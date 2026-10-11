@@ -1,56 +1,53 @@
 using System.Reflection;
 using Dalamud.Plugin.Services;
-using Poser.Entities;
 using Poser.Game.Posing;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Posing;
 
 public sealed class PoseExportCaptureTests
 {
     [Fact]
-    public void TimeoutDoesNotWriteUnrefreshedCachesAndAllowsRetry()
+    public void Export_writes_once_only_after_every_slot_refreshes()
     {
         using var fixture = new Fixture();
+        // A timeout never writes unrefreshed caches.
         fixture.Begin();
         fixture.Framework.Scheduled[0]();
         Assert.Equal(0, fixture.Writes);
         Assert.Equal(new[] { false }, fixture.Results);
         Assert.False(fixture.Capture.IsPending);
 
-        fixture.Begin();
-        fixture.Framework.Scheduled[0](); // An old timeout cannot finish the retry.
-        Assert.True(fixture.Capture.IsPending);
-        fixture.FinishBoth(true);
-        Assert.Equal(1, fixture.Writes);
-        Assert.Equal(new[] { false, true }, fixture.Results);
-    }
-
-    [Fact]
-    public void OneInterruptedSlotRefusesWholeCapture()
-    {
-        using var fixture = new Fixture();
+        // One interrupted slot refuses the whole capture.
         fixture.Begin();
         fixture.Posing.End(fixture.Slots[0], true);
+        Assert.Equal(0, fixture.Writes);
         fixture.Posing.End(fixture.Slots[1], false);
         fixture.Framework.Scheduled[^1]();
         Assert.Equal(0, fixture.Writes);
-        Assert.Equal(new[] { false }, fixture.Results);
+        Assert.Equal(new[] { false, false }, fixture.Results);
+
+        // A retry writes once, and an old timeout cannot finish it.
+        fixture.Begin();
+        fixture.Framework.Scheduled[0]();
+        Assert.True(fixture.Capture.IsPending);
+        fixture.FinishBoth(true);
+        Assert.Equal(1, fixture.Writes);
+        Assert.Equal(new[] { false, false, true }, fixture.Results);
     }
 
     [Fact]
-    public void EverySlotMustRefreshBeforeWritingOnce()
+    public void Concurrent_captures_each_complete_from_the_same_refresh()
     {
         using var fixture = new Fixture();
         fixture.Begin();
-        fixture.Posing.End(fixture.Slots[0], true);
-        Assert.Equal(0, fixture.Writes);
-        Assert.Empty(fixture.Results);
-        fixture.Posing.End(fixture.Slots[1], true);
-        fixture.Framework.Scheduled[^1]();
-        fixture.Framework.Scheduled[0]();
-        Assert.Equal(1, fixture.Writes);
-        Assert.Equal(new[] { true }, fixture.Results);
+        fixture.Begin();
+        foreach (var slot in fixture.Slots) fixture.Posing.End(slot, true);
+        foreach (var completion in fixture.Framework.Scheduled.Skip(2).ToArray()) completion();
+        Assert.Equal(2, fixture.Writes);
+        Assert.Equal(new[] { true, true }, fixture.Results);
+        Assert.False(fixture.Capture.IsPending);
     }
 
     private sealed class Fixture : IDisposable

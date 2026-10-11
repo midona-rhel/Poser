@@ -1,5 +1,12 @@
 # Testing
 
+- Debug bridge `/lifetimetrace?path=<new-absolute-file>` opts into a bounded
+  120-second read-only native skeleton-list trace; `stop=1` ends it early.
+  It uses safe process-memory reads and flushes changed owner/header rows
+  plus frame markers to a local file. It does not repair or suppress native
+  updates. Native offsets are explained at the reader. `/scene?cancel=1`
+  invokes the same cancellation command as the scene UI.
+
 - Native GPose lifetime investigations use `[GPoseLifetime]` log entries at
   entry/exit, after entry settles, and around actor/companion/overlay/IK teardown.
   Model, skeleton, owner and bounded parent-chain addresses are read with
@@ -12,39 +19,35 @@
 - The Debug-only loopback bridge and `tools/poser_mcp.py` can add a scene
   through `SceneWorkflow`, inspect load progress/resources/native rig counts,
   capture the rendered game via Dalamud's viewport texture API, and queue
-  ImGui input. Scene automation is additive and never clears existing entities.
+  ImGui input. Scene automation is additive by default; `clear=true` explicitly
+  exercises the production clear-first load contract in a disposable scene.
   UI input is not OS/game input; button/key presses require a matching release.
   Screenshots include the main game viewport and its plugin UI, not detached
   external viewports. These probes are diagnostics, not acceptance verdicts.
-  `/uiwindows` measures registered Poser windows and can restore a named test
-  window's position; it cannot target other plugins' windows.
+  `/uiwindows` lists every registered Poser window and can open, close, move,
+  or resize an exact named test window; it cannot target other plugins' windows.
+  A `published` readback distinguishes a registered window from one that has
+  an existing native ImGui window; it does not prove that window drew this frame.
   `/uidrag` queues a bounded continuous ImGui gesture (at most eight seconds),
   releasing its button and restoring native event admission on completion,
   cancellation or disposal. Its bounded trace verifies the injected input,
   not whether the target control behaved correctly; measure that separately.
+  `/worldsources` lists the portal's current object, effect, and world-light
+  candidate IDs and acquires only through the same incarnation-validated
+  application service as the UI; native addresses are never bridge identity.
+  Debug scene-autosave failure tests select their isolated root through a
+  validated process override and a plugin reload; the running store is never
+  swapped, and clearing the override plus another reload restores the default.
 
 - The Debug bridge's `/gazeprobe?actor&start=1` records at most 128 native
   pre/post-pose samples over two seconds; it never writes bones. `/gazepose`
   and `/gazeparts` use production gaze commands. `/undo?selected=1` and
   `/redo?selected=1` use the same scoped facade as the shortcuts.
 
-- The in-game harness is the wiring/native gate. `/poser test basic` runs
-  these eight scenarios once: `selection.actor-bone-clear`,
-  `transform.actor-components`, `transform.actor-undo-redo`,
-  `posing.bone-components`, `posing.animation-interference`,
-  `posing.reset-region`, `posing.copy-paste-pose`, and `posing.ik-bake`.
-  A scenario id narrows diagnosis; `/poser test full` runs all eight at the
-  acceptance repetition count; `status` and `cancel` manage runs.
-- The harness drives production command routes in GPose, snapshots boundaries,
-  checks shared invariants, and restores the user's actors and selection. It
-  does not judge visual UI conformance. `run.json` is the authoritative,
-  atomically written verdict; only `Succeeded` is success, and
-  `AcceptanceQualified` additionally requires the repetition count. Never
-  infer success from chat text or file existence.
-- `tools/Test-PoserLiveRun.ps1` reads the persisted verdict outside the game
-  (exit 0 success, 1 failure, 2 running, 3 invalid). Artifacts per run are
-  `live-tests/<UTC>/run.json`, `events.jsonl`, `report.json`, `summary.md`,
-  and `snapshots/`.
+- Validation is the Release build plus every test project, run locally and in
+  CI (`.github/workflows/architecture.yml`), plus the user's in-game test card.
+  There is no in-game automated harness; wiring and native behavior are judged
+  by the user against that card in the running game.
 - Visual and behavioral acceptance belongs to the user in the running game.
   Give a short starting-state/actions/expected-result card and ask for observed
   pass/fail and reproduction details. No video verification or recording is

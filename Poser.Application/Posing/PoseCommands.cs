@@ -42,9 +42,6 @@ public sealed class PoseCommands(
         return Report("Mirror edits", edits.Mirror(targets, "Mirror edits"));
     }
 
-    public PoseCaptureResult Copy(ActorId actor) => transfers.Capture(Targets(actor));
-    public PoseEditResult Paste(ActorId actor, PortablePose pose) =>
-        Report("Paste pose", transfers.Apply(Targets(actor), pose));
     public PoseEditResult Stash(ActorId actor, string sourceLabel) =>
         Report("Stash pose", transfers.Stash(Targets(actor), sourceLabel));
     public PoseEditResult ApplyStash(ActorId actor) =>

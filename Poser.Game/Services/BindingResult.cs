@@ -1,4 +1,4 @@
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 public enum BindingStatus
 {
@@ -6,6 +6,8 @@ public enum BindingStatus
     StaleTarget,
     IdentityMismatch,
     Missing,
+    /// <summary>Asked off the framework thread; nothing was resolved.</summary>
+    WrongThread,
 }
 
 /// <summary>What a stable id resolves to right now: the live entity, or

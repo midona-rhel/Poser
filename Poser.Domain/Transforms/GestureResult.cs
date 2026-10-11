@@ -17,6 +17,10 @@ public readonly record struct GestureResult(
         new(true, null, id);
     public static GestureResult Fail(string detail) =>
         new(false, detail);
+    public static GestureResult From(Outcome outcome) => new(outcome.Success, outcome.Detail);
+
+    /// <summary>The plain outcome, without the gesture and its evidence.</summary>
+    public Outcome Outcome => new(Success, Detail);
 
     /// <summary>Additive evidence, excluded from legacy positional equality.</summary>
     public TransformRecoveryReceipt? Recovery { get; init; }

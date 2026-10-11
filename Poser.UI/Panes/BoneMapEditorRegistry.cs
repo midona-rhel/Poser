@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Poser.Domain.Identity;
-using Poser.Config;
+using Poser.Documents.Config;
 
 namespace Poser.UI;
 

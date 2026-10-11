@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -37,34 +38,18 @@ public sealed record CameraReading(
     float DefaultRoll,
     Vector3 DefaultRotation);
 
-/// <summary>Detached camera editor values and exact-generation writes in native units.</summary>
+/// <summary>Detached camera editor values, exact-generation writes in native
+/// units, and the camera commands that are not one property.</summary>
 public interface ICameraControl
 {
     CameraReading? Read(CameraId id);
     void Seal();
-    ValueWriteResult Cycle(int delta);
-    ValueWriteResult SetLocked(CameraId id, bool value);
-    ValueWriteResult ResetProperties(CameraId id);
-    ValueWriteResult SetName(CameraId id, string value);
-    ValueWriteResult SetAngle(CameraId id, Vector2 value);
-    ValueWriteResult SetPan(CameraId id, Vector2 value);
-    ValueWriteResult SetRoll(CameraId id, float value);
-    ValueWriteResult SetZoom(CameraId id, float value);
-    ValueWriteResult SetFoV(CameraId id, float value);
-    ValueWriteResult SetPositionOffset(CameraId id, Vector3 value);
-    ValueWriteResult SetFixedPosition(CameraId id, Vector3? value);
-    ValueWriteResult SetDisableCollision(CameraId id, bool value);
-    ValueWriteResult SetDelimitCamera(CameraId id, bool value);
-    ValueWriteResult SetPosition(CameraId id, Vector3 value);
-    ValueWriteResult SetRotation(CameraId id, Vector3 value);
-    ValueWriteResult SetMovementEnabled(CameraId id, bool value);
-    ValueWriteResult SetMove2D(CameraId id, bool value);
-    ValueWriteResult SetMovementSpeed(CameraId id, float value);
-    ValueWriteResult SetMouseSensitivity(CameraId id, float value);
-    ValueWriteResult SetDelimitAngle(CameraId id, bool value);
-    ValueWriteResult SetOrthographic(CameraId id, bool value);
-    ValueWriteResult SetOrthographicZoom(CameraId id, float value);
-    ValueWriteResult SetPortrait(CameraId id, bool value);
-    ValueWriteResult SetLive(CameraId id, bool value);
-    ValueWriteResult ResetPosition(CameraId id);
+    Outcome Set<T>(CameraId id, EntityProperty<CameraId, T> property, T value);
+    Outcome Update<T>(CameraId id, EntityProperty<CameraId, T> property, Func<T, T> change);
+    Outcome Cycle(int delta);
+    Outcome ResetProperties(CameraId id);
+    /// <summary>Quarter-turns the roll with the mode, as one step.</summary>
+    Outcome SetPortrait(CameraId id, bool value);
+    Outcome SetLive(CameraId id, bool value);
+    Outcome ResetPosition(CameraId id);
 }

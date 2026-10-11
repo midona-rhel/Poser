@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Companions;
 
@@ -9,5 +10,5 @@ public sealed record ActorSceneReading(CompanionKind? SpawnedKind, bool HasCompa
 public interface IActorSceneControl
 {
     ActorSceneReading? Read(ActorId actor);
-    ValueWriteResult SetGameTarget(ActorId actor);
+    Outcome SetGameTarget(ActorId actor);
 }

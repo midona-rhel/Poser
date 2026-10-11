@@ -127,6 +127,10 @@ The rail pins entity targets (always the actor root), while
 posing content still follows that actor's globally selected bones. Separate
 presentation graphs share commands/history, never mutable selection or gesture
 state. Collapsing the rail preserves content width and does not change other hosts.
+Every host's graph, the main window's included, is built by one presentation
+scope that creates and disposes its panes; pane types are never container
+singletons. The main window, its sidebar menus, the spawn browser and the
+library reach the main graph's panes, never a second copy.
 Main and popped-out Properties use the same minimum content width, adding
 only their currently attached Sidebar/Inspector columns to the outer width.
 Pop-outs follow the workspace's manipulation fade, retaining live shell-drag
@@ -194,6 +198,11 @@ Reset submenus. Bone presets apply to the owning actor, including when opened
 from a bone or branch; Head excludes the separately toggleable Face detail set.
 Jaw and Jaw Only sit directly under Head in the tree and stock presets; other
 mouth bones keep their existing categories. This does not change native parenting.
+The Ktisis tree (`KtisisBoneCategories`) is the only bone grouping: the sidebar,
+stock presets, the inspector matrix's "More" sections, the multi-bone header and
+category search all read it, and bones it doesn't list show under Other.
+`BoneInfoService` supplies only curated names and the NSFW set; pose-import
+filters keep their own Brio-style name prefixes.
 Skeleton Settings selects default presets for the character skeleton root's
 Wand action, immediately left of its eye. One click shows exactly the union of
 checked presets within that skeleton's scope; no matching defaults disables the
@@ -334,8 +343,24 @@ Responsive-grid audits check normal, narrow, and wide panes in game for order,
 wrapping, clipping or overlap, attached actions, and unused space. Visual
 acceptance remains manual under the [testing contract](../process/testing.md).
 
-Crystarium and Picto are first-party UI work. Crystarium supplies the shared
-controls, text, icons, placement, scrolling, and motion. `Interactive.Reserve`
+The widget toolkit is first-party UI work. `Poser.UI.Widgets` supplies the
+shared controls, text, icons, placement, scrolling, and motion as one static
+class per widget family (`ButtonWidgets`, `TextWidgets`, `FloatingMenu`, …);
+call sites import them with `using static`. Their mutable state (active
+theme, text and texture caches, interaction, menu, help and animation state,
+the texture uploader and log) lives in one `UiContext`. The host registers it
+with its texture uploader and log. The service provider owns it, resolving it
+before presentation graphs so reverse disposal releases it after panes and
+windows. `UIManager` detaches Draw and input callbacks first without disposing
+shared widget state: closing editors still dismisses menus through the context.
+Context disposal releases its textures and uninstalls it; the host resets no
+UI statics.
+App views hold no mutable statics either: state the windows and panes share
+(the hide-while-manipulating fade and gizmo pointer hold, overlay bone picking,
+the transform clipboard) and the frame profiler are container singletons
+injected where they are used, overlay hand-offs live on
+`SkeletonOverlayPresentation`, and a shell's retained draw state rides its
+`AppShellViewModel`. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.

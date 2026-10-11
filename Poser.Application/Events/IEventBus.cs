@@ -1,7 +1,6 @@
 using System;
-using Poser.Core;
 
-namespace Poser.Services;
+namespace Poser.Application.Events;
 
 /// <summary>
 /// Provides decoupled communication between components via publish/subscribe pattern.

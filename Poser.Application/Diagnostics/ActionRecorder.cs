@@ -8,7 +8,9 @@ namespace Poser.Application.Diagnostics;
 
 /// <summary>One recorded thing: an action the journal appended, a notice
 /// the user saw, or an exception the UI caught. Already anonymized: the
-/// actor is a token, and the text was scrubbed as it was written.</summary>
+/// actor is a token, and the text was scrubbed as it was written.
+/// <see cref="Before"/>/<see cref="After"/> are bounded copies made by
+/// <see cref="DiagnosticValue"/>, never the live values.</summary>
 public sealed record ActionRecord(
     DateTime At,
     string Kind,
@@ -42,7 +44,7 @@ public sealed class ActionRecorder : IDisposable
 {
     public const int Capacity = 500;
 
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly ActionRecord?[] _ring = new ActionRecord?[Capacity];
     private int _next;
     private int _count;
@@ -56,7 +58,7 @@ public sealed class ActionRecorder : IDisposable
     /// a tilde. Set by the UI.</summary>
     public Func<string, string> Scrub { get; set; } = text => text;
 
-    public ActionRecorder(TransformHistory history)
+    public ActionRecorder(EditHistory history)
     {
         _history = history;
         _history.Appended += OnAppended;
@@ -103,7 +105,9 @@ public sealed class ActionRecorder : IDisposable
                 DateTime.UtcNow,
                 step.RequiredAsset is not null ? "File"
                     : step.CompleteReplay is not null ? "Disruptive" : "Value",
-                Scrub(step.Description), null, step.BeforeValue, step.AfterValue,
+                Scrub(step.Description), null,
+                DiagnosticValue.From(step.BeforeValue, Scrub),
+                DiagnosticValue.From(step.AfterValue, Scrub),
                 step.RequiredAsset is { } asset ? Scrub(asset) : null, null),
             SceneLifecyclePatch lifecycle => new ActionRecord(
                 DateTime.UtcNow, "Lifecycle", Scrub(lifecycle.Description), null, null, null, null, null),

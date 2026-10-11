@@ -6,15 +6,16 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
-using Poser.Core;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
-using Poser.Services;
 
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
+using Poser.Domain.Actors;
+using Poser.Documents.Files;
+using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Preview;
 
@@ -28,10 +29,6 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     /// <summary>CharaView slot 1 — the one whose render target is
     /// <c>CharaViewTextures[1]</c>.</summary>
     private const uint CharaViewIndex = 1;
-
-    /// <summary>Ktisis' preview node size, used until the texture reports
-    /// its own dimensions.</summary>
-    private static readonly Vector2 FallbackSize = new(192f, 320f);
 
     /// <summary>How far the body may be offset from its staged position, in
     /// native units either way. A whole body is about 1.8 tall, so this is
@@ -80,8 +77,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     private volatile string? _refusalText;
 
     /// <summary>The standing request, in the order it must land: the first
-    /// stage alone for a plain <see cref="ShowPose(string, PoseImportOptions)"/>,
-    /// both for a <see cref="ShowSequence"/>. The SERIAL is what the framework
+    /// stage alone for a single-stage request, both for a
+    /// <see cref="ShowSequence"/>. The SERIAL is what the framework
     /// side watches — a new statement supersedes whatever the sequence had
     /// reached, wholesale.</summary>
     private PosePreviewRequest? _requestedFirst;
@@ -191,17 +188,6 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         }
     }
 
-    public Vector2 TextureSize
-    {
-        get
-        {
-            var texture = _open ? CharaViewTexture() : null;
-            if (texture == null || texture->ActualWidth == 0 || texture->ActualHeight == 0)
-                return FallbackSize;
-            return new Vector2(texture->ActualWidth, texture->ActualHeight);
-        }
-    }
-
     private static FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Texture* CharaViewTexture()
     {
         var manager = RenderTargetManager.Instance();
@@ -236,22 +222,6 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         _framework.Update += OnFrameworkUpdate;
         RunOnFramework(InitializeCharaView);
     }
-
-    /// <summary>
-    /// The pose to show. Remembered until the preview body is bound, then
-    /// applied; the latest call wins. The OPTIONS INSTANCE is part of the
-    /// request: restating the same path with the same instance is free, while
-    /// a new instance re-imports — that is how an import-option change reaches
-    /// a preview whose path never moved.
-    /// </summary>
-    public void ShowPose(string path, PoseImportOptions options) =>
-        Request(PosePreviewRequest.File(path, options), null);
-
-    /// <summary>The same statement for a pose held in memory — the rebase
-    /// baseline, which is a capture and not a file. <paramref name="key"/>
-    /// stands in for the path in the dedupe.</summary>
-    public void ShowPose(PoseFile pose, string key, PoseImportOptions options) =>
-        Request(PosePreviewRequest.Memory(pose, key, options), null);
 
     /// <summary>
     /// TWO poses in order, which is how a preview shows what an import will
@@ -676,7 +646,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
             _appliedSerial = serial;
             _appliedStage = 0;
         }
-        // The sequence is one stage (a plain ShowPose) or two (rebase then
+        // The sequence is one stage or two (rebase then
         // file). Once every stage has been dispatched the body stands for the
         // whole request and NOTHING more is armed — the bug this guards was a
         // second stage re-arming every idle tick, which held the shared import

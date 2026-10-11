@@ -1,9 +1,10 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 

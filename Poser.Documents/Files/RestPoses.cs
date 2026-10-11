@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using Poser.Domain.Posing;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// Brio's embedded rest poses (Resources/Embedded/Data/BrioAPose.pose and

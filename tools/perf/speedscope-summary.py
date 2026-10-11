@@ -7,7 +7,7 @@ Capture and convert:
 Then:
     python tools/perf/speedscope-summary.py t.speedscope.json [substring ...]
 
-With no substrings: the top Poser/Crystarium frames by inclusive time and
+With no substrings: the top Poser frames by inclusive time and
 the frame count (UIManager.DrawUI invocations) so totals read as ms per
 frame. With substrings: for each frame name containing one, its total,
 its per-frame cost and its direct children by time — that is where the
@@ -56,7 +56,7 @@ def main(path, wanted):
                 stack.pop()
     print(f"frames {frames}  (~{frames / 45:.1f} fps over 45 s)")
     if not wanted:
-        ours = [(f, t) for f, t in incl.items() if "Poser" in names[f] or "Crystarium" in names[f]]
+        ours = [(f, t) for f, t in incl.items() if "Poser" in names[f]]
         for f, t in sorted(ours, key=lambda x: -x[1])[:30]:
             print(f"{t:8.0f} ms  {t / max(1, frames):5.2f} ms/frame  {names[f][:110]}")
         return

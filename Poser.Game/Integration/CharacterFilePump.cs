@@ -1,5 +1,6 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.Integration;
+using Poser.Application.Presentation;
 
 namespace Poser.Game.Integration;
 
@@ -8,20 +9,20 @@ public sealed class CharacterFilePump : IDisposable
 {
     private readonly IFramework _framework;
     private readonly CharacterFileSession _files;
-    private readonly Action<string> _failed;
+    private readonly IUserNotices _notices;
 
-    public CharacterFilePump(IFramework framework, CharacterFileSession files, Action<string> failed)
+    public CharacterFilePump(IFramework framework, CharacterFileSession files, IUserNotices notices)
     {
         _framework = framework;
         _files = files;
-        _failed = failed;
+        _notices = notices;
         _framework.Update += OnUpdate;
     }
 
     private void OnUpdate(IFramework framework)
     {
         if (_files.Advance() is { Success: false } result)
-            _failed(result.Detail ?? "The character file could not be applied.");
+            _notices.Failed("Import: " + (result.Detail ?? "The character file could not be applied."));
     }
 
     public void Dispose()

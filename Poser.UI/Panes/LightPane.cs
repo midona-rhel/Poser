@@ -9,13 +9,16 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
-using Poser.Config;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Presentation;
-using Poser.Files;
-using Poser.Services;
+using Poser.Application.Transforms;
+using Poser.UI.Widgets;
+using Poser.Domain.Posing;
+using Poser.Documents.Files;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.SegmentedControlWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -28,7 +31,6 @@ public sealed class LightPane
     private readonly ISceneCreation _creation;
 
     private readonly EntityActions _entityActions;
-    private readonly ILightFiles _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IViewportReads _viewport;
@@ -51,7 +53,7 @@ public sealed class LightPane
 
     /// <summary>The gobo library's visual surface: the shared texture grid,
     /// walking the library by index with each tile captioned by NAME.</summary>
-    private readonly Crystarium.TexturePicker _goboGrid;
+    private readonly TexturePicker _goboGrid;
     private LightId? _goboTarget;
 
 
@@ -60,16 +62,12 @@ public sealed class LightPane
     private readonly HashSet<string> _missingGobos = new(StringComparer.Ordinal);
 
 
-    private readonly Crystarium.FileDialog _saveBrowser =
+    private readonly FileDialog _saveBrowser =
         new("Save Light", new[] { ".xivl" }, isSaveMode: true);
-    private readonly Crystarium.FileDialog _loadBrowser =
+    private readonly FileDialog _loadBrowser =
         new("Load Light", new[] { ".xivl" });
     private readonly global::Poser.UI.Controls.RememberedFolder _folder =
         new(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
-
-    // An imported light is only selectable once the scene refresh has bound
-    // it, exactly like a spawned one.
-    private readonly IPendingSceneCreation _pendingCreation;
 
     /// <summary>The intensity slider's decade notches: where 1 and 10 sit on
     /// the log track, so the tiers read before dragging.</summary>
@@ -95,9 +93,7 @@ public sealed class LightPane
         SceneSession scene,
         PropertiesContext properties,
         ISceneCreation creation,
-        IPendingSceneCreation pendingCreation,
         EntityActions entityActions,
-        ILightFiles lightFiles,
         ObjectPlacementPreferences placement,
         ITransformFacade cleanTransforms,
         IViewportReads viewport,
@@ -115,10 +111,8 @@ public sealed class LightPane
         _scene = scene;
         _selection = properties.Selection;
         _creation = creation;
-        _pendingCreation = pendingCreation;
         _scenePane = scenePane;
         _entityActions = entityActions;
-        _lightFiles = lightFiles;
         _placement = placement;
         _cleanTransforms = cleanTransforms;
         // The load dialog carries the ONE choice that changes where the
@@ -130,7 +124,7 @@ public sealed class LightPane
         _textures = textures;
         // The library is embedded and fixed by the time the pane composes,
         // so its count is the walk and its names are the captions.
-        _goboGrid = new Crystarium.TexturePicker(
+        _goboGrid = new TexturePicker(
             "light-gobo",
             GoboPreview,
             (uint)values.Gobos.Count,
@@ -161,10 +155,10 @@ public sealed class LightPane
     private void DrawPlacementBand(Vector2 origin, Vector2 size, string? path)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        float inset = Crystarium.ActiveTheme.Page.Inset * scale;
+        float inset = ActiveTheme.Page.Inset * scale;
         ImGui.SetCursorScreenPos(
             new Vector2(origin.X + inset, origin.Y + inset));
-        Crystarium.SegmentedControl(
+        SegmentedControl(
             "##light-placement-mode",
             PlacementModeLabels,
             (int)_placement.Mode,
@@ -181,16 +175,8 @@ public sealed class LightPane
     /// menu's "New light from file…".</summary>
     public void OpenLoad()
     {
-        _folder.Open(_loadBrowser, path =>
-        {
-            var imported = _lightFiles.Import(path, _placement.Mode);
-            if (imported.Handle is null)
-            {
-                _notices.Failed(imported.Detail ?? "The light could not be loaded.");
-                return;
-            }
-            _pendingCreation.SelectWhenReady(imported.Handle);
-        });
+        _folder.Open(_loadBrowser,
+            path => _scenePane.LoadEntry(path, _placement.Mode));
     }
 
     /// <summary>
@@ -225,9 +211,9 @@ public sealed class LightPane
         string id,
         Vector2 origin,
         Vector2 size,
-        Action<Crystarium.PageScope, LightId, LightReading> sections)
+        Action<PageScope, LightId, LightReading> sections)
     {
-        Crystarium.Page(id, origin, size, page =>
+        Page(id, origin, size, page =>
         {
             var (lightId, light) = TargetLight();
             if (light == null)
@@ -251,7 +237,7 @@ public sealed class LightPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void GeneralRows(Crystarium.FormScope form, LightReading light)
+    private void GeneralRows(FormScope form, LightReading light)
     {
         if (!light.Available)
             form.Status("Lighting is unavailable: game signatures not found.");
@@ -260,12 +246,12 @@ public sealed class LightPane
             cells.Cell(
                 "Enabled",
                 cell => cell.Switch("##light-enabled", light.IsOn,
-                    value => _values.SetIsOn(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.IsOn, value)),
                 help: "Switch off, settings kept");
             cells.Cell(
                 "Reflections",
                 cell => cell.Switch("##light-reflections", light.HasReflection,
-                    value => _values.SetHasReflection(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.HasReflection, value)),
                 help: "Let this light appear in reflective surfaces");
         });
         form.Cells(cells =>
@@ -273,23 +259,23 @@ public sealed class LightPane
             cells.Cell(
                 "Name",
                 cell => cell.TextInput("##light-name", light.Name,
-                    value => _values.SetName(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.Name, value)),
                 help: "The name this light carries in the sidebar");
             cells.Cell(
                 "Type",
                 cell => cell.Dropdown("##light-type", KindOptions,
                     (int)light.Kind,
-                    selected => _values.SetKind(light.Id, (LightKind)selected)),
+                    selected => _values.Set(light.Id, LightProperties.Kind, (LightKind)selected)),
                 help: "Sun, bulb, cone, or panel");
         });
     }
 
-    private void LightRows(Crystarium.FormScope form, LightReading light)
+    private void LightRows(FormScope form, LightReading light)
     {
         form.ColorWells("Color", wells =>
         {
             wells.Well("Color", ToDisplayColor(light.Color),
-                value => _values.SetColor(light.Id, ToRawColor(value)),
+                value => _values.Set(light.Id, LightProperties.Color, ToRawColor(value)),
                 hdr: true);
         }, help: "HDR color; reaches past white");
 
@@ -302,7 +288,7 @@ public sealed class LightPane
             cells.Cell(
                 "Intensity",
                 cell => cell.Slider("##light-intensity", light.Intensity,
-                    0f, 100f, value => _values.SetIntensity(light.Id, value),
+                    0f, 100f, value => _values.Set(light.Id, LightProperties.Intensity, value),
                     scale: SliderScale.Log,
                     marks: IntensityMarks,
                     logCurvature: 9999f, onBegin: _values.Seal),
@@ -310,7 +296,7 @@ public sealed class LightPane
             cells.Cell(
                 "Range",
                 cell => cell.Slider("##light-range", light.Range, 0f, 999f,
-                    value => _values.SetRange(light.Id, value),
+                    value => _values.Set(light.Id, LightProperties.Range, value),
                     scale: SliderScale.Log, onBegin: _values.Seal),
                 help: "How far the light reaches");
         });
@@ -320,12 +306,12 @@ public sealed class LightPane
                 "Falloff type",
                 cell => cell.Dropdown("##light-falloff-type", FalloffOptions,
                     (int)light.FalloffType,
-                    selected => _values.SetFalloffType(light.Id, (LightFalloffType)selected)),
+                    selected => _values.Set(light.Id, LightProperties.FalloffType, (LightFalloffType)selected)),
                 help: "The dimming curve");
             cells.Cell(
                 "Falloff",
                 cell => cell.Slider("##light-falloff", light.Falloff,
-                    0f, 1000f, value => _values.SetFalloff(light.Id, value),
+                    0f, 1000f, value => _values.Set(light.Id, LightProperties.Falloff, value),
                     scale: SliderScale.Log, logCurvature: 9999f, onBegin: _values.Seal),
                 help: "Dimming toward the cone edge");
         });
@@ -338,13 +324,13 @@ public sealed class LightPane
                     cells.Cell(
                         "Cone angle",
                         cell => cell.Slider("##light-cone", light.SpotAngle,
-                            0f, 180f, value => _values.SetSpotAngle(light.Id, value), onBegin: _values.Seal),
+                            0f, 180f, value => _values.Set(light.Id, LightProperties.SpotAngle, value), onBegin: _values.Seal),
                         help: "How wide the cone opens, in degrees");
                     cells.Cell(
                         "Falloff angle",
                         cell => cell.Slider("##light-cone-falloff",
                             light.FalloffAngle, 0f, 180f,
-                            value => _values.SetFalloffAngle(light.Id, value), onBegin: _values.Seal),
+                            value => _values.Set(light.Id, LightProperties.FalloffAngle, value), onBegin: _values.Seal),
                         help: "How soft the cone's edge is, in degrees");
                 });
                 break;
@@ -356,17 +342,17 @@ public sealed class LightPane
                         "Skew X",
                         cell => cell.Slider("##light-area-x", area.X,
                             -90f, 90f,
-                            value => _values.SetAreaAngleX(light.Id, value), onBegin: _values.Seal),
+                            value => _values.Update(light.Id, LightProperties.AreaAngle, angle => angle with { X = value }), onBegin: _values.Seal),
                         help: "Tilt the throw around local X (vertical), in degrees; the emitter itself does not rotate");
                     cells.Cell(
                         "Skew Y",
                         cell => cell.Slider("##light-area-y", area.Y,
                             -90f, 90f,
-                            value => _values.SetAreaAngleY(light.Id, value), onBegin: _values.Seal),
+                            value => _values.Update(light.Id, LightProperties.AreaAngle, angle => angle with { Y = value }), onBegin: _values.Seal),
                         help: "Tilt the throw around local Y (horizontal), in degrees; the emitter itself does not rotate");
                 });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
-                    value => _values.SetFalloffAngle(light.Id, value),
+                    value => _values.Set(light.Id, LightProperties.FalloffAngle, value),
                     help: "How soft the panel's edge is, in degrees", onBegin: _values.Seal);
                 break;
         }
@@ -393,7 +379,7 @@ public sealed class LightPane
                 cell => cell.Button("##light-gobo-clear", "Clear",
                     () =>
                     {
-                        _values.ClearGobo(light.Id);
+                        _values.Set(light.Id, LightProperties.Gobo, null);
                     },
                     disabled: light.GoboPath is null),
                 help: "Project no mask at all");
@@ -473,7 +459,7 @@ public sealed class LightPane
             : TextureProbe.Ready;
     }
 
-    private void ShadowRows(Crystarium.FormScope form, LightReading light)
+    private void ShadowRows(FormScope form, LightReading light)
     {
         form.Cells(cells =>
         {
@@ -481,23 +467,23 @@ public sealed class LightPane
                 "Dynamic",
                 cell => cell.Switch("##light-shadow-dynamic",
                     light.CastsDynamicShadows,
-                    value => _values.SetCastsDynamicShadows(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.CastsDynamicShadows, value)),
                 help: "Cast shadows that update as the scene moves");
             cells.Cell(
                 "Characters",
                 cell => cell.Switch("##light-shadow-chara",
                     light.CastsCharacterShadow,
-                    value => _values.SetCastsCharacterShadow(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.CastsCharacterShadow, value)),
                 help: "Let characters cast shadows from this light");
             cells.Cell(
                 "Objects",
                 cell => cell.Switch("##light-shadow-object",
                     light.CastsObjectShadow,
-                    value => _values.SetCastsObjectShadow(light.Id, value)),
+                    value => _values.Set(light.Id, LightProperties.CastsObjectShadow, value)),
                 help: "Let scenery cast shadows from this light");
         });
         form.Slider("Character range", light.CharacterShadowRange,
-            0f, 1000f, value => _values.SetCharacterShadowRange(light.Id, value),
+            0f, 1000f, value => _values.Set(light.Id, LightProperties.CharacterShadowRange, value),
             help: "How far character shadows are still drawn",
             scale: SliderScale.Log, onBegin: _values.Seal);
         form.Cells(cells =>
@@ -506,26 +492,26 @@ public sealed class LightPane
                 "Shadow near",
                 cell => cell.Slider("##light-shadow-near",
                     light.ShadowPlaneNear, 0f, 10f,
-                    value => _values.SetShadowPlaneNear(light.Id, value),
+                    value => _values.Set(light.Id, LightProperties.ShadowPlaneNear, value),
                     scale: SliderScale.Log, onBegin: _values.Seal),
                 help: "The closest distance shadows begin at");
             cells.Cell(
                 "Shadow far",
                 cell => cell.Slider("##light-shadow-far",
                     light.ShadowPlaneFar, 0f, 1000f,
-                    value => _values.SetShadowPlaneFar(light.Id, value),
+                    value => _values.Set(light.Id, LightProperties.ShadowPlaneFar, value),
                     scale: SliderScale.Log, logCurvature: 9999f, onBegin: _values.Seal),
                 help: "The furthest distance shadows reach");
         });
     }
 
-    private void AttachRows(Crystarium.FormScope form, LightReading light) =>
+    private void AttachRows(FormScope form, LightReading light) =>
         _parenting.Draw(form, SelectionId.ForLight(light.Id));
 
     /// <summary>Save writes the selected light; load always spawns a new one,
     /// which the pending-select hook makes the selection once the scene has
     /// bound it.</summary>
-    private void FileRows(Crystarium.FormScope form, LightReading light)
+    private void FileRows(FormScope form, LightReading light)
     {
         form.Actions("Light file", actions =>
         {
@@ -546,18 +532,12 @@ public sealed class LightPane
     /// </summary>
     public void OpenSave(LightId id)
     {
-        _folder.Open(_saveBrowser, path =>
-        {
-            var result = _lightFiles.Export(id, path);
-            if (result.Success)
-                _notices.Done($"Light saved to {path}.");
-            else
-                _notices.Failed(result.Detail ?? "The light file could not be written.");
-        });
+        _folder.Open(_saveBrowser,
+            path => _scenePane.SaveEntryTo(SelectionId.ForLight(id), path));
     }
 
     private void ActionRows(
-        Crystarium.FormScope form, LightId lightId, LightReading light)
+        FormScope form, LightId lightId, LightReading light)
     {
         form.Actions("Light", actions =>
         {

@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
@@ -9,9 +10,9 @@ public interface IExpressionPreview
     event Action<string>? Failed;
     bool IsPending(ActorId actor);
     bool IsBaking { get; }
-    AnimationResult Choose(ActorId actor, TimelineEntry entry);
-    AnimationResult Preview(ActorId actor, ushort timeline);
-    AnimationResult Reset(ActorId actor);
-    AnimationResult Bake(ActorId actor, ushort timeline);
+    Outcome Choose(ActorId actor, TimelineEntry entry);
+    Outcome Preview(ActorId actor, ushort timeline);
+    Outcome Reset(ActorId actor);
+    Outcome Bake(ActorId actor, ushort timeline);
     void CancelRetry(ActorId actor);
 }

@@ -1,11 +1,10 @@
 using System.Globalization;
 using System.Numerics;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using LegacyLayer = Poser.Core.BonePoseTransformInfo;
+using LegacyLayer = Poser.Domain.Posing.BonePoseTransformInfo;
 
 namespace Poser.Game.Transforms;
 

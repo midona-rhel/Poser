@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Posing;
 
 namespace Poser.Application.Tests.Transforms;
@@ -9,7 +10,7 @@ public sealed class FabrikHistoryTests
     [Fact]
     public void Endpoint_drag_commits_once_and_replays_the_exact_targets_and_seed()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var entries = new List<HistoryEntry>();
         history.Appended += entries.Add;
@@ -25,7 +26,7 @@ public sealed class FabrikHistoryTests
         {
             journal.BeginEdit("root-position");
             journal.Adjust("chain", "Set IK", () => current,
-                next => { current = next; return ValueWriteResult.Ok(); },
+                next => { current = next; return Outcome.Ok(); },
                 current with { Fabrik = current.Fabrik! with
                     { Handle = point with { Position = new Vector3(i, 2, 3) } } });
             journal.EndEdit();

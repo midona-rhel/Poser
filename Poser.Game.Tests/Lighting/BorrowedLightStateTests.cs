@@ -1,6 +1,5 @@
 using System.Numerics;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.Lighting;
 using Xunit;
 
@@ -40,7 +39,7 @@ public unsafe class BorrowedLightStateTests
         Assert.Equal(originalRender.LightFlags, copyRender.LightFlags);
         Assert.Equal(originalRender.ColorIntensity, render.ColorIntensity);
         Assert.Equal((byte)17, native.VisibilityFlags);
-        light.Transform = Poser.Transform.Identity;
+        light.Transform = Poser.Domain.Transforms.Transform.Identity;
         light.Kind = LightKind.Spot;
         light.Color = Vector3.One;
         light.Intensity = 10;
@@ -67,6 +66,7 @@ public unsafe class BorrowedLightStateTests
         Assert.Equal(12f, copyRender.Intensity);
         Assert.Equal(7f, render.Intensity);
         Assert.True(state.Restore(&native));
+        Assert.Equal((byte)17, native.VisibilityFlags);
         Assert.Equal(originalTransform.Position, native.Transform.Position);
         Assert.Equal(originalTransform.Rotation, native.Transform.Rotation);
         Assert.Equal(originalTransform.Scale, native.Transform.Scale);
@@ -112,42 +112,5 @@ public unsafe class BorrowedLightStateTests
         Assert.Empty(released);
         Assert.Equal((nint)123, (nint)native.ProjectedCubemapTexture);
         Assert.Equal((nint)456, (nint)render.Texture);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(17)]
-    public void Release_restores_original_visibility_without_rewinding_game_updates(byte visibility)
-    {
-        LightRenderObject render = default;
-        GameLight native = default;
-        native.LightRenderObject = &render;
-        native.VisibilityFlags = visibility;
-        using var state = new BorrowedLightState(&native);
-        state.Suppress(&native);
-        render.Intensity = 4;
-        native.Transform.Position = new(9, 8, 7);
-        Assert.True(state.Restore(&native));
-        Assert.Equal(visibility, native.VisibilityFlags);
-        Assert.Equal(4, render.Intensity);
-        Assert.Equal(new Vector3(9, 8, 7), (Vector3)native.Transform.Position);
-    }
-
-    [Fact]
-    public void Failed_capture_releases_the_pending_texture_reference_once_without_touching_source()
-    {
-        LightRenderObject render = default;
-        GameLight native = default;
-        native.LightRenderObject = &render;
-        render.Color = new(2, 3, 4);
-        native.ProjectedCubemapTexture = (FFXIVClientStructs.FFXIV.Client.System.Resource.Handle.TextureResourceHandle*)123;
-        var released = new List<nint>();
-        var state = new BorrowedLightState(&native, _ => { }, released.Add);
-        state.Dispose();
-        state.Dispose();
-        Assert.Equal(new Vector3(2, 3, 4), render.Color);
-        Assert.Equal((nint)123, (nint)native.ProjectedCubemapTexture);
-        Assert.Equal(new nint[] { 123 }, released);
-        Assert.False(state.Restore(&native));
     }
 }

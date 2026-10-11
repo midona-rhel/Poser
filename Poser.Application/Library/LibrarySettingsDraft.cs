@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Poser.Domain.Library;
+using Poser.Documents.Library;
 
-namespace Poser.Library;
+namespace Poser.Application.Library;
 
 public sealed class LibrarySourceDraft
 {

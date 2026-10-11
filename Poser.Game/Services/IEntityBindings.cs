@@ -1,7 +1,7 @@
 using Poser.Domain.Identity;
-using Poser.Entities;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>Stable ids to live entities and back. The one lookup every
 /// surface resolves through; the registry behind it decides what a

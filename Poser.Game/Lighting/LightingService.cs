@@ -8,14 +8,17 @@ using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
-using Poser.Core;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.WorldObjects;
-using Poser.Services;
-using PoserTransform = Poser.Transform;
+using PoserTransform = Poser.Domain.Transforms.Transform;
 
 using Poser.Application.Viewport;
+using Poser.Domain.Posing;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Game.Core;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Lighting;
 
@@ -35,82 +38,20 @@ public sealed unsafe class LightingService : ILightingService
     private const string CreateLightSignature =
         "48 ?? ?? ?? ?? 57 48 83 EC 20 49 8B D8 8B F9 ??";
 
-    // Light.ctor — every scene light in the process passes through here,
-    // which is how overworld lights become capture candidates.
-    private const string LightCtorSignature =
-        "E8 ?? ?? ?? ?? 48 89 84 ?? ?? ?? ?? ?? 48 85 C0 0F ?? ?? ?? ?? ?? 48 8B C8";
-
-    private const string ToggleGPoseLightSignature =
-        "48 83 EC 28 4C 8B C1 83 FA 03";
-
-    // Gobo pair, Ktisis pattern first then Brio's. The two projects signature
-    // the same two functions off different anchors and neither is guaranteed
-    // to survive a patch, so each is tried in turn before the feature is
-    // declared unavailable.
-    private const string SetLightTextureSignatureKtisis =
-        "40 53 48 83 EC ?? 48 8B D9 C7 44 24 ?? ?? ?? ?? ?? 33 C9";
-
-    private const string SetLightTextureSignatureBrio =
-        "40 53 48 83 ?? ?? 48 ?? ?? ?? 44 24 58 ?? ?? ?? ?? 33 ?? 48";
-
-    private const string ClassifyPathSignatureKtisis =
-        "40 53 48 83 EC ?? ?? ?? ?? ?? 4C 8B CA 0F BE 42";
-
-    private const string ClassifyPathSignatureBrio =
-        "40 53 48 83 ?? ?? 44 0F BE 02 ?? ?? ?? ??";
-
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly IGPoseService _gPose;
     private readonly ICameraProjection _camera;
     private readonly IEventBus _events;
-    private readonly IObjectTable _objects;
-    private readonly IGameInteropProvider _hooks;
-    private readonly IWorldObjectPort _worldGraph;
+    private readonly LightGoboController _goboControl;
+    private readonly WorldLightCapture _world;
+    private readonly GPoseCameraLights _cameraLights;
 
     /// <summary>Light.Create — the game allocates and returns the object;
     /// the plugin never allocates one itself.</summary>
     private readonly delegate* unmanaged<uint, nint, void*, GameLight*> _createGameLight;
 
-    /// <summary>Assigns a resource path as the light's projected texture.</summary>
-    private readonly delegate* unmanaged<GameLight*, uint*, byte*, byte> _setLightTexture;
-
-    /// <summary>Classifies a resource path into its resource category, which
-    /// the texture assignment takes as its second argument.</summary>
-    private readonly delegate* unmanaged<uint*, byte*, uint*> _classifyPath;
-
-    private delegate GameLight* LightCtorDelegate(GameLight* light);
-    private delegate nint LightDtorDelegate(GameLight* light, bool free);
-    private delegate bool ToggleGPoseLightDelegate(GPoseLightController* state, uint index);
-
-    private readonly Hook<LightCtorDelegate>? _lightCtorHook;
-    private readonly Hook<ToggleGPoseLightDelegate>? _toggleGPoseLightHook;
-    private Hook<LightDtorDelegate>? _lightDtorHook;
-    private nint _destructorAddress;
-
     private readonly List<Light> _lights = new();
-    private readonly IReadOnlyList<GoboEntry> _gobos;
-
-    /// <summary>Every scene light the game has constructed and not yet
-    /// destroyed, minus this plugin's own. Written from the ctor/dtor detours
-    /// as well as the framework thread, hence the gate.</summary>
-    private readonly HashSet<nint> _worldLights = new();
-    private readonly Dictionary<nint, long> _worldLightGenerations = new();
-    private long _nextWorldLightGeneration;
-    private readonly object _worldGate = new();
-
-    /// <summary>Whether the world's existing lights have been walked for this
-    /// GPose session. The ctor hook only ever sees lights constructed AFTER it
-    /// was installed, so a zone that was already loaded — every dev hot-reload,
-    /// and every session entered without a territory change — contributes
-    /// nothing through it. The seed is what makes those lights exist to the
-    /// listing; this flag is what stops an empty listing re-walking the graph
-    /// on every frame.</summary>
-    private bool _worldLightsSeeded;
-
-
-    private static readonly TimeSpan GPosePollInterval = TimeSpan.FromSeconds(1);
-    private DateTime _nextGPosePollUtc = DateTime.MinValue;
 
     private bool _disposed;
 
@@ -123,21 +64,16 @@ public sealed unsafe class LightingService : ILightingService
         IEventBus events,
         IObjectTable objects,
         IGameInteropProvider hooks,
-        IWorldObjectPort worldGraph)
+        IWorldGraphPort worldGraph)
     {
         _framework = framework;
         _log = log;
         _gPose = gPose;
         _camera = camera;
         _events = events;
-        _objects = objects;
-        _hooks = hooks;
-        _worldGraph = worldGraph;
-
-        _gobos = GoboLibrary.Load();
 
         var createAddress = TryScan(
-            sigScanner, "Light.Create", CreateLightSignature);
+            sigScanner, log, "Light.Create", CreateLightSignature);
         if (createAddress is { } create)
         {
             _createGameLight =
@@ -145,59 +81,14 @@ public sealed unsafe class LightingService : ILightingService
             IsAvailable = true;
         }
 
-        // Gobo availability is tracked apart from IsAvailable on purpose: a
-        // patch that only breaks the texture pair must cost gobos, not lights.
-        var textureAddress = TryScan(
-            sigScanner,
-            "light set-texture",
-            SetLightTextureSignatureKtisis,
-            SetLightTextureSignatureBrio);
-        var classifyAddress = TryScan(
-            sigScanner,
-            "resource-path classify",
-            ClassifyPathSignatureKtisis,
-            ClassifyPathSignatureBrio);
-        if (textureAddress is { } texture && classifyAddress is { } classify)
-        {
-            _setLightTexture =
-                (delegate* unmanaged<GameLight*, uint*, byte*, byte>)texture;
-            _classifyPath = (delegate* unmanaged<uint*, byte*, uint*>)classify;
-            AreGobosAvailable = _gobos.Count > 0;
-        }
-
-        var ctorAddress = TryScan(sigScanner, "Light.ctor", LightCtorSignature);
-        if (ctorAddress is { } ctor)
-        {
-            try
-            {
-                _lightCtorHook = _hooks.HookFromAddress<LightCtorDelegate>(
-                    ctor, LightCtorDetour);
-                _lightCtorHook.Enable();
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(
-                    $"LightingService: could not hook Light.ctor, overworld capture unavailable: {ex.Message}");
-            }
-        }
-
-        var toggleAddress = TryScan(
-            sigScanner, "GPose light toggle", ToggleGPoseLightSignature);
-        if (toggleAddress is { } toggle)
-        {
-            try
-            {
-                _toggleGPoseLightHook =
-                    _hooks.HookFromAddress<ToggleGPoseLightDelegate>(
-                        toggle, ToggleGPoseLightDetour);
-                _toggleGPoseLightHook.Enable();
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(
-                    $"LightingService: could not hook the GPose light toggle, camera lights will not be tracked: {ex.Message}");
-            }
-        }
+        // Scanned and hooked in the service's original order: the gobo pair,
+        // then Light.ctor, then the GPose light toggle.
+        _goboControl = new LightGoboController(sigScanner, framework, log);
+        _world = new WorldLightCapture(
+            sigScanner, framework, log, camera, objects, hooks, worldGraph,
+            () => _disposed, OnNativeLightDied);
+        _cameraLights = new GPoseCameraLights(
+            sigScanner, hooks, log, gPose, events, _lights, _world, () => _disposed);
 
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update += OnFrameworkUpdate;
@@ -207,13 +98,13 @@ public sealed unsafe class LightingService : ILightingService
 
     /// <summary>False when either gobo signature failed or the embedded
     /// library is empty; the light service itself stays usable.</summary>
-    public bool AreGobosAvailable { get; }
+    public bool AreGobosAvailable => _goboControl.AreGobosAvailable;
 
     public IReadOnlyList<ILight> Lights => _lights;
 
-    public IReadOnlyList<GoboEntry> Gobos => _gobos;
+    public IReadOnlyList<GoboEntry> Gobos => _goboControl.Gobos;
 
-    private nint? TryScan(ISigScanner scanner, string name, params string[] patterns)
+    internal static nint? TryScan(ISigScanner scanner, IPluginLog log, string name, params string[] patterns)
     {
         foreach (var pattern in patterns)
         {
@@ -228,7 +119,7 @@ public sealed unsafe class LightingService : ILightingService
             }
         }
 
-        _log.Warning(
+        log.Warning(
             $"LightingService: signature '{name}' not found ({patterns.Length} pattern(s) tried); the feature it backs is disabled.");
         return null;
     }
@@ -271,7 +162,7 @@ public sealed unsafe class LightingService : ILightingService
             return;
 
         DestroyNative(typed);
-        _events.Publish(new LightListChangedEvent(Lights));
+        _events.Publish(new LightListChangedEvent());
     }
 
     public void ReleaseLight(ILight light)
@@ -284,7 +175,7 @@ public sealed unsafe class LightingService : ILightingService
             return;
 
         ReleaseInternal(typed);
-        _events.Publish(new LightListChangedEvent(Lights));
+        _events.Publish(new LightListChangedEvent());
     }
 
     public void DestroyAllLights()
@@ -312,7 +203,7 @@ public sealed unsafe class LightingService : ILightingService
         }
 
         _lights.Clear();
-        _events.Publish(new LightListChangedEvent(Lights));
+        _events.Publish(new LightListChangedEvent());
     }
 
     public bool IsSpawnedLight(ILight light) =>
@@ -343,7 +234,7 @@ public sealed unsafe class LightingService : ILightingService
         try
         {
             if (light.WorldState is { } state &&
-                IsCurrentWorldLight(light.WorldAddress, light.WorldGeneration))
+                _world.IsCurrentWorldLight(light.WorldAddress, light.WorldGeneration))
                 state.Restore((GameLight*)light.WorldAddress);
         }
         catch (Exception ex)
@@ -359,13 +250,6 @@ public sealed unsafe class LightingService : ILightingService
             else
                 light.Invalidate();
         }
-    }
-
-    private bool IsCurrentWorldLight(nint handle, long generation)
-    {
-        lock (_worldGate)
-            return _worldLights.Contains(handle)
-                && _worldLightGenerations.GetValueOrDefault(handle) == generation;
     }
 
     /// <summary>The native calls run inline on the caller's thread, so every
@@ -430,13 +314,13 @@ public sealed unsafe class LightingService : ILightingService
             {
                 CopyProperties(source, light);
                 if (source.GoboPath is { } gobo)
-                    ApplyGoboPath(light, gobo);
+                    _goboControl.ApplyGoboPath(light, gobo);
             }
 
             light.NativePtr->Update();
 
             _log.Debug($"LightingService: spawned {kind} light '{light.Name}'");
-            _events.Publish(new LightListChangedEvent(Lights));
+            _events.Publish(new LightListChangedEvent());
             return light;
         }
         catch (Exception ex)
@@ -465,8 +349,7 @@ public sealed unsafe class LightingService : ILightingService
 
         // The factory runs the same constructor the ctor hook watches, so the
         // plugin's own light lands in the overworld set; take it back out.
-        lock (_worldGate)
-            _worldLights.Remove((nint)native);
+        _world.Forget((nint)native);
 
         // The render object caches the address of the light's transform,
         // so the transform must hold its final values BEFORE the pointer
@@ -575,282 +458,19 @@ public sealed unsafe class LightingService : ILightingService
     {
         if (light is not Light typed || !typed.IsValid)
             return false;
-        if (!AreGobosAvailable)
-            return false;
-        if (!_framework.IsInFrameworkUpdateThread)
-        {
-            _log.Warning("LightingService: gobos must be applied on the framework thread");
-            return false;
-        }
-        if (!SupportsGobo(typed.Kind))
-            return false;
-
-        return ApplyGoboPath(typed, gobo.Path);
+        return _goboControl.ApplyGobo(typed, gobo);
     }
 
     public void ClearGobo(ILight light)
     {
         if (light is not Light typed)
             return;
-        ClearGoboNative(typed);
-    }
-
-    /// <summary>Only spot and area lights project a texture; the game ignores
-    /// it on the other two kinds.</summary>
-    private static bool SupportsGobo(LightKind kind) =>
-        kind is LightKind.Spot or LightKind.Area;
-
-    [SkipLocalsInit]
-    private bool ApplyGoboPath(Light light, string path)
-    {
-        if (!AreGobosAvailable || string.IsNullOrEmpty(path))
-            return false;
-
-        var native = light.NativePtr;
-        if (native == null)
-            return false;
-
-        // The native assignment early-returns when a texture handle is already
-        // present, so any previous gobo has to be released first.
-        ClearGoboNative(light);
-
-        try
-        {
-            var byteCount = Encoding.UTF8.GetByteCount(path);
-            Span<byte> buffer = byteCount > 511
-                ? (Span<byte>)new byte[byteCount + 1]
-                : stackalloc byte[512];
-            Encoding.UTF8.GetBytes(path.AsSpan(), buffer);
-            buffer[byteCount] = 0;
-
-            fixed (byte* pathPtr = buffer)
-            {
-                var category = 0xFFFFFFFFu;
-                _classifyPath(&category, pathPtr);
-                var result = _setLightTexture(native, &category, pathPtr);
-
-                native->UpdateRender();
-                native->Update();
-
-                if (result == 0)
-                {
-                    _log.Warning(
-                        $"LightingService: the game refused gobo '{path}' for light '{light.Name}'");
-                    return false;
-                }
-            }
-
-            light.SetGoboPath(path);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: failed to apply gobo '{path}': {ex.Message}");
-            return false;
-        }
-    }
-
-    private void ClearGoboNative(Light light)
-    {
-        var native = light.NativePtr;
-        if (native == null)
-        {
-            light.SetGoboPath(null);
-            return;
-        }
-
-        try
-        {
-            if (native->ProjectedCubemapTexture != null)
-            {
-                native->ProjectedCubemapTexture->DecRef();
-                native->ProjectedCubemapTexture = null;
-            }
-            if (native->LightRenderObject != null)
-                native->LightRenderObject->Texture = null;
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: failed to clear a gobo: {ex.Message}");
-        }
-
-        light.SetGoboPath(null);
-    }
-
-    #endregion
-
-    #region GPose camera lights
-
-    private static GPoseLightController* GetGPoseController()
-    {
-        var framework = EventFramework.Instance();
-        if (framework == null)
-            return null;
-        return (GPoseLightController*)
-            &framework->EventSceneModule.EventGPoseController;
-    }
-
-    private bool ToggleGPoseLightDetour(GPoseLightController* state, uint index)
-    {
-        var result = _toggleGPoseLightHook!.Original(state, index);
-        try
-        {
-            if (!_disposed && _gPose.IsGPosing)
-                RefreshGPoseLights();
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: failed to track a GPose light toggle: {ex}");
-        }
-        return result;
-    }
-
-    /// <summary>Reconciles the three camera-light slots against the list. A
-    /// slot the game emptied is delisted, never destroyed.</summary>
-    private void RefreshGPoseLights()
-    {
-        var controller = GetGPoseController();
-        if (controller == null)
-            return;
-
-        var changed = false;
-        for (var slot = 0u; slot < GPoseLightController.LightCount; slot++)
-        {
-            var native = controller->GetLight(slot);
-            var tracked = FindGPoseLight((int)slot);
-
-            if (native == null)
-            {
-                if (tracked == null)
-                    continue;
-                _lights.Remove(tracked);
-                tracked.Invalidate();
-                changed = true;
-                continue;
-            }
-
-            if (tracked != null)
-            {
-                if (tracked.NativePtr == native)
-                    continue;
-                _lights.Remove(tracked);
-                tracked.Invalidate();
-            }
-
-            // The game constructed it, so it is sitting in the overworld set;
-            // a camera light is not a capture candidate.
-            lock (_worldGate)
-                _worldLights.Remove((nint)native);
-
-            _lights.Add(new Light(
-                native, $"Camera Light {slot + 1}", LightOwnership.GPose)
-            {
-                GPoseSlot = (int)slot,
-            });
-            changed = true;
-        }
-
-        if (changed)
-            _events.Publish(new LightListChangedEvent(Lights));
-    }
-
-    /// <summary>Backfill, Ktisis' RefreshLightEntities: the toggle hook covers
-    /// the player toggling a camera light, but not the lights the game already
-    /// had when GPose opened.</summary>
-    private void PollGPoseLights()
-    {
-        if (!_gPose.IsGPosing)
-            return;
-        var now = DateTime.UtcNow;
-        if (now < _nextGPosePollUtc)
-            return;
-        _nextGPosePollUtc = now + GPosePollInterval;
-        RefreshGPoseLights();
-    }
-
-    private Light? FindGPoseLight(int slot)
-    {
-        foreach (var light in _lights)
-        {
-            if (light.Ownership == LightOwnership.GPose && light.GPoseSlot == slot)
-                return light;
-        }
-        return null;
+        _goboControl.ClearGoboNative(typed);
     }
 
     #endregion
 
     #region Overworld capture
-
-    private GameLight* LightCtorDetour(GameLight* light)
-    {
-        var result = _lightCtorHook!.Original(light);
-        try
-        {
-            if (_disposed || light == null)
-                return result;
-
-            lock (_worldGate)
-            {
-                _worldLights.Add((nint)light);
-                _worldLightGenerations[(nint)light] = ++_nextWorldLightGeneration;
-            }
-
-            // The destructor has no signature of its own; its address comes
-            // out of the first constructed light's virtual table, and the hook
-            // is installed off the detour rather than inside it.
-            if (_destructorAddress == nint.Zero && light->VirtualTable != null)
-            {
-                _destructorAddress = (nint)light->VirtualTable->Destructor;
-                var address = _destructorAddress;
-                _framework.RunOnTick(() => HookDestructor(address));
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: light constructor tracking failed: {ex}");
-        }
-        return result;
-    }
-
-    private void HookDestructor(nint address)
-    {
-        if (_disposed || _lightDtorHook != null || address == nint.Zero)
-            return;
-        try
-        {
-            _lightDtorHook =
-                _hooks.HookFromAddress<LightDtorDelegate>(address, LightDtorDetour);
-            _lightDtorHook.Enable();
-        }
-        catch (Exception ex)
-        {
-            _log.Warning(
-                $"LightingService: could not hook the light destructor, stale capture candidates will not be pruned: {ex.Message}");
-        }
-    }
-
-    private nint LightDtorDetour(GameLight* light, bool free)
-    {
-        try
-        {
-            var handle = (nint)light;
-            var known = false;
-            long generation;
-            lock (_worldGate)
-            {
-                generation = _worldLightGenerations.GetValueOrDefault(handle);
-                known = _worldLights.Remove(handle);
-            }
-            if (known && !_disposed)
-                _framework.RunOnTick(() => OnNativeLightDied(handle, generation));
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: light destructor tracking failed: {ex}");
-        }
-        return _lightDtorHook!.Original(light, free);
-    }
 
     /// <summary>A native the plugin borrowed has gone away: drop anything
     /// bound to it without touching the freed memory.</summary>
@@ -883,119 +503,16 @@ public sealed unsafe class LightingService : ILightingService
         }
 
         if (changed)
-            _events.Publish(new LightListChangedEvent(Lights));
-    }
-
-    /// <summary>
-    /// Walks the world's scene graph for the lights that already exist and adds
-    /// them to the tracked set.
-    ///
-    /// <para>WHY THIS EXISTS: <see cref="LightCtorDetour"/> is the only other
-    /// writer, and a hook sees nothing that was constructed before it was
-    /// installed. A light belonging to an already-loaded zone therefore never
-    /// entered the set, which made the world-light listing permanently empty
-    /// for exactly the case it is tested in. The hook is the LIVENESS half and
-    /// stays; this is the SEED half.</para>
-    ///
-    /// <para>Ktisis reaches the same lights the same way and no other way:
-    /// one recursion of <c>World.Instance()</c>'s object graph, partitioned by
-    /// <c>ObjectType.Light</c> (<c>Ktisis/Services/Game/WorldService.cs:39-42</c>),
-    /// rebuilt on its own GPose-enter event (<c>:27-30</c>), with the node's
-    /// address used as the light pointer directly
-    /// (<c>Scene/Entities/World/LightEntity.cs:114</c>). Overlap with the hook's
-    /// additions costs nothing — the set is a hash set.</para>
-    /// </summary>
-    private void SeedWorldLights()
-    {
-        if (_disposed || !_framework.IsInFrameworkUpdateThread)
-            return;
-        if (!_worldGraph.IsAvailable)
-            return;
-
-        _worldLightsSeeded = true;
-
-        IReadOnlyList<nint> found;
-        try
-        {
-            found = _worldGraph.EnumerateLights();
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: seeding the world lights failed: {ex}");
-            return;
-        }
-
-        var added = 0;
-        lock (_worldGate)
-        {
-            foreach (var handle in found)
-            {
-                if (handle != nint.Zero && _worldLights.Add(handle))
-                {
-                    _worldLightGenerations[handle] = ++_nextWorldLightGeneration;
-                    added++;
-                }
-            }
-        }
-
-        if (added > 0)
-            _log.Debug(
-                $"LightingService: seeded {added} pre-existing world light(s) from the scene graph.");
+            _events.Publish(new LightListChangedEvent());
     }
 
     public IReadOnlyList<WorldLightCandidate> GetWorldLightCandidates()
     {
-        if (!IsAvailable || _lightCtorHook == null || !_gPose.IsGPosing)
+        if (!IsAvailable || !_world.HasConstructorHook || !_gPose.IsGPosing)
             return Array.Empty<WorldLightCandidate>();
         if (!_framework.IsInFrameworkUpdateThread)
             return Array.Empty<WorldLightCandidate>();
-
-        // The lazy half of the seed, for the session this service was
-        // constructed INSIDE of — a hot reload raises no GPose-enter event, so
-        // the first listing is the only place left to notice the set is empty.
-        if (!_worldLightsSeeded)
-        {
-            var empty = false;
-            lock (_worldGate)
-                empty = _worldLights.Count == 0;
-            if (empty)
-                SeedWorldLights();
-        }
-
-        nint[] handles;
-        lock (_worldGate)
-        {
-            if (_worldLights.Count == 0)
-                return Array.Empty<WorldLightCandidate>();
-            handles = new nint[_worldLights.Count];
-            _worldLights.CopyTo(handles);
-        }
-
-        var origin = _objects.LocalPlayer?.Position ?? _camera.GetCameraPosition();
-        var candidates = new List<WorldLightCandidate>(handles.Length);
-        foreach (var handle in handles)
-        {
-            if (IsCaptured(handle))
-                continue;
-            var native = (GameLight*)handle;
-            if (native == null || native->LightRenderObject == null)
-                continue;
-            // A hot reload can discover existing lights before any constructor
-            // runs. Direct borrowing needs destruction tracking in that case too.
-            if (_lightDtorHook == null && native->VirtualTable != null)
-                HookDestructor((nint)native->VirtualTable->Destructor);
-            if (_lightDtorHook == null)
-                return Array.Empty<WorldLightCandidate>();
-            Vector3 position = native->Transform.Position;
-            long generation;
-            lock (_worldGate) generation = _worldLightGenerations.GetValueOrDefault(handle);
-            candidates.Add(new WorldLightCandidate(
-                handle, Vector3.Distance(position, origin), position, generation));
-        }
-
-        candidates.Sort(static (left, right) =>
-            left.DistanceFromPlayer.CompareTo(right.DistanceFromPlayer));
-        return candidates;
+        return _world.Candidates(IsCaptured);
     }
 
     public WorldLightCandidate? GetWorldSource(ILight light) =>
@@ -1005,10 +522,10 @@ public sealed unsafe class LightingService : ILightingService
 
     public ILight? CaptureWorldLight(WorldLightCandidate candidate)
     {
-        if (!CanSpawn() || _lightDtorHook == null)
+        if (!CanSpawn() || !_world.HasDestructorHook)
             return null;
 
-        bool known = IsCurrentWorldLight(candidate.Handle, candidate.Generation);
+        bool known = _world.IsCurrentWorldLight(candidate.Handle, candidate.Generation);
         if (!known)
         {
             _log.Warning("LightingService: that world light no longer exists");
@@ -1044,14 +561,14 @@ public sealed unsafe class LightingService : ILightingService
             light.WorldGeneration = candidate.Generation;
             light.WorldState = state;
             state.CopyTo(light.NativePtr);
-            AdoptGobo(light, original);
+            _goboControl.AdoptGobo(light, original);
             light.NativePtr->UpdateRender();
             light.NativePtr->Update();
             state.Suppress(original);
 
             _log.Debug(
                 $"LightingService: captured world light {candidate.Handle:X} as '{light.Name}'");
-            _events.Publish(new LightListChangedEvent(Lights));
+            _events.Publish(new LightListChangedEvent());
             return light;
         }
         catch (Exception ex)
@@ -1065,28 +582,6 @@ public sealed unsafe class LightingService : ILightingService
             _log.Error($"LightingService: failed to capture a world light: {ex}");
             return null;
         }
-    }
-
-    /// <summary>Adopts the original's projected texture path when it has one,
-    /// matched against the embedded library so the UI can name it.</summary>
-    private void AdoptGobo(Light light, GameLight* original)
-    {
-        if (!AreGobosAvailable || original->ProjectedCubemapTexture == null)
-            return;
-
-        string path;
-        try
-        {
-            path = original->ProjectedCubemapTexture->FileName.ToString();
-        }
-        catch (Exception)
-        {
-            return;
-        }
-
-        if (string.IsNullOrEmpty(path) || !SupportsGobo(light.Kind))
-            return;
-        light.SetGoboPath(path);
     }
 
     private bool IsCaptured(nint handle)
@@ -1107,7 +602,7 @@ public sealed unsafe class LightingService : ILightingService
         if (framework.IsFrameworkUnloading || _disposed)
             return;
 
-        PollGPoseLights();
+        _cameraLights.PollGPoseLights();
 
         if (_lights.Count == 0)
             return;
@@ -1119,7 +614,7 @@ public sealed unsafe class LightingService : ILightingService
             var light = _lights[i];
             if (light.Ownership == LightOwnership.World)
             {
-                if (!IsCurrentWorldLight(light.WorldAddress, light.WorldGeneration))
+                if (!_world.IsCurrentWorldLight(light.WorldAddress, light.WorldGeneration))
                 {
                     _lights.RemoveAt(i);
                     ReleaseInternal(light);
@@ -1136,8 +631,8 @@ public sealed unsafe class LightingService : ILightingService
 
             // A light switched away from spot or area cannot project, so the
             // texture goes with the switch rather than lingering unused.
-            if (light.GoboPath != null && !SupportsGobo(light.Kind))
-                ClearGoboNative(light);
+            if (light.GoboPath != null && !LightGoboController.SupportsGobo(light.Kind))
+                _goboControl.ClearGoboNative(light);
 
             if (!light.IsOn)
                 continue;
@@ -1148,24 +643,24 @@ public sealed unsafe class LightingService : ILightingService
         }
 
         if (detached)
-            _events.Publish(new LightListChangedEvent(Lights));
+            _events.Publish(new LightListChangedEvent());
     }
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)
     {
-        _nextGPosePollUtc = DateTime.MinValue;
+        _cameraLights.ResetPoll();
         if (evt.IsGPosing)
         {
             // Ktisis rebuilds its world listing on this same edge
             // (WorldService.cs:27-30). The seed runs first so the camera
             // lights the refresh finds are already deduped against it.
-            _worldLightsSeeded = false;
-            SeedWorldLights();
-            RefreshGPoseLights();
+            _world.Unseed();
+            _world.SeedWorldLights();
+            _cameraLights.RefreshGPoseLights();
         }
         else
         {
-            _worldLightsSeeded = false;
+            _world.Unseed();
             DestroyAllLightsCore();
         }
     }
@@ -1176,9 +671,8 @@ public sealed unsafe class LightingService : ILightingService
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update -= OnFrameworkUpdate;
         DestroyAllLightsCore();
-        _toggleGPoseLightHook?.Dispose();
-        _lightDtorHook?.Dispose();
-        _lightCtorHook?.Dispose();
+        _cameraLights.Dispose();
+        _world.Dispose();
         GC.SuppressFinalize(this);
     }
 }

@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Library;
+namespace Poser.Domain.Library;
 
 /// <summary>The shared ordering choices for file-backed browser surfaces.</summary>
 public enum LibraryBrowseSort : byte

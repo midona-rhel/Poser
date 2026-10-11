@@ -2,8 +2,8 @@
 
 Poser is an FFXIV GPose tool for posing actors and building scenes. It covers
 GPose lifecycle, actor discovery and actions, selection and transforms,
-expression/gaze/IK, animation and physics freeze, settings, the live harness,
-and one undo journal. It also covers objects, lights, virtual cameras,
+expression/gaze/IK, animation and physics freeze, settings, and one undo
+journal. It also covers objects, lights, virtual cameras,
 environment, overlays, adopted world objects, scenes, pose and MCDF libraries,
 autosave, and reference pictures.
 
@@ -37,6 +37,12 @@ At this revision:
 `Poser.Application` keeps scene state and user actions. `Poser.Game` talks to
 the game and runs its hooks on the framework thread. Native entities, skeletons
 and low-level service contracts live in Game; the Core project is retired.
+Policy without a native dependency lives in Application even when only Game
+calls it: the transform facade, scene-group lifetime, refresh coalescing,
+lifecycle slots and world/VFX claim ledgers. The Journal entity sessions stay in
+Game because they hold native handles. Game folders follow the area:
+`Runtime` (core actor, posing, camera and GPose services), `Lighting`,
+`WorldObjects` (including world borrowing).
 The host wires the assemblies; UI shows application state. CI checks the allowed
 project graph and builds/tests the portable layers without the game SDK.
 
@@ -48,7 +54,7 @@ ImGui and native key conversion remain at the input boundary.
 Stagehand conversion and MCDF package storage also live in Documents; actor
 resource discovery and IPC remain in Game.
 
-Environment readings and commands cross `IEnvironmentControl`. Application owns
+Environment readings and commands cross `EnvironmentControl`. Application owns
 capture, apply ordering, gesture coalescing and history; Game implements the
 runtime ports. Scene transactions apply through that same control without a
 second history entry. UI reads detached values, not native environment services.
@@ -57,7 +63,8 @@ Library refresh/cancellation and autosave cadence/admission live in Application.
 Documents owns scans, file actions, snapshot writes and disk retention. Game
 captures detached poses/scenes and owns framework subscriptions; panel visibility
 does not drive this work. Pose and scene snapshots retain their separate formats,
-roots and limits, and scene progress is exposed through `ISceneAutoSave`.
+roots and limits. `SceneAutoSaveService` exposes the scene snapshot root; a failed
+scene snapshot is logged at Warning.
 
 Actor appearance commands own their history inverses in Application. UI
 supplies an actor and the selected value; it never constructs restore callbacks
@@ -65,8 +72,12 @@ or starts native catalog work. Character-file progress and cancellation use
 the same application boundary as import/export. Host composition starts catalog
 warm-up; native integration sessions remain the single owners of provider state.
 
-Embedded resources retain their original `Poser.Data.*` logical names after
-moving to Documents (rest poses and graphical-bone data) or Game (expressions).
+Every namespace starts with its owning project: `<Project>` or
+`<Project>.<folder>` (`Poser.Documents.Files`, `Poser.Game.Services`), so a
+`using` names the layer it crosses into. Embedded resources retain their
+original `Poser.Data.*` logical names after moving to Documents (rest poses
+and graphical-bone data) or Game (expressions); those names are set in the
+project files and do not follow the C# namespaces.
 Portable transforms live in Domain; file conversion operators live on the
 Documents DTOs. Existing serialized fields and keybinding enum values are unchanged.
 

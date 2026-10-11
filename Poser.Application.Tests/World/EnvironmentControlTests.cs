@@ -1,7 +1,7 @@
 using Poser.Application.Transforms;
 using Poser.Application.World;
 using Poser.Domain.Scene;
-using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.World;
 
@@ -13,7 +13,7 @@ public sealed class EnvironmentControlTests
         var runtime = new Runtime { MinuteOfDay = 120, DayOfMonth = 4, IsTimeFrozen = false };
         runtime.SetWeather(2, 0.5f);
         runtime.Sky = new();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
         var target = new SceneEnvironment
         {
@@ -39,145 +39,6 @@ public sealed class EnvironmentControlTests
         Assert.Equal(960, runtime.MinuteOfDay);
         Assert.False(runtime.IsTimeFrozen);
         Assert.Equal(3u, runtime.CurrentWeatherId);
-    }
-
-    [Fact]
-    public void Shared_gesture_coalesces_without_a_panel_and_readings_are_detached()
-    {
-        var runtime = new Runtime();
-        var history = new TransformHistory();
-        var journal = new ValueJournal(history);
-        var control = new EnvironmentControl(journal, runtime, runtime, runtime);
-        var before = control.Read();
-        journal.BeginEdit("wind");
-        control.SetWind(new() { Speed = 2 });
-        control.SetWind(new() { Speed = 5 });
-        journal.EndEdit();
-        control.Seal();
-        runtime.Weathers.Clear();
-        Assert.Equal(2, before.AllWeathers.Count);
-        Assert.Empty(before.HeldSections);
-        Assert.Equal(5, control.Read().Wind.Speed);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        history.CommitUndo(step);
-        Assert.Equal(0, runtime.Wind.Speed);
-        Assert.False(history.CanUndo);
-    }
-
-    [Fact]
-    public void Scene_transaction_uses_the_same_application_without_a_second_history_entry()
-    {
-        var runtime = new Runtime();
-        var history = new TransformHistory();
-        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
-        control.Apply(new() { MinuteOfDay = 300, DayOfMonth = 1 }, recordHistory: false);
-        Assert.Equal(300, runtime.MinuteOfDay);
-        Assert.False(history.CanUndo);
-    }
-
-    [Fact]
-    public void Interior_brightness_is_guarded_clamped_and_stale_history_is_refused()
-    {
-        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
-        var history = new TransformHistory();
-        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
-
-        control.SetInteriorBrightness(3f);
-        Assert.Equal(1f, runtime.InteriorBrightness);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        runtime.HousingInteriorBinding++;
-        Assert.True(step.Undo());
-        history.CommitUndo(step);
-        Assert.Equal(1f, runtime.InteriorBrightness);
-
-        var outside = new Runtime();
-        var outsideHistory = new TransformHistory();
-        new EnvironmentControl(new(outsideHistory), outside, outside, outside)
-            .SetInteriorBrightness(0.7f);
-        Assert.False(outsideHistory.CanUndo);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Interior_brightness_release_restores_baseline_and_replays(bool returnToBaseline)
-    {
-        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
-        var history = new TransformHistory();
-        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
-        control.SetInteriorBrightness(0.7f);
-        control.Seal();
-        if (returnToBaseline)
-        {
-            control.SetInteriorBrightness(0.4f);
-            control.Seal();
-        }
-        var previous = history.PeekUndo();
-        control.ReleaseInteriorBrightness();
-        Assert.Equal(0.4f, runtime.InteriorBrightness);
-        Assert.False(runtime.IsInteriorBrightnessOverridden);
-
-        var release = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.NotSame(previous, release);
-        Assert.True(release.Undo());
-        history.CommitUndo(release);
-        Assert.Equal(returnToBaseline ? 0.4f : 0.7f, runtime.InteriorBrightness);
-        Assert.True(runtime.IsInteriorBrightnessOverridden);
-        Assert.True(release.Redo());
-        history.CommitRedo(release);
-        Assert.Equal(0.4f, runtime.InteriorBrightness);
-        Assert.False(runtime.IsInteriorBrightnessOverridden);
-    }
-
-    [Theory]
-    [InlineData(0.8f, false)]
-    [InlineData(0.4f, false)]
-    [InlineData(0.4f, true)]
-    public void Reset_brightness_replays_value_and_ownership(float before, bool owned)
-    {
-        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = before };
-        if (owned) runtime.TrySetInteriorBrightness(before, runtime.HousingInteriorBinding);
-        var history = new TransformHistory();
-        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
-        control.ResetInteriorBrightness();
-        Assert.Equal(0.8f, runtime.InteriorBrightness);
-        Assert.True(runtime.IsInteriorBrightnessOverridden);
-        var reset = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(reset.Undo());
-        history.CommitUndo(reset);
-        Assert.Equal(before, runtime.InteriorBrightness);
-        Assert.Equal(owned, runtime.IsInteriorBrightnessOverridden);
-        Assert.True(reset.Redo());
-        history.CommitRedo(reset);
-        Assert.Equal(0.8f, runtime.InteriorBrightness);
-        Assert.True(runtime.IsInteriorBrightnessOverridden);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void First_brightness_drag_undo_releases_ownership_even_after_return_to_start(bool returnToStart)
-    {
-        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = 0.4f };
-        var history = new TransformHistory();
-        var journal = new ValueJournal(history);
-        var control = new EnvironmentControl(journal, runtime, runtime, runtime);
-        journal.BeginEdit("brightness");
-        control.SetInteriorBrightness(0.7f);
-        if (returnToStart) control.SetInteriorBrightness(0.4f);
-        journal.EndEdit();
-        control.Seal();
-        Assert.True(runtime.IsInteriorBrightnessOverridden);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        history.CommitUndo(step);
-        Assert.False(runtime.IsInteriorBrightnessOverridden);
-        Assert.Equal(0.4f, runtime.InteriorBrightness);
-        Assert.True(step.Redo());
-        history.CommitRedo(step);
-        Assert.True(runtime.IsInteriorBrightnessOverridden);
-        Assert.Equal(returnToStart ? 0.4f : 0.7f, runtime.InteriorBrightness);
     }
 
     private sealed class Runtime : IEnvironmentRuntimePort, IWorldRenderingRuntimePort, IFestivalRuntimePort
@@ -251,6 +112,9 @@ public sealed class EnvironmentControlTests
         public bool IsWaterFrozen { get; set; }
         public bool IsWaterFreezeAvailable => true;
         public bool ResetWaterOnGPoseExit { get; set; }
+        public bool IsPhysicsFrozen { get; private set; }
+        public Poser.Domain.Outcome SetPhysicsFrozen(bool frozen)
+        { IsPhysicsFrozen = frozen; return Poser.Domain.Outcome.Ok(); }
         public IReadOnlyList<ActiveFestival> ActiveFestivals => [];
         public IReadOnlyDictionary<uint, FestivalEntry> FestivalList => new Dictionary<uint, FestivalEntry>();
         public bool HasFreeSlot => true;

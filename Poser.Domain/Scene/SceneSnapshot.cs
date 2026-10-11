@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Domain.Collections;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
@@ -15,6 +16,11 @@ public sealed record SkeletonDescriptor(
     SkeletonId Id,
     IReadOnlyList<BoneDescriptor> Bones)
 {
+    /// <summary>Stored as a <see cref="ValueList{T}"/> so record equality
+    /// compares bones by content.</summary>
+    public IReadOnlyList<BoneDescriptor> Bones { get; init => field = ValueList.From(value); } =
+        ValueList.From(Bones);
+
     public PoseSlot Slot => Id.Slot;
 }
 
@@ -39,6 +45,11 @@ public sealed record ActorDescriptor(
     bool IsOwned = true,
     bool IsAdopted = false)
 {
+    /// <summary>Stored as a <see cref="ValueList{T}"/> so record equality
+    /// compares skeletons by content.</summary>
+    public IReadOnlyList<SkeletonDescriptor> Skeletons { get; init => field = ValueList.From(value); } =
+        ValueList.From(Skeletons);
+
     /// <summary><see cref="IsAdopted"/>: an overworld body taken into the
     /// scene by reference; it is released, never destroyed.</summary>
     /// <summary><see cref="IsOwned"/>: the actor was spawned by Poser or
@@ -224,9 +235,10 @@ public sealed record GazeDescriptor(
 /// the committed Application owner of this state, while the current Game
 /// producer remains a transitional candidate source and may leave additive
 /// relationship, environment, and gaze fields empty until lifecycle
-/// integration is serialized. Generated record equality remains reference
-/// based for collection properties; use <see cref="ContentEquals"/> when
-/// scene content equality is required.
+/// integration is serialized. Every list member, here and in the nested
+/// descriptors, is stored as a <see cref="ValueList{T}"/>, so generated record
+/// equality is structural all the way down and covers every field without a
+/// hand-written comparison to keep in step.
 /// </summary>
 public sealed record SceneSnapshot
 {
@@ -281,7 +293,8 @@ public sealed record SceneSnapshot
     public IReadOnlyList<ActorDescriptor> Actors
     {
         get;
-        init => field = Freeze(value.Select(CopyActor));
+        init => field = Freeze(value.Select(actor =>
+            actor ?? throw new ArgumentNullException(nameof(Actors))));
     }
 
     public IReadOnlyList<LightDescriptor> Lights
@@ -342,26 +355,14 @@ public sealed record SceneSnapshot
     }
 
     /// <summary>
-    /// Compares the complete snapshot content, including revision and nested
-    /// collection values. Generated record equality is intentionally not used
-    /// for scene admission because <see cref="IReadOnlyList{T}"/> equality is
-    /// reference-based; SceneSession uses this structural comparison for
-    /// equal-replay detection.
+    /// Compares the complete snapshot content, including revision and every
+    /// descriptor field. SceneSession and the lifecycle use it for
+    /// equal-replay detection. It is generated record equality: strings are
+    /// ordinal, floats and vectors exact (<c>float.Equals</c>, so NaN equals
+    /// NaN), with no tolerances.
     /// </summary>
-    public bool ContentEquals(SceneSnapshot? other)
-    {
-        if (other is null || Revision != other.Revision)
-            return false;
-
-        return ActorsEqual(Actors, other.Actors) &&
-               LightsEqual(Lights, other.Lights) &&
-               CamerasEqual(Cameras, other.Cameras) &&
-               PropsEqual(Props, other.Props) &&
-               OverlaysEqual(Overlays, other.Overlays) &&
-               WorldObjectsEqual(WorldObjects, other.WorldObjects) &&
-               EnvironmentEqual(Environment, other.Environment) &&
-               GazeEqual(GazeStates, other.GazeStates);
-    }
+    public bool ContentEquals(SceneSnapshot? other) =>
+        other is not null && Revision == other.Revision && Equals(other);
 
     public static SceneSnapshot Empty { get; } =
         new(
@@ -399,239 +400,8 @@ public sealed record SceneSnapshot
         gazeStates = GazeStates;
     }
 
-    private static ActorDescriptor CopyActor(ActorDescriptor actor)
-    {
-        ArgumentNullException.ThrowIfNull(actor);
-        return actor with
-        {
-            Skeletons = Freeze(actor.Skeletons.Select(skeleton =>
-                skeleton with { Bones = Freeze(skeleton.Bones) })),
-        };
-    }
-
-    private static IReadOnlyList<T> Freeze<T>(IEnumerable<T> values)
-    {
-        ArgumentNullException.ThrowIfNull(values);
-        return Array.AsReadOnly(values.ToArray());
-    }
-
-    private static bool ActorsEqual(
-        IReadOnlyList<ActorDescriptor> left,
-        IReadOnlyList<ActorDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Id != second.Id ||
-                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
-                first.IsPlayer != second.IsPlayer ||
-                first.IsCompanion != second.IsCompanion ||
-                first.IsHidden != second.IsHidden ||
-                first.OwnerActor != second.OwnerActor ||
-                first.AttachmentKind != second.AttachmentKind ||
-                !SkeletonsEqual(first.Skeletons, second.Skeletons))
-                return false;
-        }
-
-        return true;
-    }
-
-    private static bool SkeletonsEqual(
-        IReadOnlyList<SkeletonDescriptor> left,
-        IReadOnlyList<SkeletonDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Id != second.Id ||
-                !BonesEqual(first.Bones, second.Bones))
-                return false;
-        }
-
-        return true;
-    }
-
-    private static bool BonesEqual(
-        IReadOnlyList<BoneDescriptor> left,
-        IReadOnlyList<BoneDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Id != second.Id ||
-                !StringComparer.Ordinal.Equals(
-                    first.DisplayName,
-                    second.DisplayName) ||
-                first.Parent != second.Parent ||
-                first.IsHidden != second.IsHidden)
-                return false;
-        }
-
-        return true;
-    }
-
-    private static bool LightsEqual(
-        IReadOnlyList<LightDescriptor> left,
-        IReadOnlyList<LightDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Id != second.Id ||
-                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
-                first.Kind != second.Kind ||
-                first.IsOn != second.IsOn ||
-                first.Ownership != second.Ownership ||
-                first.AttachedBone != second.AttachedBone)
-                return false;
-        }
-
-        return true;
-    }
-
-    private static bool CamerasEqual(
-        IReadOnlyList<CameraDescriptor> left,
-        IReadOnlyList<CameraDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Id != second.Id ||
-                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
-                first.Kind != second.Kind ||
-                first.IsLive != second.IsLive ||
-                first.IsDefault != second.IsDefault ||
-                first.IsLocked != second.IsLocked ||
-                first.TargetActor != second.TargetActor ||
-                first.TargetBone != second.TargetBone ||
-                first.TargetOffset != second.TargetOffset)
-                return false;
-        }
-
-        return true;
-    }
-
-    private static bool PropsEqual(
-        IReadOnlyList<PropDescriptor> left,
-        IReadOnlyList<PropDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Id != second.Id ||
-                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
-                first.Visible != second.Visible)
-                return false;
-        }
-
-        return true;
-    }
-
-    private static bool WorldObjectsEqual(
-        IReadOnlyList<WorldObjectDescriptor> left,
-        IReadOnlyList<WorldObjectDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Id != second.Id ||
-                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
-                !StringComparer.Ordinal.Equals(first.Path, second.Path) ||
-                first.Visible != second.Visible)
-                return false;
-        }
-
-        return true;
-    }
-
-    private static bool OverlaysEqual(
-        IReadOnlyList<OverlayDescriptor> left,
-        IReadOnlyList<OverlayDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Id != second.Id ||
-                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
-                first.Kind != second.Kind ||
-                first.Visible != second.Visible)
-                return false;
-        }
-
-        return true;
-    }
-
-    private static bool EnvironmentEqual(
-        EnvironmentDescriptor? left,
-        EnvironmentDescriptor? right)
-    {
-        if (left is null || right is null)
-            return left is null && right is null;
-
-        return left.MinuteOfDay == right.MinuteOfDay &&
-               left.DayOfMonth == right.DayOfMonth &&
-               left.WeatherId == right.WeatherId &&
-               left.IsTimeFrozen == right.IsTimeFrozen &&
-               left.IsWeatherOverrideEnabled ==
-                   right.IsWeatherOverrideEnabled &&
-               left.HeldSections == right.HeldSections;
-    }
-
-    private static bool GazeEqual(
-        IReadOnlyList<GazeDescriptor> left,
-        IReadOnlyList<GazeDescriptor> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        for (var index = 0; index < left.Count; index++)
-        {
-            var first = left[index];
-            var second = right[index];
-            if (first.Actor != second.Actor ||
-                first.Mode != second.Mode ||
-                first.Parts != second.Parts ||
-                first.LockedParts != second.LockedParts ||
-                first.TargetActor != second.TargetActor ||
-                first.Anchor != second.Anchor ||
-                first.EyesPosition != second.EyesPosition ||
-                first.HeadPosition != second.HeadPosition ||
-                first.BodyPosition != second.BodyPosition)
-                return false;
-        }
-
-        return true;
-    }
+    // Descriptors copy their own nested lists into ValueLists on
+    // construction, so the snapshot only freezes its top-level lists.
+    private static IReadOnlyList<T> Freeze<T>(IEnumerable<T> values) =>
+        ValueList.From(values);
 }

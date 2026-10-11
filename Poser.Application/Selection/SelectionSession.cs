@@ -261,11 +261,6 @@ public sealed class SelectionScope
 public sealed class SelectionSession
 {
     private readonly SelectionScope _live;
-    private readonly List<SelectionScope> _scopes = new();
-
-    // Compatibility-only cursor for current UI callers. New code should use
-    // SelectionScope directly; UI migration will remove this adapter later.
-    private SelectionScope? _compatibilityScope;
 
     public SelectionSession()
     {
@@ -277,10 +272,7 @@ public sealed class SelectionSession
     /// <summary>The independently addressable live selection.</summary>
     public SelectionScope Live => _live;
 
-    /// <summary>
-    /// The compatibility view used by legacy session-member callers while a
-    /// <see cref="BeginScope"/> token is active.
-    /// </summary>
+    /// <summary>The live selection, for session-member callers.</summary>
     public IReadOnlyList<SelectionId> Selected => Target.Selected;
 
     public SelectionId? Primary => Target.Primary;
@@ -291,63 +283,7 @@ public sealed class SelectionSession
 
     public SelectionId? Anchor => Target.Anchor;
 
-    /// <summary>
-    /// Compatibility adapter for the current ambient UI callers. The token
-    /// restores nested adapters on disposal; legacy session-member writes to
-    /// the redirected scope do not publish the live-selection event. Direct
-    /// <see cref="Live"/> writes remain observable. Explicit scope callers do
-    /// not use this method.
-    /// </summary>
-    public IDisposable BeginScope(SelectionScope scope)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-
-        var previous = _compatibilityScope;
-        _compatibilityScope = scope;
-        return new CompatibilityScopeToken(this, previous);
-    }
-
-    /// <summary>
-    /// Retains an explicit scope for stable-id reconciliation. The scope is
-    /// still mutated directly; registration does not redirect session calls.
-    /// </summary>
-    public void TrackScope(SelectionScope scope)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        if (ReferenceEquals(scope, _live))
-        {
-            throw new ArgumentException(
-                "The live selection is reconciled automatically and cannot be tracked as a scope.",
-                nameof(scope));
-        }
-
-        if (!_scopes.Contains(scope))
-            _scopes.Add(scope);
-    }
-
-    public void ForgetScope(SelectionScope scope)
-    {
-        ArgumentNullException.ThrowIfNull(scope);
-        _scopes.Remove(scope);
-    }
-
-    private sealed class CompatibilityScopeToken(
-        SelectionSession session,
-        SelectionScope? previous) : IDisposable
-    {
-        private bool _disposed;
-
-        public void Dispose()
-        {
-            if (_disposed)
-                return;
-
-            _disposed = true;
-            session._compatibilityScope = previous;
-        }
-    }
-
-    private SelectionScope Target => _compatibilityScope ?? _live;
+    private SelectionScope Target => _live;
 
     public bool IsSelected(SelectionId id) => Target.IsSelected(id);
 
@@ -376,18 +312,12 @@ public sealed class SelectionSession
     {
         ArgumentNullException.ThrowIfNull(resolver);
 
-        var liveChanged = _live.Reconcile(resolver);
-        foreach (var scope in _scopes)
-            scope.Reconcile(resolver);
-
-        if (liveChanged)
+        if (_live.Reconcile(resolver))
             SelectionChanged?.Invoke(_live.Selected.ToArray());
     }
 
     private void PublishLiveChanged()
     {
-        // Live is an explicit owner, so its notifications remain observable
-        // even when legacy session members are redirected to a private scope.
         SelectionChanged?.Invoke(_live.Selected.ToArray());
     }
 }

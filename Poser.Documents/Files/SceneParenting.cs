@@ -2,7 +2,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 public sealed class SceneParentLink
 {
@@ -17,12 +17,12 @@ public sealed class SceneParentLink
 public static class SceneParenting
 {
     public static HashSet<(string, Guid)> Keys(SceneFile scene) =>
-        scene.Actors.Select(x => ("actor", x.Key)).Concat(scene.Lights.Select(x => ("light", x.Key)))
-            .Concat(scene.Actors.Where(x => x.CompanionKind != null).Select(x => ("companion", x.Key)))
-            .Concat(scene.Props.Select(x => ("prop", x.Key))).Concat(scene.Cameras.Select(x => ("camera", x.Key)))
+        scene.Actors.Select(x => (SceneStructureKind.Actor, x.Key)).Concat(scene.Lights.Select(x => (SceneStructureKind.Light, x.Key)))
+            .Concat(scene.Actors.Where(x => x.CompanionKind != null).Select(x => (SceneStructureKind.Companion, x.Key)))
+            .Concat(scene.Props.Select(x => (SceneStructureKind.Prop, x.Key))).Concat(scene.Cameras.Select(x => (SceneStructureKind.Camera, x.Key)))
             .Concat((scene.Overlays ?? []).Where(x => x.Node?.Kind == OverlayNodeKind.Collider)
-                .Select(x => ("overlay", x.Key)))
-            .Concat((scene.WorldObjects ?? []).Select(x => ("worldObject", x.Key))).ToHashSet();
+                .Select(x => (SceneStructureKind.Overlay, x.Key)))
+            .Concat((scene.WorldObjects ?? []).Select(x => (SceneStructureKind.WorldObject, x.Key))).ToHashSet();
 
     public static void Prune(SceneFile scene, List<string> notes)
     {
@@ -34,6 +34,8 @@ public static class SceneParenting
             notes.Add("A parent was excluded from this save; its child is saved at its current world placement.");
             return true;
         });
+        if (scene.Parents is { Count: 0 })
+            scene.Parents = null;
     }
 
     public static string? Validate(SceneFile scene)
@@ -45,14 +47,14 @@ public static class SceneParenting
         {
             if (link?.Child == null || link.Target == null || !link.Offset.IsValid
                 || !keys.Contains((link.Child.Kind, link.Child.Key)) || !keys.Contains((link.Target.Kind, link.Target.Key))
-                || link.Child.Kind == "camera" || link.Target.Kind == "camera" || (link.BoneName != null &&
-                    (link.Target.Kind is not ("actor" or "companion") || string.IsNullOrWhiteSpace(link.BoneName) || link.BoneName.Length > 256
+                || link.Child.Kind == SceneStructureKind.Camera || link.Target.Kind == SceneStructureKind.Camera || (link.BoneName != null &&
+                    (link.Target.Kind is not (SceneStructureKind.Actor or SceneStructureKind.Companion) || string.IsNullOrWhiteSpace(link.BoneName) || link.BoneName.Length > 256
                         || !Enum.IsDefined(link.Slot) || link.Partial < 0))
                 || !parents.TryAdd((link.Child.Kind, link.Child.Key), (link.Target.Kind, link.Target.Key)))
                 return "The scene has an invalid transform-parent relationship.";
         }
         foreach (var actor in scene.Actors.Where(x => x.CompanionKind != null))
-            parents.TryAdd(("companion", actor.Key), ("actor", actor.Key));
+            parents.TryAdd((SceneStructureKind.Companion, actor.Key), (SceneStructureKind.Actor, actor.Key));
         foreach (var child in parents.Keys)
         {
             var visited = new HashSet<(string, Guid)>();

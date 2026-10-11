@@ -6,12 +6,14 @@ using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
+using static Poser.UI.Widgets.TextWidgets;
 
 namespace Poser.UI;
 
@@ -45,6 +47,23 @@ public sealed partial class PropertiesContent
     private readonly OverlayPane _overlayPane;
     private readonly PoseFileInspectorSection _poseFiles;
     private readonly GraphicalBonePane _map;
+
+    // The surface's own panes, for the window that hosts this content: each
+    // surface owns one set, so a host's verbs reach the inspector it shows.
+    public PoseInspectorPane PoseInspector => _poseInspector;
+    public AnimationPane AnimationPanel => _animationPane;
+    public AppearancePane AppearancePanel => _appearancePane;
+    public LightPane LightPanel => _lightPane;
+    public CameraPane CameraPanel => _cameraPane;
+    public EnvironmentPane EnvironmentPanel => _environmentPane;
+    public ScenePane ScenePanel => _scenePane;
+    public PropsPane PropsPanel => _propsPane;
+    public WorldObjectsPane WorldObjectsPanel => _worldObjectsPane;
+    public OverlayPane OverlayPanel => _overlayPane;
+    public PoseFileInspectorSection PoseFiles => _poseFiles;
+    public GraphicalBonePane BoneMap => _map;
+    public EntityNameModal Names => _names;
+
     private AppShellViewModel _vm = new();
     private PropertiesContext? _inspectorContext;
     private PoseInspectorPane? _pinnedInspector;
@@ -67,10 +86,11 @@ public sealed partial class PropertiesContent
     private readonly ShellTab[] _furnitureTabs = [new() { Label = "Furniture" }];
     private readonly ShellTab[] _environmentTabs = [new() { Label = "Lighting" }, new() { Label = "Sky" }, new() { Label = "Atmosphere" }, new() { Label = "World" }];
     private static readonly string[] CameraTrackingModeOptions = ["Follow", "Pan", "Follow and pan", "None"];
-    private readonly Crystarium.SearchPicker<BoneChoice> _cameraTrackingBonePicker = new("camera-tracking-bones");
+    private readonly SearchPicker<BoneChoice> _cameraTrackingBonePicker = new("camera-tracking-bones");
     private IReadOnlyList<BoneChoice> _cameraBoneChoices = Array.Empty<BoneChoice>();
     private CameraId? _cameraBonePickerCamera;
     private ActorId? _cameraBonePickerActor;
+    private readonly Controls.BonePick _bonePick;
 
     public PropertiesContent(PropertiesContext context, SceneSession scene, ConfigurationService configuration,
         IGPoseService gPoseService, ISceneObjectControl objectControl, SceneGroups groups, GroupSteps groupSteps,
@@ -79,8 +99,10 @@ public sealed partial class PropertiesContent
         PoseInspectorPane poseInspector, AnimationPane animationPane, AppearancePane appearancePane,
         LightPane lightPane, CameraPane cameraPane, EnvironmentPane environmentPane, ScenePane scenePane,
         PropsPane propsPane, WorldObjectsPane worldObjectsPane, OverlayPane overlayPane,
-        PoseFileInspectorSection poseFiles, GraphicalBonePane map, EntityRemovalDialog removal)
+        PoseFileInspectorSection poseFiles, GraphicalBonePane map, EntityRemovalDialog removal,
+        Controls.BonePick bonePick)
     {
+        _bonePick = bonePick;
         Context = context; _scene = scene; _configuration = configuration; _gPoseService = gPoseService;
         _animation = animation;
         _objectControl = objectControl; _groups = groups; _groupSteps = groupSteps; _placement = placement;
@@ -142,7 +164,7 @@ public sealed partial class PropertiesContent
         if (_inspectorContext?.IsAvailable != true)
         {
             _pinnedInspector?.CancelInteraction();
-            Crystarium.TextAt(origin, "Target unavailable", new TextStyle());
+            TextAt(origin, "Target unavailable", new TextStyle());
             return;
         }
         _pinnedRail!.Draw(origin, size);

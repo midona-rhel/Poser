@@ -1,14 +1,14 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
+using Poser.Documents.AutoSave;
+using Poser.Application.AutoSave;
 
 namespace Poser.Application.Lifecycle;
 
 /// <summary>
 /// Truth about the synchronous final-capture boundary. A dispatch is not a
 /// write acknowledgement: the existing persistence worker remains separate.
-/// Terminal durability is represented by <see cref="FinalPersistenceStatus"/>;
-/// the host may retain additional immutable health evidence behind the port.
+/// Terminal durability is represented by <see cref="AutoSaveTerminalStatus"/>;
+/// the host may attach the immutable autosave health record as evidence.
 /// </summary>
 public enum FinalCaptureStatus
 {
@@ -22,131 +22,6 @@ public enum FinalCaptureStatus
     Failure,
 }
 
-public enum FinalPersistenceStatus
-{
-    NotAttempted,
-    Pending,
-    Written,
-    Cleaned,
-    RecoveryRequired,
-    Cancelled,
-}
-
-/// <summary>Immutable Application projection of one autosave recovery obligation.</summary>
-public sealed class FinalPersistenceRecoveryEntry
-{
-    public FinalPersistenceRecoveryEntry(
-        string operationId,
-        string reason,
-        FinalPersistenceStatus status,
-        DateTime createdUtc,
-        DateTime updatedUtc,
-        int intendedActors,
-        int writtenActors,
-        IEnumerable<string>? affectedPaths,
-        string? failurePhase,
-        string? detail,
-        IEnumerable<string>? recoveryEvidencePaths)
-    {
-        OperationId = Limit(operationId, 128);
-        Reason = Limit(reason, 128);
-        Status = status;
-        CreatedUtc = createdUtc;
-        UpdatedUtc = updatedUtc;
-        IntendedActors = Math.Clamp(intendedActors, 0, 8192);
-        WrittenActors = Math.Clamp(writtenActors, 0, IntendedActors);
-        AffectedPaths = Freeze(affectedPaths);
-        FailurePhase = failurePhase is null ? null : Limit(failurePhase, 128);
-        Detail = detail is null ? null : Limit(detail, 4096);
-        RecoveryEvidencePaths = Freeze(recoveryEvidencePaths);
-    }
-
-    public string OperationId { get; }
-    public string Reason { get; }
-    public FinalPersistenceStatus Status { get; }
-    public DateTime CreatedUtc { get; }
-    public DateTime UpdatedUtc { get; }
-    public int IntendedActors { get; }
-    public int WrittenActors { get; }
-    public IReadOnlyList<string> AffectedPaths { get; }
-    public string? FailurePhase { get; }
-    public string? Detail { get; }
-    public IReadOnlyList<string> RecoveryEvidencePaths { get; }
-
-    private static string Limit(string? value, int max) =>
-        string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
-
-    private static IReadOnlyList<string> Freeze(IEnumerable<string>? values) =>
-        Array.AsReadOnly((values ?? Array.Empty<string>())
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Take(256)
-            .Select(static value => Limit(value, 1024))
-            .ToArray());
-}
-
-/// <summary>Immutable additive evidence for terminal final persistence.</summary>
-public sealed class FinalPersistenceEvidence
-{
-    public FinalPersistenceEvidence(
-        string operationId,
-        string reason,
-        FinalPersistenceStatus status,
-        DateTime createdUtc,
-        DateTime updatedUtc,
-        int intendedActors,
-        int writtenActors,
-        IEnumerable<string>? affectedPaths,
-        string? failurePhase,
-        string? detail,
-        IEnumerable<string>? recoveryEvidencePaths,
-        IEnumerable<FinalPersistenceRecoveryEntry>? recoveryEntries = null,
-        int recoveryOverflowCount = 0)
-    {
-        OperationId = operationId;
-        Reason = reason;
-        Status = status;
-        CreatedUtc = createdUtc;
-        UpdatedUtc = updatedUtc;
-        IntendedActors = intendedActors;
-        WrittenActors = writtenActors;
-        AffectedPaths = Freeze(affectedPaths);
-        FailurePhase = failurePhase is null ? null : Limit(failurePhase, 128);
-        Detail = detail is null ? null : Limit(detail, 4096);
-        RecoveryEvidencePaths = Freeze(recoveryEvidencePaths);
-        var incoming = (recoveryEntries ?? Array.Empty<FinalPersistenceRecoveryEntry>()).ToArray();
-        RecoveryEntries = Array.AsReadOnly(incoming.Take(MaxRecoveryEntries).ToArray());
-        var discarded = Math.Max(0, incoming.Length - MaxRecoveryEntries);
-        RecoveryOverflowCount = (int)Math.Min(int.MaxValue,
-            (long)Math.Max(0, recoveryOverflowCount) + discarded);
-    }
-
-    public string OperationId { get; }
-    public string Reason { get; }
-    public FinalPersistenceStatus Status { get; }
-    public DateTime CreatedUtc { get; }
-    public DateTime UpdatedUtc { get; }
-    public int IntendedActors { get; }
-    public int WrittenActors { get; }
-    public IReadOnlyList<string> AffectedPaths { get; }
-    public string? FailurePhase { get; }
-    public string? Detail { get; }
-    public IReadOnlyList<string> RecoveryEvidencePaths { get; }
-    public IReadOnlyList<FinalPersistenceRecoveryEntry> RecoveryEntries { get; }
-    public int RecoveryOverflowCount { get; }
-
-    private const int MaxRecoveryEntries = 4;
-
-    private static string Limit(string? value, int max) =>
-        string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
-
-    private static IReadOnlyList<string> Freeze(IEnumerable<string>? values) =>
-        Array.AsReadOnly((values ?? Array.Empty<string>())
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Take(256)
-            .Select(static value => Limit(value, 1024))
-            .ToArray());
-}
-
 /// <summary>
 /// Result of one final-capture attempt. <see cref="DispatchAccepted"/> means
 /// only that the existing worker dispatcher accepted detached data; it does
@@ -158,7 +33,7 @@ public readonly record struct FinalCaptureResult(
     int CapturedActors,
     string? Detail = null,
     bool DispatchAccepted = false,
-    FinalPersistenceStatus Persistence = FinalPersistenceStatus.NotAttempted,
+    AutoSaveTerminalStatus Persistence = AutoSaveTerminalStatus.NotAttempted,
     string? PersistenceDetail = null)
 {
     /// <summary>
@@ -168,12 +43,11 @@ public readonly record struct FinalCaptureResult(
     public bool CaptureCompleted =>
         Status is FinalCaptureStatus.Captured or FinalCaptureStatus.DispatchStarted;
 
-    public bool DurableSuccess =>
-        Persistence == FinalPersistenceStatus.Written;
-
-    /// <summary>Additive persistence evidence; excluded from legacy positional
-    /// equality and deconstruction.</summary>
-    public FinalPersistenceEvidence? PersistenceEvidence { get; init; }
+    /// <summary>Additive persistence evidence (the autosave health record as
+    /// last observed); excluded from legacy positional equality and
+    /// deconstruction. Its own status/detail may be less terminal than
+    /// <see cref="Persistence"/>/<see cref="PersistenceDetail"/>.</summary>
+    public AutoSaveHealthRecord? PersistenceEvidence { get; init; }
 
     public bool Equals(FinalCaptureResult other) =>
         Status == other.Status &&

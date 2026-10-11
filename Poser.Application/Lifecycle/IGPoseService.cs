@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Services;
+namespace Poser.Application.Lifecycle;
 
 public interface IGPoseService : IDisposable
 {

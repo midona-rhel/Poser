@@ -23,7 +23,7 @@ namespace Poser.UI;
 /// where a thing would be. Those explain an absence IN PLACE and must stay
 /// where the absence is.</para>
 /// </summary>
-public sealed class UserNotices
+public sealed class UserNotices : global::Poser.Application.Presentation.IUserNotices
 {
     /// <summary>Every notification wears the plugin's name, because it is
     /// shown outside any Poser window.</summary>
@@ -56,6 +56,11 @@ public sealed class UserNotices
 
     public void Removal(SelectionRemovalResult result)
     {
+        // A removal that landed can still lose something its undo cannot restore.
+        foreach (var note in result.Items
+            .Where(item => item.Status == SelectionRemovalStatus.Removed && item.Detail != null)
+            .Select(item => item.Detail!).Distinct())
+            Note(note);
         foreach (var failure in result.Items
             .Where(item => item.Status is SelectionRemovalStatus.Refused or SelectionRemovalStatus.Failed)
             .Select(item => (item.Status, Detail: item.Detail ?? "The entity could not be removed."))
@@ -66,6 +71,15 @@ public sealed class UserNotices
             else
                 Refused("Remove", failure.Detail);
         }
+    }
+
+    public void Visibility(SelectionVisibilityResult result)
+    {
+        foreach (var detail in result.Items
+            .Where(item => !item.Result.Success)
+            .Select(item => item.Result.Detail ?? "The change was refused.")
+            .Distinct())
+            Refused("Visibility", detail);
     }
 
     /// <summary>Every notice as it is posted: its kind and its text, for

@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// External integration settings. The MCDF limits are hard validation caps

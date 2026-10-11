@@ -13,7 +13,7 @@ not delete files or replace the final package scan.
 | `DevHost/`, `Norvrandt.Tests/` | Local development harnesses outside the shipped solution. |
 | `.claude/`, `claude/`, `CLAUDE.md`, `AGENTS.local.md` | Local agent/session material. |
 | `imgui.ini`, `*.user`, `.vs/`, `.idea/` | Local editor and window state. |
-| `tools/__pycache__/`, `tools/uiverify/`, captured validation media | Verification scratch and live-test evidence. |
+| `tools/__pycache__/`, `tools/uiverify/`, captured validation media | Verification scratch and captured evidence. |
 | `**/Data/GameData/` | Game-derived data that Poser cannot redistribute. |
 
 `Poser.Core` is retired. Runtime resources now live in the owning Documents,

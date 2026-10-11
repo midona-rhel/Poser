@@ -43,7 +43,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     public TransformGestureService(
         SceneSession scene,
         ITransformRuntimePort runtime,
-        TransformHistory history,
+        EditHistory history,
         GroupTransformState? groupTransforms = null,
         IGroupTransformSource? groupSource = null,
         GroupTransformCoordinator? groupCoordinator = null)
@@ -67,7 +67,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         _scene.Selection.SelectionChanged += OnSelectionChanged;
     }
 
-    public TransformHistory History { get; }
+    public EditHistory History { get; }
     public TransformGestureId? ActiveGesture => _active?.Id;
 
     private GroupTransformPresentation ReadGroupPresentation(Guid? named, IReadOnlyList<TransformTargetId> targets)
@@ -491,35 +491,26 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         CancelActive(active);
     }
 
-    public GestureResult Undo() => UndoCore(null);
-    public GestureResult Undo(SelectionId entity) => UndoCore(entity);
-
-    private GestureResult UndoCore(SelectionId? entity)
+    /// <summary>
+    /// Runs one direction of the synchronous entry <see cref="UndoJournal"/>
+    /// peeked, through the shared transition and recovery barrier, and commits
+    /// it only when it lands. A refused entry remains available to retry.
+    /// </summary>
+    public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
     {
-        if (RecoverPending() is { } recovered)
-            return recovered;
+        var verb = undo ? "undo" : "redo";
+        if (PendingRecovery != null) return new(RecoveryRequired(PendingRecovery), false);
         using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
-        if (_active != null)
-            return GestureResult.Fail("Cancel the active gesture before undo.");
-        var entry = History.PeekUndo(entity);
-        if (entry == null)
-            return GestureResult.Fail("Nothing to undo.");
-        if (entry is JournalStep { CompleteReplay: not null })
-            return GestureResult.Fail("This step requires the asynchronous undo journal.");
-        if (entry is SceneLifecyclePatch lifecycle)
-            return RunLifecycle(
-                lifecycle.Undo,
-                $"Could not undo {lifecycle.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry, entity), lifecycle.FailureDetail);
-        if (entry is JournalStep step)
-            return RunLifecycle(
-                step.Undo,
-                $"Could not undo {step.Description.ToLowerInvariant()}.",
-                () => History.CommitUndo(entry, entity), step.FailureDetail);
-        var patch = (TransformPatch)entry;
-        return RestorePatch(patch, true, () => History.CommitUndo(patch, entity));
+        if (transition == null) return new(Busy(), false);
+        if (_active != null) return new(GestureResult.Fail($"Cancel the active gesture before {verb}."), false);
+        Action commit = undo
+            ? () => History.CommitUndo(entry, entity)
+            : () => History.CommitRedo(entry, entity);
+        if (entry is InverseEntry inverse)
+            return new(RunLifecycle(undo ? inverse.Undo : inverse.Redo,
+                $"Could not {verb} {inverse.Description.ToLowerInvariant()}.",
+                commit, inverse.FailureDetail), true);
+        return new(RestorePatch((TransformPatch)entry, undo, commit), true);
     }
 
     /// <summary>
@@ -544,53 +535,17 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return GestureResult.Ok();
     }
 
-    public GestureResult Replay(JournalStep step, bool before) => ReplayCore(step, before, null);
-    public GestureResult Replay(JournalStep step, bool before, SelectionId entity) => ReplayCore(step, before, entity);
-
-    private GestureResult ReplayCore(JournalStep step, bool before, SelectionId? entity)
+    public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity)
     {
-        if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
+        if (PendingRecovery != null) return new(RecoveryRequired(PendingRecovery), false);
         using var transition = TryEnterTransition();
-        if (transition == null) return Busy();
-        if (_active != null) return GestureResult.Fail("Cancel the active gesture before undo or redo.");
-        if ((before ? History.PeekUndo(entity) : History.PeekRedo(entity))?.Id != step.Id)
-            return GestureResult.Fail("The history changed before replay.");
+        if (transition == null) return new(Busy(), false);
+        if (_active != null) return new(GestureResult.Fail("Cancel the active gesture before undo or redo."), false);
         // The journal owns async snapshot completion; do not hold this
         // synchronous transition across the import (rollback also needs it).
-        return RunLifecycle(before ? step.Undo : step.Redo,
+        return new(RunLifecycle(before ? step.Undo : step.Redo,
             $"Could not {(before ? "undo" : "redo")} {step.Description.ToLowerInvariant()}.",
-            () => { }, step.FailureDetail);
-    }
-
-    public GestureResult Redo() => RedoCore(null);
-    public GestureResult Redo(SelectionId entity) => RedoCore(entity);
-
-    private GestureResult RedoCore(SelectionId? entity)
-    {
-        if (RecoverPending() is { } recovered)
-            return recovered;
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
-        if (_active != null)
-            return GestureResult.Fail("Cancel the active gesture before redo.");
-        var entry = History.PeekRedo(entity);
-        if (entry == null)
-            return GestureResult.Fail("Nothing to redo.");
-        if (entry is JournalStep { CompleteReplay: not null })
-            return GestureResult.Fail("This step requires the asynchronous undo journal.");
-        if (entry is SceneLifecyclePatch lifecycle)
-            return RunLifecycle(
-                lifecycle.Redo,
-                $"Could not redo {lifecycle.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry, entity), lifecycle.FailureDetail);
-        if (entry is JournalStep step)
-            return RunLifecycle(
-                step.Redo,
-                $"Could not redo {step.Description.ToLowerInvariant()}.",
-                () => History.CommitRedo(entry, entity), step.FailureDetail);
-        var patch = (TransformPatch)entry;
-        return RestorePatch(patch, false, () => History.CommitRedo(patch, entity));
+            () => { }, step.FailureDetail), true);
     }
 
     public GestureResult RunValueTransition(Action action)
@@ -659,8 +614,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         Action? completed = null,
         bool remap = false)
     {
-        var requested = remap && _groupSource != null
-            ? states.Select(state => _groupSource.CurrentTarget(state.Target) is { } current
+        var requested = remap
+            ? states.Select(state => _scene.CurrentTransformTarget(state.Target) is { } current
                 ? state with { Target = current } : state).ToArray()
             : states;
         var recovery = TransformRecovery.RestoreAll(_runtime, requested);
@@ -768,6 +723,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return FailureAfterRecovery(detail, RecoverGesture(active));
     }
 
+    // A redraw cancels ordinary bone gestures too. Retain their baseline
+    // through the publication gap and resolve its exact bone identity on
+    // retry, rather than permanently retrying a retired skeleton generation.
     private TransformRecoveryReceipt RecoverGesture(ActiveGestureState active) =>
         AttemptRecovery(active.Before, () =>
         {
@@ -777,7 +735,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             if (restored != null)
                 _groupTransforms.Put(GroupTransformKey.For(active.Command.GroupId,
                     restored.Expected.Keys), restored);
-        }, remap: active.GroupBefore != null);
+        }, remap: true);
 
     /// <summary>
     /// A thrown port call is mutation-unknown, exactly like an explicit

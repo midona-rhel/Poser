@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Poser.Config;
+namespace Poser.Domain.Preferences;
 
 /// <summary>Canonical chord text shared by settings and input adapters. Empty means unbound.</summary>
 public readonly record struct KeyChord(bool Ctrl, bool Shift, bool Alt, KeyCode Key)

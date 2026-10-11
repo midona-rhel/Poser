@@ -1,7 +1,6 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.AutoSave;
-using Poser.Files;
-using Poser.Services;
+using Poser.Application.Lifecycle;
 
 namespace Poser.Game.AutoSave;
 

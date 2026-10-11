@@ -1,4 +1,4 @@
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// How far one pixel of drag moves a numeric transform well. Brio's

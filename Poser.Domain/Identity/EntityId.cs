@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Core;
+namespace Poser.Domain.Identity;
 
 public record struct EntityId(string Unique)
 {

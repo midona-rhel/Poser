@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// One BG object the world holds and the scene has not adopted, as an

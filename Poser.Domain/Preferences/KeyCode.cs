@@ -1,4 +1,4 @@
-namespace Poser.Config;
+namespace Poser.Domain.Preferences;
 
 /// <summary>Stable persisted key vocabulary. Numeric values retain the Windows virtual-key
 /// codes used by existing bindings; native and ImGui adapters live outside Domain.</summary>

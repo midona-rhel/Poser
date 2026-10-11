@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// Represents one slot skeleton attached to an actor. One actor owns

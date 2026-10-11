@@ -1,6 +1,7 @@
 using System;
+using Poser.Domain.Library;
 
-namespace Poser.Library;
+namespace Poser.Application.Library;
 
 /// <summary>
 /// Scans the configured pose roots off-thread and publishes the result as ONE

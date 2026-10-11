@@ -6,6 +6,6 @@ namespace Poser.Game.Integration;
 /// Called before its first deferred draw, never against a source actor or an existing scene actor.</summary>
 public interface ISpawnAppearancePort
 {
-    IntegrationPortResult ResetSpawnAppearance(nint address);
-    IntegrationPortResult CopySpawnAppearance(nint sourceAddress, nint targetAddress);
+    IntegrationResult ResetSpawnAppearance(nint address);
+    IntegrationResult CopySpawnAppearance(nint sourceAddress, nint targetAddress);
 }

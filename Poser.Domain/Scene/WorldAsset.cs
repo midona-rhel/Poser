@@ -1,4 +1,4 @@
-namespace Poser.Services;
+namespace Poser.Domain.Scene;
 
 public enum WorldAssetKind { Scenery, Furniture, Effect }
 

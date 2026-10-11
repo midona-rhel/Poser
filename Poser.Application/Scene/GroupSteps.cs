@@ -14,7 +14,7 @@ namespace Poser.Application.Scene;
 public sealed class GroupSteps
 {
     private readonly SceneGroups _groups;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly ValueJournal _values;
     private readonly GroupTransformState? _groupTransforms;
     private readonly GroupTransformCoordinator? _groupCoordinator;
@@ -23,7 +23,7 @@ public sealed class GroupSteps
 
     public GroupSteps(
         SceneGroups groups,
-        TransformHistory history,
+        EditHistory history,
         ValueJournal values,
         GroupTransformState? groupTransforms = null,
         GroupTransformCoordinator? groupCoordinator = null,
@@ -64,7 +64,9 @@ public sealed class GroupSteps
                 () => Put(ref before, out deferredCapture),
                 () => Put(ref after, out deferredCapture))
             {
-                HasDeferredGroupCapture = () => deferredCapture,
+                // A restore waiting for readable member poses must not discard
+                // its preserved authored state on repeated temporary refusal.
+                OnRefusal = () => deferredCapture ? RefusalAction.Keep : RefusalAction.DropOnRepeat,
             });
         return result;
     }
@@ -81,6 +83,27 @@ public sealed class GroupSteps
         _groupCoordinator?.SynchronizeNamed();
         _groupTransforms?.ForgetMissingGroups(_groups.All.Select(group => group.Id));
         return Capture();
+    }
+
+    /// <summary>
+    /// The group model's half of a lifecycle removal batch (#494). Removed
+    /// members leave their groups through the scene prune, which dissolves a
+    /// group left with fewer than two items; the removal's undo must put that
+    /// structure back along with the entities. Added as the batch prologue,
+    /// so undo restores <paramref name="before"/> once the entities are back
+    /// (members rebind through the history's lifecycle successors). Redo has
+    /// nothing to do: removing the members again prunes the same way.
+    /// </summary>
+    public JournalStep RemovalStructure(GroupsSnapshot before)
+    {
+        bool deferredCapture = false;
+        return new JournalStep(
+            "Restore groups",
+            () => Put(ref before, out deferredCapture),
+            () => true)
+        {
+            OnRefusal = () => deferredCapture ? RefusalAction.Keep : RefusalAction.DropOnRepeat,
+        };
     }
 
     public void Run(string description, Action act) =>

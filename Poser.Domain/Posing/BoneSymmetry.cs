@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using Poser.Services;
+using Poser.Domain.Preferences;
 
-namespace Poser.Core;
+namespace Poser.Domain.Posing;
 
 /// <summary>
 /// The per-bone symmetry rule, in its one home, three tiers: a bone the

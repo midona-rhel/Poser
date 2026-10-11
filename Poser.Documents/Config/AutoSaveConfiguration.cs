@@ -1,4 +1,4 @@
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// Timed pose auto-save (Ktisis <c>PoseAutoSave</c> / Brio <c>AutoSaveService</c>

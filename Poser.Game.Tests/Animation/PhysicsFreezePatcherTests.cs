@@ -61,11 +61,8 @@ private static PhysicsFreezePatcher CreatePatcher(FakeNative native, out LogProx
 
         private readonly byte[] _memory = new byte[0x40];
 
-        public bool ScanSucceeds { get; set; } = true;
-        public bool FailReads { get; set; }
         public int FailOnWriteNumber { get; set; }
-        public int Writes { get; private set; }
-        public List<(nint Address, int Length, MemoryProtection NewProtection)> PermissionChanges { get; } = new();
+        private int _writes;
 
         public FakeNative()
         {
@@ -81,28 +78,22 @@ private static PhysicsFreezePatcher CreatePatcher(FakeNative native, out LogProx
 
         public bool TryScanFreezeSite(ISigScanner scanner, out nint address)
         {
-            address = ScanSucceeds ? Site : 0;
-            return ScanSucceeds;
+            address = Site;
+            return true;
         }
 
-        public byte[] ReadRaw(nint address, int length) =>
-            FailReads
-                ? throw new InvalidOperationException("test read fault")
-                : At(address, length);
+        public byte[] ReadRaw(nint address, int length) => At(address, length);
 
         public void WriteRaw(nint address, byte[] data)
         {
-            if (++Writes == FailOnWriteNumber)
+            if (++_writes == FailOnWriteNumber)
                 throw new InvalidOperationException("test write fault");
             WriteAt(address, data);
         }
 
         public MemoryProtection ChangePermission(
-            nint address, int length, MemoryProtection newProtection)
-        {
-            PermissionChanges.Add((address, length, newProtection));
-            return PreviousProtection;
-        }
+            nint address, int length, MemoryProtection newProtection) =>
+            PreviousProtection;
     }
 
     private class LogProxy : DispatchProxy

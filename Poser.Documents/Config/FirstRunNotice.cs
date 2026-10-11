@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>One upstream project Poser is derivative of, and the repository
 /// the attribution links to.</summary>

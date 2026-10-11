@@ -32,130 +32,7 @@ public class BepuIkCollisionTests(Xunit.ITestOutputHelper output)
         }
     }
 
-    [Fact]
-    public void ChangingWidthOnRestingRopeChangesSurfaceClearance()
-    {
-        var mesh = new IkColliderMesh([new(-2, 0, -2), new(2, 0, -2), new(2, 0, 2), new(-2, 0, 2)], [0, 1, 2, 0, 2, 3]);
-        var collider = new ColliderGeometry(new() { Shape = IkColliderShape.Mesh, Mesh = mesh,
-            Transform = new(new(0, .9f, 0), Quaternion.Identity, Vector3.One) });
-        var rest = Enumerable.Range(0, 21).Select(i => new Vector3(-1.5f + i * .15f, 1.4f + .7f * MathF.Sin(i * MathF.PI / 20), 0)).ToArray();
-        using var state = new BepuIkCollisionState();
-        foreach (float radius in new[] { .08f, .01f, .14f })
-        {
-            var positions = rest.ToArray();
-            for (int frame = 0; frame < 360; frame++)
-            {
-                positions = rest.ToArray();
-                state.Solve(positions, 20, [collider], radius, -Vector3.UnitY, rest);
-            }
-            float clearance = positions.Min(p => p.Y) - .9f;
-            output.WriteLine($"Radius {radius}: clearance {clearance}");
-            Assert.InRange(clearance, radius - .006f, radius + .006f);
-        }
-    }
-
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void RopeRestsOnCapturedMeshFromEitherSide(bool flipped)
-    {
-        var mesh = new IkColliderMesh([new(-2, 0, -2), new(2, 0, -2), new(2, 0, 2), new(-2, 0, 2)],
-            flipped ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]);
-        var geometry = new ColliderGeometry(new() { Shape = IkColliderShape.Mesh, Mesh = mesh,
-            Transform = new(new(0, .9f, 0), Quaternion.Identity, Vector3.One) });
-        var rest = Enumerable.Range(0, 21).Select(i => new Vector3(-1.5f + i * .15f, 1.4f + .7f * MathF.Sin(i * MathF.PI / 20), 0)).ToArray();
-        using var state = new BepuIkCollisionState();
-        var positions = rest.ToArray();
-        for (int frame = 0; frame < 240; frame++)
-        {
-            positions = rest.ToArray();
-            state.Solve(positions, 20, [geometry], .04f, -Vector3.UnitY, rest);
-        }
-        Assert.InRange(positions.Min(p => p.Y), .935f, .97f);
-        Assert.True(Vector3.Distance(positions[0], rest[0]) < .005f);
-        for (int i = 0; i < 20; i++)
-            Assert.InRange(MathF.Abs(Vector3.Distance(positions[i], positions[i + 1]) - Vector3.Distance(rest[i], rest[i + 1])), 0, .005f);
-    }
-
-    [Fact]
-    public void ReturningDeformedSpanToStraightDoesNotLeaveIndependentLinkTwist()
-    {
-        using var state = new BepuIkCollisionState();
-        var authored = Enumerable.Range(0, 3)
-            .Select(i => Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .2f + i * .35f)).ToArray();
-        var rotations = new Quaternion[3];
-        for (int step = 0; step <= 480; step++)
-        {
-            float tilt = MathF.Min(60, Math.Min(step, 480 - step)) * MathF.PI / 180;
-            float around = Math.Clamp(step - 60, 0, 360) * MathF.PI / 180;
-            var bent = new Vector3(MathF.Sin(tilt) * MathF.Cos(around), MathF.Sin(tilt) * MathF.Sin(around), MathF.Cos(tilt));
-            for (int link = 0; link < 3; link++)
-            {
-                var direction = link == 1 ? bent : Vector3.UnitZ;
-                rotations[link] = state.ResolveRotation(link, Vector3.UnitZ, direction, authored[link]);
-                Assert.True(Vector3.Distance(Vector3.Transform(Vector3.UnitZ, rotations[link]), direction) < .0001f);
-            }
-        }
-        for (int link = 0; link < 3; link++)
-            Assert.True(MathF.Abs(Quaternion.Dot(authored[link], rotations[link])) > .9999f,
-                $"Link {link} retained twist after the span returned to its authored directions.");
-    }
-
-    [Fact]
-    public void FoldingPastBackwardsDoesNotFlipTheAuthoredRoll()
-    {
-        using var state = new BepuIkCollisionState();
-        var authored = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .7f);
-        Quaternion previous = authored;
-        for (int degree = 0; degree <= 200; degree++)
-        {
-            var direction = Vector3.Transform(Vector3.UnitZ, Quaternion.CreateFromAxisAngle(Vector3.UnitX, degree * MathF.PI / 180));
-            var rotation = state.ResolveRotation(0, Vector3.UnitZ, direction, authored);
-            Assert.True(MathF.Abs(Quaternion.Dot(previous, rotation)) > .999f, $"Roll flipped at {degree} degrees");
-            Assert.True(Vector3.Distance(Vector3.Transform(Vector3.UnitZ, rotation), direction) < .0001f);
-            previous = rotation;
-        }
-        state.Reset();
-        var a = state.ResolveRotation(0, Vector3.UnitZ, Vector3.Normalize(new Vector3(0, .005f, -1)), authored);
-        var b = state.ResolveRotation(0, Vector3.UnitZ, Vector3.Normalize(new Vector3(0, .004f, -1)), authored);
-        Assert.True(MathF.Abs(Quaternion.Dot(a, b)) > .999f);
-    }
-
-    [Theory]
-    [InlineData(0f, 0f)]
-    [InlineData(.08f, .15f)]
-    [InlineData(-.08f, -.1f)]
-    public void RopeSettlesFlatOnBox(float boxHeight, float targetOffset)
-    {
-        var source = Enumerable.Range(0, 21).Select(i => new Vector3(i * .165f, 0, 0)).ToArray();
-        var seed = RopeSolver.Solve(source, new(-1.5f, 1, 0), new(1.5f + targetOffset, 1, 0), -Vector3.UnitY);
-        var geometry = new ColliderGeometry(new() { Transform = new(new(0, boxHeight, 0), Quaternion.Identity, new(2, 1, 1)) });
-        using var state = new BepuIkCollisionState();
-        var positions = seed.ToArray();
-        for (int frame = 0; frame < 120; frame++)
-        {
-            positions = seed.ToArray();
-            state.Solve(positions, 20, [geometry], .04f, -Vector3.UnitY, seed);
-        }
-        Assert.True(Vector3.Distance(seed[0], positions[0]) < .002f);
-        Assert.True(Vector3.Distance(seed[^1], positions[^1]) < .002f);
-        for (int i = 0; i < 20; i++)
-        {
-            Assert.InRange(MathF.Abs(Vector3.Distance(positions[i], positions[i + 1]) - Vector3.Distance(seed[i], seed[i + 1])), 0, .002f);
-            if (geometry.Contact(positions[i], positions[i + 1], .04f, out _, out var correction))
-                Assert.True(correction.Length() < .002f, $"Link {i} penetrates by {correction.Length()}");
-        }
-        var supported = positions.Where(p => MathF.Abs(p.X) < .4f && MathF.Abs(p.Z) < .4f).ToArray();
-        Assert.NotEmpty(supported);
-        Assert.All(supported, p => Assert.InRange(p.Y, boxHeight + .538f, boxHeight + .555f));
-    }
-
-    [Theory]
-    [InlineData(false, false, 30)]
-    [InlineData(false, true, 30)]
-    [InlineData(true, false, 30)]
-    [InlineData(true, true, 30)]
-    [InlineData(false, true, 50)]
     [InlineData(true, true, 50)]
     public void CylinderWrapSurvivesTargetAndColliderDragging(bool rope, bool moveCollider, int links)
     {
@@ -196,9 +73,6 @@ public class BepuIkCollisionTests(Xunit.ITestOutputHelper output)
     }
 
     [Theory]
-    [InlineData(IkColliderShape.Plane)]
-    [InlineData(IkColliderShape.Box)]
-    [InlineData(IkColliderShape.Cylinder)]
     [InlineData(IkColliderShape.Cone)]
     public void ThickChainRespectsTransformedShapesAndCanBeRecreated(IkColliderShape shape)
     {

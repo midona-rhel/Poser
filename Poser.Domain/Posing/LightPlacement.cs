@@ -1,6 +1,7 @@
 using System.Numerics;
+using Poser.Domain.Transforms;
 
-namespace Poser.Core;
+namespace Poser.Domain.Posing;
 
 /// <summary>Shared placement for new lights and the Move to camera command.</summary>
 public static class LightPlacement

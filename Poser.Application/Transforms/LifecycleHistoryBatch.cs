@@ -13,19 +13,35 @@ internal sealed class LifecycleHistoryBatch(string description)
     public bool TryAdd(HistoryEntry entry)
     {
         if (Environment.CurrentManagedThreadId != _thread || entry.RequiredAsset is not null || entry is JournalStep { CompleteReplay: not null }
-            || entry is not (SceneLifecyclePatch or JournalStep)) return false;
+            || entry is not InverseEntry) return false;
         _children.Add(new(entry));
         return true;
     }
 
-    public SceneLifecyclePatch? Build() => _children.Count == 0 ? null : new(
-        _children.Count == 1 ? _children[0].Entry.Description : description,
-        () => Run(undo: true), () => Run(undo: false))
+    /// <summary>Seats <paramref name="entry"/> before every sibling: redone
+    /// first, undone last — after the siblings have put their entities back.
+    /// A batch of prologues alone records nothing.</summary>
+    public void AddPrologue(HistoryEntry entry)
     {
-        FailureDetail = () => _failure,
-        DropOnFailure = () => _children.All(child => child.Dropped),
-        ResolveAffectedEntities = ResolveAffectedEntities,
-    };
+        if (entry is not InverseEntry)
+            throw new ArgumentException("A batch prologue must be invertible.", nameof(entry));
+        _children.Insert(0, new(entry) { Prologue = true });
+    }
+
+    public SceneLifecyclePatch? Build()
+    {
+        var actions = _children.Where(child => !child.Prologue).ToArray();
+        if (actions.Length == 0)
+            return null;
+        return new(
+            actions.Length == 1 ? actions[0].Entry.Description : description,
+            () => Run(undo: true), () => Run(undo: false))
+        {
+            FailureDetail = () => _failure,
+            OnRefusal = () => _children.All(child => child.Dropped) ? RefusalAction.DropNow : RefusalAction.Keep,
+            ResolveAffectedEntities = ResolveAffectedEntities,
+        };
+    }
 
     private IReadOnlyList<SelectionId>? ResolveAffectedEntities()
     {
@@ -34,7 +50,7 @@ internal sealed class LifecycleHistoryBatch(string description)
         {
             // Resolve on each lookup: lifecycle restoration can replace IDs.
             // One unknown child makes the entire batch an ordering barrier.
-            var affected = TransformHistory.EntitiesOf(child.Entry);
+            var affected = EditHistory.EntitiesOf(child.Entry);
             if (affected is null || affected.Count == 0) return null;
             entities.UnionWith(affected);
         }
@@ -47,16 +63,12 @@ internal sealed class LifecycleHistoryBatch(string description)
         foreach (var child in undo ? _children.AsEnumerable().Reverse() : _children)
         {
             if (child.Dropped || child.Undone == undo) continue;
+            var entry = (InverseEntry)child.Entry;
             bool landed;
             string? detail = null;
             try
             {
-                landed = child.Entry switch
-                {
-                    SceneLifecyclePatch step => undo ? step.Undo() : step.Redo(),
-                    JournalStep step => undo ? step.Undo() : step.Redo(),
-                    _ => false,
-                };
+                landed = undo ? entry.Undo() : entry.Redo();
             }
             catch (Exception ex) { landed = false; detail = ex.Message; }
             if (landed)
@@ -65,19 +77,11 @@ internal sealed class LifecycleHistoryBatch(string description)
                 child.Refused = false;
                 continue;
             }
-            switch (child.Entry)
-            {
-                case SceneLifecyclePatch step:
-                    detail ??= step.FailureDetail?.Invoke();
-                    child.Dropped = step.DropOnFailure?.Invoke() == true;
-                    break;
-                case JournalStep step:
-                    detail ??= step.FailureDetail?.Invoke();
-                    bool retain = step.RetainOnFailure || step.HasDeferredGroupCapture?.Invoke() == true;
-                    child.Dropped = !retain && child.Refused;
-                    child.Refused = !retain;
-                    break;
-            }
+            detail ??= entry.FailureDetail?.Invoke();
+            var action = RefusalPolicy.Decide(entry);
+            child.Dropped = action == RefusalAction.DropNow
+                || (action == RefusalAction.DropOnRepeat && child.Refused);
+            child.Refused = action == RefusalAction.DropOnRepeat;
             _failure = detail ?? $"Could not {(undo ? "undo" : "redo")} {child.Entry.Description.ToLowerInvariant()}.";
             // Stop at the first refusal to preserve inverse ordering. A retry
             // resumes here (or after a permanently discarded child).
@@ -89,6 +93,7 @@ internal sealed class LifecycleHistoryBatch(string description)
     private sealed class Child(HistoryEntry entry)
     {
         public HistoryEntry Entry { get; } = entry;
+        public bool Prologue { get; init; }
         public bool Undone { get; set; }
         public bool Dropped { get; set; }
         public bool Refused { get; set; }

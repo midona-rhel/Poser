@@ -1,7 +1,7 @@
-using Poser.Config;
-using Poser.Services;
+using Poser.Domain.Preferences;
+using Poser.Documents.Config;
 
-namespace Poser.Core;
+namespace Poser.Application.Settings;
 
 /// <summary>
 /// Tracks editor-wide state: gizmo settings.
@@ -17,7 +17,7 @@ namespace Poser.Core;
 /// keybinds and the overlay can never disagree — and so a chord thrown at
 /// either of them outlives the session.</para>
 /// </summary>
-public class EditorState : IEditorState
+public class EditorState
 {
     private readonly ConfigurationService _configuration;
 

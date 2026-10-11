@@ -191,7 +191,7 @@ public partial class SkeletonOverlayWindow
 
     private void DrawColliders(Vector2 viewport, Vector3 camera, List<ActorDisplayData> handles)
     {
-        using var profile = FrameProfiler.Scope("Overlay.Colliders");
+        using var profile = _profiler.Scope("Overlay.Colliders");
         DrawIkWidth(viewport);
         if (!_cameraService.TryGetProjection(out var projection)) return;
         _drawnColliders.Clear();
@@ -234,10 +234,10 @@ public partial class SkeletonOverlayWindow
     {
         if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
         {
-            IkWidthPreview.Target = null;
+            _presentation.IkWidthTarget = null;
             return;
         }
-        if (IkWidthPreview.Target is not { } target ||
+        if (_presentation.IkWidthTarget is not { } target ||
             _ikPort.Get(TransformTargetId.ForBone(target))?.Fabrik is not { } chain ||
             _viewport.GetSkeletonModelMatrix(target) is not { } model) return;
         var points = new List<Vector3>();
@@ -257,7 +257,7 @@ public partial class SkeletonOverlayWindow
         for (int i = 0; i < points.Count; i++)
         {
             if (!_cameraService.WorldToScreen(points[i], out var center) ||
-                !_cameraService.WorldToScreen(points[i] + right * IkWidthPreview.Radius, out var rim)) continue;
+                !_cameraService.WorldToScreen(points[i] + right * _presentation.IkWidthRadius, out var rim)) continue;
             float radius = Vector2.Distance(center, rim);
             if (radius <= 0) continue;
             draw.AddCircleFilled(viewport + center, radius, fill);

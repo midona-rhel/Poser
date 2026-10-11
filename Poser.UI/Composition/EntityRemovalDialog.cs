@@ -4,6 +4,9 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.TextWidgets;
 
 namespace Poser.UI;
 
@@ -73,7 +76,7 @@ public sealed class EntityRemovalDialog
 
     public void DrawBulkDestroyModal()
     {
-        Crystarium.Dialog("##bulk-destroy", _bulkDestroyOpen,
+        Dialog("##bulk-destroy", _bulkDestroyOpen,
             open =>
             {
                 _bulkDestroyOpen = open;
@@ -83,19 +86,19 @@ public sealed class EntityRemovalDialog
             _bulkDestroyTitle,
             body: () =>
             {
-                Crystarium.Text(_bulkDestroyDescription, default,
+                Text(_bulkDestroyDescription, default,
                     TextConstraint.Wrap(ImGui.GetContentRegionAvail().X,
                         whitespace: TextWhitespace.PreLine));
             },
             footer: () =>
             {
-                if (Crystarium.Button("Cancel", id: "bulk-destroy-cancel"))
+                if (Button("Cancel", id: "bulk-destroy-cancel"))
                 {
                     _bulkDestroyOpen = false;
                     _bulkDestroy = null;
                 }
                 ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-                if (Crystarium.Button("Destroy all", variant: ButtonVariant.Danger,
+                if (Button("Destroy all", variant: ButtonVariant.Danger,
                         id: "bulk-destroy-confirm") && _bulkDestroyOpen)
                 {
                     var destroy = _bulkDestroy;

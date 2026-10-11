@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Security.Cryptography;
 using System.Threading;
+using Poser.Documents.Files;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 /// <summary>
 /// Finds an appearance package in the user's MCDF library BY ITS CONTENT,
@@ -139,7 +139,7 @@ public sealed class McdfHashIndex : IMcdfHashIndex
 
             if (digest is null)
             {
-                digest = HashFile(file);
+                digest = FileDigest.TryHashFile(file);
                 if (digest is null)
                     continue;
                 lock (_gate)
@@ -164,19 +164,6 @@ public sealed class McdfHashIndex : IMcdfHashIndex
             return info.Exists
                 ? new FileStamp(info.Length, info.LastWriteTimeUtc.Ticks)
                 : null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private static string? HashFile(string path)
-    {
-        try
-        {
-            using var stream = File.OpenRead(path);
-            return Convert.ToHexString(SHA256.HashData(stream));
         }
         catch (Exception)
         {

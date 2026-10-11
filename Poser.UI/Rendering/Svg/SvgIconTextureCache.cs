@@ -6,31 +6,17 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
-public static partial class Crystarium
-{
-    public static Func<byte[], int, int, (nint Handle, IDisposable? Keepalive)>?
-        IconTextureUploader
-    {
-        get => SvgIconTextureCache.Uploader;
-        set => SvgIconTextureCache.Uploader = value;
-    }
-
-    /// <summary>Whether bounded startup icon warming has finished.</summary>
-    public static bool StartupIconsReady => SvgIconTextureCache.StartupIconsReady;
-
-    /// <summary>Advances bounded startup icon warming on the UI thread.</summary>
-    public static void PumpStartupIcons(float libraryIconSize) =>
-        SvgIconTextureCache.PumpStartupIcons(libraryIconSize);
-
-    /// <summary>Diagnostics sink — the host wires it to its debug log.
-    /// Poser.UI stays free of Dalamud, so the seam is one delegate.</summary>
-    public static Action<string>? Log;
-}
-
-internal static class SvgIconTextureCache
+/// <summary>
+/// Baked icon textures by exact draw parameters, with bounded startup warming
+/// and a background rasterizer. One cache belongs to each
+/// <see cref="Widgets.UiContext"/>, whose disposal releases its textures.
+/// </summary>
+internal sealed class SvgIconTextureCache(
+    Func<byte[], int, int, (nint Handle, IDisposable? Keepalive)> uploader)
 {
     private const int MaxEntries = 1024;
     private const int MaxStartupJobs = 172;
@@ -56,34 +42,33 @@ internal static class SvgIconTextureCache
         public int LastDraw;
     }
 
-    private static readonly Dictionary<ulong, Entry> Cache = new();
+    private readonly Dictionary<ulong, Entry> _cache = new();
 
     /// <summary>The last size that BAKED per icon variant (the full key
     /// minus size). During a tile-size drag every exact size is a fresh
     /// cache miss, and misses fall back to per-frame vector tessellation —
     /// the library-resize hitch. The stale texture draws stretched instead
     /// while the worker bakes the new size.</summary>
-    private static readonly Dictionary<ulong, (ulong Key, Vector2 Size)>
-        LastGood = new();
+    private readonly Dictionary<ulong, (ulong Key, Vector2 Size)>
+        _lastGood = new();
 
-    private static int _drawTick;
+    private int _drawTick;
 
-    private static readonly int[] SweepTicks = new int[MaxEntries];
-    private static readonly ulong[] SweepKeys = new ulong[MaxEntries];
+    private readonly int[] _sweepTicks = new int[MaxEntries];
+    private readonly ulong[] _sweepKeys = new ulong[MaxEntries];
 
-    private static readonly ulong[] Seen = new ulong[64];
-    private static int _seenAt;
+    private readonly ulong[] _seen = new ulong[64];
+    private int _seenAt;
 
-    private static Func<byte[], int, int, (nint, IDisposable?)>? _uploader;
-    private static bool _startupStarted;
-    private static int _startupRemaining;
+    private bool _startupStarted;
+    private int _startupRemaining;
     // Signature changes rewarm new keys without clearing device textures.
-    private static int _startupGeneration;
-    private static bool _startupSignatureSet;
-    private static Theme _startupTheme;
-    private static float _startupScale;
-    private static float _startupStyleAlpha;
-    private static float _startupLibraryFallbackSide;
+    private int _startupGeneration;
+    private bool _startupSignatureSet;
+    private Theme _startupTheme;
+    private float _startupScale;
+    private float _startupStyleAlpha;
+    private float _startupLibraryFallbackSide;
 
     private static readonly TablerIcon[] ShellIcons =
     [
@@ -262,25 +247,12 @@ internal static class SvgIconTextureCache
         TablerIcon.Movie,
     ];
 
-    internal static Func<byte[], int, int, (nint, IDisposable?)>? Uploader
-    {
-        get => _uploader;
-        set
-        {
-            Clear();
-            _uploader = value;
-        }
-    }
+    internal bool StartupIconsReady =>
+        _startupStarted && _startupRemaining == 0;
 
-    // Painter fallback remains available when no uploader is registered.
-    internal static bool StartupIconsReady =>
-        _uploader is null || (_startupStarted && _startupRemaining == 0);
-
-    internal static void PumpStartupIcons(float libraryIconSize)
+    internal void PumpStartupIcons(float libraryIconSize)
     {
-        if (_uploader is null)
-            return;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         float styleAlpha = ImGui.GetStyle().Alpha;
         float libraryFallbackSide = LibraryFallbackSide(
@@ -289,11 +261,11 @@ internal static class SvgIconTextureCache
                 theme, scale, styleAlpha, libraryFallbackSide))
             StartStartupWarm(theme, scale, styleAlpha, libraryFallbackSide);
         BeginFrame();
-        if (!Completed.IsEmpty)
+        if (!_completed.IsEmpty)
             Integrate(ref _uploads);
     }
 
-    private static bool MatchesStartupSignature(
+    private bool MatchesStartupSignature(
         Theme theme, float scale, float styleAlpha,
         float libraryFallbackSide) =>
         _startupSignatureSet
@@ -305,7 +277,7 @@ internal static class SvgIconTextureCache
         && BitConverter.SingleToUInt32Bits(_startupLibraryFallbackSide)
             == BitConverter.SingleToUInt32Bits(libraryFallbackSide);
 
-    private static void StartStartupWarm(
+    private void StartStartupWarm(
         Theme theme, float scale, float styleAlpha,
         float libraryFallbackSide)
     {
@@ -514,7 +486,7 @@ internal static class SvgIconTextureCache
         return MathF.Max(bucket, MathF.Floor(boxSide * 0.4f / bucket) * bucket);
     }
 
-    private static void QueueStartup(
+    private void QueueStartup(
         SvgDocument? doc,
         float side,
         Vector4 tint,
@@ -530,10 +502,10 @@ internal static class SvgIconTextureCache
         ulong key = Key(
             doc, Vector2.Zero, size, tint, flipX, strokeWidth,
             groupOpacity, groupBackground, styleAlpha);
-        if (Cache.ContainsKey(key) || !Pending.Add(key))
+        if (_cache.ContainsKey(key) || !_pending.Add(key))
             return;
         _startupRemaining++;
-        Inbox.Enqueue(new RasterJob
+        _inbox.Enqueue(new RasterJob
         {
             Generation = _generation,
             Key = key,
@@ -550,7 +522,6 @@ internal static class SvgIconTextureCache
         });
         Pump();
     }
-
 
     private sealed class RasterJob
     {
@@ -573,35 +544,35 @@ internal static class SvgIconTextureCache
         public SvgStrokeMask.Baked? Baked;
     }
 
-    private static readonly ConcurrentQueue<RasterJob> Inbox = new();
-    private static readonly ConcurrentQueue<RasterJob> Completed = new();
+    private readonly ConcurrentQueue<RasterJob> _inbox = new();
+    private readonly ConcurrentQueue<RasterJob> _completed = new();
 
-    private static readonly HashSet<ulong> Pending = new();
+    private readonly HashSet<ulong> _pending = new();
 
-    private static int _generation;
+    private int _generation;
 
-    private static int _draining;
+    private int _draining;
 
-    private static void Pump()
+    private void Pump()
     {
         if (Interlocked.CompareExchange(ref _draining, 1, 0) != 0)
             return;
         Task.Run(Drain);
     }
 
-    private static void Drain()
+    private void Drain()
     {
         do
         {
-            while (Inbox.TryDequeue(out var job))
+            while (_inbox.TryDequeue(out var job))
                 Rasterize(job);
             Volatile.Write(ref _draining, 0);
         }
-        while (!Inbox.IsEmpty
+        while (!_inbox.IsEmpty
             && Interlocked.CompareExchange(ref _draining, 1, 0) == 0);
     }
 
-    private static void Rasterize(RasterJob job)
+    private void Rasterize(RasterJob job)
     {
         if (job.Generation != Volatile.Read(ref _generation))
             return;
@@ -618,16 +589,16 @@ internal static class SvgIconTextureCache
             job.Bakeable = false;
             job.Baked = null;
         }
-        Completed.Enqueue(job);
+        _completed.Enqueue(job);
     }
 
-    private static void Integrate(ref int uploads)
+    private void Integrate(ref int uploads)
     {
-        while (uploads < UploadBudget && Completed.TryDequeue(out var job))
+        while (uploads < UploadBudget && _completed.TryDequeue(out var job))
         {
             if (job.Generation != _generation)
                 continue;
-            Pending.Remove(job.Key);
+            _pending.Remove(job.Key);
             if (job.Startup
                 && job.StartupGeneration == _startupGeneration
                 && _startupRemaining > 0)
@@ -650,17 +621,17 @@ internal static class SvgIconTextureCache
                 }
             }
             entry.LastDraw = _drawTick;
-            if (Cache.Count >= MaxEntries)
+            if (_cache.Count >= MaxEntries)
                 EvictStale();
-            Cache[job.Key] = entry;
+            _cache[job.Key] = entry;
         }
     }
 
-    private static Entry Upload(SvgStrokeMask.Baked baked)
+    private Entry Upload(SvgStrokeMask.Baked baked)
     {
         if (baked.Width <= 0 || baked.Height <= 0)
             return new Entry(0, default, default, null, false);
-        var (handle, keepalive) = _uploader!(
+        var (handle, keepalive) = uploader(
             SvgStrokeMask.Pack(baked), baked.Width, baked.Height);
         if (handle == 0)
         {
@@ -675,51 +646,51 @@ internal static class SvgIconTextureCache
             false);
     }
 
-    internal static void Clear()
+    internal void Clear()
     {
-        foreach (var entry in Cache.Values)
+        foreach (var entry in _cache.Values)
             entry.Keepalive?.Dispose();
-        Cache.Clear();
-        LastGood.Clear();
-        Array.Clear(Seen);
+        _cache.Clear();
+        _lastGood.Clear();
+        Array.Clear(_seen);
         _seenAt = 0;
 
         _generation++;
-        while (Inbox.TryDequeue(out _)) { }
-        while (Completed.TryDequeue(out _)) { }
-        Pending.Clear();
+        while (_inbox.TryDequeue(out _)) { }
+        while (_completed.TryDequeue(out _)) { }
+        _pending.Clear();
         _startupStarted = false;
         _startupRemaining = 0;
         _startupGeneration++;
         _startupSignatureSet = false;
     }
 
-    private static void EvictStale()
+    private void EvictStale()
     {
         int count = 0;
-        foreach (var pair in Cache)
+        foreach (var pair in _cache)
         {
-            SweepTicks[count] = pair.Value.LastDraw;
-            SweepKeys[count] = pair.Key;
+            _sweepTicks[count] = pair.Value.LastDraw;
+            _sweepKeys[count] = pair.Key;
             count++;
         }
-        Array.Sort(SweepTicks, 0, count);
-        int threshold = SweepTicks[count / 2];
+        Array.Sort(_sweepTicks, 0, count);
+        int threshold = _sweepTicks[count / 2];
         for (int i = 0; i < count; i++)
         {
-            ulong key = SweepKeys[i];
-            if (Cache.TryGetValue(key, out var entry)
+            ulong key = _sweepKeys[i];
+            if (_cache.TryGetValue(key, out var entry)
                 && entry.LastDraw <= threshold)
             {
                 entry.Keepalive?.Dispose();
-                Cache.Remove(key);
+                _cache.Remove(key);
             }
         }
     }
 
-    private static int _frame = -1;
-    private static int _paints;
-    private static int _uploads;
+    private int _frame = -1;
+    private int _paints;
+    private int _uploads;
 
     /// <summary>Synchronous first-use paints allowed per frame — enough for
     /// a whole menu of small glyphs in one frame, bounded so a pathological
@@ -732,17 +703,17 @@ internal static class SvgIconTextureCache
     /// open for 200ms. Once a frame has spent this much painting, the
     /// rest go async and pop in a frame late instead.</summary>
     private const double SyncPaintBudgetMs = 3.0;
-    private static double _syncPaintMs;
+    private double _syncPaintMs;
 
     /// <summary>Only small glyphs paint synchronously: a menu icon bakes in
     /// under a millisecond, a 120px library tile does not — the profiler
     /// attributed 25–99ms spikes to exactly that. Large icons keep the
     /// async path and briefly show their tile without a glyph.</summary>
     private const float SyncPaintMaxSide = 40f;
-    private static int _syncPaints;
+    private int _syncPaints;
 
     // All drains share this reset so uploads remain capped per frame.
-    private static void BeginFrame()
+    private void BeginFrame()
     {
         int frame = ImGui.GetFrameCount();
         if (frame == _frame)
@@ -754,7 +725,7 @@ internal static class SvgIconTextureCache
         _syncPaintMs = 0;
     }
 
-    internal static bool TryDraw(
+    internal bool TryDraw(
         ImDrawListPtr draw,
         SvgDocument doc,
         Vector2 min,
@@ -765,12 +736,6 @@ internal static class SvgIconTextureCache
         float groupOpacity,
         Vector4 groupBackground)
     {
-        if (_uploader is null)
-        {
-            WarnMissingUploader();
-            return false;
-        }
-
         float styleAlpha = ImGui.GetStyle().Alpha;
         // The fade lands HERE, on the quad, never in the bake: a fading
         // shell reuses the standing textures instead of re-baking every
@@ -790,11 +755,11 @@ internal static class SvgIconTextureCache
         _drawTick++;
 
         BeginFrame();
-        if (!Completed.IsEmpty)
+        if (!_completed.IsEmpty)
             Integrate(ref _uploads);
 
         ref var slot = ref System.Runtime.InteropServices.CollectionsMarshal
-            .GetValueRefOrNullRef(Cache, key);
+            .GetValueRefOrNullRef(_cache, key);
         Entry entry;
         if (!System.Runtime.CompilerServices.Unsafe.IsNullRef(ref slot))
         {
@@ -803,7 +768,7 @@ internal static class SvgIconTextureCache
         }
         else if (_syncPaints < SyncPaintBudget
             && _syncPaintMs < SyncPaintBudgetMs
-            && !Pending.Contains(key)
+            && !_pending.Contains(key)
             && (max - min).Y <= SyncPaintMaxSide)
         {
             // FIRST USE PAINTS NOW, inside the frame's time box: the frame
@@ -833,16 +798,16 @@ internal static class SvgIconTextureCache
             double paintMs = paintClock.Elapsed.TotalMilliseconds;
             _syncPaintMs += paintMs;
             entry.LastDraw = _drawTick;
-            if (Cache.Count >= MaxEntries)
+            if (_cache.Count >= MaxEntries)
                 EvictStale();
-            Cache[key] = entry;
+            _cache[key] = entry;
         }
         else
         {
-            if (Repeated(key) && Pending.Add(key))
+            if (Repeated(key) && _pending.Add(key))
             {
                 // Queue uncached variants outside the synchronous frame budget.
-                Inbox.Enqueue(new RasterJob
+                _inbox.Enqueue(new RasterJob
                 {
                     Generation = _generation,
                     Key = key,
@@ -858,11 +823,11 @@ internal static class SvgIconTextureCache
                 });
                 Pump();
             }
-            if (LastGood.TryGetValue(variant, out var good)
+            if (_lastGood.TryGetValue(variant, out var good)
                 && good.Size.Y > 0f)
             {
                 ref var stale = ref System.Runtime.InteropServices
-                    .CollectionsMarshal.GetValueRefOrNullRef(Cache, good.Key);
+                    .CollectionsMarshal.GetValueRefOrNullRef(_cache, good.Key);
                 if (!System.Runtime.CompilerServices.Unsafe.IsNullRef(
                         ref stale)
                     && stale.Handle != 0)
@@ -900,18 +865,18 @@ internal static class SvgIconTextureCache
                 Vector2.Zero,
                 Vector2.One,
                 quadTint);
-            LastGood[variant] = (key, max - min);
+            _lastGood[variant] = (key, max - min);
         }
         return true;
     }
 
-    private static bool Repeated(ulong key)
+    private bool Repeated(ulong key)
     {
-        foreach (ulong seen in Seen)
+        foreach (ulong seen in _seen)
             if (seen == key)
                 return true;
-        Seen[_seenAt] = key;
-        _seenAt = (_seenAt + 1) % Seen.Length;
+        _seen[_seenAt] = key;
+        _seenAt = (_seenAt + 1) % _seen.Length;
         return false;
     }
 
@@ -985,21 +950,4 @@ internal static class SvgIconTextureCache
 
     private static uint Bits(float value) =>
         BitConverter.SingleToUInt32Bits(value);
-
-#if DEBUG
-    private static bool _warned;
-#endif
-
-    private static void WarnMissingUploader()
-    {
-#if DEBUG
-        if (_warned)
-            return;
-        _warned = true;
-        System.Diagnostics.Debug.WriteLine(
-            "Crystarium: no IconTextureUploader is registered — every icon "
-            + "falls back to the per-pixel painter. Register one at host "
-            + "startup (Crystarium.IconTextureUploader).");
-#endif
-    }
 }

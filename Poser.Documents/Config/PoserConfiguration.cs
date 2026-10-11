@@ -1,7 +1,7 @@
 using Poser.Domain.Scene;
-using Poser.Library;
+using Poser.Documents.Library;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// Main configuration for Poser plugin.
@@ -98,7 +98,7 @@ public class PoserConfiguration
 
     /// <summary>The stated per-bone modes, by canonical bone name — only
     /// the bones the user explicitly set.</summary>
-    public System.Collections.Generic.Dictionary<string, Poser.Services.SymmetryMode>
+    public System.Collections.Generic.Dictionary<string, Poser.Domain.Preferences.SymmetryMode>
         BoneSymmetryOverrides { get; set; } = new();
 
     /// <summary>
@@ -106,7 +106,7 @@ public class PoserConfiguration
     /// (Brio's <c>Posing.UndoStackSize</c>, same zero-means-off semantics —
     /// <c>HistoryService.cs:17-24</c>). Poser's own long-standing depth is the
     /// default, not Brio's 50. Kept in step with
-    /// <c>TransformHistory.DefaultCapacity</c>, which this assembly cannot
+    /// <c>EditHistory.DefaultCapacity</c>, which this assembly cannot
     /// reference (config sits below the application layer).
     /// </summary>
     public int UndoDepth { get; set; } = 500;

@@ -3,13 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.WorldObjects;
-using Poser.Services;
+using Poser.Application.Scene;
+using Poser.Domain.Transforms;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
@@ -149,16 +148,17 @@ internal sealed class WorldObjectLifecycleOwner
 
         public bool Restore() => owner.Restore(slots);
         public string? FailureDetail => RestoreFailure(slots);
-        public bool DropOnFailure() => owner.DiscardUnrestorable(slots);
+        public RefusalAction OnRefusal() =>
+            owner.DiscardUnrestorable(slots) ? RefusalAction.DropNow : RefusalAction.Keep;
     }
 
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly IWorldObjectLifecycle _worldObjects;
     private readonly Func<object, TransformTargetId?>? _target;
     private readonly LifecycleSlotOwner<object, Slot> _slots;
 
     public WorldObjectLifecycleOwner(
-        TransformHistory history,
+        EditHistory history,
         IWorldObjectLifecycle worldObjects,
         Func<object, TransformTargetId?>? target = null)
     {
@@ -232,26 +232,6 @@ internal sealed class WorldObjectLifecycleOwner
         return true;
     }
 
-    public bool ReleaseAll()
-    {
-        var slots = _worldObjects.WorldObjects.Select(_slots.SlotFor).ToArray();
-        if (slots.Length == 0)
-            return true;
-
-        // A refused member remains live with its acquisition entry. Only
-        // confirmed releases belong to this one group history action.
-        var released = new List<Slot>(slots.Length);
-        bool allReleased = true;
-        foreach (var slot in slots)
-            if (_slots.CaptureAndRemove(slot))
-                released.Add(slot);
-            else
-                allReleased = false;
-        if (released.Count != 0)
-            AppendRelease(released.Count == 1 ? "Remove world object" : $"Remove {released.Count} world objects", released);
-        return allReleased;
-    }
-
     internal void AppendAcquisition(object worldObject)
     {
         var slot = _slots.SlotFor(worldObject);
@@ -261,7 +241,7 @@ internal sealed class WorldObjectLifecycleOwner
             () => _slots.Restore(slot))
         {
             FailureDetail = () => slot.RestoreFailure,
-            DropOnFailure = () => DiscardUnrestorable(slot),
+            OnRefusal = () => DiscardUnrestorable(slot) ? RefusalAction.DropNow : RefusalAction.Keep,
         };
         slot.AcquisitionEntry = entry;
         _history.Append(entry);
@@ -274,7 +254,7 @@ internal sealed class WorldObjectLifecycleOwner
             description, batch.Restore, batch.Release)
         {
             FailureDetail = () => batch.FailureDetail,
-            DropOnFailure = batch.DropOnFailure,
+            OnRefusal = batch.OnRefusal,
         });
     }
 

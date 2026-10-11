@@ -1,4 +1,5 @@
 using System;
+using Poser.UI.Widgets;
 
 namespace Poser.UI.Controls;
 
@@ -16,7 +17,7 @@ public sealed class RememberedFolder
 
     /// <summary>Opens the dialog here; the chosen file's folder is
     /// remembered before the callback runs.</summary>
-    public void Open(Crystarium.FileDialog dialog, Action<string> chosen) =>
+    public void Open(FileDialog dialog, Action<string> chosen) =>
         dialog.Open(Path, path =>
         {
             Remember(path);

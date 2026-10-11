@@ -2,6 +2,7 @@ using CSCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Domain.Identity;
+using Poser.Game.Core;
 
 namespace Poser.Game;
 
@@ -27,11 +28,11 @@ public static unsafe class RaceFeatureRead
     public static CustomizeData ReadCustomize(nint address)
     {
         if (address == nint.Zero) return default;
-        var model = SlotCharacterBases.Resolve(address, PoseSlot.Character);
+        var human = GPoseObjectTable.AsHuman(SlotCharacterBases.Resolve(address, PoseSlot.Character));
         // Glamourer may change only Human.Customize; DrawData then still
         // describes the original race and ears, not the skeleton being posed.
-        return model != null && model->GetModelType() == CharacterBase.ModelType.Human
-            ? ((Human*)model)->Customize
+        return human != null
+            ? human->Customize
             : ((CSCharacter*)address)->DrawData.CustomizeData;
     }
 

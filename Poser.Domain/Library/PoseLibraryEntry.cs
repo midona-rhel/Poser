@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Poser.Library;
+namespace Poser.Domain.Library;
 
 /// <summary>
 /// What a scanned file IS. The browser shows one kind at a time, so this is the
@@ -126,7 +126,7 @@ public sealed class PoseLibrarySourceSnapshot
 public sealed class PoseLibraryEntry
 {
     public required PoseLibraryEntryKind Kind { get; init; }
-    public Services.WorldAssetKind WorldKind { get; init; }
+    public Scene.WorldAssetKind WorldKind { get; init; }
 
     /// <summary>Absolute path of the file.</summary>
     public required string FilePath { get; init; }

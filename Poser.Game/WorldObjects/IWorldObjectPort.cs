@@ -1,8 +1,8 @@
 using System.Collections.Generic;
-using Poser.Services;
 using System.Numerics;
 
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.WorldObjects;
 
@@ -51,36 +51,11 @@ public readonly record struct VfxStateSnapshot(
     float Speed,
     VfxPlaybackState Playback);
 
-/// <summary>
-/// The NATIVE seam under <see cref="WorldObjectService"/>: the walk of the
-/// game's own scene graph, and the reads and writes to the BG objects it
-/// finds. Nothing else in Poser touches a map object.
-///
-/// <para>Enumeration may read the whole graph, but writes are reached only
-/// through an adopted or spawned handle. The map's own objects are never
-/// created or destroyed — each is restored before its handle is forgotten.
-/// Objects POSER spawned are the one exception: they are Poser's to destroy,
-/// and are never restored onto.</para>
-///
-/// <para>Every implementation must:</para>
-/// <list type="number">
-/// <item><description><see cref="Enumerate"/> returns rows whose placement and
-/// flags are the values the world held at the moment of the walk, and never
-/// throws — a graph it cannot read is an empty listing.</description></item>
-/// <item><description><see cref="IsAlive"/> answers false for any address the
-/// implementation cannot still see as a BG object, and every read and write
-/// below is a no-op for such an address.</description></item>
-/// <item><description><see cref="Write"/> leaves the object drawn where it was
-/// put — the game caches culling and render state off the transform, so the
-/// write is not complete until that cache is re-stated.</description></item>
-/// </list>
-/// </summary>
-public interface IWorldObjectPort
+/// <summary>The walk of the world's scene graph: every BG object and effect
+/// it holds as pointer-free rows, and its light nodes as bare addresses.</summary>
+public interface IWorldGraphPort
 {
     void Pump() { }
-    bool WriteFurnitureColor(nint address, byte stain, Vector3? tint) => true;
-    IReadOnlyList<FurnitureLightState> ReadFurnitureLights(nint address) => [];
-    void WriteFurnitureLights(nint address, IReadOnlyList<FurnitureLightState> lights) { }
 
     /// <summary>Whether the world's scene graph can be reached at all right
     /// now. False makes <see cref="Enumerate"/> answer empty rather than walk
@@ -100,7 +75,13 @@ public interface IWorldObjectPort
     /// addresses.</para>
     /// </summary>
     IReadOnlyList<nint> EnumerateLights();
+}
 
+/// <summary>Per-address reads and writes every world node supports — BG
+/// model, furniture layout or effect — plus spawn and teardown. Every member
+/// is a no-op or a refusal for an address <see cref="IsAlive"/> rejects.</summary>
+public interface IWorldNodePort
+{
     /// <summary>Whether this address is still a BG object this port can
     /// address. An adopted object whose address has gone is inert, never
     /// written and never restored onto.</summary>
@@ -124,18 +105,6 @@ public interface IWorldObjectPort
     /// <summary>Writes one object's placement and re-states the render and
     /// culling caches that hang off it.</summary>
     void Write(nint address, in Transform placement);
-
-    /// <summary>Writes and refreshes a VFX transform without an implicit
-    /// replay. Playback commands are separate so a drag cannot restart a
-    /// playing effect; paused and inactive effects remain stopped.</summary>
-    void WriteVfxTransform(nint address, in Transform placement) =>
-        Write(address, placement);
-
-    bool TryWriteVfxTransform(nint address, in Transform placement)
-    {
-        WriteVfxTransform(address, placement);
-        return true;
-    }
 
     /// <summary>Reads one object's draw flags — the byte that carries, among
     /// other things, whether it is drawn at all.</summary>
@@ -180,6 +149,77 @@ public interface IWorldObjectPort
         var address = Spawn(path, placement);
         TryReadIncarnation(address, out identity);
         return address;
+    }
+
+    /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
+    /// VFX's alpha, a BG object's dither transparency.</summary>
+    void WriteOpacity(nint address, float opacity);
+
+    bool TryReadOpacity(nint address, out float opacity);
+
+    /// <summary>Destroys a spawned object — BG or VFX; the vtable serves
+    /// both. Never called with an adopted address — the map's own objects
+    /// are always restored instead.</summary>
+    void Destroy(nint address);
+
+    /// <summary>Reports whether teardown actually completed. The default
+    /// preserves the old void seam for test/fallback ports.</summary>
+    bool TryDestroy(nint address)
+    {
+        Destroy(address);
+        return true;
+    }
+}
+
+/// <summary>BG-model and furniture-only state: dye, day/night dressing,
+/// animation speed and the instance tail the pause hold freezes.</summary>
+public interface IBgObjectPort : IWorldNodePort
+{
+    bool WriteFurnitureColor(nint address, byte stain, Vector3? tint) => true;
+    IReadOnlyList<FurnitureLightState> ReadFurnitureLights(nint address) => [];
+    void WriteFurnitureLights(nint address, IReadOnlyList<FurnitureLightState> lights) { }
+
+    /// <summary>Dyes a BG object; null clears to white. False while the
+    /// model has not produced its stain buffer yet — retry next tick.
+    /// </summary>
+    bool WriteBgTint(nint address, System.Numerics.Vector3? tint);
+
+    /// <summary>Whether a BG object's model has fully streamed in.</summary>
+    bool IsBgReady(nint address);
+
+    /// <summary>The instance's day/night state byte: true = night (a raw
+    /// spawn's default). Null for effects.</summary>
+    /// <summary>Whether the BG model can take dye (its stain buffer
+    /// exists); null while it is still streaming.</summary>
+    bool? CanDyeBg(nint address);
+
+    bool? ReadBgNightState(nint address);
+
+    /// <summary>Sets an animated BG object's playback speed; false until
+    /// its skeleton's controls exist.</summary>
+    bool WriteBgAnimationSpeed(nint address, float speed);
+
+    bool TryReadBgTail(nint address, byte[] into);
+
+    void WriteBgTailHeld(nint address, byte[] values);
+
+    void WriteBgNightState(nint address, bool night);
+}
+
+/// <summary>World-effect-only state: playback, speed, colour, intensity, and
+/// the exact-incarnation teardown and claim release an effect needs.</summary>
+public interface IVfxObjectPort : IWorldNodePort
+{
+    /// <summary>Writes and refreshes a VFX transform without an implicit
+    /// replay. Playback commands are separate so a drag cannot restart a
+    /// playing effect; paused and inactive effects remain stopped.</summary>
+    void WriteVfxTransform(nint address, in Transform placement) =>
+        Write(address, placement);
+
+    bool TryWriteVfxTransform(nint address, in Transform placement)
+    {
+        WriteVfxTransform(address, placement);
+        return true;
     }
 
     /// <summary>Sets a spawned VFX's playback speed. A no-op on anything
@@ -272,51 +312,6 @@ public interface IWorldObjectPort
         return true;
     }
 
-    /// <summary>Dyes a BG object; null clears to white. False while the
-    /// model has not produced its stain buffer yet — retry next tick.
-    /// </summary>
-    bool WriteBgTint(nint address, System.Numerics.Vector3? tint);
-
-    /// <summary>Whether a BG object's model has fully streamed in.</summary>
-    bool IsBgReady(nint address);
-
-    /// <summary>The instance's day/night state byte: true = night (a raw
-    /// spawn's default). Null for effects.</summary>
-    /// <summary>Whether the BG model can take dye (its stain buffer
-    /// exists); null while it is still streaming.</summary>
-    bool? CanDyeBg(nint address);
-
-    bool? ReadBgNightState(nint address);
-
-    /// <summary>Sets an animated BG object's playback speed; false until
-    /// its skeleton's controls exist.</summary>
-    bool WriteBgAnimationSpeed(nint address, float speed);
-
-    bool TryReadBgTail(nint address, byte[] into);
-
-    void WriteBgTailHeld(nint address, byte[] values);
-
-    void WriteBgNightState(nint address, bool night);
-
-    /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
-    /// VFX's alpha, a BG object's dither transparency.</summary>
-    void WriteOpacity(nint address, float opacity);
-
-    bool TryReadOpacity(nint address, out float opacity);
-
-    /// <summary>Destroys a spawned object — BG or VFX; the vtable serves
-    /// both. Never called with an adopted address — the map's own objects
-    /// are always restored instead.</summary>
-    void Destroy(nint address);
-
-    /// <summary>Reports whether teardown actually completed. The default
-    /// preserves the old void seam for test/fallback ports.</summary>
-    bool TryDestroy(nint address)
-    {
-        Destroy(address);
-        return true;
-    }
-
     /// <summary>Destroys only the exact VFX incarnation named by a claim.
     /// A replacement at the same address must never be destroyed.</summary>
     bool TryDestroyVfx(WorldObjectIncarnation incarnation)
@@ -332,3 +327,30 @@ public interface IWorldObjectPort
     bool TryReleaseVfxClaim(WorldObjectIncarnation incarnation) => false;
 }
 
+/// <summary>
+/// The NATIVE seam under <see cref="WorldObjectService"/>: the walk of the
+/// game's own scene graph, and the reads and writes to the BG objects it
+/// finds. Nothing else in Poser touches a map object.
+///
+/// <para>Enumeration may read the whole graph, but writes are reached only
+/// through an adopted or spawned handle. The map's own objects are never
+/// created or destroyed — each is restored before its handle is forgotten.
+/// Objects POSER spawned are the one exception: they are Poser's to destroy,
+/// and are never restored onto.</para>
+///
+/// <para>Every implementation must:</para>
+/// <list type="number">
+/// <item><description><see cref="Enumerate"/> returns rows whose placement and
+/// flags are the values the world held at the moment of the walk, and never
+/// throws — a graph it cannot read is an empty listing.</description></item>
+/// <item><description><see cref="IsAlive"/> answers false for any address the
+/// implementation cannot still see as a BG object, and every read and write
+/// below is a no-op for such an address.</description></item>
+/// <item><description><see cref="Write"/> leaves the object drawn where it was
+/// put — the game caches culling and render state off the transform, so the
+/// write is not complete until that cache is re-stated.</description></item>
+/// </list>
+/// </summary>
+public interface IWorldObjectPort : IWorldGraphPort, IBgObjectPort, IVfxObjectPort
+{
+}

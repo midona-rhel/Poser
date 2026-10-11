@@ -5,6 +5,7 @@ using Poser.Application.Lifecycle;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Operations;
@@ -32,17 +33,18 @@ public interface IActorStateSnapshots
 /// <summary>Coordinates the existing state owners; no animation playback is captured or restored.</summary>
 public sealed class ActorStateSnapshots(
     SceneSession scene, ISessionGenerationSource sessions, Lazy<IPoseSnapshotPort> poses,
-    ActorIntegrationSession appearance, ActorPresentationSession presentation,
+    IntegrationSelectors appearance, McdfTransaction mcdf, ActorPresentationSession presentation,
     ActorModelIdSession models, GazeSession gaze, IExpressionRuntimePort expressions,
-    IIntegrationRuntimePort runtime) : IActorStateSnapshots
+    IIntegrationResolutionPort runtime, IPenumbraPort penumbra) : IActorStateSnapshots
 {
-    public IntegrationValue<ActorPropertiesSnapshot> CaptureProperties(ActorId actor, bool captureCollection = true)
+    public IntegrationValue<ActorPropertiesSnapshot> CaptureProperties(ActorId actor, bool captureCollection = true,
+        bool omitUnreadableLook = false)
     {
         try
         {
             if (models.Read(actor) is not { } model)
                 return IntegrationValue<ActorPropertiesSnapshot>.Fail("The actor's model could not be captured.");
-            var look = appearance.TryCaptureHistory(actor, captureCollection);
+            var look = appearance.TryCaptureHistory(actor, captureCollection, omitUnreadableLook);
             if (!look.Success || look.Value == null)
                 return IntegrationValue<ActorPropertiesSnapshot>.Fail(look.Detail ?? "Appearance capture failed.");
             var gazeState = gaze.IsAvailable ? gaze.Read(actor) : null;
@@ -83,7 +85,7 @@ public sealed class ActorStateSnapshots(
         bool CurrentRestore() => !cancellation.IsCancellationRequested && stillCurrent()
             && Current(snapshot.Actor, snapshot.Session);
         var appearanceResult = await RestoreAppearance(snapshot.Actor, snapshot.Properties, CurrentRestore, cancellation);
-        if (!appearanceResult.Success) return GestureResult.Fail(appearanceResult.Detail!);
+        if (!appearanceResult.Success) return GestureResult.From(appearanceResult.Outcome);
 
         var poseDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var started = await runtime.OnFrameworkThread(() => CurrentRestore()
@@ -104,35 +106,37 @@ public sealed class ActorStateSnapshots(
         var model = await runtime.OnFrameworkThread(() =>
         {
             if (cancellation.IsCancellationRequested || !stillCurrent())
-                return PresentationResult.Fail("The actor restoration is no longer current.");
+                return Outcome.Fail("The actor restoration is no longer current.");
             return models.Read(actor) == properties.ModelId
-                ? PresentationResult.Ok() : models.Apply(actor, properties.ModelId);
+                ? Outcome.Ok() : models.Apply(actor, properties.ModelId);
         });
-        if (!model.Success) return IntegrationResult.Fail(model.Detail!);
+        if (!model.Success) return IntegrationResult.From(model);
         // MCDF already uses the same barrier, but a restored model id can require
         // a subsequent redraw. Ordinary looks and collections also finish here.
-        if (await runtime.OnFrameworkThread(() => runtime.Penumbra.Available))
-        {
-            var ready = await runtime.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation);
-            if (!ready.Success) return IntegrationResult.Fail(ready.Detail!);
-        }
-        return IntegrationResult.Ok();
+        return await RedrawIfPenumbra(actor, cancellation);
     }
+
+    /// <summary>Redraws through Penumbra and waits for the actor to be ready;
+    /// succeeds at once when Penumbra is unavailable (nothing to redraw).</summary>
+    private async Task<IntegrationResult> RedrawIfPenumbra(ActorId actor, CancellationToken cancellation) =>
+        await runtime.OnFrameworkThread(() => penumbra.Penumbra.Available)
+            ? await penumbra.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation)
+            : IntegrationResult.Ok();
 
     /// <summary>Shared post-readiness restoration. The pose importer remains the sole pose/IK owner.</summary>
     public GestureResult RestoreProperties(ActorId actor, ActorPropertiesSnapshot properties)
     {
         var present = presentation.RestoreOverrides(actor, properties.Presentation);
-        if (!present.Success) return GestureResult.Fail(present.Detail!);
+        if (!present.Success) return GestureResult.From(present);
         if (properties.Gaze is { } savedGaze)
         {
             var result = gaze.RestoreState(actor, savedGaze);
-            if (!result.Success) return GestureResult.Fail(result.Detail ?? "Gaze restoration failed.");
+            if (!result.Success) return GestureResult.From(result);
         }
         if (properties.Expression is { } weights)
         {
             var result = expressions.Write(actor, weights, reset: true);
-            if (!result.Success) return GestureResult.Fail(result.Detail ?? "Expression restoration failed.");
+            if (!result.Success) return GestureResult.From(result);
         }
         return GestureResult.Ok();
     }
@@ -143,7 +147,7 @@ public sealed class ActorStateSnapshots(
         var session = sessions.ActiveSessionGeneration;
         _ = Complete(async () =>
         {
-            await appearance.PendingCompletion.WaitAsync(cancellation);
+            await mcdf.CurrentCompletion.WaitAsync(cancellation);
             var check = await runtime.OnFrameworkThread(() =>
             {
                 if (cancellation.IsCancellationRequested || !stillCurrent()
@@ -154,11 +158,8 @@ public sealed class ActorStateSnapshots(
                     : GestureResult.Ok();
             });
             if (!check.Success) return check;
-            if (await runtime.OnFrameworkThread(() => runtime.Penumbra.Available))
-            {
-                var ready = await runtime.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation);
-                if (!ready.Success) return GestureResult.Fail(ready.Detail!);
-            }
+            var ready = await RedrawIfPenumbra(actor, cancellation);
+            if (!ready.Success) return GestureResult.From(ready.Outcome);
             return await runtime.OnFrameworkThread(() => !cancellation.IsCancellationRequested && stillCurrent()
                 && session != null && Current(actor, session.Value)
                 ? GestureResult.Ok() : GestureResult.Fail("The actor reset is no longer current."));

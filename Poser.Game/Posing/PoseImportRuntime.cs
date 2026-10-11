@@ -1,11 +1,10 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.Posing;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Transforms;
-using Poser.Files;
 using Poser.Game.Bindings;
+using Poser.Application.Settings;
 
 namespace Poser.Game.Posing;
 
@@ -22,6 +21,7 @@ public sealed class PoseImportRuntime(
     ConfigurationService configuration, IFramework framework, IPluginLog log) : IPoseImportRuntime
 {
     public bool IsPending => capture.IsPending;
+    public bool AdmissionBusy => capture.AdmissionBusy;
     public bool IsFrameworkThread => framework.IsInFrameworkUpdateThread;
     public bool FreezeOnImport => configuration.Config.FreezeActorOnPoseImport;
     public bool IsCurrent(PoseImportOperation operation) => capture.IsCurrent(operation);

@@ -63,20 +63,4 @@ internal sealed class PapAnimationDocument
         _source = bytes.ToArray();
         Clips = Array.AsReadOnly(clips);
     }
-
-    public byte[] ReplaceHavok(ReadOnlySpan<byte> havok)
-    {
-        if (havok.Length is < 8 or > 64 * 1024 * 1024)
-            throw new InvalidDataException("Invalid encoded animation size.");
-        // Preserve the original timeline's alignment convention and every other
-        // clip/header/timeline byte. Replacing a motion is not rewriting its TMB.
-        int padding = (_timelineOffset - _havokOffset - havok.Length) & 3;
-        int newTimeline = checked(_havokOffset + havok.Length + padding);
-        var result = new byte[checked(newTimeline + _source.Length - _timelineOffset)];
-        _source.AsSpan(0, _havokOffset).CopyTo(result);
-        havok.CopyTo(result.AsSpan(_havokOffset));
-        _source.AsSpan(_timelineOffset).CopyTo(result.AsSpan(newTimeline));
-        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(22), newTimeline);
-        return result;
-    }
 }

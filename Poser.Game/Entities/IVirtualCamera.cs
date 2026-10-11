@@ -3,7 +3,7 @@ using System.Numerics;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// One virtual camera. All setters route to the native camera while the

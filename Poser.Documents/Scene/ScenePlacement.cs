@@ -1,9 +1,10 @@
 using System;
 using System.Numerics;
 using Poser.Domain.Scene;
-using Poser.Files;
+using Poser.Documents.Files;
+using TransformMath = Poser.Domain.Transforms.TransformMath;
 
-namespace Poser.Scene;
+namespace Poser.Documents.Scene;
 
 /// <summary>
 /// The relative-placement rebase: one pure pass over a READ document that
@@ -45,9 +46,7 @@ public static class SceneRelativePlacement
             return "The scene records no origin, so it cannot be placed " +
                 "relative to where you are standing. Load it as saved instead.";
         }
-        if (!float.IsFinite(currentOrigin.X) ||
-            !float.IsFinite(currentOrigin.Y) ||
-            !float.IsFinite(currentOrigin.Z))
+        if (!TransformMath.IsFinite(currentOrigin))
         {
             return "The current position could not be read, so the scene " +
                 "cannot be placed relative to it.";
@@ -57,58 +56,8 @@ public static class SceneRelativePlacement
         if (offset == Vector3.Zero)
             return null;
 
-        foreach (var actor in scene.Actors)
-        {
-            if (actor.ModelTransform is { } placement)
-                placement.Position += offset;
-            ScenePlacementRebase.RebaseCompanionPlacement(actor, point => point + offset, Quaternion.Identity);
-            // The gaze's world points are points in THIS scene: an actor
-            // looking at a spot on the floor must keep looking at the same spot
-            // on the moved floor. They are moved whatever the mode says,
-            // because a per-part lock can pin a point while the mode reads
-            // Camera or Entity.
-            if (actor.Gaze is { } gaze)
-            {
-                gaze.Position += offset;
-                gaze.EyesPosition += offset;
-                gaze.HeadPosition += offset;
-                gaze.BodyPosition += offset;
-            }
-        }
-
-        foreach (var prop in scene.Props)
-            prop.Transform.Position += offset;
-
-        // Every world object moves: a document only carries spawnable
-        // copies (borrowing never persists, ruled 2026-09-01).
-        foreach (var worldObject in scene.WorldObjects ?? [])
-            worldObject.Transform.Position += offset;
-
-        foreach (var light in scene.Lights)
-        {
-            // An attached light's transform is stated against its bone, and
-            // the bone moved with its actor already.
-            if (light.Attachment is not null)
-                continue;
-            if (light.Light is { } document)
-                document.Transform.Position += offset;
-        }
-
-        foreach (var camera in scene.Cameras)
-        {
-            // Only a free camera states a world position; an orbit camera is
-            // angle and zoom about a target that moved with the scene, and its
-            // TargetOffset is relative to that target either way.
-            if (camera.Camera is { Kind: CameraKind.Free } document)
-                document.Position += offset;
-        }
-
-        SceneGroupTransformCodec.Rebase(scene, point => point + offset, Quaternion.Identity);
-        foreach (var overlay in scene.Overlays ?? [])
-            if (overlay.Node?.Collider is { } collider)
-                overlay.Node = overlay.Node with { Collider = collider with
-                { Transform = collider.Transform with { Position = collider.Transform.Position + offset } } };
-        SceneFabrikChain.Rebase(scene, point => point + offset, Quaternion.Identity);
+        // A pure translation: rotations are left exactly as saved.
+        ScenePlacementRebase.MoveAll(scene, point => point + offset, turn: null, yawDelta: 0f);
         return null;
     }
 }
@@ -137,89 +86,104 @@ public static class ScenePlacementRebase
 
     public static string? Rebase(
         SceneFile scene,
-        Poser.Files.PlacementAnchorData saved,
+        Poser.Documents.Files.PlacementAnchorData saved,
         Vector3 currentPosition,
         float currentYaw)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        if (!float.IsFinite(currentPosition.X) ||
-            !float.IsFinite(currentPosition.Y) ||
-            !float.IsFinite(currentPosition.Z) ||
-            !float.IsFinite(currentYaw))
+        if (!TransformMath.IsFinite(currentPosition) || !float.IsFinite(currentYaw))
             return "The current anchor could not be read, so the entry " +
                 "cannot be placed relative to it.";
 
         float yawDelta = currentYaw - saved.Yaw;
-        var turn = System.Numerics.Quaternion.CreateFromAxisAngle(
-            Vector3.UnitY, yawDelta);
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, yawDelta);
         Vector3 Move(Vector3 point) => currentPosition +
             Vector3.Transform(point - saved.Position, turn);
+
+        MoveAll(scene, Move, turn, yawDelta);
+        return null;
+    }
+
+    /// <summary>
+    /// The one walk over every world-space point a document states, shared by
+    /// both rebases. <paramref name="turn"/> null is a pure translation: entity
+    /// rotations are left exactly as saved (the companion and group codecs
+    /// still take the identity turn, as they always did).
+    /// </summary>
+    internal static void MoveAll(
+        SceneFile scene, Func<Vector3, Vector3> move, Quaternion? turn, float yawDelta)
+    {
+        Quaternion Turn(Quaternion rotation) =>
+            turn is { } by ? Quaternion.Normalize(by * rotation) : rotation;
+        var codecTurn = turn ?? Quaternion.Identity;
 
         foreach (var actor in scene.Actors)
         {
             if (actor.ModelTransform is { } placement)
             {
-                placement.Position = Move(placement.Position);
-                placement.Rotation = System.Numerics.Quaternion.Normalize(
-                    turn * placement.Rotation);
+                placement.Position = move(placement.Position);
+                placement.Rotation = Turn(placement.Rotation);
             }
-            RebaseCompanionPlacement(actor, Move, turn);
+            RebaseCompanionPlacement(actor, move, codecTurn);
+            // The gaze's world points are points in THIS scene: an actor
+            // looking at a spot on the floor must keep looking at the same spot
+            // on the moved floor. They are moved whatever the mode says,
+            // because a per-part lock can pin a point while the mode reads
+            // Camera or Entity.
             if (actor.Gaze is { } gaze)
             {
-                gaze.Position = Move(gaze.Position);
-                gaze.EyesPosition = Move(gaze.EyesPosition);
-                gaze.HeadPosition = Move(gaze.HeadPosition);
-                gaze.BodyPosition = Move(gaze.BodyPosition);
+                gaze.Position = move(gaze.Position);
+                gaze.EyesPosition = move(gaze.EyesPosition);
+                gaze.HeadPosition = move(gaze.HeadPosition);
+                gaze.BodyPosition = move(gaze.BodyPosition);
             }
         }
+
         foreach (var prop in scene.Props)
         {
-            prop.Transform.Position = Move(prop.Transform.Position);
-            prop.Transform.Rotation = System.Numerics.Quaternion.Normalize(
-                turn * prop.Transform.Rotation);
+            prop.Transform.Position = move(prop.Transform.Position);
+            prop.Transform.Rotation = Turn(prop.Transform.Rotation);
         }
+
         // Every world object moves: a document only carries spawnable
         // copies (borrowing never persists, ruled 2026-09-01).
         foreach (var worldObject in scene.WorldObjects ?? [])
         {
-            worldObject.Transform.Position =
-                Move(worldObject.Transform.Position);
-            worldObject.Transform.Rotation =
-                System.Numerics.Quaternion.Normalize(
-                    turn * worldObject.Transform.Rotation);
+            worldObject.Transform.Position = move(worldObject.Transform.Position);
+            worldObject.Transform.Rotation = Turn(worldObject.Transform.Rotation);
         }
+
         foreach (var light in scene.Lights)
         {
+            // An attached light's transform is stated against its bone, and
+            // the bone moved with its actor already.
             if (light.Attachment is not null)
                 continue;
             if (light.Light is { } document)
             {
-                document.Transform.Position =
-                    Move(document.Transform.Position);
-                document.Transform.Rotation =
-                    System.Numerics.Quaternion.Normalize(
-                        turn * document.Transform.Rotation);
-            }
-        }
-        foreach (var camera in scene.Cameras)
-        {
-            if (camera.Camera is { Kind: CameraKind.Free } document)
-            {
-                document.Position = Move(document.Position);
-                document.Angle = document.Angle with
-                {
-                    X = document.Angle.X + yawDelta,
-                };
+                document.Transform.Position = move(document.Transform.Position);
+                document.Transform.Rotation = Turn(document.Transform.Rotation);
             }
         }
 
-        SceneGroupTransformCodec.Rebase(scene, Move, turn);
+        foreach (var camera in scene.Cameras)
+        {
+            // Only a free camera states a world position; an orbit camera is
+            // angle and zoom about a target that moved with the scene, and its
+            // TargetOffset is relative to that target either way.
+            if (camera.Camera is { Kind: CameraKind.Free } document)
+            {
+                document.Position = move(document.Position);
+                if (turn is not null)
+                    document.Angle = document.Angle with { X = document.Angle.X + yawDelta };
+            }
+        }
+
+        SceneGroupTransformCodec.Rebase(scene, move, codecTurn);
         foreach (var overlay in scene.Overlays ?? [])
             if (overlay.Node?.Collider is { } collider)
                 overlay.Node = overlay.Node with { Collider = collider with
-                { Transform = collider.Transform with { Position = Move(collider.Transform.Position),
-                    Rotation = Quaternion.Normalize(turn * collider.Transform.Rotation) } } };
-        SceneFabrikChain.Rebase(scene, Move, turn);
-        return null;
+                { Transform = collider.Transform with { Position = move(collider.Transform.Position),
+                    Rotation = Turn(collider.Transform.Rotation) } } };
     }
 }

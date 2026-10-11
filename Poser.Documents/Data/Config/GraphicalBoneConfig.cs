@@ -1,24 +1,28 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
+using System.Text.Json.Serialization;
 
-namespace Poser.Data.Config;
+namespace Poser.Documents.Data.Config;
 
 /// <summary>
 /// Configuration for graphical bone selection UI.
 /// Contains image sections and bone positions for the body map.
+/// Read-only once loaded: one instance is shared by every bone-map pane.
 /// </summary>
-public class GraphicalBoneConfig
+public sealed class GraphicalBoneConfig
 {
     /// <summary>
     /// Dictionary of pose image sections keyed by section name.
     /// </summary>
-    public Dictionary<string, PoseImageSection> PoseImages { get; set; } = new();
+    public IReadOnlyDictionary<string, PoseImageSection> PoseImages { get; init; } =
+        new Dictionary<string, PoseImageSection>();
 
     /// <summary>
-    /// Processes parent references to merge bone lists.
-    /// Call after loading JSON.
+    /// Merges each section's parent bones into its own list. Called once by
+    /// the reader after loading JSON.
     /// </summary>
-    public void ProcessParentReferences()
+    internal void ProcessParentReferences()
     {
         foreach (var section in PoseImages.Values)
         {
@@ -26,10 +30,7 @@ public class GraphicalBoneConfig
                 continue;
 
             if (PoseImages.TryGetValue(section.Parent, out var parent))
-            {
-                // Add parent bones to this section
-                section.Bones.AddRange(parent.Bones);
-            }
+                section.Bones = section.Bones.Concat(parent.Bones).ToList();
         }
     }
 }
@@ -37,43 +38,45 @@ public class GraphicalBoneConfig
 /// <summary>
 /// A section of the pose image containing bone positions.
 /// </summary>
-public class PoseImageSection
+public sealed class PoseImageSection
 {
     /// <summary>
     /// Name of the image file (without extension).
     /// </summary>
-    public string? Image { get; set; }
+    public string? Image { get; init; }
 
     /// <summary>
     /// Optional parent section to inherit bones from.
     /// </summary>
-    public string? Parent { get; set; }
+    public string? Parent { get; init; }
 
     /// <summary>
     /// List of bones with their positions in this section.
     /// </summary>
-    public List<GraphicalBoneEntry> Bones { get; set; } = new();
+    [JsonInclude]
+    public IReadOnlyList<GraphicalBoneEntry> Bones { get; internal set; } = [];
 }
 
 /// <summary>
 /// A single bone entry with its position in the image.
 /// </summary>
-public class GraphicalBoneEntry
+public sealed class GraphicalBoneEntry
 {
     /// <summary>
     /// Bone name (e.g., "j_kubi", "j_sebo_a").
     /// Special value "!model" indicates the model root.
     /// </summary>
-    public string Name { get; set; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
 
     /// <summary>
     /// Position in image coordinates as a string "x, y".
     /// Parsed into Vector2 after loading.
     /// </summary>
-    public string Position { get; set; } = string.Empty;
+    public string Position { get; init; } = string.Empty;
 
     /// <summary>
     /// Parsed position as Vector2.
     /// </summary>
-    public Vector2 PositionVector { get; set; }
+    [JsonIgnore]
+    public Vector2 PositionVector { get; internal set; }
 }

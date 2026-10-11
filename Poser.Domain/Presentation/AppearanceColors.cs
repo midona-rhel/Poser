@@ -12,6 +12,4 @@ public static class AppearanceColorSpace
     public static Vector4 FromShader(Vector4 value) => new(Root(value.X), Root(value.Y), Root(value.Z), value.W);
     private static float Square(float value) => MathF.CopySign(value * value, value);
     private static float Root(float value) => MathF.CopySign(MathF.Sqrt(MathF.Abs(value)), value);
-    public static bool IsFinite(Vector4 value) => float.IsFinite(value.X) && float.IsFinite(value.Y)
-        && float.IsFinite(value.Z) && float.IsFinite(value.W);
 }

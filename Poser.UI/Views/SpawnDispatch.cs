@@ -1,6 +1,6 @@
 using Poser.Domain.Companions;
 using Poser.Domain.Scene;
-using Poser.Library;
+using Poser.Domain.Library;
 
 namespace Poser.UI.Views;
 

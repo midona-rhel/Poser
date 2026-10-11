@@ -15,33 +15,6 @@ namespace Poser.Application.Tests.Integration;
 
 public sealed class CharacterFileSessionTests
 {
-    [Theory]
-    [InlineData("actor.mcdf")]
-    [InlineData("actor.chara")]
-    public void Spawn_waits_for_rig_before_attempting_import_history(string path)
-    {
-        var f = new Fixture();
-        f.Creation.Ready = true;
-        f.Creation.PoseReady = false;
-        Assert.NotNull(f.Control.Spawn(path).Handle);
-        Assert.Null(f.Control.Advance());
-        Assert.Empty(f.Runtime.Writes);
-        Assert.False(f.History.CanUndo);
-    }
-
-    [Fact]
-    public void Invalid_file_does_not_spawn_and_pending_spawn_is_not_overwritten()
-    {
-        var f = new Fixture();
-        f.Files.Document = null;
-        Assert.Null(f.Control.Spawn("invalid.chara").Handle);
-        Assert.Equal(0, f.Creation.Created);
-        f.Files.Document = "first";
-        Assert.NotNull(f.Control.Spawn("valid.chara").Handle);
-        Assert.Null(f.Control.Spawn("another.chara").Handle);
-        Assert.Equal(1, f.Creation.Created);
-    }
-
     [Fact]
     public void Ready_spawn_uses_frozen_document_once_and_history_restores_its_exact_actor()
     {
@@ -50,7 +23,13 @@ public sealed class CharacterFileSessionTests
         Assert.NotNull(handle);
         Assert.Null(f.Control.Advance());
         f.Files.Document = "changed on disk";
+        // A spawned actor whose rig is not ready yet is waited for, not imported.
         f.Creation.Ready = true;
+        f.Creation.PoseReady = false;
+        Assert.Null(f.Control.Advance());
+        Assert.Empty(f.Runtime.Writes);
+        Assert.False(f.History.CanUndo);
+        f.Creation.PoseReady = true;
         Assert.True(f.Control.Advance()!.Value.Success);
         Assert.Equal("chosen document", f.Runtime.State);
         Assert.True(f.Creation.RequiredPose);
@@ -94,22 +73,23 @@ public sealed class CharacterFileSessionTests
     private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
     {
         public SessionGeneration? ActiveSessionGeneration { get; set; } = SessionGeneration.New();
-        public TransformHistory History { get; } = new();
+        public EditHistory History { get; } = new();
         public Files Files { get; } = new();
         public Clock Clock { get; } = new();
         public RuntimeProxy Runtime { get; }
         public CreationProxy Creation { get; }
         public CharacterFileSession Control { get; }
-        private readonly ActorIntegrationSession _integration;
+        private readonly IntegrationSelectors _integration;
         public Fixture()
         {
-            var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
+            var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
             var creation = DispatchProxy.Create<ISceneCreation, CreationProxy>();
             Creation = (CreationProxy)(object)creation;
             Creation.Session = () => ActiveSessionGeneration!.Value;
-            var integration = _integration = new ActorIntegrationSession(port, null!, this);
-            Control = new(integration, Files, new(History, this, new ValueJournal(History)), creation, this, Clock);
+            var integration = new IntegrationGraph(port, null!, this);
+            _integration = integration.Selectors;
+            Control = new(integration.Selectors, integration.Mcdf, Files, new(History, this, new ValueJournal(History)), creation, this, Clock);
         }
         public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>
             IntegrationValue<ActorStateSnapshot>.Ok(new(actor, ActiveSessionGeneration!.Value,
@@ -147,13 +127,11 @@ public sealed class CharacterFileSessionTests
         public ActorId Actor = ActorId.New();
         public bool Ready, RequiredPose;
         public bool PoseReady = true;
-        public int Created;
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             switch (method!.Name)
             {
                 case nameof(ISceneCreation.CreateActor):
-                    Created++;
                     return new SceneCreationResult(new(Session(), SceneEntityKind.Actor));
                 case nameof(ISceneCreation.Resolve):
                     RequiredPose = (bool)args![1]!;
@@ -171,14 +149,14 @@ public sealed class CharacterFileSessionTests
         {
             switch (method!.Name)
             {
-                case nameof(IIntegrationRuntimePort.ProbeGlamourerAccess): return GlamourerAccess.Editable;
-                case nameof(IIntegrationRuntimePort.GetGlamourerStateJson):
-                case nameof(IIntegrationRuntimePort.CaptureGlamourerState): return IntegrationValue<string>.Ok(State);
-                case nameof(IIntegrationRuntimePort.GetActorName): return IntegrationValue<string>.Ok("Actor");
-                case nameof(IIntegrationRuntimePort.ApplyGlamourerStateJson):
+                case nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess): return GlamourerAccess.Editable;
+                case nameof(IIntegrationRuntimeFake.GetGlamourerStateJson):
+                case nameof(IIntegrationRuntimeFake.CaptureGlamourerState): return IntegrationValue<string>.Ok(State);
+                case nameof(IIntegrationRuntimeFake.GetActorName): return IntegrationValue<string>.Ok("Actor");
+                case nameof(IIntegrationRuntimeFake.ApplyGlamourerStateJson):
                     Writes.Add((ActorId)args![0]!);
                     State = (string)args[1]!;
-                    return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
                 default: throw new NotSupportedException(method.Name);
             }
         }

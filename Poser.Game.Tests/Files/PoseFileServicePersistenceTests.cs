@@ -4,14 +4,15 @@ using System.IO;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using NSubstitute;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
+using Poser.Domain.Transforms;
+using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Files;
+using Poser.Game.Services;
 
-namespace Poser.Tests.Files;
+namespace Poser.Game.Tests.Files;
 
 public sealed class PoseFileServicePersistenceTests
 {
@@ -33,6 +34,24 @@ public sealed class PoseFileServicePersistenceTests
     }
 
     [Fact]
+    public void Cmp_and_clipboard_poses_are_validated_before_any_plan()
+    {
+        using var file = new TempFile(".cmp");
+        File.WriteAllText(file.Path, """
+            {"Race":"1","Head":"00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F",
+             "HeadSize":"00 00 C0 7F 00 00 80 3F 00 00 80 3F"}
+            """);
+        Assert.Null(Service().BuildImportPlan(
+            new[] { Skeleton(Bone("j_kao", Transform.Identity)) }, file.Path));
+
+        Assert.Null(PoseClipboard.Decode("""{"Bones":null}""", out var nullBones));
+        Assert.Contains("invalid", nullBones);
+        Assert.Null(PoseClipboard.Decode(
+            """{"Bones":{"j_kao":{"Rotation":{"X":0,"Y":0,"Z":0,"W":1},"Scale":{"X":1e39,"Y":1,"Z":1}}}}""",
+            out _));
+    }
+
+    [Fact]
     public void Empty_legacy_bone_rotation_never_becomes_a_native_pose_write()
     {
         using var file = new TempFile();
@@ -42,14 +61,10 @@ public sealed class PoseFileServicePersistenceTests
         Assert.Empty(plan.Writes);
     }
 
-    [Theory]
-    [InlineData(PoseSlot.Character, false)]
-    [InlineData(PoseSlot.Character, true)]
-    [InlineData(PoseSlot.MainHand, false)]
-    [InlineData(PoseSlot.MainHand, true)]
-    public void Captured_chain_keeps_requested_positions_even_when_local_offsets_match(
-        PoseSlot slot, bool reset)
+    [Fact]
+    public void Captured_chain_keeps_requested_positions_even_when_local_offsets_match()
     {
+        const PoseSlot slot = PoseSlot.MainHand;
         var skeleton = Substitute.For<ISkeleton>();
         skeleton.Slot.Returns(slot);
         var pose = new PoseFile();
@@ -73,11 +88,11 @@ public sealed class PoseFileServicePersistenceTests
         skeleton.Bones.Returns(bones);
         var options = new PoseImportOptions
         {
-            ApplyPosition = true, ApplyScale = true, ResetBeforeImport = reset,
+            ApplyPosition = true, ApplyScale = true, ResetBeforeImport = true,
         };
         var plan = Service().BuildImportPlan(new[] { skeleton }, pose, options);
 
-        Assert.Equal(24, plan.Writes.Count);
+        Assert.Equal(24, plan!.Writes.Count);
         Assert.All(plan.Writes, write =>
         {
             Assert.Equal(TransformComponents.All, write.Components);
@@ -87,7 +102,7 @@ public sealed class PoseFileServicePersistenceTests
         // A user disabling positions still gets rotation/scale only.
         options.ApplyPosition = false;
         var rotationPlan = Service().BuildImportPlan(new[] { skeleton }, pose, options);
-        Assert.Equal(24, rotationPlan.Writes.Count);
+        Assert.Equal(24, rotationPlan!.Writes.Count);
         Assert.All(rotationPlan.Writes, write =>
             Assert.False(write.Components.HasFlag(TransformComponents.Position)));
     }

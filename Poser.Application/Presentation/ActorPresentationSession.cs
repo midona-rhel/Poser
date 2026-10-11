@@ -2,17 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 
 namespace Poser.Application.Presentation;
-
-public readonly record struct PresentationResult(bool Success, string? Detail = null)
-{
-    public static PresentationResult Ok() => new(true);
-    public static PresentationResult Fail(string detail) => new(false, detail);
-}
 
 /// <summary>
 /// The one authority for Poser-owned runtime presentation — opacity,
@@ -59,7 +54,7 @@ public sealed partial class ActorPresentationSession
 
     // ── Opacity ───────────────────────────────────────────────────────
 
-    public PresentationResult SetOpacity(ActorId actor, float opacity)
+    public Outcome SetOpacity(ActorId actor, float opacity)
     {
         var current = OverridesFor(actor);
         float? captured = current.OpacityCapture == null
@@ -68,19 +63,19 @@ public sealed partial class ActorPresentationSession
 
         var result = _port.SetOpacity(actor, opacity);
         if (!result.Success)
-            return PresentationResult.Fail(result.Detail ?? "Opacity failed.");
+            return result;
 
         Mutate(actor, o => o with
         {
             Opacity = opacity,
             OpacityCapture = o.OpacityCapture ?? captured,
         });
-        return PresentationResult.Ok();
+        return Outcome.Ok();
     }
 
     // ── Tint ──────────────────────────────────────────────────────────
 
-    public PresentationResult SetTint(ActorId actor, PresentationModel model, Vector4 tint)
+    public Outcome SetTint(ActorId actor, PresentationModel model, Vector4 tint)
     {
         var current = OverridesFor(actor);
         Vector4? captured = null;
@@ -88,7 +83,7 @@ public sealed partial class ActorPresentationSession
         {
             captured = _port.Read(actor)?.TintFor(model);
             if (captured == null)
-                return PresentationResult.Fail(
+                return Outcome.Fail(
                     model == PresentationModel.Character
                         ? "The character model is not available."
                         : "That weapon model is not present.");
@@ -96,7 +91,7 @@ public sealed partial class ActorPresentationSession
 
         var result = _port.SetTint(actor, model, tint);
         if (!result.Success)
-            return PresentationResult.Fail(result.Detail ?? "Tint failed.");
+            return result;
 
         Mutate(actor, o =>
         {
@@ -106,7 +101,7 @@ public sealed partial class ActorPresentationSession
                 captures[model] = taken;
             return o with { Tints = tints, TintCaptures = captures };
         });
-        return PresentationResult.Ok();
+        return Outcome.Ok();
     }
 
     // ── Wetness ───────────────────────────────────────────────────────
@@ -117,61 +112,61 @@ public sealed partial class ActorPresentationSession
     /// the reference captures on enable — or disables it by restoring
     /// that complete state.
     /// </summary>
-    public PresentationResult SetWetnessEnabled(ActorId actor, bool enabled)
+    public Outcome SetWetnessEnabled(ActorId actor, bool enabled)
     {
         var current = OverridesFor(actor);
         if (enabled == (current.Wetness != null))
-            return PresentationResult.Ok();
+            return Outcome.Ok();
 
         if (enabled)
         {
             if (_port.Read(actor) is not { } reading)
-                return PresentationResult.Fail("The actor is not available.");
+                return Outcome.Fail("The actor is not available.");
             var incoming = reading.Wetness;
             var result = _port.SetWetness(actor, incoming);
             if (!result.Success)
-                return PresentationResult.Fail(result.Detail ?? "Wetness override failed.");
+                return result;
             Mutate(actor, o => o with
             {
                 Wetness = incoming,
                 WetnessCapture = o.WetnessCapture ?? incoming,
             });
-            return PresentationResult.Ok();
+            return Outcome.Ok();
         }
 
         if (current.WetnessCapture is not { } capture)
         {
             Mutate(actor, o => o with { Wetness = null });
-            return PresentationResult.Ok();
+            return Outcome.Ok();
         }
         var cleared = _port.ClearWetness(actor, capture);
         if (!cleared.Success)
-            return PresentationResult.Fail(cleared.Detail ?? "Wetness restore failed.");
+            return cleared;
         Mutate(actor, o => o with { Wetness = null, WetnessCapture = null });
-        return PresentationResult.Ok();
+        return Outcome.Ok();
     }
 
     /// <summary>Updates the enabled override's values.</summary>
-    public PresentationResult SetWetness(ActorId actor, WetnessState state)
+    public Outcome SetWetness(ActorId actor, WetnessState state)
     {
         if (OverridesFor(actor).Wetness == null)
-            return PresentationResult.Fail("Enable the wetness override first.");
+            return Outcome.Fail("Enable the wetness override first.");
         var result = _port.SetWetness(actor, state);
         if (!result.Success)
-            return PresentationResult.Fail(result.Detail ?? "Wetness failed.");
+            return result;
         Mutate(actor, o => o with { Wetness = state });
-        return PresentationResult.Ok();
+        return Outcome.Ok();
     }
 
     // ── Restoration ───────────────────────────────────────────────────
 
     /// <summary>Replays a reset's saved intent using the original captures.
     /// Partial failure retains recovery evidence and must not commit history.</summary>
-    public PresentationResult RestoreOverrides(ActorId actor, PresentationOverrides? requested)
+    public Outcome RestoreOverrides(ActorId actor, PresentationOverrides? requested)
     {
         var reset = ResetActor(actor);
         if (!reset.Success || requested is null || !requested.HasAny) return reset;
-        if (!_port.IsSupported(actor)) return PresentationResult.Fail("The actor is no longer available.");
+        if (!_port.IsSupported(actor)) return Outcome.Fail("The actor is no longer available.");
         // A failed replay still needs the original baseline, including channels
         // already individually released before the reset. Never recapture a redraw.
         _overrides[actor] = requested with
@@ -193,7 +188,7 @@ public sealed partial class ActorPresentationSession
         }
         foreach (var (channel, color) in requested.Colors)
         { var result = SetColor(actor, channel, color); Check(result.Success, result.Detail); }
-        return failures.Count == 0 ? PresentationResult.Ok() : PresentationResult.Fail(string.Join("; ", failures));
+        return failures.Count == 0 ? Outcome.Ok() : Outcome.Fail(string.Join("; ", failures));
     }
 
     /// <summary>
@@ -202,20 +197,20 @@ public sealed partial class ActorPresentationSession
     /// stay owned for the next attempt. An unresolvable actor is dropped
     /// without writes.
     /// </summary>
-    public PresentationResult ResetActor(ActorId actor)
+    public Outcome ResetActor(ActorId actor)
     {
         _port.SuspendColors(actor);
         if (!_overrides.TryGetValue(actor, out var owned))
         {
             _port.ClearOwned(actor);
-            return PresentationResult.Ok();
+            return Outcome.Ok();
         }
 
         var failures = new List<string>();
         var remaining = owned;
         bool actorGone = !_port.IsSupported(actor) && _port.Read(actor) == null;
 
-        bool Try(PresentationPortResult result)
+        bool Try(Outcome result)
         {
             if (result.Success)
                 return true;
@@ -228,7 +223,7 @@ public sealed partial class ActorPresentationSession
         {
             _overrides.Remove(actor);
             _port.ClearOwned(actor);
-            return PresentationResult.Ok();
+            return Outcome.Ok();
         }
 
         if (owned.OpacityCapture is { } opacity && Try(_port.RestoreOpacity(actor, opacity)))
@@ -269,13 +264,13 @@ public sealed partial class ActorPresentationSession
         }
 
         return failures.Count == 0
-            ? PresentationResult.Ok()
-            : PresentationResult.Fail(string.Join("; ", failures));
+            ? Outcome.Ok()
+            : Outcome.Fail(string.Join("; ", failures));
     }
 
     /// <summary>Restores every owned actor. Used by GPose exit, plugin
     /// disposal, and Reset All.</summary>
-    public PresentationResult ResetAll()
+    public Outcome ResetAll()
     {
         var failures = new List<string>();
         foreach (var actor in _overrides.Keys.ToList())
@@ -285,8 +280,8 @@ public sealed partial class ActorPresentationSession
                 failures.Add($"{actor}: {detail}");
         }
         return failures.Count == 0
-            ? PresentationResult.Ok()
-            : PresentationResult.Fail(string.Join("; ", failures));
+            ? Outcome.Ok()
+            : Outcome.Fail(string.Join("; ", failures));
     }
 
     /// <summary>

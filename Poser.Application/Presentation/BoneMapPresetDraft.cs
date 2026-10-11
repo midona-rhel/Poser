@@ -1,7 +1,7 @@
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
+using Poser.Documents.Config;
 
 namespace Poser.Application.Presentation;
 
@@ -81,7 +81,7 @@ public sealed class BoneMapPresetDraft
     {
         var source = _points.FirstOrDefault(point => point.Bone == bone && point.Section == section);
         if (source == null || !available.TryGetValue(bone, out var original)
-            || Core.PoseMath.GetMirrorBoneName(bone.CanonicalName) is not { } mirrorName
+            || Domain.Posing.PoseMath.GetMirrorBoneName(bone.CanonicalName) is not { } mirrorName
             || !available.TryGetValue(bone with { CanonicalName = mirrorName }, out var mirror)) return null;
         BoneMapPoint? Point(BoneId id) => _points.FirstOrDefault(point => point.Bone == PortableBoneId.From(id)
             && point.Section == section);

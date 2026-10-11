@@ -6,6 +6,7 @@ using Dalamud.Interface.Windowing;
 using Poser.UI.Composition;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -18,6 +19,7 @@ public sealed class PropertiesWindow : Window, IDisposable
 {
     private readonly PropertiesContentLease _lease;
     private readonly AppShellViewModel _vm;
+    private readonly ManipulationState _manipulation;
     private readonly Action<PropertiesWindowPlacement> _rememberPlacement;
     private PropertiesWindowPlacement _reportedPlacement;
     private bool _collapsed, _resize;
@@ -28,12 +30,14 @@ public sealed class PropertiesWindow : Window, IDisposable
     private float _width = 660f;
 
     internal PropertiesWindow(PropertiesContentLease lease, Action settings,
-        PropertiesWindowPlacement placement, Action<PropertiesWindowPlacement> rememberPlacement)
+        PropertiesWindowPlacement placement, Action<PropertiesWindowPlacement> rememberPlacement,
+        ManipulationState manipulation)
         : base($"Properties###poser-properties-{Guid.NewGuid():N}",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.NoBackground)
     {
         _lease = lease;
+        _manipulation = manipulation;
         _rememberPlacement = rememberPlacement;
         _reportedPlacement = placement;
         _width = placement.Size.X;
@@ -91,7 +95,7 @@ public sealed class PropertiesWindow : Window, IDisposable
         else SizeCondition = ImGuiCond.FirstUseEver;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, Crystarium.ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
         ResizeAccent.Push();
     }
 
@@ -117,9 +121,9 @@ public sealed class PropertiesWindow : Window, IDisposable
         }
         _vm.Collapsed = _collapsed;
         _lease.Content.Refresh();
-        if (!ManipulationHide.Hidden || ManipulationDrag.ShellHeld)
+        if (!_manipulation.Hidden || _manipulation.ShellDragHeld)
         {
-            using var manipulationFade = ManipulationHide.FadeScope();
+            using var manipulationFade = _manipulation.FadeScope();
             AppShellView.Draw(_vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         }
         _lease.Content.DrawDialogs();

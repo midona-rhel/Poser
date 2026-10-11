@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain.Identity;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -132,7 +133,7 @@ internal sealed partial class EntityContextMenus
 
     private static void DrawMoreAction(IReadOnlyList<ContextMenuItem> items, List<Action?> more)
     {
-        int clicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parent);
+        int clicked = FloatingMenu.ConsumeSubmenuClick(out int parent);
         if (InvokeComposedAction(items, parent, clicked)) return;
         if (parent >= 0 && parent < items.Count && items[parent].Label == "More"
             && clicked >= 0 && clicked < more.Count)
@@ -155,8 +156,8 @@ internal sealed partial class EntityContextMenus
         var actions = items.Select(item => item.OnInvoke).ToArray();
         var more = MoveMoreActions(ref items, ref actions);
         if (requested) { requested = false; OpenContextMenu(menu, items); }
-        Crystarium.FloatingMenu.Refresh(menu, items);
-        int clicked = Crystarium.FloatingMenu.Draw(menu);
+        FloatingMenu.Refresh(menu, items);
+        int clicked = FloatingMenu.Draw(menu);
         if (clicked >= 0 && clicked < actions.Length) actions[clicked]?.Invoke();
         DrawMoreAction(items, more);
     }
@@ -212,7 +213,7 @@ internal sealed partial class EntityContextMenus
         }
         else if (id.Overlay is { } overlay && !worldEntity)
             reset.Add(new("Size and opacity", TablerIcon.Refresh)
-            { OnInvoke = () => { var result = _overlayControl.ResetSize(overlay); if (!result.Success) _notices.Failed("Reset", result.Detail ?? "The overlay could not be reset."); } });
+            { OnInvoke = () => { var result = _overlayControl.Set(overlay, Application.Presentation.OverlayProperties.Size, (1f, 1f)); if (!result.Success) _notices.Failed("Reset", result.Detail ?? "The overlay could not be reset."); } });
         if (reset.Count == 0 || items.Any(item => item.Label == "Reset")) return;
         items.Add(new("Reset", TablerIcon.Refresh, submenuItems: reset.ToArray())); actions.Add(null);
     }

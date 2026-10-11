@@ -23,6 +23,9 @@ public readonly record struct PoseEditResult(
     public static PoseEditResult Fail(string detail) =>
         new(false, 0, detail);
 
+    /// <summary>The plain outcome, without the count and its evidence.</summary>
+    public Outcome Outcome => new(Success, Detail);
+
     /// <summary>Additive evidence, excluded from legacy positional equality.</summary>
     public TransformRecoveryReceipt? Recovery { get; init; }
 

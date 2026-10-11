@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Presentation;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
@@ -94,26 +95,26 @@ public sealed class AppearanceColorTests
             Enum.GetValues<AppearanceColorChannel>().ToDictionary(channel => channel, _ => Vector4.One);
         public IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> ReadColors(ActorId actor) =>
             IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>>.Ok(new Dictionary<AppearanceColorChannel, Vector4>(Values));
-        public PresentationPortResult SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
+        public Outcome SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
         {
-            if (Refuse) return PresentationPortResult.Fail(Detail);
-            Values[channel] = value; return PresentationPortResult.Ok();
+            if (Refuse) return Outcome.Fail(Detail);
+            Values[channel] = value; return Outcome.Ok();
         }
-        public PresentationPortResult RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
+        public Outcome RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
         {
-            if (Refuse) return PresentationPortResult.Fail(Detail);
+            if (Refuse) return Outcome.Fail(Detail);
             BeforeRestore?.Invoke();
-            Values[channel] = incoming; return PresentationPortResult.Ok();
+            Values[channel] = incoming; return Outcome.Ok();
         }
-        public PresentationPortResult RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures) => PresentationPortResult.Ok();
+        public Outcome RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures) => Outcome.Ok();
         public bool IsSupported(ActorId actor) => true;
         public PresentationReading? Read(ActorId actor) => null;
-        public PresentationPortResult SetOpacity(ActorId actor, float value) => PresentationPortResult.Ok();
-        public PresentationPortResult RestoreOpacity(ActorId actor, float value) => PresentationPortResult.Ok();
-        public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 value) => PresentationPortResult.Ok();
-        public PresentationPortResult RestoreTint(ActorId actor, PresentationModel model, Vector4 value) => PresentationPortResult.Ok();
-        public PresentationPortResult SetWetness(ActorId actor, WetnessState value) => PresentationPortResult.Ok();
-        public PresentationPortResult ClearWetness(ActorId actor, WetnessState value) => PresentationPortResult.Ok();
+        public Outcome SetOpacity(ActorId actor, float value) => Outcome.Ok();
+        public Outcome RestoreOpacity(ActorId actor, float value) => Outcome.Ok();
+        public Outcome SetTint(ActorId actor, PresentationModel model, Vector4 value) => Outcome.Ok();
+        public Outcome RestoreTint(ActorId actor, PresentationModel model, Vector4 value) => Outcome.Ok();
+        public Outcome SetWetness(ActorId actor, WetnessState value) => Outcome.Ok();
+        public Outcome ClearWetness(ActorId actor, WetnessState value) => Outcome.Ok();
         public void ClearOwned(ActorId actor) { }
     }
 }

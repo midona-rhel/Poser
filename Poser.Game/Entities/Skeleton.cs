@@ -6,11 +6,12 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
-using Poser.Core;
+using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>Which bone transform caches a refresh may write. Brio's
 /// CacheTypes: LastRawTransform belongs to the update-phase apply pass and
@@ -108,16 +109,6 @@ public class Skeleton : EntityBase, ISkeleton
     /// cache entry per (actor id, slot) — never one per wrapper.</summary>
     public void RebindActor(IActor actor) => Actor = actor;
 
-    /// <summary>
-    /// Skeletons are always collapsible.
-    /// </summary>
-    public override bool IsCollapsible => true;
-
-    /// <summary>
-    /// Entity type is Skeleton.
-    /// </summary>
-    public override EntityType EntityType => EntityType.Skeleton;
-
     // Slot-native discovery is OWNED by Poser.Game: this transitional entity
     // receives only a resolver returning a given actor's current
     // CharacterBase address for this slot (zero when the slot is absent).
@@ -132,7 +123,8 @@ public class Skeleton : EntityBase, ISkeleton
         IActor actor,
         Poser.Domain.Identity.PoseSlot slot,
         Func<IActor, nint> resolveCharacterBase,
-        Func<bool> showAllVieraEars)
+        Func<bool> showAllVieraEars,
+        Func<bool> showFriendlyNames)
         : base(new EntityId($"skeleton_{actor.Id.Unique}_{slot}"), "Skeleton")
     {
         Actor = actor;
@@ -140,7 +132,7 @@ public class Skeleton : EntityBase, ISkeleton
         _bonesView = _bones.AsReadOnly();
         _resolveCharacterBase = resolveCharacterBase;
         _showAllVieraEars = showAllVieraEars;
-        IsCollapsed = true; // Start collapsed by default
+        _showFriendlyNames = showFriendlyNames;
         IsVisible = false; // Start unchecked (not visible in overlay)
         BuildSkeleton();
     }
@@ -304,7 +296,7 @@ public class Skeleton : EntityBase, ISkeleton
                     var boneName = rawBone.Name.String ?? $"bone_{partialIdx}_{boneIdx}";
                     var parentIndex = pose->Skeleton->ParentIndices[boneIdx];
 
-                    var bone = new Bone(this, partialIdx, boneIdx, boneName);
+                    var bone = new Bone(this, partialIdx, boneIdx, boneName, _showFriendlyNames);
                     partialBones[partialIdx][boneIdx] = bone;
                     _bones.Add(bone);
 
@@ -467,6 +459,8 @@ public class Skeleton : EntityBase, ISkeleton
     /// ear bones, so a non-Viera skeleton costs nothing.</para>
     /// </summary>
     private readonly Func<bool> _showAllVieraEars;
+    // Ktisis' ShowFriendlyBoneNames, read live by every Bone.Name.
+    private readonly Func<bool> _showFriendlyNames;
     private readonly List<Bone> _vieraEarBones = new();
     private char? _filteredEarSet;
 

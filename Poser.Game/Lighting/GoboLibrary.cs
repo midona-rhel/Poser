@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Lighting;
 

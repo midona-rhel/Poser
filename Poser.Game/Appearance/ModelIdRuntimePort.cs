@@ -1,9 +1,9 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Appearance;
 using Poser.Application.Presentation;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Appearance;
 
@@ -19,24 +19,19 @@ namespace Poser.Game.Appearance;
 /// </summary>
 public sealed class ModelIdRuntimePort : IModelIdRuntimePort
 {
-    private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly IActorSpawnService _spawn;
 
     public ModelIdRuntimePort(
-        IFramework framework,
         StableBindingRegistry bindings,
         IActorSpawnService spawn)
     {
-        _framework = framework;
         _bindings = bindings;
         _spawn = spawn;
     }
 
     public int? Read(ActorId actor)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy
             || legacy.Address == nint.Zero)
@@ -44,15 +39,12 @@ public sealed class ModelIdRuntimePort : IModelIdRuntimePort
         return _spawn.GetModelCharaId(legacy);
     }
 
-    public PresentationPortResult Write(ActorId actor, int modelCharaId)
+    public Outcome Write(ActorId actor, int modelCharaId)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return PresentationPortResult.Fail(
-                "Model id writes must run on the framework thread.");
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy
             || legacy.Address == nint.Zero)
-            return PresentationPortResult.Fail(
+            return Outcome.Fail(
                 resolved.Detail ?? "The actor is no longer available.");
 
         _spawn.SetModelCharaId(legacy, modelCharaId);
@@ -61,7 +53,7 @@ public sealed class ModelIdRuntimePort : IModelIdRuntimePort
         // begins, so an immediate readback is the truthful outcome of the
         // write itself; the redraw completes over the following frames.
         return _spawn.GetModelCharaId(legacy) == modelCharaId
-            ? PresentationPortResult.Ok()
-            : PresentationPortResult.Fail("The model id write did not land.");
+            ? Outcome.Ok()
+            : Outcome.Fail("The model id write did not land.");
     }
 }

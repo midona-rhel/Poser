@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -11,7 +12,7 @@ internal static class ResizeAccent
 
     public static void Push()
     {
-        var accent = Crystarium.ActiveTheme.Accent;
+        var accent = ActiveTheme.Accent;
         ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, accent);
         ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, accent);
         ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, accent);

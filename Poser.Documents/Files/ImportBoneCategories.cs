@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>One row of the bone-filter menu: a named set of bone-name
 /// prefixes (Brio BoneCategories.json, Filter entries).</summary>

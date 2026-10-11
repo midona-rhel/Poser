@@ -13,20 +13,20 @@ using Poser.Application.World;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Library;
-using Poser.Services;
 using Poser.Domain.Scene;
 using Poser.UI.Views;
+using Poser.Domain.Library;
+using Poser.Documents.Files;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
 /// <summary>The info rail and the objects rail beside the grid.</summary>
-internal sealed class LibraryDetailsPanel(IEnvironmentControl _environment)
+internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
 {
     private string? _detailsPath;
     private readonly List<(string Label, string Value)> _detailsRows = [];
@@ -39,14 +39,14 @@ internal sealed class LibraryDetailsPanel(IEnvironmentControl _environment)
         string modified, string contents)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float inset = theme.Page.Inset * scale;
         var cursor = origin + new Vector2(inset, inset);
 
         if (tile == null)
         {
             // Centred in the rail, both ways, like every empty state.
-            Crystarium.TextInBand(
+            TextInBand(
                 origin, size, "Select a file",
                 new TextStyle
                 {
@@ -57,7 +57,7 @@ internal sealed class LibraryDetailsPanel(IEnvironmentControl _environment)
             return size.Y;
         }
 
-        Crystarium.TextAt(cursor, tile.Label, new TextStyle
+        TextAt(cursor, tile.Label, new TextStyle
         {
             Size = theme.Typography.SurfaceTitleSize,
             Weight = FontWeight.Medium,
@@ -65,7 +65,7 @@ internal sealed class LibraryDetailsPanel(IEnvironmentControl _environment)
         });
         cursor.Y += (theme.Typography.SurfaceTitleSize + 10f) * scale;
 
-        float body = Crystarium.Section(
+        float body = Section(
             "##library-file-info", string.Empty,
             new Vector2(origin.X, cursor.Y), size.X, true, null,
             form =>
@@ -105,27 +105,27 @@ internal sealed class LibraryDetailsPanel(IEnvironmentControl _environment)
         ProbeDetails(tile.ThumbKey, kind);
 
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float inset = theme.Page.Inset * scale;
         var cursor = origin + new Vector2(inset, inset);
 
         // The entry's NAME leads, then one plain "Properties" heading — no
         // separators anywhere on this rail.
-        Crystarium.TextAt(cursor, tile.Label, new TextStyle
+        TextAt(cursor, tile.Label, new TextStyle
         {
             Size = theme.Typography.SurfaceTitleSize,
             Weight = FontWeight.Medium,
             Color = theme.Text,
         });
         cursor.Y += (theme.Typography.SurfaceTitleSize + 10f) * scale;
-        Crystarium.TextAt(cursor, "Properties", new TextStyle
+        TextAt(cursor, "Properties", new TextStyle
         {
             Size = theme.Typography.CaptionSize,
             Color = theme.FormHint,
         });
         cursor.Y += (theme.Typography.CaptionSize + 6f) * scale;
 
-        Crystarium.Section(
+        Section(
             "##objects-inspector", string.Empty,
             new Vector2(origin.X, cursor.Y), size.X, true, null,
             form =>

@@ -1,15 +1,8 @@
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 
 namespace Poser.Application.Posing;
-
-public readonly record struct IkPortResult(
-    bool Success,
-    string? Detail = null)
-{
-    public static IkPortResult Ok() => new(true);
-    public static IkPortResult Fail(string detail) => new(false, detail);
-}
 
 /// <summary>
 /// One bone carrying IK configuration on a skeleton, with the canonical names
@@ -49,24 +42,24 @@ public interface IIkConfigurationPort
 
     /// <summary>Validates and stores the configuration. Entering Fixed mode
     /// or enabling a Fixed chain captures the current effective target.</summary>
-    IkPortResult Set(TransformTargetId target, IkChainConfig config);
-    IkPortResult Adjust(TransformTargetId target, IkChainConfig config);
-    IkPortResult SetFabrikTarget(TransformTargetId target, IkTargetMode mode,
-        BoneId? bone = null, SelectionId? entity = null) => IkPortResult.Fail("FABRIK targets unavailable.");
+    Outcome Set(TransformTargetId target, IkChainConfig config);
+    Outcome Adjust(TransformTargetId target, IkChainConfig config);
+    Outcome SetFabrikTarget(TransformTargetId target, IkTargetMode mode,
+        BoneId? bone = null, SelectionId? entity = null) => Outcome.Fail("FABRIK targets unavailable.");
 
     /// <summary>Restores the chain's defaults while preserving its current
     /// Enabled state.</summary>
-    IkPortResult ResetDefaults(TransformTargetId target);
+    Outcome ResetDefaults(TransformTargetId target);
 
     /// <summary>Points the chain at another bone (Bone mode): the endpoint
     /// keeps its current offset from that bone and follows it.</summary>
-    IkPortResult SetBoneTarget(
+    Outcome SetBoneTarget(
         TransformTargetId target, global::Poser.Domain.Identity.BoneId bone);
 
     /// <summary>The bone a Bone-mode chain follows, if one was picked.</summary>
     global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target);
 
     /// <summary>Follow a stable non-skeletal scene target, keeping the tip's offset.</summary>
-    IkPortResult SetEntityTarget(TransformTargetId target, SelectionId entity);
+    Outcome SetEntityTarget(TransformTargetId target, SelectionId entity);
     SelectionId? EntityTarget(TransformTargetId target);
 }

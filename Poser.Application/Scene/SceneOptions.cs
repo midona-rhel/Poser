@@ -5,8 +5,24 @@ using Poser.Domain.Scene;
 
 namespace Poser.Application.Scene;
 
+/// <summary>The categories a scene document is made of — one vocabulary for
+/// what a save keeps and what a load restores.</summary>
+[Flags]
+public enum SceneCategories
+{
+    None = 0,
+    Actors = 1 << 0,
+    Props = 1 << 1,
+    Lights = 1 << 2,
+    Cameras = 1 << 3,
+    Environment = 1 << 4,
+    Overlays = 1 << 5,
+    WorldObjects = 1 << 6,
+    All = Actors | Props | Lights | Cameras | Environment | Overlays | WorldObjects,
+}
+
 /// <summary>
-/// What a scene SAVE is asked to put in the document. The six category flags
+/// What a scene SAVE is asked to put in the document. The category flags
 /// mirror the load's, so "what a scene contains" is one vocabulary in both
 /// directions.
 ///
@@ -25,34 +41,11 @@ public sealed record SceneSaveOptions
     public bool IncludeCameras { get; init; } = true;
     public bool IncludeEnvironment { get; init; } = true;
     public bool IncludeOverlays { get; init; } = true;
+    public bool IncludeWorldObjects { get; init; } = true;
 
     /// <summary>Embeds a portable modded-appearance package per actor. Off by
     /// default; consent is per save.</summary>
     public bool IncludeModdedAppearance { get; init; }
-
-    /// <summary>
-    /// Restricts the save to the one actor with this logical identity — the
-    /// actor-library entry (.xiva) save. The capture still runs whole so it
-    /// reads the same caches every save reads; the document is narrowed to
-    /// this actor before appearance sealing, so only its package is read and
-    /// embedded. A save that names an actor the capture did not contain
-    /// refuses by name.
-    /// </summary>
-    public Guid? OnlyActorLogicalId { get; init; }
-
-    /// <summary>The actor-entry save: one actor, its appearance embedded,
-    /// nothing else.</summary>
-    public static SceneSaveOptions ActorEntry(Guid logicalId) => new()
-    {
-        IncludeProps = false,
-        IncludeLights = false,
-        IncludeCameras = false,
-        IncludeEnvironment = false,
-        IncludeOverlays = false,
-        IncludeModdedAppearance = true,
-        IncludeStructure = false,
-        OnlyActorLogicalId = logicalId,
-    };
 
     /// <summary>Whether the document carries the sidebar's structure —
     /// named groups and the user's root order. On for whole-scene saves;
@@ -61,107 +54,30 @@ public sealed record SceneSaveOptions
 
     /// <summary>Restricts the save to the entities whose keys (logical
     /// ids; actor capture keys are admitted by translation) are in the
-    /// set — the group-entry save. Groups survive only when every member
-    /// is kept.</summary>
+    /// set — every library entry save. Groups survive only when every
+    /// member is kept; references to anything pruned are detached by
+    /// <see cref="SceneSaveNarrowing"/>.</summary>
     public IReadOnlyCollection<Guid>? OnlyEntityKeys { get; init; }
-
-    /// <summary>The group-entry save: one named group's members with
-    /// their appearances, the group riding along so the load recreates
-    /// it whole.</summary>
-    public static SceneSaveOptions GroupEntry(
-        IReadOnlyCollection<Guid> memberKeys) => new()
-    {
-        IncludeEnvironment = false,
-        IncludeModdedAppearance = true,
-        OnlyEntityKeys = memberKeys,
-    };
 
     /// <summary>The name the save modal took: it lands ON the entry's one
     /// thing — Stone rail spawns a Stone rail. A group entry names the
     /// GROUP; children keep their own saved names.</summary>
     public string? EntryName { get; init; }
 
-    /// <summary>The light-entry save: one light, nothing else — the same
-    /// container and key filter every entry uses.</summary>
-    public static SceneSaveOptions LightEntry(Guid key) => new()
+    /// <summary>An entry save: only these categories, narrowed to these
+    /// keys when any are given, with no sidebar structure.</summary>
+    public static SceneSaveOptions Only(
+        SceneCategories categories, IReadOnlyCollection<Guid>? keys = null) => new()
     {
-        IncludeActors = false,
-        IncludeProps = false,
-        IncludeCameras = false,
-        IncludeEnvironment = false,
-        IncludeOverlays = false,
+        IncludeActors = categories.HasFlag(SceneCategories.Actors),
+        IncludeProps = categories.HasFlag(SceneCategories.Props),
+        IncludeLights = categories.HasFlag(SceneCategories.Lights),
+        IncludeCameras = categories.HasFlag(SceneCategories.Cameras),
+        IncludeEnvironment = categories.HasFlag(SceneCategories.Environment),
+        IncludeOverlays = categories.HasFlag(SceneCategories.Overlays),
+        IncludeWorldObjects = categories.HasFlag(SceneCategories.WorldObjects),
         IncludeStructure = false,
-        OnlyEntityKeys = new[] { key },
-    };
-
-    /// <summary>The camera-entry save: one camera, nothing else.</summary>
-    public static SceneSaveOptions CameraEntry(Guid key) => new()
-    {
-        IncludeActors = false,
-        IncludeProps = false,
-        IncludeLights = false,
-        IncludeEnvironment = false,
-        IncludeOverlays = false,
-        IncludeStructure = false,
-        OnlyEntityKeys = new[] { key },
-    };
-
-    /// <summary>The world-object-entry save: one object as a spawnable
-    /// copy — path and placement, no map identity to match. Overlays stay
-    /// INCLUDED even though none survive the key prune: the save policy
-    /// couples <c>scene.WorldObjects</c> to the overlays flag, and setting
-    /// it false shipped empty entries.</summary>
-    public static SceneSaveOptions WorldObjectEntry(Guid key) => new()
-    {
-        IncludeActors = false,
-        IncludeProps = false,
-        IncludeLights = false,
-        IncludeCameras = false,
-        IncludeEnvironment = false,
-        IncludeStructure = false,
-        OnlyEntityKeys = new[] { key },
-    };
-
-    /// <summary>Restricts the save to one overlay — the overlay-entry
-    /// (.xivo) save. Same contract as the actor filter.</summary>
-    public Guid? OnlyOverlayKey { get; init; }
-
-    /// <summary>The prop-entry save: one spawned prop — model, dyes,
-    /// pose variant, placement — nothing else.</summary>
-    public static SceneSaveOptions PropEntry(Guid key) => new()
-    {
-        IncludeActors = false,
-        IncludeLights = false,
-        IncludeCameras = false,
-        IncludeEnvironment = false,
-        IncludeOverlays = false,
-        IncludeStructure = false,
-        OnlyEntityKeys = new[] { key },
-    };
-
-    /// <summary>The overlay-entry save: one overlay node, nothing else.
-    /// </summary>
-    public static SceneSaveOptions OverlayEntry(Guid key) => new()
-    {
-        IncludeActors = false,
-        IncludeProps = false,
-        IncludeLights = false,
-        IncludeCameras = false,
-        IncludeEnvironment = false,
-        IncludeStructure = false,
-        OnlyOverlayKey = key,
-    };
-
-    /// <summary>The environment-entry save: the environment configuration
-    /// and nothing else.</summary>
-    public static SceneSaveOptions EnvironmentEntry { get; } = new()
-    {
-        IncludeActors = false,
-        IncludeProps = false,
-        IncludeLights = false,
-        IncludeCameras = false,
-        IncludeOverlays = false,
-        IncludeStructure = false,
+        OnlyEntityKeys = keys,
     };
 
     public static SceneSaveOptions Default { get; } = new();
@@ -210,6 +126,7 @@ public sealed record SceneLoadOptions
     public bool IncludeCameras { get; init; } = true;
     public bool IncludeEnvironment { get; init; } = true;
     public bool IncludeOverlays { get; init; } = true;
+    public bool IncludeWorldObjects { get; init; } = true;
 
     /// <summary>
     /// Place the scene relative to where the user is standing NOW rather than
@@ -222,7 +139,9 @@ public sealed record SceneLoadOptions
 
     /// <summary>Where the loaded content lands: the object-entry placement
     /// (a library actor tile), resolved by the CALLER against the live
-    /// session. AsSaved is every ordinary load.</summary>
+    /// session. AsSaved is every ordinary load. Any other mode wins over
+    /// <see cref="PlaceRelativeToCurrentOrigin"/>: the two are exclusive,
+    /// so content lands once.</summary>
     public ObjectPlacementMode Placement { get; init; }
 
     /// <summary>The current anchor pose the placement measures against,
@@ -233,10 +152,23 @@ public sealed record SceneLoadOptions
     /// <summary>Today's load, stated once.</summary>
     public static SceneLoadOptions Default { get; } = new();
 
+    /// <summary>An additive load of only these categories.</summary>
+    public static SceneLoadOptions Only(SceneCategories categories) => new()
+    {
+        IncludeActors = categories.HasFlag(SceneCategories.Actors),
+        IncludeProps = categories.HasFlag(SceneCategories.Props),
+        IncludeLights = categories.HasFlag(SceneCategories.Lights),
+        IncludeCameras = categories.HasFlag(SceneCategories.Cameras),
+        IncludeEnvironment = categories.HasFlag(SceneCategories.Environment),
+        IncludeOverlays = categories.HasFlag(SceneCategories.Overlays),
+        IncludeWorldObjects = categories.HasFlag(SceneCategories.WorldObjects),
+    };
+
     /// <summary>Whether any category at all is asked for. A load that includes
     /// nothing is refused at admission — it would report success over an
     /// untouched session.</summary>
     public bool IncludesAnything =>
         IncludeActors || IncludeProps || IncludeLights ||
-        IncludeCameras || IncludeEnvironment || IncludeOverlays;
+        IncludeCameras || IncludeEnvironment || IncludeOverlays ||
+        IncludeWorldObjects;
 }

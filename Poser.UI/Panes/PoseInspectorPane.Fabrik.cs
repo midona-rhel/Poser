@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -9,7 +10,7 @@ public partial class PoseInspectorPane
 {
     private (TransformTargetId Target, IkTargetMode Mode)? _fabrikPicking;
 
-    private void DrawFabrikTargets(Crystarium.FormScope form, BoneId endpoint,
+    private void DrawFabrikTargets(FormScope form, BoneId endpoint,
         TransformTargetId target, IkChainConfig config)
     {
         var point = config.Fabrik!.Handle;

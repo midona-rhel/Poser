@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 
@@ -12,12 +13,12 @@ public sealed record CompanionReading(ActorId Owner, bool IsAttachedChild, Compa
 public interface ICompanionControl
 {
     CompanionReading? Read(ActorId subject);
-    ValueWriteResult Set(ActorId subject, ActorId expectedOwner, CompanionAttachment? attachment);
+    Outcome Set(ActorId subject, ActorId expectedOwner, CompanionAttachment? attachment);
 }
 
 public interface ICompanionRuntime
 {
     CompanionReading? Read(ActorId subject);
     bool IsResolvable(ActorId owner);
-    ValueWriteResult Set(ActorId owner, CompanionAttachment? attachment);
+    Outcome Set(ActorId owner, CompanionAttachment? attachment);
 }

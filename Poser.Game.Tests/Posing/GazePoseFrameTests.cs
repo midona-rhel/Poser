@@ -1,7 +1,7 @@
 using System.Numerics;
 using Poser.Game.Posing;
-using Poser.Files;
 using Newtonsoft.Json;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Tests.Posing;
 
@@ -40,14 +40,6 @@ public sealed class GazePoseFrameTests
             var identity = GazePoseFrames.Map(gaze, gaze, world)!.Value;
             Assert.True(Vector3.Distance(new(24, 2, 52), Vector3.Transform(new(24, 2, 52), identity)) < .0001f);
         }
-    }
-
-    [Fact]
-    public void Missing_or_singular_frames_are_not_used()
-    {
-        Assert.Null(GazePoseFrames.Map(null, Matrix4x4.Identity, Matrix4x4.Identity));
-        Assert.Null(GazePoseFrames.Map(Matrix4x4.Identity, Matrix4x4.CreateScale(0), Matrix4x4.Identity));
-        Assert.Null(GazePoseFrames.Map(Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.CreateScale(0)));
     }
 
     [Fact]

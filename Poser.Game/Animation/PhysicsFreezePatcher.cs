@@ -3,6 +3,7 @@ using Dalamud.Game;
 using Dalamud.Memory;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
+using Poser.Domain;
 
 namespace Poser.Game.Animation;
 
@@ -132,15 +133,15 @@ internal sealed class PhysicsFreezePatcher : IDisposable
             _log.Warning($"PhysicsFreezePatcher: {UnavailableDetail}");
     }
 
-    public AnimationPortResult SetFrozen(bool frozen)
+    public Outcome SetFrozen(bool frozen)
     {
         if (_disposed)
-            return AnimationPortResult.Fail("Physics freeze patcher is disposed.");
+            return Outcome.Fail("Physics freeze patcher is disposed.");
         if (!IsAvailable)
-            return AnimationPortResult.Fail(
+            return Outcome.Fail(
                 $"Physics freeze is unavailable: {UnavailableDetail}");
         if (frozen == IsFrozen)
-            return AnimationPortResult.Ok();
+            return Outcome.Ok();
 
         try
         {
@@ -148,17 +149,17 @@ internal sealed class PhysicsFreezePatcher : IDisposable
         }
         catch (Exception ex)
         {
-            return AnimationPortResult.Fail($"Physics freeze failed: {ex.Message}");
+            return Outcome.Fail($"Physics freeze failed: {ex.Message}");
         }
     }
 
-    private AnimationPortResult Freeze()
+    private Outcome Freeze()
     {
         // Refuse to patch over anything but the exact startup instructions:
         // if another tool wrote here since, NOPing would corrupt ITS state and
         // a later restore would resurrect stale bytes.
         if (!SiteMatches(_original1, _original2))
-            return AnimationPortResult.Fail(
+            return Outcome.Fail(
                 "Physics freeze site changed since startup; refusing to patch.");
 
         // Both regions or neither: a fault after the first write rolls it
@@ -175,16 +176,16 @@ internal sealed class PhysicsFreezePatcher : IDisposable
             throw;
         }
         IsFrozen = true;
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    private AnimationPortResult Unfreeze()
+    private Outcome Unfreeze()
     {
         // Restore only over our own NOPs. Foreign bytes here mean something
         // else wrote over the live patch; restoring originals blind would
         // destroy that write and desynchronize both tools.
         if (!SiteMatches(NopRegion1, NopRegion2))
-            return AnimationPortResult.Fail(
+            return Outcome.Fail(
                 "Physics freeze site was overwritten while frozen; refusing to restore.");
 
         // A failed unpatch returns to the FULLY frozen state, so
@@ -202,7 +203,7 @@ internal sealed class PhysicsFreezePatcher : IDisposable
             throw;
         }
         IsFrozen = false;
-        return AnimationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     private bool SiteMatches(byte[] expected1, byte[] expected2) =>

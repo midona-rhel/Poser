@@ -6,8 +6,9 @@ using System.Text.Json;
 using Poser.Domain.Scene;
 using Stagehand.Definitions;
 using Stagehand.Definitions.Objects;
+using Poser.Documents.Files;
 
-namespace Poser.Files;
+namespace Poser.Documents.Scene;
 
 /// <summary>
 /// The Stagehand Stage seam: a Stage definition (their plain-JSON world-dressing
@@ -84,12 +85,12 @@ public static class StageFile
                 "The Stage file held no definition.", path));
 
         var scene = ToScene(stage, notes);
-        var validated = SceneFileValidation.Validate(scene);
+        var validated = SceneFileValidation.ValidateForLoad(scene, out var refusals);
         if (!validated.Succeeded)
             return SceneReadOutcome.Failed(SceneStoreFailure.Create(
                 SceneStoreFailureKind.Validation,
                 validated.Failure!.Detail, path, validated.Failure));
-        return SceneReadOutcome.Success(scene);
+        return SceneReadOutcome.Success(scene, refusals);
     }
 
     private static SceneFile ToScene(StageDefinition stage, List<string> notes)
@@ -250,32 +251,28 @@ public static class StageFile
         ArgumentNullException.ThrowIfNull(notes);
         var stage = FromScene(
             scene, Path.GetFileNameWithoutExtension(path), notes);
-        string temporary = path + ".tmp";
+        byte[] bytes;
         try
         {
-            string json = JsonSerializer.Serialize(
+            bytes = JsonSerializer.SerializeToUtf8Bytes(
                 stage, StageDefinition.StandardSerializerOptions);
-            File.WriteAllText(temporary, json);
-            File.Move(temporary, path, overwrite: true);
         }
-        catch (Exception ex) when (ex is IOException
-            or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
-            try
-            {
-                if (File.Exists(temporary))
-                    File.Delete(temporary);
-            }
-            catch (Exception)
-            {
-                return SceneWriteOutcome.Failed(SceneStoreFailure.Create(
-                    SceneStoreFailureKind.TemporaryWrite, ex.Message, path),
-                    new[] { temporary });
-            }
             return SceneWriteOutcome.Failed(SceneStoreFailure.Create(
-                SceneStoreFailureKind.TemporaryWrite, ex.Message, path));
+                SceneStoreFailureKind.Serialization, ex.Message, path));
         }
-        return SceneWriteOutcome.Success();
+
+        var written = AtomicFile.Write(new SystemAtomicFileSystem(), path, bytes,
+            new AtomicWriteOptions { Subject = "stage" });
+        return written.Committed
+            ? SceneWriteOutcome.Success()
+            : SceneWriteOutcome.Failed(
+                SceneStoreFailure.Create(
+                    SceneFileStore.FailureKind(written.Phase!.Value),
+                    written.Detail!,
+                    written.Path ?? path),
+                written.RecoveryEvidencePaths);
     }
 
     private static StageDefinition FromScene(

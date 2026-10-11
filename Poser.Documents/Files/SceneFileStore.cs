@@ -6,7 +6,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 public enum SceneStoreFailureKind
 {
@@ -62,17 +62,30 @@ public sealed class SceneReadOutcome
     public SceneFile? Scene { get; }
     public SceneStoreFailure? Failure { get; }
 
-    private SceneReadOutcome(SceneFile? scene, SceneStoreFailure? failure)
+    /// <summary>Entities the read left out of <see cref="Scene"/> because
+    /// their own data is invalid; the load names each one.</summary>
+    public IReadOnlyList<SceneEntityRefusal> Refusals { get; }
+
+    private SceneReadOutcome(
+        SceneFile? scene, SceneStoreFailure? failure,
+        IReadOnlyList<SceneEntityRefusal> refusals)
     {
         Succeeded = scene is not null;
         Scene = scene;
         Failure = failure;
+        Refusals = refusals;
     }
 
-    internal static SceneReadOutcome Success(SceneFile scene) => new(scene, null);
+    internal static SceneReadOutcome Success(
+        SceneFile scene, IReadOnlyList<SceneEntityRefusal>? refusals = null) =>
+        new(scene, null, refusals ?? Array.Empty<SceneEntityRefusal>());
     internal static SceneReadOutcome Failed(SceneStoreFailure failure) =>
-        new(null, failure);
+        new(null, failure, Array.Empty<SceneEntityRefusal>());
 }
+
+/// <summary>An opened appearance payload — the caller owns the stream — or
+/// why it could not be opened.</summary>
+public sealed record SceneAppearanceOpen(Stream? Stream, string? Error);
 
 /// <summary>Typed status for one scene entry in a listing. The codec
 /// validated the complete document before reporting <see cref="Valid"/>.</summary>
@@ -232,14 +245,14 @@ public sealed class SceneFileStore
 {
     public static SceneFileStore Default { get; } = new();
 
-    private readonly IPoseFileStoreFileSystem _fileSystem;
+    private readonly IAtomicFileSystem _fileSystem;
 
     public SceneFileStore()
-        : this(new SystemPoseFileStoreFileSystem())
+        : this(new SystemAtomicFileSystem())
     {
     }
 
-    internal SceneFileStore(IPoseFileStoreFileSystem fileSystem)
+    internal SceneFileStore(IAtomicFileSystem fileSystem)
     {
         _fileSystem = fileSystem;
     }
@@ -262,26 +275,30 @@ public sealed class SceneFileStore
     /// Opens ONE appearance payload as a stream. The caller owns the returned
     /// stream and copies it wherever it needs the bytes — they are never
     /// materialized here, because a real package is hundreds of megabytes.
-    /// Null when the container has no such entry.
+    /// Otherwise the reason: a missing entry and an unreadable container are
+    /// different refusals, and the user is told which.
     /// </summary>
-    public Stream? OpenAppearance(string scenePath, string entryName)
+    public SceneAppearanceOpen OpenAppearance(string scenePath, string entryName)
     {
+        Stream? container = null;
         try
         {
-            var archive = ZipFile.OpenRead(scenePath);
+            container = _fileSystem.OpenRead(scenePath);
+            var archive = new ZipArchive(container, ZipArchiveMode.Read, leaveOpen: false);
             var entry = archive.GetEntry(entryName);
             if (entry is null)
             {
                 archive.Dispose();
-                return null;
+                return new(null, "the scene holds no such payload.");
             }
             // The entry stream owns the archive: disposing what the caller was
             // handed closes the container behind it.
-            return new EntryStream(archive, entry.Open());
+            return new(new EntryStream(archive, entry.Open()), null);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return null;
+            container?.Dispose();
+            return new(null, ex.Message);
         }
     }
 
@@ -339,6 +356,18 @@ public sealed class SceneFileStore
                     path);
             }
 
+            // Light and camera entries were once bare JSON documents. A
+            // .xivl/.xivc that is not a container (no "PK" signature) is read
+            // as that document and wrapped as the one-entity entry every
+            // writer now produces; nothing writes the old form any more.
+            if (IsLegacyEntryExtension(path))
+            {
+                int signature = stream.ReadByte();
+                stream.Position = 0;
+                if (signature != 'P')
+                    return DecodeLegacyEntry(stream, path);
+            }
+
             using var archive = new ZipArchive(
                 stream, ZipArchiveMode.Read, leaveOpen: true);
             if (archive.GetEntry(DocumentEntry) is not { } document)
@@ -393,37 +422,11 @@ public sealed class SceneFileStore
             : SceneMetadataReadOutcome.Failed(read.Failure!);
     }
 
-    public SceneReadOutcome Parse(string json)
-    {
-        if (json is null)
-        {
-            return ReadFailure(
-                SceneStoreFailureKind.Json,
-                "The scene JSON is null.");
-        }
-
-        try
-        {
-            var byteCount = Encoding.UTF8.GetByteCount(json);
-            if (byteCount > SceneFileLimits.MaxDocumentBytes)
-            {
-                return ReadFailure(
-                    SceneStoreFailureKind.SizeLimit,
-                    $"The scene JSON is {byteCount} bytes " +
-                    $"(limit {SceneFileLimits.MaxDocumentBytes}).");
-            }
-            return Decode(Encoding.UTF8.GetBytes(json), path: null);
-        }
-        catch (Exception ex)
-        {
-            return ReadFailure(
-                SceneStoreFailureKind.Json,
-                $"Parsing the scene JSON failed: {ex.Message}");
-        }
-    }
-
     public SceneWriteOutcome Write(SceneFile scene, string destination)
     {
+        // The bytes are this build's shape whatever version the document was
+        // read at, so they carry this build's version (docs/features/scenes.md).
+        scene.FileVersion = SceneFile.CurrentVersion;
         var validation = SceneFileValidation.Validate(scene);
         if (!validation.Succeeded)
             return ValidationWriteFailure(validation.Failure!, destination);
@@ -459,254 +462,43 @@ public sealed class SceneFileStore
                 destination);
         }
 
-        string fullDestination;
-        string temporary;
-        string backup;
-        try
+        var written = AtomicFile.Write(_fileSystem, destination, stream =>
         {
-            fullDestination = Path.GetFullPath(destination);
-            var directory = Path.GetDirectoryName(fullDestination)
-                ?? throw new IOException("The destination has no parent directory.");
-            var fileName = Path.GetFileName(fullDestination);
-            temporary = Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.tmp");
-            backup = Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.bak");
-        }
-        catch (Exception ex)
-        {
-            return WriteFailure(
-                SceneStoreFailureKind.TemporaryCreate,
-                $"Preparing the atomic scene paths failed: {ex.Message}",
-                destination);
-        }
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true);
+            var document = archive.CreateEntry(DocumentEntry, CompressionLevel.Optimal);
+            using (var entry = document.Open())
+                entry.Write(bytes);
 
-        SceneStoreFailure? failure = null;
-        var failureKind = SceneStoreFailureKind.TemporaryCreate;
-        try
+            // Payloads are STREAMED in, one entry per distinct package,
+            // stored rather than compressed: an MCDF is already LZ4 inside,
+            // so deflating it costs minutes and saves nothing.
+            if (WriteAppearancePayloads(scene, archive) is { } payloadError)
+                throw new AtomicWriteRefusedException(payloadError);
+        }, new AtomicWriteOptions
         {
-            failureKind = SceneStoreFailureKind.TemporaryCreate;
-            using (var stream = _fileSystem.CreateNew(temporary))
-            {
-                failureKind = SceneStoreFailureKind.TemporaryWrite;
-                using (var archive = new ZipArchive(
-                    stream, ZipArchiveMode.Create, leaveOpen: true))
-                {
-                    var document = archive.CreateEntry(
-                        DocumentEntry, CompressionLevel.Optimal);
-                    using (var entry = document.Open())
-                        entry.Write(bytes);
-
-                    // Payloads are STREAMED in, one entry per distinct
-                    // package, stored rather than compressed: an MCDF is
-                    // already LZ4 inside, so deflating it costs minutes and
-                    // saves nothing.
-                    if (WriteAppearancePayloads(scene, archive) is { } payloadError)
-                    {
-                        failure = SceneStoreFailure.Create(
-                            SceneStoreFailureKind.TemporaryWrite,
-                            payloadError,
-                            temporary);
-                    }
-                }
-
-                if (failure is null)
-                {
-                    failureKind = SceneStoreFailureKind.TemporaryFlush;
-                    _fileSystem.FlushToDisk(stream);
-                }
-            }
-
-            if (failure is null)
-            {
-                failureKind = SceneStoreFailureKind.TemporaryReopen;
-                var reopened = Read(temporary);
-                if (!reopened.Succeeded)
-                {
-                    failure = SceneStoreFailure.Create(
-                        SceneStoreFailureKind.TemporaryReopen,
-                        $"Reopening the atomic scene temp failed: {reopened.Failure!.Detail}",
-                        temporary);
-                }
-                else if (StampOf(temporary) is not { } stamp)
-                {
-                    failure = SceneStoreFailure.Create(
-                        SceneStoreFailureKind.TemporaryReopen,
-                        "The atomic scene temp could not be checksummed.",
-                        temporary);
-                }
-                else if (_fileSystem.Exists(fullDestination))
-                {
-                    return CommitExisting(stamp, temporary, fullDestination, backup);
-                }
-                else
-                {
-                    return CommitNew(stamp, temporary, fullDestination);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            failure = SceneStoreFailure.Create(
-                failureKind,
-                $"Atomic scene write failed during {failureKind}: {ex.Message}",
-                temporary);
-        }
-
-        failure ??= SceneStoreFailure.Create(
-            SceneStoreFailureKind.TemporaryReopen,
-            "The atomic scene temp was not committed.",
-            temporary);
-        return CleanupPrecommitFailure(failure, temporary);
-    }
-
-    private SceneWriteOutcome CommitExisting(
-        FileStamp stamp,
-        string temporary,
-        string destination,
-        string backup)
-    {
-        try
-        {
-            _fileSystem.Replace(temporary, destination, backup);
-            if (!Matches(destination, stamp))
-            {
-                return UncertainCommitFailure(
-                    SceneStoreFailureKind.Replace,
-                    "Replace returned without the validated bytes at the destination.",
-                    destination,
-                    temporary,
-                    backup);
-            }
-            return CleanupConfirmedCommit(stamp, destination, temporary, backup);
-        }
-        catch (Exception ex)
-        {
-            if (Matches(destination, stamp))
-                return CleanupConfirmedCommit(stamp, destination, temporary, backup);
-            return UncertainCommitFailure(
-                SceneStoreFailureKind.Replace,
-                $"Atomic scene replace failed: {ex.Message}",
-                destination,
-                temporary,
-                backup);
-        }
-    }
-
-    private SceneWriteOutcome CommitNew(
-        FileStamp stamp,
-        string temporary,
-        string destination)
-    {
-        try
-        {
-            _fileSystem.Move(temporary, destination);
-            if (!Matches(destination, stamp))
-            {
-                return UncertainCommitFailure(
-                    SceneStoreFailureKind.Move,
-                    "Move returned without the validated bytes at the destination.",
-                    destination,
-                    temporary);
-            }
-            return CleanupConfirmedCommit(stamp, destination, temporary);
-        }
-        catch (Exception ex)
-        {
-            if (Matches(destination, stamp))
-                return CleanupConfirmedCommit(stamp, destination, temporary);
-            return UncertainCommitFailure(
-                SceneStoreFailureKind.Move,
-                $"Atomic scene move failed: {ex.Message}",
-                destination,
-                temporary);
-        }
-    }
-
-    private SceneWriteOutcome CleanupConfirmedCommit(
-        FileStamp stamp,
-        string destination,
-        string temporary,
-        string? backup = null)
-    {
-        var cleanupErrors = new List<string>();
-        try
-        {
-            _fileSystem.Delete(temporary);
-        }
-        catch (Exception ex)
-        {
-            cleanupErrors.Add($"{temporary}: {ex.Message}");
-        }
-
-        if (backup is not null)
-        {
-            if (!Matches(destination, stamp))
-            {
-                cleanupErrors.Add(
-                    $"{backup}: destination postcondition changed before backup cleanup");
-            }
-            else
-            {
-                try
-                {
-                    _fileSystem.Delete(backup);
-                }
-                catch (Exception ex)
-                {
-                    cleanupErrors.Add($"{backup}: {ex.Message}");
-                }
-            }
-        }
-
-        if (cleanupErrors.Count == 0)
+            Subject = "scene",
+            KeepTemporaryOnFailure = true,
+            VerifyTemporary = temporary => Read(temporary) is { Succeeded: false } reopened
+                ? $"Reopening the atomic scene temp failed: {reopened.Failure!.Detail}"
+                : null,
+        });
+        if (written.Succeeded)
             return SceneWriteOutcome.Success();
-
-        var evidence = backup is null
-            ? SurvivingCandidates(temporary)
-            : SurvivingCandidates(temporary, backup);
         return SceneWriteOutcome.Failed(
-            SceneStoreFailure.Create(
-                SceneStoreFailureKind.Cleanup,
-                "The scene was committed, but recovery-file cleanup failed: " +
-                string.Join("; ", cleanupErrors)),
-            evidence);
+            SceneStoreFailure.Create(FailureKind(written.Phase!.Value), written.Detail!, written.Path),
+            written.RecoveryEvidencePaths);
     }
 
-    private SceneWriteOutcome CleanupPrecommitFailure(
-        SceneStoreFailure failure,
-        string temporary)
+    internal static SceneStoreFailureKind FailureKind(AtomicWritePhase phase) => phase switch
     {
-        try
-        {
-            _fileSystem.Delete(temporary);
-        }
-        catch (Exception cleanup)
-        {
-            failure = failure.WithDetail(
-                failure.Detail + $" The temp could not be deleted: {cleanup.Message}");
-        }
-
-        return SceneWriteOutcome.Failed(failure, SurvivingCandidates(temporary));
-    }
-
-    private SceneWriteOutcome UncertainCommitFailure(
-        SceneStoreFailureKind kind,
-        string detail,
-        string destination,
-        params string[] recoveryCandidates) =>
-        SceneWriteOutcome.Failed(
-            SceneStoreFailure.Create(kind, detail, destination),
-            SurvivingCandidates(recoveryCandidates));
-
-    private IReadOnlyList<string> SurvivingCandidates(params string[] candidates)
-    {
-        var surviving = new List<string>();
-        foreach (var candidate in candidates.Distinct(StringComparer.Ordinal))
-        {
-            if (Observe(candidate) is not PathObservation.Missing)
-                surviving.Add(candidate);
-        }
-        return surviving;
-    }
+        AtomicWritePhase.CreateTemporary => SceneStoreFailureKind.TemporaryCreate,
+        AtomicWritePhase.WriteTemporary => SceneStoreFailureKind.TemporaryWrite,
+        AtomicWritePhase.FlushTemporary => SceneStoreFailureKind.TemporaryFlush,
+        AtomicWritePhase.ReopenTemporary => SceneStoreFailureKind.TemporaryReopen,
+        AtomicWritePhase.ReplaceDestination => SceneStoreFailureKind.Replace,
+        AtomicWritePhase.MoveDestination => SceneStoreFailureKind.Move,
+        _ => SceneStoreFailureKind.Cleanup,
+    };
 
     /// <summary>
     /// Streams every portable payload into the container, one entry per
@@ -717,7 +509,7 @@ public sealed class SceneFileStore
     /// deflating it costs minutes of CPU for no bytes. Returns null on
     /// success, else what went wrong.</para>
     /// </summary>
-    private static string? WriteAppearancePayloads(
+    private string? WriteAppearancePayloads(
         SceneFile scene, ZipArchive archive)
     {
         var written = new HashSet<string>(StringComparer.Ordinal);
@@ -737,7 +529,7 @@ public sealed class SceneFileStore
                 var entry = archive.CreateEntry(
                     payload.PackageEntry!, CompressionLevel.NoCompression);
                 using var target = entry.Open();
-                using var reading = File.OpenRead(source);
+                using var reading = _fileSystem.OpenRead(source);
                 reading.CopyTo(target);
             }
             catch (Exception ex)
@@ -749,74 +541,12 @@ public sealed class SceneFileStore
         return null;
     }
 
-    /// <summary>
-    /// What a committed file must still be. A scene now carries payload
-    /// entries that run to hundreds of megabytes, so the commit postcondition
-    /// is a STREAMED length-and-digest comparison rather than a byte image
-    /// held in memory — same guarantee, constant cost.
-    /// </summary>
-    private readonly record struct FileStamp(long Length, string Digest);
-
-    private FileStamp? StampOf(string path)
-    {
-        try
-        {
-            using var stream = _fileSystem.OpenRead(path);
-            long length = stream.Length;
-            var digest = System.Security.Cryptography.SHA256.HashData(stream);
-            return new FileStamp(length, Convert.ToHexString(digest));
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private bool Matches(string path, FileStamp expected) =>
-        StampOf(path) is { } actual &&
-        actual.Length == expected.Length &&
-        string.Equals(actual.Digest, expected.Digest, StringComparison.Ordinal);
-
-    private PathObservation Observe(string path)
-    {
-        try
-        {
-            using var stream = _fileSystem.OpenRead(path);
-            return PathObservation.Present;
-        }
-        catch (FileNotFoundException)
-        {
-            return PathObservation.Missing;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return PathObservation.Missing;
-        }
-        catch
-        {
-            return PathObservation.Unknown;
-        }
-    }
-
     private static SceneReadOutcome Decode(ReadOnlySpan<byte> bytes, string? path)
     {
         try
         {
-            var scene = JsonSerializer.Deserialize<SceneFile>(
-                bytes, SceneFile.JsonOptions);
-            var validation = SceneFileValidation.Validate(scene);
-            if (!validation.Succeeded)
-            {
-                return validation.Failure!.Kind ==
-                    SceneFileValidationFailureKind.FutureVersion
-                    ? SceneReadOutcome.Failed(SceneStoreFailure.Create(
-                        SceneStoreFailureKind.FutureVersion,
-                        validation.Failure.Detail,
-                        path,
-                        validation.Failure))
-                    : ValidationReadFailure(validation.Failure!, path);
-            }
-            return SceneReadOutcome.Success(scene!);
+            return Validated(JsonSerializer.Deserialize<SceneFile>(
+                Utf8Bom.Strip(bytes), SceneFile.JsonOptions), path);
         }
         catch (JsonException ex)
         {
@@ -830,6 +560,75 @@ public sealed class SceneFileStore
             return ReadFailure(
                 SceneStoreFailureKind.Json,
                 $"The scene JSON could not be decoded: {ex.Message}",
+                path);
+        }
+    }
+
+    private static SceneReadOutcome Validated(SceneFile? scene, string? path)
+    {
+        var validation = SceneFileValidation.ValidateForLoad(scene, out var refusals);
+        if (!validation.Succeeded)
+        {
+            return validation.Failure!.Kind ==
+                SceneFileValidationFailureKind.FutureVersion
+                ? SceneReadOutcome.Failed(SceneStoreFailure.Create(
+                    SceneStoreFailureKind.FutureVersion,
+                    validation.Failure.Detail,
+                    path,
+                    validation.Failure))
+                : ValidationReadFailure(validation.Failure!, path);
+        }
+        return SceneReadOutcome.Success(scene!, refusals);
+    }
+
+    private static bool IsLegacyEntryExtension(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(SceneFile.LightEntryExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(SceneFile.CameraEntryExtension, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Wraps a bare light or camera document as its one-entity
+    /// entry. The wrapped camera is a created one — live, not the default —
+    /// which is what the old loader made of it.</summary>
+    private static SceneReadOutcome DecodeLegacyEntry(Stream stream, string path)
+    {
+        if (stream.Length > SceneFileLimits.MaxDocumentBytes)
+        {
+            return ReadFailure(
+                SceneStoreFailureKind.SizeLimit,
+                $"The document is {stream.Length} bytes " +
+                $"(limit {SceneFileLimits.MaxDocumentBytes}).",
+                path);
+        }
+        try
+        {
+            var scene = new SceneFile { SceneId = Guid.NewGuid() };
+            if (Path.GetExtension(path).Equals(
+                    SceneFile.LightEntryExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                var light = JsonSerializer.Deserialize<LightFile>(stream, SceneFile.JsonOptions);
+                scene.CameraAnchor = light?.CameraAnchor;
+                scene.ActorAnchor = light?.ActorAnchor;
+                scene.Lights.Add(new SceneLight { Key = Guid.NewGuid(), Light = light });
+            }
+            else
+            {
+                var camera = JsonSerializer.Deserialize<CameraFile>(stream, SceneFile.JsonOptions);
+                scene.CameraAnchor = camera?.CameraAnchor;
+                scene.ActorAnchor = camera?.ActorAnchor;
+                scene.Cameras.Add(new SceneCamera
+                {
+                    Key = Guid.NewGuid(), Camera = camera, IsLive = true,
+                });
+            }
+            return Validated(scene, path);
+        }
+        catch (Exception ex)
+        {
+            return ReadFailure(
+                SceneStoreFailureKind.Json,
+                $"The document JSON is invalid: {ex.Message}",
                 path);
         }
     }
@@ -863,11 +662,4 @@ public sealed class SceneFileStore
         string detail,
         string? path = null) =>
         SceneWriteOutcome.Failed(SceneStoreFailure.Create(kind, detail, path));
-
-    private enum PathObservation
-    {
-        Missing,
-        Present,
-        Unknown,
-    }
 }

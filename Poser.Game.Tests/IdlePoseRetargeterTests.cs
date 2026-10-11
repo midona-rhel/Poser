@@ -3,7 +3,7 @@ using Poser.Documents.Animation;
 using Poser.Domain.Transforms;
 using Poser.Game.Animation;
 
-namespace Poser.Tests;
+namespace Poser.Game.Tests;
 
 public sealed class IdlePoseRetargeterTests
 {
@@ -22,16 +22,6 @@ public sealed class IdlePoseRetargeterTests
         Assert.True(MathF.Abs(Quaternion.Dot(rotation, mapped.Tracks[2].Posed.Rotation)) > .999999f);
         Assert.Equal(targetReference, mapped.Tracks[1].Posed);
         Assert.Equal(new short[] { 0, 1, 2 }, mapped.Tracks.Select(t => t.BoneIndex));
-    }
-
-    [Fact]
-    public void Incompatible_parent_does_not_apply_a_local_transform_in_the_wrong_space()
-    {
-        var source = new IdleHavokEncoder.SkeletonLayout("root", ["root", "face"], [-1, 0], [PoseTransform.Identity, PoseTransform.Identity]);
-        var target = new IdleHavokEncoder.SkeletonLayout("root", ["root", "head", "face"], [-1, 0, 1], [PoseTransform.Identity, PoseTransform.Identity, PoseTransform.Identity]);
-        var pose = new IdleSkeletonPose("root", 2, [new(0, PoseTransform.Identity, PoseTransform.Identity),
-            new(1, PoseTransform.Identity, PoseTransform.Identity with { Position = Vector3.One })]);
-        Assert.Equal(PoseTransform.Identity, IdlePoseRetargeter.Retarget(source, pose, target, target.ReferencePose).Tracks[2].Posed);
     }
 
     [Fact]

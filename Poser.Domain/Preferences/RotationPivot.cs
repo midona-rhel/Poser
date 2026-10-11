@@ -1,4 +1,4 @@
-namespace Poser.Core;
+namespace Poser.Domain.Preferences;
 
 /// <summary>
 /// The single visible rotation pivot choice (toolbar, beside Local/World).

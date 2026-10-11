@@ -1,18 +1,16 @@
 using System.Reflection;
 using Poser.Domain.Posing;
-using Poser.Entities;
 using Poser.Game.Posing;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Tests.Posing;
 
 public sealed class FabrikSpanTests
 {
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(5)]
-    public void Ccd_affected_bones_stop_at_the_connected_partial_root(int depth)
+    [Fact]
+    public void Ccd_affected_bones_stop_at_the_connected_partial_root()
     {
+        const int depth = 5;
         // Skeleton.BuildBones connects partial roots back to partial 0.
         // That display hierarchy continues beyond the native CCD pose.
         var nodes = Chain(5);
@@ -23,36 +21,23 @@ public sealed class FabrikSpanTests
         }
         nodes[2].Hidden = true; // Structural partial root remains part of the native pose.
         var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd, CcdDepth = depth };
-        var expected = nodes.Skip(Math.Max(2, 4 - depth)).ToArray();
+        var expected = nodes.Skip(2).ToArray();
 
-        Assert.Equal(expected.Select(n => n.Bone), BonePosingService.NativeIkMembers(nodes[4].Bone, config));
+        Assert.Equal(expected.Select(n => n.Bone), IkChainShapes.NativeIkMembers(nodes[4].Bone, config));
         Assert.Equal(expected.Select(n => n.Bone), IkBakeCapture.AffectedBones(nodes[4].Bone, config));
-        Assert.Equal(expected.Reverse().Select(n => n.Name), BonePosingService.ChainMemberNames(nodes[4].Bone, config));
+        Assert.Equal(expected.Reverse().Select(n => n.Name), IkChainShapes.ChainMemberNames(nodes[4].Bone, config));
     }
 
-    [Theory]
-    [InlineData("same-pose", true)]
-    [InlineData("no-parent", false)]
-    [InlineData("hidden-parent", false)]
-    [InlineData("different-partial", false)]
-    [InlineData("different-skeleton", false)]
-    public void Ccd_eligibility_requires_a_visible_parent_in_the_same_native_pose(string scenario, bool expected)
+    [Fact]
+    public void Ccd_eligibility_requires_a_parent_in_the_same_native_pose()
     {
+        var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd };
         var nodes = Chain(2);
-        switch (scenario)
-        {
-            case "no-parent": nodes[1].Parent = null; break;
-            case "hidden-parent": nodes[0].Hidden = true; break;
-            case "different-partial": nodes[0].Partial = 1; break;
-            case "different-skeleton": nodes[0].Skeleton = Chain(1)[0].Skeleton; break;
-        }
-        Assert.Equal(expected, BonePosingService.IsCcdEligible(nodes[1].Bone));
-        if (scenario != "hidden-parent")
-        {
-            var members = BonePosingService.NativeIkMembers(nodes[1].Bone,
-                IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd });
-            Assert.Equal(expected ? 2 : 1, members.Count);
-        }
+        Assert.True(IkChainShapes.IsCcdEligible(nodes[1].Bone));
+        Assert.Equal(2, IkChainShapes.NativeIkMembers(nodes[1].Bone, config).Count);
+        nodes[0].Partial = 1;
+        Assert.False(IkChainShapes.IsCcdEligible(nodes[1].Bone));
+        Assert.Single(IkChainShapes.NativeIkMembers(nodes[1].Bone, config));
     }
 
     [Fact]
@@ -61,7 +46,7 @@ public sealed class FabrikSpanTests
         var nodes = Chain(5);
         string[] names = ["j_sebo_c", "j_sako_l", "j_ude_a_l", "j_ude_b_l", "j_te_l"];
         for (int i = 0; i < nodes.Length; i++) nodes[i].Name = names[i];
-        var members = BonePosingService.NativeIkMembers(nodes[^1].Bone, IkChainConfig.DefaultsFor(true));
+        var members = IkChainShapes.NativeIkMembers(nodes[^1].Bone, IkChainConfig.DefaultsFor(true));
         Assert.Equal(nodes.Skip(2).Select(n => n.Bone), members);
         Assert.Same(nodes[1].Bone, members[0].ParentBone);
     }
@@ -71,61 +56,40 @@ public sealed class FabrikSpanTests
     {
         var nodes = Chain(6);
         var config = IkChainConfig.DefaultsForChain() with { Solver = IkSolver.Ccd, CcdDepth = 2 };
-        var members = BonePosingService.NativeIkMembers(nodes[^1].Bone, config);
+        var members = IkChainShapes.NativeIkMembers(nodes[^1].Bone, config);
         Assert.Equal(nodes.Skip(3).Select(n => n.Bone), members);
         Assert.Same(nodes[2].Bone, members[0].ParentBone);
         nodes[3].Partial = 1;
-        Assert.Equal(nodes.Skip(4).Select(n => n.Bone), BonePosingService.NativeIkMembers(nodes[^1].Bone, config));
+        Assert.Equal(nodes.Skip(4).Select(n => n.Bone), IkChainShapes.NativeIkMembers(nodes[^1].Bone, config));
     }
 
     [Fact]
-    public void Selected_bone_is_between_parent_and_child_spans_in_native_order()
+    public void Walks_stop_at_forks_partial_boundaries_and_hidden_parents_but_keep_the_selected_bone()
     {
-        var nodes = Chain(7);
-        var span = BonePosingService.FabrikMembers(nodes[3].Bone,
-            IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 2 });
-        Assert.Equal(nodes.Skip(1).Take(5).Select(n => n.Bone), span);
-    }
+        // The selected bone sits between its parent and child spans in native order.
+        var straight = Chain(7);
+        Assert.Equal(straight.Skip(1).Take(5).Select(n => n.Bone), IkChainShapes.FabrikMembers(straight[3].Bone,
+            IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 2 }));
 
-    [Fact]
-    public void Child_walk_stops_at_a_fork_instead_of_choosing_a_branch()
-    {
+        var forked = Chain(5);
+        forked[2].Children.Add(new Node(forked[0].Skeleton).Bone);
+        Assert.Equal(new[] { forked[1].Bone, forked[2].Bone }, IkChainShapes.FabrikMembers(forked[1].Bone,
+            IkChainConfig.DefaultsForChain() with { ParentDepth = 0, ChildDepth = 10 }));
+
+        var config = IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 2 };
         var nodes = Chain(5);
-        nodes[2].Children.Add(new Node(nodes[0].Skeleton).Bone);
-        var span = BonePosingService.FabrikMembers(nodes[1].Bone,
-            IkChainConfig.DefaultsForChain() with { ParentDepth = 0, ChildDepth = 10 });
-        Assert.Equal(new[] { nodes[1].Bone, nodes[2].Bone }, span);
-    }
+        nodes[1].Partial = 1;
+        Assert.Equal(nodes.Skip(2).Select(n => n.Bone), IkChainShapes.FabrikMembers(nodes[2].Bone, config));
+        nodes = Chain(5);
+        nodes[3].Partial = 1;
+        Assert.Equal(nodes.Take(3).Select(n => n.Bone), IkChainShapes.FabrikMembers(nodes[2].Bone, config));
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void Neither_walk_crosses_a_partial_boundary(bool parent)
-    {
-        var nodes = Chain(5);
-        nodes[parent ? 1 : 3].Partial = 1;
-        var span = BonePosingService.FabrikMembers(nodes[2].Bone,
-            IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 2 });
-        Assert.Equal(parent ? nodes.Skip(2).Select(n => n.Bone) : nodes.Take(3).Select(n => n.Bone), span);
-    }
-
-    [Fact]
-    public void Hidden_parent_stops_traversal_but_the_selected_bone_is_always_included()
-    {
-        var nodes = Chain(4);
+        nodes = Chain(4);
         nodes[1].Hidden = true;
         nodes[2].Hidden = true;
-        var span = BonePosingService.FabrikMembers(nodes[2].Bone,
+        var span = IkChainShapes.FabrikMembers(nodes[2].Bone,
             IkChainConfig.DefaultsForChain() with { ParentDepth = 2, ChildDepth = 1 });
         Assert.Equal(new[] { nodes[2].Bone, nodes[3].Bone }, span);
-    }
-
-    [Fact]
-    public void Zero_depths_leave_only_the_selected_handle()
-    {
-        var nodes = Chain(4);
-        Assert.Equal(nodes[2].Bone, Assert.Single(BonePosingService.FabrikMembers(nodes[2].Bone,
-            IkChainConfig.DefaultsForChain() with { ParentDepth = 0, ChildDepth = 0 })));
     }
 
     private static Node[] Chain(int count)

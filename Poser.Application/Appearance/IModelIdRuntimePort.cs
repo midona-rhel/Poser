@@ -1,4 +1,5 @@
 using Poser.Application.Presentation;
+using Poser.Domain;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Appearance;
@@ -21,5 +22,5 @@ public interface IModelIdRuntimePort
 
     /// <summary>Writes the model id and redraws. Success is verified by
     /// readback — the underlying write path is fire-and-forget.</summary>
-    PresentationPortResult Write(ActorId actor, int modelCharaId);
+    Outcome Write(ActorId actor, int modelCharaId);
 }

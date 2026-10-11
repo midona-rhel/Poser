@@ -9,14 +9,11 @@ using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 
@@ -27,7 +24,7 @@ internal sealed partial class SidebarComposer
 {
     private static readonly bool[] RootTreeLines = Array.Empty<bool>();
     private readonly AppShellViewModel _vm;
-    private readonly Config.ConfigurationService _configuration;
+    private readonly Application.Settings.ConfigurationService _configuration;
     private readonly SceneSession _scene;
     private readonly SceneGroups _groups;
     private readonly SelectionSession _selection;
@@ -62,6 +59,8 @@ internal sealed partial class SidebarComposer
 
     private int _sidebarExpandVersion = -1;
 
+    private bool _sidebarFriendlyBoneNames;
+
     /// <summary>A gaze mode transition landed since the last rebuild. Gaze mode
     /// is not part of the scene revision and cannot be, so the one row it owns
     /// needs its own arming bit. Written from the gaze service's publishing
@@ -87,7 +86,7 @@ internal sealed partial class SidebarComposer
 
     public SidebarComposer(
         AppShellViewModel vm,
-        Config.ConfigurationService configuration,
+        Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         SceneGroups groups,
         SelectionSession selection,
@@ -177,22 +176,27 @@ internal sealed partial class SidebarComposer
     /// <para>The gate is exactly the inputs that can change the row count or
     /// order: the published scene revision (the structural signature — actor
     /// set and generations, slot presence, bone counts), the search filter, and
-    /// the disclosure version. Selection, actor visibility, pause state and
-    /// library mode are per-row flags: they are refreshed in place, so they
-    /// still land on the frame they change. A display name is a flag too,
-    /// except while filtering, where it can change what matches — that case
-    /// re-arms the gate.</para>
+    /// the disclosure version, and the bone-name presentation policy. Bone
+    /// labels are retained row strings, so the policy belongs in this gate
+    /// even though it changes no scene identity. Selection, actor visibility,
+    /// pause state and library mode are per-row flags: they are refreshed in
+    /// place, so they still land on the frame they change. An actor display
+    /// name is a flag too, except while filtering, where it can change what
+    /// matches — that case re-arms the gate.</para>
     /// </summary>
     public void Build()
     {
         // Trim hands back the same instance when there is nothing to trim, so
         // the common (unfiltered) frame builds no string here.
         string filter = _vm.SidebarSearch.Trim();
+        bool friendlyBoneNames =
+            _configuration.Config.Skeleton.ShowFriendlyBoneNames;
         if (!_sidebarBuilt ||
             _gazeDirty ||
             _sidebarRevision != _scene.Revision ||
             _sidebarGroupsRevision != _groups.Revision ||
             _sidebarExpandVersion != _expandVersion ||
+            _sidebarFriendlyBoneNames != friendlyBoneNames ||
             !string.Equals(_sidebarFilter, filter, StringComparison.Ordinal))
         {
             _sidebarBuilt = true;
@@ -202,6 +206,7 @@ internal sealed partial class SidebarComposer
             _sidebarRevision = _scene.Revision;
             _sidebarGroupsRevision = _groups.Revision;
             _sidebarExpandVersion = _expandVersion;
+            _sidebarFriendlyBoneNames = friendlyBoneNames;
             _sidebarFilter = filter;
             RebuildSidebar(filter);
         }
@@ -799,20 +804,14 @@ internal sealed partial class SidebarComposer
                 (companions ??= new List<ActorDescriptor>()).Add(candidate);
         }
 
-        var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
+        // Visible character bones in skeleton order; the Ktisis tree below
+        // decides where each one is listed.
+        var visibleBones = new List<BoneDescriptor>();
         var skeleton = actor.CharacterSkeleton;
         if (skeleton != null)
-        {
             foreach (var bone in skeleton.Bones)
-            {
-                if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
-                var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
-                var slot = groups.FindIndex(g => g.Cat == cat);
-                if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
-                groups[slot].Bones.Add(bone);
-            }
-            groups.Sort((a, b) => ((int)a.Cat).CompareTo((int)b.Cat));
-        }
+                if (!bone.IsHidden && !IsBoneSuppressed(bone))
+                    visibleBones.Add(bone);
 
         // Present auxiliary slots become one additional group each under
         // the same actor row (slots are never separate actors).
@@ -823,9 +822,9 @@ internal sealed partial class SidebarComposer
 
         bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
         // Category labels match the rows emitted below.
-        bool hasMatchingBone = groups.Exists(group =>
-            group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)))
-            || (groups.Count > 0 && KtisisCategoryLabelMatches(filter));
+        bool hasMatchingBone = visibleBones.Exists(bone =>
+                MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName))
+            || (visibleBones.Count > 0 && KtisisCategoryLabelMatches(filter));
         bool hasMatchingAux = auxSkeletons.Exists(aux =>
             MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot))
             || aux.Bones.Any(bone => !bone.IsHidden && !IsBoneSuppressed(bone) &&
@@ -952,13 +951,12 @@ internal sealed partial class SidebarComposer
             var byName = new Dictionary<string, (BoneDescriptor Bone, int Ordinal)>(
                 StringComparer.Ordinal);
             int ordinal = 0;
-            foreach (var (_, bones) in groups)
-                foreach (var bone in bones)
-                    byName[bone.Id.CanonicalName] = (bone, ordinal++);
+            foreach (var bone in visibleBones)
+                byName[bone.Id.CanonicalName] = (bone, ordinal++);
 
             var claimed = new HashSet<string>(StringComparer.Ordinal);
             var built = new List<BuiltCategory>();
-            foreach (var rootCategory in Core.BoneInfo.KtisisBoneCategories.Roots)
+            foreach (var rootCategory in Domain.Posing.KtisisBoneCategories.Roots)
                 if (BuildKtisisCategory(
                         rootCategory, byName, claimed, filter, filtering)
                     is { } presentRoot)
@@ -1033,7 +1031,7 @@ internal sealed partial class SidebarComposer
 
     /// <summary>Every category label, flattened once, for the filter
     /// oracle: a query naming any category keeps the actor visible.</summary>
-    private static string[]? _ktisisLabels;
+    private static readonly string[] KtisisLabels = FlattenKtisisLabels();
 
     /// <summary>Whether an actor, any of its bones or slots, or any actor
     /// attached to it satisfies the sidebar filter.</summary>
@@ -1055,12 +1053,7 @@ internal sealed partial class SidebarComposer
                 if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
                 if (MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName))
                     return true;
-                if (!character) continue;
-                var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
-                if (MatchesSidebarFilter(
-                        filter,
-                        Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
-                        cat.ToString()))
+                if (character && KtisisCategoryLabelMatches(filter))
                     return true;
             }
         }
@@ -1236,6 +1229,6 @@ internal sealed partial class SidebarComposer
     /// IsHidden and every selection path are untouched.</summary>
     public bool IsBoneSuppressed(BoneDescriptor bone)
         => !_configuration.Config.Display.ShowNsfwBones
-            && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
+            && Domain.Posing.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
 
 }

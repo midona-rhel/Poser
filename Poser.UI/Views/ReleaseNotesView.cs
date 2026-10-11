@@ -3,6 +3,9 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Settings;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.WindowFrameWidgets;
 
 namespace Poser.UI.Views;
 
@@ -36,7 +39,7 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
                 var owner = Interactive.BeginOwner("poser-release-notes", InteractionLayer.Window, min, min + size);
                 try
                 {
-                    var frame = Crystarium.WindowFrame("release-notes", min, size, new WindowFrameProps
+                    var frame = WindowFrame("release-notes", min, size, new WindowFrameProps
                     {
                         Title = session.ShowingHistory ? "Release notes" : "What's new",
                         OnClose = session.Dismiss,
@@ -78,12 +81,12 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
 
     private void DrawBody()
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         if (session.Entries.Count == 0)
-            Crystarium.Text("No release notes are bundled for this version.");
+            Text("No release notes are bundled for this version.");
         foreach (var release in session.Entries)
         {
-            Crystarium.Text($"Poser {release.Version.ToString(3)} — {release.Title}",
+            Text($"Poser {release.Version.ToString(3)} — {release.Title}",
                 new TextStyle
                 {
                     Color = theme.Text,
@@ -94,7 +97,7 @@ public sealed class ReleaseNotesView(ReleaseNotesSession session)
             ImGui.Dummy(new Vector2(0, 8 * ImGuiHelpers.GlobalScale));
             foreach (var highlight in release.Highlights)
             {
-                Crystarium.Text($"• {highlight}", default,
+                Text($"• {highlight}", default,
                     TextConstraint.Wrap(ImGui.GetContentRegionAvail().X));
                 ImGui.Dummy(new Vector2(0, 8 * ImGuiHelpers.GlobalScale));
             }

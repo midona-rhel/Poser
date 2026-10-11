@@ -1,35 +1,11 @@
 using System.Collections.Generic;
 using System.Linq;
-using Poser.Config;
+using Poser.Documents.Config;
 
-namespace Poser.Tests.Core;
+namespace Poser.Application.Tests.Settings;
 
 public sealed class KeybindTests
 {
-    [Fact]
-    public void Pose_bindings_persist_rebinding_clearing_and_conflicts_without_new_defaults()
-    {
-        string[] actions = ["Import pose", "Import pose from file", "Export pose",
-            "Export pose to file", "Copy pose", "Paste pose", "Play / pause actor"];
-        foreach (var action in actions)
-        {
-            Assert.Contains(KeybindRegistry.Actions, entry => entry.Id == action);
-            Assert.Empty(KeybindRegistry.Default(action).Primary);
-        }
-        var settings = new UIConfiguration();
-        settings.Bindings["Import pose"] = new("Ctrl+I", "Alt+I");
-        settings.Bindings["Paste pose"] = new("Ctrl+I");
-        settings.Bindings["Copy pose"] = new("");
-        var loaded = Newtonsoft.Json.JsonConvert.DeserializeObject<UIConfiguration>(
-            Newtonsoft.Json.JsonConvert.SerializeObject(settings))!;
-        var resolved = KeybindRegistry.Resolve(loaded.Bindings);
-        Assert.Equal("Alt+I", resolved["Import pose"].Secondary);
-        Assert.Empty(resolved["Copy pose"].Primary);
-        Assert.Equal(2, KeybindRegistry.Conflicts(resolved).Count);
-        loaded.Bindings["Paste pose"].Primary = "Ctrl+V";
-        Assert.Empty(KeybindRegistry.Conflicts(KeybindRegistry.Resolve(loaded.Bindings)));
-    }
-
     [Fact]
     public void Keybind_migration_is_idempotent_and_preserves_user_edited_slots()
     {
@@ -45,39 +21,5 @@ public sealed class KeybindTests
         Assert.Equal("Alt+W", ui.Bindings["Undo"].Secondary);
         Assert.Equal("Ctrl+Y", ui.Bindings["Redo"].Primary);
         Assert.Empty(ui.Keybinds);
-    }
-
-    [Fact]
-    public void Keybind_vocabulary_preserves_canonical_round_trips_and_preset_completeness()
-    {
-        foreach (var text in new[] { "Ctrl+Z", "Ctrl+Shift+Alt+F12", "[", "PageUp" })
-            Assert.Equal(text, KeyChord.Parse(text).ToString());
-        Assert.False(KeyChord.Parse("Ctrl+Nonsense").IsBound);
-        Assert.Equal("[", KeyChord.Parse("OEM_4").ToString());
-        Assert.Contains(KeyCode.KEY_1, KeyChord.CapturableKeys());
-        Assert.All(new[] { KeybindPreset.Poser, KeybindPreset.Brio, KeybindPreset.Ktisis },
-            preset => Assert.Equal(KeybindRegistry.Actions.Count,
-                KeybindRegistry.Bindings(preset).Count));
-    }
-
-    [Fact]
-    public void Keybind_resolution_distinguishes_defaults_empty_slots_and_two_sided_conflicts()
-    {
-        var resolved = KeybindRegistry.Resolve(new Dictionary<string, KeybindSlots>
-        {
-            ["Undo"] = new(string.Empty),
-        });
-        var conflicts = KeybindRegistry.Conflicts(new Dictionary<string, KeybindSlots>
-        {
-            ["Undo"] = new("Ctrl+Z"),
-            ["Redo"] = new("Ctrl+Z"),
-        });
-
-        Assert.Equal(string.Empty, resolved["Undo"].Primary);
-        Assert.Equal(string.Empty, resolved["Next tab"].Primary);
-        Assert.Equal(2, conflicts.Count);
-        Assert.Contains(new KeybindRegistry.SlotRef("Undo", 0), conflicts.Keys);
-        Assert.Contains(new KeybindRegistry.SlotRef("Redo", 0), conflicts.Keys);
-        Assert.Equal("Ctrl+Y", KeybindRegistry.Bindings(KeybindPreset.Brio)["Redo"].Primary);
     }
 }

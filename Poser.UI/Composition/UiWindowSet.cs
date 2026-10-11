@@ -1,9 +1,11 @@
 using Dalamud.Interface.Windowing;
-using Poser.Config;
-using Poser.Services;
 using System;
 using System.Collections.Generic;
 using Poser.Application.Selection;
+using Poser.UI.Widgets;
+using Poser.Domain;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
 
 namespace Poser.UI.Composition;
 
@@ -27,6 +29,8 @@ public sealed class UiWindowSet : IDisposable
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly ConfigurationService _configService;
     private readonly IServiceProvider _services;
+    private readonly UiContext _ui;
+    private readonly FrameProfiler _profiler;
     // Requested state can wait for bounded icon warming.
     private bool _primaryOpenRequested;
     private (bool Open, bool Detached, bool SplitInspector)? _appliedLayout;
@@ -45,6 +49,7 @@ public sealed class UiWindowSet : IDisposable
     private readonly List<(PropertiesContext Context, int Mode, string Tab)> _pendingProperties = new();
 
     public UiWindowSet(
+        UiContext ui,
         IGPoseService gPoseService,
         ConfigurationService configService,
         IServiceProvider services,
@@ -53,6 +58,7 @@ public sealed class UiWindowSet : IDisposable
         GizmoOverlayWindow gizmoOverlay,
         SettingsWindow settings,
         SpawnBrowserWindow spawnBrowser,
+        FrameProfiler profiler,
         SkeletonOverlayPresentation overlayPresentation,
         WorldAdoptionSource worldAdoption,
         ReferenceImageSession referenceImages,
@@ -67,9 +73,10 @@ public sealed class UiWindowSet : IDisposable
         _overlayPresentation = overlayPresentation;
         _worldAdoption = worldAdoption;
         _configService = configService;
-        Crystarium.ReadSectionOpen = key =>
+        _ui = ui;
+        ui.Sections.ReadSectionOpen = key =>
             !_configService.Config.UI.SectionDisclosure.TryGetValue(key, out var open) || open;
-        Crystarium.WriteSectionOpen = (key, open) =>
+        ui.Sections.WriteSectionOpen = (key, open) =>
         {
             _configService.Config.UI.SectionDisclosure[key] = open;
             // UI memory is not a settings change: do not reopen hidden split
@@ -125,7 +132,8 @@ public sealed class UiWindowSet : IDisposable
         // Last in draw order, and deliberately: it reports on every window
         // registered above it, and a panel that drew first would be reporting
         // on a frame that had not happened yet.
-        FrameProfilerPanel = new FrameProfilerWindow(configService);
+        _profiler = profiler;
+        FrameProfilerPanel = new FrameProfilerWindow(configService, profiler);
         System.AddWindow(FrameProfilerPanel);
 
 
@@ -145,7 +153,7 @@ public sealed class UiWindowSet : IDisposable
     {
         bool showing = _configService.Config.UI.ShowFrameProfiler;
         FrameProfilerPanel.IsOpen = showing;
-        FrameProfiler.SetEnabled(showing);
+        _profiler.SetEnabled(showing);
     }
 
     public void SetPrimaryOpen(bool isOpen)
@@ -160,7 +168,7 @@ public sealed class UiWindowSet : IDisposable
     {
         if (_primaryOpenRequested
             && !Main.IsOpen
-            && Crystarium.StartupIconsReady
+            && _ui.Icons.StartupIconsReady
             && previewBackingReady)
             ApplyPrimaryOpen(true);
     }
@@ -328,8 +336,6 @@ public sealed class UiWindowSet : IDisposable
         Main.OnPopOutRequested -= QueueProperties;
         CloseProperties();
         PumpProperties();
-        Crystarium.ReadSectionOpen = null;
-        Crystarium.WriteSectionOpen = null;
         _referenceImages.OnAdded -= AddReferenceWindow;
         _referenceImages.OnRemoved -= DismissReferenceWindow;
         _referenceWindows.Clear();
@@ -380,7 +386,7 @@ public sealed class UiWindowSet : IDisposable
             var placement = PropertiesWindow.Cascade(_lastPropertiesPlacement, Main.LastPosition);
             _lastPropertiesPlacement = placement;
             var window = new PropertiesWindow(lease, Main.RequestSettings, placement,
-                next => _lastPropertiesPlacement = next);
+                next => _lastPropertiesPlacement = next, Main.Manipulation);
             _propertiesWindows.Add(window);
             System.AddWindow(window);
         }

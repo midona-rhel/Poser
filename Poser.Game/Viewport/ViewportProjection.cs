@@ -6,9 +6,9 @@ using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.Domain.Cameras;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Viewport;
 
@@ -52,11 +52,11 @@ public sealed class ViewportProjection : IViewportReads
     public void RequestBoneSnapshot() => BoneSnapshotDemand.Request();
 
     public ColliderViewportState? GetCollider(OverlayId id) =>
-        _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value is { State.Collider: { } collider } node
+        _bindings.Resolve(id).Value is { State.Collider: { } collider } node
             ? new(collider, node.Visible, node.Alpha) : null;
 
     public LightViewportState? GetLight(LightId id) =>
-        _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value is { } light
+        _bindings.Resolve(id).Value is { } light
             ? new(light.Kind, light.IsOn, light.Color, light.SpotAngle, light.AreaAngle) : null;
 
     public ActorId? GameTarget =>
@@ -70,7 +70,7 @@ public sealed class ViewportProjection : IViewportReads
     {
         if (included.Length < bones.Count || positions.Length < bones.Count)
             throw new ArgumentException("Bone output buffers must cover the descriptors.");
-        var skeleton = _framework.IsInFrameworkUpdateThread && bones.Count > 0 && bones[0].Id.Skeleton == id
+        var skeleton = bones.Count > 0 && bones[0].Id.Skeleton == id
             ? _bindings.Resolve(bones[0].Id).Value?.Skeleton : null;
         for (int i = 0; i < bones.Count; i++)
         {
@@ -87,14 +87,12 @@ public sealed class ViewportProjection : IViewportReads
     }
 
     public bool IsLightAttached(LightId id) =>
-        _framework.IsInFrameworkUpdateThread && _bindings.Resolve(id).Value?.AttachedBone is not null;
+        _bindings.Resolve(id).Value?.AttachedBone is not null;
 
     /// <summary>Whether the actor currently carries a model-transform
     /// override (display badge state).</summary>
     public bool HasActorOverride(ActorId id)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return false;
         var actor = _bindings.Resolve(id);
         return actor.Success && _actors.HasTransformOverride(actor.Value!);
     }
@@ -126,8 +124,6 @@ public sealed class ViewportProjection : IViewportReads
     /// thread or when the id no longer binds.</summary>
     public PoseTransform? GetPropTransform(PropId id)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var prop = _bindings.Resolve(id);
         return prop.Success
             ? ToPoseTransform(prop.Value!.Transform)
@@ -138,8 +134,6 @@ public sealed class ViewportProjection : IViewportReads
     /// framework thread or when the id no longer binds.</summary>
     public PoseTransform? GetWorldObjectTransform(WorldObjectId id)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var worldObject = _bindings.Resolve(id);
         return worldObject.Success
             ? ToPoseTransform(worldObject.Value!.Transform)
@@ -150,8 +144,6 @@ public sealed class ViewportProjection : IViewportReads
     /// thread or when the id no longer binds.</summary>
     public PoseTransform? GetLightTransform(LightId id)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var light = _bindings.Resolve(id);
         return light.Success
             ? ToPoseTransform(light.Value!.Transform)
@@ -160,8 +152,6 @@ public sealed class ViewportProjection : IViewportReads
 
     public PoseTransform? GetActorTransform(ActorId id)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var actor = _bindings.Resolve(id);
         if (!actor.Success)
             return null;
@@ -171,8 +161,6 @@ public sealed class ViewportProjection : IViewportReads
 
     public PoseTransform? GetBoneModelTransform(BoneId id)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var bone = _bindings.Resolve(id);
         return bone.Success
             ? ToPoseTransform(bone.Value!.LastTransform)
@@ -185,8 +173,6 @@ public sealed class ViewportProjection : IViewportReads
     /// </summary>
     public PoseTransform? GetParentModelTransform(BoneId id)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var bone = _bindings.Resolve(id);
         if (!bone.Success || bone.Value!.ParentBone is not { } parent)
             return null;
@@ -209,8 +195,6 @@ public sealed class ViewportProjection : IViewportReads
 
     public Matrix4x4? GetSkeletonModelMatrix(BoneId id)
     {
-        if (!_framework.IsInFrameworkUpdateThread)
-            return null;
         var bone = _bindings.Resolve(id);
         if (!bone.Success)
             return null;

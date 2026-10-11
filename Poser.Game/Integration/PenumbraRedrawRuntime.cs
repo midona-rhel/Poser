@@ -5,39 +5,31 @@ using Poser.Application.Lifecycle;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game.Bindings;
+using Poser.Game.Core;
 using Poser.Game.Posing;
-using Poser.Services;
+using Poser.Game.Services;
 using GameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace Poser.Game.Integration;
 
 internal sealed class PenumbraRedrawRuntime(
     IDalamudPluginInterface plugin, IFramework framework,
-    Lazy<StableBindingRegistry> bindings, Lazy<ISkeletonService> skeletons,
-    IActorManager actors, ISessionGenerationSource sessions,
-    Func<ActorId, IntegrationPortResult> request) : IActorRedrawRuntime
+    Lazy<StableBindingRegistry> bindings, ISkeletonService skeletons,
+    ISessionGenerationSource sessions, Func<bool> available,
+    Func<ActorId, IntegrationResult> request) : IActorRedrawRuntime
 {
     public Task<T> OnFramework<T>(Func<T> action) => framework.RunOnFrameworkThread(action);
 
-    public bool ProviderAvailable
-    {
-        get
-        {
-            try
-            {
-                return plugin.InstalledPlugins.Any(p => p.InternalName == "Penumbra" && p.IsLoaded)
-                    && plugin.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5").InvokeFunc().Item1 == 5;
-            }
-            catch { return false; }
-        }
-    }
+    /// <summary>The port's cached availability: a barrier polls this every
+    /// tick, and the plugin list and version IPC are not per-tick reads.</summary>
+    public bool ProviderAvailable => available();
 
-    public unsafe RedrawActor? Resolve(ActorId id)
+    public RedrawActor? Resolve(ActorId id)
     {
         if (sessions.ActiveSessionGeneration is not { IsValid: true } session
             || bindings.Value.Resolve(id) is not { Success: true, Value: { } actor }
             || actor.Address == 0) return null;
-        return new(id, session, actor.Address, ((GameObject*)actor.Address)->ObjectIndex);
+        return new(id, session, actor.Address, GPoseObjectTable.IndexOf(actor.Address));
     }
 
     public IDisposable Observe(Action<nint, int> redrawn) =>
@@ -48,13 +40,14 @@ internal sealed class PenumbraRedrawRuntime(
         if (Resolve(target.Actor) != target) return false;
         var native = (GameObject*)target.Address;
         if (native->RenderFlags != 0 || native->DrawObject == null) return false;
-        actors.RefreshActors();
+        // The existing wrapper: a redraw keeps the address and identity, and
+        // the actor manager's own frame scan picks up anything that did not.
         if (Resolve(target.Actor) != target
             || bindings.Value.Resolve(target.Actor) is not { Success: true, Value: { } actor }) return false;
-        return ActorPoseReadiness.IsReady(skeletons.Value.GetSkeletons(actor), bindings.Value);
+        return ActorPoseReadiness.IsReady(skeletons.GetSkeletons(actor), bindings.Value);
     }
 
-    public IntegrationPortResult Request(ActorId actor) => request(actor);
+    public IntegrationResult Request(ActorId actor) => request(actor);
 
     private sealed class RedrawObservation : IDisposable
     {

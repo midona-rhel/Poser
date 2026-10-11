@@ -1,6 +1,6 @@
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
-using Poser.Services;
+using Poser.Domain.Scene;
 
 namespace Poser.Game.WorldObjects;
 

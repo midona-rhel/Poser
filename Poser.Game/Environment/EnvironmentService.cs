@@ -4,9 +4,8 @@ using System.Collections.Generic;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using Lumina.Excel;
-using Poser.Core;
-using Poser.Services;
 using Poser.Domain.Scene;
+using Poser.Application.Events;
 using CSEnvManager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager;
 using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 using CSHousingManager = FFXIVClientStructs.FFXIV.Client.Game.HousingManager;
@@ -191,6 +190,10 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     private readonly IClientState _clientState;
     private readonly IPluginLog _log;
     private readonly IEventBus _events;
+    // A detour never throws into the game: a fault is logged once per
+    // detour and the game's own call still runs.
+    private bool _weatherFaultLogged;
+    private bool _envStateFaultLogged;
     private readonly IHousingBrightnessNative _housingBrightness;
     private readonly Action<GPoseStateChangedEvent> _onGPoseStateChanged;
 
@@ -530,10 +533,21 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         // update. Suppressing territory weather lookup alone leaves a one-shot
         // value vulnerable to later writes. Do not reset TransitionTime here:
         // blending must advance normally, and native readback stays observable.
-        if (manager != null && IsWeatherOverrideEnabled)
+        try
         {
-            _heldWeather ??= manager->ActiveWeather;
-            manager->ActiveWeather = _heldWeather.Value;
+            if (manager != null && IsWeatherOverrideEnabled)
+            {
+                _heldWeather ??= manager->ActiveWeather;
+                manager->ActiveWeather = _heldWeather.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_weatherFaultLogged)
+            {
+                _weatherFaultLogged = true;
+                _log.Error($"Environment: weather detour faulted (logged once): {ex}");
+            }
         }
         var result = _weatherHook!.Original(manager, a2, a3);
 #if DEBUG
@@ -859,11 +873,34 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     /// </summary>
     private nint EnvStateCopyDetour(EnvStateNative* dest, EnvStateNative* src)
     {
-        EnvStateNative? previous = _held != SectionFlags.None && dest != null ? *dest : null;
+        EnvStateNative? previous = null;
+        try
+        {
+            previous = _held != SectionFlags.None && dest != null ? *dest : null;
+        }
+        catch (Exception ex)
+        {
+            ReportEnvStateFault(ex);
+        }
         var result = _envStateHook!.Original(dest, src);
-        if (previous is { } state)
-            ReStamp(dest, state);
+        try
+        {
+            if (previous is { } state)
+                ReStamp(dest, state);
+        }
+        catch (Exception ex)
+        {
+            ReportEnvStateFault(ex);
+        }
         return result;
+    }
+
+    private void ReportEnvStateFault(Exception ex)
+    {
+        if (_envStateFaultLogged)
+            return;
+        _envStateFaultLogged = true;
+        _log.Error($"Environment: section hold detour faulted (logged once): {ex}");
     }
 
     private void ReStamp(EnvStateNative* dest, EnvStateNative state)

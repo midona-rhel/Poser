@@ -1,0 +1,153 @@
+using System.Numerics;
+using System.Reflection;
+using Dalamud.Plugin.Services;
+using Poser.Application.Presentation;
+using Poser.Application.Scene;
+using Poser.Application.Transforms;
+using Poser.Domain.Identity;
+using Poser.Domain.Scene;
+using Poser.Game.Lighting;
+using Poser.Game.Entities;
+using Poser.Game.Services;
+
+namespace Poser.Game.Tests.Lighting;
+
+public sealed class LightBoundaryTests
+{
+    [Fact]
+    public void Drag_retains_detached_values_and_one_reversible_history_step()
+    {
+        var f = new Fixture();
+        var before = f.Control.Read(f.Id)!;
+        for (int i = 1; i <= 3; i++)
+        {
+            f.Journal.BeginEdit("intensity");
+            Assert.True(f.Control.Set(f.Id, LightProperties.Intensity, (float)i).Success);
+            f.Journal.EndEdit();
+        }
+        Assert.False(f.History.CanUndo);
+        f.Control.Seal();
+        Assert.Equal(0f, before.Intensity);
+        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
+        Assert.True(step.Undo());
+        Assert.Equal(0f, f.Light.Intensity);
+        f.History.CommitUndo(step);
+        Assert.False(f.History.CanUndo);
+        Assert.True(step.Redo());
+        Assert.Equal(3f, f.Light.Intensity);
+    }
+
+    [Fact]
+    public void Delayed_area_component_edit_preserves_newer_other_axis()
+    {
+        var f = new Fixture();
+        _ = f.Control.Read(f.Id);
+        f.Light.AreaAngle = new(10, 20);
+        Assert.True(f.Control.Update(f.Id, LightProperties.AreaAngle, angle => angle with { X = 30 }).Success);
+        Assert.Equal(new Vector2(30, 20), f.Light.AreaAngle);
+        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
+        Assert.True(step.Undo());
+        Assert.Equal(new Vector2(10, 20), f.Light.AreaAngle);
+    }
+
+    [Fact]
+    public void Stale_or_refused_light_write_returns_detail_and_appends_nothing()
+    {
+        var f = new Fixture();
+        var earlier = new JournalStep("Earlier edit", () => true, () => true);
+        f.History.Append(earlier);
+        f.History.CommitUndo(earlier);
+        f.Ignored.Add("Intensity");
+        var refused = f.Control.Set(f.Id, LightProperties.Intensity, 5f);
+        f.CurrentId = f.Id.NextGeneration();
+        var stale = f.Control.Set(f.Id, LightProperties.Range, 5f);
+        Assert.Equal((false, "The light did not accept the value."), (refused.Success, refused.Detail));
+        Assert.Equal((false, "The light is no longer available."), (stale.Success, stale.Detail));
+        Assert.Equal(0f, f.Light.Range);
+        Assert.False(f.History.CanUndo);
+        Assert.Same(earlier, f.History.PeekRedo());
+    }
+
+    [Fact]
+    public void Replaced_target_cannot_receive_deferred_picks()
+    {
+        var f = new Fixture();
+        f.CurrentId = f.Id.NextGeneration();
+        Assert.Null(f.Control.Read(f.Id));
+        Assert.False(f.Control.ApplyGobo(f.Id, 0).Success);
+        Assert.False(f.History.CanUndo);
+    }
+
+    private sealed class Fixture
+    {
+        public readonly LightId Id = LightId.New();
+        public LightId CurrentId;
+        public readonly BoneId BoneId = new(new(ActorId.New(), PoseSlot.Character, 0), 0, 1, "j_te_l");
+        public readonly ILight Light;
+        public readonly IBone Bone;
+        public readonly EditHistory History = new();
+        public readonly ValueJournal Journal;
+        public readonly LightControl Control;
+        public readonly HashSet<string> Ignored = new();
+
+        public Fixture()
+        {
+            CurrentId = Id;
+            var state = new Dictionary<string, object?> { ["IsValid"] = true, ["Name"] = "Test light" };
+            Light = Stub<ILight>((m, a) =>
+            {
+                if (m.Name.StartsWith("set_"))
+                {
+                    if (!Ignored.Contains(m.Name[4..])) state[m.Name[4..]] = a![0];
+                    return null;
+                }
+                return state.TryGetValue(m.Name[4..], out var v) ? v :
+                    m.ReturnType.IsValueType ? Activator.CreateInstance(m.ReturnType) : null;
+            });
+            var skeleton = Stub<ISkeleton>((_, _) => true);
+            Bone = Stub<IBone>((_, _) => skeleton);
+            var bindings = Stub<IEntityBindings>((m, a) =>
+                m.Name switch
+                {
+                    "Resolve" when a![0] is LightId id => id == CurrentId
+                        ? new BindingResult<ILight>(BindingStatus.Success, Light)
+                        : new BindingResult<ILight>(BindingStatus.StaleTarget),
+                    "Resolve" => new BindingResult<IBone>(BindingStatus.Success, Bone),
+                    "GetLightId" => CurrentId,
+                    "GetBoneId" => BoneId,
+                    _ => throw new InvalidOperationException(m.Name),
+                });
+            var lighting = Stub<ILightingService>((m, a) =>
+            {
+                switch (m.Name)
+                {
+                    case "get_IsAvailable": return true;
+                    case "get_Gobos": return new[] { new GoboEntry("test.tex", "Test") };
+                    case "ApplyGobo": state["GoboPath"] = ((GoboEntry)a![1]!).Path; return true;
+                    case "ClearGobo": state["GoboPath"] = null; return null;
+                    default: throw new InvalidOperationException(m.Name);
+                }
+            });
+            Journal = new(History);
+            var parenting = new TransformParenting(Stub<IParentingRuntime>((m, _) => m.Name switch
+            {
+                "CanParent" or "CanEdit" or "Write" => true,
+                "Read" => (Poser.Domain.Transforms.PoseTransform?)Poser.Domain.Transforms.PoseTransform.Identity,
+                _ => null,
+            }), History, Journal);
+            Control = new(bindings, lighting, Journal, parenting);
+        }
+    }
+
+    private static T Stub<T>(Func<MethodInfo, object?[]?, object?> call) where T : class
+    {
+        var proxy = DispatchProxy.Create<T, StubProxy>();
+        ((StubProxy)(object)proxy).Call = call;
+        return proxy;
+    }
+    public class StubProxy : DispatchProxy
+    {
+        public Func<MethodInfo, object?[]?, object?> Call = null!;
+        protected override object? Invoke(MethodInfo? method, object?[]? args) => Call(method!, args);
+    }
+}

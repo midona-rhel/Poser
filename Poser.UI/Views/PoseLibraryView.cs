@@ -3,7 +3,17 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Library;
+using Poser.UI.Widgets;
+using Poser.Domain.Library;
+using static Poser.UI.Widgets.ActionBarWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DropdownWidgets;
+using static Poser.UI.Widgets.FilterPillWidgets;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.SliderWidgets;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Views;
 
@@ -50,7 +60,7 @@ internal struct TextFit
             _source = text;
             _band = band;
             _size = size;
-            _fitted = Crystarium.FitTruncated(text, style, band);
+            _fitted = FitTruncated(text, style, band);
         }
         return _fitted;
     }
@@ -406,10 +416,10 @@ public sealed class PoseLibraryViewModel
 
     // Hoisted once per model: the frame's chrome must not mint a closure, and
     // every one of these closes over nothing but this model.
-    internal Action<Crystarium.ActionBarScope>? Footer;
-    internal Action<Crystarium.ActionBarScope>? FooterActions;
-    internal Action<Crystarium.ScrollRegionScope>? Rail;
-    internal Action<Crystarium.ScrollRegionScope>? Grid;
+    internal Action<ActionBarScope>? Footer;
+    internal Action<ActionBarScope>? FooterActions;
+    internal Action<ScrollRegionScope>? Rail;
+    internal Action<ScrollRegionScope>? Grid;
     internal Action? SpawnClick;
     internal Action? ApplyClick;
     internal Action? SettingsClick;
@@ -545,7 +555,7 @@ public static class PoseLibraryView
         ArgumentNullException.ThrowIfNull(vm);
         if (!(size.X > 0f) || !(size.Y > 0f))
             return;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
 
         // Enter is sampled BEFORE the body opens its scroll child, so the gate
@@ -643,7 +653,7 @@ public static class PoseLibraryView
             draw.AddRectFilled(
                 rail.Min, rail.Max, Packed(theme.SurfaceRaised with
                 {
-                    W = Crystarium.FloatingSurface.FillColor.W,
+                    W = FloatingSurface.FillColor.W,
                 }));
             draw.AddRectFilled(
                 new Vector2(rail.Max.X, bandBottom),
@@ -674,7 +684,7 @@ public static class PoseLibraryView
         if (!(footer.Size.X > 0f) || !(footer.Size.Y > 0f))
             return;
         float inset = PaneInset * scale;
-        Crystarium.ActionBar(
+        ActionBar(
             ActionRowId,
             new Vector2(footer.Min.X + inset, footer.Min.Y),
             new Vector2(
@@ -685,7 +695,7 @@ public static class PoseLibraryView
     }
 
     private static void Actions(
-        PoseLibraryViewModel vm, Crystarium.ActionBarScope scope)
+        PoseLibraryViewModel vm, ActionBarScope scope)
     {
         // The menus lead the ONE bottom row. Component toggles do NOT live
         // here: the inspector owns which of position/rotation/scale a pose
@@ -776,7 +786,7 @@ public static class PoseLibraryView
         ImGui.SetCursorScreenPos(new Vector2(
             right - actionPx,
             band.Min.Y + (band.Size.Y - actionPx) * 0.5f));
-        Crystarium.IconButton(
+        IconButton(
             TablerIcon.Refresh,
             vm.OnRefresh,
             style: ControlStyle.Square(action),
@@ -790,7 +800,7 @@ public static class PoseLibraryView
             ImGui.SetCursorScreenPos(new Vector2(
                 right - SortWidth * scale,
                 band.Min.Y + (band.Size.Y - theme.Controls.WorkspaceHeight * scale) * 0.5f));
-            Crystarium.Dropdown(
+            Dropdown(
                 SortId,
                 SortOptions,
                 (int)vm.Sort,
@@ -811,7 +821,7 @@ public static class PoseLibraryView
             ImGui.SetCursorScreenPos(new Vector2(
                 right - SliderWidth * scale,
                 band.Min.Y + (band.Size.Y - sliderHeight) * 0.5f));
-            Crystarium.Slider(
+            Slider(
                 SliderId,
                 Math.Clamp(vm.IconSize, MinimumIconSize, MaximumIconSize),
                 MinimumIconSize,
@@ -835,7 +845,7 @@ public static class PoseLibraryView
         if (!(width > 0f))
             return;
         ImGui.SetCursorScreenPos(new Vector2(left, band.Min.Y));
-        Crystarium.FilterPill(
+        FilterPill(
             SearchId,
             vm.Query,
             vm.OnQuery ?? IgnoreQuery,
@@ -858,7 +868,7 @@ public static class PoseLibraryView
             Size = theme.Typography.CaptionSize,
             Color = theme.Accent,
         };
-        float text = Crystarium.MeasureText(tag, style).X;
+        float text = MeasureText(tag, style).X;
         float glyph = theme.Controls.SmallIconSize * scale;
         float padX = theme.Spacing.Three * scale;
         float inner = theme.Spacing.Two * scale;
@@ -879,7 +889,7 @@ public static class PoseLibraryView
                 ? theme.Chrome.AccentFillBorder
                 : theme.Chrome.AccentFill),
             theme.Radii.Pill * scale);
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(min.X + padX, min.Y),
             new Vector2(text, height),
             tag,
@@ -888,11 +898,11 @@ public static class PoseLibraryView
             besideIcon: true);
         var glyphMin = new Vector2(
             min.X + width - padX - glyph, min.Y + (height - glyph) * 0.5f);
-        Crystarium.IconIn(
+        IconIn(
             glyphMin, glyphMin + new Vector2(glyph), TablerIcon.X, theme.Accent);
 
         if (hit.Hovered)
-            Crystarium.HoverHelp.Explain(
+            HoverHelp.Explain(
                 ActiveTagId, min, min + new Vector2(width, height),
                 "Clear the tag filter");
         if (hit.Clicked)
@@ -917,7 +927,7 @@ public static class PoseLibraryView
         // horizontal margin, so only the vertical inset is applied here.
         ImGui.SetCursorScreenPos(
             new Vector2(rail.Min.X, rail.Min.Y + inset * scale));
-        Crystarium.ScrollRegion(
+        ScrollRegion(
             RailId,
             rail.Size.X / scale,
             rail.Size.Y / scale - inset * 2f,
@@ -925,10 +935,10 @@ public static class PoseLibraryView
     }
 
     private static void DrawFolders(
-        PoseLibraryViewModel vm, Crystarium.ScrollRegionScope region)
+        PoseLibraryViewModel vm, ScrollRegionScope region)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float inset = theme.Page.Inset;
         float gutter = theme.Scrollbar.GutterWidth;
         // The gutter is the rows' TRAILING inset, not a narrower box: the row
@@ -1011,7 +1021,7 @@ public static class PoseLibraryView
                 + (NavigationIconMargin + row.Depth * FolderIndent) * scale,
             hit.ScreenMin.Y);
         var glyphMin = slotMin + new Vector2((height - glyph) * 0.5f);
-        Crystarium.IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
+        IconIn(glyphMin, glyphMin + new Vector2(glyph), icon);
 
         float labelX = slotMin.X + height;
         // The count breathes off the pill's right edge; the label in turn
@@ -1025,9 +1035,9 @@ public static class PoseLibraryView
                 Family = FontFamily.Mono,
                 Color = theme.FormLabel,
             };
-            float countWidth = Crystarium.MeasureText(count, countStyle).X;
+            float countWidth = MeasureText(count, countStyle).X;
             labelRight -= countWidth;
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(labelRight, hit.ScreenMin.Y),
                 new Vector2(countWidth, height),
                 count,
@@ -1052,7 +1062,7 @@ public static class PoseLibraryView
         // the name was cut, so a truncated folder names itself without a second
         // measure and an untruncated one costs nothing.
         if (hit.Hovered && row.LabelFit.Truncated)
-            Crystarium.HoverHelp.Preview(
+            HoverHelp.Preview(
                 FolderLabelHelpId,
                 hit.ScreenMin,
                 new Vector2(contentRight, hit.ScreenMax.Y),
@@ -1087,7 +1097,7 @@ public static class PoseLibraryView
         float strip = selected ? InfoStripHeight : 0f;
         vm.GridHeight = body.Size.Y / scale - strip;
         ImGui.SetCursorScreenPos(body.Min);
-        Crystarium.ScrollRegion(
+        ScrollRegion(
             GridId,
             body.Size.X / scale,
             body.Size.Y / scale - strip,
@@ -1121,7 +1131,7 @@ public static class PoseLibraryView
         float block = row + detail + theme.Spacing.Three * scale + button;
         float top = body.Min.Y + (body.Size.Y - block) * 0.5f;
 
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(body.Min.X, top),
             new Vector2(body.Size.X, row),
             vm.NoSourcesTitle,
@@ -1130,7 +1140,7 @@ public static class PoseLibraryView
 
         if (detail > 0f)
         {
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(body.Min.X, top + row),
                 new Vector2(body.Size.X, row),
                 vm.NoSourcesDetail,
@@ -1138,13 +1148,13 @@ public static class PoseLibraryView
                 TextAlign.Center);
         }
 
-        float width = Crystarium.MeasureButton(
+        float width = MeasureButton(
             "Open Settings",
             ControlStyle.Comfortable).X;
         ImGui.SetCursorScreenPos(new Vector2(
             body.Min.X + (body.Size.X - width) * 0.5f,
             top + row + detail + theme.Spacing.Three * scale));
-        Crystarium.Button(
+        Button(
             "Open Settings",
             vm.OnOpenSettings,
             style: ControlStyle.Comfortable,
@@ -1159,10 +1169,10 @@ public static class PoseLibraryView
     /// tree.
     /// </summary>
     private static void DrawGrid(
-        PoseLibraryViewModel vm, Crystarium.ScrollRegionScope region)
+        PoseLibraryViewModel vm, ScrollRegionScope region)
     {
         float scale = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float inset = theme.Scrollbar.GutterWidth * GridBarShare;
         float gap = theme.Spacing.Three;
         float icon = Math.Clamp(
@@ -1306,7 +1316,7 @@ public static class PoseLibraryView
         var slotMin = new Vector2(
             hit.ScreenMin.X + HeaderChevronMargin * scale, hit.ScreenMin.Y);
         var glyphMin = slotMin + new Vector2((height - glyph) * 0.5f);
-        Crystarium.IconIn(
+        IconIn(
             glyphMin,
             glyphMin + new Vector2(glyph),
             group.Collapsed ? TablerIcon.ChevronRight : TablerIcon.ChevronDown,
@@ -1320,9 +1330,9 @@ public static class PoseLibraryView
             Family = FontFamily.Mono,
             Color = theme.FormLabel,
         };
-        float countWidth = Crystarium.MeasureText(group.CountText, countStyle).X;
+        float countWidth = MeasureText(group.CountText, countStyle).X;
         labelRight -= countWidth;
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(labelRight, hit.ScreenMin.Y),
             new Vector2(countWidth, height),
             group.CountText,
@@ -1493,7 +1503,7 @@ public static class PoseLibraryView
                 // the entry is stated as damaged right on the tile, and the
                 // info strip carries the full typed reason on selection.
                 var flagMin = new Vector2(min.X + pad, min.Y + pad);
-                Crystarium.IconIn(
+                IconIn(
                     flagMin,
                     flagMin + new Vector2(star),
                     TablerIcon.AlertTriangle,
@@ -1505,11 +1515,11 @@ public static class PoseLibraryView
                 // A favorite is FILLED and warning-yellow — Tabler's OWN
                 // filled twin, through the icon pipeline; a hand-rolled
                 // star polygon shipped once and read as nonsense.
-                Crystarium.IconIn(
+                IconIn(
                     starMin, starMax, "star-filled", theme.Warning);
             }
             else if (hovered && vm.CanFavorite)
-                Crystarium.IconIn(
+                IconIn(
                     starMin,
                     starMax,
                     TablerIcon.Star,
@@ -1597,7 +1607,7 @@ public static class PoseLibraryView
             MathF.Floor(MathF.Min(box.X, box.Y) * 0.4f / bucket) * bucket);
         var glyphMin = theme.Optical.Snap(
             boxMin + (box - new Vector2(side)) * 0.5f);
-        Crystarium.IconIn(
+        IconIn(
             glyphMin, glyphMin + new Vector2(side), tile.Fallback, theme.TextDim);
     }
 
@@ -1648,7 +1658,7 @@ public static class PoseLibraryView
         // The fit already knows whether the name was cut, so the card comes
         // off that answer instead of a second measure.
         if (hovered && tile.LabelFit.Truncated)
-            Crystarium.HoverHelp.Preview(
+            HoverHelp.Preview(
                 TileLabelHelpId, min, min + size, tile.Label);
     }
 
@@ -1697,7 +1707,7 @@ public static class PoseLibraryView
         if (above > 0f)
             ImGui.Dummy(new Vector2(0f, above));
         var min = ImGui.GetCursorScreenPos();
-        Crystarium.TextInBand(
+        TextInBand(
             min,
             new Vector2(contentWidth * scale, height),
             text,
@@ -1771,10 +1781,10 @@ public static class PoseLibraryView
                 Size = theme.Typography.CaptionSize,
                 Color = theme.FormHint,
             };
-            float width = Crystarium.MeasureText(author, style).X;
+            float width = MeasureText(author, style).X;
             if (x + width > limit)
                 return;
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(x, strip.Min.Y),
                 new Vector2(width, strip.Size.Y),
                 author,
@@ -1809,7 +1819,7 @@ public static class PoseLibraryView
             Size = theme.Typography.CaptionSize,
             Color = active ? theme.Accent : theme.FormLabel,
         };
-        float text = Crystarium.MeasureText(tag, style).X;
+        float text = MeasureText(tag, style).X;
         float padX = theme.Spacing.Three * scale;
         float width = text + padX * 2f;
         if (x + width > limit)
@@ -1829,7 +1839,7 @@ public static class PoseLibraryView
                     ? theme.Chrome.ControlHover
                     : theme.Chrome.ControlFill),
             theme.Radii.Pill * scale);
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(min.X + padX, min.Y),
             new Vector2(text, height),
             tag,
@@ -1861,7 +1871,7 @@ public static class PoseLibraryView
         if (!(band.X > 0f))
             return;
         if (fit.Resolve(text, style, band.X) is not { } fitted)
-            Crystarium.TextInBand(min, band, text, style, align, besideIcon);
+            TextInBand(min, band, text, style, align, besideIcon);
         else
             // The constraint box IS the band, so the run's own alignment
             // inside it is what carries the caller's intent. The fitted run
@@ -1869,7 +1879,7 @@ public static class PoseLibraryView
             // plainly: the CLIP is what makes an unfittable run correct, and
             // it is what places the run to the pixel. Re-checking a run that
             // already fits costs the renderer no allocation.
-            Crystarium.TextInBand(
+            TextInBand(
                 min, band, fitted, style,
                 TextConstraint.Truncate(band.X, align),
                 TextAlign.Start, besideIcon);

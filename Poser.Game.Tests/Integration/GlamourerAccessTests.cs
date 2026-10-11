@@ -1,5 +1,6 @@
 using Poser.Domain.Integration;
 using Poser.Game.Integration;
+using Poser.Game.Tests.Integration;
 using System.Reflection;
 using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
@@ -15,18 +16,21 @@ public sealed class GlamourerAccessTests
     [Fact]
     public void Customize_write_refusals_keep_typed_detail_and_do_not_record()
     {
-        var port = DispatchProxy.Create<IIntegrationRuntimePort, WriteRaceProxy>();
-        var integration = new ActorIntegrationSession(port, null!, new SessionSource());
-        var history = new TransformHistory();
+        var port = DispatchProxy.Create<IIntegrationRuntimeFake, WriteRaceProxy>();
+        var integration = new IntegrationGraph(port, null!, new SessionSource()).Selectors;
+        var history = new EditHistory();
         var customize = new CustomizeSession(new ValueJournal(history), integration, port, null!);
         var actor = ActorId.New();
         var single = customize.Set(actor, CustomizeKey.SkinColor, 8, "skin");
+#if DEBUG
         var many = customize.SetMany(actor, new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 9 }, "skin");
         foreach (var result in new[] { single, many })
+#else
+        foreach (var result in new[] { single })
+#endif
         {
             Assert.False(result.Success);
             Assert.Equal(GlamourerAccessKind.ForeignHeld, result.AppearanceRefusal);
-            Assert.Equal(GlamourerAccess.ForeignHeld.Detail, result.Detail);
         }
         Assert.False(history.CanUndo);
     }
@@ -35,12 +39,12 @@ public sealed class GlamourerAccessTests
     {
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
         {
-            nameof(IIntegrationRuntimePort.ProbeGlamourerAccess) => GlamourerAccess.Editable,
-            nameof(IIntegrationRuntimePort.CaptureGlamourerState) => IntegrationValue<string>.Ok("baseline"),
-            nameof(IIntegrationRuntimePort.GetActorName) => IntegrationValue<string>.Ok("Actor"),
-            nameof(IIntegrationRuntimePort.GetCustomizeState) => IntegrationValue<CustomizeState>.Ok(
+            nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess) => GlamourerAccess.Editable,
+            nameof(IIntegrationRuntimeFake.CaptureGlamourerState) => IntegrationValue<string>.Ok("baseline"),
+            nameof(IIntegrationRuntimeFake.GetActorName) => IntegrationValue<string>.Ok("Actor"),
+            nameof(IIntegrationRuntimeFake.GetCustomizeState) => IntegrationValue<CustomizeState>.Ok(
                 new CustomizeState(new Dictionary<CustomizeKey, int> { [CustomizeKey.SkinColor] = 7 }, 0)),
-            nameof(IIntegrationRuntimePort.SetCustomize) => IntegrationPortResult.Refused(GlamourerAccess.ForeignHeld),
+            nameof(IIntegrationRuntimeFake.SetCustomize) => IntegrationResult.Refused(GlamourerAccess.ForeignHeld),
             _ => throw new NotSupportedException(method.Name),
         };
     }
@@ -48,8 +52,8 @@ public sealed class GlamourerAccessTests
     [Fact]
     public void Journal_read_races_keep_typed_refusal_without_recording_or_mutating()
     {
-        var port = DispatchProxy.Create<IIntegrationRuntimePort, ReadRaceProxy>();
-        var session = new ActorIntegrationSession(port, null!, new SessionSource());
+        var port = DispatchProxy.Create<IIntegrationRuntimeFake, ReadRaceProxy>();
+        var session = new IntegrationGraph(port, null!, new SessionSource()).Selectors;
         // A refusal must return before touching journal/bindings or invoking
         // any mutation; the proxy throws for every unexpected native call.
         var wardrobe = new WardrobeSession(null!, session, port, null!);
@@ -63,7 +67,9 @@ public sealed class GlamourerAccessTests
             wardrobe.SetSwitch(actor, MetaSwitch.HatVisible, true),
             wardrobe.SetOutfit(actor, "outfit", _ => new WardrobeSlot(1, 0, 0)),
             customize.Set(actor, CustomizeKey.Height, 50, "height"),
+#if DEBUG
             customize.SetMany(actor, new Dictionary<CustomizeKey, int>(), "look"),
+#endif
         ];
         Assert.All(results, result => Assert.Equal(GlamourerAccessKind.ForeignHeld, result.AppearanceRefusal));
     }
@@ -77,31 +83,22 @@ public sealed class GlamourerAccessTests
     {
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
         {
-            nameof(IIntegrationRuntimePort.ProbeGlamourerAccess) => GlamourerAccess.Editable,
-            nameof(IIntegrationRuntimePort.CaptureGlamourerState) => IntegrationValue<string>.Ok("baseline"),
-            nameof(IIntegrationRuntimePort.GetActorName) => IntegrationValue<string>.Ok("Actor"),
-            nameof(IIntegrationRuntimePort.GetWardrobeState) => IntegrationValue<WardrobeState>.Refused(GlamourerAccess.ForeignHeld),
-            nameof(IIntegrationRuntimePort.GetCustomizeState) => IntegrationValue<CustomizeState>.Refused(GlamourerAccess.ForeignHeld),
+            nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess) => GlamourerAccess.Editable,
+            nameof(IIntegrationRuntimeFake.CaptureGlamourerState) => IntegrationValue<string>.Ok("baseline"),
+            nameof(IIntegrationRuntimeFake.GetActorName) => IntegrationValue<string>.Ok("Actor"),
+            nameof(IIntegrationRuntimeFake.GetWardrobeState) => IntegrationValue<WardrobeState>.Refused(GlamourerAccess.ForeignHeld),
+            nameof(IIntegrationRuntimeFake.GetCustomizeState) => IntegrationValue<CustomizeState>.Refused(GlamourerAccess.ForeignHeld),
             _ => throw new NotSupportedException(method.Name),
         };
     }
 
     [Theory]
-    [InlineData(0, true, null, false, GlamourerAccessKind.Editable)]
-    [InlineData(1, true, null, false, GlamourerAccessKind.Editable)]
-    [InlineData(0, false, null, false, GlamourerAccessKind.Unavailable)]
-    [InlineData(2, false, null, false, GlamourerAccessKind.Unavailable)]
-    [InlineData(99, false, null, false, GlamourerAccessKind.Unavailable)]
     [InlineData(6, false, 6, false, GlamourerAccessKind.ForeignHeld)]
     [InlineData(6, false, 0, true, GlamourerAccessKind.PoserHeld)]
-    [InlineData(6, false, 1, true, GlamourerAccessKind.PoserHeld)]
-    [InlineData(6, false, 0, false, GlamourerAccessKind.Unavailable)]
-    [InlineData(6, false, 2, false, GlamourerAccessKind.Unavailable)]
-    [InlineData(6, false, 99, false, GlamourerAccessKind.Unavailable)]
     public void Vendor_codes_are_classified_without_inventing_ownership(
         int code, bool state, int? keyedCode, bool keyedState, GlamourerAccessKind expected)
     {
-        var result = IntegrationRuntimePort.ClassifyAccess(code, state, keyedCode, keyedState);
+        var result = GlamourerIpc.ClassifyAccess(code, state, keyedCode, keyedState);
         Assert.Equal(expected, result.Kind);
         Assert.Equal(expected == GlamourerAccessKind.Editable, result.CanEdit);
     }

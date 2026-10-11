@@ -45,7 +45,7 @@ public sealed class GroupsSnapshot : IEquatable<GroupsSnapshot>
         IReadOnlyDictionary<GroupTransformKey, GroupTransformSnapshot> transforms) =>
         new(Groups, Order, ActiveGroupId, transforms);
 
-    public GroupsSnapshot Remap(TransformHistory history)
+    public GroupsSnapshot Remap(EditHistory history)
     {
         IReadOnlyDictionary<SelectionId, bool> Flags(IReadOnlyDictionary<SelectionId, bool> flags) =>
             flags.ToDictionary(pair => history.ResolveLifecycleEntity(pair.Key), pair => pair.Value);

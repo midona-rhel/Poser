@@ -1,4 +1,5 @@
 using System;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -89,15 +90,15 @@ public readonly struct Transition
         return 3f * inv * inv * p1 + 6f * inv * u * (p2 - p1) + 3f * u * u * (1f - p2);
     }
 
-    public static Transition Fast => new(Crystarium.ActiveTheme.Motion.Fast);
-    public static Transition Default => new(Crystarium.ActiveTheme.Motion.Default);
-    public static Transition Slow => new(Crystarium.ActiveTheme.Motion.Slow);
+    public static Transition Fast => new(ActiveTheme.Motion.Fast);
+    public static Transition Default => new(ActiveTheme.Motion.Default);
+    public static Transition Slow => new(ActiveTheme.Motion.Slow);
 
     /// <summary>picto --ease-default: cubic-bezier(0.4, 0, 0.22, 1) at --duration-normal (200ms).</summary>
-    public static readonly Transition PictoDefault = CubicBezier(0.2f, 0.4f, 0f, 0.22f, 1f);
+    public static readonly Transition EaseNormal = CubicBezier(0.2f, 0.4f, 0f, 0.22f, 1f);
 
     /// <summary>picto --ease-default at --duration-fast (50ms).</summary>
-    public static readonly Transition PictoFast = CubicBezier(0.05f, 0.4f, 0f, 0.22f, 1f);
+    public static readonly Transition EaseFast = CubicBezier(0.05f, 0.4f, 0f, 0.22f, 1f);
 }
 
 public enum Easing

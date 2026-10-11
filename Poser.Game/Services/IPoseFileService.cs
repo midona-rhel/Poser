@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
-using Poser.Entities;
-using Poser.Files;
+using Poser.Domain.Transforms;
+using Poser.Documents.Files;
+using Poser.Application.Posing;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// Brio-compatible .pose import/export over an actor's slot skeleton set.
@@ -41,7 +43,9 @@ public interface IPoseFileService : IDisposable
     PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null);
 
     /// <summary>
-    /// Computes the import plan for an already-loaded pose file.
+    /// Computes the import plan for an already-loaded pose file. Every plan
+    /// is built from a pose that passed <see cref="PoseFileValidation"/>;
+    /// returns null when this one does not.
     /// </summary>
-    PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null);
+    PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null);
 }

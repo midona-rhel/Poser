@@ -9,9 +9,16 @@ using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DropdownWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.SwitchWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -29,7 +36,7 @@ public sealed class AnimationPane : IDisposable
     private readonly SelectionScope _selection;
 
     // All picker rows share one open feed.
-    private readonly Crystarium.SearchPicker<TimelineEntry> _picker =
+    private readonly SearchPicker<TimelineEntry> _picker =
         new("animation");
 
     private bool _openGeneral = true;
@@ -169,7 +176,7 @@ public sealed class AnimationPane : IDisposable
     public void Draw(Vector2 origin, Vector2 size)
     {
         PrunePaneState();
-        Crystarium.Page("animation", origin, size, page =>
+        Page("animation", origin, size, page =>
         {
             if (_selection.PrimaryActor is not { } actor)
             {
@@ -221,7 +228,7 @@ public sealed class AnimationPane : IDisposable
     /// verified Base scrub. Humanoid stance and advanced layer controls stay
     /// on root actors.</summary>
     private void DrawAttachedAnimation(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         AnimationOverrides owned)
@@ -287,7 +294,7 @@ public sealed class AnimationPane : IDisposable
 
 
     private void DrawStance(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         ActorAnimationReading reading)
     {
@@ -308,10 +315,10 @@ public sealed class AnimationPane : IDisposable
             "Stance",
             cell =>
             {
-                var theme = Crystarium.ActiveTheme;
+                var theme = ActiveTheme;
                 ImGui.SetCursorScreenPos(
                     cell.Center(theme.Controls.WorkspaceHeight));
-                Crystarium.ActionDropdown(
+                ActionDropdown(
                     "##anim-stance",
                     StanceLabels,
                     stanceIndex,
@@ -352,8 +359,8 @@ public sealed class AnimationPane : IDisposable
             cell =>
             {
                 ImGui.SetCursorScreenPos(cell.Center(
-                    Crystarium.ActiveTheme.Controls.SwitchHeight));
-                Crystarium.Switch(
+                    ActiveTheme.Controls.SwitchHeight));
+                Switch(
                     "##anim-weapon-drawn",
                     reading.WeaponDrawn,
                     next => Report(
@@ -364,8 +371,8 @@ public sealed class AnimationPane : IDisposable
             cell =>
             {
                 ImGui.SetCursorScreenPos(cell.Center(
-                    Crystarium.ActiveTheme.Controls.SwitchHeight));
-                Crystarium.Switch(
+                    ActiveTheme.Controls.SwitchHeight));
+                Switch(
                     "##anim-position-lock",
                     owned.PositionLock,
                     next => Report(
@@ -376,12 +383,12 @@ public sealed class AnimationPane : IDisposable
     }
 
     private static void PoseStepper(
-        Crystarium.FormPairCell cell,
+        FormPairCell cell,
         bool disabled,
         Action onPrevious,
         Action onNext)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float gap = theme.Page.ActionGap * cell.Scale;
         float width = MathF.Max(
             1f, (cell.Width - gap) * 0.5f / cell.Scale);
@@ -391,7 +398,7 @@ public sealed class AnimationPane : IDisposable
         };
         var top = cell.Center(theme.Controls.WorkspaceHeight);
         ImGui.SetCursorScreenPos(top);
-        Crystarium.Button(
+        Button(
             "Previous",
             onPrevious,
             style: style,
@@ -400,7 +407,7 @@ public sealed class AnimationPane : IDisposable
             id: "##anim-pose-previous");
         ImGui.SetCursorScreenPos(
             new Vector2(top.X + width * cell.Scale + gap, top.Y));
-        Crystarium.Button(
+        Button(
             "Next",
             onNext,
             style: style,
@@ -410,7 +417,7 @@ public sealed class AnimationPane : IDisposable
     }
 
     private void DrawLayer(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         AnimationOverrides owned,
@@ -516,7 +523,7 @@ public sealed class AnimationPane : IDisposable
     }
 
     private void DrawAnimationLayers(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         AnimationOverrides owned,
@@ -580,7 +587,7 @@ public sealed class AnimationPane : IDisposable
     }
 
     private void DrawGeneral(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         ActorAnimationReading reading,
         bool advanced)
@@ -650,20 +657,20 @@ public sealed class AnimationPane : IDisposable
     private static ControlStyle FixedActionStyle() =>
         ControlStyle.Workspace with
         {
-            Width = UiWidth.Fixed(Crystarium.ActiveTheme.Form.ValueColumnWidth),
+            Width = UiWidth.Fixed(ActiveTheme.Form.ValueColumnWidth),
         };
 
     // Selection text clips inside the natural Choose animation button seat.
     private static ControlStyle FixedSelectionStyle()
     {
         var style = ControlStyle.Workspace;
-        float width = Crystarium.MeasureButton("Choose animation", style).X
+        float width = MeasureButton("Choose animation", style).X
             / ImGuiHelpers.GlobalScale;
         return style with { Width = UiWidth.Fixed(width) };
     }
 
     private void DrawScrub(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         AnimationSlot slot,
         ControlStyle actionStyle,
@@ -741,7 +748,7 @@ public sealed class AnimationPane : IDisposable
     }
 
     /// <summary>Draws the expression controls for the face workspace.</summary>
-    public void DrawExpressionRow(Crystarium.FormScope form, ActorId actor)
+    public void DrawExpressionRow(FormScope form, ActorId actor)
     {
         PrunePaneState();
         if (!_animation.IsSupported(actor))
@@ -757,14 +764,14 @@ public sealed class AnimationPane : IDisposable
     public void DrawExpressionPicker() => DrawPicker();
 
     private void DrawExpression(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor)
     {
         DrawHeldExpression(form, actor, poseSurface: true, disabled: false);
     }
 
     private void DrawHeldExpression(
-        Crystarium.FormScope form,
+        FormScope form,
         ActorId actor,
         bool poseSurface,
         bool disabled)
@@ -852,7 +859,7 @@ public sealed class AnimationPane : IDisposable
             Badge = feed.Badge,
             Strip = feed.KindStrip,
             SecondStrip = feed.WeaponStrip,
-            Width = Crystarium.ActiveTheme.Picker.WideWidth,
+            Width = ActiveTheme.Picker.WideWidth,
         };
 
     private TimelineFeed SlotFeed(AnimationSlot slot)
@@ -1188,7 +1195,7 @@ public sealed class AnimationPane : IDisposable
         _layerSelections.Remove((actor, AnimationSlot.Base));
     }
 
-    private void ReportExpression(AnimationResult result, string what) =>
+    private void ReportExpression(Outcome result, string what) =>
         Report(result, what);
 
     private string ExpressionNameFor(ActorId actor, ushort timeline, string empty)
@@ -1217,7 +1224,7 @@ public sealed class AnimationPane : IDisposable
         ReportExpression(result, "Expression");
     }
 
-    private AnimationResult ApplyExpression(ActorId actor, ushort timeline) =>
+    private Outcome ApplyExpression(ActorId actor, ushort timeline) =>
         _expressions.Preview(actor, timeline);
 
     private void OnExpressionFailed(string detail) => _notices.Failed(detail);
@@ -1261,7 +1268,7 @@ public sealed class AnimationPane : IDisposable
                 _layerSelections.Remove(key);
     }
 
-    private void Report(AnimationResult result, string what)
+    private void Report(Outcome result, string what)
     {
         if (!result.Success)
             _notices.Failed($"{what}: {result.Detail}");

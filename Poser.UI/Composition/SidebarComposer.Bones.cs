@@ -8,14 +8,11 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 
@@ -24,31 +21,32 @@ namespace Poser.UI;
 /// <summary>Ktisis's bone categories: how a skeleton's bones fold into the sidebar tree.</summary>
 internal sealed partial class SidebarComposer
 {
+    private static string[] FlattenKtisisLabels()
+    {
+        var labels = new List<string>();
+        void Walk(Domain.Posing.KtisisBoneCategory category)
+        {
+            labels.Add(category.Label);
+            foreach (var child in category.Children)
+                Walk(child);
+        }
+        foreach (var root in Domain.Posing.KtisisBoneCategories.Roots)
+            Walk(root);
+        return labels.ToArray();
+    }
+
     private static bool KtisisCategoryLabelMatches(string filter)
     {
-        if (_ktisisLabels == null)
-        {
-            var labels = new List<string>();
-            void Walk(Core.BoneInfo.KtisisBoneCategory category)
-            {
-                labels.Add(category.Label);
-                foreach (var child in category.Children)
-                    Walk(child);
-            }
-            foreach (var root in Core.BoneInfo.KtisisBoneCategories.Roots)
-                Walk(root);
-            _ktisisLabels = labels.ToArray();
-        }
-        foreach (var label in _ktisisLabels)
+        foreach (var label in KtisisLabels)
             if (MatchesSidebarFilter(filter, label))
                 return true;
         return false;
     }
 
     /// <summary>One category, pruned to what the skeleton carries and
-    /// what the filter keeps: its own present bones (all of them when the
-    /// category label matched, the matching ones otherwise) and its surviving
-    /// children. Null when nothing below survives.</summary>
+    /// what the filter keeps: when the category label matched, everything it
+    /// and its descendants carry; otherwise its matching bones and its
+    /// surviving children. Null when nothing below survives.</summary>
     private sealed record BuiltCategory(
         string Id,
         string Label,
@@ -57,7 +55,7 @@ internal sealed partial class SidebarComposer
         List<BuiltCategory> Children);
 
     private BuiltCategory? BuildKtisisCategory(
-        Core.BoneInfo.KtisisBoneCategory category,
+        Domain.Posing.KtisisBoneCategory category,
         Dictionary<string, (BoneDescriptor Bone, int Ordinal)> byName,
         HashSet<string> claimed,
         string filter,
@@ -79,9 +77,12 @@ internal sealed partial class SidebarComposer
             : all.FindAll(bone => MatchesSidebarFilter(
                 filter, bone.DisplayName, bone.Id.CanonicalName));
 
+        // A matched category shows its whole subtree: searching "Ears" keeps
+        // Left Ear and Right Ear and their bones, not only bones whose own
+        // names contain the word (#479).
         var children = new List<BuiltCategory>();
         foreach (var child in category.Children)
-            if (BuildKtisisCategory(child, byName, claimed, filter, filtering)
+            if (BuildKtisisCategory(child, byName, claimed, filter, filtering && !categoryMatches)
                 is { } present)
                 children.Add(present);
 
@@ -329,7 +330,7 @@ internal sealed partial class SidebarComposer
                     byName[bone.Id.CanonicalName] = (bone, ordinal++);
             var claimed = new HashSet<string>(StringComparer.Ordinal);
             var categories = new List<BuiltCategory>();
-            foreach (var root in Core.BoneInfo.KtisisBoneCategories.Roots)
+            foreach (var root in Domain.Posing.KtisisBoneCategories.Roots)
                 if (BuildKtisisCategory(
                         root, byName, claimed, string.Empty, filtering: false)
                     is { } category)

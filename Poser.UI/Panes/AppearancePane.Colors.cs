@@ -3,8 +3,13 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
+using static Poser.UI.Widgets.ColorWellWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -19,13 +24,13 @@ public sealed partial class AppearancePane
         (AppearanceColorChannel.Feature, "Feature"),
     ];
 
-    private void DrawCustomColours(Crystarium.PageScope page, ActorId actor)
+    private void DrawCustomColours(PageScope page, ActorId actor)
     {
         page.Section("Custom colours", _openCustomColours, next => _openCustomColours = next, form =>
         {
             var reading = _colors.Read(actor);
             if (!reading.Success) form.Status(reading.Detail ?? "Custom colours are unavailable.");
-            var theme = Crystarium.ActiveTheme;
+            var theme = ActiveTheme;
             bool disabled = !reading.Success || !_appearanceAccess.CanEdit;
             float controlsWidth = theme.Controls.ColorWellSize * 2f;
             FixedColourGroups(form, "custom-colour", CustomColourRows.Length,
@@ -38,7 +43,7 @@ public sealed partial class AppearancePane
                     float side = theme.Controls.ColorWellSize * scale;
                     ImGui.SetCursorScreenPos(origin);
                     ImGui.BeginGroup();
-                    Crystarium.ColorWell($"custom-colour-{actor}-{channel}", owned ?? observed,
+                    ColorWell($"custom-colour-{actor}-{channel}", owned ?? observed,
                         next => ReportColour(_colors.Set(actor, channel, next)),
                         new ControlStyle
                         {
@@ -66,15 +71,15 @@ public sealed partial class AppearancePane
     }
 
     private static void FixedColourGroups(
-        Crystarium.FormScope form, string id, int count, Func<int, string> labelAt,
+        FormScope form, string id, int count, Func<int, string> labelAt,
         float controlsWidth, Action<int, Vector2, float> draw)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         var labelStyle = new TextStyle { Size = theme.Typography.LabelSize, Color = theme.FormLabel };
         float labelWidth = 0f;
         for (int i = 0; i < count; i++)
-            labelWidth = MathF.Max(labelWidth, Crystarium.MeasureText(labelAt(i), labelStyle).X);
+            labelWidth = MathF.Max(labelWidth, MeasureText(labelAt(i), labelStyle).X);
         float labelGap = theme.Spacing.Three * scale;
         float columnGap = theme.Spacing.Six * scale;
         form.EndPair();
@@ -94,7 +99,7 @@ public sealed partial class AppearancePane
                     int index = first + column;
                     var group = rowOrigin + new Vector2(column * (track + columnGap), 0f);
                     if (labelSpace > 0f)
-                        Crystarium.TextInBand(group, new Vector2(labelSpace, size.Y), labelAt(index),
+                        TextInBand(group, new Vector2(labelSpace, size.Y), labelAt(index),
                             labelStyle, TextConstraint.Truncate(labelSpace));
                     var control = group + new Vector2(MathF.Max(0f, track - controlsWidth * scale),
                         (size.Y - theme.Controls.WorkspaceHeight * scale) * 0.5f);
@@ -104,7 +109,7 @@ public sealed partial class AppearancePane
         }
     }
 
-    private void ReportColour(ValueWriteResult result)
+    private void ReportColour(Outcome result)
     {
         if (!result.Success) _notices.Failed(result.Detail ?? "The custom colour could not be changed.");
     }

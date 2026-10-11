@@ -1,9 +1,9 @@
 using System.Collections.Generic;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 
-namespace Poser.Files;
+namespace Poser.Application.Posing;
 
 /// <summary>One bone the import's chosen scope resets, named the way the
 /// pose store is addressed: slot, partial, bone name — never an instance

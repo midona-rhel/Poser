@@ -10,14 +10,16 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Application.Lifecycle;
+using Poser.Game.Core;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 
 /// <summary>Capture native state once; all file parsing/skinning works on managed snapshots.</summary>
 public sealed class ActorColliderCapture(
-    IEntityBindings bindings, IIntegrationRuntimePort integration, IDataManager data,
+    IEntityBindings bindings, IIntegrationResolutionPort integration, IPenumbraPort penumbra, IDataManager data,
     Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log,
     Application.Transforms.TransformParenting parenting, GroupSteps groupSteps) : Application.Posing.IActorColliderCapture
 {
@@ -76,7 +78,7 @@ public sealed class ActorColliderCapture(
         if (character == null || character->Skeleton == null)
             throw new InvalidOperationException("The actor's model is not loaded.");
 
-        var paths = integration.GetActorResourcePaths(id);
+        var paths = penumbra.GetActorResourcePaths(id);
         var replacements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (paths.Value is { } resources)
             foreach (var (actual, original) in resources)
@@ -114,7 +116,7 @@ public sealed class ActorColliderCapture(
             if (pose == null) continue;
             var live = pose->AccessBoneModelSpace(bone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
             if (live == null || !Matrix4x4.Invert(reference.ToMatrix(), out var inverseBind)) continue;
-            var current = new global::Poser.Transform
+            var current = new global::Poser.Domain.Transforms.Transform
             {
                 Position = new(live->Translation.X, live->Translation.Y, live->Translation.Z),
                 Rotation = new(live->Rotation.X, live->Rotation.Y, live->Rotation.Z, live->Rotation.W),
@@ -123,14 +125,15 @@ public sealed class ActorColliderCapture(
             // Row-vector skinning: bind-model -> bone-local -> posed-model -> world.
             // Read the native final pose, not demand-driven inspector caches or raw baselines.
             bones.TryAdd(bone.BoneName, inverseBind * current.ToMatrix() * world);
-            var frame = global::Poser.Transform.FromMatrix(current.ToMatrix() * world);
+            var frame = global::Poser.Domain.Transforms.Transform.FromMatrix(current.ToMatrix() * world);
             joints.TryAdd(bone.BoneName, new(frame.Position - origin, bone.ParentBone?.BoneName, frame.Rotation));
             if (bindings.GetBoneId(bone) is { } boneId)
             {
                 frames.TryAdd(bone.BoneName, (boneId, new(frame.Position, frame.Rotation, frame.Scale)));
             }
         }
-        ushort skeletonRace = character->GetModelType() == CharacterBase.ModelType.Human ? ((Human*)character)->RaceSexId : (ushort)0;
+        var human = GPoseObjectTable.AsHuman(character);
+        ushort skeletonRace = human != null ? human->RaceSexId : (ushort)0;
         var deformerPath = replacements.GetValueOrDefault(ActorColliderDeformation.GamePath, ActorColliderDeformation.GamePath);
         return new(models.ToArray(), bones, joints, world, origin, skeletonRace, deformerPath, frames);
     }

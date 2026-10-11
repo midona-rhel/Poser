@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Application.Presentation;
@@ -25,8 +26,8 @@ public interface IActorAppearanceControl
     IntegrationResult ResetBodyProfile(ActorId actor);
     int? ReadModel(ActorId actor);
     bool OwnsModel(ActorId actor);
-    PresentationResult SetModel(ActorId actor, int model);
-    PresentationResult ResetModel(ActorId actor);
+    Outcome SetModel(ActorId actor, int model);
+    Outcome ResetModel(ActorId actor);
     IntegrationResult Redraw(ActorId actor);
     IntegrationResult OpenGlamourer(ActorId actor);
     IntegrationValue<Guid> SaveActorDesign(ActorId actor, string name);

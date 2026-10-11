@@ -8,22 +8,36 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Integration;
-using Poser.Config;
-using Poser.Entities;
-using Poser.Library;
-using Poser.Services;
 using Poser.UI.Views;
 
 using Poser.Domain.Cameras;
+using Poser.UI.Widgets;
+using Poser.Domain;
+using Poser.Domain.Preferences;
+using Poser.Documents.Config;
+using Poser.Documents.Library;
+using Poser.Application.AutoSave;
+using Poser.Application.Library;
 
 namespace Poser.UI;
 public class SettingsWindow : Window
 {
+#if DEBUG
+    /// <summary>Effective config and the Settings window's live preview value.
+    /// They can differ until the preview frame applies or Cancel restores it.</summary>
+    public (bool Effective, bool Preview) DebugFriendlyBoneNames() =>
+        (_configuration.Config.Skeleton.ShowFriendlyBoneNames,
+            _vm.ShowFriendlyBoneNames);
+#endif
+
     private SettingsViewModel _vm = new();
+    private readonly SettingsView.SearchSettle _search = new();
     public bool IsRebindingShortcut => IsOpen && _vm.RebindingAction != null;
     private bool _saving;
     private readonly IAutoSaveService _autoSave;
-    private readonly IIntegrationRuntimePort _integrations;
+    private readonly IPenumbraPort _penumbra;
+    private readonly IGlamourerPort _glamourer;
+    private readonly ICustomizePlusPort _customizePlus;
     private readonly Controls.IssueReportModal _issueReport;
     private readonly Dalamud.Plugin.Services.IKeyState _keyState;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
@@ -33,14 +47,16 @@ public class SettingsWindow : Window
     private bool _openLibrary;
     private bool _openSkeleton;
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public SettingsWindow(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IAutoSaveService autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,
-        IIntegrationRuntimePort integrations,
+        IPenumbraPort penumbra,
+        IGlamourerPort glamourer,
+        ICustomizePlusPort customizePlus,
         Controls.IssueReportModal issueReport,
         IPoseLibraryService library,
         UserNotices notices,
@@ -52,7 +68,9 @@ public class SettingsWindow : Window
     {
         _configuration = configuration;
         _autoSave = autoSave;
-        _integrations = integrations;
+        _penumbra = penumbra;
+        _glamourer = glamourer;
+        _customizePlus = customizePlus;
         _issueReport = issueReport;
         _keyState = keyState;
         _log = log;
@@ -146,7 +164,7 @@ public class SettingsWindow : Window
             _configuration.ApplyChange(save: false);
             var ui = _configuration.Config.UI;
             ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
-            Crystarium.FloatingSurface.ConfigureEffects(
+            FloatingSurface.ConfigureEffects(
                 ui.FillOpacity, ui.BackdropBlur);
         }
         _snapshot = null;
@@ -172,7 +190,7 @@ public class SettingsWindow : Window
             _vm.SourceSnapshot = _library.Snapshot;
             _vm.SavedLibrary = _configuration.Config.Library;
             _vm.SourceScanBusy = _library.IsScanning;
-            SettingsView.Draw(_vm, min);
+            SettingsView.Draw(_vm, _search, min);
             _folderDialog.Draw();
             // Live: a change lands on the config and is announced the
             // frame it happens, so every consumer follows at once; only
@@ -304,7 +322,7 @@ public class SettingsWindow : Window
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
             OnThemePreview = ThemeSelection.Apply,
-            OnSurfaceEffectsPreview = Crystarium.FloatingSurface.ConfigureEffects,
+            OnSurfaceEffectsPreview = FloatingSurface.ConfigureEffects,
         };
         vm.OnRefreshIntegrations = () => ReadIntegrations(vm);
         vm.OnBrowseFolder = (start, chosen) =>
@@ -367,16 +385,16 @@ public class SettingsWindow : Window
         vm.Integrations.Clear();
         vm.Integrations.Add(new IntegrationStatusVm(
             "Penumbra",
-            _integrations.Penumbra.Available,
-            _integrations.Penumbra.Detail));
+            _penumbra.Penumbra.Available,
+            _penumbra.Penumbra.Detail));
         vm.Integrations.Add(new IntegrationStatusVm(
             "Glamourer",
-            _integrations.Glamourer.Available,
-            _integrations.Glamourer.Detail));
+            _glamourer.Glamourer.Available,
+            _glamourer.Glamourer.Detail));
         vm.Integrations.Add(new IntegrationStatusVm(
             "Customize+",
-            _integrations.CustomizePlus.Available,
-            _integrations.CustomizePlus.Detail));
+            _customizePlus.CustomizePlus.Available,
+            _customizePlus.CustomizePlus.Detail));
     }
     private void ResetConfig(ConfigResetScope scope)
     {
@@ -421,7 +439,7 @@ public class SettingsWindow : Window
         var c = svc.Config;
         _saving = true;
         ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
-        Crystarium.FloatingSurface.ConfigureEffects(
+        FloatingSurface.ConfigureEffects(
             c.UI.FillOpacity, c.UI.BackdropBlur);
         svc.ApplyChange();
         _library.RequestScan();
@@ -499,8 +517,6 @@ public class SettingsWindow : Window
         c.Skeleton.ActiveActorSource =
             (ActiveActorSource)Math.Clamp(_vm.ActiveActorSource, 0, 2);
         c.Skeleton.ShowFriendlyBoneNames = _vm.ShowFriendlyBoneNames;
-        Core.BoneInfo.BoneInfoService.ShowFriendlyNames =
-            _vm.ShowFriendlyBoneNames;
         c.Skeleton.ShowAllVieraEars = _vm.ShowAllVieraEars;
 
         c.Gizmo.GizmoScale = Math.Clamp(_vm.GizmoScale, 0.5f, 2f);

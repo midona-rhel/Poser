@@ -1,9 +1,8 @@
 using System.Diagnostics;
 using System.Numerics;
 using FFXIVClientStructs.Havok.Animation.Rig;
-using Poser.Core;
 using Poser.Domain.Scene;
-using Poser.Entities;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Posing;
 

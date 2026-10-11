@@ -34,23 +34,4 @@ public sealed class StableBindingAttachmentTests
         Assert.Null(descriptors[2].OwnerActor);
         Assert.Null(descriptors[2].AttachmentKind);
     }
-
-    [Fact]
-    public void Link_refuses_self_owner_relation()
-    {
-        var child = new ActorId(Guid.NewGuid(), 3);
-        var descriptor = new ActorDescriptor(
-            child, "Child", [], IsCompanion: true);
-        var descriptors = new List<ActorDescriptor> { descriptor };
-
-        StableBindingRegistry.LinkCompanionOwners(
-            descriptors,
-            [0x200],
-            new Dictionary<nint, ActorAttachment>
-            {
-                [0x200] = new(child, CompanionKind.Companion),
-            });
-
-        Assert.Equal(descriptor, descriptors[0]);
-    }
 }

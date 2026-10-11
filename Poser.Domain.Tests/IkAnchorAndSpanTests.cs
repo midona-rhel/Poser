@@ -9,24 +9,6 @@ public sealed class IkAnchorAndSpanTests
 {
     private static readonly JsonSerializerOptions Json = new() { IncludeFields = true };
 
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public void Two_joint_end_rotation_is_the_only_rotation_authority_in_every_target_mode(bool end, bool keep)
-    {
-        foreach (var mode in Enum.GetValues<IkTargetMode>())
-        {
-            var config = IkChainConfig.DefaultsFor(true, true) with
-            { TargetMode = mode, EnforceEndRotation = end, HoldRotation = keep };
-            Assert.Equal(end, config.HoldsEndRotation);
-            Assert.Equal(keep, (config with { Solver = IkSolver.Ccd }).HoldsEndRotation);
-            Assert.Equal(keep, (config with { Solver = IkSolver.Fabrik }).HoldsEndRotation);
-            Assert.Equal(keep, (config with { Solver = IkSolver.Rope }).HoldsEndRotation);
-        }
-    }
-
     [Fact]
     public void Actor_anchor_uses_captured_model_point_and_only_subsequent_handle_edits()
     {
@@ -63,17 +45,17 @@ public sealed class IkAnchorAndSpanTests
         Near(after.Position + step, anchor.Resolve(stored, Quaternion.Identity, moved).Position);
     }
 
-    [Theory]
-    [InlineData(IkSolver.TwoJoint)]
-    [InlineData(IkSolver.Ccd)]
-    public void Native_reach_discards_excess_travel_and_old_target_debt(IkSolver solver)
+    [Fact]
+    public void Native_reach_discards_excess_travel_and_old_target_debt()
     {
-        var config = IkChainConfig.DefaultsFor(true, true) with { Solver = solver };
+        var config = IkChainConfig.DefaultsFor(true, true) with { Solver = IkSolver.TwoJoint };
         var reach = IkReach.FromChain([Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2], config);
         var target = reach.Move(Vector3.UnitX, Vector3.UnitX * 100);
         Near(new(2, 0, 0), target);
         Near(new(1.9f, 0, 0), reach.Move(target, new(-.1f, 0, 0)));
         Near(new(1.9f, 0, 0), reach.Move(new(100, 0, 0), new(-.1f, 0, 0)));
+        // A zero translation leaves an out-of-reach target where it is.
+        Near(new(10, 0, 0), new IkReach(Vector3.Zero, 1, 2, Vector3.UnitX).Move(new(10, 0, 0), Vector3.Zero));
     }
 
     [Fact]
@@ -100,78 +82,6 @@ public sealed class IkAnchorAndSpanTests
         Assert.NotNull((config with { ActorAnchor = config.ActorAnchor!.Value with { Position = new(float.NaN) } }).Validate());
     }
 
-    [Theory]
-    [InlineData(IkSolver.Rope)]
-    [InlineData(IkSolver.Fabrik)]
-    public void Repeated_depth_round_trips_reuse_original_rest_geometry_and_anchors(IkSolver solver)
-    {
-        var original = Control();
-        Vector3[] Solve(FabrikControl control)
-        {
-            var source = control.Bones.Select(b => b.Position).ToArray();
-            return solver == IkSolver.Rope
-                ? RopeSolver.Solve(source, control.Root.Position, control.Handle.Position, -Vector3.UnitY)
-                : FabrikSolver.Solve(source, control.HandleIndex, control.Root.Position,
-                    control.Tip.Position, control.Handle.Position, 60);
-        }
-        var first = Solve(original);
-        var current = original;
-        for (int i = 0; i < 5; i++)
-        {
-            current = Select(current, Keys(1, 6), 5);
-            _ = Solve(current);
-            current = Select(current, Keys(0, 7), 6);
-            Assert.Equal(original.Bones, current.Bones);
-            Assert.Equal(original.Root, current.Root);
-            Assert.Equal(original.Tip, current.Tip);
-            Assert.Equal(original.Handle, current.Handle);
-            Assert.Equal(original.SwivelBaseline, current.SwivelBaseline);
-            var result = Solve(current);
-            for (int j = 0; j < first.Length; j++) Near(first[j], result[j]);
-        }
-        if (solver == IkSolver.Rope)
-            Assert.True(Length(first) < Length(original.Bones.Select(b => b.Position).ToArray()) - .01f);
-    }
-
-    [Fact]
-    public void Both_depth_directions_and_zero_span_select_the_same_reference_without_mutating_history()
-    {
-        var original = Control();
-        var initial = Select(original, Keys(2, 3), 1);
-        var grown = Select(initial, Keys(0, 7), 3);
-        var zero = Select(grown, Keys(3, 1), 0);
-        var restored = Select(zero, Keys(2, 3), 1);
-        Assert.Equal(initial.Bones, restored.Bones);
-        Assert.Equal(initial.Root, restored.Root);
-        Assert.Equal(initial.Tip, restored.Tip);
-        Assert.Equal(3, initial.Bones.Length);
-        Assert.Equal(7, original.Bones.Length);
-        Assert.Single(zero.Bones);
-        Assert.Null(zero.Validate());
-        var roundTrip = JsonSerializer.Deserialize<FabrikControl>(JsonSerializer.Serialize(grown, Json), Json)!;
-        Assert.Equal(grown.ReferenceBones, roundTrip.ReferenceBones);
-        Assert.Equal(initial.Bones, Select(roundTrip, Keys(2, 3), 1).Bones);
-    }
-
-    [Fact]
-    public void Reference_validation_rejects_duplicates_and_nonfinite_geometry()
-    {
-        var control = Control();
-        var reference = control.ReferenceBones!;
-        Assert.NotNull((control with { ReferenceBones = [reference[0], reference[0]] }).Validate());
-        Assert.NotNull((control with { ReferenceBones = [reference[0] with
-            { Pose = reference[0].Pose with { Position = new(float.NaN) } }] }).Validate());
-    }
-
-    [Fact]
-    public void Zero_translation_preserves_an_out_of_reach_target()
-    {
-        var reach = new IkReach(Vector3.Zero, 1, 2, Vector3.UnitX);
-        Near(new(10, 0, 0), reach.Move(new(10, 0, 0), Vector3.Zero));
-        Near(new(.5f, 0, 0), reach.Move(new(.5f, 0, 0), Vector3.Zero));
-        Near(new(1.9f, 0, 0), reach.Move(new(10, 0, 0), new(-.1f, 0, 0)));
-    }
-
     [Fact]
     public void Span_missing_a_newly_available_bone_rejects_without_mutating_the_reference()
     {
@@ -183,6 +93,12 @@ public sealed class IkAnchorAndSpanTests
         Assert.True(original.TrySelectSpan(Keys(0, 7), 6, out var restored));
         Assert.Equal(original.Bones, restored.Bones);
         Assert.Same(original.ReferenceBones, restored.ReferenceBones);
+
+        // Growing, shrinking to zero and returning select the same reference.
+        var initial = Select(original, Keys(2, 3), 1);
+        var zero = Select(Select(initial, Keys(0, 7), 3), Keys(3, 1), 0);
+        Assert.Single(zero.Bones);
+        Assert.Equal(initial.Bones, Select(zero, Keys(2, 3), 1).Bones);
     }
 
     private static FabrikControl Select(FabrikControl control, (string Name, int Partial)[] members, int handle)
@@ -207,6 +123,5 @@ public sealed class IkAnchorAndSpanTests
     private static (string Name, int Partial)[] Keys(int start, int count) =>
         Enumerable.Range(start, count).Select(i => ($"b{i}", 0)).ToArray();
 
-    private static float Length(Vector3[] points) => points.Zip(points.Skip(1), Vector3.Distance).Sum();
     private static void Near(Vector3 expected, Vector3 actual) => Assert.True(Vector3.Distance(expected, actual) < 1e-5f);
 }

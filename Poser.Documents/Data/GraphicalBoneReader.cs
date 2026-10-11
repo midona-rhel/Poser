@@ -3,9 +3,9 @@ using System.Globalization;
 using System.IO;
 using System.Numerics;
 using System.Text.Json;
-using Poser.Data.Config;
+using Poser.Documents.Data.Config;
 
-namespace Poser.Data;
+namespace Poser.Documents.Data;
 
 /// <summary>
 /// Reads graphical bone position configuration from JSON.
@@ -14,17 +14,15 @@ public static class GraphicalBoneReader
 {
     private const string ResourceName = "Poser.Data.GraphicalBones.GraphicalBonePosePositions.json";
 
-    private static GraphicalBoneConfig? _cachedConfig;
+    private static readonly Lazy<GraphicalBoneConfig> EmbeddedConfig = new(ReadEmbedded);
 
     /// <summary>
-    /// Reads graphical bone configuration from embedded resource.
-    /// Result is cached for subsequent calls.
+    /// The embedded graphical bone configuration, read once and shared.
     /// </summary>
-    public static GraphicalBoneConfig ReadEmbeddedResource()
-    {
-        if (_cachedConfig != null)
-            return _cachedConfig;
+    public static GraphicalBoneConfig ReadEmbeddedResource() => EmbeddedConfig.Value;
 
+    private static GraphicalBoneConfig ReadEmbedded()
+    {
         var assembly = typeof(GraphicalBoneReader).Assembly;
 
         using var stream = assembly.GetManifestResourceStream(ResourceName);
@@ -33,8 +31,7 @@ public static class GraphicalBoneReader
             throw new InvalidOperationException($"Could not find embedded resource: {ResourceName}");
         }
 
-        _cachedConfig = ReadStream(stream);
-        return _cachedConfig;
+        return ReadStream(stream);
     }
 
     /// <summary>

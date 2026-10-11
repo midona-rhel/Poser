@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Services;
+namespace Poser.UI;
 
 public interface IUIManager : IDisposable
 {

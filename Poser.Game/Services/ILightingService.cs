@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Poser.Domain.Scene;
-using Poser.Entities;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// Spawns and owns plugin-created scene lights. GPose-scoped: every

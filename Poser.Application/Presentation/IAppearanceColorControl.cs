@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
@@ -11,7 +12,7 @@ public interface IAppearanceColorControl
 {
     IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> Read(ActorId actor);
     Vector4? Override(ActorId actor, AppearanceColorChannel channel);
-    ValueWriteResult Set(ActorId actor, AppearanceColorChannel channel, Vector4 value);
-    ValueWriteResult Clear(ActorId actor, AppearanceColorChannel channel);
+    Outcome Set(ActorId actor, AppearanceColorChannel channel, Vector4 value);
+    Outcome Clear(ActorId actor, AppearanceColorChannel channel);
     void Seal();
 }

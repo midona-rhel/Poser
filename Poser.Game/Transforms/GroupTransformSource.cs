@@ -5,13 +5,12 @@ using Poser.Application.Viewport;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Game.Bindings;
-using Poser.Services;
 
 namespace Poser.Game.Transforms;
 
 public sealed class GroupTransformSource(
     SceneSession scene, StableBindingRegistry bindings, IViewportReads viewport,
-    ICameraProjection camera) : IGroupTransformSource
+    ICameraProjection camera, EditHistory? history = null) : IGroupTransformSource
 {
     public PoseTransform? Read(TransformTargetId target) =>
         // Lock/attachment refusal governs editing, not reading existing state.
@@ -34,24 +33,13 @@ public sealed class GroupTransformSource(
     public bool TryFrame(Vector3 origin, out GroupTransformFrame frame) =>
         GroupTransformFrame.TryFromView(camera.GetViewMatrix(), origin, out frame);
 
-    public TransformTargetId? CurrentTarget(TransformTargetId target)
-    {
-        if (scene.Contains(target)) return target;
-        var logical = GroupTransformIdentity.LogicalId(target);
-        return target.Kind switch
-        {
-            TransformTargetKind.Collider => scene.Snapshot.Overlays.FirstOrDefault(x => x.Id.LogicalId == logical
-                && x.Kind == Domain.Presentation.OverlayNodeKind.Collider) is { } collider
-                ? TransformTargetId.ForCollider(collider.Id) : null,
-            TransformTargetKind.Actor => scene.Snapshot.Actors.FirstOrDefault(x => x.Id.LogicalId == logical) is { } actor
-                ? TransformTargetId.ForActor(actor.Id) : null,
-            TransformTargetKind.Prop => scene.Snapshot.Props.FirstOrDefault(x => x.Id.LogicalId == logical) is { } prop
-                ? TransformTargetId.ForProp(prop.Id) : null,
-            TransformTargetKind.Light => scene.Snapshot.Lights.FirstOrDefault(x => x.Id.LogicalId == logical) is { } light
-                ? TransformTargetId.ForLight(light.Id) : null,
-            TransformTargetKind.WorldObject => scene.Snapshot.WorldObjects.FirstOrDefault(x => x.Id.LogicalId == logical) is { } world
-                ? TransformTargetId.ForWorldObject(world.Id) : null,
-            _ => bindings.CurrentTarget(target),
-        };
-    }
+    /// <summary>The live target for <paramref name="target"/>: itself or its
+    /// lineage successor, else the entity a lifecycle undo brought back in
+    /// its place (a new id). Group members are remapped through this before
+    /// the prune, so a structure restored with a removal's undo keeps the
+    /// members that came back (#494).</summary>
+    public TransformTargetId? CurrentTarget(TransformTargetId target) =>
+        scene.CurrentTransformTarget(target)
+        ?? (history?.ResolveLifecycleTarget(target) is { } successor && successor != target
+            ? scene.CurrentTransformTarget(successor) : null);
 }

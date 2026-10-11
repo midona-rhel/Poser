@@ -3,9 +3,10 @@ using System.Collections.Generic;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
+using Poser.Application.Scene;
+using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
@@ -13,7 +14,7 @@ internal sealed class LightLifecycleSlot
 {
     public ILight? Live;
     public LightFile Document = new();
-    public Poser.Entities.IBone? AttachedBone;
+    public Poser.Game.Entities.IBone? AttachedBone;
     public WorldLightCandidate? Source;
     public bool HasDocument;
     public SelectionId? LastIdentity;
@@ -24,13 +25,13 @@ internal sealed class LightLifecycleSlot
 /// to target its current light after undo restores a new wrapper.</summary>
 internal sealed class LightLifecycleOwner
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly ILightingService _lighting;
     private readonly Func<ILight, TransformTargetId?>? _lightTarget;
     private readonly LifecycleSlotOwner<ILight, LightLifecycleSlot> _slots;
 
     public LightLifecycleOwner(
-        TransformHistory history,
+        EditHistory history,
         ILightingService lighting,
         Func<ILight, TransformTargetId?>? lightTarget = null)
     {
@@ -70,9 +71,6 @@ internal sealed class LightLifecycleOwner
 
     public ILight? CloneLight(ILight source) =>
         RecordSpawn($"Clone light '{source.Name}'", () => _lighting.CloneLight(source));
-
-    public ILight? AcquireWorldLight(WorldLightCandidate source) =>
-        AppendSpawn("Acquire world light", _lighting.CaptureWorldLight(source));
 
     public ILight? RecordSpawnedLight(string description, ILight? light) =>
         AppendSpawn(description, light);
@@ -152,7 +150,7 @@ internal sealed class LightLifecycleOwner
         if (light.IsValid)
         {
             // Capture the state at removal time so redo restores the last edit.
-            slot.Document = Lights.LightDocument.Capture(light);
+            slot.Document = Lighting.LightDocument.Capture(light);
             slot.AttachedBone = light.AttachedBone;
             slot.HasDocument = true;
             _lighting.DestroyLight(light);
@@ -173,7 +171,7 @@ internal sealed class LightLifecycleOwner
             : _lighting.SpawnLight(slot.Document.Kind);
         if (light == null)
             return false;
-        Lights.LightDocument.Apply(slot.Document, light);
+        Lighting.LightDocument.Apply(slot.Document, light);
         ApplyGobo(slot.Document.Gobo, light);
         if (slot.AttachedBone is { Skeleton.IsValid: true } bone)
             light.AttachedBone = bone;

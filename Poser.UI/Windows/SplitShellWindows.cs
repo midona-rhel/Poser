@@ -4,6 +4,12 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
+using Poser.Domain;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.WindowMovement;
 
 namespace Poser.UI;
 
@@ -26,7 +32,7 @@ public sealed class SidebarPartWindow : Window
     private Vector2 _lastLogicalSize = new(300f, 520f);
     private float _savedHeight = 520f;
 
-    public SidebarPartWindow(MainWindow main, Config.ConfigurationService configuration)
+    public SidebarPartWindow(MainWindow main, Application.Settings.ConfigurationService configuration)
         : base($"Sidebar###{PluginConstants.PluginName}_split_sidebar",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -62,7 +68,7 @@ public sealed class SidebarPartWindow : Window
     public override void PreDraw()
     {
         base.PreDraw();
-        float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        float barHeight = ActiveTheme.Floating.ModalBarHeight;
         if (_pendingCollapsed is { } next)
         {
             if (next)
@@ -99,27 +105,27 @@ public sealed class SidebarPartWindow : Window
             SizeCondition = ImGuiCond.FirstUseEver;
         }
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
-        ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
-        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
-        ImGui.PushStyleColor(ImGuiCol.Border, Crystarium.ActiveTheme.Border);
+        ImGui.PushStyleColor(ImGuiCol.Text, ActiveTheme.Text);
+        ImGui.PushStyleColor(ImGuiCol.TextDisabled, ActiveTheme.TextDim);
+        ImGui.PushStyleColor(ImGuiCol.Border, ActiveTheme.Border);
         // Resize feedback — the grip and the lit border edge — is the
         // theme's accent, never Dalamud's global highlight.
-        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.Button, Crystarium.ActiveTheme.SurfaceRaised);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Crystarium.ActiveTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Crystarium.ActiveTheme.AccentActive);
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, Crystarium.ActiveTheme.SurfaceSunken);
-        ImGui.PushStyleColor(ImGuiCol.Header, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Crystarium.ActiveTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.HeaderActive, Crystarium.ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.Button, ActiveTheme.SurfaceRaised);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, ActiveTheme.SurfaceSunken);
+        ImGui.PushStyleColor(ImGuiCol.Header, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, ActiveTheme.AccentActive);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         ImGui.PushStyleVar(
             ImGuiStyleVar.WindowRounding,
-            Crystarium.ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
+            ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
     }
 
     public override void PostDraw()
@@ -132,11 +138,11 @@ public sealed class SidebarPartWindow : Window
     public override void Draw()
     {
         if (!_main.IsOpen
-            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
+            || (_main.Manipulation.Hidden && !_main.Manipulation.ShellDragHeld))
             return;
-        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        using var manipulationFade = _main.Manipulation.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
         _lastLogicalSize = (max - min) / s;
@@ -147,7 +153,7 @@ public sealed class SidebarPartWindow : Window
             "poser-part-sidebar", InteractionLayer.Window, min, max);
         try
         {
-            Crystarium.FloatingSurface.DrawChrome(
+            FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
             float headerBottom = DrawBar(min, max, s, dl);
             if (!_collapsed)
@@ -163,7 +169,7 @@ public sealed class SidebarPartWindow : Window
     /// <summary>The sidebar title bar; closing leaves the detached layout intact.</summary>
     private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var vm = _main.ShellVm;
         float height = theme.Floating.ModalBarHeight * s;
         // The label stands on the content column's inset — the search pill's
@@ -172,7 +178,7 @@ public sealed class SidebarPartWindow : Window
         float side = theme.Controls.ShellIconAction;
         float y = min.Y + (height - side * s) * 0.5f;
 
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(min.X + inset, min.Y),
             new Vector2(max.X - min.X - inset * 2f, height),
             "Sidebar",
@@ -190,7 +196,7 @@ public sealed class SidebarPartWindow : Window
         ImGui.SetCursorScreenPos(new Vector2(
             chevronX,
             min.Y + (height - closeSide * s) * 0.5f));
-        Crystarium.IconButton(
+        IconButton(
             _collapsed ? "chevron-down" : "chevron-up",
             ToggleCollapse,
             ControlStyle.Square(closeSide),
@@ -202,7 +208,7 @@ public sealed class SidebarPartWindow : Window
         ImGui.SetCursorScreenPos(new Vector2(
             closeX,
             min.Y + (height - closeSide * s) * 0.5f));
-        Crystarium.IconButton(
+        IconButton(
             "x",
             () => IsOpen = false,
             ControlStyle.Square(closeSide),
@@ -215,13 +221,13 @@ public sealed class SidebarPartWindow : Window
         {
             var labelStyle = new TextStyle
             { Size = theme.Typography.LabelSize };
-            float labelWidth = Crystarium.MeasureText(
+            float labelWidth = MeasureText(
                 "Library", labelStyle).X;
             float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
             ImGui.SetCursorScreenPos(new Vector2(
                 closeX - theme.Spacing.Two * s - buttonWidth * s,
                 min.Y + (height - closeSide * s) * 0.5f));
-            Crystarium.Button(
+            Button(
                 "Library",
                 onLibrary,
                 style: ControlStyle.Square(closeSide) with
@@ -240,14 +246,14 @@ public sealed class SidebarPartWindow : Window
         // Double-clicking the bar's open band collapses — the chevron's
         // gesture twin, every shell window's rule.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !Crystarium.WindowTitleControlHovered())
+            && !WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X
                 && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
                 ToggleCollapse();
         }
-        Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
+        WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
         return min.Y + height;
     }
 
@@ -293,7 +299,7 @@ public sealed class ToolbarPartWindow : Window
             Position = null;
         }
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float inset = theme.Floating.HeaderInset;
         float side = theme.Floating.CloseActionSize;
         // Self-sized: content and insets. The toolbar is permanently its
@@ -320,11 +326,11 @@ public sealed class ToolbarPartWindow : Window
     public override void Draw()
     {
         if (!_main.IsOpen
-            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
+            || (_main.Manipulation.Hidden && !_main.Manipulation.ShellDragHeld))
             return;
-        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        using var manipulationFade = _main.Manipulation.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var min = ImGui.GetWindowPos();
         var size = ImGui.GetWindowSize();
         var max = min + size;
@@ -333,7 +339,7 @@ public sealed class ToolbarPartWindow : Window
             "poser-part-toolbar", InteractionLayer.Window, min, max);
         try
         {
-            Crystarium.FloatingSurface.DrawChrome(
+            FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
             float inset = theme.Floating.HeaderInset * s;
             AppShellView.DrawToolbarContent(
@@ -348,7 +354,7 @@ public sealed class ToolbarPartWindow : Window
                 && mouse.Y >= min.Y && mouse.Y < max.Y;
             if (overBrand && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
                 _compact = !_compact;
-            Crystarium.WindowTitleDrag(min, max);
+            WindowTitleDrag(min, max);
         }
         finally
         {
@@ -371,7 +377,7 @@ public sealed class InspectorPartWindow : Window
     private Vector2 _lastLogicalSize = new(282f, 560f);
     private float _savedHeight = 560f;
 
-    public InspectorPartWindow(MainWindow main, Config.ConfigurationService configuration)
+    public InspectorPartWindow(MainWindow main, Application.Settings.ConfigurationService configuration)
         : base($"Inspector###{PluginConstants.PluginName}_split_inspector",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -412,7 +418,7 @@ public sealed class InspectorPartWindow : Window
         base.PreDraw();
         ResizeAccent.Push();
         float width = AppShellView.RailWidth + 2f;
-        float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        float barHeight = ActiveTheme.Floating.ModalBarHeight;
         if (_pendingCollapsed is { } next)
         {
             if (next)
@@ -451,7 +457,7 @@ public sealed class InspectorPartWindow : Window
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         ImGui.PushStyleVar(
             ImGuiStyleVar.WindowRounding,
-            Crystarium.ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
+            ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
     }
 
     public override void PostDraw()
@@ -464,11 +470,11 @@ public sealed class InspectorPartWindow : Window
     public override void Draw()
     {
         if (!_main.IsOpen
-            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
+            || (_main.Manipulation.Hidden && !_main.Manipulation.ShellDragHeld))
             return;
-        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        using var manipulationFade = _main.Manipulation.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
         _lastLogicalSize = (max - min) / s;
@@ -479,7 +485,7 @@ public sealed class InspectorPartWindow : Window
             "poser-part-inspector", InteractionLayer.Window, min, max);
         try
         {
-            Crystarium.FloatingSurface.DrawChrome(
+            FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
             float headerBottom = DrawBar(min, max, s, dl);
             if (!_collapsed)
@@ -494,11 +500,11 @@ public sealed class InspectorPartWindow : Window
 
     private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float height = theme.Floating.ModalBarHeight * s;
         float inset = theme.Page.Inset * s;
 
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(min.X + inset, min.Y),
             new Vector2(max.X - min.X - inset * 2f, height),
             "Inspector",
@@ -516,7 +522,7 @@ public sealed class InspectorPartWindow : Window
         ImGui.SetCursorScreenPos(new Vector2(
             chevronX,
             min.Y + (height - closeSide * s) * 0.5f));
-        Crystarium.IconButton(
+        IconButton(
             _collapsed ? "chevron-down" : "chevron-up",
             ToggleCollapse,
             ControlStyle.Square(closeSide),
@@ -528,7 +534,7 @@ public sealed class InspectorPartWindow : Window
         ImGui.SetCursorScreenPos(new Vector2(
             closeX,
             min.Y + (height - closeSide * s) * 0.5f));
-        Crystarium.IconButton(
+        IconButton(
             "x",
             () => IsOpen = false,
             ControlStyle.Square(closeSide),
@@ -545,14 +551,14 @@ public sealed class InspectorPartWindow : Window
         // Double-clicking the bar's open band collapses — the chevron's
         // gesture twin, every shell window's rule.
         if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
-            && !Crystarium.WindowTitleControlHovered())
+            && !WindowTitleControlHovered())
         {
             var barMouse = ImGui.GetMousePos();
             if (barMouse.X >= min.X && barMouse.X < max.X
                 && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
                 ToggleCollapse();
         }
-        Crystarium.WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
+        WindowTitleDrag(min, new Vector2(max.X, min.Y + height));
         return min.Y + height;
     }
 

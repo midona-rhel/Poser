@@ -19,21 +19,15 @@ public sealed record ActorSnapshot(
 /// <summary>
 /// The third entry shape beside the transform patch and the lifecycle
 /// patch: a step with its own inverse. It runs the way a lifecycle patch
-/// does, with explicit completion when restoration spans frames.
+/// does, with explicit completion when restoration spans frames. A refusal
+/// repeated on the same step discards it unless <see cref="InverseEntry.OnRefusal"/>
+/// keeps it.
 /// </summary>
 public sealed record JournalStep(
     string Description,
     Func<bool> Undo,
-    Func<bool> Redo) : HistoryEntry(Description)
+    Func<bool> Redo) : InverseEntry(Description, Undo, Redo)
 {
-    /// <summary>A group membership restore can wait for readable member poses;
-    /// repeated temporary refusal must not discard its preserved authored state.</summary>
-    public Func<bool>? HasDeferredGroupCapture { get; init; }
-
-    /// <summary>Result-aware value edits retain refused inverses for retry.</summary>
-    public bool RetainOnFailure { get; init; }
-    public Func<string?>? FailureDetail { get; init; }
-
     /// <summary>Completion of a multi-frame replay, after its synchronous verb.
     /// Invokes the callback on the application thread; history stays put until then.</summary>
     public Action<bool, Func<bool>, CancellationToken, Action<GestureResult>>? CompleteReplay { get; init; }

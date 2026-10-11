@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using FFXIVClientStructs.Havok.Animation.Rig;
-using Poser.Entities;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Diagnostics;
 

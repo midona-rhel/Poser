@@ -3,19 +3,26 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Transforms;
 
+/// <summary>Admission is separate from the entry's own result. A blocked
+/// request never ran the entry and must not consume its refusal policy.</summary>
+public readonly record struct HistoryRunResult(GestureResult Result, bool Attempted);
+
 /// <summary>What runs an entry's delta: the gesture service, which owns the
-/// recovery barrier every mutation shares.</summary>
+/// recovery barrier every mutation shares. The journal peeks the entry and
+/// picks its path; the runner never reads history to find it again.</summary>
 public interface IUndoRunner
 {
-    GestureResult Undo();
-    GestureResult Redo();
-    GestureResult Undo(SelectionId entity) => GestureResult.Fail("Scoped undo is unavailable.");
-    GestureResult Redo(SelectionId entity) => GestureResult.Fail("Scoped redo is unavailable.");
-    GestureResult Replay(JournalStep step, bool before, SelectionId entity) =>
-        GestureResult.Fail("Scoped deferred replay is unavailable.");
-    GestureResult Replay(JournalStep step, bool before) =>
-        GestureResult.Fail("Deferred history replay is not supported by this runner.");
-    GestureResult? RecoverPending() => null;
+    /// <summary>Finishes a pending recovery before history may move; null when
+    /// nothing is pending.</summary>
+    GestureResult? RecoverPending();
+
+    /// <summary>Runs one direction of a synchronous entry and commits it to
+    /// history (scoped to <paramref name="entity"/> when given) on success.</summary>
+    HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity);
+
+    /// <summary>Starts one direction of a multi-frame step. The journal owns
+    /// completion and the history commit.</summary>
+    HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity);
 }
 
 /// <summary>
@@ -28,25 +35,26 @@ public sealed class UndoJournal
     public const string AssetGone = "Cannot redo: the file is no longer there.";
     public const string RestoreFailed = "The pose could not be restored.";
     public const string Dropped = "The step was dropped: the history changed while restoring.";
+    public const string TargetsPending = "Waiting for the actor's skeleton to become available.";
 
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly IUndoRunner _runner;
     private readonly Func<string, bool> _assetExists;
-    private readonly Action<string> _notice;
+    private readonly Presentation.IUserNotices _notices;
     private HistoryEntry? _restoring;
     private CancellationTokenSource? _replayCancellation;
     private ulong _historyRevision;
 
     public UndoJournal(
-        TransformHistory history,
+        EditHistory history,
         IUndoRunner runner,
         Func<string, bool> assetExists,
-        Action<string> notice)
+        Presentation.IUserNotices notices)
     {
         _history = history;
         _runner = runner;
         _assetExists = assetExists;
-        _notice = notice;
+        _notices = notices;
         _history.PatchAppended += () =>
         {
             _historyRevision++;
@@ -83,9 +91,11 @@ public sealed class UndoJournal
         var entry = _history.PeekUndo(entity);
         if (entry == null)
             return GestureResult.Fail(entity is null ? "Nothing to undo." : "No independent undo step for this entity. Creation, removal, shared or scene-wide steps require global undo.");
+        if (entry is TransformPatch { AwaitingTargets: true })
+            return GestureResult.Fail(TargetsPending);
         if (entry is JournalStep { CompleteReplay: not null } pendingStep)
             return ReplayUntilComplete(pendingStep, true, entity);
-        return GiveUpOnRepeat(entry, entity is { } scope ? _runner.Undo(scope) : _runner.Undo());
+        return GiveUpOnRepeat(entry, _runner.Run(entry, true, entity));
     }
 
     /// <summary>The entry the runner refused last; the same entry refused
@@ -93,29 +103,26 @@ public sealed class UndoJournal
     /// rollback that cannot land) never wedges every later undo.</summary>
     private HistoryEntry? _refused;
 
-    private GestureResult GiveUpOnRepeat(HistoryEntry entry, GestureResult result)
+    private GestureResult GiveUpOnRepeat(HistoryEntry entry, HistoryRunResult run)
     {
+        var result = run.Result;
+        if (!run.Attempted) return result;
         if (result.Success)
         {
             _refused = null;
             return result;
         }
-        if (entry is SceneLifecyclePatch { DropOnFailure: { } shouldDrop }
-            && shouldDrop())
+        switch (RefusalPolicy.Decide(entry))
         {
-            _refused = null;
-            _history.Drop(entry);
-            var reason = entry is SceneLifecyclePatch lifecycle
-                ? lifecycle.FailureDetail?.Invoke() ?? result.Detail
-                : result.Detail;
-            _notice(reason ?? $"{entry.Description} could not be restored and was discarded.");
-            return result;
-        }
-        if (entry is not JournalStep step || step.RetainOnFailure
-            || step.HasDeferredGroupCapture?.Invoke() == true)
-        {
-            _refused = null;
-            return result;
+            case RefusalAction.DropNow:
+                _refused = null;
+                _history.Drop(entry);
+                var reason = (entry as InverseEntry)?.FailureDetail?.Invoke() ?? result.Detail;
+                _notices.Note(reason ?? $"{entry.Description} could not be restored and was discarded.");
+                return result;
+            case RefusalAction.Keep:
+                _refused = null;
+                return result;
         }
         if (!ReferenceEquals(_refused, entry))
         {
@@ -124,7 +131,7 @@ public sealed class UndoJournal
         }
         _refused = null;
         _history.Drop(entry);
-        _notice($"{step.Description} could not be undone twice and was discarded.");
+        _notices.Note($"{entry.Description} could not be undone twice and was discarded.");
         return result;
     }
 
@@ -140,18 +147,21 @@ public sealed class UndoJournal
         var entry = _history.PeekRedo(entity);
         if (entry == null)
             return GestureResult.Fail(entity is null ? "Nothing to redo." : "No independent redo step for this entity. Creation, removal, shared or scene-wide steps require global redo.");
+        if (entry is TransformPatch { AwaitingTargets: true })
+            return GestureResult.Fail(TargetsPending);
         if (entry.RequiredAsset is { } asset && !_assetExists(asset))
             return Refuse(AssetGone);
         if (entry is JournalStep { CompleteReplay: not null } pendingStep)
             return ReplayUntilComplete(pendingStep, false, entity);
-        return GiveUpOnRepeat(entry, entity is { } scope ? _runner.Redo(scope) : _runner.Redo());
+        return GiveUpOnRepeat(entry, _runner.Run(entry, false, entity));
     }
 
     private GestureResult ReplayUntilComplete(JournalStep step, bool before, SelectionId? entity)
     {
         var revision = _historyRevision;
-        var started = entity is { } scope ? _runner.Replay(step, before, scope) : _runner.Replay(step, before);
-        if (!started.Success) return GiveUpOnRepeat(step, started);
+        var started = _runner.Replay(step, before, entity);
+        if (!started.Attempted || !started.Result.Success) return GiveUpOnRepeat(step, started);
+        _refused = null;
         if (revision != _historyRevision) return Refuse(Dropped);
         _restoring = step;
         var cancellation = new CancellationTokenSource();
@@ -179,7 +189,7 @@ public sealed class UndoJournal
 
     private GestureResult Refuse(string why)
     {
-        _notice(why);
+        _notices.Note(why);
         return GestureResult.Fail(why);
     }
 

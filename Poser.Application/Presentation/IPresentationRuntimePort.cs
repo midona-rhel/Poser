@@ -1,15 +1,10 @@
 using System.Numerics;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Integration;
 
 namespace Poser.Application.Presentation;
-
-public readonly record struct PresentationPortResult(bool Success, string? Detail = null)
-{
-    public static PresentationPortResult Ok() => new(true);
-    public static PresentationPortResult Fail(string detail) => new(false, detail);
-}
 
 /// <summary>
 /// The ONE stable-id native boundary for runtime presentation. Every
@@ -30,13 +25,13 @@ public interface IPresentationRuntimePort
 {
     IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> ReadColors(ActorId actor)
         => IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>>.Fail("Shader colours are unavailable.");
-    PresentationPortResult SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
-        => PresentationPortResult.Fail("Shader colours are unavailable.");
-    PresentationPortResult RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
-        => PresentationPortResult.Fail("Shader colours are unavailable.");
+    Outcome SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
+        => Outcome.Fail("Shader colours are unavailable.");
+    Outcome RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
+        => Outcome.Fail("Shader colours are unavailable.");
     void SuspendColors(ActorId actor) { }
-    PresentationPortResult RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
-        => PresentationPortResult.Fail("Shader colours are unavailable.");
+    Outcome RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
+        => Outcome.Fail("Shader colours are unavailable.");
     /// <summary>True when the actor resolves to a character that can
     /// carry presentation state at all.</summary>
     bool IsSupported(ActorId actor);
@@ -48,32 +43,32 @@ public interface IPresentationRuntimePort
     // ── Opacity ───────────────────────────────────────────────────────
     /// <summary>Writes the actor's opacity (0..1). Written on change,
     /// as the reference does; never touches the visibility action.</summary>
-    PresentationPortResult SetOpacity(ActorId actor, float opacity);
+    Outcome SetOpacity(ActorId actor, float opacity);
 
     /// <summary>Writes the captured incoming opacity back.</summary>
-    PresentationPortResult RestoreOpacity(ActorId actor, float incoming);
+    Outcome RestoreOpacity(ActorId actor, float incoming);
 
     // ── Tint ──────────────────────────────────────────────────────────
     /// <summary>Writes one model's whole-model tint and takes ownership:
     /// the game's own tint update is suppressed for that exact model
     /// instance, and a replacement instance receives the owned value
     /// again. Fails when the model is absent.</summary>
-    PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 tint);
+    Outcome SetTint(ActorId actor, PresentationModel model, Vector4 tint);
 
     /// <summary>Writes the captured incoming tint back and releases
     /// ownership. An absent model has nothing left to restore into and
     /// succeeds as a release.</summary>
-    PresentationPortResult RestoreTint(ActorId actor, PresentationModel model, Vector4 incoming);
+    Outcome RestoreTint(ActorId actor, PresentationModel model, Vector4 incoming);
 
     // ── Wetness ───────────────────────────────────────────────────────
     /// <summary>Starts or updates the granular wetness override. The
     /// port re-applies the three values on every framework tick while
     /// owned, because the game recomputes them.</summary>
-    PresentationPortResult SetWetness(ActorId actor, WetnessState state);
+    Outcome SetWetness(ActorId actor, WetnessState state);
 
     /// <summary>Stops enforcing and writes the complete captured
     /// incoming three-float state back once.</summary>
-    PresentationPortResult ClearWetness(ActorId actor, WetnessState incoming);
+    Outcome ClearWetness(ActorId actor, WetnessState incoming);
 
     /// <summary>Drops every port-side ownership entry for the actor
     /// without native writes — the actor-gone path.</summary>

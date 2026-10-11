@@ -1,5 +1,4 @@
 using System;
-using Poser.Services;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;

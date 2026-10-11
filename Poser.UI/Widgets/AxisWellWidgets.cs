@@ -1,0 +1,340 @@
+using System;
+using System.Globalization;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.SliderReadout;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.ValueEdits;
+
+namespace Poser.UI.Widgets;
+
+public static class AxisWellWidgets
+{
+    /// <summary>The axis well being typed into, shared with the slider wells.</summary>
+    internal sealed class AxisEditState
+    {
+        internal uint? Id;
+        internal float Value;
+        internal bool NeedsFocus;
+    }
+
+    private static AxisEditState State => UiContext.Current.AxisEdit;
+
+    public static bool AxisWell(
+        string id,
+        string axis,
+        float value,
+        Action<float> onChange,
+        Action? onCommit,
+        Vector4 accent,
+        float perPixel,
+        string format,
+        ControlStyle style = default,
+        bool disabled = false,
+        bool adaptiveDisplay = false,
+        float? altReset = null)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        var metrics = ControlSizing.Resolve(
+            style,
+            ActiveTheme.Form.ValueColumnWidth,
+            ActiveTheme.Controls.WorkspaceHeight);
+        var pos = ImGui.GetCursorScreenPos();
+        var size = metrics.Size;
+
+        if (State.Id == ImGui.GetID(id) && !disabled)
+            return EditAxisWell(
+                id, axis, value, onChange, onCommit, accent,
+                adaptiveDisplay ? "0.######" : format,
+                pos, size, scale);
+
+        var hit = Interactive.Reserve(id, size, disabled);
+        bool changed = false;
+        // Alt-click resets to the stated default — the slider's own
+        // gesture, spoken by every value control that HAS a default.
+        if (hit.Clicked && ImGui.GetIO().KeyAlt
+            && altReset is { } fallback && !disabled)
+        {
+            if (value != fallback)
+            {
+                ChangeValue(id, () => onChange(fallback));
+                value = fallback;
+                changed = true;
+            }
+            Commit(id, onCommit);
+        }
+        else if (hit.DoubleClicked)
+        {
+            State.Id = ImGui.GetID(id);
+            State.Value = value;
+            State.NeedsFocus = true;
+        }
+        else if (hit.Active)
+        {
+            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
+            float delta = hit.DragDelta.X;
+            if (delta != 0f)
+            {
+                float next = value + delta * perPixel
+                    * DragModifierMultiplier(ImGui.GetIO());
+                ChangeValue(id, () => onChange(next));
+                value = next;
+                changed = true;
+            }
+        }
+
+        if (hit.DragEnded)
+            Commit(id, onCommit);
+
+        // NO wheel stepping: the wheel belongs to the page scroll, and a
+        // well that stepped on a notch hijacked it (the Brio behaviour was
+        // removed 2026-08-30 — only the pose preview and the viewports
+        // read the wheel).
+
+        // The label follows the adaptive three-digit rule when asked; the
+        // EDIT above always carries the full value — precision belongs to
+        // typing, not to the resting label.
+        DrawAxisWell(
+            pos, size, axis, value, accent,
+            adaptiveDisplay ? null : format,
+            hit.Active, disabled, scale);
+        if (hit.Hovered && State.Id == null)
+        {
+            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
+            HoverHelp.Explain(id, pos, pos + size,
+                "Drag · double-click to edit");
+        }
+        return changed;
+    }
+
+    public static void CancelAxisEdit()
+    {
+        State.Id = null;
+        State.NeedsFocus = false;
+    }
+
+    internal static bool EditAxisWell(
+        string id,
+        string axis,
+        float value,
+        Action<float> onChange,
+        Action? onCommit,
+        Vector4 accent,
+        string format,
+        Vector2 pos,
+        Vector2 size,
+        float scale)
+    {
+        DrawAxisWell(pos, size, axis, State.Value, accent, format,
+            focused: true, disabled: false, scale, drawValue: false);
+
+        var mono = FontRegistry.Resolve(
+            FontFamily.Mono, ActiveTheme.Typography.LabelSize);
+        bool fontPushed = mono is { Available: true };
+        if (fontPushed)
+            mono!.Push();
+        float horizontalPadding =
+            ActiveTheme.Form.AxisWellHorizontalPadding;
+        float axisWidth = axis.Length == 0
+            ? 0f
+            : ImGui.CalcTextSize(axis).X / scale;
+        float axisSlot = axis.Length == 0
+            ? horizontalPadding
+            : horizontalPadding
+                + axisWidth
+                + ActiveTheme.Form.AxisLabelGap;
+        float horizontalPaddingPx = horizontalPadding * scale;
+        float axisSlotPx = axisSlot * scale;
+        string editText = State.Value.ToString(
+            format,
+            CultureInfo.InvariantCulture);
+        float inputLeft = MathF.Max(
+            axisSlotPx,
+            size.X
+                - ImGui.CalcTextSize(editText).X
+                - horizontalPaddingPx * 2f);
+
+        // The EDIT centres by ImGui's own line height, with no metric
+        // rise and no caret scissor: the selection highlight and caret
+        // then exactly hug the text, which is what a focused input looks
+        // like. The file-metric seating bought sub-pixel alignment with
+        // the resting label and cost a visibly misplaced highlight after
+        // the Roboto switch (its cap dead band is 4.4px, Cascadia's was
+        // 3.0).
+        ImGui.GetWindowDrawList().AddRectFilled(
+            pos + new Vector2(inputLeft, 0f),
+            pos + new Vector2(size.X, size.Y),
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(ActiveTheme.Chrome.InputWell)),
+            ActiveTheme.Radii.Small * scale);
+        ImGui.SetCursorScreenPos(
+            pos + new Vector2(inputLeft, 0f));
+        ImGui.SetNextItemWidth(MathF.Max(
+            1f, size.X - inputLeft));
+        if (State.NeedsFocus)
+            ImGui.SetKeyboardFocusHere();
+
+        float verticalPadding = MathF.Max(
+            0f,
+            (size.Y - ImGui.GetTextLineHeight()) * 0.5f);
+        ImGui.PushStyleVar(
+            ImGuiStyleVar.FramePadding,
+            new Vector2(
+                horizontalPaddingPx,
+                verticalPadding));
+        ImGui.PushStyleVar(
+            ImGuiStyleVar.FrameRounding,
+            ActiveTheme.Radii.Small * scale);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, Vector4.Zero);
+        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered, Vector4.Zero);
+        ImGui.PushStyleColor(ImGuiCol.FrameBgActive, Vector4.Zero);
+        ImGui.PushStyleColor(
+            ImGuiCol.TextSelectedBg,
+            ActiveTheme.Chrome.Primary with { W = 0.32f });
+        ImGui.PushStyleColor(ImGuiCol.Text, ActiveTheme.Text);
+        bool enter = ImGui.InputFloat(
+            $"##axis-edit-{id}",
+            ref State.Value,
+            0f,
+            0f,
+            InputFloatFormat(format),
+            ImGuiInputTextFlags.AutoSelectAll
+                | ImGuiInputTextFlags.EnterReturnsTrue);
+        bool editedOnDeactivate = ImGui.IsItemDeactivatedAfterEdit();
+        bool deactivated = ImGui.IsItemDeactivated();
+        bool cancelled = ImGui.IsKeyPressed(ImGuiKey.Escape);
+        ImGui.PopStyleColor(5);
+        ImGui.PopStyleVar(2);
+        if (fontPushed)
+            mono!.Pop();
+        State.NeedsFocus = false;
+
+        if (cancelled)
+        {
+            CancelAxisEdit();
+            return false;
+        }
+
+        if (enter || editedOnDeactivate)
+        {
+            ChangeValue(id, () => onChange(State.Value));
+            Commit(id, onCommit);
+            CancelAxisEdit();
+            return State.Value != value;
+        }
+
+        if (deactivated)
+            CancelAxisEdit();
+        return false;
+    }
+
+    private static void DrawAxisWell(
+        Vector2 pos,
+        Vector2 size,
+        string axis,
+        float value,
+        Vector4 accent,
+        string? format,
+        bool focused,
+        bool disabled,
+        float scale,
+        bool drawValue = true)
+    {
+        var draw = ImGui.GetWindowDrawList();
+        var max = pos + size;
+        float radius = ActiveTheme.Radii.Small * scale;
+        var fill = ActiveTheme.Chrome.InputWell;
+        var border = focused
+            ? accent with { W = 0.85f }
+            : ActiveTheme.Chrome.ControlBorder;
+        if (disabled)
+        {
+            fill = fill.Fade(ActiveTheme.Chrome.DisabledOpacity);
+            border = border.Fade(ActiveTheme.Chrome.DisabledOpacity);
+        }
+        draw.AddRectFilled(
+            pos, max,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fill)),
+            radius);
+        float inset = 0.5f * scale;
+        draw.AddRect(
+            pos + new Vector2(inset),
+            max - new Vector2(inset),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
+            MathF.Max(0f, radius - inset),
+            ImDrawFlags.None,
+            scale);
+
+        var mono = FontRegistry.Resolve(
+            FontFamily.Mono, ActiveTheme.Typography.LabelSize);
+        bool pushed = mono is { Available: true };
+        if (pushed)
+            mono!.Push();
+        float pad =
+            ActiveTheme.Form.AxisWellHorizontalPadding * scale;
+        var axisSize = ImGui.CalcTextSize(axis);
+        float axisSlot = axis.Length == 0
+            ? pad
+            : pad
+                + axisSize.X
+                + ActiveTheme.Form.AxisLabelGap * scale;
+        // The well's own mono face stays pushed for the slot geometry
+        // above; TextInBand resolves the same handle and ink-centers both
+        // runs on the well.
+        var wellStyle = new TextStyle
+        {
+            Size = ActiveTheme.Typography.LabelSize,
+            Family = FontFamily.Mono,
+        };
+        if (axis.Length > 0)
+        {
+            draw.PushClipRect(
+                pos + new Vector2(inset),
+                new Vector2(pos.X + axisSlot, max.Y - inset),
+                true);
+            TextInBand(
+                new Vector2(pos.X + pad, pos.Y),
+                new Vector2(axisSize.X, size.Y),
+                axis,
+                wellStyle with { Color = accent });
+            draw.PopClipRect();
+        }
+        if (drawValue)
+        {
+            string text = format is { } fixedFormat
+                ? value.ToString(fixedFormat, CultureInfo.InvariantCulture)
+                : AdaptiveValueText(value);
+            draw.PushClipRect(
+                new Vector2(pos.X + axisSlot, pos.Y + inset),
+                max - new Vector2(inset),
+                true);
+            TextInBand(
+                new Vector2(pos.X + axisSlot, pos.Y),
+                new Vector2(max.X - pad - (pos.X + axisSlot), size.Y),
+                text,
+                wellStyle with
+                {
+                    Color = disabled ? ActiveTheme.TextDim : ActiveTheme.Text,
+                },
+                TextAlign.End);
+            draw.PopClipRect();
+        }
+        if (pushed)
+            mono!.Pop();
+    }
+
+    private static float DragModifierMultiplier(ImGuiIOPtr io) =>
+        io.KeyCtrl && io.KeyShift ? 1f
+        : io.KeyCtrl ? 0.1f
+        : io.KeyShift ? 10f
+        : 1f;
+
+    private static string InputFloatFormat(string displayFormat)
+    {
+        int dot = displayFormat.IndexOf('.');
+        int decimals = dot < 0 ? 0 : displayFormat.Length - dot - 1;
+        return $"%.{decimals}f";
+    }
+}

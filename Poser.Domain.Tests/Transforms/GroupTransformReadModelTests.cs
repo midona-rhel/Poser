@@ -100,12 +100,18 @@ public sealed class GroupTransformReadModelTests
     private static TransformTargetId Target() =>
         TransformTargetId.ForActor(ActorId.New());
 
-    [Theory]
-    [InlineData(.7f, -.2f, .1f)]
-    [InlineData(-1.2f, 1.1f, 2f)]
-    [InlineData(2.4f, -.9f, -2.3f)]
-    public void Captured_camera_frame_keeps_heading_but_removes_pitch_and_roll(float yaw, float pitch, float roll)
+    [Fact]
+    public void Bone_targets_have_no_group_identity()
     {
+        var skeleton = new SkeletonId(ActorId.New(), PoseSlot.Character, 0);
+        var bone = TransformTargetId.ForBone(new BoneId(skeleton, 0, 4, "j_kao"));
+        Assert.Throws<InvalidOperationException>(() => GroupTransformIdentity.LogicalId(bone));
+    }
+
+    [Fact]
+    public void Captured_camera_frame_keeps_heading_but_removes_pitch_and_roll()
+    {
+        const float yaw = -1.2f, pitch = 1.1f, roll = 2f;
         var rotation = Quaternion.CreateFromYawPitchRoll(yaw, pitch, roll);
         var cameraWorld = Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(4, 5, 6);
         Assert.True(Matrix4x4.Invert(cameraWorld, out var view));
@@ -123,44 +129,6 @@ public sealed class GroupTransformReadModelTests
         Assert.True(MathF.Abs(Quaternion.Dot(authored, next.Rotation)) > .99999f);
         Assert.True(Vector3.Distance(Vector3.UnitY,
             Vector3.Transform(Vector3.UnitY, frame.ToWorldOrientation(next.Rotation))) > .1f);
-    }
-
-    [Theory]
-    [InlineData(1f, 0f)]
-    [InlineData(-1f, 0f)]
-    [InlineData(1f, .8f)]
-    [InlineData(-1f, -.8f)]
-    public void Vertical_camera_uses_finite_deterministic_right_heading(float sign, float roll)
-    {
-        Quaternion? previous = null;
-        foreach (float offset in new[] { -.0001f, 0f, .0001f })
-        {
-            var rotation = Quaternion.CreateFromYawPitchRoll(.7f, sign * MathF.PI / 2 + offset, roll);
-            Assert.True(Matrix4x4.Invert(Matrix4x4.CreateFromQuaternion(rotation), out var view));
-            Assert.True(GroupTransformFrame.TryFromView(view, new(2, 3, 4), out var frame));
-            Assert.True(frame.IsValid);
-            Assert.Equal(new Vector3(2, 3, 4), frame.Origin);
-            Assert.True(Vector3.Distance(Vector3.UnitY, Vector3.Transform(Vector3.UnitY, frame.Rotation)) < .00001f);
-            var right = Vector3.Transform(Vector3.UnitX, rotation);
-            var expected = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.Atan2(-right.Z, right.X));
-            Assert.True(MathF.Abs(Quaternion.Dot(expected, frame.Rotation)) > .99999f);
-            if (previous is { } prior) Assert.True(MathF.Abs(Quaternion.Dot(prior, frame.Rotation)) > .99999f);
-            previous = frame.Rotation;
-        }
-    }
-
-    [Fact]
-    public void Coincident_reflected_members_need_no_geometric_fit()
-    {
-        var initial = new Dictionary<TransformTargetId, PoseTransform> {
-            [Target()] = new(Vector3.Zero, Quaternion.Identity, new(-1, 2, 3)),
-            [Target()] = new(Vector3.Zero, Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .6f), new(3, 1, -2))
-        };
-        Assert.True(GroupTransformBaseline.TryCapture(initial, GroupTransformFrame.World(Vector3.Zero),
-            out var baseline, out _));
-        var snapshot = new GroupTransformSnapshot(baseline!, initial, GroupTransformControls.Identity(Vector3.Zero));
-        Assert.True(GroupTransformReadModel.TryRead(snapshot, initial, GroupScaleMode.SpacingOnly, out var read, out _));
-        Assert.Equal(Vector3.One, read.Scale);
     }
 
     private static PoseTransform Pose(

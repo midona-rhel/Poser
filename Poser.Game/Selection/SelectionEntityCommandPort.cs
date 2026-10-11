@@ -3,18 +3,17 @@ using Poser.Application.Selection;
 using Poser.Application.Transforms;
 using Poser.Application.World;
 using Dalamud.Plugin.Services;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game;
 using Poser.Game.Scene;
 using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
-using Poser.Game.World;
 using System.Linq;
 using System.Threading.Tasks;
-using Poser.Game.Journal;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Selection;
 
@@ -24,7 +23,10 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
 {
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
-    private readonly EntitySessions _sessions;
+    private readonly Poser.Application.Presentation.IActorValueControl _actorValues;
+    private readonly Poser.Application.Presentation.ISceneObjectControl _objectValues;
+    private readonly Poser.Application.Presentation.ILightControl _lights;
+    private readonly Poser.Application.Presentation.IOverlayControl _overlayValues;
     private readonly IActorManager _actorManager;
     private readonly IActorSpawnService _actors;
     private readonly ISceneLifecycleHistory _lifecycle;
@@ -35,14 +37,18 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     private readonly WorldObjectService _worldObjects;
     private readonly IWorldReleasePort _worldRelease;
     private readonly IFramework _framework;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly SceneGroups _groups;
     private readonly SelectionSession _selection;
+    private readonly System.Lazy<GroupSteps>? _groupSteps;
 
     public SelectionEntityCommandPort(
         SceneSession scene,
         IEntityBindings bindings,
-        EntitySessions sessions,
+        Poser.Application.Presentation.IActorValueControl actorValues,
+        Poser.Application.Presentation.ISceneObjectControl objectValues,
+        Poser.Application.Presentation.ILightControl lights,
+        Poser.Application.Presentation.IOverlayControl overlayValues,
         IActorManager actorManager,
         IActorSpawnService actors,
         ISceneLifecycleHistory lifecycle,
@@ -54,11 +60,16 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         IWorldReleasePort worldRelease,
         SceneGroups groups,
         IFramework framework,
-        TransformHistory history)
+        EditHistory history,
+        System.Lazy<GroupSteps>? groupSteps = null)
     {
+        _groupSteps = groupSteps;
         _scene = scene;
         _bindings = bindings;
-        _sessions = sessions;
+        _actorValues = actorValues;
+        _objectValues = objectValues;
+        _lights = lights;
+        _overlayValues = overlayValues;
         _actorManager = actorManager;
         _actors = actors;
         _lifecycle = lifecycle;
@@ -106,37 +117,36 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         }
     }
 
-    public bool SetVisibility(SelectionId id, bool visible)
+    public Outcome SetVisibility(SelectionId id, bool visible)
     {
+        Outcome Gone() => new(false, "That entity is no longer available.");
         if (_scene.ReadCurrent(id) is not { CanChangeVisibility: true } current
             || current.Id != id)
-            return false;
+            return Gone();
         switch (id)
         {
             case { Actor: { } actorId }:
-                if (!CurrentActor(actorId, out var actor)
-                    || !ActorOwnershipMatches(actorId, actor)) return false;
-                return _sessions.Actors.SetVisibility(actorId, visible).Success;
+                if (!CurrentActor(actorId, out var actor)) return Gone();
+                if (!ActorOwnershipMatches(actorId, actor))
+                    return new(false, "The actor's ownership changed; select it again.");
+                return _actorValues.SetVisibility(actorId, visible);
             case { Light: { } lightId }:
-                if (!CurrentLight(lightId, out var light)
-                    || (current.Removal == SelectionRemoval.Release)
-                        != (light.Ownership != LightOwnership.Spawned)) return false;
-                _sessions.Lights.SetIsOn(light, visible);
-                return true;
+                if (!CurrentLight(lightId, out var light)) return Gone();
+                if ((current.Removal == SelectionRemoval.Release)
+                        != (light.Ownership != LightOwnership.Spawned))
+                    return new(false, "The light's ownership changed; select it again.");
+                return _lights.Set(lightId, Poser.Application.Presentation.LightProperties.IsOn, visible);
             case { Prop: { } propId }:
-                if (!CurrentProp(propId, out var prop)) return false;
-                _sessions.Props.SetVisible(prop, visible);
-                return true;
+                return CurrentProp(propId, out _)
+                    ? _objectValues.Set(propId, Poser.Application.Presentation.PropProperties.Visible, visible) : Gone();
             case { Overlay: { } overlayId }:
-                if (!CurrentOverlay(overlayId, out var overlay)) return false;
-                _sessions.Overlays.SetVisible(overlay, visible);
-                return true;
+                return CurrentOverlay(overlayId, out _)
+                    ? _overlayValues.Set(overlayId, Poser.Application.Presentation.OverlayProperties.Visible, visible) : Gone();
             case { WorldObject: { } worldId }:
-                if (!CurrentWorldObject(worldId, out var world)) return false;
-                _sessions.WorldObjects.SetVisible(world, visible);
-                return true;
+                return CurrentWorldObject(worldId, out _)
+                    ? _objectValues.Set(worldId, Poser.Application.Presentation.WorldObjectProperties.Visible, visible) : Gone();
             default:
-                return false;
+                return new(false, "That entity cannot be shown or hidden.");
         }
     }
 
@@ -148,20 +158,30 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
             var outcomes = new List<SelectionRemovalItem>(captured.Length);
             _history.RecordLifecycleBatch("Remove entities", () =>
             {
+                // Members leave their groups through the scene prune; the
+                // undo puts the structure back with them (#494).
+                var structure = _groupSteps?.Value.Capture();
+                bool groupedRemoved = false;
                 foreach (var request in captured)
                 {
                     try
                     {
+                        bool grouped = _groups.GroupOf(request.Id) != null;
                         var result = RemoveOne(request);
                         outcomes.Add(result);
                         if (result.Status == SelectionRemovalStatus.Removed)
+                        {
                             _selection.Remove(result.Id);
+                            groupedRemoved |= grouped;
+                        }
                     }
                     catch (Exception ex)
                     {
                         outcomes.Add(new(request.Id, SelectionRemovalStatus.Failed, ex.Message));
                     }
                 }
+                if (groupedRemoved && structure is not null)
+                    _history.AppendBatchPrologue(_groupSteps!.Value.RemovalStructure(structure));
             });
             return new SelectionRemovalResult(outcomes);
         });
@@ -206,9 +226,9 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
                     || (!_actors.IsSpawnedActor(actor)
                         && _actors.RemovalRefusal(actor) is not null))
                     return Refused(_actors.RemovalRefusal(actor) ?? "That actor cannot be destroyed.");
-                if (!_lifecycle.DespawnActor(actor)) return Refused("The actor could not be removed.");
+                if (!_lifecycle.DespawnActor(actor, out var note)) return Refused("The actor could not be removed.");
                 _selection.RemoveActorLineage(actorId.LogicalId);
-                return Removed();
+                return new(id, SelectionRemovalStatus.Removed, note);
             case { Light: { } lightId }:
                 if (!CurrentLight(lightId, out var light)) return Absent();
                 if (light.Ownership == LightOwnership.Spawned)
@@ -252,7 +272,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         actor = result.Value!;
         return result.Success && actor != null
-            && _bindings.GetActorId(actor) == id
             && _actorManager.Actors.Contains(actor);
     }
 
@@ -265,7 +284,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         light = result.Value!;
         return result.Success && light is { IsValid: true }
-            && _bindings.GetLightId(light) == id
             && _lighting.Lights.Contains(light);
     }
 
@@ -274,7 +292,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         camera = result.Value!;
         return result.Success && camera is { IsValid: true }
-            && _bindings.GetCameraId(camera) == id
             && _cameras.Cameras.Contains(camera);
     }
 
@@ -283,7 +300,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         prop = result.Value!;
         return result.Success && prop is { IsValid: true }
-            && _bindings.GetPropId(prop) == id
             && _props.Props.Contains(prop);
     }
 
@@ -292,7 +308,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         overlay = result.Value!;
         return result.Success && overlay is { IsValid: true }
-            && _bindings.GetOverlayId(overlay) == id
             && _overlays.Nodes.Contains(overlay);
     }
 
@@ -301,7 +316,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         var result = _bindings.Resolve(id);
         world = result.Value!;
         return result.Success && world is { IsValid: true }
-            && _bindings.GetWorldObjectId(world) == id
             && _worldObjects.Adopted.Contains(world);
     }
 }

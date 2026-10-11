@@ -5,6 +5,7 @@ using System.IO;
 using System.Numerics;
 using System.Xml;
 using Dalamud.Bindings.ImGui;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -204,7 +205,7 @@ public sealed class SvgDocument
 
         // Warm path: one cached quad. No geometry, no closure, no
         // per-sub-path point buffers, no per-pixel rect.
-        if (SvgIconTextureCache.TryDraw(
+        if (UiContext.Current.Icons.TryDraw(
                 drawList, this, min, max, tint, flipX, strokeWidth,
                 groupOpacity, groupBackground))
             return;

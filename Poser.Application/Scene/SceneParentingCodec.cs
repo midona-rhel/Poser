@@ -1,6 +1,6 @@
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
-using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
@@ -16,17 +16,17 @@ internal static class SceneParentingCodec
             if (key == Guid.Empty && companionOwner?.Invoke(owner) is { } root)
             {
                 key = actors.FirstOrDefault(pair => pair.Value == root).Key;
-                return key == Guid.Empty ? null : new() { Kind = "companion", Key = key };
+                return key == Guid.Empty ? null : new() { Kind = SceneStructureKind.Companion, Key = key };
             }
-            return key == Guid.Empty ? null : new() { Kind = "actor", Key = key };
+            return key == Guid.Empty ? null : new() { Kind = SceneStructureKind.Actor, Key = key };
         }
         return id switch
         {
-            { Light: { } v } => new() { Kind = "light", Key = v.LogicalId },
-            { Prop: { } v } => new() { Kind = "prop", Key = v.LogicalId },
-            { Overlay: { } v } => new() { Kind = "overlay", Key = v.LogicalId },
-            { WorldObject: { } v } => new() { Kind = "worldObject", Key = v.LogicalId },
-            { Camera: { } v } => new() { Kind = "camera", Key = v.LogicalId },
+            { Light: { } v } => new() { Kind = SceneStructureKind.Light, Key = v.LogicalId },
+            { Prop: { } v } => new() { Kind = SceneStructureKind.Prop, Key = v.LogicalId },
+            { Overlay: { } v } => new() { Kind = SceneStructureKind.Overlay, Key = v.LogicalId },
+            { WorldObject: { } v } => new() { Kind = SceneStructureKind.WorldObject, Key = v.LogicalId },
+            { Camera: { } v } => new() { Kind = SceneStructureKind.Camera, Key = v.LogicalId },
             _ => null,
         };
     }
@@ -34,18 +34,19 @@ internal static class SceneParentingCodec
     public static void Write(SceneFile scene, IReadOnlyDictionary<SelectionId, TransformParent> links,
         IReadOnlyDictionary<Guid, ActorId> actors, Func<ActorId, ActorId?> companionOwner)
     {
-        scene.Parents = [];
+        var parents = new List<SceneParentLink>();
         foreach (var (child, link) in links)
         {
             if (Reference(child, actors, companionOwner) is not { } childRef) continue;
             var targetRef = Reference(link.Target, actors, companionOwner);
             // Keep an excluded actor reference until policy pruning can report the static fallback.
             if (targetRef == null && (link.Target.Actor ?? link.Target.Bone?.Skeleton.Actor) is { } excluded)
-                targetRef = new() { Kind = "actor", Key = excluded.LogicalId };
+                targetRef = new() { Kind = SceneStructureKind.Actor, Key = excluded.LogicalId };
             if (targetRef == null) continue;
-            scene.Parents.Add(new() { Child = childRef, Target = targetRef,
+            parents.Add(new() { Child = childRef, Target = targetRef,
                 BoneName = link.Target.Bone?.CanonicalName, Slot = link.Target.Bone?.Slot ?? PoseSlot.Character,
                 Partial = link.Target.Bone?.PartialId ?? 0, Offset = link.Offset });
         }
+        scene.Parents = parents.Count > 0 ? parents : null;
     }
 }

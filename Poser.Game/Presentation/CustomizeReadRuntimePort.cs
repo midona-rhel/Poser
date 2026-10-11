@@ -1,6 +1,7 @@
 using Poser.Application.Presentation;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
+using Poser.Game.Core;
 using CSCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 
 namespace Poser.Game.Presentation;
@@ -52,8 +53,7 @@ public sealed unsafe class CustomizeReadRuntimePort : ICustomizeReadRuntimePort
     {
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero) return false;
-        var model = SlotCharacterBases.Resolve(legacy.Address, PoseSlot.Character);
-        if (model == null || model->GetModelType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase.ModelType.Human)
+        if (GPoseObjectTable.AsHuman(SlotCharacterBases.Resolve(legacy.Address, PoseSlot.Character)) == null)
             return false;
         return RaceFeatureRead.ReadCustomize(legacy.Address).Race is >= 1 and <= 8;
     }

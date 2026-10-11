@@ -31,6 +31,10 @@ public interface ICameraProjection
         return false;
     }
 
+    /// <summary>The game viewport's size in pixels this frame; zero when it
+    /// cannot be read.</summary>
+    Vector2 DisplaySize { get; }
+
     /// <summary>
     /// Gets the current view matrix from the active camera.
     /// </summary>

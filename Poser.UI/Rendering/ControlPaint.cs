@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -79,7 +80,7 @@ internal static class ControlPaint
         /// solution and the bound where the fill is opaque.</summary>
         public Vector4 Label(Vector4 color) =>
             ColorEx.DisabledLabelCompensation(
-                color, fill, Crystarium.ActiveTheme.Surface, groupOpacity);
+                color, fill, ActiveTheme.Surface, groupOpacity);
 
         /// <summary>The opacity an icon/glyph must render at: its own
         /// resting opacity scaled by the group's.</summary>

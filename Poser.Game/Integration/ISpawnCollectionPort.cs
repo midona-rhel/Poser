@@ -12,7 +12,7 @@ namespace Poser.Game.Integration;
 /// clone has no stable binding yet, and an overworld clone source never has
 /// one at all. Both addresses are resolved to object indices at the call
 /// boundary and nothing native is retained, exactly as
-/// <see cref="IntegrationRuntimePort"/> does for its stable-id calls.
+/// <see cref="PenumbraIpc"/> does for its stable-id calls.
 ///
 /// Why an explicit assignment is needed at all: Penumbra identifies a GPose
 /// actor through the parent index its CopyCharacter hook recorded
@@ -27,24 +27,30 @@ public interface ISpawnCollectionPort
 {
     IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(nint actor) =>
         IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
-    IntegrationPortResult RestoreInheritedCollection(nint actor, SpawnCollectionSnapshot snapshot) =>
-        IntegrationPortResult.Fail("Collection history is unavailable.");
+    IntegrationResult RestoreInheritedCollection(nint actor, SpawnCollectionSnapshot snapshot) =>
+        IntegrationResult.Fail("Collection history is unavailable.");
 
     /// <summary>Assigns the source's EFFECTIVE collection — an individual
     /// assignment when it has one, otherwise whatever Penumbra actually
     /// resolves for it — to the clone as an individual assignment.</summary>
-    IntegrationPortResult InheritCollection(nint sourceAddress, nint cloneAddress);
+    IntegrationResult InheritCollection(nint sourceAddress, nint cloneAddress);
 
     /// <summary>Removes the assignment <see cref="InheritCollection"/> made.
     /// Must run while the clone still resolves: Penumbra keys the assignment
     /// on the object's identifier, which stops existing with the object.</summary>
-    IntegrationPortResult ReleaseCollection(nint cloneAddress);
+    IntegrationResult ReleaseCollection(nint cloneAddress);
+
+    /// <summary>For a clone whose slot vanished before it could be released:
+    /// deletes its own temporary collection by GUID without touching the
+    /// object, so nothing outlives the clone and no later body at the same
+    /// address inherits the stale GUID.</summary>
+    IntegrationResult DiscardCollection(nint cloneAddress) => IntegrationResult.Ok();
 
     /// <summary>Assigns the PLAYER's effective collection to a fresh actor
     /// that was not copied from anyone in particular — a new actor, a
     /// catalog creature. Brio leaves such a spawn to Penumbra's own
     /// identification; Poser's self-directed copy gives the spawn its own
     /// identifier, so the assignment has to be explicit.</summary>
-    IntegrationPortResult AssignPlayerCollection(nint cloneAddress);
+    IntegrationResult AssignPlayerCollection(nint cloneAddress);
 
 }

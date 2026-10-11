@@ -1,15 +1,15 @@
 using System;
-using Poser.Config;
 using Poser.Domain.Identity;
+using Poser.Application.Settings;
 
-namespace Poser.Tests.Core;
+namespace Poser.Application.Tests.Settings;
 
 public sealed class ActorNicknameLifetimeTests
 {
     [Fact]
     public void NicknameSurvivesSameSessionRebindingButNotNextSessionSlotReuse()
     {
-        var plugin = new Poser.Tests.Fixtures.MemoryConfigurationPersistence();
+        var plugin = new Poser.Application.Tests.Fixtures.MemoryConfigurationPersistence();
         var names = new ConfigurationService(plugin);
         var original = new ActorId(Guid.NewGuid(), 0);
         var restored = new ActorId(original.LogicalId, 1);

@@ -6,8 +6,7 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Group;
 using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Node;
 using System.Numerics;
 using System.Text;
-using Poser.Services;
-using Transform = Poser.Transform;
+using Transform = Poser.Domain.Transforms.Transform;
 using LayoutTransform = FFXIVClientStructs.FFXIV.Client.LayoutEngine.Transform;
 
 using Poser.Domain.Scene;
@@ -23,7 +22,6 @@ internal sealed unsafe class FurnitureLayoutDriver
     private readonly delegate* unmanaged<SharedGroupLayoutInstance*, byte, void> _setupStain;
     private readonly IDataManager _data;
     private readonly Dictionary<nint, State> _owned = new();
-    private readonly HashSet<nint> _known = new();
     private readonly HashSet<nint> _graphics = new();
 
     private sealed class State(WorldObjectIncarnation identity, Transform transform)
@@ -58,7 +56,6 @@ internal sealed unsafe class FurnitureLayoutDriver
     }
 
     internal bool Contains(nint address) => _owned.ContainsKey(address);
-    internal bool IsLayoutAddress(nint address) => _known.Contains(address);
     internal bool OwnsGraphics(nint address) => _graphics.Contains(address);
     internal void RefreshGraphics()
     {
@@ -79,7 +76,6 @@ internal sealed unsafe class FurnitureLayoutDriver
                 CollectGraphics(&((SharedGroupLayoutInstance*)instance)->Instances);
         }
     }
-    internal void ForgetReusedGraphicsAddress(nint address) => _known.Remove(address);
     internal bool TryIdentity(nint address, out WorldObjectIncarnation identity)
     {
         identity = _owned.TryGetValue(address, out var state) ? state.Identity : default;
@@ -100,7 +96,6 @@ internal sealed unsafe class FurnitureLayoutDriver
         if (layout == null) return 0;
         var address = (nint)layout;
         identity = new(address, generation, 0);
-        _known.Add(address);
         _owned.Add(address, new State(identity, transform));
         try
         {
@@ -285,7 +280,7 @@ internal sealed unsafe class FurnitureLayoutDriver
     private static void ApplyNightState(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object* graphics, bool night)
     {
         if (graphics != null && graphics->GetObjectType() == ObjectType.BgObject)
-            NativeWorldObjectPort.WriteModelNightState((BgObject*)graphics, night);
+            BgObjectNative.WriteModelNightState((BgObject*)graphics, night);
     }
 
     internal void Destroy(nint address)

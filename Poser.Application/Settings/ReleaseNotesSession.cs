@@ -1,5 +1,3 @@
-using Poser.Config;
-
 namespace Poser.Application.Settings;
 
 public sealed class ReleaseNotesSession

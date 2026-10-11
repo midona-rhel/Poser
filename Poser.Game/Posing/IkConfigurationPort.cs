@@ -1,10 +1,11 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.Posing;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 
@@ -39,7 +40,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
 
     /// <summary>The set as a journal step: the previous configuration is
     /// the inverse. Only a landed set is journaled.</summary>
-    public IkPortResult Set(TransformTargetId target, IkChainConfig config)
+    public Outcome Set(TransformTargetId target, IkChainConfig config)
     {
         _journal.Seal();
         var before = Get(target);
@@ -53,10 +54,10 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         config = Get(target) ?? config; // Record captured endpoints, not the uncaptured request.
         if (!result.Success || before is null || before == config)
             return result;
-        _journal.Record(
+        _journal.Record(target.ToSelectionId(),
             config.Enabled == before.Enabled ? "Set IK" : config.Enabled ? "Enable IK" : "Disable IK",
-            before, config, next => Write(target, next),
-            () => target.Bone is { } bone && _bindings.Resolve(bone).Success, target.ToSelectionId());
+            before, config, next => Written(() => Write(target, next)),
+            () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return result;
     }
 
@@ -98,31 +99,40 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             : null;
     }
 
-    private IkPortResult Write(TransformTargetId target, IkChainConfig config)
+    private const string GestureActive = "IK configuration rejected: a transform gesture is active.";
+
+    /// <summary>A replayed IK write. An active transform gesture ends by
+    /// itself, so that refusal is transient; any other is permanent.</summary>
+    private Outcome Written(Func<Outcome> write)
+    {
+        if (_gestures.ActiveGesture != null)
+            return Outcome.Busy(GestureActive);
+        return write();
+    }
+
+    private Outcome Write(TransformTargetId target, IkChainConfig config)
     {
         if (_gestures.ActiveGesture != null)
         {
-            const string reason =
-                "IK configuration rejected: a transform gesture is active.";
-            _log.Information(reason);
-            return IkPortResult.Fail(reason);
+            _log.Information(GestureActive);
+            return Outcome.Fail(GestureActive);
         }
         if (target.Bone is not { } boneId)
-            return IkPortResult.Fail("IK configuration requires a bone target.");
+            return Outcome.Fail("IK configuration requires a bone target.");
         var bone = _bindings.Resolve(boneId);
         if (!bone.Success)
-            return IkPortResult.Fail(
+            return Outcome.Fail(
                 bone.Detail ?? $"Bone {boneId.CanonicalName} did not resolve.");
         var error = _bonePosing.SetIkConfiguration(bone.Value!, config);
         if (error != null)
         {
             _log.Information($"IK configuration rejected: {error}");
-            return IkPortResult.Fail(error);
+            return Outcome.Fail(error);
         }
-        return IkPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public IkPortResult SetBoneTarget(
+    public Outcome SetBoneTarget(
         TransformTargetId target, global::Poser.Domain.Identity.BoneId bone)
     {
         if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null })
@@ -133,32 +143,32 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         // chain's target mode step (an IK set) carries the way back.
         if (!result.Success || before is not { } previous || previous == bone)
             return result;
-        _journal.Record("Set IK bone target", previous, bone,
-            next => WriteBoneTarget(target, next),
+        _journal.Record(this, "Set IK bone target", previous, bone,
+            next => Written(() => WriteBoneTarget(target, next)),
             () => target.Bone is { } endpoint && _bindings.Resolve(endpoint).Success);
         return result;
     }
 
-    private IkPortResult WriteBoneTarget(
+    private Outcome WriteBoneTarget(
         TransformTargetId target, global::Poser.Domain.Identity.BoneId bone)
     {
         if (target.Bone is not { } endpointId)
-            return IkPortResult.Fail("IK configuration requires a bone target.");
+            return Outcome.Fail("IK configuration requires a bone target.");
         var endpoint = _bindings.Resolve(endpointId);
         if (!endpoint.Success)
-            return IkPortResult.Fail(
+            return Outcome.Fail(
                 endpoint.Detail ?? $"Bone {endpointId.CanonicalName} did not resolve.");
         var anchor = _bindings.Resolve(bone);
         if (!anchor.Success)
-            return IkPortResult.Fail(
+            return Outcome.Fail(
                 anchor.Detail ?? $"Bone {bone.CanonicalName} did not resolve.");
         var error = _bonePosing.SetIkBoneTarget(endpoint.Value!, anchor.Value!);
         if (error != null)
         {
             _log.Information($"IK target rejected: {error}");
-            return IkPortResult.Fail(error);
+            return Outcome.Fail(error);
         }
-        return IkPortResult.Ok();
+        return Outcome.Ok();
     }
 
     public global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target)
@@ -174,13 +184,13 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         return _bindings.GetBoneId(anchor);
     }
 
-    public IkPortResult ResetDefaults(TransformTargetId target)
+    public Outcome ResetDefaults(TransformTargetId target)
     {
         if (target.Bone is not { } boneId)
-            return IkPortResult.Fail("IK configuration requires a bone target.");
+            return Outcome.Fail("IK configuration requires a bone target.");
         var current = Get(target);
         if (current == null)
-            return IkPortResult.Fail(
+            return Outcome.Fail(
                 $"Bone {boneId.CanonicalName} cannot use IK.");
         // Reset Defaults preserves the chain's Enabled state. A bone with no
         // declared chain resets to the CCD defaults, which are the only ones
@@ -191,67 +201,63 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             : IkChainConfig.DefaultsFor(definition.IsArm, current.Enabled));
     }
 
-    public IkPortResult SetEntityTarget(TransformTargetId target, SelectionId entity)
+    public Outcome SetEntityTarget(TransformTargetId target, SelectionId entity)
     {
         if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null })
             return SetFabrikTarget(target, IkTargetMode.Entity, entity: entity);
         var before = EntityTarget(target);
         var result = WriteEntityTarget(target, entity);
         if (result.Success && before is { } previous && previous != entity)
-            _journal.Record("Set IK scene target", previous, entity,
-                next => WriteEntityTarget(target, next),
+            _journal.Record(this, "Set IK scene target", previous, entity,
+                next => Written(() => WriteEntityTarget(target, next)),
                 () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
         return result;
     }
 
-    public IkPortResult Adjust(TransformTargetId target, IkChainConfig config)
+    public Outcome Adjust(TransformTargetId target, IkChainConfig config)
     {
         if (Get(target) is not { } initial)
-            return IkPortResult.Fail("IK configuration requires a live bone target.");
+            return Outcome.Fail("IK configuration requires a live bone target.");
         // Depth edits capture a new authored span before the journal stages it.
         // Redo restores that span, not another capture from the later live pose.
         if (target.Bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } endpoint })
             config = _bonePosing.PrepareIkConfiguration(endpoint, config);
         var result = _journal.Adjust((target, "IK"), "Set IK",
             () => Get(target) ?? initial,
-            next =>
-            {
-                var written = Write(target, next);
-                return new ValueWriteResult(written.Success, written.Detail);
-            }, config,
+            next => Written(() => Write(target, next)), config,
             () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
-        return new IkPortResult(result.Success, result.Detail);
+        return new Outcome(result.Success, result.Detail);
     }
 
-    public IkPortResult SetFabrikTarget(TransformTargetId target, IkTargetMode mode,
+    public Outcome SetFabrikTarget(TransformTargetId target, IkTargetMode mode,
         BoneId? bone = null, SelectionId? entity = null)
     {
         if (_gestures.ActiveGesture != null)
-            return IkPortResult.Fail("Finish the active transform before changing the IK target.");
+            return Outcome.Fail("Finish the active transform before changing the IK target.");
         if (target.Bone is not { } id || _bindings.Resolve(id) is not { Success: true, Value: { } endpoint }
             || Get(target) is not { Fabrik: { } control } config)
-            return IkPortResult.Fail("The FABRIK chain is unavailable.");
+            return Outcome.Fail("The FABRIK chain is unavailable.");
         if (bone is { } anchor && anchor.Skeleton == id.Skeleton
             && _bindings.Resolve(anchor) is { Success: true, Value: { } followed })
             for (var ancestor = followed; ancestor != null; ancestor = ancestor.ParentBone)
                 if (control.Bones.Any(b => b.Name == ancestor.BoneName && b.Partial == ancestor.PartialId))
-                    return IkPortResult.Fail("An endpoint cannot follow its own chain or a bone moved by that chain.");
+                    return Outcome.Fail("An endpoint cannot follow its own chain or a bone moved by that chain.");
         var capture = _bonePosing.CaptureFabrikTarget(endpoint, mode, bone, entity);
-        if (capture == null) return IkPortResult.Fail("Choose an available target.");
+        if (capture == null) return Outcome.Fail("Choose an available target.");
         return Set(target, config with { TargetMode = mode, Fabrik = control with { Handle = capture } });
     }
 
-    private IkPortResult WriteEntityTarget(TransformTargetId target, SelectionId entity)
+    private Outcome WriteEntityTarget(TransformTargetId target, SelectionId entity)
     {
         if (_gestures.ActiveGesture != null)
-            return IkPortResult.Fail("Finish the active transform before changing the IK target.");
+            return Outcome.Fail("Finish the active transform before changing the IK target.");
         if (target.Bone is not { } endpointId)
-            return IkPortResult.Fail("IK configuration requires a bone target.");
+            return Outcome.Fail("IK configuration requires a bone target.");
         var endpoint = _bindings.Resolve(endpointId);
         if (!endpoint.Success)
-            return IkPortResult.Fail(endpoint.Detail ?? "The IK endpoint is unavailable.");
+            return Outcome.Fail(endpoint.Detail ?? "The IK endpoint is unavailable.");
         var error = _bonePosing.SetIkEntityTarget(endpoint.Value!, entity);
-        return error == null ? IkPortResult.Ok() : IkPortResult.Fail(error);
+        return error == null ? Outcome.Ok() : Outcome.Fail(error);
     }
 
     public SelectionId? EntityTarget(TransformTargetId target)

@@ -6,7 +6,7 @@ namespace Poser.Application.Transforms;
 
 /// <summary>Appearance-changing commands share the complete non-animation actor inverse.</summary>
 public sealed class DisruptiveSteps(
-    TransformHistory history, IActorStateSnapshots snapshots,
+    EditHistory history, IActorStateSnapshots snapshots,
     ValueJournal values)
 {
     public IntegrationResult Run(ActorId actor, string description, Func<IntegrationResult> verb)
@@ -44,7 +44,7 @@ public sealed class DisruptiveSteps(
         history.Append(new JournalStep(description, PrepareUndo, () => after != null)
         {
             AffectedEntities = new[] { SelectionId.ForActor(actor) },
-            RetainOnFailure = true,
+            OnRefusal = () => RefusalAction.Keep,
             FailureDetail = () => failure,
             CompleteReplay = (undo, current, cancellation, completed) =>
                 snapshots.Restore(undo ? before : after!, current, cancellation, completed),

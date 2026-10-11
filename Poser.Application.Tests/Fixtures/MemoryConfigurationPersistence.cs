@@ -1,6 +1,7 @@
-using Poser.Config;
+using Poser.Documents.Config;
+using Poser.Application.Settings;
 
-namespace Poser.Tests.Fixtures;
+namespace Poser.Application.Tests.Fixtures;
 
 internal sealed class MemoryConfigurationPersistence : IConfigurationPersistence
 {

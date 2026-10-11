@@ -4,13 +4,12 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 
@@ -82,7 +81,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     private readonly ISkeletonService _skeletons;
     private readonly IPoseFileService _poseFiles;
     private readonly ITransformRuntimePort _runtime;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
     private readonly IPluginLog _log;
 
@@ -127,7 +126,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         ISkeletonService skeletons,
         IPoseFileService poseFiles,
         ITransformRuntimePort runtime,
-        TransformHistory history,
+        EditHistory history,
         TransformGestureService gestures,
         IPluginLog log)
     {
@@ -176,19 +175,17 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
     /// <summary>The bones the solver moves for this target — the limb a bake
     /// is about. The bake itself writes the whole skeleton, as Brio's does;
-    /// this is what the UI and the live scenario name. Empty when the target is
+    /// this is what the UI names. Empty when the target is
     /// not an armed, resolvable chain.</summary>
-    IReadOnlyList<BoneId> IIkBake.AffectedChain(TransformTargetId target) =>
-        AffectedChain(target).Select(bone => _bindings.GetBoneId(bone))
-            .OfType<BoneId>().ToArray();
-
-    public IReadOnlyList<IBone> AffectedChain(TransformTargetId target)
+    public IReadOnlyList<BoneId> AffectedChain(TransformTargetId target)
     {
         if (target.Bone is not { } boneId ||
             _bindings.Resolve(boneId) is not { Success: true, Value: { } endpoint } ||
             _posing.GetIkConfiguration(endpoint) is not { Enabled: true } config)
-            return Array.Empty<IBone>();
-        return AffectedBones(endpoint, config);
+            return Array.Empty<BoneId>();
+        return AffectedBones(endpoint, config)
+            .Select(bone => _bindings.GetBoneId(bone))
+            .OfType<BoneId>().ToArray();
     }
 
     /// <summary>
@@ -363,7 +360,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
             var desired = _posing.ToApplySpace(bone, fileBone);
             var basis = bone.LastRawTransform;
-            if (IsApproximatelyIdentity(BonePoseInfo.Diff(desired, basis)))
+            if (TransformMath.IsApproximatelyIdentityDelta(BonePoseInfo.Diff(desired, basis)))
                 return;
 
             // Brio passes TransformComponents.All as the new stack's
@@ -507,7 +504,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             })
         {
             AffectedEntities = before.Concat(after)
-                .Select(state => TransformHistory.EntityOf(state.Target.ToSelectionId())).Distinct().ToArray(),
+                .Select(state => EditHistory.EntityOf(state.Target.ToSelectionId())).Distinct().ToArray(),
         });
         return null;
     }
@@ -582,21 +579,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             _ => null,
         };
 
-    /// <summary>Brio's <c>Transform.IsApproximatelySame(Transform.Identity)</c>
-    /// (Core/Transform.cs:96-101) on a stack delta: position and scale are
-    /// additive, rotation multiplicative.</summary>
-    private static bool IsApproximatelyIdentity(Transform delta)
-    {
-        const float tolerance = 0.000001f;
-        return MathF.Abs(delta.Position.X) < tolerance &&
-               MathF.Abs(delta.Position.Y) < tolerance &&
-               MathF.Abs(delta.Position.Z) < tolerance &&
-               MathF.Abs(delta.Scale.X) < tolerance &&
-               MathF.Abs(delta.Scale.Y) < tolerance &&
-               MathF.Abs(delta.Scale.Z) < tolerance &&
-               MathF.Abs(MathF.Abs(delta.Rotation.W) - 1f) < tolerance;
-    }
-
     /// <summary>
     /// The bones the solver actually moves. Two Joint moves the resolved
     /// definition (joints, optional twists, endpoint); CCD moves the endpoint
@@ -607,7 +589,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     internal static List<IBone> AffectedBones(IBone endpoint, IkChainConfig config)
     {
         if (config.Solver == IkSolver.Ccd)
-            return BonePosingService.NativeIkMembers(endpoint, config);
+            return IkChainShapes.NativeIkMembers(endpoint, config);
         var result = new List<IBone>();
         void Add(IBone? bone)
         {

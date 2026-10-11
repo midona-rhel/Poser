@@ -1,4 +1,5 @@
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -14,13 +15,13 @@ public sealed record CameraTargetReading(
 public interface ICameraTargetControl
 {
     CameraTargetReading? Read(CameraId id);
-    ValueWriteResult Follow(CameraId id, ActorId actor, string displayName);
-    ValueWriteResult SetTargetLocked(CameraId id, bool value);
-    ValueWriteResult ToggleGameTarget(CameraId id);
-    ValueWriteResult SetTracking(CameraId id, bool value);
-    ValueWriteResult SetTrackingMode(CameraId id, CameraTrackingMode value);
-    ValueWriteResult ToggleTrackedBone(CameraId id, BoneId bone);
-    ValueWriteResult CenterOnActor(ActorId actor);
-    ValueWriteResult Recenter(CameraId id, SelectionId? selection);
-    ValueWriteResult CenterTrackedActor(CameraId id);
+    Outcome Follow(CameraId id, ActorId actor, string displayName);
+    Outcome SetTargetLocked(CameraId id, bool value);
+    Outcome ToggleGameTarget(CameraId id);
+    Outcome SetTracking(CameraId id, bool value);
+    Outcome SetTrackingMode(CameraId id, CameraTrackingMode value);
+    Outcome ToggleTrackedBone(CameraId id, BoneId bone);
+    Outcome CenterOnActor(ActorId actor);
+    Outcome Recenter(CameraId id, SelectionId? selection);
+    Outcome CenterTrackedActor(CameraId id);
 }
