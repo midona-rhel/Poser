@@ -44,9 +44,9 @@ internal sealed partial class SidebarComposer
     }
 
     /// <summary>One category, pruned to what the skeleton carries and
-    /// what the filter keeps: its own present bones (all of them when the
-    /// category label matched, the matching ones otherwise) and its surviving
-    /// children. Null when nothing below survives.</summary>
+    /// what the filter keeps: when the category label matched, everything it
+    /// and its descendants carry; otherwise its matching bones and its
+    /// surviving children. Null when nothing below survives.</summary>
     private sealed record BuiltCategory(
         string Id,
         string Label,
@@ -77,9 +77,12 @@ internal sealed partial class SidebarComposer
             : all.FindAll(bone => MatchesSidebarFilter(
                 filter, bone.DisplayName, bone.Id.CanonicalName));
 
+        // A matched category shows its whole subtree: searching "Ears" keeps
+        // Left Ear and Right Ear and their bones, not only bones whose own
+        // names contain the word (#479).
         var children = new List<BuiltCategory>();
         foreach (var child in category.Children)
-            if (BuildKtisisCategory(child, byName, claimed, filter, filtering)
+            if (BuildKtisisCategory(child, byName, claimed, filter, filtering && !categoryMatches)
                 is { } present)
                 children.Add(present);
 
