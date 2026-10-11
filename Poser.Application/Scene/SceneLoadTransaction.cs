@@ -969,7 +969,7 @@ internal sealed class SceneLoadTransaction(
             string detail = failures.Count == 0
                 ? $"Loaded {operation.FileName}: " +
                   $"{Count(_actors.Count, "actor")}, " +
-                  $"{Count(_props.Count, "object")}, " +
+                  $"{Count(_props.Count + _worldObjects.Count, "object")}, " +
                   $"{Count(_lights.Count, "light")}, " +
                   $"{Count(_cameras.Count, "camera")}."
                 : $"Loaded {operation.FileName} partially: " +
