@@ -97,6 +97,32 @@ public sealed class McdfHistoryTests
     }
 
     [Fact]
+    public async Task Cancel_publishes_disabled_request_and_late_worker_progress_cannot_resurrect_it()
+    {
+        var files = new Files { Hold = new() };
+        using var integration = new IntegrationGraph(
+            DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>(), files, new Sessions());
+        var actor = ActorId.New();
+        Assert.True(integration.Mcdf.BeginImport(actor, "held.mcdf").Success);
+        await files.ReadEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        integration.Mcdf.Cancel();
+
+        Assert.Equal(McdfPhase.Cancelling, integration.Mcdf.Progress!.Phase);
+        Assert.False(integration.Mcdf.Progress.Cancellable);
+        Assert.True(integration.Mcdf.Busy);
+        files.PublishLateCancellableProgress();
+        Assert.Equal(McdfPhase.Cancelling, integration.Mcdf.Progress.Phase);
+        Assert.False(integration.Mcdf.Progress.Cancellable);
+
+        files.Hold.SetResult();
+        await integration.Mcdf.CurrentCompletion;
+        Assert.Equal(OperationReceiptState.Cancelled, integration.Mcdf.Receipt!.State);
+        Assert.Equal(McdfPhase.Cancelled, integration.Mcdf.Progress.Phase);
+        Assert.True(integration.Mcdf.Progress.Outcome!.Cancelled);
+    }
+
+    [Fact]
     public async Task Late_cancel_of_a_finished_operation_never_cancels_the_newer_one()
     {
         var files = new Files();
@@ -225,10 +251,14 @@ public sealed class McdfHistoryTests
         public List<bool> InputPresentAtRead { get; } = [];
         public TaskCompletionSource ReadEntered { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private Action<McdfProgressStep>? _progress;
+        public void PublishLateCancellableProgress() =>
+            _progress!(new(McdfPhase.Extracting, 0, 1, 0, 1));
         public async Task<IntegrationValue<McdfPackage>> ReadPackage(string path, McdfLimits limits,
             McdfOperationDirectory directory, Action<McdfProgressStep> progress, CancellationToken cancellation)
         {
             Reads++;
+            _progress = progress;
             ReadEntered.TrySetResult();
             if (Hold is { } hold)
                 await hold.Task;

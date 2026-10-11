@@ -25,11 +25,12 @@ public enum McdfPhase
     Committing,
     CapturingExport,
     WritingPackage,
-    Cancelling,
     RollingBack,
     Completed,
     Failed,
     Cancelled,
+    // Appended so Debug telemetry keeps every existing serialized enum value.
+    Cancelling,
 }
 
 /// <summary>Final result of one MCDF operation.</summary>
