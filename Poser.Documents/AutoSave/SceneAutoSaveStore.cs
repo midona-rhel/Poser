@@ -7,10 +7,22 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Documents.AutoSave;
 
+/// <summary>Opaque comparison baseline retained only after a successful scene autosave.</summary>
+public sealed class SceneAutoSaveIdentity
+{
+    internal SceneAutoSaveIdentity(string exactHash, IReadOnlyList<Transform> bones)
+    {
+        ExactHash = exactHash;
+        Bones = bones;
+    }
+
+    internal string ExactHash { get; }
+    internal IReadOnlyList<Transform> Bones { get; }
+}
+
 /// <summary>Whole-scene snapshot filenames and disk retention, separate from pose snapshots.</summary>
 public sealed class SceneAutoSaveStore
 {
-    private static readonly JsonSerializerOptions SignatureOptions = CreateSignatureOptions();
     private readonly SceneFileStore _store;
     private readonly Action<string> _error;
     public string RootDirectory { get; }
@@ -35,10 +47,7 @@ public sealed class SceneAutoSaveStore
     ///
     /// <para>It hashes with the document's own wire options: without the
     /// numerics converters every vector serializes as <c>{}</c>, so a moved
-    /// bone or prop would hash the same as before. Bone transforms alone use
-    /// semantic buckets: capture/decomposition noise below the pose system's
-    /// tolerance is not authored work, while every other field remains exact.
-    /// The file written to disk is never rounded.</para>
+    /// bone or prop would hash the same as before.</para>
     /// </summary>
     public static string? Signature(SceneFile scene)
     {
@@ -48,7 +57,7 @@ public sealed class SceneAutoSaveStore
         {
             return Convert.ToHexString(System.Security.Cryptography.SHA256
                 .HashData(System.Text.Json.JsonSerializer
-                    .SerializeToUtf8Bytes(scene, SignatureOptions)));
+                    .SerializeToUtf8Bytes(scene, SceneFile.JsonOptions)));
         }
         catch (Exception)
         {
@@ -60,20 +69,71 @@ public sealed class SceneAutoSaveStore
         }
     }
 
-    private static JsonSerializerOptions CreateSignatureOptions()
+    /// <summary>Captures an exact hash of every non-bone value plus the bone
+    /// transforms in wire order. Comparing to the last successfully written
+    /// baseline absorbs sub-tolerance capture noise without hiding cumulative
+    /// motion or changing the document that is written.</summary>
+    public static SceneAutoSaveIdentity? CaptureIdentity(SceneFile scene)
     {
+        var bones = new List<Transform>();
         var options = new JsonSerializerOptions(SceneFile.JsonOptions);
-        options.Converters.Insert(0, new BoneSignatureConverter());
-        return options;
+        options.Converters.Insert(0, new BoneIdentityConverter(bones));
+        var savedAt = scene.SavedAt;
+        scene.SavedAt = null;
+        try
+        {
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(scene, options);
+            return new SceneAutoSaveIdentity(
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)),
+                bones.ToArray());
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            scene.SavedAt = savedAt;
+        }
     }
 
-    /// <summary>One bucket spans twice the established pose comparison
-    /// tolerance, so its maximum canonicalization error is that tolerance.
-    /// Bucket identity is used directly by SHA-256: equality and hashing
-    /// therefore cannot disagree at an epsilon boundary.</summary>
-    private sealed class BoneSignatureConverter : JsonConverter<PoseFile.BoneData>
+    public static bool SemanticallyEquals(SceneAutoSaveIdentity left, SceneAutoSaveIdentity right)
     {
-        private const float Quantum = 2f * TransformMath.ApproximateSameTolerance;
+        if (!string.Equals(left.ExactHash, right.ExactHash, StringComparison.Ordinal)
+            || left.Bones.Count != right.Bones.Count)
+            return false;
+        for (var i = 0; i < left.Bones.Count; i++)
+            if (!Same(left.Bones[i], right.Bones[i]))
+                return false;
+        return true;
+    }
+
+    private static bool Same(Transform left, Transform right)
+    {
+        const float tolerance = TransformMath.ApproximateSameTolerance;
+        static bool Vector(Vector3 a, Vector3 b, float tolerance) =>
+            MathF.Abs(a.X - b.X) <= tolerance &&
+            MathF.Abs(a.Y - b.Y) <= tolerance &&
+            MathF.Abs(a.Z - b.Z) <= tolerance;
+        if (!Vector(left.Position, right.Position, tolerance)
+            || !Vector(left.Scale, right.Scale, tolerance))
+            return false;
+        var aLength = left.Rotation.LengthSquared();
+        var bLength = right.Rotation.LengthSquared();
+        if (aLength < float.Epsilon || bLength < float.Epsilon)
+            return left.Rotation == right.Rotation;
+        var a = Quaternion.Normalize(left.Rotation);
+        var b = Quaternion.Normalize(right.Rotation);
+        if (Quaternion.Dot(a, b) < 0f)
+            b = new Quaternion(-b.X, -b.Y, -b.Z, -b.W);
+        return MathF.Abs(a.X - b.X) <= tolerance &&
+            MathF.Abs(a.Y - b.Y) <= tolerance &&
+            MathF.Abs(a.Z - b.Z) <= tolerance &&
+            MathF.Abs(a.W - b.W) <= tolerance;
+    }
+
+    private sealed class BoneIdentityConverter(List<Transform> bones) : JsonConverter<PoseFile.BoneData>
+    {
 
         public override PoseFile.BoneData Read(
             ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
@@ -82,31 +142,12 @@ public sealed class SceneAutoSaveStore
         public override void Write(
             Utf8JsonWriter writer, PoseFile.BoneData value, JsonSerializerOptions options)
         {
+            bones.Add(value);
+            // Keys, collection order and every surrounding field remain in
+            // the exact hash; only the three noisy transform values move to
+            // the baseline-relative comparison above.
             writer.WriteStartObject();
-            writer.WritePropertyName(nameof(PoseFile.BoneData.Position));
-            JsonSerializer.Serialize(writer, Canonical(value.Position), options);
-            writer.WritePropertyName(nameof(PoseFile.BoneData.Rotation));
-            JsonSerializer.Serialize(writer, Canonical(value.Rotation), options);
-            writer.WritePropertyName(nameof(PoseFile.BoneData.Scale));
-            JsonSerializer.Serialize(writer, Canonical(value.Scale), options);
             writer.WriteEndObject();
-        }
-
-        private static float Component(float value) =>
-            MathF.Round(value / Quantum, MidpointRounding.ToEven) * Quantum;
-
-        private static Vector3 Canonical(Vector3 value) =>
-            new(Component(value.X), Component(value.Y), Component(value.Z));
-
-        private static Quaternion Canonical(Quaternion value)
-        {
-            // A quaternion and its negation encode the same orientation.
-            if (value.W < 0f || value.W == 0f && (value.Z < 0f ||
-                value.Z == 0f && (value.Y < 0f || value.Y == 0f && value.X < 0f)))
-                value = new Quaternion(-value.X, -value.Y, -value.Z, -value.W);
-            return new Quaternion(
-                Component(value.X), Component(value.Y),
-                Component(value.Z), Component(value.W));
         }
     }
 

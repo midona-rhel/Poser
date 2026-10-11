@@ -29,6 +29,36 @@ public sealed class SceneAutoSaveTests
     }
 
     [Fact]
+    public void Bone_noise_is_compared_to_the_last_written_baseline_so_drift_accumulates()
+    {
+        using var test = new Harness();
+        var bone = new PoseFile.BoneData
+        {
+            Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.One,
+        };
+        var pose = new PoseFile();
+        pose.Bones["j_kosi"] = bone;
+        test.Scene.Actors.Add(new SceneActor { Key = Guid.NewGuid(), Name = "Actor", Pose = pose });
+
+        test.Tick(0);
+        test.Tick(10);
+        test.Complete();
+        Assert.True(test.Service.LastResult.Status == SceneAutoSaveStatus.Written,
+            test.Service.LastResult.Detail);
+
+        bone.Scale = bone.Scale with { X = bone.Scale.X + 0.0000006f };
+        test.Tick(20);
+        test.Complete();
+        Assert.Equal(SceneAutoSaveStatus.Skipped, test.Service.LastResult.Status);
+
+        bone.Scale = bone.Scale with { X = bone.Scale.X + 0.0000006f };
+        test.Tick(30);
+        test.Complete();
+        Assert.Equal(SceneAutoSaveStatus.Written, test.Service.LastResult.Status);
+        Assert.Equal(2, Directory.GetFiles(test.Root, "*.xivs", SearchOption.AllDirectories).Length);
+    }
+
+    [Fact]
     public void Stale_session_capture_is_ignored_and_capture_failure_creates_no_file()
     {
         using var test = new Harness();
@@ -94,16 +124,50 @@ public sealed class SceneAutoSaveTests
             Lights = [new SceneLight { Key = Guid.NewGuid(), Light = light }],
         };
 
-        var baseline = SceneAutoSaveStore.Signature(scene);
+        var baseline = SceneAutoSaveStore.CaptureIdentity(scene)!;
         bone.Scale = new Vector3(1.0000005f, 1f, 0.99999994f);
-        Assert.Equal(baseline, SceneAutoSaveStore.Signature(scene));
+        Assert.True(SceneAutoSaveStore.SemanticallyEquals(
+            baseline, SceneAutoSaveStore.CaptureIdentity(scene)!));
 
         bone.Scale = new Vector3(1.000004f, 1f, 1f);
-        var authored = SceneAutoSaveStore.Signature(scene);
-        Assert.NotEqual(baseline, authored);
+        var authored = SceneAutoSaveStore.CaptureIdentity(scene)!;
+        Assert.False(SceneAutoSaveStore.SemanticallyEquals(baseline, authored));
 
         light.Intensity += 0.0000001f;
-        Assert.NotEqual(authored, SceneAutoSaveStore.Signature(scene));
+        Assert.False(SceneAutoSaveStore.SemanticallyEquals(
+            authored, SceneAutoSaveStore.CaptureIdentity(scene)!));
+    }
+
+    [Fact]
+    public void Semantic_identity_has_no_quantization_boundary_and_accumulates_from_written_baseline()
+    {
+        var bone = new PoseFile.BoneData
+        {
+            Position = new Vector3(0.12345099f, 0, 0),
+            Rotation = Quaternion.Identity,
+            Scale = Vector3.One,
+        };
+        var pose = new PoseFile();
+        pose.Bones["j_kosi"] = bone;
+        var scene = new SceneFile
+        {
+            SceneId = Guid.NewGuid(),
+            Actors = [new SceneActor { Key = Guid.NewGuid(), Pose = pose }],
+        };
+        var written = SceneAutoSaveStore.CaptureIdentity(scene)!;
+
+        bone.Position = new Vector3(0.12345101f, 0, 0);
+        Assert.True(SceneAutoSaveStore.SemanticallyEquals(
+            written, SceneAutoSaveStore.CaptureIdentity(scene)!));
+
+        bone.Position = new Vector3(0.1234521f, 0, 0);
+        Assert.False(SceneAutoSaveStore.SemanticallyEquals(
+            written, SceneAutoSaveStore.CaptureIdentity(scene)!));
+
+        bone.Rotation = new Quaternion(0, 0, 0, -1);
+        bone.Position = new Vector3(0.12345099f, 0, 0);
+        Assert.True(SceneAutoSaveStore.SemanticallyEquals(
+            written, SceneAutoSaveStore.CaptureIdentity(scene)!));
     }
 
     [Fact]
