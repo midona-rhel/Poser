@@ -329,6 +329,7 @@ public sealed partial class DebugBridge : IDisposable
                         "overlay-node.create", "overlay-node.read", "overlay-node.move", "overlay-node.scale",
                         "library.entry.save", "library.entry.spawn", "library.entry.placement", "library.entry.camera-save",
                         "actor.weapon-state.read", "actor.weapon-state.set",
+                        "bone.authored-modification.read",
                         "autosave.config.read", "autosave.config.write", "autosave.status.read",
                         "autosave.library.refresh", "autosave.library.read", "autosave.library.delete-disposable",
                         "selection.entities",
@@ -351,6 +352,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/overlaynode?action=create&kind=Talk|Balloon|Status or ?overlay=SELECTION_ID&x=NUMBER&y=NUMBER|scale=NUMBER",
                         "/libraryentry?action=save&entity=SELECTION_ID&path=NEW_ABSOLUTE_PATH or action=spawn&kind=Overlay&path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera|RelativeToCamera|RelativeToSelectedActor",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
+                        "/bone?actor=NAME|INDEX&name=BONE&partial=0 (evaluated/raw plus full authored modification)",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
                         "/uidrag?x=START_X&y=START_Y&toX=END_X&toY=END_Y&frames=12 (read status without coordinates; cancel=1 releases)",
@@ -973,13 +975,23 @@ public sealed partial class DebugBridge : IDisposable
                             if (_bindings.GetBoneId(bone) is { } liveBone)
                                 _viewport.GetSkeletonModelMatrix(liveBone);
                             var t = bone.LastTransform; var rw = bone.LastRawTransform;
+                            var modification = _bonePosing.GetModification(bone);
                             return Json(new { name, partial = bone.PartialId, bone.BoneIndex,
                                 bone.IsPartialRoot, bone.IsSkeletonRoot,
                                 parent = bone.ParentBone is { } parent ? new { parent.BoneName, parent.PartialId } : null,
                                 children = bone.ChildBones.Select(child => new { child.BoneName, child.PartialId }).ToArray(),
                                 scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z }, rotation = new { t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W },
                                 raw = new { scale = rw.Scale.X, pos = new { rw.Position.X, rw.Position.Y, rw.Position.Z }, rot = new { rw.Rotation.X, rw.Rotation.Y, rw.Rotation.Z, rw.Rotation.W } },
-                                modification = _bonePosing.GetModification(bone) is { } m ? new { scale = m.Scale.X, rotW = m.Rotation.W, pos = m.Position.Y } : null });
+                                modification = modification is { } m ? new { scale = m.Scale.X, rotW = m.Rotation.W, pos = m.Position.Y } : null,
+                                authoredModification = modification is { } authored ? new
+                                {
+                                    slot = skeleton.Slot.ToString(),
+                                    partial = bone.PartialId,
+                                    name = bone.BoneName,
+                                    position = new { authored.Position.X, authored.Position.Y, authored.Position.Z },
+                                    rotation = new { authored.Rotation.X, authored.Rotation.Y, authored.Rotation.Z, authored.Rotation.W },
+                                    scale = new { authored.Scale.X, authored.Scale.Y, authored.Scale.Z },
+                                } : null });
                         }
                 return Json(new { error = "no such bone" });
             }
