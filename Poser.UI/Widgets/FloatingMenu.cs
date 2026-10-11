@@ -452,7 +452,12 @@ public static class FloatingMenu
             Size: unionMax - unionMin + new Vector2(host * 2f));
         ImGui.SetNextWindowPos(hostBounds.Min);
         ImGui.SetNextWindowSize(hostBounds.Size);
-        ImGui.SetNextWindowFocus();
+        // Only a live menu takes focus. While it plays its exit, the command
+        // it ran may have opened a surface that closes when it loses focus
+        // (the spawn browser): re-focusing the fading menu every frame closed
+        // that surface right after it opened (#500).
+        if (State.Phase is Phase.Opening or Phase.Open)
+            ImGui.SetNextWindowFocus();
         ImGui.Begin("##floating-menu", hostFlags);
         var dl = ImGui.GetWindowDrawList();
         int vtxStart = dl.VtxBuffer.Size;
