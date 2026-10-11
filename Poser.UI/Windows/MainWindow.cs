@@ -36,6 +36,22 @@ namespace Poser.UI;
 /// </summary>
 public partial class MainWindow : Window
 {
+#if DEBUG
+    /// <summary>The bone rows retained by the sidebar's real presentation
+    /// model. Debug automation reads these instead of rebuilding labels from
+    /// bone data and accidentally testing a second formatter.</summary>
+    public IReadOnlyList<ShellSidebarRow> DebugMaterializedBoneRows(ActorId actor) =>
+        _vm.Sections
+            .SelectMany(section => section.Rows)
+            .Where(row => row.Tag is SelectionId
+            {
+                Bone: { } bone,
+            } && bone.Skeleton.Actor.Equals(actor))
+            .ToArray();
+
+    public string DebugSidebarFilter => _sidebar.Filter;
+#endif
+
     // One minimum for every tab: the right column is always spent, either
     // on the Pose rail or on Animation content.
     private const float MinimumWidth = AppShellView.MinimumWorkspaceWidth;

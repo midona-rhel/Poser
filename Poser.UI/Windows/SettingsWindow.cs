@@ -22,6 +22,14 @@ using Poser.Application.Library;
 namespace Poser.UI;
 public class SettingsWindow : Window
 {
+#if DEBUG
+    /// <summary>Effective config and the Settings window's live preview value.
+    /// They can differ until the preview frame applies or Cancel restores it.</summary>
+    public (bool Effective, bool Preview) DebugFriendlyBoneNames() =>
+        (_configuration.Config.Skeleton.ShowFriendlyBoneNames,
+            _vm.ShowFriendlyBoneNames);
+#endif
+
     private SettingsViewModel _vm = new();
     private readonly SettingsView.SearchSettle _search = new();
     public bool IsRebindingShortcut => IsOpen && _vm.RebindingAction != null;

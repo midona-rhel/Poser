@@ -332,6 +332,7 @@ public sealed partial class DebugBridge : IDisposable
                         "scene-autosave.isolated-root", "scene-autosave.result.read",
                         "actor.weapon-state.read", "actor.weapon-state.set", "actor.weapon-visibility.set",
                         "bone.authored-modification.read",
+                        "ui.sidebar.materialized-bone-labels.read",
                         "actor.appearance-evidence.read", "actor.integration-identity.read",
                         "gaze.target.set", "camera.target.follow",
                         "autosave.config.read", "autosave.config.write", "autosave.status.read",
@@ -363,6 +364,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
                         "/uidrag?x=START_X&y=START_Y&toX=END_X&toY=END_Y&frames=12 (read status without coordinates; cancel=1 releases)",
                         "/uiwindows (read); ?name=EXACT_POSER_WINDOW_NAME&open=true|false&x=SCREEN_X&y=SCREEN_Y&width=PIXELS&height=PIXELS controls a registered Poser window",
+                        "/uiprobestate?case=bone-labels&actor=NAME|INDEX (materialized Sidebar labels plus effective/preview friendly-name state)",
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
@@ -894,6 +896,7 @@ public sealed partial class DebugBridge : IDisposable
             {
                 var descriptor = _sceneSession.Snapshot.FindActor(id);
                 var collection = _penumbra.GetCollectionAssignment(id);
+                var access = _session.AppearanceAccess(id);
                 var wardrobe = _session.ReadWardrobe(id);
                 var customize = _session.ReadCustomize(id);
                 return Json(new
@@ -913,6 +916,8 @@ public sealed partial class DebugBridge : IDisposable
                     },
                     glamourer = new
                     {
+                        accessKind = access.Kind.ToString(),
+                        access.Detail,
                         wardrobeSuccess = wardrobe.Success,
                         wardrobeDetail = wardrobe.Detail,
                         wardrobe = wardrobe.Value,
@@ -920,6 +925,33 @@ public sealed partial class DebugBridge : IDisposable
                         customizeDetail = customize.Detail,
                         customize = customize.Value,
                     },
+                });
+            }
+            case "/uiprobestate":
+            {
+                if (!string.Equals(query.GetValueOrDefault("case"), "bone-labels", StringComparison.Ordinal))
+                    return Json(new { error = "case must be bone-labels." });
+                var main = (global::Poser.UI.MainWindow)_services.GetService(
+                    typeof(global::Poser.UI.MainWindow))!;
+                var settings = (global::Poser.UI.SettingsWindow)_services.GetService(
+                    typeof(global::Poser.UI.SettingsWindow))!;
+                var friendly = settings.DebugFriendlyBoneNames();
+                var rows = main.DebugMaterializedBoneRows(id)
+                    .Select(row => new
+                    {
+                        boneIdentity = ((SelectionId)row.Tag!).Bone!.Value.ToString(),
+                        row.Label,
+                    })
+                    .ToArray();
+                return Json(new
+                {
+                    actor = id.ToString(),
+                    materialized = rows.Length > 0,
+                    sidebarFilter = main.DebugSidebarFilter,
+                    effectiveFriendlyBoneNames = friendly.Effective,
+                    previewFriendlyBoneNames = friendly.Preview,
+                    settingsOpen = settings.IsOpen,
+                    rows,
                 });
             }
             case "/weaponstate":
