@@ -81,6 +81,48 @@ public sealed class SceneObjectControlTests
         Assert.False(history.CanUndo);
     }
 
+    [Fact]
+    public async Task World_object_model_replacement_is_one_undoable_step()
+    {
+        // #493: a replaced furniture model added no step, so Undo reversed
+        // an earlier, unrelated action instead.
+        var id = WorldObjectId.New();
+        string path = "bgcommon/old.sgb";
+        bool refuse = false;
+        var world = Stub<IWorldObject>((method, args) => method switch
+        {
+            "get_IsValid" => true,
+            "get_Path" => path,
+            "Respawn" => Respawn((string)args![0]!),
+            _ => throw new InvalidOperationException(method),
+        });
+        Task<Poser.Domain.Outcome> Respawn(string next)
+        {
+            if (refuse) return Task.FromResult(new Poser.Domain.Outcome(false, "The game did not take it."));
+            path = next;
+            return Task.FromResult(Poser.Domain.Outcome.Ok());
+        }
+        var bindings = Stub<IEntityBindings>((_, _) => new BindingResult<IWorldObject>(BindingStatus.Success, world));
+        var history = new EditHistory();
+        var control = new SceneObjectControl(bindings, new ValueJournal(history), history: history);
+
+        Assert.True((await control.Respawn(id, "bgcommon/new.sgb")).Success);
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Poser.Domain.Transforms.GestureResult? done = null;
+        step.CompleteReplay!(true, () => true, CancellationToken.None, result => done = result);
+        Assert.True(done?.Success);
+        Assert.Equal("bgcommon/old.sgb", path);
+        step.CompleteReplay!(false, () => true, CancellationToken.None, result => done = result);
+        Assert.Equal("bgcommon/new.sgb", path);
+
+        // A refused or same-path replacement records nothing.
+        refuse = true;
+        Assert.False((await control.Respawn(id, "bgcommon/other.sgb")).Success);
+        refuse = false;
+        Assert.True((await control.Respawn(id, "bgcommon/new.sgb")).Success);
+        Assert.Same(step, history.PeekUndo());
+    }
+
     private static T Stub<T>(Func<string, object?[]?, object?> call) where T : class
     {
         var proxy = DispatchProxy.Create<T, StubProxy>();

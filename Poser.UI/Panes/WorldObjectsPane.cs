@@ -56,6 +56,9 @@ public sealed class WorldObjectsPane
     private Action? _pending;
     private WorldObjectId? _pathDraftFor;
     private string _pathDraft = string.Empty;
+    // The path the draft was seeded from: an undone or redone model change
+    // reseeds an untouched draft, never one the user is typing (#493).
+    private string _pathDraftSeed = string.Empty;
     private string _status = string.Empty;
     private Task<Outcome>? _respawn;
     private WorldObjectId? _respawnTarget;
@@ -201,10 +204,12 @@ public sealed class WorldObjectsPane
         // map's fact.
         if (worldObject.Spawned)
         {
-            if (_pathDraftFor != worldObject.Id)
+            if (_pathDraftFor != worldObject.Id
+                || (worldObject.Path != _pathDraftSeed && _pathDraft == _pathDraftSeed))
             {
                 _pathDraftFor = worldObject.Id;
                 _pathDraft = worldObject.Path;
+                _pathDraftSeed = worldObject.Path;
             }
             form.TextInput(
                 "Model",
