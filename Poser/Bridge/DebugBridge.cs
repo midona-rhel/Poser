@@ -329,6 +329,7 @@ public sealed partial class DebugBridge : IDisposable
                         "world-source.read", "world-source.acquire",
                         "overlay-node.create", "overlay-node.read", "overlay-node.move", "overlay-node.scale",
                         "library.entry.save", "library.entry.spawn", "library.entry.placement", "library.entry.camera-save",
+                        "scene-autosave.isolated-root", "scene-autosave.result.read",
                         "actor.weapon-state.read", "actor.weapon-state.set", "actor.weapon-visibility.set",
                         "bone.authored-modification.read",
                         "actor.appearance-evidence.read", "actor.integration-identity.read",
@@ -355,6 +356,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/overlaynode?action=create&kind=Talk|Balloon|Status or ?overlay=SELECTION_ID&x=NUMBER&y=NUMBER|scale=NUMBER",
                         "/libraryentry?action=save&entity=SELECTION_ID&path=NEW_ABSOLUTE_PATH or action=spawn&kind=Overlay&path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera|RelativeToCamera|RelativeToSelectedActor",
                         "/worldsources?kinds=Object,Effect,Light&force=true or ?acquire=CANDIDATE_GUID",
+                        "/sceneautosaveconfig (read) or ?mode=isolate&root=ABSOLUTE_DISPOSABLE_PATH or ?mode=restore&root=PRIOR_OVERRIDE",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/bone?actor=NAME|INDEX&name=BONE&partial=0 (evaluated/raw plus full authored modification)",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
@@ -405,6 +407,8 @@ public sealed partial class DebugBridge : IDisposable
                 return _framework.RunOnFrameworkThread(() => Json(AutoSaveStatus()));
             case "/autosavelibrary":
                 return _framework.RunOnFrameworkThread(() => Json(AutoSaveLibraryCommand(query)));
+            case "/sceneautosaveconfig":
+                return _framework.RunOnFrameworkThread(() => Json(SceneAutoSaveConfigCommand(query)));
             case "/idleexport":
                 return ExportIdle(query);
             case "/idlecheck":

@@ -687,12 +687,18 @@ internal static class ServiceRegistration
         services.AddSingleton(sp =>
         {
             var log = sp.GetRequiredService<IPluginLog>();
+#if DEBUG
+            var sceneAutoSaveRoot = global::Poser.Lifecycle.DebugSceneAutoSaveRoot.Resolve(System.IO.Path.Combine(
+                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "SceneAutoSaves"));
+#else
+            var sceneAutoSaveRoot = System.IO.Path.Combine(
+                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "SceneAutoSaves");
+#endif
             return new SceneAutoSaveService(
                 sp.GetRequiredService<ConfigurationService>(),
                 sp.GetRequiredService<SceneCaptureService>().BeginCapture,
                 () => sp.GetRequiredService<SceneWorkflow>().Busy,
-                new SceneAutoSaveStore(System.IO.Path.Combine(
-                    sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "SceneAutoSaves"),
+                new SceneAutoSaveStore(sceneAutoSaveRoot,
                     message => log.Error(message)),
                 message => log.Warning(message));
         });

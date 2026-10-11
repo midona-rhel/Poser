@@ -35,6 +35,9 @@
   `/worldsources` lists the portal's current object, effect, and world-light
   candidate IDs and acquires only through the same incarnation-validated
   application service as the UI; native addresses are never bridge identity.
+  Debug scene-autosave failure tests select their isolated root through a
+  validated process override and a plugin reload; the running store is never
+  swapped, and clearing the override plus another reload restores the default.
 
 - The Debug bridge's `/gazeprobe?actor&start=1` records at most 128 native
   pre/post-pose samples over two seconds; it never writes bones. `/gazepose`

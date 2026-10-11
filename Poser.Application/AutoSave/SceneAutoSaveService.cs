@@ -79,6 +79,11 @@ public sealed class SceneAutoSaveService : IDisposable
         }
     }
 
+#if DEBUG
+    /// <summary>Debug bridge evidence for the real autosave writer outcome.</summary>
+    public SceneAutoSaveResult DebugLastResult => LastResult;
+#endif
+
     private AutoSaveConfiguration Settings => _configuration.Config.AutoSave;
 
     /// <summary>
