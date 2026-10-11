@@ -14,6 +14,31 @@ public sealed class PoseImportCoordinatorTests
 {
     private static readonly ActorId Actor = new(Guid.NewGuid(), 0);
 
+    [Theory]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, false)]
+    public void Explicit_freeze_is_owned_until_completion(bool preference, bool initiallyPaused, bool success)
+    {
+        var f = new Fixture();
+        f.Runtime.FreezeOnImport = preference;
+        if (initiallyPaused) f.Animation.Pause(Actor);
+        else f.Animation.SetSpeed(Actor, .5f);
+        Assert.True(f.Coordinator.Begin(Actor, new Plan(),
+            new() { FreezeOnImport = true }, "Posed duplicate").Success);
+        f.Runtime.Tick(4);
+        f.Runtime.Finish(success);
+        f.Runtime.Tick(2);
+
+        Assert.Equal(success || initiallyPaused, f.Animation.IsPaused(Actor));
+        if (!success && !initiallyPaused)
+            Assert.Equal(.5f, f.Animation.OverridesFor(Actor).OverallSpeed);
+        Assert.Equal(preference, f.Runtime.FreezeOnImport);
+    }
+
     [Fact]
     public void ImportHoldsPauseUntilCompletionAndRestoresPreviousSpeed()
     {
@@ -104,7 +129,7 @@ public sealed class PoseImportCoordinatorTests
         public bool IsPending => _current != null;
         public bool AdmissionBusy => IsPending;
         public bool IsFrameworkThread => true;
-        public bool FreezeOnImport => false;
+        public bool FreezeOnImport { get; set; }
         public bool IsCurrent(PoseImportOperation operation) => ReferenceEquals(_current, operation);
         public GestureResult Reserve(ActorId actor, string description,
             out PoseImportOperation? operation, Action<bool> onFinished, Action<OperationReceipt> onReceipt)

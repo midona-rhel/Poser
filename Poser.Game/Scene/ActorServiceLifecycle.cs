@@ -504,6 +504,9 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         if (state.PartialRootScales is { } rootScales)
             ApplyPartialRootScales(actor, rootScales);
         var options = RestoreOptions;
+        // The import owns pause and its delayed speed restoration. A separate
+        // WhenPosable pause can otherwise be undone by that restoration.
+        options.FreezeOnImport = state.FreezePoseOnRestore;
         if (_bindings.GetActorId(actor) is not { } actorId)
             return;
         void OnReceipt(Poser.Domain.Operations.OperationReceipt receipt)

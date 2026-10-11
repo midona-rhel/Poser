@@ -3,7 +3,9 @@
 Duplicate with pose captures the current rendered skeleton, including the
 visible head/face and solved IK, without changing the source's raw posing
 cache. The copy is a frozen pose, not a copy of live animation, gaze or
-Customize+ drivers. Unedited physics sway remains simulated; authored
+Customize+ drivers. Its restore/import operation owns freezing, independently
+of the ordinary import preference; no separate readiness callback races the
+importer's delayed playback restoration. Unedited physics sway remains simulated; authored
 physics-bone edits are retained. Partial-root scales are restored separately
 and must not be reapplied as a second inherited scale during reconciliation.
 The live copy keeps slot/partial/name identity instead of passing through a

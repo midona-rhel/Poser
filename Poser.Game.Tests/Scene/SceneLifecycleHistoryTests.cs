@@ -32,6 +32,23 @@ namespace Poser.Game.Tests.Scene;
 public sealed class SceneLifecycleHistoryTests
 {
     [Fact]
+    public void Posed_duplicate_owns_freeze_in_its_restore_operation()
+    {
+        var world = new World();
+        var source = world.Actors.Spawn("Source")!;
+        world.Actors.Edit(source, Posed(Vector3.Zero, visible: true));
+        var copy = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+
+        Assert.True(world.Actors.StateOf(copy).FreezePoseOnRestore);
+        Assert.False(world.Actors.StateOf(source).FreezePoseOnRestore);
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+        copy = world.Actors.Live.Single(a => !ReferenceEquals(a, source));
+        Assert.True(world.Actors.StateOf(copy).FreezePoseOnRestore);
+    }
+
+    [Fact]
     public void Prop_transform_history_rebinds_after_removal()
     {
         var world = new World();

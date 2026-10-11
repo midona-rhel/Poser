@@ -151,14 +151,14 @@ internal sealed class ActorLifecycleOwner
     /// pose), the copy is spawned, and that state is restored onto it once
     /// its body is posable — the same waiting restore a respawn gets. The
     /// live animation is not carried: duplication is a pose snapshot, by
-    /// decision (2026-09-02); the caller freezes the copy. Redo replays the
+    /// decision (2026-09-02); the restore operation freezes the copy. Redo replays the
     /// snapshot, so the copy comes back posed, not idling.
     /// </summary>
     public IActor? SpawnActorWithPose(
         string description, Func<IActor?> spawn, IActor source)
     {
         var name = _actors.GetName(source);
-        var state = _actors.ReadPoseForCopy(source);
+        var state = _actors.ReadPoseForCopy(source) with { FreezePoseOnRestore = true };
         IActor? Posed()
         {
             var copy = spawn();
