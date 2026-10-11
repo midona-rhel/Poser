@@ -244,15 +244,6 @@ public static class SceneFileLimits
     /// </summary>
     public const long MaxDocumentBytes = 64L * 1024 * 1024;
     public const int MaxJsonDepth = 64;
-    public const int MaxActors = 100;
-    public const int MaxProps = 100;
-
-    /// <summary>A scene borrows map objects one click at a time; the cap is the
-    /// props' own, for the same reason.</summary>
-    public const int MaxWorldObjects = 100;
-    public const int MaxLights = 50;
-    public const int MaxCameras = 50;
-    public const int MaxOverlays = 50;
     public const int MaxNameCharacters = 256;
 
     /// <summary>The scene's free-text description: prose, not a name, so it
