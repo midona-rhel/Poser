@@ -81,7 +81,7 @@ public sealed partial class DebugBridge
         if (string.IsNullOrWhiteSpace(path))
             return Json(new { accepted = false, terminal = true, outcome = "Refused",
                 reason = "A non-empty resource path is required." });
-        Task<Poser.Domain.Outcome>? operation = null;
+        Task<global::Poser.Domain.Outcome>? operation = null;
         await _framework.RunOnFrameworkThread(() =>
         {
             operation = BridgeObjects.Respawn(worldId, path);
