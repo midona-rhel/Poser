@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Poser.Application.Appearance;
+using Poser.Application.Catalog;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 
@@ -17,6 +18,8 @@ public sealed partial class DebugBridge
         (GroupSteps)_services.GetService(typeof(GroupSteps))!;
     private ModelCatalog BridgeModelCatalog =>
         (ModelCatalog)_services.GetService(typeof(ModelCatalog))!;
+    private IModelCatalogLoader BridgeModelCatalogLoader =>
+        (IModelCatalogLoader)_services.GetService(typeof(IModelCatalogLoader))!;
 
     private object ReadGroups()
     {
@@ -117,6 +120,8 @@ public sealed partial class DebugBridge
         if (actor == null || _bindings.GetActorId(actor) is not { } actorId)
             return new { success = false, detail = "No such bound actor." };
         var catalog = BridgeModelCatalog;
+        var loader = BridgeModelCatalogLoader;
+        loader.EnsureLoaded();
         int current = _appearance.ReadModel(actorId) ?? -1;
         var currentEntry = catalog.FindByModelCharaId(current);
         int limit = query.TryGetValue("limit", out var requested)
@@ -132,13 +137,33 @@ public sealed partial class DebugBridge
                 entry.ModelCharaId, entry.RowId })
             .ToArray();
         return new { success = catalog.IsLoaded,
-            detail = catalog.IsLoaded ? null : "Model catalog is still loading.",
+            detail = catalog.IsLoaded ? null : loader.LastError ?? "Model catalog is still loading.",
+            isBuilding = loader.IsBuilding, loader.LastError,
             publicationVersion = catalog.PublicationVersion, currentModelCharaId = current,
             currentKind = currentEntry?.Kind.ToString(), entries };
     }
 
     private object ActorModel(Dictionary<string, string> query)
     {
+        if (query.TryGetValue("spawn", out var spawnText))
+        {
+            if (!int.TryParse(spawnText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var spawnModel)
+                || spawnModel <= 0)
+                return new { accepted = false, detail = "spawn must be a positive model id." };
+            var result = _creation.CreateActor(new(ModelCharaId: spawnModel));
+            var resolved = result.Handle is { } created ? _creation.Resolve(created)?.Actor : null;
+            return new
+            {
+                accepted = result.Handle != null,
+                result.Detail,
+                handle = result.Handle == null ? null : new
+                {
+                    session = result.Handle.Session.ToString(),
+                    kind = result.Handle.Kind.ToString(),
+                },
+                actorGeneration = resolved?.ToString(),
+            };
+        }
         var actor = FindActor(query.GetValueOrDefault("actor", "0"));
         if (actor == null || _bindings.GetActorId(actor) is not { } actorId)
             return new { success = false, detail = "No such bound actor." };

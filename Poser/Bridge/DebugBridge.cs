@@ -323,12 +323,16 @@ public sealed partial class DebugBridge : IDisposable
                         "scene.load.clear-first",
                         "scene.load.placement",
                         "groups.read", "groups.create", "groups.add", "groups.nest", "groups.remove",
-                        "actor.model.read", "actor.model.set", "actor.model.reset",
+                        "actor.model.read", "actor.model.set", "actor.model.reset", "actor.model.spawn",
+                        "prop.model.read", "prop.model.set",
+                        "world-object.model.read", "world-object.model.respawn",
+                        "overlay-node.create", "overlay-node.read",
+                        "library.entry.save", "library.entry.spawn",
                     },
                     endpoints = new[]
                     {
                         "/actors",
-                        "/selection?actors=INDEX,INDEX or entity=EXACT_ID (omit to read; empty actors to clear)",
+                        "/selection?actors=INDEX,INDEX or entity=EXACT_ID or entities=EXACT_ID,EXACT_ID (omit to read; empty actors/entities to clear)",
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
@@ -337,7 +341,11 @@ public sealed partial class DebugBridge : IDisposable
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
                         "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera&clear=true|false&relativeToOrigin=true|false",
                         "/groups", "/group?action=create&name=NAME&members=SELECTION_ID,SELECTION_ID|add&group=ID&member=SELECTION_ID|nest&parent=ID&child=ID|remove&group=ID",
-                        "/catalogmodels?actor=NAME|INDEX&limit=20", "/actormodel?actor=NAME|INDEX&model=ID|reset=true",
+                        "/catalogmodels?actor=NAME|INDEX&limit=20", "/actormodel?actor=NAME|INDEX&model=ID|reset=true or ?spawn=MODEL_ID",
+                        "/propmodel?prop=SELECTION_ID&model=ID&submodel=ID&variant=ID",
+                        "/worldobjectmodel?object=SELECTION_ID&path=ABSOLUTE_RESOURCE_PATH",
+                        "/overlaynode?action=create&kind=Talk|Balloon|Status or ?overlay=SELECTION_ID",
+                        "/libraryentry?action=save&entity=SELECTION_ID&path=NEW_ABSOLUTE_PATH or action=spawn&kind=Overlay&path=ABSOLUTE_PATH",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
@@ -370,6 +378,8 @@ public sealed partial class DebugBridge : IDisposable
                 return Screenshot();
             case "/bodycolliders":
                 return CreateBodyColliders(query);
+            case "/worldobjectmodel":
+                return WorldObjectModel(query);
             case "/idleexport":
                 return ExportIdle(query);
             case "/idlecheck":
@@ -438,6 +448,9 @@ public sealed partial class DebugBridge : IDisposable
             case "/group": return Json(GroupCommand(query));
             case "/catalogmodels": return Json(CatalogModels(query));
             case "/actormodel": return Json(ActorModel(query));
+            case "/propmodel": return Json(PropModelCommand(query));
+            case "/overlaynode": return Json(OverlayNodeCommand(query));
+            case "/libraryentry": return Json(LibraryEntryCommand(query));
             case "/importstate":
                 return Json(new { import = _poseFiles.DebugImportState, library = _poseLibrary.DebugTargetState });
             case "/interior":
@@ -472,7 +485,21 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/selection":
             {
-                if (query.TryGetValue("entity", out var entityKey))
+                if (query.TryGetValue("entities", out var entityKeys))
+                {
+                    var available = ParentProbeEntities().ToArray();
+                    var ids = new List<SelectionId>();
+                    foreach (var key in entityKeys.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var match = available.Where(entry => entry.Id.ToString() == key).ToArray();
+                        if (match.Length != 1 || _sceneSession.Resolve(match[0].Id) != match[0].Id)
+                            return Json(new { error = $"No such current entity: {key}" });
+                        ids.Add(match[0].Id);
+                    }
+                    _sceneSession.Selection.Clear();
+                    foreach (var selectedId in ids) _sceneSession.Selection.Add(selectedId);
+                }
+                else if (query.TryGetValue("entity", out var entityKey))
                 {
                     var match = ParentProbeEntities().Where(entry => entry.Id.ToString() == entityKey).ToArray();
                     if (match.Length != 1 || _sceneSession.Resolve(match[0].Id) != match[0].Id)
