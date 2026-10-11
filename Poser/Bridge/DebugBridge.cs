@@ -328,7 +328,7 @@ public sealed partial class DebugBridge : IDisposable
                         "world-object.model.read", "world-object.model.respawn",
                         "overlay-node.create", "overlay-node.read", "overlay-node.move", "overlay-node.scale",
                         "library.entry.save", "library.entry.spawn", "library.entry.placement", "library.entry.camera-save",
-                        "actor.weapon-state.read", "actor.weapon-state.set",
+                        "actor.weapon-state.read", "actor.weapon-state.set", "actor.weapon-visibility.set",
                         "bone.authored-modification.read",
                         "autosave.config.read", "autosave.config.write", "autosave.status.read",
                         "autosave.library.refresh", "autosave.library.read", "autosave.library.delete-disposable",
@@ -363,7 +363,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z&dx=0&dy=0&dz=0  (journaled)",
                         "/ik?actor&name=BONE&action=read|set&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
-                        "/weaponstate?actor=NAME|INDEX&drawn=true|false (draw/sheath only; returns native state and published rig)",
+                        "/weaponstate?actor=NAME|INDEX&drawn=true|false&visible=true|false (production draw/sheath and appearance visibility controls)",
                         "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
                         "/autosavestatus (read-only pose-autosave terminal and health state)",
                         "/autosavelibrary?action=refresh|read|delete&path=DISPOSABLE_POSE_FILE",
@@ -812,6 +812,10 @@ public sealed partial class DebugBridge : IDisposable
             case "/weaponstate":
             {
                 global::Poser.Domain.Outcome? result = null;
+                global::Poser.Domain.Integration.IntegrationResult? visibilityResult = null;
+                var wardrobe = (global::Poser.Application.Appearance.IWardrobeControl)_services.GetService(
+                    typeof(global::Poser.Application.Appearance.IWardrobeControl))!;
+                var beforeWardrobe = wardrobe.Read(id);
                 if (query.TryGetValue("drawn", out var requested))
                 {
                     if (!TryBoolean(requested, out var drawn))
@@ -819,15 +823,28 @@ public sealed partial class DebugBridge : IDisposable
                             reason = "drawn must be true, false, 1 or 0." });
                     result = _animation.SetWeaponDrawn(id, drawn);
                 }
+                if (query.TryGetValue("visible", out var requestedVisibility))
+                {
+                    if (!TryBoolean(requestedVisibility, out var visible))
+                        return Json(new { accepted = false, applied = false,
+                            reason = "visible must be true, false, 1 or 0." });
+                    visibilityResult = wardrobe.SetSwitch(
+                        id, global::Poser.Domain.Integration.MetaSwitch.WeaponVisible, visible);
+                }
+                var afterWardrobe = wardrobe.Read(id);
                 var snapshot = _port.ProbeSnapshot(id);
+                bool accepted = (result?.Success ?? true) && (visibilityResult?.Success ?? true);
                 return Json(new
                 {
-                    accepted = result?.Success ?? true,
-                    applied = result?.Success,
-                    reason = result?.Detail,
+                    accepted,
+                    applied = result is not null || visibilityResult is not null ? accepted : (bool?)null,
+                    reason = result?.Success == false ? result?.Detail : visibilityResult?.Detail,
                     actor = id.ToString(),
                     weaponDrawn = snapshot?.WeaponDrawn,
                     weaponHidden = snapshot?.WeaponHidden,
+                    weaponVisibleBefore = beforeWardrobe.Success ? beforeWardrobe.Value?.WeaponVisible : null,
+                    weaponVisible = afterWardrobe.Success ? afterWardrobe.Value?.WeaponVisible : null,
+                    wardrobeDetail = afterWardrobe.Detail,
                     hasDrawObject = snapshot?.HasDrawObject,
                     rig = Rig(actor),
                 });
