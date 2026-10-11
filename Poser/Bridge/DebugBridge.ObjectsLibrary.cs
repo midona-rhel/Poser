@@ -272,20 +272,50 @@ public sealed partial class DebugBridge
                 break;
             }
         }
-        if (camera is not { } cameraId
-            || ResolveActorId(query.GetValueOrDefault("actor", "")) is not { } actorId
+        if (camera is not { } cameraId)
+            return new { accepted = false, applied = false,
+                reason = "A current camera is required." };
+        var control = (ICameraTargetControl)_services.GetService(typeof(ICameraTargetControl))!;
+        if (!query.TryGetValue("actor", out var actorValue))
+            return CameraTargetState(cameraId, control.Read(cameraId), true, false, null, readOnly: true);
+        if (ResolveActorId(actorValue) is not { } actorId
             || _bindings.Resolve(actorId).Value is not { } actor)
             return new { accepted = false, applied = false,
-                reason = "A current camera and actor are required." };
-        var control = (ICameraTargetControl)_services.GetService(typeof(ICameraTargetControl))!;
+                reason = "A current actor is required." };
         var result = control.Follow(cameraId, actorId,
             _configuration.GetDisplayName(actorId.LogicalId, actor.Name));
-        var reading = control.Read(cameraId);
-        return new { accepted = result.Success, applied = result.Success, reason = result.Detail,
-            camera = cameraId.ToString(), requestedActor = actorId.ToString(),
-            followedActor = reading?.FollowedActor?.ToString(), reading?.IsLocked,
-            reading?.IsTracking, reading?.IsTargetLocked, trackingMode = reading?.TrackingMode.ToString() };
+        return CameraTargetState(cameraId, control.Read(cameraId), result.Success,
+            result.Success, result.Detail, readOnly: false, actorId);
     }
+
+    private static object CameraTargetState(
+        CameraId cameraId,
+        CameraTargetReading? reading,
+        bool accepted,
+        bool applied,
+        string? reason,
+        bool readOnly,
+        ActorId? requestedActor = null) => new
+    {
+        accepted,
+        applied,
+        reason,
+        readOnly,
+        camera = cameraId.ToString(),
+        selectionId = SelectionId.ForCamera(cameraId).ToString(),
+        requestedActor = requestedActor?.ToString(),
+        followedActor = reading?.FollowedActor?.ToString(),
+        gameTarget = reading?.GameTarget?.ToString(),
+        reading?.GameTargetName,
+        trackingActor = reading?.TrackingActor?.ToString(),
+        trackedBones = reading?.TrackedBones.Select(bone => bone.ToString()).ToArray()
+            ?? Array.Empty<string>(),
+        reading?.IsLocked,
+        reading?.IsTracking,
+        reading?.IsTargetLocked,
+        trackingMode = reading?.TrackingMode.ToString(),
+        reading?.CanCenterTrackedActor,
+    };
 
     private static bool TryNumber<T>(Dictionary<string, string> query, string key, out T value)
         where T : struct, System.Numerics.INumberBase<T>

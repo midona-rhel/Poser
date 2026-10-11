@@ -370,7 +370,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/weaponstate?actor=NAME|INDEX&drawn=true|false&visible=true|false (production draw/sheath and appearance visibility controls)",
                         "/appearanceevidence?actor=NAME|INDEX (identity plus production Penumbra/Glamourer reads)",
                         "/gazetarget?actor=NAME|INDEX|SELECTION_ID&target=NAME|INDEX|SELECTION_ID",
-                        "/cameratarget?camera=CAMERA_SELECTION_ID&actor=NAME|INDEX|SELECTION_ID",
+                        "/cameratarget?camera=CAMERA_SELECTION_ID (read) or &actor=NAME|INDEX|SELECTION_ID (follow)",
                         "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
                         "/autosavestatus (read-only pose-autosave terminal and health state)",
                         "/autosavelibrary?action=refresh|read|delete&path=DISPOSABLE_POSE_FILE",
