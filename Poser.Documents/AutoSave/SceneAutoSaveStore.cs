@@ -1,11 +1,16 @@
 using System.Globalization;
+using System.Numerics;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Poser.Documents.Files;
+using Poser.Domain.Transforms;
 
 namespace Poser.Documents.AutoSave;
 
 /// <summary>Whole-scene snapshot filenames and disk retention, separate from pose snapshots.</summary>
 public sealed class SceneAutoSaveStore
 {
+    private static readonly JsonSerializerOptions SignatureOptions = CreateSignatureOptions();
     private readonly SceneFileStore _store;
     private readonly Action<string> _error;
     public string RootDirectory { get; }
@@ -30,7 +35,10 @@ public sealed class SceneAutoSaveStore
     ///
     /// <para>It hashes with the document's own wire options: without the
     /// numerics converters every vector serializes as <c>{}</c>, so a moved
-    /// bone or prop would hash the same as before.</para>
+    /// bone or prop would hash the same as before. Bone transforms alone use
+    /// semantic buckets: capture/decomposition noise below the pose system's
+    /// tolerance is not authored work, while every other field remains exact.
+    /// The file written to disk is never rounded.</para>
     /// </summary>
     public static string? Signature(SceneFile scene)
     {
@@ -40,7 +48,7 @@ public sealed class SceneAutoSaveStore
         {
             return Convert.ToHexString(System.Security.Cryptography.SHA256
                 .HashData(System.Text.Json.JsonSerializer
-                    .SerializeToUtf8Bytes(scene, SceneFile.JsonOptions)));
+                    .SerializeToUtf8Bytes(scene, SignatureOptions)));
         }
         catch (Exception)
         {
@@ -49,6 +57,56 @@ public sealed class SceneAutoSaveStore
         finally
         {
             scene.SavedAt = savedAt;
+        }
+    }
+
+    private static JsonSerializerOptions CreateSignatureOptions()
+    {
+        var options = new JsonSerializerOptions(SceneFile.JsonOptions);
+        options.Converters.Insert(0, new BoneSignatureConverter());
+        return options;
+    }
+
+    /// <summary>One bucket spans twice the established pose comparison
+    /// tolerance, so its maximum canonicalization error is that tolerance.
+    /// Bucket identity is used directly by SHA-256: equality and hashing
+    /// therefore cannot disagree at an epsilon boundary.</summary>
+    private sealed class BoneSignatureConverter : JsonConverter<PoseFile.BoneData>
+    {
+        private const float Quantum = 2f * TransformMath.ApproximateSameTolerance;
+
+        public override PoseFile.BoneData Read(
+            ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            throw new NotSupportedException("The autosave signature converter only writes.");
+
+        public override void Write(
+            Utf8JsonWriter writer, PoseFile.BoneData value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName(nameof(PoseFile.BoneData.Position));
+            JsonSerializer.Serialize(writer, Canonical(value.Position), options);
+            writer.WritePropertyName(nameof(PoseFile.BoneData.Rotation));
+            JsonSerializer.Serialize(writer, Canonical(value.Rotation), options);
+            writer.WritePropertyName(nameof(PoseFile.BoneData.Scale));
+            JsonSerializer.Serialize(writer, Canonical(value.Scale), options);
+            writer.WriteEndObject();
+        }
+
+        private static float Component(float value) =>
+            MathF.Round(value / Quantum, MidpointRounding.ToEven) * Quantum;
+
+        private static Vector3 Canonical(Vector3 value) =>
+            new(Component(value.X), Component(value.Y), Component(value.Z));
+
+        private static Quaternion Canonical(Quaternion value)
+        {
+            // A quaternion and its negation encode the same orientation.
+            if (value.W < 0f || value.W == 0f && (value.Z < 0f ||
+                value.Z == 0f && (value.Y < 0f || value.Y == 0f && value.X < 0f)))
+                value = new Quaternion(-value.X, -value.Y, -value.Z, -value.W);
+            return new Quaternion(
+                Component(value.X), Component(value.Y),
+                Component(value.Z), Component(value.W));
         }
     }
 

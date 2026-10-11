@@ -76,6 +76,37 @@ public sealed class SceneAutoSaveTests
     }
 
     [Fact]
+    public void Signature_ignores_bone_capture_noise_but_keeps_small_authored_and_light_edits()
+    {
+        var bone = new PoseFile.BoneData
+        {
+            Position = Vector3.Zero,
+            Rotation = Quaternion.Identity,
+            Scale = Vector3.One,
+        };
+        var light = new LightFile { Intensity = 1f };
+        var pose = new PoseFile();
+        pose.Bones["j_kami_a"] = bone;
+        var scene = new SceneFile
+        {
+            SceneId = Guid.NewGuid(),
+            Actors = [new SceneActor { Key = Guid.NewGuid(), Name = "Actor", Pose = pose }],
+            Lights = [new SceneLight { Key = Guid.NewGuid(), Light = light }],
+        };
+
+        var baseline = SceneAutoSaveStore.Signature(scene);
+        bone.Scale = new Vector3(1.0000005f, 1f, 0.99999994f);
+        Assert.Equal(baseline, SceneAutoSaveStore.Signature(scene));
+
+        bone.Scale = new Vector3(1.000004f, 1f, 1f);
+        var authored = SceneAutoSaveStore.Signature(scene);
+        Assert.NotEqual(baseline, authored);
+
+        light.Intensity += 0.0000001f;
+        Assert.NotEqual(authored, SceneAutoSaveStore.Signature(scene));
+    }
+
+    [Fact]
     public void Day_folder_name_is_gregorian_under_a_non_gregorian_culture()
     {
         using var test = new Harness();
