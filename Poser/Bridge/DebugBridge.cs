@@ -296,6 +296,13 @@ public sealed partial class DebugBridge : IDisposable
         return result;
     }
 
+    private static bool TryBoolean(string value, out bool result)
+    {
+        if (value == "1") { result = true; return true; }
+        if (value == "0") { result = false; return true; }
+        return bool.TryParse(value, out result);
+    }
+
     private static string Json(object value) =>
         JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = false });
 
@@ -315,6 +322,8 @@ public sealed partial class DebugBridge : IDisposable
                         "scene.load.additive",
                         "scene.load.clear-first",
                         "scene.load.placement",
+                        "groups.read", "groups.create", "groups.add", "groups.nest", "groups.remove",
+                        "actor.model.read", "actor.model.set", "actor.model.reset",
                     },
                     endpoints = new[]
                     {
@@ -326,7 +335,9 @@ public sealed partial class DebugBridge : IDisposable
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
-                        "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera&clear=true|false",
+                        "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera&clear=true|false&relativeToOrigin=true|false",
+                        "/groups", "/group?action=create&name=NAME&members=SELECTION_ID,SELECTION_ID|add&group=ID&member=SELECTION_ID|nest&parent=ID&child=ID|remove&group=ID",
+                        "/catalogmodels?actor=NAME|INDEX&limit=20", "/actormodel?actor=NAME|INDEX&model=ID|reset=true",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
@@ -423,6 +434,10 @@ public sealed partial class DebugBridge : IDisposable
         if (path == "/parenting") return ParentingProbe(query);
         switch (path)
         {
+            case "/groups": return Json(ReadGroups());
+            case "/group": return Json(GroupCommand(query));
+            case "/catalogmodels": return Json(CatalogModels(query));
+            case "/actormodel": return Json(ActorModel(query));
             case "/importstate":
                 return Json(new { import = _poseFiles.DebugImportState, library = _poseLibrary.DebugTargetState });
             case "/interior":
@@ -567,9 +582,17 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 bool clear = false;
                 if (query.TryGetValue("clear", out var requestedClear)
-                    && !bool.TryParse(requestedClear, out clear))
-                    return Json(new { error = "clear must be true or false." });
-                var options = _scenePreferences.Options with { ClearExistingScene = clear };
+                    && !TryBoolean(requestedClear, out clear))
+                    return Json(new { error = "clear must be true, false, 1 or 0." });
+                bool relativeToOrigin = _scenePreferences.Options.PlaceRelativeToCurrentOrigin;
+                if (query.TryGetValue("relativeToOrigin", out var requestedRelative)
+                    && !TryBoolean(requestedRelative, out relativeToOrigin))
+                    return Json(new { error = "relativeToOrigin must be true, false, 1 or 0." });
+                var options = _scenePreferences.Options with
+                {
+                    ClearExistingScene = clear,
+                    PlaceRelativeToCurrentOrigin = relativeToOrigin,
+                };
                 var placement = options.Placement;
                 if (query.TryGetValue("placement", out var requestedPlacement)
                     && (!Enum.TryParse<global::Poser.Domain.Scene.ObjectPlacementMode>(
@@ -582,7 +605,8 @@ public sealed partial class DebugBridge : IDisposable
                 {
                     Placement = placement, PlacementPosition = position, PlacementYaw = yaw,
                 });
-                return Json(new { ok = result.Success, result.Detail, clear,
+                return Json(new { ok = result.Success, result.Detail,
+                    clearExistingScene = clear, placeRelativeToCurrentOrigin = relativeToOrigin,
                     placement = placement.ToString(), progress = _scenes.Progress });
             }
             case "/lifetimetrace":
