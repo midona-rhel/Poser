@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.9.18-beta — Scene reliability and more lights
+
+### Scenes and files
+
+- Removed the 50-light limit when saving and loading scenes.
+- Made shared scenes load when a saved mod collection is unavailable.
+- Kept successfully loaded content when an optional scene item fails.
+- Fixed undo and redo after partial scene loads.
+- Improved scene autosaves and stopped duplicate backups caused by tiny idle changes.
+- Improved Autosaves library loading.
+- Fixed furniture counts in scene-load summaries.
+- Fixed issue-report export failures.
+
+### Actors and posing
+
+- Fixed appearance errors when spawning many actors.
+- Fixed Customize+ scaling on posed duplicates.
+- Kept posed duplicates frozen and preserved their pose through undo and redo.
+- Fixed pose history after actor redraws.
+- Fixed bone-name changes not updating existing rows.
+
+### Undo and controls
+
+- Fixed Alt-based selected-entity undo and redo.
+- Fixed group structure after undoing group deletion.
+- Added undo and redo for furniture model changes.
+- Restored pause state and camera target locks correctly through undo.
+- Kept actor placement when releasing position lock.
+
+### Interface
+
+- Fixed clipped controls in the popped-out Inspector.
+- Fixed long actor names overlapping Properties tabs.
+- Fixed the spawn browser closing when opened from a window menu.
+- Improved bone-category search.
+- Showed cancellation immediately during character-file imports.
+- Made scene recovery messages match what remains in the scene.
+
 ## 0.9.17-beta — Bone maps, IK fixes and pose-aware gaze
 
 - Added editable Body and Face map presets.
