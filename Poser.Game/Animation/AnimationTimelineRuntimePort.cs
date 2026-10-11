@@ -19,6 +19,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;
     private readonly SceneSession _scene;
+    private readonly AnimationSpeedRuntimePort? _speeds;
     // Poser-owned forced timelines are reasserted if a native animation
     // update clears the field while repeat remains armed.
     private readonly Dictionary<ActorId, ushort> _forcedLoops = new();
@@ -27,8 +28,10 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         IFramework framework,
         IPluginLog log,
         AnimationNativeState native,
-        SceneSession scene)
+        SceneSession scene,
+        AnimationSpeedRuntimePort? speeds = null)
     {
+        _speeds = speeds;
         _framework = framework;
         _log = log;
         _native = native;
@@ -289,9 +292,19 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         {
             var character = _native.Resolve(actor, out _);
             if (character == null ||
-                !AnimationNativeState.TryReadForcedTimeline(&character->Timeline, out var current) ||
-                current == timeline)
+                !AnimationNativeState.TryReadForcedTimeline(&character->Timeline, out var current))
                 continue;
+            var action = ForcedLoopAction(current == timeline, _speeds?.IsHeld(actor) == true);
+            if (action == ForcedLoop.Keep)
+                continue;
+            if (action == ForcedLoop.Rearm)
+            {
+                // Held still (paused or scrubbed): the clip has not run out.
+                // Re-arm the field so the loop stays owned, but never replay
+                // from the start underneath the held frame (#485).
+                AnimationNativeState.TrySetForcedTimeline(&character->Timeline, timeline);
+                continue;
+            }
             var replayed = _native.PlayTimeline(character, timeline);
             if (replayed.Success && AnimationNativeState.TrySetForcedTimeline(&character->Timeline, timeline))
                 _log.Information(
@@ -302,6 +315,14 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
                     (replayed.Detail ?? "forced field write failed."));
         }
     }
+
+    internal enum ForcedLoop { Keep, Rearm, Replay }
+
+    /// <summary>What an owned full-body loop needs this tick: nothing while
+    /// its field still names the loop; a re-armed field while the animation
+    /// is held; a replay only when a playing animation's field cleared.</summary>
+    internal static ForcedLoop ForcedLoopAction(bool fieldOwned, bool held) =>
+        fieldOwned ? ForcedLoop.Keep : held ? ForcedLoop.Rearm : ForcedLoop.Replay;
 
     /// <summary>Replays an owned slot after its native timeline drifts.</summary>
     private void EnforceLoops(IFramework framework)
