@@ -118,6 +118,6 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
             });
 
         if (_entities.Draw() is { } entityPick && _editing is { } entityChild) Apply(entityChild, entityPick.Item.Id);
-        if (_bones.Draw() is { } bonePick && _editing is { } boneChild) Apply(boneChild, SelectionId.ForBone(bonePick.Item.BoneId));
+        if (_bones.Draw() is { } picked && _editing is { } boneChild) Apply(boneChild, SelectionId.ForBone(picked.Item.BoneId));
     }
 }
