@@ -54,8 +54,6 @@ internal interface IActorLifecycle
 
     void CopyBodyProfile(IActor source, IActor target) { }
 
-    void DetachGaze(object actor);
-
     IActor? Recreate(ActorState state) => null;
 
     /// <summary>Runs <paramref name="act"/> once the actor's body is
@@ -163,10 +161,7 @@ internal sealed class ActorLifecycleOwner
         {
             var copy = spawn();
             if (copy != null)
-            {
-                _actors.DetachGaze(copy);
                 _actors.Restore(copy, state);
-            }
             return copy;
         }
         var actor = Posed();

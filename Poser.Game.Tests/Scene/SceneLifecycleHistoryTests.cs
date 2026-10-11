@@ -825,7 +825,6 @@ public sealed class SceneLifecycleHistoryTests
 
     private sealed class FakeActors : IActorLifecycle
     {
-        public void DetachGaze(object actor) { }
         public string GetName(object actor) => ((IActor)actor).Name;
         public void SetName(object actor, string name) => ((IActor)actor).Name = name;
         public void NameCreated(object actor, string seed) => SetName(actor,

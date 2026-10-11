@@ -385,14 +385,6 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 
     public void Note(string detail) => _log.Warning(detail);
 
-    public void DetachGaze(object actor)
-    {
-        // Before the first draw, so a posed duplicate never begins a look-at blend.
-        var result = _gaze.SetGazeMode((IActor)actor, GazeTargetMode.Detached);
-        if (!result.Success)
-            Note($"Duplicate: the gaze could not be detached: {result.Detail}");
-    }
-
     public void WhenPosable(object actor, Action<object> act) =>
         ScheduleReady((IActor)actor, act, ReadyAttempts);
 
@@ -478,6 +470,13 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             return;
         }
 
+        if (state.CopyBones is { } required &&
+            !ActorPoseReadiness.IsReady(_skeletons.GetSkeletons(actor), _bindings, required))
+        {
+            Schedule(actor, state, attempts - 1, stillCurrent);
+            return;
+        }
+
         _posing.SetTransformOverride(actor, state.Placement);
         if (_posing.GetTransformOverride(actor) is null)
             _log.Warning(
@@ -509,6 +508,13 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         options.FreezeOnImport = state.FreezePoseOnRestore;
         if (_bindings.GetActorId(actor) is not { } actorId)
             return;
+        if (state.CopyBones is not null)
+        {
+            // Spawn has no published actor identity yet. Detach only after
+            // binding, but before the importer settles and samples its basis.
+            var detached = _gaze.SetGazeMode(actor, GazeTargetMode.Detached);
+            if (!detached.Success) { Note($"Duplicate: {detached.Detail}"); return; }
+        }
         void OnReceipt(Poser.Domain.Operations.OperationReceipt receipt)
             {
                 if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)
