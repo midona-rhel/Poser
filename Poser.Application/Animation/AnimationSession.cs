@@ -384,14 +384,23 @@ public sealed class AnimationSession : IAnimationPlayback
             return Outcome.Ok();
         }
 
+        // A body that is gone has nothing left to restore into: retire what
+        // Poser owned for it without native writes. Its clears could only
+        // fail, and reporting those as unrestored state was false (#495;
+        // the game's own GPose actors are often gone at the exit edge).
+        if (!_timeline.IsSupported(actor) && _timeline.Read(actor) == null)
+        {
+            _timeline.ClearLoops(actor);
+            _speedPort.Forget(actor);
+            _store.Remove(actor);
+            return Outcome.Ok();
+        }
+
         // Each aspect is released only when its restore succeeded. What
         // fails stays owned, so a later Reset retries it instead of the
-        // override being silently abandoned on a still-live actor. If the
-        // actor no longer resolves there is nothing left to restore into,
-        // and everything is dropped.
+        // override being silently abandoned on a still-live actor.
         var failures = new List<string>();
         var remaining = owned;
-        bool actorGone = !_timeline.IsSupported(actor) && _timeline.Read(actor) == null;
 
         bool Try(Outcome result)
         {
@@ -550,10 +559,8 @@ public sealed class AnimationSession : IAnimationPlayback
         if (owned.PositionLock && Try(_stancePort.SetPositionLock(actor, false)))
             remaining = remaining with { PositionLock = false };
 
-        if (actorGone || !remaining.HasAny)
+        if (!remaining.HasAny)
         {
-            if (actorGone)
-                _timeline.ClearLoops(actor);
             _store.Remove(actor);
         }
         else

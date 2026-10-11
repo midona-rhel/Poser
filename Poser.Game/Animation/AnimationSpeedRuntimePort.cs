@@ -323,6 +323,12 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         return Outcome.Ok();
     }
 
+    public void Forget(ActorId actor)
+    {
+        if (_enforcement.Remove(actor))
+            SyncEnforcementIndex();
+    }
+
     public Outcome ClearOverallSpeed(ActorId actor)
     {
         var character = _native.Resolve(actor, out var detail);
