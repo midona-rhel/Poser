@@ -59,6 +59,8 @@ internal sealed partial class SidebarComposer
 
     private int _sidebarExpandVersion = -1;
 
+    private bool _sidebarFriendlyBoneNames;
+
     /// <summary>A gaze mode transition landed since the last rebuild. Gaze mode
     /// is not part of the scene revision and cannot be, so the one row it owns
     /// needs its own arming bit. Written from the gaze service's publishing
@@ -174,22 +176,27 @@ internal sealed partial class SidebarComposer
     /// <para>The gate is exactly the inputs that can change the row count or
     /// order: the published scene revision (the structural signature — actor
     /// set and generations, slot presence, bone counts), the search filter, and
-    /// the disclosure version. Selection, actor visibility, pause state and
-    /// library mode are per-row flags: they are refreshed in place, so they
-    /// still land on the frame they change. A display name is a flag too,
-    /// except while filtering, where it can change what matches — that case
-    /// re-arms the gate.</para>
+    /// the disclosure version, and the bone-name presentation policy. Bone
+    /// labels are retained row strings, so the policy belongs in this gate
+    /// even though it changes no scene identity. Selection, actor visibility,
+    /// pause state and library mode are per-row flags: they are refreshed in
+    /// place, so they still land on the frame they change. An actor display
+    /// name is a flag too, except while filtering, where it can change what
+    /// matches — that case re-arms the gate.</para>
     /// </summary>
     public void Build()
     {
         // Trim hands back the same instance when there is nothing to trim, so
         // the common (unfiltered) frame builds no string here.
         string filter = _vm.SidebarSearch.Trim();
+        bool friendlyBoneNames =
+            _configuration.Config.Skeleton.ShowFriendlyBoneNames;
         if (!_sidebarBuilt ||
             _gazeDirty ||
             _sidebarRevision != _scene.Revision ||
             _sidebarGroupsRevision != _groups.Revision ||
             _sidebarExpandVersion != _expandVersion ||
+            _sidebarFriendlyBoneNames != friendlyBoneNames ||
             !string.Equals(_sidebarFilter, filter, StringComparison.Ordinal))
         {
             _sidebarBuilt = true;
@@ -199,6 +206,7 @@ internal sealed partial class SidebarComposer
             _sidebarRevision = _scene.Revision;
             _sidebarGroupsRevision = _groups.Revision;
             _sidebarExpandVersion = _expandVersion;
+            _sidebarFriendlyBoneNames = friendlyBoneNames;
             _sidebarFilter = filter;
             RebuildSidebar(filter);
         }
