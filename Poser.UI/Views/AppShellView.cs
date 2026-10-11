@@ -1483,7 +1483,9 @@ public static class AppShellView
     {
         using var disclosure = UseSectionDisclosure(vm.SectionDisclosure);
         float s = ImGuiHelpers.GlobalScale;
-        RailScrollSeam(vm, min, max, (max.X - min.X) / s, s);
+        // The shared seam accepts physical width and performs the one
+        // physical-to-logical conversion used by the attached rail too.
+        RailScrollSeam(vm, min, max, max.X - min.X, s);
     }
 
     private static void RailScrollSeam(
