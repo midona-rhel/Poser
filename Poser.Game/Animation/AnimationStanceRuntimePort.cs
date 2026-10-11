@@ -13,9 +13,7 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
 {
     private readonly AnimationNativeState _native;
     private readonly PosingService _posing;
-    // Actors whose position lock this session created, so releasing it
-    // cannot wipe a placement the user made with the gizmo.
-    private readonly HashSet<ActorId> _positionLocks = new();
+    private readonly PositionLockOwnership _positionLocks = new();
 
     /// <summary>Emote-mode argument values.</summary>
     private const uint EmoteModeNormal = 0;
@@ -127,8 +125,9 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
 
     /// <summary>
     /// Position lock reuses the model transform override that suppresses the
-    /// game's per-frame write. Releasing clears only an override created here,
-    /// so a placement made with the gizmo survives unlocking.
+    /// game's per-frame write. Releasing clears only an override this lock
+    /// created and nothing moved since, so a placement made while locked
+    /// survives unlocking.
     /// </summary>
     public Outcome SetPositionLock(ActorId actor, bool locked)
     {
@@ -142,12 +141,13 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
                 // Already held in place by the user's own placement.
                 return Outcome.Ok();
             }
-            _posing.SetTransformOverride(legacy, _posing.GetEffectiveTransform(legacy));
-            _positionLocks.Add(actor);
+            var held = _posing.GetEffectiveTransform(legacy);
+            _posing.SetTransformOverride(legacy, held);
+            _positionLocks.Lock(actor, held);
             return Outcome.Ok();
         }
 
-        if (_positionLocks.Remove(actor))
+        if (_positionLocks.Release(actor, _posing.GetTransformOverride(legacy)))
             _posing.ClearTransformOverride(legacy);
         return Outcome.Ok();
     }
