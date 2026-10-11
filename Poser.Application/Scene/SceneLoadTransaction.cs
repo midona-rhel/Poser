@@ -533,8 +533,9 @@ internal sealed class SceneLoadTransaction(
             .ToList();
         await Task.WhenAll(collections.Select(entry => entry.Restore));
         foreach (var (name, restore) in collections)
-            if (restore.Result is { } collectionError)
-                _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.Collection, name, false, collectionError));
+            if (!restore.Result.Success || restore.Result.Detail is not null)
+                _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.Collection, name,
+                    restore.Result.Success, restore.Result.Detail));
 
         foreach (var actor in _actors)
         {

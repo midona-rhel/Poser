@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Documents.Files;
+using Poser.Domain;
 
 namespace Poser.Application.Scene;
 
@@ -26,9 +27,11 @@ public interface IActorRestorePort
     bool CompanionReady(SceneEntityHandle actor);
 
     /// <summary>Assigns the saved Penumbra collection when the actor states
-    /// one and no character file. Null on success or when nothing is stated.
+    /// one and no character file. A missing local collection succeeds with a
+    /// caveat, retaining the spawned actor's inherited collection. Integration
+    /// or redraw failures remain refusals.
     /// Runs from the workflow task and marshals its own framework work.</summary>
-    Task<string?> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
+    Task<Outcome> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
         System.Threading.CancellationToken cancellation);
 
     /// <summary>

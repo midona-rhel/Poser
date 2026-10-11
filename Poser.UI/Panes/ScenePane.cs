@@ -530,7 +530,11 @@ public sealed class ScenePane
             ? "Saved" : "Loaded";
         if (outcome.State == OperationReceiptState.Applied)
         {
-            _notices.Done($"{action} {progress.FileName}.");
+            string caveat = outcome.Entities.Any(entity =>
+                entity.Kind == SceneOutcomeKind.Collection && entity.Degraded)
+                ? " Some saved collections weren't available; those actors use your local appearance settings."
+                : string.Empty;
+            _notices.Done($"{action} {progress.FileName}.{caveat}");
             return;
         }
 

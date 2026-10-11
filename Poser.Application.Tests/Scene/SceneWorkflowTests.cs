@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Numerics;
+using Poser.Domain;
 using Poser.Domain.Operations;
 using Poser.Domain.Companions;
 using Poser.Application.Transforms;
@@ -378,8 +379,9 @@ public sealed class SceneWorkflowTests
 
         public int CollectionRestoresRunning;
         public int PeakCollectionRestores;
+        public Func<SceneActor, Outcome>? CollectionResult;
 
-        public async Task<string?> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
+        public async Task<Outcome> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
             CancellationToken cancellation)
         {
             Record($"RestoreCollection:{data.Name}");
@@ -388,7 +390,7 @@ public sealed class SceneWorkflowTests
                 PeakCollectionRestores = Math.Max(PeakCollectionRestores, running);
             await Task.Delay(20, cancellation);
             Interlocked.Decrement(ref CollectionRestoresRunning);
-            return null;
+            return CollectionResult?.Invoke(data) ?? Outcome.Ok();
         }
 
         public SceneEntityHandle? SpawnActor(SceneActor data, out string? detail)
@@ -1129,6 +1131,86 @@ public sealed class SceneWorkflowTests
 
         AssertApplied(load);
         Assert.Equal(2, runtime.PeakCollectionRestores);
+    }
+
+    [Fact]
+    public async Task Missing_local_collections_keep_actors_and_load_history_successful()
+    {
+        var first = Actor("First", out _);
+        var second = Actor("Second", out _);
+        first.PenumbraCollection = Guid.NewGuid();
+        second.PenumbraCollection = Guid.NewGuid();
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(first, second),
+            CollectionResult = _ => new Outcome(true, "Saved collection unavailable; kept local appearance."),
+        };
+        var history = new EditHistory();
+        using var load = Workflow(runtime, history: history);
+        Assert.True(load.BeginLoad("shared.xivs").Success);
+        await load.Drain;
+        AssertApplied(load);
+        Assert.Empty(runtime.Destroyed);
+        Assert.Contains("ArmPoseImport:First", runtime.Calls);
+        Assert.Contains("ArmPoseImport:Second", runtime.Calls);
+        Assert.Equal(new[] { "First", "Second" }, load.Progress!.Outcome!.Entities
+            .Where(entity => entity.Kind == SceneOutcomeKind.Collection && entity.Degraded)
+            .Select(entity => entity.Name));
+
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        history.CommitUndo(step);
+        Assert.Equal(2, runtime.Destroyed.Count);
+        Assert.True(step.Redo());
+        history.CommitRedo(step);
+        await load.Drain;
+        AssertApplied(load);
+        Assert.Same(step, history.PeekUndo());
+        Assert.Equal(2, load.Progress!.Outcome!.Entities.Count(entity => entity.Degraded));
+    }
+
+    [Theory]
+    [InlineData("Could not read Penumbra collections.")]
+    [InlineData("Collection assignment was refused.")]
+    [InlineData("The actor redraw timed out.")]
+    public async Task Real_collection_failures_remain_named_failures_beside_fallbacks(string detail)
+    {
+        var first = Actor("Missing", out _);
+        var second = Actor("Failed", out _);
+        first.PenumbraCollection = Guid.NewGuid();
+        second.PenumbraCollection = Guid.NewGuid();
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(first, second),
+            CollectionResult = actor => actor.Name == "Missing"
+                ? new Outcome(true, "Saved collection unavailable; kept local appearance.")
+                : Outcome.Fail(detail),
+        };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("shared.xivs").Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        var failure = Assert.Single(load.Progress!.Outcome!.Entities, entity => !entity.Restored);
+        Assert.Equal("Failed", failure.Name);
+        Assert.Equal(detail, failure.Detail);
+        Assert.Single(load.Progress.Outcome.Entities, entity => entity.Degraded);
+        Assert.Empty(runtime.Destroyed);
+    }
+
+    [Fact]
+    public async Task Character_file_takes_precedence_over_saved_collection()
+    {
+        var actor = Actor("Packaged", out _);
+        actor.PenumbraCollection = Guid.NewGuid();
+        actor.Mcdf = new SceneActorMcdf { Path = "appearance.mcdf", FileName = "appearance.mcdf" };
+        var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("shared.xivs").Success);
+        await load.Drain;
+        AssertApplied(load);
+        Assert.DoesNotContain("RestoreCollection:Packaged", runtime.Calls);
+        Assert.Contains("ImportMcdf:Packaged", runtime.Calls);
+        Assert.DoesNotContain(load.Progress!.Outcome!.Entities, entity => entity.Kind == SceneOutcomeKind.Collection);
     }
 
     /// <summary>A whole scene: one of every entity kind the load restores, so

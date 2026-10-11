@@ -4,6 +4,7 @@ using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using System;
 using Poser.Domain.Identity;
+using Poser.Domain;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -149,7 +150,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion &&
         Posable(companion);
 
-    public Task<string?> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
+    public Task<Outcome> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
         System.Threading.CancellationToken cancellation) =>
         _appearance.RestoreCollection(actor, data, bound, cancellation);
 
