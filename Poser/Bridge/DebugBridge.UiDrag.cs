@@ -56,6 +56,7 @@ public sealed partial class DebugBridge
 
     private void AdvanceUiDrag(IFramework framework)
     {
+        CaptureMcdfPresentationFrame();
         // Requests already run on the framework thread; disposal need not.
         // Serialize it with an in-flight step so a finished probe cannot
         // re-press the button and suppress native events after cleanup.

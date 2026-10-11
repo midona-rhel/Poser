@@ -334,6 +334,9 @@ public sealed partial class DebugBridge : IDisposable
                         "bone.authored-modification.read",
                         "ui.sidebar.materialized-bone-labels.read",
                         "actor.appearance-evidence.read", "actor.integration-identity.read",
+                        "actor.penumbra-identity.read", "actor.mcdf.cancel", "actor.mcdf.presentation-trace",
+                        "ui.scale.read", "camera.lock.set",
+                        "ui.reference-images.read", "ui.reference-images.add", "ui.reference-images.remove",
                         "gaze.target.set", "camera.target.follow",
                         "autosave.config.read", "autosave.config.write", "autosave.status.read",
                         "autosave.library.refresh", "autosave.library.read", "autosave.library.delete-disposable",
@@ -364,6 +367,8 @@ public sealed partial class DebugBridge : IDisposable
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
                         "/uidrag?x=START_X&y=START_Y&toX=END_X&toY=END_Y&frames=12 (read status without coordinates; cancel=1 releases)",
                         "/uiwindows (read); ?name=EXACT_POSER_WINDOW_NAME&open=true|false&x=SCREEN_X&y=SCREEN_Y&width=PIXELS&height=PIXELS controls a registered Poser window",
+                        "/uiscale (read-only Dalamud scale, viewport pixels and frame telemetry)",
+                        "/referenceimages (read) or ?add=ABSOLUTE_IMAGE_PATH or ?remove=RETURNED_ID",
                         "/uiprobestate?case=bone-labels&actor=NAME|INDEX (materialized Sidebar labels plus effective/preview friendly-name state)",
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
@@ -373,6 +378,8 @@ public sealed partial class DebugBridge : IDisposable
                         "/state?actor=NAME|INDEX",
                         "/weaponstate?actor=NAME|INDEX&drawn=true|false&visible=true|false (production draw/sheath and appearance visibility controls)",
                         "/appearanceevidence?actor=NAME|INDEX (identity plus production Penumbra/Glamourer reads)",
+                        "/penumbraidentity?actor=NAME|INDEX (stable actor, native GPose slot, exact production integration name and Penumbra assignment)",
+                        "/mcdf?actor=NAME|INDEX&import=PATH|cancel=true (production character-file command plus retained presentation trace)",
                         "/gazetarget?actor=NAME|INDEX|SELECTION_ID&target=NAME|INDEX|SELECTION_ID",
                         "/cameratarget?camera=CAMERA_SELECTION_ID (read) or &actor=NAME|INDEX|SELECTION_ID (follow)",
                         "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
@@ -570,6 +577,20 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/uidrag":
                 return UiDrag(query);
+            case "/uiscale":
+            {
+                var viewport = Dalamud.Bindings.ImGui.ImGui.GetMainViewport();
+                return Json(new
+                {
+                    globalScale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale,
+                    viewportPositionPixels = new { x = viewport.Pos.X, y = viewport.Pos.Y },
+                    viewportSizePixels = new { x = viewport.Size.X, y = viewport.Size.Y },
+                    frame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount(),
+                    framerate = Dalamud.Bindings.ImGui.ImGui.GetIO().Framerate,
+                });
+            }
+            case "/referenceimages":
+                return ReferenceImages(query);
             case "/uiwindows":
             {
                 var windows = (global::Poser.UI.Composition.UiWindowSet)_services.GetService(typeof(global::Poser.UI.Composition.UiWindowSet))!;
@@ -767,6 +788,8 @@ public sealed partial class DebugBridge : IDisposable
                     {
                         id = _bindings.GetCameraId(camera)?.ToString(),
                         camera.Name, camera.Kind, camera.IsDefault, camera.IsLive,
+                        camera.IsLocked, camera.MovementEnabled,
+                        camera.MovementSpeed, camera.MouseSensitivity,
                         camera.Angle, camera.Pan, camera.Roll, camera.Zoom, camera.FoV,
                         camera.PositionOffset, camera.TargetOffset, camera.WorldPosition,
                         camera.FixedPosition, camera.Position, camera.Rotation,
@@ -784,6 +807,9 @@ public sealed partial class DebugBridge : IDisposable
                 var result = query.GetValueOrDefault("action") switch
                 {
                     "live" => _cameraControl.SetLive(cameraId, true),
+                    "lock" when query.TryGetValue("value", out var value)
+                        && TryBoolean(value, out var locked) =>
+                        _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.IsLocked, locked),
                     "angle" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Angle, new(Number("x"), Number("y"))),
                     "pan" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Pan, new(Number("x"), Number("y"))),
                     "roll" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Roll, Number("x")),
@@ -927,6 +953,8 @@ public sealed partial class DebugBridge : IDisposable
                     },
                 });
             }
+            case "/penumbraidentity":
+                return PenumbraIdentity(id, actor);
             case "/uiprobestate":
             {
                 if (!string.Equals(query.GetValueOrDefault("case"), "bone-labels", StringComparison.Ordinal))
@@ -1176,23 +1204,7 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(new { bones = rows });
             }
             case "/mcdf":
-            {
-                if (query.TryGetValue("resolve", out var resourcePath))
-                    return Json(_penumbra.DebugResolveResourcePath(id, resourcePath));
-                if (query.TryGetValue("spawn", out var packagePath))
-                    return Json(_characterFiles.Spawn(packagePath));
-                if (query.GetValueOrDefault("reset") == "1")
-                    return Json(_characterFiles.Reset(id));
-                if (query.TryGetValue("export", out var destination))
-                {
-                    if (System.IO.File.Exists(destination)) return Json(new { error = "Refusing to overwrite an existing file." });
-                    return Json(_characterFiles.Export(id, destination, "Local compatibility check"));
-                }
-                if (query.TryGetValue("import", out var source))
-                    return Json(_characterFiles.Import(id, source));
-                return Json(new { busy = _characterFiles.Busy, progress = _characterFiles.Progress,
-                    owned = Owned(id), collection = _penumbra.GetCollectionAssignment(id) });
-            }
+                return Mcdf(query, id);
             case "/bonediff":
             {
                 var other = _actors.Actors[int.Parse(query["other"])];
