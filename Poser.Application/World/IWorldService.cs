@@ -7,7 +7,12 @@ namespace Poser.Application.World;
 public enum WorldKinds { None = 0, Actor = 1, Light = 2, Object = 4, Effect = 8, All = 15 }
 public readonly record struct WorldCandidateId(Guid Value);
 public readonly record struct WorldClaimId(Guid Value);
-public sealed record WorldCandidate(WorldCandidateId Id, WorldKinds Kind, string Name, Vector3 Position);
+public sealed record WorldCandidate(
+    WorldCandidateId Id,
+    WorldKinds Kind,
+    string Name,
+    Vector3 Position,
+    string? ResourcePath = null);
 public sealed record WorldSnapshot(long Revision, IReadOnlyList<WorldCandidate> Candidates);
 public enum WorldCommandStatus { Applied, AlreadyReleased, StaleCandidate, Unavailable, Refused }
 public sealed record WorldAcquisition(WorldCommandStatus Status, WorldClaimId? Claim = null, SelectionId? Entity = null, string? Detail = null)

@@ -132,7 +132,7 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
                             if (marked) _objects.WriteOutline(row.Address, WorldObjectOutline.Hover);
                         }
                         else if (marked) _objects.WriteOutline(row.Address, outline);
-                    }));
+                    }, ResourcePath: row.Path));
             }
         }
     }

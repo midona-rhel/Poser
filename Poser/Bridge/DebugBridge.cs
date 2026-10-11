@@ -326,6 +326,7 @@ public sealed partial class DebugBridge : IDisposable
                         "actor.model.read", "actor.model.set", "actor.model.reset", "actor.model.spawn",
                         "prop.model.read", "prop.model.set",
                         "world-object.model.read", "world-object.model.respawn",
+                        "world-source.read", "world-source.acquire",
                         "overlay-node.create", "overlay-node.read", "overlay-node.move", "overlay-node.scale",
                         "library.entry.save", "library.entry.spawn", "library.entry.placement", "library.entry.camera-save",
                         "actor.weapon-state.read", "actor.weapon-state.set", "actor.weapon-visibility.set",
@@ -353,6 +354,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/worldobjectmodel?object=SELECTION_ID&path=ABSOLUTE_RESOURCE_PATH",
                         "/overlaynode?action=create&kind=Talk|Balloon|Status or ?overlay=SELECTION_ID&x=NUMBER&y=NUMBER|scale=NUMBER",
                         "/libraryentry?action=save&entity=SELECTION_ID&path=NEW_ABSOLUTE_PATH or action=spawn&kind=Overlay&path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera|RelativeToCamera|RelativeToSelectedActor",
+                        "/worldsources?kinds=Object,Effect,Light&force=true or ?acquire=CANDIDATE_GUID",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/bone?actor=NAME|INDEX&name=BONE&partial=0 (evaluated/raw plus full authored modification)",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
@@ -395,6 +397,8 @@ public sealed partial class DebugBridge : IDisposable
                 return CreateBodyColliders(query);
             case "/worldobjectmodel":
                 return WorldObjectModel(query);
+            case "/worldsources":
+                return WorldSources(query);
             case "/autosaveconfig":
                 return _framework.RunOnFrameworkThread(() => Json(AutoSaveConfigCommand(query)));
             case "/autosavestatus":

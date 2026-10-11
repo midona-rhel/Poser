@@ -32,6 +32,9 @@
   releasing its button and restoring native event admission on completion,
   cancellation or disposal. Its bounded trace verifies the injected input,
   not whether the target control behaved correctly; measure that separately.
+  `/worldsources` lists the portal's current object, effect, and world-light
+  candidate IDs and acquires only through the same incarnation-validated
+  application service as the UI; native addresses are never bridge identity.
 
 - The Debug bridge's `/gazeprobe?actor&start=1` records at most 128 native
   pre/post-pose samples over two seconds; it never writes bones. `/gazepose`

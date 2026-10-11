@@ -5,7 +5,8 @@ namespace Poser.Game.WorldObjects;
 
 internal sealed record WorldCandidateEntry(
     object Identity, WorldKinds Kind, string Name, System.Numerics.Vector3 Position,
-    Func<bool> Valid, Func<WorldAcquisitionBinding?> Acquire, Action<bool>? Highlight = null);
+    Func<bool> Valid, Func<WorldAcquisitionBinding?> Acquire, Action<bool>? Highlight = null,
+    string? ResourcePath = null);
 
 /// <summary>Identity bookkeeping only; each driver supplies its native proof and operations.</summary>
 internal sealed class WorldCandidateBook
@@ -41,5 +42,5 @@ internal sealed class WorldCandidateBook
     internal void Clear() { _entries.Clear(); Publish(); }
     private void Publish() => Snapshot = new(Snapshot.Revision + 1,
         Array.AsReadOnly(_entries.Select(p => new WorldCandidate(p.Key, p.Value.Kind, p.Value.Name,
-            p.Value.Position)).ToArray()));
+            p.Value.Position, p.Value.ResourcePath)).ToArray()));
 }
