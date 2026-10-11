@@ -300,6 +300,33 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
             return IntegrationResult.Ok();
         });
 
+#if DEBUG
+    /// <summary>Destructive exact-id cleanup oracle for the Debug bridge.
+    /// The bridge owns the allowlist; this method deliberately preserves the
+    /// provider's raw distinction between absent and found resources.</summary>
+    public DebugTemporaryCollectionDeleteProbe DebugDeleteTemporaryCollection(Guid collection)
+    {
+        if (!Penumbra.Available)
+            return new(-1, "Unavailable", false, false, Penumbra.Detail);
+        try
+        {
+            int code = _deleteTemporaryCollection.InvokeFunc(collection);
+            return code switch
+            {
+                PenumbraEcCollectionMissing => new(code, "CollectionMissing", true, false, null),
+                PenumbraEcSuccess => new(code, "FoundAndDeleted", false, true, null),
+                PenumbraEcNothingChanged => new(code, "FoundOrUnchanged", false, true, null),
+                _ => new(code, "Error", false, false,
+                    $"Penumbra failed probing the temporary collection (code {code})."),
+            };
+        }
+        catch (Exception ex)
+        {
+            return new(-1, "Error", false, false, ex.Message);
+        }
+    }
+#endif
+
     public IntegrationValue<string> GetActorMetaManipulations(ActorId actor) =>
         Guarded(Penumbra, "Meta manipulations", () =>
         {
@@ -541,3 +568,12 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
             ? IntegrationResult.Ok()
             : IntegrationResult.Fail($"Penumbra failed {what} (code {ec}).");
 }
+
+#if DEBUG
+public sealed record DebugTemporaryCollectionDeleteProbe(
+    int Code,
+    string Classification,
+    bool WasMissing,
+    bool CleanupAccepted,
+    string? Detail);
+#endif

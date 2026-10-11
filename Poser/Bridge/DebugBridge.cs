@@ -335,6 +335,7 @@ public sealed partial class DebugBridge : IDisposable
                         "ui.sidebar.materialized-bone-labels.read",
                         "actor.appearance-evidence.read", "actor.integration-identity.read",
                         "actor.penumbra-identity.read", "actor.mcdf.cancel", "actor.mcdf.presentation-trace",
+                        "integration.cleanup-owned-ids.capture", "integration.cleanup-owned-ids.verify",
                         "ui.scale.read", "camera.lock.set",
                         "ui.reference-images.read", "ui.reference-images.add", "ui.reference-images.remove",
                         "gaze.target.set", "camera.target.follow",
@@ -380,6 +381,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/appearanceevidence?actor=NAME|INDEX (identity plus production Penumbra/Glamourer reads)",
                         "/penumbraidentity?actor=NAME|INDEX (stable actor, native GPose slot, exact production integration name and Penumbra assignment)",
                         "/mcdf?actor=NAME|INDEX&import=PATH|cancel=true (production character-file command plus retained presentation trace)",
+                        "/integrationcleanupids (pending read), ?captureActor=NAME|INDEX, ?verifyPenumbra=CAPTURED_GUID, or ?verifyCustomize=CAPTURED_GUID (one-shot exact owned IDs)",
                         "/gazetarget?actor=NAME|INDEX|SELECTION_ID&target=NAME|INDEX|SELECTION_ID",
                         "/cameratarget?camera=CAMERA_SELECTION_ID (read) or &actor=NAME|INDEX|SELECTION_ID (follow)",
                         "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
@@ -591,6 +593,8 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/referenceimages":
                 return ReferenceImages(query);
+            case "/integrationcleanupids":
+                return Json(IntegrationCleanupIds(query));
             case "/uiwindows":
             {
                 var windows = (global::Poser.UI.Composition.UiWindowSet)_services.GetService(typeof(global::Poser.UI.Composition.UiWindowSet))!;
