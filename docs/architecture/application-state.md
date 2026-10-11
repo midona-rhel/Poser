@@ -45,8 +45,10 @@ refresh; the framework update runs at most one per frame, never inside the
 publisher, so a load that spawns N actors costs one rebuild. Notifications
 during that pass wait for the next frame. Skeleton changes found inside native
 hooks are queued and published on the next update. While idle, a bone-free
-signature (actor slots, attachments and row fields) is polled once a second and
-a rebuild runs only when it moves. Event payloads are value snapshots, never
+signature (actor slots, attachments, row fields and bone-naming policy) is polled
+once a second and a descriptor refresh runs only when it moves. Naming changes
+refresh all detached labels without rebuilding native skeletons or changing ids.
+Event payloads are value snapshots, never
 live lists or native wrappers. Unchanged structure and auxiliary bindings
 publish nothing. GPose exit cancels old pending work before requesting the exit
 scene and drops the session's actor lineages; disposal stops queued refresh

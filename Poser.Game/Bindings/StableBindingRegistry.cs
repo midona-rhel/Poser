@@ -39,6 +39,7 @@ public sealed class StableBindingRegistry : IEntityBindings
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
     private readonly IFramework _framework;
+    private readonly Poser.Application.Settings.ConfigurationService _configuration;
     private Dictionary<string, ActorLineage> _lineages =
         new(StringComparer.Ordinal);
     private BindingCandidate? _stagedCandidate;
@@ -93,9 +94,11 @@ public sealed class StableBindingRegistry : IEntityBindings
         PropSpawnService props,
         OverlayNodeService overlays,
         WorldObjectService worldObjects,
-        IFramework framework)
+        IFramework framework,
+        Poser.Application.Settings.ConfigurationService configuration)
     {
         _framework = framework;
+        _configuration = configuration;
         _actors = actors;
         _skeletons = skeletons;
         _spawn = spawn;
@@ -520,14 +523,18 @@ public sealed class StableBindingRegistry : IEntityBindings
     /// Everything a candidate reads except the bone walk: per actor its
     /// address, row fields, attachments and each present slot skeleton's
     /// build; per light, camera, prop, overlay and adopted object its instance
-    /// and row fields. While this is unchanged a new candidate would equal the
+    /// and row fields, plus the naming policy used by bone descriptors.
+    /// While this is unchanged a new candidate would equal the
     /// last one, so the idle poll compares it instead of rebuilding. Asking
     /// for the skeletons also lets the cache notice an in-place rebuild,
     /// which it reports by itself.
     /// </summary>
     public List<object?> IdleSignature()
     {
-        var signature = new List<object?>();
+        // Bone.Name follows this setting without rebuilding the native cache.
+        // Detached descriptors must refresh too, including preview/cancel and
+        // config resets; an unrelated actor event must not be required.
+        var signature = new List<object?> { _configuration.Config.Skeleton.ShowFriendlyBoneNames };
         AddActors(_actors.Actors);
         signature.Add(null);
         AddActors(_actors.AuxiliaryActors);
