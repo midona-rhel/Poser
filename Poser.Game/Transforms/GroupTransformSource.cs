@@ -33,24 +33,6 @@ public sealed class GroupTransformSource(
     public bool TryFrame(Vector3 origin, out GroupTransformFrame frame) =>
         GroupTransformFrame.TryFromView(camera.GetViewMatrix(), origin, out frame);
 
-    public TransformTargetId? CurrentTarget(TransformTargetId target)
-    {
-        if (scene.Contains(target)) return target;
-        var logical = GroupTransformIdentity.LogicalId(target);
-        return target.Kind switch
-        {
-            TransformTargetKind.Collider => scene.Snapshot.Overlays.FirstOrDefault(x => x.Id.LogicalId == logical
-                && x.Kind == Domain.Presentation.OverlayNodeKind.Collider) is { } collider
-                ? TransformTargetId.ForCollider(collider.Id) : null,
-            TransformTargetKind.Actor => scene.Snapshot.Actors.FirstOrDefault(x => x.Id.LogicalId == logical) is { } actor
-                ? TransformTargetId.ForActor(actor.Id) : null,
-            TransformTargetKind.Prop => scene.Snapshot.Props.FirstOrDefault(x => x.Id.LogicalId == logical) is { } prop
-                ? TransformTargetId.ForProp(prop.Id) : null,
-            TransformTargetKind.Light => scene.Snapshot.Lights.FirstOrDefault(x => x.Id.LogicalId == logical) is { } light
-                ? TransformTargetId.ForLight(light.Id) : null,
-            TransformTargetKind.WorldObject => scene.Snapshot.WorldObjects.FirstOrDefault(x => x.Id.LogicalId == logical) is { } world
-                ? TransformTargetId.ForWorldObject(world.Id) : null,
-            _ => bindings.CurrentTarget(target),
-        };
-    }
+    public TransformTargetId? CurrentTarget(TransformTargetId target) =>
+        scene.CurrentTransformTarget(target);
 }

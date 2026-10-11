@@ -1065,43 +1065,6 @@ public sealed class StableBindingRegistry : IEntityBindings
     public ISkeleton? ResolveSkeleton(SkeletonId id) =>
         _skeletonBones.TryGetValue(id, out var bone) ? Resolve(bone).Value?.Skeleton : null;
 
-    /// <summary>The current-generation id for a target whose actor is still
-    /// in the scene: the same bone by slot, partial, index and name on the
-    /// redrawn body, or the actor's current id. Null when nothing matches.
-    /// Used only on reconcile, so the scans are not per frame.</summary>
-    public TransformTargetId? CurrentTarget(TransformTargetId target)
-    {
-        if (target.Collider is { } collider)
-            foreach (var pair in _overlayBindings)
-                if (pair.Key.LogicalId == collider.LogicalId && pair.Value.State.Collider != null)
-                    return TransformTargetId.ForCollider(pair.Key);
-        switch (target.Kind)
-        {
-            case TransformTargetKind.Bone when target.Bone is { } bone:
-                foreach (var pair in _boneBindings)
-                {
-                    var key = pair.Key;
-                    if (key.Skeleton.Actor.LogicalId == bone.Skeleton.Actor.LogicalId
-                        && key.Skeleton.Slot == bone.Skeleton.Slot
-                        && key.PartialId == bone.PartialId
-                        && key.BoneIndex == bone.BoneIndex
-                        && key.CanonicalName.Equals(bone.CanonicalName, StringComparison.Ordinal))
-                        return TransformTargetId.ForBone(key);
-                }
-                return null;
-            case TransformTargetKind.Actor when target.Actor is { } actor:
-                foreach (var pair in _boneBindings)
-                {
-                    var current = pair.Key.Skeleton.Actor;
-                    if (current.LogicalId == actor.LogicalId)
-                        return TransformTargetId.ForActor(current);
-                }
-                return null;
-            default:
-                return null;
-        }
-    }
-
     /// <summary>Light identity is instance identity: two distinct lights with
     /// identical settings are never the same light.</summary>
     // The port's handle-typed forms. The registry keeps its concrete

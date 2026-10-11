@@ -496,21 +496,21 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     /// peeked, through the shared transition and recovery barrier, and commits
     /// it only when it lands. A refused entry remains available to retry.
     /// </summary>
-    public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
+    public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
     {
         var verb = undo ? "undo" : "redo";
-        if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
+        if (PendingRecovery != null) return new(RecoveryRequired(PendingRecovery), false);
         using var transition = TryEnterTransition();
-        if (transition == null) return Busy();
-        if (_active != null) return GestureResult.Fail($"Cancel the active gesture before {verb}.");
+        if (transition == null) return new(Busy(), false);
+        if (_active != null) return new(GestureResult.Fail($"Cancel the active gesture before {verb}."), false);
         Action commit = undo
             ? () => History.CommitUndo(entry, entity)
             : () => History.CommitRedo(entry, entity);
         if (entry is InverseEntry inverse)
-            return RunLifecycle(undo ? inverse.Undo : inverse.Redo,
+            return new(RunLifecycle(undo ? inverse.Undo : inverse.Redo,
                 $"Could not {verb} {inverse.Description.ToLowerInvariant()}.",
-                commit, inverse.FailureDetail);
-        return RestorePatch((TransformPatch)entry, undo, commit);
+                commit, inverse.FailureDetail), true);
+        return new(RestorePatch((TransformPatch)entry, undo, commit), true);
     }
 
     /// <summary>
@@ -535,17 +535,17 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return GestureResult.Ok();
     }
 
-    public GestureResult Replay(JournalStep step, bool before, SelectionId? entity)
+    public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity)
     {
-        if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
+        if (PendingRecovery != null) return new(RecoveryRequired(PendingRecovery), false);
         using var transition = TryEnterTransition();
-        if (transition == null) return Busy();
-        if (_active != null) return GestureResult.Fail("Cancel the active gesture before undo or redo.");
+        if (transition == null) return new(Busy(), false);
+        if (_active != null) return new(GestureResult.Fail("Cancel the active gesture before undo or redo."), false);
         // The journal owns async snapshot completion; do not hold this
         // synchronous transition across the import (rollback also needs it).
-        return RunLifecycle(before ? step.Undo : step.Redo,
+        return new(RunLifecycle(before ? step.Undo : step.Redo,
             $"Could not {(before ? "undo" : "redo")} {step.Description.ToLowerInvariant()}.",
-            () => { }, step.FailureDetail);
+            () => { }, step.FailureDetail), true);
     }
 
     public GestureResult RunValueTransition(Action action)

@@ -834,10 +834,10 @@ public sealed class SceneWorkflowTests
     private sealed class ReplayRunner : IUndoRunner
     {
         public GestureResult? RecoverPending() => null;
-        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity) =>
-            GestureResult.Fail("Not a deferred step.");
-        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
-            (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused.");
+        public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity) =>
+            new(GestureResult.Fail("Not a deferred step."), false);
+        public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity) =>
+            new((before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused."), true);
     }
 
     [Fact]

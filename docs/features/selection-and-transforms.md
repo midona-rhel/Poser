@@ -225,6 +225,9 @@ member poses, and lifecycle entries by default), drop it on the second
 consecutive refusal (a value write that throws, other journal steps), or drop
 it at once when the refusal is permanent (an unrestorable
 borrowed world object, or a batch whose children are all discarded).
+These policies apply only after the entry actually ran. Active gestures,
+reentrant calls and pending recovery block admission without consuming a
+refusal attempt or discarding history, for both global and scoped replay.
 
 A step that came from a file (a pose import, a scene load) checks the
 file before redo and refuses with one notice when it is gone.
@@ -244,6 +247,13 @@ animation pause) write and report but never journal. Undo and redo re-resolve
 the bound instance through the history-only resolver, so a lifecycle restore
 that replaced the native wrapper still receives its edits; public IDs are
 never repaired.
+
+Transform history and retained group metadata resolve replacement generations
+through the committed scene, not through group membership or auxiliary preview
+bindings. A bone retains its actor lineage, slot, partial, index and exact name;
+only the actor/skeleton generations may change. A missing or mismatched bone
+does not become an actor transform. Ordinary selection and edit validation keep
+their separate, exact-id rules.
 
 Show and Hide report a result per target. A refused or stale target writes
 nothing and appends nothing; every surface (sidebar eye, context menu,
