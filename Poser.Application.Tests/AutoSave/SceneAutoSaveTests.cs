@@ -46,12 +46,12 @@ public sealed class SceneAutoSaveTests
         Assert.True(test.Service.LastResult.Status == SceneAutoSaveStatus.Written,
             test.Service.LastResult.Detail);
 
-        bone.Scale = bone.Scale with { X = bone.Scale.X + 0.0000006f };
+        bone.Scale = bone.Scale with { X = bone.Scale.X + 0.0000011f };
         test.Tick(20);
         test.Complete();
         Assert.Equal(SceneAutoSaveStatus.Skipped, test.Service.LastResult.Status);
 
-        bone.Scale = bone.Scale with { X = bone.Scale.X + 0.0000006f };
+        bone.Scale = bone.Scale with { X = bone.Scale.X + 0.0000011f };
         test.Tick(30);
         test.Complete();
         Assert.Equal(SceneAutoSaveStatus.Written, test.Service.LastResult.Status);
