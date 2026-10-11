@@ -249,6 +249,10 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<IGroupGateState, GroupGateState>();
         services.AddSingleton<Application.Scene.GroupSteps>();
+        // Lazy: removal restores group structure through the group steps,
+        // whose gates remove and show entities through the removal port.
+        services.AddSingleton(sp => new System.Lazy<Application.Scene.GroupSteps>(
+            sp.GetRequiredService<Application.Scene.GroupSteps>));
         services.AddSingleton<DisruptiveSteps>();
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<GroupTransformState>();
