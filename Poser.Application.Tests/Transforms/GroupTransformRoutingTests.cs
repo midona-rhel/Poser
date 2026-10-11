@@ -56,7 +56,7 @@ public sealed class GroupTransformRoutingTests
             return TransformPortResult.Ok(saved);
         });
         var state = new GroupTransformState();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         using var coordinator = new GroupTransformCoordinator(scene, new SceneGroups(), state, source);
         using var gestures = new TransformGestureService(scene, runtime, history,
             groupTransforms: state, groupSource: source, groupCoordinator: coordinator);

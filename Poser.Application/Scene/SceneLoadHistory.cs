@@ -25,7 +25,7 @@ internal sealed class SceneLoadReplay(SceneOperation current)
 /// back: the clear is not a step.
 /// </summary>
 internal sealed class SceneLoadHistory(
-    TransformHistory history, ISceneStatePort sceneState, ISceneHistoryPort historyPort,
+    EditHistory history, ISceneStatePort sceneState, ISceneHistoryPort historyPort,
     SceneLoadRollback rollback,
     SceneWorkflow workflow)
 {

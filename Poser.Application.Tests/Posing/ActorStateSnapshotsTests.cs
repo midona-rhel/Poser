@@ -113,7 +113,7 @@ public sealed class ActorStateSnapshotsTests
                 if (method.Name == "Read") return (int?)Model;
                 Model = (int)args[1]!; Events.Add("model"); return Outcome.Ok();
             }));
-            var gaze = new GazeSession(new ValueJournal(new TransformHistory()), Port<IGazeRuntimePort>((method, args) =>
+            var gaze = new GazeSession(new ValueJournal(new EditHistory()), Port<IGazeRuntimePort>((method, args) =>
             {
                 if (method.Name == "get_IsAvailable") return true;
                 if (method.Name == "Read") return new GazeReading(new(GazeTargetMode.Entity, GazeTargetType.Eyes,

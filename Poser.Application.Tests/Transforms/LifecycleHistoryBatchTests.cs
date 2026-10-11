@@ -9,7 +9,7 @@ public sealed class LifecycleHistoryBatchTests
     [Fact]
     public void Mixed_removals_publish_once_and_replay_reverse_then_forward()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var calls = new List<string>();
         var published = new List<HistoryEntry>();
         history.Appended += published.Add;
@@ -34,7 +34,7 @@ public sealed class LifecycleHistoryBatchTests
     [Fact]
     public void Retry_does_not_repeat_siblings_that_already_landed()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         int earlier = 0, later = 0;
         bool available = false;
         history.RecordLifecycleBatch("Remove selection", () =>
@@ -69,7 +69,7 @@ public sealed class LifecycleHistoryBatchTests
             { (RefusalAction.Keep, 3), (RefusalAction.DropOnRepeat, 2), (RefusalAction.DropNow, 1) })
         {
             // Undo journal: count refusals before the entry leaves history.
-            var history = new TransformHistory();
+            var history = new EditHistory();
             var notices = new Fixtures.NoticeLog();
             var journal = new UndoJournal(history, new Runner(history), _ => true, notices);
             history.Append(Refusing(action));
@@ -81,7 +81,7 @@ public sealed class LifecycleHistoryBatchTests
             }
 
             // Batch: the same step as the only child of a lifecycle batch.
-            var batchHistory = new TransformHistory();
+            var batchHistory = new EditHistory();
             batchHistory.RecordLifecycleBatch("Batch", () => batchHistory.Append(Refusing(action)));
             var batch = Assert.IsType<SceneLifecyclePatch>(batchHistory.PeekUndo());
             int batchRefusals = 0;
@@ -98,7 +98,7 @@ public sealed class LifecycleHistoryBatchTests
         }
     }
 
-    private sealed class Runner(TransformHistory history) : IUndoRunner
+    private sealed class Runner(EditHistory history) : IUndoRunner
     {
         public GestureResult? RecoverPending() => null;
         public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
@@ -115,7 +115,7 @@ public sealed class LifecycleHistoryBatchTests
     [Fact]
     public void Command_exception_preserves_already_recorded_removals_and_ends_capture()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         int restored = 0;
         Assert.Throws<InvalidOperationException>(() => history.RecordLifecycleBatch("Remove selection", () =>
         {

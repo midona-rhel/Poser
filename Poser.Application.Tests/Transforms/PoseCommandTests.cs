@@ -101,7 +101,7 @@ public sealed class PoseCommandTests
     {
         public readonly ActorId Actor = ActorId.New();
         public readonly SceneSession Scene = new(new SelectionSession());
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly Dictionary<TransformTargetId, TransformTargetState> Live = new();
         public readonly TransformTargetId Character, Weapon, Model;
         public readonly TransformGestureService Gestures;

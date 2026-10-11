@@ -34,7 +34,7 @@ internal sealed class LifecycleHistoryBatch(string description)
         {
             // Resolve on each lookup: lifecycle restoration can replace IDs.
             // One unknown child makes the entire batch an ordering barrier.
-            var affected = TransformHistory.EntitiesOf(child.Entry);
+            var affected = EditHistory.EntitiesOf(child.Entry);
             if (affected is null || affected.Count == 0) return null;
             entities.UnionWith(affected);
         }

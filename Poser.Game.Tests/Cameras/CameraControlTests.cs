@@ -53,7 +53,7 @@ public sealed class CameraControlTests
         public readonly IVirtualCamera Camera = CameraStub(false);
         public readonly IVirtualCamera Main = CameraStub(true);
         public IVirtualCamera? Live;
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly ValueJournal Journal;
         public readonly CameraControl Control;
 

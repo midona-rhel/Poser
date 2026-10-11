@@ -36,7 +36,7 @@ public sealed class WorldObjectRestoreTests
     public void Edits_replay_after_acquisition_and_release_restore_new_wrappers()
     {
         var world = new World();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var ids = new Dictionary<AdoptedWorldObject, TransformTargetId>();
         TransformTargetId? Target(object instance)
         {

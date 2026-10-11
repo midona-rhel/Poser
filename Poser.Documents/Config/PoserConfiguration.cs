@@ -106,7 +106,7 @@ public class PoserConfiguration
     /// (Brio's <c>Posing.UndoStackSize</c>, same zero-means-off semantics —
     /// <c>HistoryService.cs:17-24</c>). Poser's own long-standing depth is the
     /// default, not Brio's 50. Kept in step with
-    /// <c>TransformHistory.DefaultCapacity</c>, which this assembly cannot
+    /// <c>EditHistory.DefaultCapacity</c>, which this assembly cannot
     /// reference (config sits below the application layer).
     /// </summary>
     public int UndoDepth { get; set; } = 500;

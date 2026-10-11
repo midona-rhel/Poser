@@ -37,7 +37,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     private readonly WorldObjectService _worldObjects;
     private readonly IWorldReleasePort _worldRelease;
     private readonly IFramework _framework;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly SceneGroups _groups;
     private readonly SelectionSession _selection;
 
@@ -59,7 +59,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         IWorldReleasePort worldRelease,
         SceneGroups groups,
         IFramework framework,
-        TransformHistory history)
+        EditHistory history)
     {
         _scene = scene;
         _bindings = bindings;

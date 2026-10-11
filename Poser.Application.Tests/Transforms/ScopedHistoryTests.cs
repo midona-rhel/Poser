@@ -15,7 +15,7 @@ public sealed class ScopedHistoryTests
     [Fact]
     public void Scoped_undo_skips_light_and_global_redo_restores_actual_replay_order()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var pose = Step(Actor);
         var light = Step(SelectionId.ForLight(LightId.New()));
         history.Append(pose); history.Append(light);
@@ -48,7 +48,7 @@ public sealed class ScopedHistoryTests
     [Fact]
     public void Shared_and_unknown_operations_are_barriers_but_disjoint_shared_entries_are_skippable()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var pose = Step(Actor);
         history.Append(pose);
         history.Append(Step(_other, SelectionId.ForLight(LightId.New())));
@@ -63,7 +63,7 @@ public sealed class ScopedHistoryTests
     [Fact]
     public void Lifecycle_requires_global_replay_and_does_not_block_disjoint_edits()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         SelectionId? live = Actor;
         var ownEdit = Step(Actor);
         var otherEdit = Step(_other);

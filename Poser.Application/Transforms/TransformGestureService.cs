@@ -43,7 +43,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     public TransformGestureService(
         SceneSession scene,
         ITransformRuntimePort runtime,
-        TransformHistory history,
+        EditHistory history,
         GroupTransformState? groupTransforms = null,
         IGroupTransformSource? groupSource = null,
         GroupTransformCoordinator? groupCoordinator = null)
@@ -67,7 +67,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         _scene.Selection.SelectionChanged += OnSelectionChanged;
     }
 
-    public TransformHistory History { get; }
+    public EditHistory History { get; }
     public TransformGestureId? ActiveGesture => _active?.Id;
 
     private GroupTransformPresentation ReadGroupPresentation(Guid? named, IReadOnlyList<TransformTargetId> targets)

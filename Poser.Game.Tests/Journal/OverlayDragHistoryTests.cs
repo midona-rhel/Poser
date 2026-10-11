@@ -13,7 +13,7 @@ public class OverlayDragHistoryTests
     [Fact]
     public void NativeDragReleaseRecordsOneStepAndRestoresDocumentAndNativeState()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var port = new Port();
         using var events = new EventBus(DispatchProxy.Create<IPluginLog, Log>());

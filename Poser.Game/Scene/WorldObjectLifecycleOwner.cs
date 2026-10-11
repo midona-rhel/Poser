@@ -152,13 +152,13 @@ internal sealed class WorldObjectLifecycleOwner
             owner.DiscardUnrestorable(slots) ? RefusalAction.DropNow : RefusalAction.Keep;
     }
 
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly IWorldObjectLifecycle _worldObjects;
     private readonly Func<object, TransformTargetId?>? _target;
     private readonly LifecycleSlotOwner<object, Slot> _slots;
 
     public WorldObjectLifecycleOwner(
-        TransformHistory history,
+        EditHistory history,
         IWorldObjectLifecycle worldObjects,
         Func<object, TransformTargetId?>? target = null)
     {

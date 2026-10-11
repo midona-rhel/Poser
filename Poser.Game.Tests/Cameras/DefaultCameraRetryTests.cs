@@ -55,7 +55,7 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         setup.GPose.IsGPosing = true;
         setup.Bus.Publish(new GPoseStateChangedEvent(true));
         var camera = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
-        var history = new Poser.Application.Transforms.TransformHistory();
+        var history = new Poser.Application.Transforms.EditHistory();
         var id = new Poser.Domain.Identity.CameraId(Guid.NewGuid(), 0);
         var control = new CameraControl(CameraBinding(camera, id), setup.Framework, service,
             new Poser.Application.Transforms.ValueJournal(history));

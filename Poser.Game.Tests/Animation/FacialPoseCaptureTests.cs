@@ -74,7 +74,7 @@ public sealed class FacialPoseCaptureTests
             Animation = AnimationPortProxy.Session();
             TransformRuntime = new TestTransformRuntime();
             TransformRuntime.Seed(Bone, 0);
-            History = new TransformHistory();
+            History = new EditHistory();
             Gestures = new TransformGestureService(Scene, TransformRuntime, History);
             Transforms = new TransformCommandService(
                 Scene, TransformRuntime, History, Gestures);
@@ -117,7 +117,7 @@ public sealed class FacialPoseCaptureTests
         public FrameworkProxy Framework { get; }
         public AnimationSession Animation { get; }
         public TestTransformRuntime TransformRuntime { get; }
-        public TransformHistory History { get; }
+        public EditHistory History { get; }
         public TransformGestureService Gestures { get; }
         public TransformCommandService Transforms { get; }
         public MutableSessionSource SessionSource { get; }

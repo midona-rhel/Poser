@@ -11,13 +11,13 @@ public sealed class TransformCommandService
 {
     private readonly SceneSession _scene;
     private readonly ITransformRuntimePort _runtime;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
 
     public TransformCommandService(
         SceneSession scene,
         ITransformRuntimePort runtime,
-        TransformHistory history,
+        EditHistory history,
         TransformGestureService gestures)
     {
         _scene = scene;

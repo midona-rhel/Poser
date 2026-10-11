@@ -23,13 +23,13 @@ namespace Poser.Game.Posing;
 /// </summary>
 internal sealed class PoseImportTerminal
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
     private readonly ITransformRuntimePort _runtime;
     private readonly IPluginLog _log;
 
     public PoseImportTerminal(
-        TransformHistory history,
+        EditHistory history,
         TransformGestureService gestures,
         ITransformRuntimePort runtime,
         IPluginLog log)

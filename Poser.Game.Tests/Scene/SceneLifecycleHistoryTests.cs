@@ -293,7 +293,7 @@ public sealed class SceneLifecycleHistoryTests
     /// move the entry between stacks only if it landed.</summary>
     private sealed class World
     {
-        public TransformHistory History { get; }
+        public EditHistory History { get; }
         public FakeLighting Lighting { get; } = new();
         public FakeCameras Cameras { get; } = new();
         public FakeActors Actors { get; } = new();
@@ -305,9 +305,9 @@ public sealed class SceneLifecycleHistoryTests
 
         /// <param name="capacity">Undo depth; below 1 is undo switched off.
         /// </param>
-        public World(int capacity = TransformHistory.DefaultCapacity)
+        public World(int capacity = EditHistory.DefaultCapacity)
         {
-            History = new TransformHistory(() => capacity);
+            History = new EditHistory(() => capacity);
             Lifecycle = new SceneLifecycleHistory(
                 History, Lighting, Cameras, Actors, Props, Overlays,
                 WorldObjects, Lighting.Target,

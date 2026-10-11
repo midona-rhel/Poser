@@ -61,7 +61,7 @@ public sealed class CameraTargetControlTests
         public ActorId CurrentActorId;
         public readonly BoneId BoneId;
         public readonly IVirtualCamera Camera;
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly ValueJournal Journal;
         public readonly CameraTargetControl Control;
 

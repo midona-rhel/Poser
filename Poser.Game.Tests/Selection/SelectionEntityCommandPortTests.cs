@@ -105,7 +105,7 @@ public sealed class SelectionEntityCommandPortTests
         public SelectionId Id => SelectionId.ForLight(Light);
         public readonly SceneSession Scene = new(new SelectionSession());
         public readonly SceneGroups Groups = new();
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly ReleasePort Release = new();
         public readonly FrameworkProxy Framework;
         public readonly SelectionEntityCommandPort Port;

@@ -20,7 +20,7 @@ public sealed class LifecycleSlotOwner<TInstance, TSlot>
     private readonly Func<TSlot, bool> _captureAndRemove;
     private readonly Func<TSlot, bool> _restore;
     private readonly bool _retainAliases;
-    private readonly TransformHistory? _history;
+    private readonly EditHistory? _history;
     private readonly Func<TInstance, TransformTargetId?>? _transformTarget;
 
     public LifecycleSlotOwner(
@@ -30,7 +30,7 @@ public sealed class LifecycleSlotOwner<TInstance, TSlot>
         Func<TSlot, bool> captureAndRemove,
         Func<TSlot, bool> restore,
         bool retainAliases = false,
-        TransformHistory? history = null,
+        EditHistory? history = null,
         Func<TInstance, TransformTargetId?>? transformTarget = null)
     {
         _create = create;

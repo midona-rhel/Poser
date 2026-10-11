@@ -121,7 +121,7 @@ public sealed class TransformFacade : ITransformFacade
         var selected = _scene.Selection.Selected;
         if (selected.Count == 0 || selected.Any(id => _scene.Resolve(id) != id))
             return GestureResult.Fail("Select a current entity to undo or redo its changes.");
-        var entities = selected.Select(TransformHistory.EntityOf).Distinct().ToArray();
+        var entities = selected.Select(EditHistory.EntityOf).Distinct().ToArray();
         if (entities.Length != 1 || entities[0].Kind == SceneEntityKind.Bone)
             return GestureResult.Fail("Select one entity, or bones belonging to one actor. Use global undo for groups.");
         return before ? _journal.Undo(entities[0]) : _journal.Redo(entities[0]);

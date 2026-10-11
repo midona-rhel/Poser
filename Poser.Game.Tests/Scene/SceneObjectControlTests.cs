@@ -37,7 +37,7 @@ public sealed class SceneObjectControlTests
             Assert.Equal(id, args![0]);
             return new BindingResult<IPropHandle>(BindingStatus.Success, prop);
         });
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var control = new SceneObjectControl(bindings, journal);
         var reading = control.Read(id)!;
@@ -67,7 +67,7 @@ public sealed class SceneObjectControlTests
         var bindings = Stub<IEntityBindings>((method, args) => current
             ? new BindingResult<IWorldObject>(BindingStatus.Success, effect)
             : new BindingResult<IWorldObject>(BindingStatus.StaleTarget));
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var control = new SceneObjectControl(bindings, new ValueJournal(history));
 
         Assert.True(control.Set(id, WorldObjectProperties.VfxPaused, true).Success);

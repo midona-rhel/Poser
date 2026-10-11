@@ -4,7 +4,7 @@ namespace Poser.Application.Tests.Fixtures;
 
 internal static class JournalUndo
 {
-    public static bool Undo(TransformHistory history)
+    public static bool Undo(EditHistory history)
     {
         var step = (JournalStep)history.PeekUndo()!;
         if (!step.Undo())

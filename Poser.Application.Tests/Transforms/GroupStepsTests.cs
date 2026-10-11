@@ -14,7 +14,7 @@ public sealed class GroupStepsTests
     public void Creating_and_renaming_a_group_are_steps_that_put_the_whole_model_back()
     {
         var groups = new SceneGroups();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var steps = new GroupSteps(groups, history, new ValueJournal(history));
         var members = new[] { Actor(), Actor() };
 

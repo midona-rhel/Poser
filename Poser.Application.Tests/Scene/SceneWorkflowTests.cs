@@ -44,7 +44,7 @@ public sealed class SceneWorkflowTests
         var runtime = new FakeRuntime { ReadResult = document };
         var groups = new SceneGroups(); var state = new GroupTransformState();
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
-        var history = new TransformHistory(); var native = new ParentRuntime();
+        var history = new EditHistory(); var native = new ParentRuntime();
         var parenting = new TransformParenting(native, history, new(history));
         using var workflow = Workflow(runtime, history: history,
             structure: new SceneStructure(groups, coordinator, state), parenting: parenting);
@@ -102,7 +102,7 @@ public sealed class SceneWorkflowTests
         var state = new GroupTransformState();
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
         var structure = new SceneStructure(groups, coordinator, state);
-        var history = new TransformHistory();
+        var history = new EditHistory();
         using var load = Workflow(runtime, history: history, structure: structure);
         for (int cycle = 0; cycle < 2; cycle++)
         {
@@ -170,7 +170,7 @@ public sealed class SceneWorkflowTests
         var scene = SceneWith();
         scene.Lights.Add(new SceneLight { Key = Guid.NewGuid(), Light = new LightFile { Name = "Imported" } });
         var runtime = new FakeRuntime { ReadResult = scene };
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var appends = 0;
         history.Appended += _ => appends++;
         using var load = Workflow(runtime, history: history);
@@ -199,15 +199,15 @@ public sealed class SceneWorkflowTests
 
     /// <summary>A workflow over the fake with no-op collaborators wherever
     /// the test does not bring its own.</summary>
-    private static SceneWorkflow Workflow(FakeRuntime runtime, TransformHistory? history = null,
+    private static SceneWorkflow Workflow(FakeRuntime runtime, EditHistory? history = null,
         ISceneStructure? structure = null, TransformParenting? parenting = null) =>
         new(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
-            history ?? new TransformHistory(),
+            history ?? new EditHistory(),
             structure ?? new NoStructure(), parenting ?? Parenting());
 
     private static TransformParenting Parenting()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         return new TransformParenting(new ParentRuntime(), history, new(history));
     }
 
@@ -718,7 +718,7 @@ public sealed class SceneWorkflowTests
 
         // A read failure touches no native state and appends no history.
         var readRuntime = new FakeRuntime { ReadFailure = Corrupt("The document is not a scene.") };
-        var history = new TransformHistory();
+        var history = new EditHistory();
         using var read = Workflow(readRuntime, history: history);
         Assert.True(read.BeginLoad("shot.xivs").Success);
         await read.Drain;
@@ -739,7 +739,7 @@ public sealed class SceneWorkflowTests
             NeverReadyActor = "Slow",
         };
         using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
-            new TransformHistory(), new NoStructure(), Parenting())
+            new EditHistory(), new NoStructure(), Parenting())
         {
             ActorReadyBound = TimeSpan.FromMilliseconds(100),
         };
@@ -773,7 +773,7 @@ public sealed class SceneWorkflowTests
             runtime.SpawnedLightTokens.Count == 3 && token == runtime.SpawnedLightTokens[2];
         var groups = new SceneGroups(); var state = new GroupTransformState();
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var parenting = new TransformParenting(new ParentRuntime(), history, new(history));
         using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(), history,
             new SceneStructure(groups, coordinator, state), parenting)
@@ -846,7 +846,7 @@ public sealed class SceneWorkflowTests
             ReadResult = WholeScene(),
             GazeFailure = _ => "The look-at target is gone.",
         };
-        var history = new TransformHistory();
+        var history = new EditHistory();
         using var load = Workflow(runtime, history: history);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
@@ -863,7 +863,7 @@ public sealed class SceneWorkflowTests
     public async Task Redo_never_clears_again_and_a_failed_replay_stays_redoable()
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var notices = new Fixtures.NoticeLog();
         var journal = new UndoJournal(history, new ReplayRunner(), _ => true, notices);
         using var load = Workflow(runtime, history: history);
@@ -891,7 +891,7 @@ public sealed class SceneWorkflowTests
     public async Task Undo_while_another_scene_operation_runs_keeps_the_load_step()
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new UndoJournal(history, new ReplayRunner(), _ => true, new Fixtures.NoticeLog());
         using var load = Workflow(runtime, history: history);
         Assert.True(load.BeginLoad("shot.xivs").Success);
@@ -1056,7 +1056,7 @@ public sealed class SceneWorkflowTests
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
         using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
-            new TransformHistory(), new NoStructure(), Parenting())
+            new EditHistory(), new NoStructure(), Parenting())
         {
             PoseImportBound = TimeSpan.FromMilliseconds(100),
         };

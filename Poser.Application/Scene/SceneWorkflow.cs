@@ -83,7 +83,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         ISceneHistoryPort historyPort,
         ISceneDocumentStore documents,
         ISceneWorkflowObserver observer,
-        TransformHistory history,
+        EditHistory history,
         ISceneStructure structure,
         TransformParenting parenting)
     {

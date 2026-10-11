@@ -17,7 +17,7 @@ public sealed class ValueJournalTests
     [Fact]
     public void A_drag_is_one_step_that_undoes_to_the_value_before_the_drag()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var target = new Target();
         Set(journal, target, 1f); // setting the value it already holds is not a step
@@ -40,7 +40,7 @@ public sealed class ValueJournalTests
     [Fact]
     public void A_step_on_a_dead_target_undoes_as_a_no_op_so_the_steps_under_it_stay_reachable()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var first = new Target();
         var second = new Target();

@@ -120,7 +120,7 @@ public sealed class WorldActorDiscoveryTests
             Result = actor,
             OnInvoke = () => { manager.Adopted = true; id = id with { Generation = id.Generation + 1 }; },
         };
-        var history = new TransformHistory();
+        var history = new EditHistory();
         int appends = 0;
         history.Appended += _ => appends++;
         var session = new WorldActorSession(NewDiscovery(adapter, seam, manager: manager), history,
@@ -207,7 +207,7 @@ public sealed class WorldActorDiscoveryTests
         var second = new ActorBase(first.Id, "Borrowed", observed.Address);
         var seam = new CloneSeam { Result = second };
         var manager = new FakeActorManager { Actors = [first], Adopted = true };
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var released = new List<IActor>();
         var session = new WorldActorSession(NewDiscovery(adapter, seam, manager: manager), history,
             actor => { released.Add(actor); return true; });

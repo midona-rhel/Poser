@@ -22,7 +22,7 @@ public static class ValueWrites
 /// </summary>
 public sealed class ValueJournal
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly Func<object, SelectionId?>? _identify;
     private PendingEdit? _pending;
     private object? _control;
@@ -52,7 +52,7 @@ public sealed class ValueJournal
         }
     }
 
-    public ValueJournal(TransformHistory history, Func<object, SelectionId?>? identify = null)
+    public ValueJournal(EditHistory history, Func<object, SelectionId?>? identify = null)
     {
         _history = history;
         _identify = identify;
@@ -246,7 +246,7 @@ public sealed class ValueJournal
             TransformTargetId target => target.ToSelectionId(),
             _ => _identify?.Invoke(key),
         };
-        return entity is { } found ? new[] { TransformHistory.EntityOf(found) } : null;
+        return entity is { } found ? new[] { EditHistory.EntityOf(found) } : null;
     }
 
     private sealed record PendingEdit(object Key, Action<object> SetAfter, Action Commit);

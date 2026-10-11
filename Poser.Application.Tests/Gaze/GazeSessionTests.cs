@@ -13,7 +13,7 @@ public sealed class GazeSessionTests
     public void Drag_is_one_step_and_replays_original_and_final_points()
     {
         var port = new Runtime();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var session = new GazeSession(new ValueJournal(history), port);
         var entries = new List<HistoryEntry>();
         history.Appended += entries.Add;
@@ -37,7 +37,7 @@ public sealed class GazeSessionTests
     public void Old_generation_never_writes_into_replacement_actor()
     {
         var port = new Runtime();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var session = new GazeSession(new ValueJournal(history), port);
         var old = port.Actor;
         session.SetGazePosition(old, Vector3.One);

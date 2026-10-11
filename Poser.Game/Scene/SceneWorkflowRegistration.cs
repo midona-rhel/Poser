@@ -42,7 +42,7 @@ public static class SceneWorkflowRegistration
             sp.GetRequiredService<ISceneHistoryPort>(),
             sp.GetRequiredService<ISceneDocumentStore>(),
             sp.GetRequiredService<ISceneWorkflowObserver>(),
-            sp.GetRequiredService<TransformHistory>(),
+            sp.GetRequiredService<EditHistory>(),
             sp.GetRequiredService<ISceneStructure>(),
             sp.GetRequiredService<TransformParenting>()));
         return services;

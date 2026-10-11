@@ -8,7 +8,7 @@ public class ValueEditScopeTests
     [Fact]
     public void SameControlAcrossFramesAppendsOnceAndRecorderSeesOnlyCommittedValues()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         using var recorder = new ActionRecorder(history);
         int value = 1;
@@ -38,7 +38,7 @@ public class ValueEditScopeTests
     [Fact]
     public void TypedWordCommitsOnFocusLossAndSeparateClicksNeverFold()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         string name = "A";
         foreach (string next in new[] { "AB", "ABC" })

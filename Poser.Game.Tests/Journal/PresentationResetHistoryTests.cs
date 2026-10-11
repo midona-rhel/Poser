@@ -215,7 +215,7 @@ public sealed class PresentationResetHistoryTests
         public readonly IEntityBindings Bindings = DispatchProxy.Create<IEntityBindings, BindingProxy>();
         public readonly IActorSpawnService Spawn =
             DispatchProxy.Create<IActorSpawnService, VisibilitySpawnProxy>();
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly UndoJournal Journal;
         public Fixture()
         {

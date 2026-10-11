@@ -17,7 +17,7 @@ public sealed class OverlayControlTests
         var id = OverlayId.New();
         var current = id;
         var node = new Node();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var earlier = new JournalStep("Earlier edit", () => true, () => true);
         history.Append(earlier);
         history.CommitUndo(earlier);

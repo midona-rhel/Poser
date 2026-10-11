@@ -13,7 +13,7 @@ public sealed class CompanionControlTests
     {
         var runtime = new Runtime();
         var before = runtime.Attachment;
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var control = new CompanionSession(runtime, new(history));
         Assert.True(control.Set(runtime.Child, runtime.Owner, null).Success);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
@@ -34,7 +34,7 @@ public sealed class CompanionControlTests
     public void History_does_not_follow_a_replaced_owner_generation()
     {
         var runtime = new Runtime();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var control = new CompanionSession(runtime, new(history));
         Assert.True(control.Set(runtime.Owner, runtime.Owner, null).Success);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());

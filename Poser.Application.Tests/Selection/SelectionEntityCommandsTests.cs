@@ -19,7 +19,7 @@ public sealed class SelectionEntityCommandsTests
             CanChangeVisibility: true, IsVisible: true,
             SelectionRemoval.Destroy));
         var port = new RecordingPort();
-        var commands = new SelectionEntityCommands(reads, port, new TransformHistory());
+        var commands = new SelectionEntityCommands(reads, port, new EditHistory());
 
         Assert.Null(commands.ReadVisibility(id));
         var hidden = commands.SetVisibility([id], visible: false);
@@ -34,7 +34,7 @@ public sealed class SelectionEntityCommandsTests
     [Fact]
     public void Hide_selection_is_one_entry_and_replays_only_landed_targets()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var actors = new[] { SelectionId.ForActor(ActorId.New()), SelectionId.ForActor(ActorId.New()) };
         var light = SelectionId.ForLight(LightId.New());
         var prop = SelectionId.ForProp(PropId.New());
@@ -79,7 +79,7 @@ public sealed class SelectionEntityCommandsTests
 
         public bool? ReadVisibility(SelectionId id) => Visibility;
 
-        public TransformHistory? History { get; init; }
+        public EditHistory? History { get; init; }
         public Dictionary<SelectionId, string> Refuse { get; } = new();
         public Dictionary<SelectionId, bool> Visible { get; } = new();
 

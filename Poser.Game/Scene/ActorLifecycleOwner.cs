@@ -96,11 +96,11 @@ internal sealed class ActorLifecycleSlot
 /// this owner recorded the spawn or can recreate the actor.</summary>
 internal sealed class ActorLifecycleOwner
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly IActorLifecycle _actors;
     private readonly LifecycleSlotOwner<IActor, ActorLifecycleSlot> _slots;
 
-    public ActorLifecycleOwner(TransformHistory history, IActorLifecycle actors)
+    public ActorLifecycleOwner(EditHistory history, IActorLifecycle actors)
     {
         _history = history;
         _actors = actors;

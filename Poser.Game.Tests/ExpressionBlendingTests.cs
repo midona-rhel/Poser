@@ -27,7 +27,7 @@ public sealed class ExpressionBlendingTests
         using var f = new Fixture();
         f.Service.SetWeight(f.Actor, "SmileL", -.2f);
         f.Service.SetWeight(f.Actor, "SmileR", .4f);
-        var history = new TransformHistory();
+        var history = new EditHistory();
         int appended = 0;
         history.Appended += _ => appended++;
         var journal = new ValueJournal(history);

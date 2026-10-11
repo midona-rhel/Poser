@@ -231,7 +231,7 @@ public sealed class GroupTransformStateTests
         public readonly SceneSession Scene;
         public readonly SceneGroups Groups = new();
         public readonly GroupTransformState State = new();
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly GroupTransformCoordinator Coordinator;
         public readonly TransformGestureService Service;
         public readonly UndoJournal Journal;

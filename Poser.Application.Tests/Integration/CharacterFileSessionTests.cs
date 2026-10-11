@@ -73,7 +73,7 @@ public sealed class CharacterFileSessionTests
     private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
     {
         public SessionGeneration? ActiveSessionGeneration { get; set; } = SessionGeneration.New();
-        public TransformHistory History { get; } = new();
+        public EditHistory History { get; } = new();
         public Files Files { get; } = new();
         public Clock Clock { get; } = new();
         public RuntimeProxy Runtime { get; }

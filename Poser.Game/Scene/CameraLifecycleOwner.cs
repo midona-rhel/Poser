@@ -29,11 +29,11 @@ internal sealed class CameraLifecycleSlot
 /// not carry, so undo brings the camera back as the user last had it.</summary>
 internal sealed class CameraLifecycleOwner
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly IVirtualCameraService _cameras;
     private readonly LifecycleSlotOwner<IVirtualCamera, CameraLifecycleSlot> _slots;
 
-    public CameraLifecycleOwner(TransformHistory history, IVirtualCameraService cameras)
+    public CameraLifecycleOwner(EditHistory history, IVirtualCameraService cameras)
     {
         _history = history;
         _cameras = cameras;

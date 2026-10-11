@@ -30,7 +30,7 @@ public sealed class ResultValueJournalTests
     [Fact]
     public void Failed_live_write_keeps_last_success_and_original_before_until_commit()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var target = new Target();
         journal.BeginEdit("colour");
@@ -54,7 +54,7 @@ public sealed class ResultValueJournalTests
     [Fact]
     public void Repeated_transient_refusal_never_drops_or_advances_and_can_retry()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var target = new Target();
         Set(new ValueJournal(history), target, 8);
         var undo = new UndoJournal(history, new Runner(history), _ => true, new Fixtures.NoticeLog());
@@ -81,7 +81,7 @@ public sealed class ResultValueJournalTests
     [Fact]
     public void Permanent_refusal_is_reported_then_dropped_on_repeat_so_earlier_undo_proceeds()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var earlier = new Target();
         var target = new Target();
@@ -105,7 +105,7 @@ public sealed class ResultValueJournalTests
     [Fact]
     public void Refused_write_leaves_history_and_redo_unchanged()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var target = new Target();
         Set(journal, target, 7);
@@ -123,7 +123,7 @@ public sealed class ResultValueJournalTests
         Assert.Equal(7, target.Value);
     }
 
-    private sealed class Runner(TransformHistory history) : IUndoRunner
+    private sealed class Runner(EditHistory history) : IUndoRunner
     {
         public GestureResult? RecoverPending() => null;
         public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>

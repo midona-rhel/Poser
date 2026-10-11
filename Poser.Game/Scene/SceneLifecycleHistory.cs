@@ -67,7 +67,7 @@ namespace Poser.Game.Scene;
 /// removal whose entity is already gone is SATISFIED (nothing left to remove),
 /// while a restore with no document behind it FAILS rather than minting a
 /// default-valued impostor. Leaving GPose clears the history outright and the
-/// slots go with it (<see cref="TransformHistory.Cleared"/>), so a slot never
+/// slots go with it (<see cref="EditHistory.Cleared"/>), so a slot never
 /// outlives the session that made it.</para>
 /// </summary>
 public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
@@ -75,7 +75,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     IEntityHistoryBinding<IVirtualCamera>, IEntityHistoryBinding<IPropHandle>,
     IEntityHistoryBinding<IOverlayNode>, IEntityHistoryBinding<IActor>
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
 
@@ -95,7 +95,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     /// here and handed straight to those ports.</summary>
     public SceneLifecycleHistory(
         Application.Settings.ConfigurationService configuration,
-        TransformHistory history,
+        EditHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,
         IActorSpawnService actors,
@@ -145,7 +145,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     /// entry's two directions can be exercised without a native scene object
     /// and without a native UI node.</summary>
     internal SceneLifecycleHistory(
-        TransformHistory history,
+        EditHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,
         IActorLifecycle actors,

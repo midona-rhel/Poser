@@ -25,13 +25,13 @@ internal sealed class LightLifecycleSlot
 /// to target its current light after undo restores a new wrapper.</summary>
 internal sealed class LightLifecycleOwner
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly ILightingService _lighting;
     private readonly Func<ILight, TransformTargetId?>? _lightTarget;
     private readonly LifecycleSlotOwner<ILight, LightLifecycleSlot> _slots;
 
     public LightLifecycleOwner(
-        TransformHistory history,
+        EditHistory history,
         ILightingService lighting,
         Func<ILight, TransformTargetId?>? lightTarget = null)
     {

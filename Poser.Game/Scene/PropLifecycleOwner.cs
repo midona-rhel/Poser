@@ -94,12 +94,12 @@ internal sealed class PropLifecycleSlot
 /// its exact inverse, re-binding the slot to every instance a restore mints.</summary>
 internal sealed class PropLifecycleOwner
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly IPropLifecycle _props;
     private readonly LifecycleSlotOwner<object, PropLifecycleSlot> _slots;
 
     public PropLifecycleOwner(
-        TransformHistory history,
+        EditHistory history,
         IPropLifecycle props,
         Func<object, TransformTargetId?>? propTarget = null)
     {

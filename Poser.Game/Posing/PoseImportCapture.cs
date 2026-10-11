@@ -105,7 +105,7 @@ public sealed class PoseImportCapture : IDisposable
         StableBindingRegistry bindings,
         IBonePosingService posing,
         ITransformRuntimePort runtime,
-        TransformHistory history,
+        EditHistory history,
         TransformGestureService gestures,
         IkBakeCapture ikBake,
         IPoseFileService poseFiles,

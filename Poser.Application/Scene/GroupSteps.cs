@@ -14,7 +14,7 @@ namespace Poser.Application.Scene;
 public sealed class GroupSteps
 {
     private readonly SceneGroups _groups;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly ValueJournal _values;
     private readonly GroupTransformState? _groupTransforms;
     private readonly GroupTransformCoordinator? _groupCoordinator;
@@ -23,7 +23,7 @@ public sealed class GroupSteps
 
     public GroupSteps(
         SceneGroups groups,
-        TransformHistory history,
+        EditHistory history,
         ValueJournal values,
         GroupTransformState? groupTransforms = null,
         GroupTransformCoordinator? groupCoordinator = null,

@@ -18,7 +18,7 @@ public sealed class GlamourerAccessTests
     {
         var port = DispatchProxy.Create<IIntegrationRuntimeFake, WriteRaceProxy>();
         var integration = new IntegrationGraph(port, null!, new SessionSource()).Selectors;
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var customize = new CustomizeSession(new ValueJournal(history), integration, port, null!);
         var actor = ActorId.New();
         var single = customize.Set(actor, CustomizeKey.SkinColor, 8, "skin");

@@ -67,7 +67,7 @@ public sealed class ActorAppearanceControlTests
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
         public ActorId Actor { get; } = ActorId.New();
-        public TransformHistory History { get; } = new();
+        public EditHistory History { get; } = new();
         public RuntimeProxy Runtime { get; }
         public IActorAppearanceControl Control { get; }
         private readonly IntegrationSelectors _integration;

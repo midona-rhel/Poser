@@ -199,7 +199,7 @@ internal static class ServiceRegistration
         services.AddSingleton(sp =>
         {
             var configuration = sp.GetRequiredService<ConfigurationService>();
-            return new TransformHistory(() => configuration.Config.UndoDepth);
+            return new EditHistory(() => configuration.Config.UndoDepth);
         });
         services.AddSingleton<IPoseSnapshotPort, Game.Journal.PoseSnapshotPort>();
         // Lazy: the snapshot port restores through the pose facade, which
@@ -210,7 +210,7 @@ internal static class ServiceRegistration
             (Func<string, bool>)System.IO.File.Exists));
         // The owner lookup reaches the binding registry per recorded edit, never
         // at construction: the registry's own graph writes values through here.
-        services.AddSingleton(sp => new ValueJournal(sp.GetRequiredService<TransformHistory>(),
+        services.AddSingleton(sp => new ValueJournal(sp.GetRequiredService<EditHistory>(),
             owner => Game.Journal.HistoryEntityLookup.Identify(owner, sp.GetRequiredService<IEntityBindings>())));
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
         // Entity lifecycle lands in the transform history, so

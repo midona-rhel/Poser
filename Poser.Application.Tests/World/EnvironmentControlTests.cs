@@ -13,7 +13,7 @@ public sealed class EnvironmentControlTests
         var runtime = new Runtime { MinuteOfDay = 120, DayOfMonth = 4, IsTimeFrozen = false };
         runtime.SetWeather(2, 0.5f);
         runtime.Sky = new();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
         var target = new SceneEnvironment
         {

@@ -101,7 +101,7 @@ public sealed class AppearanceControlTests
     private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
-        public TransformHistory History { get; } = new();
+        public EditHistory History { get; } = new();
         public RuntimeProxy Runtime { get; }
         public bool CaptureFailure;
         public IWardrobeControl Wardrobe { get; }

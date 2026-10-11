@@ -81,7 +81,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     private readonly ISkeletonService _skeletons;
     private readonly IPoseFileService _poseFiles;
     private readonly ITransformRuntimePort _runtime;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
     private readonly IPluginLog _log;
 
@@ -126,7 +126,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         ISkeletonService skeletons,
         IPoseFileService poseFiles,
         ITransformRuntimePort runtime,
-        TransformHistory history,
+        EditHistory history,
         TransformGestureService gestures,
         IPluginLog log)
     {
@@ -504,7 +504,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             })
         {
             AffectedEntities = before.Concat(after)
-                .Select(state => TransformHistory.EntityOf(state.Target.ToSelectionId())).Distinct().ToArray(),
+                .Select(state => EditHistory.EntityOf(state.Target.ToSelectionId())).Distinct().ToArray(),
         });
         return null;
     }

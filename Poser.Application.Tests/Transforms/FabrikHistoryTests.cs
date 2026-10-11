@@ -10,7 +10,7 @@ public sealed class FabrikHistoryTests
     [Fact]
     public void Endpoint_drag_commits_once_and_replays_the_exact_targets_and_seed()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
         var entries = new List<HistoryEntry>();
         history.Appended += entries.Add;

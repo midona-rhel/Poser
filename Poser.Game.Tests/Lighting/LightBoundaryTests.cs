@@ -85,7 +85,7 @@ public sealed class LightBoundaryTests
         public readonly BoneId BoneId = new(new(ActorId.New(), PoseSlot.Character, 0), 0, 1, "j_te_l");
         public readonly ILight Light;
         public readonly IBone Bone;
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly ValueJournal Journal;
         public readonly LightControl Control;
         public readonly HashSet<string> Ignored = new();

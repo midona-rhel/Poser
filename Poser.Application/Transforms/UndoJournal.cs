@@ -32,7 +32,7 @@ public sealed class UndoJournal
     public const string RestoreFailed = "The pose could not be restored.";
     public const string Dropped = "The step was dropped: the history changed while restoring.";
 
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly IUndoRunner _runner;
     private readonly Func<string, bool> _assetExists;
     private readonly Presentation.IUserNotices _notices;
@@ -41,7 +41,7 @@ public sealed class UndoJournal
     private ulong _historyRevision;
 
     public UndoJournal(
-        TransformHistory history,
+        EditHistory history,
         IUndoRunner runner,
         Func<string, bool> assetExists,
         Presentation.IUserNotices notices)

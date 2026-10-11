@@ -29,9 +29,9 @@ public sealed class TransformParentingTests
 
     private static SelectionId Actor() => SelectionId.ForActor(ActorId.New());
     private static PoseTransform At(float x) => PoseTransform.Identity with { Position = new(x, 0, 0) };
-    private static (Runtime Runtime, TransformHistory History, TransformParenting Parents) Setup()
+    private static (Runtime Runtime, EditHistory History, TransformParenting Parents) Setup()
     {
-        var runtime = new Runtime(); var history = new TransformHistory();
+        var runtime = new Runtime(); var history = new EditHistory();
         return (runtime, history, new(runtime, history, new(history)));
     }
 

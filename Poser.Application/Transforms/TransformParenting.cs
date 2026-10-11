@@ -24,7 +24,7 @@ public interface ITransformParenting
 }
 
 /// <summary>One relationship owner; native following and UI do not own offsets or history.</summary>
-public sealed class TransformParenting(IParentingRuntime runtime, TransformHistory history,
+public sealed class TransformParenting(IParentingRuntime runtime, EditHistory history,
     ValueJournal journal) : ITransformParenting
 {
     private readonly Dictionary<SelectionId, TransformParent> _links = new();

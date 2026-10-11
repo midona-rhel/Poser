@@ -73,12 +73,12 @@ internal sealed class OverlayLifecycleSlot
 /// collider group a body-collider capture creates.</summary>
 internal sealed class OverlayLifecycleOwner
 {
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly IOverlayLifecycle _overlays;
     private readonly LifecycleSlotOwner<object, OverlayLifecycleSlot> _slots;
 
     public OverlayLifecycleOwner(
-        TransformHistory history,
+        EditHistory history,
         IOverlayLifecycle overlays,
         Func<object, TransformTargetId?>? overlayTarget = null)
     {

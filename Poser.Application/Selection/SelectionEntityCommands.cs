@@ -67,7 +67,7 @@ public interface ISelectionEntityCommandPort
 public sealed class SelectionEntityCommands(
     ICurrentSelectionEntityReads reads,
     ISelectionEntityCommandPort port,
-    TransformHistory history)
+    EditHistory history)
 {
     private const string Unavailable = "That entity is no longer available.";
 
