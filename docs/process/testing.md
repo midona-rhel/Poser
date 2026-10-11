@@ -27,7 +27,7 @@
   `/uiwindows` lists every registered Poser window and can open, close, move,
   or resize an exact named test window; it cannot target other plugins' windows.
   A `published` readback distinguishes a registered window from one that has
-  produced an ImGui window in the current frame.
+  an existing native ImGui window; it does not prove that window drew this frame.
   `/uidrag` queues a bounded continuous ImGui gesture (at most eight seconds),
   releasing its button and restoring native event admission on completion,
   cancellation or disposal. Its bounded trace verifies the injected input,

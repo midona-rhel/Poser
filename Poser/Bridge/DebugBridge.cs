@@ -572,9 +572,9 @@ public sealed partial class DebugBridge : IDisposable
                     bool? requestedOpen = null;
                     if (query.TryGetValue("open", out var openText))
                     {
-                        if (!bool.TryParse(openText, out var open))
+                        if (!bool.TryParse(openText, out var parsedOpen))
                             return Json(new { error = "open must be true or false." });
-                        requestedOpen = open;
+                        requestedOpen = parsedOpen;
                     }
 
                     static bool TryWindowNumber(string? text, out float value)
@@ -602,7 +602,7 @@ public sealed partial class DebugBridge : IDisposable
                             || width < 64f || width > 8192f || height < 64f || height > 8192f))
                         return Json(new { error = "width and height must be supplied together as finite values from 64 through 8192 pixels." });
 
-                    if (requestedOpen is { } open) requested.IsOpen = open;
+                    if (requestedOpen is { } requestedOpenValue) requested.IsOpen = requestedOpenValue;
                     if (hasX)
                     {
                         var position = new System.Numerics.Vector2(x, y);
