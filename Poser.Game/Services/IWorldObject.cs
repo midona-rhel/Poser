@@ -31,7 +31,8 @@ public interface IWorldObject
     bool? Dyeable { get; }
     bool NightState { get; set; }
     bool AnimationPaused { get; set; }
-    Task<Outcome> Respawn(string path);
+    Task<Outcome> Respawn(string path, System.Func<bool>? stillCurrent = null,
+        System.Threading.CancellationToken cancellation = default);
     Transform InitialPlacement { get; }
     byte InitialFlags { get; }
     bool InitialVisible { get; }

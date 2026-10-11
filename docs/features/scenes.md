@@ -510,6 +510,12 @@ have individual on/off controls in the inspector and context menu. Their states
 survive duplication, lifecycle history, and scene/library saving, addressed by
 child paths within the same furniture asset rather than native pointers.
 
+Deferred world-object model replacements retain their initiating operation's
+validity until commit. History invalidation cancels the hidden replacement on
+the framework thread before the original body is destroyed; rejecting only
+the later history callback is not sufficient. Failed replay still completes
+its journal callback so subsequent undo/redo is not left waiting.
+
 ## A scene is a picture, not a performance
 
 Scenes record no animation: no timeline id, no playback position, no speed, no
