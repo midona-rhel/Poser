@@ -218,6 +218,7 @@ public sealed partial class DebugBridge : IDisposable
         _ = _framework.RunOnFrameworkThread(() =>
         {
             FinishUiDrag();
+            StopLifetimeTrace();
             _framework.Update -= AdvanceUiDrag;
         });
         try { _listener.Stop(); } catch { }
@@ -534,6 +535,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/scene":
             {
+                if (query.GetValueOrDefault("cancel") == "1") _scenes.Cancel();
                 if (!query.TryGetValue("path", out var scenePath))
                     return Json(new { gpose = _gpose.IsGPosing, busy = _scenes.Busy,
                         progress = _scenes.Progress });
@@ -568,6 +570,8 @@ public sealed partial class DebugBridge : IDisposable
                 });
                 return Json(new { ok = result.Success, result.Detail, progress = _scenes.Progress });
             }
+            case "/lifetimetrace":
+                return Json(ConfigureLifetimeTrace(query));
             case "/environment":
                 if (query.TryGetValue("weather", out var weatherText)
                     && byte.TryParse(weatherText, out var weather))

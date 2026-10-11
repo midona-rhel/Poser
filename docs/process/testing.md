@@ -1,5 +1,12 @@
 # Testing
 
+- Debug bridge `/lifetimetrace?path=<new-absolute-file>` opts into a bounded
+  120-second read-only native skeleton-list trace; `stop=1` ends it early.
+  It uses safe process-memory reads and flushes changed owner/header rows
+  plus frame markers to a local file. It does not repair or suppress native
+  updates. Native offsets are explained at the reader. `/scene?cancel=1`
+  invokes the same cancellation command as the scene UI.
+
 - Native GPose lifetime investigations use `[GPoseLifetime]` log entries at
   entry/exit, after entry settles, and around actor/companion/overlay/IK teardown.
   Model, skeleton, owner and bounded parent-chain addresses are read with
