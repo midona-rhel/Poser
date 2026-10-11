@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using Dalamud.Plugin;
 using Poser.Application.AutoSave;
 using Poser.Application.Library;
 
@@ -62,8 +63,12 @@ public sealed partial class DebugBridge
     private object AutoSaveConfigState()
     {
         var settings = _configuration.Config.AutoSave;
-        string configured = string.IsNullOrWhiteSpace(settings.RootDirectory)
-            ? string.Empty : Path.GetFullPath(settings.RootDirectory);
+        string stored = settings.RootDirectory;
+        string configured = string.IsNullOrWhiteSpace(stored)
+            ? Path.GetFullPath(Path.Combine(
+                ((IDalamudPluginInterface)_services.GetService(typeof(IDalamudPluginInterface))!)
+                    .GetPluginConfigDirectory(), "AutoSaves"))
+            : Path.GetFullPath(stored);
         string effective = Path.GetFullPath(BridgeAutoSaves.RootDirectory);
         return new
         {
@@ -74,6 +79,8 @@ public sealed partial class DebugBridge
             sceneSnapshots = settings.SceneSnapshots,
             maxSceneSnapshots = settings.MaxSceneSnapshots,
             configuredRoot = configured,
+            storedRoot = stored,
+            usesDefaultRoot = string.IsNullOrWhiteSpace(stored),
             effectiveServiceRoot = effective,
             reloadRequired = !string.Equals(configured, effective, StringComparison.OrdinalIgnoreCase),
             sceneRootIsolationSupported = false,
