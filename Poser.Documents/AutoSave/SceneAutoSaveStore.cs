@@ -115,8 +115,16 @@ public sealed class SceneAutoSaveStore
             MathF.Abs(a.X - b.X) <= tolerance &&
             MathF.Abs(a.Y - b.Y) <= tolerance &&
             MathF.Abs(a.Z - b.Z) <= tolerance;
+        static bool ScaleComponent(float a, float b, float tolerance) =>
+            MathF.Abs(a - b) <= tolerance * (1f + MathF.Max(MathF.Abs(a), MathF.Abs(b)));
+        static bool Scale(Vector3 a, Vector3 b, float tolerance) =>
+            ScaleComponent(a.X, b.X, tolerance) &&
+            ScaleComponent(a.Y, b.Y, tolerance) &&
+            ScaleComponent(a.Z, b.Z, tolerance);
         if (!Vector(left.Position, right.Position, tolerance)
-            || !Vector(left.Scale, right.Scale, tolerance))
+            // Repeated evaluated-scale composition accumulates relative as
+            // well as absolute float error; compare against the saved baseline.
+            || !Scale(left.Scale, right.Scale, tolerance))
             return false;
         var aLength = left.Rotation.LengthSquared();
         var bLength = right.Rotation.LengthSquared();

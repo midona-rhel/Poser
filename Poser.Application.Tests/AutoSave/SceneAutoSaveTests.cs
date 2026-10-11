@@ -171,6 +171,34 @@ public sealed class SceneAutoSaveTests
     }
 
     [Fact]
+    public void Semantic_identity_treats_recorded_evaluated_scale_error_as_relative_float_noise()
+    {
+        var bone = new PoseFile.BoneData
+        {
+            Position = Vector3.Zero,
+            Rotation = Quaternion.Identity,
+            Scale = new Vector3(1.0000014f, 1.1648104f, 1.0000083f),
+        };
+        var pose = new PoseFile();
+        pose.Bones["n_sippo_b"] = bone;
+        var scene = new SceneFile
+        {
+            SceneId = Guid.NewGuid(),
+            Actors = [new SceneActor { Key = Guid.NewGuid(), Pose = pose }],
+        };
+        var written = SceneAutoSaveStore.CaptureIdentity(scene)!;
+
+        // Values observed in consecutive idle captures of the same frozen actor.
+        bone.Scale = new Vector3(1.0000015f, 1.1648097f, 1.0000072f);
+        Assert.True(SceneAutoSaveStore.SemanticallyEquals(
+            written, SceneAutoSaveStore.CaptureIdentity(scene)!));
+
+        bone.Scale = new Vector3(1.000005f, 1.1648104f, 1.0000083f);
+        Assert.False(SceneAutoSaveStore.SemanticallyEquals(
+            written, SceneAutoSaveStore.CaptureIdentity(scene)!));
+    }
+
+    [Fact]
     public void Day_folder_name_is_gregorian_under_a_non_gregorian_culture()
     {
         using var test = new Harness();
