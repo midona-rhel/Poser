@@ -107,9 +107,12 @@ public sealed partial class DebugBridge
             value.Path,
             value.Spawned,
             ready = transform != null,
-            position = transform?.Position,
-            rotation = transform?.Rotation,
-            scale = transform?.Scale,
+            position = transform is { } pose ? new
+                { pose.Position.X, pose.Position.Y, pose.Position.Z } : null,
+            rotation = transform is { } rotated ? new
+                { rotated.Rotation.X, rotated.Rotation.Y, rotated.Rotation.Z, rotated.Rotation.W } : null,
+            scale = transform is { } scaled ? new
+                { scaled.Scale.X, scaled.Scale.Y, scaled.Scale.Z } : null,
         };
     }
 
@@ -135,10 +138,27 @@ public sealed partial class DebugBridge
             accepted = true,
             id = selection.ToString(),
             kind = reading.State.Kind.ToString(),
-            position = reading.State.Position,
+            position = new { reading.State.Position.X, reading.State.Position.Y },
             rotation = (object?)null,
             scale = reading.State.Scale,
-            state = reading.State,
+            state = new
+            {
+                reading.State.Name,
+                reading.State.Visible,
+                reading.State.Draggable,
+                reading.State.Alpha,
+                reading.State.Text,
+                reading.State.Speaker,
+                reading.State.FontSize,
+                talkBackground = reading.State.TalkBackground.ToString(),
+                talkCursor = reading.State.TalkCursor.ToString(),
+                balloonChannel = reading.State.BalloonChannel.ToString(),
+                balloonGradient = reading.State.BalloonGradient.ToString(),
+                reading.State.ArrowVisible,
+                reading.State.ArrowX,
+                statusKind = reading.State.StatusKind.ToString(),
+                reading.State.StatusIconId,
+            },
             externalReferences = Array.Empty<string>(),
         };
     }
