@@ -330,6 +330,8 @@ public sealed partial class DebugBridge : IDisposable
                         "library.entry.save", "library.entry.spawn", "library.entry.placement", "library.entry.camera-save",
                         "actor.weapon-state.read", "actor.weapon-state.set", "actor.weapon-visibility.set",
                         "bone.authored-modification.read",
+                        "actor.appearance-evidence.read", "actor.integration-identity.read",
+                        "gaze.target.set", "camera.target.follow",
                         "autosave.config.read", "autosave.config.write", "autosave.status.read",
                         "autosave.library.refresh", "autosave.library.read", "autosave.library.delete-disposable",
                         "selection.entities",
@@ -364,6 +366,9 @@ public sealed partial class DebugBridge : IDisposable
                         "/ik?actor&name=BONE&action=read|set&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/weaponstate?actor=NAME|INDEX&drawn=true|false&visible=true|false (production draw/sheath and appearance visibility controls)",
+                        "/appearanceevidence?actor=NAME|INDEX (identity plus production Penumbra/Glamourer reads)",
+                        "/gazetarget?actor=NAME|INDEX|SELECTION_ID&target=NAME|INDEX|SELECTION_ID",
+                        "/cameratarget?camera=CAMERA_SELECTION_ID&actor=NAME|INDEX|SELECTION_ID",
                         "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
                         "/autosavestatus (read-only pose-autosave terminal and health state)",
                         "/autosavelibrary?action=refresh|read|delete&path=DISPOSABLE_POSE_FILE",
@@ -467,6 +472,8 @@ public sealed partial class DebugBridge : IDisposable
             case "/propmodel": return Json(PropModelCommand(query));
             case "/overlaynode": return Json(OverlayNodeCommand(query));
             case "/libraryentry": return Json(LibraryEntryCommand(query));
+            case "/gazetarget": return Json(GazeTargetCommand(query));
+            case "/cameratarget": return Json(CameraTargetCommand(query));
             case "/importstate":
                 return Json(new { import = _poseFiles.DebugImportState, library = _poseLibrary.DebugTargetState });
             case "/interior":
@@ -809,6 +816,38 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(Rig(actor));
             case "/state":
                 return Json(State(id, actor));
+            case "/appearanceevidence":
+            {
+                var descriptor = _sceneSession.Snapshot.FindActor(id);
+                var collection = _penumbra.GetCollectionAssignment(id);
+                var wardrobe = _session.ReadWardrobe(id);
+                var customize = _session.ReadCustomize(id);
+                return Json(new
+                {
+                    actor = id.ToString(),
+                    nativeName = actor.Name,
+                    displayName = _configuration.GetDisplayName(id.LogicalId, actor.Name),
+                    objectIndex = global::Poser.Game.Runtime.GPoseObjectTable.IndexOf(actor.Address),
+                    actorKind = actor.ActorKind.ToString(),
+                    isOwned = descriptor?.IsOwned,
+                    isAdopted = descriptor?.IsAdopted,
+                    penumbra = new
+                    {
+                        success = collection.Success,
+                        collection.Detail,
+                        value = collection.Value,
+                    },
+                    glamourer = new
+                    {
+                        wardrobeSuccess = wardrobe.Success,
+                        wardrobeDetail = wardrobe.Detail,
+                        wardrobe = wardrobe.Value,
+                        customizeSuccess = customize.Success,
+                        customizeDetail = customize.Detail,
+                        customize = customize.Value,
+                    },
+                });
+            }
             case "/weaponstate":
             {
                 global::Poser.Domain.Outcome? result = null;

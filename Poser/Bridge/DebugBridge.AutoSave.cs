@@ -37,10 +37,11 @@ public sealed partial class DebugBridge
             || !TryBooleanSetting(query, "sceneSnapshots", out var scenes)
             || !TryPositiveInt(query, "maxSceneSnapshots", out var maxScenes)
             || !query.TryGetValue("root", out var root)
-            || !Path.IsPathFullyQualified(root))
+            || (isolate && !Path.IsPathFullyQualified(root))
+            || (restore && root.Length > 0 && !Path.IsPathFullyQualified(root)))
             return new { accepted = false, reason = "A complete, valid autosave configuration is required." };
 
-        root = Path.GetFullPath(root);
+        root = root.Length == 0 ? string.Empty : Path.GetFullPath(root);
         if (isolate && !IsDisposableAutoSavePath(root, allowRoot: true))
             return new { accepted = false,
                 reason = "Isolation roots must be beneath artifacts/refactor-review-481/autosave-disposable/." };

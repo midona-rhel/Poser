@@ -111,6 +111,14 @@ public sealed partial class DebugBridge
         return null;
     }
 
+    private ActorId? ResolveActorId(string value)
+    {
+        if (ResolveSelection(value) is { Actor: { } selected })
+            return selected;
+        var actor = FindActor(value);
+        return actor is null ? null : _bindings.GetActorId(actor);
+    }
+
     private static bool TryGuid(string? value, out Guid id) =>
         Guid.TryParse(value, out id) && id != Guid.Empty;
 

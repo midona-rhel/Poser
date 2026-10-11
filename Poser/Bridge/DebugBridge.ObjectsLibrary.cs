@@ -244,6 +244,49 @@ public sealed partial class DebugBridge
         return new { accepted = false, outcome = "Refused", reason = "Unknown library-entry action.", path };
     }
 
+    private object GazeTargetCommand(Dictionary<string, string> query)
+    {
+        if (ResolveActorId(query.GetValueOrDefault("actor", "")) is not { } actor
+            || ResolveActorId(query.GetValueOrDefault("target", "")) is not { } target)
+            return new { accepted = false, applied = false, reason = "Both current actors are required." };
+        var result = _gaze.SetTarget(actor, target);
+        _gaze.Seal();
+        var reading = _gaze.Read(actor);
+        return new { accepted = result.Success, applied = result.Success, reason = result.Detail,
+            actor = actor.ToString(), requestedTarget = target.ToString(),
+            target = reading?.Target?.ToString(), mode = reading?.Settings.Mode.ToString(),
+            stale = reading?.TargetStale };
+    }
+
+    private object CameraTargetCommand(Dictionary<string, string> query)
+    {
+        CameraId? camera = null;
+        string cameraValue = query.GetValueOrDefault("camera", "");
+        foreach (var candidate in _sceneSession.Snapshot.Cameras)
+        {
+            var selection = SelectionId.ForCamera(candidate.Id);
+            if (string.Equals(selection.ToString(), cameraValue, StringComparison.OrdinalIgnoreCase)
+                && _sceneSession.Resolve(selection) == selection)
+            {
+                camera = candidate.Id;
+                break;
+            }
+        }
+        if (camera is not { } cameraId
+            || ResolveActorId(query.GetValueOrDefault("actor", "")) is not { } actorId
+            || _bindings.Resolve(actorId).Value is not { } actor)
+            return new { accepted = false, applied = false,
+                reason = "A current camera and actor are required." };
+        var control = (ICameraTargetControl)_services.GetService(typeof(ICameraTargetControl))!;
+        var result = control.Follow(cameraId, actorId,
+            _configuration.GetDisplayName(actorId.LogicalId, actor.Name));
+        var reading = control.Read(cameraId);
+        return new { accepted = result.Success, applied = result.Success, reason = result.Detail,
+            camera = cameraId.ToString(), requestedActor = actorId.ToString(),
+            followedActor = reading?.FollowedActor?.ToString(), reading?.IsLocked,
+            reading?.IsTracking, reading?.IsTargetLocked, trackingMode = reading?.TrackingMode.ToString() };
+    }
+
     private static bool TryNumber<T>(Dictionary<string, string> query, string key, out T value)
         where T : struct, System.Numerics.INumberBase<T>
     {
