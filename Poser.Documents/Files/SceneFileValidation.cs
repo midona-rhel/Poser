@@ -17,7 +17,6 @@ public enum SceneFileValidationFailureKind
     /// <summary>The file's FileVersion is above what this build understands.</summary>
     FutureVersion,
     Identity,
-    CollectionSize,
     Name,
     Relationship,
     NonFiniteNumeric,
@@ -130,31 +129,9 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.Document,
                 "A scene entity collection is missing.");
 
-        if (scene.Actors.Count > SceneFileLimits.MaxActors)
-            return Fail(SceneFileValidationFailureKind.CollectionSize,
-                $"The scene contains {scene.Actors.Count} actors (limit {SceneFileLimits.MaxActors}).");
-        if (scene.Props.Count > SceneFileLimits.MaxProps)
-            return Fail(SceneFileValidationFailureKind.CollectionSize,
-                $"The scene contains {scene.Props.Count} objects (limit {SceneFileLimits.MaxProps}).");
-        if (scene.Lights.Count > SceneFileLimits.MaxLights)
-            return Fail(SceneFileValidationFailureKind.CollectionSize,
-                $"The scene contains {scene.Lights.Count} lights (limit {SceneFileLimits.MaxLights}).");
-        if (scene.Cameras.Count > SceneFileLimits.MaxCameras)
-            return Fail(SceneFileValidationFailureKind.CollectionSize,
-                $"The scene contains {scene.Cameras.Count} cameras (limit {SceneFileLimits.MaxCameras}).");
-        // The overlay list is optional: absent is a scene with no staged
-        // nodes, which is every file written before they existed.
-        if (scene.Overlays is { } overlayList &&
-            overlayList.Count > SceneFileLimits.MaxOverlays)
-            return Fail(SceneFileValidationFailureKind.CollectionSize,
-                $"The scene contains {overlayList.Count} overlays (limit {SceneFileLimits.MaxOverlays}).");
-
-        // The borrowed-object list is optional for the same reason the overlay
-        // list is: absent is a scene that borrowed nothing.
-        if (scene.WorldObjects is { } worldObjectList &&
-            worldObjectList.Count > SceneFileLimits.MaxWorldObjects)
-            return Fail(SceneFileValidationFailureKind.CollectionSize,
-                $"The scene contains {worldObjectList.Count} world objects (limit {SceneFileLimits.MaxWorldObjects}).");
+        // No per-kind entity counts: the game imposes none on lights,
+        // cameras, props or overlays, and actors run out of native GPose slots
+        // first (the spawn reports that). MaxDocumentBytes bounds the file.
 
         if (!ValidateText(scene.Author, "Author", out var textFailure) ||
             !ValidateText(scene.Description, "Description", out textFailure,
