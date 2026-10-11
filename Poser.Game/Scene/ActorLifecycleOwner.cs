@@ -18,6 +18,10 @@ internal readonly record struct ActorState(
     public ActorRuntimeState? Runtime { get; init; }
     public IReadOnlyList<PoseImportWrite>? CopyBones { get; init; }
     public bool FreezePoseOnRestore { get; init; }
+    /// <summary>Whether the restored actor comes back paused: a posed
+    /// duplicate's frozen basis, or an actor that was paused when it was read
+    /// (#483). A running actor comes back running.</summary>
+    public bool RestoresPaused => FreezePoseOnRestore || Runtime?.Paused == true;
     /// <summary>Partial-root scales by "partial:bone", the head scaling a
     /// pose file cannot carry (its bones are keyed by name and the roots
     /// share the body's). Applied after the pose lands.</summary>
