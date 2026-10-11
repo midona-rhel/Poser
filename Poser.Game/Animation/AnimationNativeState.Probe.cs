@@ -22,7 +22,7 @@ namespace Poser.Game.Animation;
 /// here logs loudly and ships behind the Animation pane's Debug section;
 /// it is torn out once the ownership design lands.
 /// </summary>
-public sealed unsafe partial class AnimationRuntimePort
+public sealed unsafe partial class AnimationNativeState
 {
     /// <summary>Everything the sequencer and its havok controls say about
     /// one actor at one instant, raw enough to write back verbatim.</summary>
@@ -55,6 +55,18 @@ public sealed unsafe partial class AnimationRuntimePort
 
     private Hook<SetTimelineIdDelegate>? _probeTimelineHook;
     private bool _probeOurWrite;
+
+    /// <summary>The speed port's enforced speeds, set by that port.</summary>
+    internal Func<ActorId, (float? Overall, IReadOnlyDictionary<int, float> Slots)?>?
+        ProbeEnforcedSpeeds { get; set; }
+
+    /// <summary>Disposes the lazily armed probe hooks.</summary>
+    internal void DisposeProbeHooks()
+    {
+        _probeTimelineHook?.Dispose();
+        _probeCancelHook?.Dispose();
+        _probeLoadWeaponHook?.Dispose();
+    }
 
     public bool ProbeLogging => _probeTimelineHook?.IsEnabled == true;
 
@@ -308,11 +320,11 @@ public sealed unsafe partial class AnimationRuntimePort
         // The FIELD lies about paused speed: Poser's pause is the speed
         // hook rewriting the value after the game's calculation, so a
         // read here catches the game's x1. The enforcement is the truth.
-        if (_enforcement.TryGetValue(actor, out var enforced))
+        if (ProbeEnforcedSpeeds?.Invoke(actor) is { } enforced)
         {
-            if (enforced.OverallSpeed is { } overall)
+            if (enforced.Overall is { } overall)
                 capture.OverallSpeed = overall;
-            foreach (var (slot, speed) in enforced.SlotSpeeds)
+            foreach (var (slot, speed) in enforced.Slots)
                 capture.SlotSpeeds[slot] = speed;
         }
         return capture;
@@ -786,7 +798,7 @@ public sealed unsafe partial class AnimationRuntimePort
     }
 
     /// <summary>Runs from the port's framework tick.</summary>
-    private void ProbeTick()
+    internal void ProbeTick()
     {
         ProbeClockHuntTick();
         ProbeResetWatchTick();

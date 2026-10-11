@@ -329,13 +329,21 @@ internal static class ServiceRegistration
     private static IServiceCollection AddAnimationFeature(
         this IServiceCollection services)
     {
-        // The port owns native hooks; the session owns exact restoration.
-        services.AddSingleton<Game.Animation.AnimationRuntimePort>();
+        // The ports own native hooks; the session owns exact restoration.
+        services.AddSingleton<Game.Animation.AnimationNativeState>();
+        services.AddSingleton<IAnimationTimelinePort, Game.Animation.AnimationTimelineRuntimePort>();
+        services.AddSingleton<Game.Animation.AnimationSpeedRuntimePort>();
+        services.AddSingleton<IAnimationSpeedPort>(sp => sp.GetRequiredService<Game.Animation.AnimationSpeedRuntimePort>());
+        services.AddSingleton<IAnimationStancePort, Game.Animation.AnimationStanceRuntimePort>();
+        services.AddSingleton<IAnimationScrubPort, Game.Animation.AnimationScrubRuntimePort>();
         services.AddSingleton<AnimationSession>(sp =>
         {
             var log = sp.GetRequiredService<IPluginLog>();
-            var port = sp.GetRequiredService<Game.Animation.AnimationRuntimePort>();
-            return new AnimationSession(port, port, port, port,
+            return new AnimationSession(
+                sp.GetRequiredService<IAnimationTimelinePort>(),
+                sp.GetRequiredService<IAnimationSpeedPort>(),
+                sp.GetRequiredService<IAnimationStancePort>(),
+                sp.GetRequiredService<IAnimationScrubPort>(),
                 sp.GetRequiredService<IWorldRenderingRuntimePort>())
             {
                 Trace = message => log.Information($"[AnimState] {message}"),

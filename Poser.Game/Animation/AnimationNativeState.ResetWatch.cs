@@ -17,7 +17,7 @@ namespace Poser.Game.Animation;
 /// The frame a clock jumps BACKWARD names the schedule that still counts on
 /// the old position despite the scrub. No hooks, no breakpoints.
 /// </summary>
-public sealed unsafe partial class AnimationRuntimePort
+public sealed unsafe partial class AnimationNativeState
 {
     private ActorId? _resetWatchActor;
     private int _resetWatchTicks;

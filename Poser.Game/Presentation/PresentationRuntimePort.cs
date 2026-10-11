@@ -131,7 +131,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         return _updateTintHook!.Original(characterBase, tint);
     }
 
-    // ── Resolution (the AnimationRuntimePort pattern, verbatim) ───────
+    // ── Resolution (the AnimationNativeState pattern, verbatim) ───────
 
     private CSCharacter* Resolve(ActorId actor, out string? detail)
     {
