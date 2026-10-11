@@ -299,7 +299,8 @@ public sealed class CleanSceneLifecycle : IDisposable
             _gestures.ReconcileScene(_scene.Contains);
             _history.Reconcile(
                 _scene.Contains,
-                _scene.CurrentTransformTarget);
+                _scene.CurrentTransformTarget,
+                _scene.IsTransformTargetPending);
             // Animation follows the same exact-generation rule: a replaced
             // actor's old entry is released without touching the new body.
             // The port's detour-facing address index is rebuilt from the

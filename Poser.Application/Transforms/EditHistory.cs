@@ -226,7 +226,9 @@ public sealed class EditHistory
     }
 
     /// <summary>
-    /// Drops every patch touching a target that is no longer current. A
+    /// Drops every patch touching a target that is no longer current. An
+    /// explicitly pending target retains the whole patch without allowing
+    /// replay; its replacement is validated on a later reconciliation. A
     /// patch is removed whole when ANY of its targets is stale (its restore
     /// could never succeed); patches whose targets all remain current
     /// survive, so replacing one slot never discards history that involves
@@ -240,7 +242,8 @@ public sealed class EditHistory
     /// </summary>
     public void Reconcile(
         Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent,
-        Func<Poser.Domain.Identity.TransformTargetId, Poser.Domain.Identity.TransformTargetId?>? rekey = null)
+        Func<Poser.Domain.Identity.TransformTargetId, Poser.Domain.Identity.TransformTargetId?>? rekey = null,
+        Func<Poser.Domain.Identity.TransformTargetId, bool>? isPending = null)
     {
         RefreshLifecycleTargets(_undo);
         RefreshLifecycleTargets(_redo);
@@ -258,14 +261,20 @@ public sealed class EditHistory
                     continue;
                 if (patch.Before.All(state => isCurrent(state.Target))
                     && patch.After.All(state => isCurrent(state.Target)))
+                {
+                    if (patch.AwaitingTargets) stack[i] = patch with { AwaitingTargets = false };
                     continue;
+                }
                 var before = Remap(patch.Before);
                 var after = before is null ? null : Remap(patch.After);
                 var group = patch.GroupState?.Remap(target =>
                     isCurrent(target) ? target : rekey(target));
                 if (before is not null && after is not null
                     && (patch.GroupState == null || group != null))
-                    stack[i] = patch with { Before = before, After = after, GroupState = group };
+                    stack[i] = patch with { Before = before, After = after, GroupState = group, AwaitingTargets = false };
+                else
+                    stack[i] = patch with { AwaitingTargets = patch.Before.Concat(patch.After)
+                        .Any(state => isPending?.Invoke(state.Target) == true) };
             }
             List<TransformTargetState>? Remap(IReadOnlyList<TransformTargetState> states)
             {
@@ -288,9 +297,14 @@ public sealed class EditHistory
         {
             if (entry is not TransformPatch patch)
                 return false;
-            bool staleTarget =
-                patch.Before.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId())) ||
-                patch.After.Any(state => !isCurrent(state.Target) && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId()));
+            // A mixed patch can contain both a ready replacement and another
+            // slot still redrawing. Remap is atomic, so the ready target can
+            // still carry its old ID here; that alone must not drop the patch.
+            bool Gone(TransformTargetState state) => !isCurrent(state.Target)
+                && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId())
+                && (!patch.AwaitingTargets || rekey?.Invoke(state.Target) is null)
+                && isPending?.Invoke(state.Target) != true;
+            bool staleTarget = patch.Before.Any(Gone) || patch.After.Any(Gone);
             if (!staleTarget)
                 return false;
             return true;

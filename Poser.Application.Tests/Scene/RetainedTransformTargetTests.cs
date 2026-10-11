@@ -1,4 +1,6 @@
 using System.Numerics;
+using NSubstitute;
+using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
@@ -12,6 +14,130 @@ namespace Poser.Application.Tests.Scene;
 
 public sealed class RetainedTransformTargetTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Redraw_gap_retains_whole_patch_then_rekeys_when_slot_returns(bool redo)
+    {
+        var actor = ActorId.New();
+        var bone = new BoneId(new SkeletonId(actor, PoseSlot.Character, 0), 0, 0, "n_root");
+        var scene = Scene(bone);
+        var history = new EditHistory();
+        var state = new TransformTargetState(TransformTargetId.ForBone(bone), PoseTransform.Identity, new BonePose(), true);
+        var patch = new TransformPatch("Bone edit", [state], [state]);
+        history.Append(patch);
+        if (redo) history.CommitUndo(patch);
+        Assert.True(scene.TryRefresh(new SceneSnapshot(2,
+            [new ActorDescriptor(actor, "Actor", [])], [], [], [])).Accepted);
+
+        history.Reconcile(scene.Contains, scene.CurrentTransformTarget, scene.IsTransformTargetPending);
+
+        var waiting = Assert.IsType<TransformPatch>(redo ? history.PeekRedo() : history.PeekUndo());
+        Assert.Equal(patch.Id, waiting.Id);
+        Assert.True(waiting.AwaitingTargets);
+        var runner = Substitute.For<IUndoRunner>();
+        var journal = new UndoJournal(history, runner, _ => true, Substitute.For<IUserNotices>());
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            Assert.Equal(UndoJournal.TargetsPending, (redo ? journal.Redo() : journal.Undo()).Detail);
+            Assert.Equal(UndoJournal.TargetsPending,
+                (redo ? journal.Redo(SelectionId.ForActor(actor)) : journal.Undo(SelectionId.ForActor(actor))).Detail);
+        }
+        runner.DidNotReceive().Run(Arg.Any<HistoryEntry>(), Arg.Any<bool>(), Arg.Any<SelectionId?>());
+        Assert.False(scene.Contains(state.Target));
+        Assert.Null(scene.CurrentTransformTarget(state.Target));
+        var current = bone with { Skeleton = bone.Skeleton.NextGeneration() };
+        Assert.True(scene.TryRefresh(new SceneSnapshot(3,
+            [new ActorDescriptor(actor, "Actor", [new SkeletonDescriptor(current.Skeleton,
+                [new BoneDescriptor(current, "Root", null)])])], [], [], [])).Accepted);
+
+        history.Reconcile(scene.Contains, scene.CurrentTransformTarget, scene.IsTransformTargetPending);
+
+        var ready = Assert.IsType<TransformPatch>(redo ? history.PeekRedo() : history.PeekUndo());
+        Assert.Equal(patch.Id, ready.Id);
+        Assert.False(ready.AwaitingTargets);
+        Assert.Equal(TransformTargetId.ForBone(current), Assert.Single(ready.Before).Target);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Pending_patch_is_dropped_when_owner_disappears_or_returned_slot_lacks_exact_bone(bool ownerGone)
+    {
+        var actor = ActorId.New();
+        var bone = new BoneId(new SkeletonId(actor, PoseSlot.Character, 0), 0, 0, "n_root");
+        var scene = new SceneSession(new SelectionSession());
+        Assert.True(scene.TryRefresh(new SceneSnapshot(1,
+            [new ActorDescriptor(actor, "Actor", [])], [], [], [])).Accepted);
+        var history = new EditHistory();
+        var state = new TransformTargetState(TransformTargetId.ForBone(bone), PoseTransform.Identity, new BonePose(), true);
+        history.Append(new TransformPatch("Bone edit", [state], [state]));
+        history.Reconcile(scene.Contains, scene.CurrentTransformTarget, scene.IsTransformTargetPending);
+        Assert.True(Assert.IsType<TransformPatch>(history.PeekUndo()).AwaitingTargets);
+        Assert.True(scene.TryRefresh(new SceneSnapshot(2, ownerGone ? [] :
+            [new ActorDescriptor(actor, "Actor", [new SkeletonDescriptor(bone.Skeleton.NextGeneration(), [])])],
+            [], [], [])).Accepted);
+
+        history.Reconcile(scene.Contains, scene.CurrentTransformTarget, scene.IsTransformTargetPending);
+
+        Assert.Null(history.PeekUndo());
+    }
+
+    [Fact]
+    public void Mixed_actor_patch_waits_for_all_replacements_before_rekeying()
+    {
+        var actor = ActorId.New();
+        var body = new BoneId(new SkeletonId(actor, PoseSlot.Character, 0), 0, 0, "n_root");
+        var otherActor = ActorId.New();
+        var weapon = new BoneId(new SkeletonId(otherActor, PoseSlot.MainHand, 0), 0, 0, "n_root");
+        var bodyNow = body with { Skeleton = body.Skeleton.NextGeneration() };
+        var weaponNow = weapon with { Skeleton = weapon.Skeleton.NextGeneration() };
+        var scene = new SceneSession(new SelectionSession());
+        Assert.True(scene.TryRefresh(new SceneSnapshot(1,
+            [new ActorDescriptor(actor, "Ready actor", [new SkeletonDescriptor(bodyNow.Skeleton,
+                [new BoneDescriptor(bodyNow, "Body", null)])]),
+             new ActorDescriptor(otherActor, "Redrawing actor", [])], [], [], [])).Accepted);
+        var history = new EditHistory();
+        TransformTargetState State(BoneId bone) => new(TransformTargetId.ForBone(bone), PoseTransform.Identity, new BonePose(), true);
+        history.Append(new TransformPatch("Two bones", [State(body), State(weapon)], [State(body), State(weapon)]));
+
+        history.Reconcile(scene.Contains, scene.CurrentTransformTarget, scene.IsTransformTargetPending);
+
+        var waiting = Assert.IsType<TransformPatch>(history.PeekUndo());
+        Assert.True(waiting.AwaitingTargets);
+        Assert.Equal(TransformTargetId.ForBone(body), waiting.Before[0].Target);
+        Assert.True(scene.TryRefresh(new SceneSnapshot(2,
+            [new ActorDescriptor(actor, "Ready actor", [
+                new SkeletonDescriptor(bodyNow.Skeleton, [new BoneDescriptor(bodyNow, "Body", null)])]),
+             new ActorDescriptor(otherActor, "Other actor", [
+                new SkeletonDescriptor(new SkeletonId(otherActor, PoseSlot.Character, 1), []),
+                new SkeletonDescriptor(weaponNow.Skeleton, [new BoneDescriptor(weaponNow, "Weapon", null)])])], [], [], [])).Accepted);
+
+        history.Reconcile(scene.Contains, scene.CurrentTransformTarget, scene.IsTransformTargetPending);
+
+        var ready = Assert.IsType<TransformPatch>(history.PeekUndo());
+        Assert.False(ready.AwaitingTargets);
+        Assert.Equal(TransformTargetId.ForBone(bodyNow), ready.Before[0].Target);
+        Assert.Equal(TransformTargetId.ForBone(weaponNow), ready.Before[1].Target);
+    }
+
+    [Fact]
+    public void Unequipped_weapon_on_ready_actor_is_not_a_pending_redraw()
+    {
+        var actor = ActorId.New();
+        var body = new BoneId(new SkeletonId(actor, PoseSlot.Character, 0), 0, 0, "n_root");
+        var weapon = new BoneId(new SkeletonId(actor, PoseSlot.MainHand, 0), 0, 0, "n_root");
+        var scene = Scene(body);
+        var history = new EditHistory();
+        var state = new TransformTargetState(TransformTargetId.ForBone(weapon), PoseTransform.Identity, new BonePose(), true);
+        history.Append(new TransformPatch("Weapon edit", [state], [state]));
+
+        history.Reconcile(scene.Contains, scene.CurrentTransformTarget, scene.IsTransformTargetPending);
+
+        Assert.False(scene.IsTransformTargetPending(state.Target));
+        Assert.Null(history.PeekUndo());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

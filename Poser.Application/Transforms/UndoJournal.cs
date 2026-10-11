@@ -35,6 +35,7 @@ public sealed class UndoJournal
     public const string AssetGone = "Cannot redo: the file is no longer there.";
     public const string RestoreFailed = "The pose could not be restored.";
     public const string Dropped = "The step was dropped: the history changed while restoring.";
+    public const string TargetsPending = "Waiting for the actor's skeleton to become available.";
 
     private readonly EditHistory _history;
     private readonly IUndoRunner _runner;
@@ -90,6 +91,8 @@ public sealed class UndoJournal
         var entry = _history.PeekUndo(entity);
         if (entry == null)
             return GestureResult.Fail(entity is null ? "Nothing to undo." : "No independent undo step for this entity. Creation, removal, shared or scene-wide steps require global undo.");
+        if (entry is TransformPatch { AwaitingTargets: true })
+            return GestureResult.Fail(TargetsPending);
         if (entry is JournalStep { CompleteReplay: not null } pendingStep)
             return ReplayUntilComplete(pendingStep, true, entity);
         return GiveUpOnRepeat(entry, _runner.Run(entry, true, entity));
@@ -144,6 +147,8 @@ public sealed class UndoJournal
         var entry = _history.PeekRedo(entity);
         if (entry == null)
             return GestureResult.Fail(entity is null ? "Nothing to redo." : "No independent redo step for this entity. Creation, removal, shared or scene-wide steps require global redo.");
+        if (entry is TransformPatch { AwaitingTargets: true })
+            return GestureResult.Fail(TargetsPending);
         if (entry.RequiredAsset is { } asset && !_assetExists(asset))
             return Refuse(AssetGone);
         if (entry is JournalStep { CompleteReplay: not null } pendingStep)

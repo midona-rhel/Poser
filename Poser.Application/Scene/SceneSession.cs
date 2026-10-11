@@ -360,6 +360,17 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
         };
     }
 
+    /// <summary>A whole-actor redraw publishes a skeleton-less interval.
+    /// History waits for its character skeleton before deciding whether a
+    /// retained slot/bone was removed. A missing weapon on an otherwise ready
+    /// actor is not kept pending indefinitely.
+    /// This never makes the old target available for a native write.</summary>
+    public bool IsTransformTargetPending(TransformTargetId target) =>
+        target.Bone is { } bone
+        && _actors.TryFind(bone.Skeleton.Actor.LogicalId, out var owner)
+        && owner.CharacterSkeleton is null
+        && owner.GetSkeleton(bone.Slot) is null;
+
     private static SceneRefreshResult Invalid(string detail) =>
         new(SceneRefreshOutcome.RejectedInvalidCandidate, detail);
 

@@ -254,6 +254,11 @@ bindings. A bone retains its actor lineage, slot, partial, index and exact name;
 only the actor/skeleton generations may change. A missing or mismatched bone
 does not become an actor transform. Ordinary selection and edit validation keep
 their separate, exact-id rules.
+A still-present actor without its character skeleton is pending during redraw,
+not evidence that its bones were deleted. History stays in the same bounded
+journal, but replay waits without writing or entering recovery. When the body
+returns, all targets are re-keyed together; a missing slot, mismatched bone or
+absent owner discards the whole patch.
 
 Show and Hide report a result per target. A refused or stale target writes
 nothing and appends nothing; every surface (sidebar eye, context menu,
