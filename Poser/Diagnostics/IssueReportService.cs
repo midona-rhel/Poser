@@ -101,19 +101,25 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     /// the workflow and the zip closes on <see cref="Tick"/> when it lands.</summary>
     public void Save(bool includeScene, Action<string> done, Action<string> failed)
     {
+        string? zip = null;
+        bool written = false;
         try
         {
             Directory.CreateDirectory(Folder);
+            // Built before the archive exists: a report that cannot be
+            // built leaves no empty, success-looking zip behind (#491).
+            string report = BuildReport();
             // Two reports in the same second must not collide.
             string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture)
                 + "-" + Guid.NewGuid().ToString("N")[..6];
-            string zip = Path.Combine(Folder, $"poser-issue-{stamp}.zip");
+            zip = Path.Combine(Folder, $"poser-issue-{stamp}.zip");
             using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
             {
                 var entry = archive.CreateEntry("report.json", CompressionLevel.Optimal);
                 using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
-                writer.Write(BuildReport());
+                writer.Write(report);
             }
+            written = true;
             if (!includeScene)
             {
                 done(zip);
@@ -137,6 +143,8 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         catch (Exception ex)
         {
             _log.Error(ex, "Issue report failed");
+            if (zip is not null && !written)
+                DeleteQuietly(zip);
             failed(ex.Message);
         }
     }
@@ -162,7 +170,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         }
         catch (Exception ex)
         {
-            _log.Warning($"Issue report: the temporary scene could not be deleted: {ex.Message}");
+            _log.Warning($"Issue report: {Path.GetFileName(path)} could not be deleted: {ex.Message}");
         }
     }
 
