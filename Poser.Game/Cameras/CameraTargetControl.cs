@@ -221,25 +221,42 @@ public sealed class CameraTargetControl(
     {
         if (camera.IsLocked)
             return false;
-        var before = camera.TargetActorId;
+        var before = FollowState.Read(camera);
         if (!cameras.SetTargetActor(camera, actor, actorId, displayName))
             return false;
         // Keys led by the camera service name no entity: these steps stay global.
-        journal.Record((cameras, camera), "Follow actor", before, (ActorId?)actorId,
-            next => PutTarget(camera, next), () => Current(camera) is not null);
+        journal.Record((cameras, camera), "Follow actor", before, FollowState.Read(camera),
+            next => PutFollow(camera, next), () => Current(camera) is not null);
         return true;
     }
 
     private void ClearTargetActor(IVirtualCamera camera)
     {
-        var before = camera.TargetActorId;
+        // Clearing also releases the target lock: the step records both, so
+        // undoing "Stop following" brings back a locked target locked (#489).
+        var before = FollowState.Read(camera);
         cameras.ClearTargetActor(camera);
-        journal.Record((cameras, camera), "Stop following", before, (ActorId?)null,
-            next => PutTarget(camera, next), () => Current(camera) is not null);
+        journal.Record((cameras, camera), "Stop following", before, FollowState.Read(camera),
+            next => PutFollow(camera, next), () => Current(camera) is not null);
     }
 
-    private Outcome PutTarget(IVirtualCamera original, ActorId? target) =>
-        Current(original) is { } live ? PutTarget(bindings, cameras, live, target) : Refused(Unavailable);
+    /// <summary>What following an actor changes on a camera: the actor and
+    /// whether the target is locked.</summary>
+    private readonly record struct FollowState(ActorId? Target, bool Locked)
+    {
+        public static FollowState Read(IVirtualCamera camera) =>
+            new(camera.TargetActorId, camera.TargetActorId is not null && camera.IsTargetLocked);
+    }
+
+    private Outcome PutFollow(IVirtualCamera original, FollowState state)
+    {
+        if (Current(original) is not { } live) return Refused(Unavailable);
+        var put = PutTarget(bindings, cameras, live, state.Target);
+        if (!put.Success) return put;
+        // The lock only stands on a target that came back.
+        live.IsTargetLocked = state.Locked && live.TargetActorId == state.Target;
+        return put;
+    }
 
     internal static Outcome PutTarget(IEntityBindings bindings, IVirtualCameraService cameras,
         IVirtualCamera camera, ActorId? target)
