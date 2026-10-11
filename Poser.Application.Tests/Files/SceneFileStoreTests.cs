@@ -6,185 +6,19 @@ using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Diagnostics;
-using Poser.Files;
-using Poser.Services;
+using Poser.Documents.Files;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class SceneFileStoreTests
 {
-    [Theory]
-    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Talk)]
-    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Balloon)]
-    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Status)]
-    [InlineData(Poser.Domain.Presentation.OverlayNodeKind.Collider)]
-    public void Only_collider_overlays_can_be_transform_parent_endpoints(Poser.Domain.Presentation.OverlayNodeKind kind)
-    {
-        var scene = ValidScene();
-        var overlay = new SceneOverlay { Key = Guid.NewGuid(), Node = new() { Kind = kind, Collider = new() } };
-        scene.Overlays = [overlay];
-        var actorRef = new SceneStructureRef { Kind = "actor", Key = scene.Actors[0].Key };
-        var overlayRef = new SceneStructureRef { Kind = "overlay", Key = overlay.Key };
-        foreach (bool overlayIsChild in new[] { false, true })
-        {
-            scene.Parents = [new() { Child = overlayIsChild ? overlayRef : actorRef,
-                Target = overlayIsChild ? actorRef : overlayRef }];
-            Assert.Equal(kind == Poser.Domain.Presentation.OverlayNodeKind.Collider, SceneParenting.Validate(scene) == null);
-        }
-    }
-
-    [Fact]
-    public void Collider_group_saves_and_restores_members_transforms_and_flags()
-    {
-        using var fixture = new SceneFixture();
-        var scene = ValidScene();
-        scene.Actors.Clear();
-        scene.Props.Clear();
-        scene.Lights.Clear();
-        scene.Cameras.Clear();
-        scene.Overlays = [];
-        var group = new SceneGroupEntry { Key = Guid.NewGuid(), Name = "Collision test", Transform = new() };
-        foreach (var shape in new[] { Poser.Domain.Posing.IkColliderShape.Box, Poser.Domain.Posing.IkColliderShape.Cylinder })
-        {
-            var key = Guid.NewGuid();
-            var pose = new Poser.Domain.Transforms.PoseTransform(new(2 + (int)shape, 3, 4),
-                Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f), new(2, 1, 3));
-            scene.Overlays.Add(new() { Key = key, Node = new()
-            {
-                Kind = Poser.Domain.Presentation.OverlayNodeKind.Collider, Name = shape.ToString(),
-                Collider = new() { Shape = shape, Transform = pose, Enabled = false, Locked = true },
-                Visible = false, Alpha = .3f,
-            } });
-            var reference = new SceneStructureRef { Kind = "overlay", Key = key };
-            group.Members.Add(reference);
-            group.Transform.Members.Add(new() { Member = reference, Initial = pose, Expected = pose });
-        }
-        scene.Groups = [group];
-        scene.Parents = [new() { Child = group.Members[1], Target = group.Members[0],
-            Offset = new(new(1, 2, 3), Quaternion.CreateFromAxisAngle(Vector3.UnitX, .4f), new(2, 3, 4)) }];
-        var write = SceneFileStore.Default.Write(scene, fixture.Path);
-        Assert.True(write.Succeeded, write.Failure?.Detail);
-        var read = SceneFileStore.Default.Read(fixture.Path);
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var restored = Assert.Single(read.Scene!.Groups!);
-        Assert.Equal(group.Name, restored.Name);
-        var savedParent = Assert.Single(read.Scene.Parents!);
-        Assert.Equal(scene.Parents[0].Target.Key, savedParent.Target.Key);
-        Assert.Equal(scene.Parents[0].Offset, savedParent.Offset);
-        for (int i = 0; i < 2; i++)
-        {
-            Assert.Equal(scene.Overlays[i].Node, read.Scene.Overlays![i].Node);
-            Assert.Equal(read.Scene.Overlays[i].Key, restored.Members[i].Key);
-            Assert.Equal(group.Transform.Members[i].Expected, restored.Transform!.Members[i].Expected);
-        }
-    }
-
-    [Fact]
-    public void Collider_world_state_and_chain_width_round_trip()
-    {
-        using var fixture = new SceneFixture();
-        var scene = ValidScene();
-        var collider = new Poser.Domain.Posing.IkCollider
-        {
-            Shape = Poser.Domain.Posing.IkColliderShape.Cone,
-            Transform = new(new Vector3(2,3,4), Quaternion.CreateFromAxisAngle(Vector3.UnitY,.7f), new Vector3(2,1,3)),
-            Enabled = false, Locked = true,
-        };
-        scene.Overlays = [new SceneOverlay { Key = Guid.NewGuid(), Node = new()
-        {
-            Kind = Poser.Domain.Presentation.OverlayNodeKind.Collider,
-            Name = "IK collider 1", Collider = collider, Alpha = .3f, Visible = false,
-        } }];
-        var write = SceneFileStore.Default.Write(scene, fixture.Path);
-        Assert.True(write.Succeeded, write.Failure?.Detail);
-        var read = SceneFileStore.Default.Read(fixture.Path);
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var node = Assert.Single(read.Scene!.Overlays!).Node!;
-        Assert.Equal(collider, node.Collider);
-        Assert.False(node.Visible);
-        Assert.Equal(.3f, node.Alpha);
-        var config = Poser.Domain.Posing.IkChainConfig.DefaultsForChain() with { Collisions = true, CollisionRadius = .07f };
-        var json = JsonSerializer.Serialize(config, SceneJsonOptionsAccessor.Options);
-        Assert.Equal(config, JsonSerializer.Deserialize<Poser.Domain.Posing.IkChainConfig>(json, SceneJsonOptionsAccessor.Options));
-    }
-
-    [Fact]
-    public void Collider_moves_with_scene_placement_but_screen_overlay_does_not()
-    {
-        var scene = ValidScene();
-        scene.Origin = Vector3.Zero;
-        scene.Overlays = [new SceneOverlay { Node = new() { Kind = Poser.Domain.Presentation.OverlayNodeKind.Collider,
-            Collider = new() { Transform = Poser.Domain.Transforms.PoseTransform.Identity with { Position = Vector3.UnitX } } } },
-            new SceneOverlay { Node = new() { Position = new Vector2(20,30) } }];
-        Assert.Null(Poser.Scene.SceneRelativePlacement.Rebase(scene, new Vector3(5,0,0)));
-        Assert.Equal(new Vector3(6,0,0), scene.Overlays[0].Node!.Collider!.Transform.Position);
-        Assert.Equal(new Vector2(20,30), scene.Overlays[1].Node!.Position);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Companion_placement_rebases_with_owner_without_changing_its_bones(bool rotate)
-    {
-        var scene = ValidScene();
-        scene.Origin = Vector3.Zero;
-        var owner = scene.Actors[0];
-        owner.ModelTransform = new() { Position = new(2, 3, 4), Rotation = Quaternion.Identity, Scale = Vector3.One };
-        var savedRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, .4f);
-        owner.CompanionPose = new PoseFile
-        {
-            ModelAbsoluteValues = new() { Position = new(3, 2, 5), Rotation = savedRotation, Scale = new(.77f) },
-            Bones = new() { ["n_root"] = new() { Position = new(1, 2, 3), Rotation = Quaternion.Identity, Scale = Vector3.One } },
-        };
-        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, rotate ? .9f : 0);
-        var anchor = new Vector3(10, 20, 30);
-        var refusal = rotate
-            ? Poser.Scene.ScenePlacementRebase.Rebase(scene, new() { Position = Vector3.Zero, Yaw = 0 }, anchor, .9f)
-            : Poser.Scene.SceneRelativePlacement.Rebase(scene, anchor);
-        Assert.Null(refusal);
-        var restored = owner.CompanionPose.ModelAbsoluteValues;
-        Assert.True(Vector3.Distance(restored.Position - owner.ModelTransform.Position,
-            Vector3.Transform(new Vector3(1, -1, 1), turn)) < .00001f);
-        Assert.True(MathF.Abs(Quaternion.Dot(restored.Rotation, Quaternion.Normalize(turn * savedRotation))) > .99999f);
-        Assert.Equal(new Vector3(.77f), restored.Scale);
-        Assert.Equal(new Vector3(1, 2, 3), owner.CompanionPose.Bones["n_root"].Position);
-    }
-
-    [Fact]
-    public void Native_scene_document_can_be_redacted_without_losing_entities_or_relationships()
-    {
-        using var fixture = new SceneFixture();
-        var original = ValidScene();
-        original.Description = @"Source C:\Users\PrivateOwner\PrivateScenes\example.xivs";
-        var written = SceneFileStore.Default.Write(original, fixture.Path);
-        Assert.True(written.Succeeded, written.Failure?.Detail);
-
-        using var archive = System.IO.Compression.ZipFile.OpenRead(fixture.Path);
-        var document = Assert.Single(archive.Entries);
-        Assert.Equal(SceneFileStore.DocumentEntry, document.FullName);
-        using var reader = new StreamReader(document.Open());
-        var redactor = new DiagnosticRedactor();
-        redactor.RegisterIdentity("Lead", "Actor 1");
-        string json = redactor.ScrubJson(reader.ReadToEnd());
-        var scene = JsonSerializer.Deserialize<SceneFile>(json, SceneJsonOptionsAccessor.Options)!;
-
-        Assert.DoesNotContain("PrivateOwner", json);
-        Assert.DoesNotContain("PrivateScenes", json);
-        Assert.Equal("Actor 1", Assert.Single(scene.Actors).Name);
-        Assert.Single(scene.Props);
-        Assert.Single(scene.Lights);
-        Assert.Single(scene.Cameras);
-        Assert.Equal(scene.Actors[0].Key, scene.Lights[0].Attachment!.ActorKey);
-        Assert.Equal(scene.Actors[0].Key, scene.Cameras[0].TargetActorKey);
-        Assert.Equal("Actor 1", scene.Cameras[0].TargetActorName);
-        Assert.NotNull(scene.Actors[0].Pose);
-    }
-
     [Fact]
     public void A_complete_scene_round_trips_with_its_entity_relationships()
     {
         using var fixture = new SceneFixture();
         var original = ValidScene();
+        original.Actors[0].SpawnedKind = CompanionKind.Mount;
+        original.Actors[0].AppearanceNotSaved = true;
 
         var write = SceneFileStore.Default.Write(original, fixture.Path);
         var read = SceneFileStore.Default.Read(fixture.Path);
@@ -193,6 +27,8 @@ public sealed class SceneFileStoreTests
         Assert.True(read.Succeeded, read.Failure?.Detail);
         Assert.Equal(original.SceneId, read.Scene!.SceneId);
         Assert.Equal(1, read.Scene.Actors.Count);
+        Assert.Equal(CompanionKind.Mount, read.Scene.Actors[0].SpawnedKind);
+        Assert.True(read.Scene.Actors[0].AppearanceNotSaved);
         Assert.Equal(1, read.Scene.Props.Count);
         Assert.Equal(1, read.Scene.Lights.Count);
         Assert.Equal(1, read.Scene.Cameras.Count);
@@ -239,79 +75,74 @@ public sealed class SceneFileStoreTests
     }
 
     [Fact]
-    public void A_document_that_is_not_a_container_is_not_a_scene()
-    {
-        using var fixture = new SceneFixture();
-        File.WriteAllText(
-            fixture.Path,
-            JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options));
-
-        var read = SceneFileStore.Default.Read(fixture.Path);
-
-        Assert.False(read.Succeeded);
-        Assert.Contains("container", read.Failure!.Detail);
-    }
-
-    [Fact]
-    public void A_saved_scene_round_trips_through_its_container()
-    {
-        using var fixture = new SceneFixture();
-        var written = SceneFileStore.Default.Write(ValidScene(), fixture.Path);
-        Assert.True(written.Succeeded, written.Failure?.Detail);
-
-        var read = SceneFileStore.Default.Read(fixture.Path);
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-
-        // The document lives in its own entry, so the file is a container and
-        // not the JSON itself.
-        using var archive = System.IO.Compression.ZipFile.OpenRead(fixture.Path);
-        Assert.NotNull(archive.GetEntry(SceneFileStore.DocumentEntry));
-    }
-
-    [Fact]
     public void Corrupt_and_future_scene_data_have_typed_rejections()
     {
-        Assert.Equal(SceneStoreFailureKind.Json, SceneFileStore.Default.Parse("{ nope").Failure!.Kind);
+        using var fixture = new SceneFixture();
+        WriteContainer(fixture.Path, "{ nope");
+        Assert.Equal(SceneStoreFailureKind.Json, SceneFileStore.Default.Read(fixture.Path).Failure!.Kind);
 
         var json = JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options);
         json = json.Replace(
             $"\"FileVersion\": {SceneFile.CurrentVersion}",
             $"\"FileVersion\": {SceneFile.CurrentVersion + 1}",
             StringComparison.Ordinal);
-        var future = SceneFileStore.Default.Parse(json);
+        WriteContainer(fixture.Path, json);
+        var future = SceneFileStore.Default.Read(fixture.Path);
 
         Assert.False(future.Succeeded);
         Assert.Equal(SceneStoreFailureKind.FutureVersion, future.Failure!.Kind);
+
+        // A bare JSON document is not a scene container.
+        File.WriteAllText(fixture.Path, JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options));
+        var bare = SceneFileStore.Default.Read(fixture.Path);
+        Assert.False(bare.Succeeded);
+        Assert.Contains("container", bare.Failure!.Detail);
     }
 
-    /// <summary>`.xivs` has only ever been written at the current version, so
-    /// anything below it is a renamed development document. It takes the
-    /// ordinary invalid-document refusal — there is no migration shim and no
-    /// legacy-specific message to keep working.</summary>
     [Fact]
-    public void A_scene_below_the_current_version_is_not_read()
+    public void Older_bom_prefixed_scenes_read_and_resave_at_the_current_version()
     {
-        var json = JsonSerializer
-            .Serialize(ValidScene(), SceneJsonOptionsAccessor.Options)
-            .Replace(
-                $"\"FileVersion\": {SceneFile.CurrentVersion}",
-                $"\"FileVersion\": {SceneFile.CurrentVersion - 1}",
-                StringComparison.Ordinal);
+        using var fixture = new SceneFixture();
+        var document = System.Text.Json.Nodes.JsonNode.Parse(
+            JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options))!;
+        document["FileVersion"] = SceneFile.MinimumVersion;
+        // A pre-#229 chain: carried opaquely, never validated or restored.
+        document["Actors"]![0]!["Fabrik"] = System.Text.Json.Nodes.JsonNode.Parse(
+            """[{"Slot":"Character","Endpoint":"j_te_r","Config":{"Solver":"NotASolver"}}]""");
+        WriteContainer(fixture.Path, "\uFEFF" + document.ToJsonString());
 
-        var legacy = SceneFileStore.Default.Parse(json);
+        var read = SceneFileStore.Default.Read(fixture.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Equal(SceneFile.MinimumVersion, read.Scene!.FileVersion);
+        Assert.NotNull(read.Scene.Actors[0].Fabrik);
 
-        Assert.False(legacy.Succeeded);
-        Assert.NotEqual(SceneStoreFailureKind.FutureVersion, legacy.Failure!.Kind);
+        Assert.True(SceneFileStore.Default.Write(read.Scene, fixture.Path).Succeeded);
+        Assert.Equal(SceneFile.CurrentVersion, SceneFileStore.Default.Read(fixture.Path).Scene!.FileVersion);
     }
 
-    /// <summary>The extension is part of the format's identity, and it is the
-    /// only one. A development `.poserscene` is simply not a scene file.
-    /// </summary>
     [Fact]
-    public void Xivs_is_the_only_scene_extension()
+    public void Bare_json_light_and_camera_entries_read_as_one_entity_entries()
     {
-        Assert.Equal(".xivs", SceneFile.Extension);
-        Assert.Equal(2, SceneFile.CurrentVersion);
+        using var fixture = new SceneFixture();
+        var lightPath = Path.Combine(fixture.Root, "old" + SceneFile.LightEntryExtension);
+        var cameraPath = Path.Combine(fixture.Root, "old" + SceneFile.CameraEntryExtension);
+        var light = ValidScene().Lights[0].Light!;
+        light.CameraAnchor = new PlacementAnchorData { Position = new Vector3(1, 2, 3) };
+        File.WriteAllText(lightPath, JsonSerializer.Serialize(light, SceneJsonOptionsAccessor.Options));
+        File.WriteAllText(cameraPath, JsonSerializer.Serialize(
+            new CameraFile { Name = "Saved view", Kind = CameraKind.Free },
+            SceneJsonOptionsAccessor.Options));
+
+        var lightRead = SceneFileStore.Default.Read(lightPath);
+        var cameraRead = SceneFileStore.Default.Read(cameraPath);
+
+        Assert.True(lightRead.Succeeded, lightRead.Failure?.Detail);
+        Assert.Equal("Key light", Assert.Single(lightRead.Scene!.Lights).Light!.Name);
+        Assert.Equal(new Vector3(1, 2, 3), lightRead.Scene.CameraAnchor!.Position);
+        Assert.True(cameraRead.Succeeded, cameraRead.Failure?.Detail);
+        var camera = Assert.Single(cameraRead.Scene!.Cameras);
+        Assert.True(camera.IsLive);
+        Assert.False(camera.IsDefault);
     }
 
     [Fact]
@@ -345,6 +176,46 @@ public sealed class SceneFileStoreTests
             validation.Failure!.Kind);
         Assert.False(write.Succeeded);
         Assert.Equal("old scene", File.ReadAllText(fixture.Path));
+    }
+
+    // ── issue #439: one bad entity never refuses the whole scene ─────────
+
+    [Fact]
+    public void A_load_names_bad_entities_and_keeps_the_rest_while_writes_stay_strict()
+    {
+        var scene = ValidScene();
+        scene.Description = new string('d', 400);
+        scene.Lights.Add(new SceneLight
+        {
+            Key = Guid.NewGuid(),
+            Light = new LightFile { Name = new string('x', 300), Transform = scene.Lights[0].Light!.Transform },
+        });
+        scene.WorldObjects = [new SceneWorldObject { Key = Guid.NewGuid(), Path = "bg/fast.avfx", VfxSpeed = float.PositiveInfinity }];
+        scene.Actors[0].Mcdf = new SceneActorMcdf
+        {
+            FileName = "lead.mcdf",
+            ContentHash = new string('A', 64),
+            PackageEntry = SceneFileStore.DocumentEntry,
+        };
+        Assert.False(SceneFileValidation.Validate(scene).Succeeded);
+
+        var load = SceneFileValidation.ValidateForLoad(scene, out var refusals);
+
+        Assert.True(load.Succeeded);
+        Assert.Equal(
+            new[] { SceneOutcomeKind.CharacterFile, SceneOutcomeKind.WorldObject, SceneOutcomeKind.Light },
+            refusals.Select(refusal => refusal.Kind).ToArray());
+        Assert.Equal("Lead", refusals[0].Name);
+        Assert.Single(scene.Actors);
+        Assert.Null(scene.Actors[0].Mcdf);
+        Assert.Single(scene.Lights);
+        Assert.Empty(scene.WorldObjects);
+        Assert.True(SceneFileValidation.Validate(scene).Succeeded);
+
+        // The structure the load's restore dereferences is checked whether or
+        // not a group carries a transform.
+        scene.Groups = [new SceneGroupEntry { Key = Guid.NewGuid(), Name = "Rig", Members = null! }];
+        Assert.False(SceneFileValidation.ValidateForLoad(scene, out _).Succeeded);
     }
 
     internal static SceneFile ValidScene()
@@ -469,7 +340,7 @@ internal sealed class SceneFixture : IDisposable
     }
 }
 
-internal sealed class FailingSceneFileSystem : IPoseFileStoreFileSystem
+internal sealed class FailingSceneFileSystem : IAtomicFileSystem
 {
     public Stream OpenRead(string path) => File.OpenRead(path);
     public Stream CreateNew(string path) => throw new IOException("injected scene write failure");

@@ -11,6 +11,15 @@ public sealed class EntityActions(SelectionEntityCommands commands, UserNotices 
 {
     public Task<int?> Remove(SelectionId id) => Remove([id]);
 
+    /// <summary>Shows or hides the ids as one command; every refusal is
+    /// reported here so sidebar, menu and section toggles read alike.</summary>
+    public int SetVisibility(IReadOnlyList<SelectionId> ids, bool visible)
+    {
+        var result = commands.SetVisibility(ids, visible);
+        notices.Visibility(result);
+        return result.AppliedCount;
+    }
+
     public async Task<int?> Remove(IReadOnlyList<SelectionId> ids)
     {
         try

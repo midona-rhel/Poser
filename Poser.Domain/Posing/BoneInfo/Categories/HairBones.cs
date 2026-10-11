@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Poser.Core.BoneInfo;
+namespace Poser.Domain.Posing.BoneInfo.Categories;
 
 public static class HairBones
 {

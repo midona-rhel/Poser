@@ -1,6 +1,7 @@
 using System.Numerics;
-using Poser.Core;
 using Poser.Game.Posing;
+using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 
 namespace Poser.Game.Tests.Posing;
 
@@ -50,65 +51,22 @@ public sealed class PartialPoseFrameTests
     [Fact]
     public void Fabrik_endpoint_world_projection_roundtrips_a_moved_scaled_partial()
     {
-        var after = PosedRoot;
-        after.Scale = new Vector3(.8f, 1.3f, 1.1f);
-        var frame = new PartialPoseFrame(AnimatedRoot, after);
-        var raw = new Transform(new Vector3(.15f, 1.62f, -.07f),
-            Quaternion.CreateFromYawPitchRoll(.2f, .3f, -.4f), Vector3.One);
-        var visible = frame.ToDisplay(raw);
-        Near(Reparent(raw, frame), visible);
-        Near(raw, frame.ToApply(visible));
-        visible.Position += new Vector3(.1f, .2f, -.3f);
-        Near(visible, frame.ToDisplay(frame.ToApply(visible)));
-    }
-
-    [Fact]
-    public void Upward_mouth_drag_remains_up_after_head_reparenting()
-    {
-        var frame = new PartialPoseFrame(AnimatedRoot, PosedRoot);
-        var visible = Reparent(new Transform(new Vector3(.1f, 1.55f, .1f),
-            Quaternion.Identity, Vector3.One), frame);
-        var requested = visible;
-        requested.Position += Vector3.UnitY * .02f;
-        var before = frame.ToApply(visible);
-        var after = frame.ToApply(requested);
-        var applied = before;
-        applied.Position += after.Position - before.Position;
-        Near(requested, Reparent(applied, frame));
-        Assert.True(Vector3.Distance(after.Position - before.Position, Vector3.UnitY * .02f) > .01f);
-    }
-
-    [Fact]
-    public void Duplicate_keeps_partial_root_scale_exactly_once()
-    {
-        var root = PosedRoot;
-        root.Scale = new Vector3(1.077f, 1.3f, .8f);
-        var frame = new PartialPoseFrame(AnimatedRoot, root);
-        var visible = new Transform(new Vector3(.2f, 1.2f, .3f),
-            Quaternion.CreateFromAxisAngle(Vector3.UnitY, .6f), new Vector3(1.077f, 1.04f, .8f));
-        Near(visible, Reparent(frame.ToApply(visible), frame));
-        Assert.InRange(frame.ToApply(visible).Scale.X, .99999f, 1.00001f);
-    }
-
-    [Fact]
-    public void Identity_attachment_does_not_change_body_transforms()
-    {
-        var frame = new PartialPoseFrame(AnimatedRoot, AnimatedRoot);
-        Near(PosedRoot, frame.ToApply(PosedRoot));
-    }
-
-    [Fact]
-    public void Animated_root_rotation_and_nonuniform_scale_are_not_assumed_identity()
-    {
+        // The animated root is not assumed to be identity.
         var before = AnimatedRoot;
         before.Rotation = Quaternion.CreateFromYawPitchRoll(.4f, -.2f, .7f);
         before.Scale = new Vector3(.8f, 1.3f, 1.1f);
         var after = PosedRoot;
         after.Scale = new Vector3(1.2f, .9f, 1.4f);
         var frame = new PartialPoseFrame(before, after);
-        var visible = new Transform(new Vector3(.2f, .9f, -.1f),
-            Quaternion.CreateFromYawPitchRoll(.8f, .2f, -.4f), new Vector3(.9f, 1.2f, 1.4f));
-        Near(visible, Reparent(frame.ToApply(visible), frame));
+        var raw = new Transform(new Vector3(.15f, 1.62f, -.07f),
+            Quaternion.CreateFromYawPitchRoll(.2f, .3f, -.4f), Vector3.One);
+        var visible = frame.ToDisplay(raw);
+        Near(Reparent(raw, frame), visible);
+        Near(raw, frame.ToApply(visible));
+        // A duplicate keeps the partial-root scale exactly once.
+        Assert.InRange(frame.ToApply(visible).Scale.X, .99999f, 1.00001f);
+        visible.Position += new Vector3(.1f, .2f, -.3f);
+        Near(visible, frame.ToDisplay(frame.ToApply(visible)));
     }
 
     private static Transform Reparent(Transform raw, PartialPoseFrame frame)

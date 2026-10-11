@@ -2,7 +2,7 @@ using Poser.Domain.Scene;
 using System;
 using System.Numerics;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// One placement anchor as a file records it: where the anchor stood and

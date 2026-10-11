@@ -2,12 +2,13 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
 using Poser.Application.Scene;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Scene;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Animation;
 
@@ -51,16 +52,16 @@ public sealed class ExpressionPreview : IExpressionPreview, IDisposable
     public bool IsBaking => _capture.IsPending;
 
     private IActor? Resolve(ActorId actor) =>
-        !_disposed && _framework.IsInFrameworkUpdateThread &&
+        !_disposed &&
         _sessions.ActiveSessionGeneration != null &&
         _scene.Snapshot.FindActor(actor) != null &&
         _bindings.Resolve(actor) is { Success: true, Value: { } binding }
             ? binding : null;
 
-    private static AnimationResult Unavailable() =>
-        AnimationResult.Fail("The actor is no longer available for expression editing.");
+    private static Outcome Unavailable() =>
+        Outcome.Fail("The actor is no longer available for expression editing.");
 
-    public AnimationResult Choose(ActorId actor, TimelineEntry entry)
+    public Outcome Choose(ActorId actor, TimelineEntry entry)
     {
         if (Resolve(actor) == null)
             return Unavailable();
@@ -71,7 +72,7 @@ public sealed class ExpressionPreview : IExpressionPreview, IDisposable
         return result;
     }
 
-    public AnimationResult Preview(ActorId actor, ushort timeline)
+    public Outcome Preview(ActorId actor, ushort timeline)
     {
         if (Resolve(actor) is not { } binding)
             return Unavailable();
@@ -85,7 +86,7 @@ public sealed class ExpressionPreview : IExpressionPreview, IDisposable
         return result;
     }
 
-    public AnimationResult Reset(ActorId actor)
+    public Outcome Reset(ActorId actor)
     {
         if (Resolve(actor) == null)
             return Unavailable();
@@ -96,17 +97,17 @@ public sealed class ExpressionPreview : IExpressionPreview, IDisposable
         return result;
     }
 
-    public AnimationResult Bake(ActorId actor, ushort timeline)
+    public Outcome Bake(ActorId actor, ushort timeline)
     {
         if (Resolve(actor) == null || _scene.Snapshot.FindActor(actor) is not { } descriptor)
             return Unavailable();
         if (IsPending(actor) || IsBaking)
-            return AnimationResult.Fail("An expression preview or bake is already pending.");
+            return Outcome.Fail("An expression preview or bake is already pending.");
         var held = _animation.HoldExpression(actor, timeline);
         if (!held.Success)
             return held;
         var captured = _capture.Begin(actor, descriptor);
-        return captured.Success ? AnimationResult.Ok() : AnimationResult.Fail(captured.Detail!);
+        return captured.Outcome;
     }
 
     public void CancelRetry(ActorId actor)

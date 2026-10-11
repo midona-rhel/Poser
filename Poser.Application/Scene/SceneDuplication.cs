@@ -8,7 +8,6 @@ namespace Poser.Application.Scene;
 
 public interface ISceneDuplication
 {
-    SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose);
     void DuplicateAndSelect(SelectionId id, bool withPose = false);
     void DuplicateGroup(SceneGroup group, bool withPose);
     void DuplicateSelection(bool withPose);
@@ -17,7 +16,7 @@ public interface ISceneDuplication
 public sealed class SceneDuplication(
     ISceneCreation creation, IPendingSceneCreation pending,
     SceneGroups groups, GroupSteps groupSteps, SelectionSession selection,
-    ISessionGenerationSource sessions, Action<string> failure) : ISceneDuplication
+    ISessionGenerationSource sessions, Presentation.IUserNotices notices) : ISceneDuplication
 {
     private readonly ISceneCreation _creation = creation;
     private readonly IPendingSceneCreation _pending = pending;
@@ -25,7 +24,7 @@ public sealed class SceneDuplication(
     private readonly GroupSteps _groupSteps = groupSteps;
     private readonly SelectionSession _selection = selection;
     private readonly ISessionGenerationSource _sessions = sessions;
-    private readonly Action<string> _failure = failure;
+    private readonly Presentation.IUserNotices _notices = notices;
 
     public void DuplicateSelection(bool withPose)
     {
@@ -44,10 +43,10 @@ public sealed class SceneDuplication(
 
     /// <summary>One entity's copy receipt, or null when
     /// the kind has none or the copy failed.</summary>
-    public SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose)
+    private SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose)
     {
         var result = _creation.Duplicate(id, withPose);
-        if (result.Handle is null) _failure(result.Detail ?? "The entity could not be duplicated.");
+        if (result.Handle is null) _notices.Failed(result.Detail ?? "The entity could not be duplicated.");
         return result.Handle;
     }
 
@@ -133,7 +132,7 @@ public sealed class SceneDuplication(
             });
             if (made == null)
             {
-                _failure($"'{copy.Name}' could not be duplicated: nothing in it copied.");
+                _notices.Failed($"'{copy.Name}' could not be duplicated: nothing in it copied.");
                 continue;
             }
         }

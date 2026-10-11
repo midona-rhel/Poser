@@ -3,6 +3,13 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.FilterPillWidgets;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.SidebarPresentation;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.TreeRowWidgets;
 
 namespace Poser.UI.Views;
 
@@ -98,7 +105,7 @@ public sealed class ShellSidebar
     private bool[] _kept = new bool[64];
     private int[] _keptDepth = new int[64];
 
-    private readonly Action<Crystarium.ScrollRegionScope> _drawTree;
+    private readonly Action<ScrollRegionScope> _drawTree;
     private readonly Action<string> _setSearch;
 
     /// <summary>The current frame's view model.</summary>
@@ -129,7 +136,7 @@ public sealed class ShellSidebar
     {
         ArgumentNullException.ThrowIfNull(vm);
         _vm = vm;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         float inset = theme.Page.Inset;
         float width = size.X / scale;
@@ -149,14 +156,14 @@ public sealed class ShellSidebar
         float pillWidth = MathF.Max(
             1f, plusX - theme.Page.ActionGap - pillLeft);
         ImGui.SetCursorScreenPos(origin + new Vector2(pillLeft, SearchTop) * scale);
-        Crystarium.FilterPill(
+        FilterPill(
             SearchId,
             vm.SidebarSearch,
             _setSearch,
             "Search",
             ControlStyle.Workspace with { Width = UiWidth.Fixed(pillWidth) });
         ImGui.SetCursorScreenPos(origin + new Vector2(plusX, SearchTop) * scale);
-        if (Crystarium.TemporaryIconToggle(
+        if (TemporaryIconToggle(
                 TablerIcon.Plus,
                 selected: false,
                 style: ControlStyle.Square(side),
@@ -172,7 +179,7 @@ public sealed class ShellSidebar
         // Search remains fixed above the scrolling tree.
         float treeHeight = MathF.Max(1f, size.Y / scale - SearchBandHeight);
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, SearchBandHeight * scale));
-        Crystarium.ScrollRegion(TreeId, width, treeHeight, _drawTree);
+        ScrollRegion(TreeId, width, treeHeight, _drawTree);
     }
 
     // ── the cache ────────────────────────────────────────────────────────
@@ -399,9 +406,9 @@ public sealed class ShellSidebar
     private ShellSidebarRow? _paintDropTarget;
     private RowDropPosition _paintDropPosition;
 
-    private void DrawTree(Crystarium.ScrollRegionScope region)
+    private void DrawTree(ScrollRegionScope region)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         float inset = theme.Page.Inset;
         float gutter = theme.Scrollbar.GutterWidth;
@@ -465,19 +472,19 @@ public sealed class ShellSidebar
             var mouse = ImGui.GetMousePos();
             var ghostStyle = new TextStyle
             {
-                Size = Crystarium.ActiveTheme.Typography.LabelSize,
-                Color = Crystarium.ActiveTheme.Text,
+                Size = ActiveTheme.Typography.LabelSize,
+                Color = ActiveTheme.Text,
             };
             var text = _vm.DragGhostText?.Invoke(dragging) ?? dragging.Label;
-            var size = Crystarium.MeasureText(text, ghostStyle);
+            var size = MeasureText(text, ghostStyle);
             var pad = new Vector2(6f, 3f) * scale;
             var min = mouse + new Vector2(14f, 6f) * scale;
             ImGui.GetWindowDrawList().AddRectFilled(
                 min, min + size + pad * 2f,
                 ImGui.ColorConvertFloat4ToU32(
-                    Crystarium.ActiveTheme.SurfaceRaised),
-                Crystarium.ActiveTheme.Radii.Surface * scale);
-            Crystarium.TextAt(min + pad, text, ghostStyle);
+                    ActiveTheme.SurfaceRaised),
+                ActiveTheme.Radii.Surface * scale);
+            TextAt(min + pad, text, ghostStyle);
 
             if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
             {
@@ -621,7 +628,7 @@ public sealed class ShellSidebar
         };
 
         ImGui.SetCursorScreenPos(at);
-        var action = Crystarium.TreeRow(
+        var action = TreeRow(
             entry.Id,
             row.Label,
             in props,
@@ -691,7 +698,7 @@ public sealed class ShellSidebar
             Color = theme.TextMuted,
         };
         // Center the title in the complete header slot.
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(at.X + theme.Spacing.Two * scale, at.Y),
             new Vector2(width * scale, entry.Height * scale),
             section.Title,
@@ -701,7 +708,7 @@ public sealed class ShellSidebar
         if (!section.ShowPlus)
             return;
         float side = theme.Controls.SwitchHeight;
-        var plus = Crystarium.SidebarTrailingAction(
+        var plus = SidebarTrailingAction(
             new Vector2(
                 at.X + (width - theme.Scrollbar.GutterWidth) * scale,
                 at.Y),
@@ -711,7 +718,7 @@ public sealed class ShellSidebar
             ActionGap,
             scale);
         ImGui.SetCursorScreenPos(plus.HitMin);
-        if (Crystarium.IconButton(
+        if (IconButton(
                 TablerIcon.Plus,
                 style: ControlStyle.Square(side),
                 id: entry.Id,
@@ -779,7 +786,7 @@ public sealed class ShellSidebar
                 // The first action toggles the actor's world handle.
                 bool handleShown = _vm.IsHandleShown?.Invoke(row) ?? true;
                 ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         TablerIcon.ArrowsMove,
                         selected: false,
                         style: square,
@@ -792,7 +799,7 @@ public sealed class ShellSidebar
                 // fill when this row IS it, the same voice the camera's
                 // live mark speaks in.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         TablerIcon.Crosshair,
                         selected: row.ActorTargeted,
                         style: square,
@@ -803,7 +810,7 @@ public sealed class ShellSidebar
 
                 // A faded eye means the actor is hidden.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         TablerIcon.Eye,
                         selected: false,
                         style: square,
@@ -814,7 +821,7 @@ public sealed class ShellSidebar
 
                 // The glyph reports the current animation state.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         row.ActorPaused
                             ? TablerIcon.PlayerPause
                             : TablerIcon.PlayerPlay,
@@ -831,7 +838,7 @@ public sealed class ShellSidebar
             {
                 bool handleShown = _vm.IsHandleShown?.Invoke(row) ?? true;
                 ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         TablerIcon.ArrowsMove,
                         selected: false,
                         style: square,
@@ -843,19 +850,19 @@ public sealed class ShellSidebar
                 if (row.ColliderActions)
                 {
                     ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
-                    if (Crystarium.TemporaryIconToggle(TablerIcon.Cube, selected: false, style: square,
+                    if (TemporaryIconToggle(TablerIcon.Cube, selected: false, style: square,
                             help: row.CollisionEnabled ? "Disable collision" : "Enable collision",
                             id: "##collider-collision", dimmed: !row.CollisionEnabled))
                         _vm.OnColliderCollision?.Invoke(row);
                     ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
-                    if (Crystarium.TemporaryIconToggle(row.ColliderLocked ? TablerIcon.Lock : TablerIcon.LockOpen,
+                    if (TemporaryIconToggle(row.ColliderLocked ? TablerIcon.Lock : TablerIcon.LockOpen,
                             selected: false, style: square,
                             help: row.ColliderLocked ? "Unlock transform" : "Lock transform",
                             id: "##collider-lock", dimmed: !row.ColliderLocked))
                         _vm.OnColliderLock?.Invoke(row);
                 }
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * (row.ColliderActions ? 2f : 1f), 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         TablerIcon.Eye,
                         selected: false,
                         style: square,
@@ -870,7 +877,7 @@ public sealed class ShellSidebar
                 {
                     ImGui.SetCursorScreenPos(
                         origin + new Vector2(step * 2f, 0f));
-                    if (Crystarium.TemporaryIconToggle(
+                    if (TemporaryIconToggle(
                             row.Night ? TablerIcon.Moon : TablerIcon.Sun,
                             selected: false,
                             style: square,
@@ -885,7 +892,7 @@ public sealed class ShellSidebar
                 {
                     ImGui.SetCursorScreenPos(
                         origin + new Vector2(step * 2f, 0f));
-                    if (Crystarium.TemporaryIconToggle(
+                    if (TemporaryIconToggle(
                             row.Paused
                                 ? TablerIcon.PlayerPause
                                 : TablerIcon.PlayerPlay,
@@ -903,7 +910,7 @@ public sealed class ShellSidebar
             {
                 bool handleShown = _vm.IsHandleShown?.Invoke(row) ?? true;
                 ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         TablerIcon.ArrowsMove,
                         selected: false,
                         style: square,
@@ -913,7 +920,7 @@ public sealed class ShellSidebar
                     _vm.OnHandleToggle?.Invoke(row);
 
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         row.GroupLocked
                             ? TablerIcon.Lock
                             : TablerIcon.LockOpen,
@@ -927,7 +934,7 @@ public sealed class ShellSidebar
                 // The group's gates: closed hides or pauses everything
                 // beneath; open gives each member its own flag back.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         row.GroupHidden ? TablerIcon.EyeOff : TablerIcon.Eye,
                         selected: false,
                         style: square,
@@ -937,7 +944,7 @@ public sealed class ShellSidebar
                     _vm.OnGroupVisibility?.Invoke(row);
 
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         row.GroupPaused ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
                         selected: false,
                         style: square,
@@ -953,7 +960,7 @@ public sealed class ShellSidebar
                 // The recenter seat leads — Brio's Bullseye: retarget this
                 // camera's tracking onto the SELECTED actor.
                 ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         TablerIcon.Crosshair,
                         selected: false,
                         style: square,
@@ -963,7 +970,7 @@ public sealed class ShellSidebar
                     _vm.OnCameraRecenter?.Invoke(row);
 
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         TablerIcon.Video,
                         selected: row.CameraLive,
                         style: square,
@@ -982,9 +989,9 @@ public sealed class ShellSidebar
                         Size = theme.Typography.LabelSize,
                         Color = theme.TextMuted,
                     };
-                    var markSize = Crystarium.MeasureText(
+                    var markSize = MeasureText(
                         row.CameraMark, markStyle);
-                    Crystarium.TextAt(
+                    TextAt(
                         origin + new Vector2(
                             step * 2f + (side * scale - markSize.X) * 0.5f,
                             (side * scale - markSize.Y) * 0.5f),
@@ -993,7 +1000,7 @@ public sealed class ShellSidebar
                 }
 
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
-                if (Crystarium.TemporaryIconToggle(
+                if (TemporaryIconToggle(
                         row.CameraLocked
                             ? TablerIcon.Lock
                             : TablerIcon.LockOpen,
@@ -1014,7 +1021,7 @@ public sealed class ShellSidebar
             if (row.DefaultBonePresetAction)
             {
                 bool canApply = _vm.CanApplyDefaultBonePresets?.Invoke(bones) ?? false;
-                if (Crystarium.IconButton(TablerIcon.Wand, style: square,
+                if (IconButton(TablerIcon.Wand, style: square,
                         disabled: !canApply,
                         help: canApply ? "Apply default bone presets" : "Choose matching default bone presets in Settings → Skeleton",
                         id: "##default-bone-presets"))
@@ -1028,11 +1035,11 @@ public sealed class ShellSidebar
                 _ => "Hide bones",
             };
             bool changed = state == 1
-                ? Crystarium.SidebarMixedVisibilityToggle(
+                ? SidebarMixedVisibilityToggle(
                     style: square,
                     help: state == 1 ? "Hide shown bones" : help,
                     id: "##overlay")
-                : Crystarium.TemporaryIconToggle(
+                : TemporaryIconToggle(
                     TablerIcon.Eye,
                     selected: false,
                     style: square,

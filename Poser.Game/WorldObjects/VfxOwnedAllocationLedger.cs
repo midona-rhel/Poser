@@ -92,6 +92,21 @@ internal sealed class VfxOwnedAllocationLedger
         }
     }
 
+    /// <summary>Forgets observations of addresses outside
+    /// <paramref name="present"/> unless a pending or live claim owns them,
+    /// so unowned effects that left the world do not accumulate.</summary>
+    public void RetainObserved(IReadOnlySet<nint> present)
+    {
+        lock (_gate)
+        {
+            foreach (var (address, identity) in _observed)
+                if (!present.Contains(address)
+                    && !_pending.ContainsKey(identity)
+                    && !_live.ContainsKey(identity))
+                    _observed.Remove(address);
+        }
+    }
+
     public VfxAllocationMatch Match(
         WorldObjectIncarnation identity,
         nint currentResource,
@@ -159,22 +174,6 @@ internal sealed class VfxOwnedAllocationLedger
                 RetireObserved(identity);
             }
             return true;
-        }
-    }
-
-    public bool TryGetPending(nint address, out VfxAllocationLease lease)
-    {
-        lock (_gate)
-        {
-            foreach (var entry in _pending.Values)
-                if (entry.Identity.Address == address)
-                {
-                    lease = new VfxAllocationLease(
-                        entry.Identity, entry.Claim);
-                    return true;
-                }
-            lease = default;
-            return false;
         }
     }
 

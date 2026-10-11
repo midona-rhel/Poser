@@ -1,4 +1,4 @@
-using Poser.Config;
+using Poser.Documents.Config;
 
 namespace Poser.Application.Presentation;
 

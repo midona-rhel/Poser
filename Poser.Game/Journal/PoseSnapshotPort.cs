@@ -6,11 +6,11 @@ using Dalamud.Plugin.Services;
 using Poser.Domain.Operations;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
-using Poser.Services;
+using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Journal;
 

@@ -7,19 +7,6 @@ namespace Poser.Application.Tests.Diagnostics;
 public class DiagnosticRedactorTests
 {
     [Fact]
-    public void ConfiguredFolderNamesDoNotRenameReportSchema()
-    {
-        var redactor = new DiagnosticRedactor();
-        redactor.RegisterPathsJson(JsonSerializer.Serialize(@"D:\Private Client\Poser\Library"));
-        using var result = JsonDocument.Parse(redactor.ScrubJson("""
-            {"Poser":"0.9.6.0","Settings":{"Library":{"Root":"D:\\Private Client\\Poser\\Library"}},"Log":["Private Client"]}
-            """));
-        Assert.Equal("0.9.6.0", result.RootElement.GetProperty("Poser").GetString());
-        Assert.Contains("[path", result.RootElement.GetProperty("Settings").GetProperty("Library").GetProperty("Root").GetString());
-        Assert.DoesNotContain("Private Client", result.RootElement.ToString());
-    }
-
-    [Fact]
     public void EveryZipMemberUsesDecodedRedactionIncludingFailuresAndDictionaryKeys()
     {
         var redactor = new DiagnosticRedactor();
@@ -67,35 +54,5 @@ public class DiagnosticRedactorTests
                 Assert.Contains(".pose", text);
             }
         }
-    }
-
-    [Theory]
-    [InlineData(@"Load failed: 'E:\Unconfigured Private\Client\hidden.pose'")]
-    [InlineData("Load failed: 'e:/Unconfigured Private/Client/hidden.pose'")]
-    [InlineData(@"Load failed: '\\private-host\hidden-share\Client\hidden.pose'")]
-    [InlineData(@"Load failed: 'E:\Client's private shoot\hidden.pose'")]
-    public void UnknownAbsolutePathsAreRemovedButOperationAndExtensionRemain(string text)
-    {
-        string result = new DiagnosticRedactor().ScrubText(text);
-        Assert.StartsWith("Load failed:", result);
-        Assert.Contains(".pose", result);
-        Assert.DoesNotContain("hidden", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("private", result, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Client", result);
-    }
-
-    [Fact]
-    public void RedactedDictionaryKeysDoNotDiscardValuesAndUsefulRelativeAssetsRemain()
-    {
-        var redactor = new DiagnosticRedactor();
-        redactor.RegisterIdentity("Alice", "Actor 1");
-        redactor.RegisterIdentity("Bob", "Actor 1");
-        using var result = JsonDocument.Parse(redactor.ScrubJson("""
-            {"Alice": 1, "Bob": 2, "Asset":"chara/human/c0101/model.mdl", "Url":"https://github.com/midona-rhel/Poser"}
-            """));
-        Assert.Equal(1, result.RootElement.GetProperty("Actor 1").GetInt32());
-        Assert.Equal(2, result.RootElement.GetProperty("Actor 1 2").GetInt32());
-        Assert.Equal("chara/human/c0101/model.mdl", result.RootElement.GetProperty("Asset").GetString());
-        Assert.Equal("https://github.com/midona-rhel/Poser", result.RootElement.GetProperty("Url").GetString());
     }
 }

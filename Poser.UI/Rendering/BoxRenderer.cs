@@ -1,6 +1,7 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -118,7 +119,7 @@ internal static class BoxRenderer
         float radius = (baseRadius + sh.Spread) * scale;
 
         if (blur > 0f
-            && BoxShadowTextureCache.TryDraw(
+            && UiContext.Current.Shadows.TryDraw(
                 new BoxShadowTextureCache.ImGuiShadowDrawSink(drawList),
                 min,
                 max,

@@ -78,31 +78,31 @@ public readonly record struct Theme
     public HoverHelpTokens HoverHelp { get; init; }
 
     /// <summary>The accepted Picto-derived dark foundation.</summary>
-    public static Theme PictoDark => new()
+    public static Theme Dark => new()
     {
         IsLight = false,
-        // Color identity flows from the committed PictoTokens projection of the
+        // Color identity flows from the committed ColorTokens projection of the
         // canonical tokens.css. Fields not wired to a token are product
         // extensions and are declared explicitly below.
-        Surface = PictoTokens.Dark.BgApp,
-        SurfaceRaised = PictoTokens.Dark.Surface1,
-        SurfaceSunken = PictoTokens.Dark.Surface2,
-        Text = PictoTokens.Dark.TextPrimary,
-        TextDim = PictoTokens.Dark.TextSecondary,
-        TextMuted = PictoTokens.Dark.TextTertiary,
-        FormLabel = PictoTokens.Dark.TextTertiary,
+        Surface = ColorTokens.Dark.BgApp,
+        SurfaceRaised = ColorTokens.Dark.Surface1,
+        SurfaceSunken = ColorTokens.Dark.Surface2,
+        Text = ColorTokens.Dark.TextPrimary,
+        TextDim = ColorTokens.Dark.TextSecondary,
+        TextMuted = ColorTokens.Dark.TextTertiary,
+        FormLabel = ColorTokens.Dark.TextTertiary,
         FormHint = new(1f, 1f, 1f, 0.40f),
         FormValue = new(1f, 1f, 1f, 0.90f),
-        FormSeparator = PictoTokens.Dark.BorderSecondary,
-        Border = PictoTokens.Dark.BorderSecondary,
-        BorderStrong = PictoTokens.Dark.BorderPrimary,
-        Accent = PictoTokens.Dark.Primary,
-        AccentHover = PictoTokens.Dark.Primary60,
+        FormSeparator = ColorTokens.Dark.BorderSecondary,
+        Border = ColorTokens.Dark.BorderSecondary,
+        BorderStrong = ColorTokens.Dark.BorderPrimary,
+        Accent = ColorTokens.Dark.Primary,
+        AccentHover = ColorTokens.Dark.Primary60,
         // Derivation: there is no --color-primary-80 token.
-        AccentActive = PictoTokens.Dark.Primary with { W = 0.80f },
+        AccentActive = ColorTokens.Dark.Primary with { W = 0.80f },
         Success = new(0.30f, 0.80f, 0.40f, 1f),
         Warning = new(1.00f, 0.70f, 0.20f, 1f),
-        Danger = PictoTokens.Dark.Negative,
+        Danger = ColorTokens.Dark.Negative,
 
         Spacing = new() { One = 2f, Two = 4f, Three = 6f, Four = 8f, Six = 12f, Eight = 16f },
         Controls = new()
@@ -264,7 +264,7 @@ public readonly record struct Theme
             Purple = new(0.5f, 0f, 0.5f, 1f),
             Orange = new(1f, 0.5f, 0f, 1f),
             Gray = new(0.5f, 0.5f, 0.5f, 1f),
-            Primary = PictoTokens.Dark.Primary,
+            Primary = ColorTokens.Dark.Primary,
             AxisX = new(1f, 107f / 255f, 122f / 255f, 1f),
             AxisY = new(126f / 255f, 211f / 255f, 160f / 255f, 1f),
             AxisZ = new(109f / 255f, 179f / 255f, 1f, 1f),
@@ -273,46 +273,46 @@ public readonly record struct Theme
         {
             // Background: accepted precomposited no-blur fallback (deviation).
             Background = new(34f / 255f, 35f / 255f, 38f / 255f, 0.97f),
-            BlurBackground = PictoTokens.Dark.GlassBg,
-            BorderTop = PictoTokens.Dark.GlassBorderTop,
-            BorderSide = PictoTokens.Dark.GlassBorderSide,
-            BorderBottom = PictoTokens.Dark.GlassBorderBottom,
+            BlurBackground = ColorTokens.Dark.GlassBg,
+            BorderTop = ColorTokens.Dark.GlassBorderTop,
+            BorderSide = ColorTokens.Dark.GlassBorderSide,
+            BorderBottom = ColorTokens.Dark.GlassBorderBottom,
             Luminosity = new(0f, 0f, 0f, 0.30f),
         },
         Chrome = new()
         {
-            Text = PictoTokens.Dark.TextPrimary,
+            Text = ColorTokens.Dark.TextPrimary,
             TextMuted = new(1f, 1f, 1f, 0.60f),
-            ControlBorder = PictoTokens.Dark.BorderPrimary,
-            ControlFill = PictoTokens.Dark.SurfaceHover,
-            ControlHover = PictoTokens.Dark.SubtleOverlay,
-            WeakOverlay = PictoTokens.Dark.HoverOverlay,
-            ActiveOverlay = PictoTokens.Dark.ActiveOverlay,
-            InputWell = PictoTokens.Dark.Black20,
-            Primary = PictoTokens.Dark.Primary,
-            PrimaryHover = PictoTokens.Dark.Primary60,
-            PrimaryFocus = PictoTokens.Dark.Primary50,
-            AccentFill = PictoTokens.Dark.Primary10,
-            AccentFillBorder = PictoTokens.Dark.Primary30,
+            ControlBorder = ColorTokens.Dark.BorderPrimary,
+            ControlFill = ColorTokens.Dark.SurfaceHover,
+            ControlHover = ColorTokens.Dark.SubtleOverlay,
+            WeakOverlay = ColorTokens.Dark.HoverOverlay,
+            ActiveOverlay = ColorTokens.Dark.ActiveOverlay,
+            InputWell = ColorTokens.Dark.Black20,
+            Primary = ColorTokens.Dark.Primary,
+            PrimaryHover = ColorTokens.Dark.Primary60,
+            PrimaryFocus = ColorTokens.Dark.Primary50,
+            AccentFill = ColorTokens.Dark.Primary10,
+            AccentFillBorder = ColorTokens.Dark.Primary30,
             Checkmark = new(1f, 1f, 1f, 0.99f),
-            Danger = PictoTokens.Dark.Negative,
+            Danger = ColorTokens.Dark.Negative,
             // Derivation: --color-negative at the hover-fill alpha.
-            DangerHover = PictoTokens.Dark.Negative with { W = 0.12f },
+            DangerHover = ColorTokens.Dark.Negative with { W = 0.12f },
             // The one violet: a verb that breaks animation state wears it,
             // beside Danger red. Its fills derive from it the way Danger's do.
             Disruptive = new(139f / 255f, 92f / 255f, 246f / 255f, 1f),  // #8b5cf6
             DisruptiveHover = new(139f / 255f, 92f / 255f, 246f / 255f, 0.12f),
             UnavailableFill = new(0f, 0f, 0f, 0.12f),
-            ColorWellBorder = PictoTokens.Dark.BorderPrimary,
-            PickerWell = PictoTokens.Dark.BgApp,
+            ColorWellBorder = ColorTokens.Dark.BorderPrimary,
+            PickerWell = ColorTokens.Dark.BgApp,
             PickerBorder = new(1f, 1f, 1f, 0.18f),
             ModalDim = new(0f, 0f, 0f, 0.55f),
-            ModalFooter = PictoTokens.Dark.Black10,
-            RailFill = PictoTokens.Dark.Black10,
+            ModalFooter = ColorTokens.Dark.Black10,
+            RailFill = ColorTokens.Dark.Black10,
             SegmentShadow = new(0f, 0f, 0f, 0.25f),
-            SegmentSelected = PictoTokens.Dark.Surface2,
-            SidebarSelected = PictoTokens.Dark.SurfaceActive,
-            SidebarHover = PictoTokens.Dark.SurfaceHover,
+            SegmentSelected = ColorTokens.Dark.Surface2,
+            SidebarSelected = ColorTokens.Dark.SurfaceActive,
+            SidebarHover = ColorTokens.Dark.SurfaceHover,
             SwitchOff = new(128f / 255f, 128f / 255f, 128f / 255f, 0.25f),
             SwitchKnob = new(1f, 1f, 1f, 1f),
             SwitchShadow = new(0f, 0f, 0f, 0.08f),
@@ -338,41 +338,41 @@ public readonly record struct Theme
         },
     };
 
-    public static Theme PictoBlue => DarkSurface(
-        PictoDark,
-        PictoTokens.Blue.BgApp,
-        PictoTokens.Blue.Surface1,
-        PictoTokens.Blue.Surface2);
+    public static Theme Blue => DarkSurface(
+        Dark,
+        ColorTokens.Blue.BgApp,
+        ColorTokens.Blue.Surface1,
+        ColorTokens.Blue.Surface2);
 
-    public static Theme PictoPurple => DarkSurface(
-        PictoDark,
-        PictoTokens.Purple.BgApp,
-        PictoTokens.Purple.Surface1,
-        PictoTokens.Purple.Surface2);
+    public static Theme Purple => DarkSurface(
+        Dark,
+        ColorTokens.Purple.BgApp,
+        ColorTokens.Purple.Surface1,
+        ColorTokens.Purple.Surface2);
 
-    public static Theme PictoGray => DarkSurface(
-        PictoDark,
-        PictoTokens.Gray.BgApp,
-        PictoTokens.Gray.Surface1,
-        PictoTokens.Gray.Surface2);
+    public static Theme Gray => DarkSurface(
+        Dark,
+        ColorTokens.Gray.BgApp,
+        ColorTokens.Gray.Surface1,
+        ColorTokens.Gray.Surface2);
 
-    public static Theme PictoLight => LightSurface(
-        PictoDark,
-        PictoTokens.Light.BgApp,
-        PictoTokens.Light.Surface1,
-        PictoTokens.Light.Surface2,
-        PictoTokens.Light.BorderPrimary,
-        PictoTokens.Light.BorderSecondary);
+    public static Theme Light => LightSurface(
+        Dark,
+        ColorTokens.Light.BgApp,
+        ColorTokens.Light.Surface1,
+        ColorTokens.Light.Surface2,
+        ColorTokens.Light.BorderPrimary,
+        ColorTokens.Light.BorderSecondary);
 
-    public static Theme PictoLightGray => LightSurface(
-        PictoLight,
-        PictoTokens.LightGray.BgApp,
-        PictoTokens.LightGray.Surface1,
-        PictoTokens.LightGray.Surface2,
-        PictoTokens.LightGray.BorderPrimary,
-        PictoTokens.LightGray.BorderSecondary);
+    public static Theme LightGray => LightSurface(
+        Light,
+        ColorTokens.LightGray.BgApp,
+        ColorTokens.LightGray.Surface1,
+        ColorTokens.LightGray.Surface2,
+        ColorTokens.LightGray.BorderPrimary,
+        ColorTokens.LightGray.BorderSecondary);
 
-    public static Theme Default => PictoDark;
+    public static Theme Default => Dark;
 
     /// <summary>
     /// Re-derives the primary color family from a chosen accent. Every stop
@@ -433,7 +433,7 @@ public readonly record struct Theme
     {
         // Light-scheme chrome comes from the light token cascade; lightgray
         // only overrides surfaces and borders, which arrive as parameters.
-        var primary = PictoTokens.Light.Primary;
+        var primary = ColorTokens.Light.Primary;
         return theme with
         {
             IsLight = true,
@@ -444,17 +444,17 @@ public readonly record struct Theme
             // light ground uses the Windows 11 89% black, which reads as ink
             // instead of a hole. Secondary/tertiary already carry their own
             // alphas and are unchanged.
-            Text = PictoTokens.Light.TextPrimary with { W = 0.894f },
-            TextDim = PictoTokens.Light.TextSecondary,
-            TextMuted = PictoTokens.Light.TextTertiary,
-            FormLabel = PictoTokens.Light.TextTertiary,
+            Text = ColorTokens.Light.TextPrimary with { W = 0.894f },
+            TextDim = ColorTokens.Light.TextSecondary,
+            TextMuted = ColorTokens.Light.TextTertiary,
+            FormLabel = ColorTokens.Light.TextTertiary,
             FormHint = new(0f, 0f, 0f, 0.40f),
             FormValue = new(0f, 0f, 0f, 0.90f),
             FormSeparator = border,
             Border = border,
             BorderStrong = borderStrong,
             Accent = primary,
-            AccentHover = PictoTokens.Light.Primary60,
+            AccentHover = ColorTokens.Light.Primary60,
             AccentActive = primary with { W = 0.80f },
             Glass = theme.Glass with
             {
@@ -464,31 +464,31 @@ public readonly record struct Theme
             },
             Chrome = theme.Chrome with
             {
-                Text = PictoTokens.Light.TextPrimary,
+                Text = ColorTokens.Light.TextPrimary,
                 TextMuted = new(0f, 0f, 0f, 0.60f),
                 ControlBorder = borderStrong,
-                ControlFill = PictoTokens.Light.SurfaceHover,
-                ControlHover = PictoTokens.Light.SubtleOverlay,
-                WeakOverlay = PictoTokens.Light.HoverOverlay,
-                ActiveOverlay = PictoTokens.Light.ActiveOverlay,
-                InputWell = PictoTokens.Light.Black20,
+                ControlFill = ColorTokens.Light.SurfaceHover,
+                ControlHover = ColorTokens.Light.SubtleOverlay,
+                WeakOverlay = ColorTokens.Light.HoverOverlay,
+                ActiveOverlay = ColorTokens.Light.ActiveOverlay,
+                InputWell = ColorTokens.Light.Black20,
                 Primary = primary,
-                PrimaryHover = PictoTokens.Light.Primary60,
-                PrimaryFocus = PictoTokens.Light.Primary50,
-                AccentFill = PictoTokens.Light.Primary10,
-                AccentFillBorder = PictoTokens.Light.Primary30,
+                PrimaryHover = ColorTokens.Light.Primary60,
+                PrimaryFocus = ColorTokens.Light.Primary50,
+                AccentFill = ColorTokens.Light.Primary10,
+                AccentFillBorder = ColorTokens.Light.Primary30,
                 Checkmark = new(1f, 1f, 1f, 0.99f),
                 UnavailableFill = new(0f, 0f, 0f, 0.08f),
                 ColorWellBorder = borderStrong,
                 PickerWell = surface,
                 PickerBorder = new(0f, 0f, 0f, 0.18f),
                 ModalDim = new(0f, 0f, 0f, 0.35f),
-                ModalFooter = PictoTokens.Light.Black10,
-                RailFill = PictoTokens.Light.Black10,
+                ModalFooter = ColorTokens.Light.Black10,
+                RailFill = ColorTokens.Light.Black10,
                 SegmentShadow = new(0f, 0f, 0f, 0.12f),
                 SegmentSelected = sunken,
-                SidebarSelected = PictoTokens.Light.SurfaceActive,
-                SidebarHover = PictoTokens.Light.SurfaceHover,
+                SidebarSelected = ColorTokens.Light.SurfaceActive,
+                SidebarHover = ColorTokens.Light.SurfaceHover,
                 SwitchOff = new(0f, 0f, 0f, 0.20f),
                 SwitchShadow = new(0f, 0f, 0f, 0.08f),
                 SwitchHighlight = new(1f, 1f, 1f, 0.10f),
@@ -868,40 +868,6 @@ public readonly record struct Theme
     }
 }
 
-public static partial class Crystarium
-{
-    private static Theme _activeTheme = Theme.PictoDark;
-    private static readonly ThemeActivation _themes = new(Theme.PictoDark);
-
-    /// <summary>The active theme as a value for public consumers.</summary>
-    public static Theme ActiveTheme => _activeTheme;
-
-    // The UI renderer reads several tokens for every text submission. Keep
-    // those reads on the current immutable value without copying Theme.
-    internal static ref readonly Theme ActiveThemeRef => ref _activeTheme;
-
-    /// <summary>Queues a full token replacement until its font atlas is ready.</summary>
-    public static void UseTheme(Theme theme)
-    {
-        if (!FontRegistry.Registered)
-            _themes.ActivateWithoutFonts(theme);
-        else
-            _themes.Request(theme);
-        _activeTheme = _themes.Active;
-    }
-
-    /// <summary>Advances a staged theme at the frame boundary before drawing.</summary>
-    public static bool AdvanceTheme()
-    {
-        _themes.Advance(candidate => FontRegistry.Activate(candidate));
-        _activeTheme = _themes.Active;
-        // Once the fonts have been ready the UI draws every frame; a
-        // handle that reads unavailable for a frame falls back to the
-        // default font in the text pipeline instead of hiding everything.
-        return FontRegistry.Ready || FontRegistry.EverReady;
-    }
-}
-
 /// <summary>Keeps a visible theme paired with the atlas that rasterized it.</summary>
 internal sealed class ThemeActivation
 {
@@ -910,8 +876,6 @@ internal sealed class ThemeActivation
     public ThemeActivation(Theme active) => Active = active;
 
     public Theme Active { get; private set; }
-
-    internal bool HasPending => _pending.HasValue;
 
     public void ActivateWithoutFonts(Theme theme)
     {

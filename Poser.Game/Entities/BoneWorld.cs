@@ -1,7 +1,7 @@
 using Poser.Domain.Transforms;
 using FFXIVClientStructs.Havok.Animation.Rig;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>A bone's posed transform in the world: its cached model-space
 /// transform through the skeleton's model matrix. The caller decides

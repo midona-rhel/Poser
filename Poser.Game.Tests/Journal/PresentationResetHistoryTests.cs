@@ -2,15 +2,17 @@ using System.Numerics;
 using System.Reflection;
 using Poser.Application.Presentation;
 using Poser.Application.Integration;
+using Poser.Game.Tests.Integration;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
-using Poser.Entities;
 using Poser.Game.Journal;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Journal;
 
@@ -40,7 +42,7 @@ public sealed class PresentationResetHistoryTests
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         f.Port.RefuseSet = true;
         Assert.False(step.Undo());
-        Assert.True(step.RetainOnFailure);
+        Assert.Equal(RefusalAction.DropOnRepeat, RefusalPolicy.Decide(step));
         f.Port.RefuseSet = false;
         Assert.True(step.Undo());
         Assert.Equal(Vector4.One, f.Port.Tint);
@@ -92,7 +94,6 @@ public sealed class PresentationResetHistoryTests
         f.Port.RefuseRestore = true;
         Assert.False(f.ColorValues.Clear(f.Actor, AppearanceColorChannel.Skin).Success);
         Assert.Same(set, f.History.PeekUndo());
-        Assert.False(f.Journal.Undo().Success);
         Assert.False(f.Journal.Undo().Success);
         Assert.Same(set, f.History.PeekUndo());
         Assert.False(f.History.CanRedo);
@@ -166,7 +167,6 @@ public sealed class PresentationResetHistoryTests
         var step = f.History.PeekUndo();
         f.Port.RefuseSet = true;
         Assert.False(f.Journal.Undo().Success);
-        Assert.False(f.Journal.Undo().Success);
         Assert.Same(step, f.History.PeekUndo());
         Assert.False(f.History.CanRedo);
         Assert.Equal(capture.ToArray(), f.Session.OverridesFor(f.Actor).ColorCaptures.ToArray());
@@ -215,7 +215,7 @@ public sealed class PresentationResetHistoryTests
         public readonly IEntityBindings Bindings = DispatchProxy.Create<IEntityBindings, BindingProxy>();
         public readonly IActorSpawnService Spawn =
             DispatchProxy.Create<IActorSpawnService, VisibilitySpawnProxy>();
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly UndoJournal Journal;
         public Fixture()
         {
@@ -225,9 +225,9 @@ public sealed class PresentationResetHistoryTests
             Values = new(values, Session, new Game.Presentation.ActorValueRuntime(Bindings, Spawn));
             var runner = new TransformGestureService(new SceneSession(new SelectionSession()),
                 DispatchProxy.Create<ITransformRuntimePort, UnusedProxy>(), History);
-            Journal = new(History, runner, _ => true, _ => { });
-            var integration = new ActorIntegrationSession(DispatchProxy.Create<IIntegrationRuntimePort, IntegrationProxy>(), null!, null!);
-            ColorValues = new(Session, integration, values, runner, Bindings);
+            Journal = new(History, runner, _ => true, new SilentNotices());
+            var integration = new IntegrationGraph(DispatchProxy.Create<IIntegrationRuntimeFake, IntegrationProxy>(), null!, null!);
+            ColorValues = new(Session, integration.Selectors, values, runner, Bindings);
         }
         public VisibilitySpawnProxy Visibility =>
             (VisibilitySpawnProxy)(object)Spawn;
@@ -305,18 +305,25 @@ public sealed class PresentationResetHistoryTests
         public PresentationReading? Read(ActorId actor) => new(1, Tint, null, null, Wetness);
         public IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> ReadColors(ActorId actor) =>
             IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>>.Ok(new Dictionary<AppearanceColorChannel, Vector4>(Colors));
-        public PresentationPortResult SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
-        { if (RefuseSet) return PresentationPortResult.Fail("colour refused"); Colors[channel] = value; return PresentationPortResult.Ok(); }
-        public PresentationPortResult RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
-        { if (RefuseRestore) return PresentationPortResult.Fail("restore refused"); foreach (var (channel, value) in captures) Colors[channel] = value; return PresentationPortResult.Ok(); }
-        public PresentationPortResult RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
-        { if (RefuseRestore) return PresentationPortResult.Fail("restore refused"); Colors[channel] = incoming; return PresentationPortResult.Ok(); }
-        public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 value) { if (RefuseSet) return PresentationPortResult.Fail("tint refused"); Tint = value; return PresentationPortResult.Ok(); }
-        public PresentationPortResult RestoreTint(ActorId actor, PresentationModel model, Vector4 value) { Tint = value; return PresentationPortResult.Ok(); }
-        public PresentationPortResult SetWetness(ActorId actor, WetnessState value) { Wetness = value; return PresentationPortResult.Ok(); }
-        public PresentationPortResult ClearWetness(ActorId actor, WetnessState value) { Wetness = value; return PresentationPortResult.Ok(); }
-        public PresentationPortResult SetOpacity(ActorId actor, float value) => PresentationPortResult.Ok();
-        public PresentationPortResult RestoreOpacity(ActorId actor, float value) => PresentationPortResult.Ok();
+        public Outcome SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
+        { if (RefuseSet) return Outcome.Fail("colour refused"); Colors[channel] = value; return Outcome.Ok(); }
+        public Outcome RestoreColors(ActorId actor, IReadOnlyDictionary<AppearanceColorChannel, Vector4> captures)
+        { if (RefuseRestore) return Outcome.Fail("restore refused"); foreach (var (channel, value) in captures) Colors[channel] = value; return Outcome.Ok(); }
+        public Outcome RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
+        { if (RefuseRestore) return Outcome.Fail("restore refused"); Colors[channel] = incoming; return Outcome.Ok(); }
+        public Outcome SetTint(ActorId actor, PresentationModel model, Vector4 value) { if (RefuseSet) return Outcome.Fail("tint refused"); Tint = value; return Outcome.Ok(); }
+        public Outcome RestoreTint(ActorId actor, PresentationModel model, Vector4 value) { Tint = value; return Outcome.Ok(); }
+        public Outcome SetWetness(ActorId actor, WetnessState value) { Wetness = value; return Outcome.Ok(); }
+        public Outcome ClearWetness(ActorId actor, WetnessState value) { Wetness = value; return Outcome.Ok(); }
+        public Outcome SetOpacity(ActorId actor, float value) => Outcome.Ok();
+        public Outcome RestoreOpacity(ActorId actor, float value) => Outcome.Ok();
         public void ClearOwned(ActorId actor) { }
+    }
+
+    private sealed class SilentNotices : Poser.Application.Presentation.IUserNotices
+    {
+        public void Note(string message) { }
+        public void Refused(string message) { }
+        public void Failed(string message) { }
     }
 }

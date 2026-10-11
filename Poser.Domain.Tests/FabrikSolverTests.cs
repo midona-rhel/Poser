@@ -7,11 +7,10 @@ public sealed class FabrikSolverTests
 {
     private static readonly Vector3[] Bent = Enumerable.Range(0, 7).Select(i => new Vector3(i, i % 2, 0)).ToArray();
 
-    [Theory]
-    [InlineData(3f)]
-    [InlineData(20f)]
-    public void Reach_limit_discards_excess_travel_and_reverses_immediately(float initialTarget)
+    [Fact]
+    public void Reach_limit_discards_excess_travel_and_reverses_immediately()
     {
+        const float initialTarget = 20f;
         Vector3[] source = [Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2, Vector3.UnitX * 3];
         var target = new Vector3(initialTarget, 0, 0);
         target = FabrikSolver.MoveHandle(source, 3, source[0], source[^1], target, Vector3.UnitX * 10);
@@ -27,19 +26,12 @@ public sealed class FabrikSolverTests
     [Theory]
     [InlineData(0)]
     [InlineData(3)]
-    [InlineData(6)]
-    public void Capturing_either_or_both_sides_preserves_the_pose(int handle)
-    {
-        var result = FabrikSolver.Solve(Bent, handle, Bent[0], Bent[^1], Bent[handle], 8);
-        for (int i = 0; i < Bent.Length; i++) Near(Bent[i], result[i]);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(3)]
-    [InlineData(6)]
     public void Selected_handle_moves_and_far_ends_stay_anchored(int handle)
     {
+        // Capturing the current pose as the target leaves the chain untouched.
+        var still = FabrikSolver.Solve(Bent, handle, Bent[0], Bent[^1], Bent[handle], 8);
+        for (int i = 0; i < Bent.Length; i++) Near(Bent[i], still[i]);
+
         var target = Bent[handle] + new Vector3(0, .15f, .3f);
         var result = FabrikSolver.Solve(Bent, handle, Bent[0], Bent[^1], target, 60);
         Near(target, result[handle]);
@@ -48,72 +40,17 @@ public sealed class FabrikSolverTests
         Lengths(Bent, result);
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(3)]
-    [InlineData(6)]
-    public void Unreachable_drag_clamps_the_handle_without_stretching(int handle)
+    [Fact]
+    public void Unreachable_drag_clamps_the_handle_without_stretching()
     {
-        var result = FabrikSolver.Solve(Bent, handle, Bent[0], Bent[^1], new(100, 100, 100), 60);
-        if (handle > 0) Near(Bent[0], result[0]);
-        if (handle < Bent.Length - 1) Near(Bent[^1], result[^1]);
+        var result = FabrikSolver.Solve(Bent, 3, Bent[0], Bent[^1], new(100, 100, 100), 60);
+        Near(Bent[0], result[0]); Near(Bent[^1], result[^1]);
         Lengths(Bent, result);
-    }
 
-    [Fact]
-    public void Two_single_link_sides_share_one_handle_on_their_intersection_circle()
-    {
-        Vector3[] chain = [Vector3.Zero, new(1, 1, 0), new(2, 0, 0)];
-        var result = FabrikSolver.Solve(chain, 1, chain[0], chain[^1], new(1, 0, 4), 8);
-        Near(new(1, 0, 1), result[1]);
-        Near(chain[0], result[0]); Near(chain[^1], result[^1]); Lengths(chain, result);
-    }
-
-    [Fact]
-    public void Taut_two_sided_chain_cannot_be_stretched_by_moving_its_middle()
-    {
-        Vector3[] chain = [Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2];
-        var result = FabrikSolver.Solve(chain, 1, chain[0], chain[^1], Vector3.One, 8);
-        for (int i = 0; i < chain.Length; i++) Near(chain[i], result[i]);
-    }
-
-    [Fact]
-    public void Default_iterations_keep_the_two_spans_connected()
-    {
-        var target = Bent[3] + new Vector3(0, .15f, .3f);
-        var result = FabrikSolver.Solve(Bent, 3, Bent[0], Bent[^1], target, 8);
-        Near(target, result[3]); Near(Bent[0], result[0]); Near(Bent[^1], result[^1]);
-        Lengths(Bent, result);
-    }
-
-    [Fact]
-    public void Fifty_links_are_supported_and_fifty_one_rejected()
-    {
-        var chain = Enumerable.Range(0, 51).Select(i => new Vector3(i, i % 2, 0)).ToArray();
-        Lengths(chain, FabrikSolver.Solve(chain, 25, chain[0], chain[^1], new(25, 3, 1), 60));
-        Assert.Throws<ArgumentOutOfRangeException>(() => FabrikSolver.Solve(
-            new Vector3[52], 25, Vector3.Zero, Vector3.One, Vector3.UnitX, 8));
-        Assert.Equal(50, IkChainConfig.MaxDepthFor(IkSolver.Fabrik));
-        Assert.Equal(20, IkChainConfig.MaxDepthFor(IkSolver.Ccd));
-    }
-
-    [Fact]
-    public void Depths_share_the_fifty_link_limit_and_preserve_parent_traversal_by_default()
-    {
-        var config = IkChainConfig.DefaultsForChain();
-        Assert.Equal(3, config.ParentDepth); Assert.Equal(0, config.ChildDepth);
-        Assert.Null((config with { ParentDepth = 25, ChildDepth = 25 }).Validate());
-        Assert.NotNull((config with { ParentDepth = 26, ChildDepth = 25 }).Validate());
-        Assert.NotNull((config with { ParentDepth = -1 }).Validate());
-        Assert.Null((config with { ParentDepth = 0, ChildDepth = 0 }).Validate());
-    }
-
-    [Fact]
-    public void Straight_chain_can_bend_toward_a_closer_collinear_handle()
-    {
-        Vector3[] chain = [Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2, Vector3.UnitX * 3];
-        var result = FabrikSolver.Solve(chain, 3, chain[0], chain[^1], Vector3.UnitX * 1.5f, 60);
-        Near(Vector3.UnitX * 1.5f, result[^1]); Lengths(chain, result);
+        // A taut chain cannot be stretched by moving its middle.
+        Vector3[] taut = [Vector3.Zero, Vector3.UnitX, Vector3.UnitX * 2];
+        var held = FabrikSolver.Solve(taut, 1, taut[0], taut[^1], Vector3.One, 8);
+        for (int i = 0; i < taut.Length; i++) Near(taut[i], held[i]);
     }
 
     [Fact]

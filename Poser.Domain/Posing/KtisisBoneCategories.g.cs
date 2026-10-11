@@ -3,7 +3,7 @@
 // preserve this presentation override when refreshing the upstream hierarchy.
 using System.Collections.Generic;
 
-namespace Poser.Core.BoneInfo;
+namespace Poser.Domain.Posing;
 
 /// <summary>One node of the Ktisis category tree.</summary>
 public sealed record KtisisBoneCategory(

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Poser.Domain.Integration;
 
-namespace Poser.Services;
+namespace Poser.Application.Catalog;
 
 /// <summary>The wardrobe the pickers list: every item per slot, every dye,
 /// every facewear, read once from the game sheets.</summary>

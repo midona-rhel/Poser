@@ -5,7 +5,14 @@ using Dalamud.Bindings.ImGui;
 using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Services;
+using Poser.UI.Widgets;
+using static Poser.UI.Widgets.AxisWellWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DropdownWidgets;
+using static Poser.UI.Widgets.ImageWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -40,18 +47,18 @@ public sealed partial class AppearancePane
     };
 
     // The palette picker and what opened it.
-    private readonly Crystarium.PalettePicker _palette = new("appearance-palette");
+    private readonly PalettePicker _palette = new("appearance-palette");
     private CustomizeKey _paletteKey;
     private ActorId? _paletteActor;
     private readonly Dictionary<uint[], List<Vector4>> _paletteColors = new(ReferenceEqualityComparer.Instance);
 
     // One tile picker per clan, gender and feature: its dropped ids are
     // its own, and a clan's faces are not another's.
-    private readonly Dictionary<(byte Clan, byte Gender, CustomizeKey Key), Crystarium.TexturePicker> _tilePickers = new();
+    private readonly Dictionary<(byte Clan, byte Gender, CustomizeKey Key), TexturePicker> _tilePickers = new();
 
     // ── the view ────────────────────────────────────────────────────────
 
-    private void DrawCustomizeView(Crystarium.PageScope page, ActorId actor)
+    private void DrawCustomizeView(PageScope page, ActorId actor)
     {
         var glamourer = _integration.Glamourer;
         bool ready = glamourer.Available && _appearanceAccess.CanEdit;
@@ -121,7 +128,7 @@ public sealed partial class AppearancePane
                 ("Tattoo", CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why),
                 ("Paint", CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why),
             };
-            var theme = Crystarium.ActiveTheme;
+            var theme = ActiveTheme;
             float paletteWidth = theme.Controls.WorkspaceHeight * 2f;
             FixedColourGroups(form, "appearance-palette-colour", entries.Length,
                 index => entries[index].Label, paletteWidth, (index, origin, _) =>
@@ -131,13 +138,13 @@ public sealed partial class AppearancePane
                         entry.Key, entry.Palette, entry.Live, entry.Why);
                 });
             form.Checkboxes("Options",
-                new Crystarium.CheckItem("Highlights", highlights,
+                new CheckItem("Highlights", highlights,
                     on => Set(actor, CustomizeKey.Highlights, on ? Flag(CustomizeKey.Highlights) : 0, on ? "Highlights on" : "Highlights off"),
                     live ? "Highlight the hair" : why, !live),
-                new Crystarium.CheckItem("Lipstick", lipstick,
+                new CheckItem("Lipstick", lipstick,
                     on => Set(actor, CustomizeKey.Lipstick, on ? Flag(CustomizeKey.Lipstick) : 0, on ? "Lipstick on" : "Lipstick off"),
                     live ? "Colour the lips" : why, !live),
-                new Crystarium.CheckItem("Reversed paint", (state?.Value(CustomizeKey.FacePaintReversed) ?? 0) != 0,
+                new CheckItem("Reversed paint", (state?.Value(CustomizeKey.FacePaintReversed) ?? 0) != 0,
                     on => Set(actor, CustomizeKey.FacePaintReversed, on ? Flag(CustomizeKey.FacePaintReversed) : 0, on ? "Reverse face paint" : "Face paint forward"),
                     live ? "Mirror the face paint" : why, !live));
         });
@@ -150,7 +157,7 @@ public sealed partial class AppearancePane
     /// so each is a disruptive step whose inverse is the values read
     /// before.</summary>
     private void BodyRow(
-        Crystarium.FormScope form, ActorId actor, CustomizeState? state, bool live, string? why)
+        FormScope form, ActorId actor, CustomizeState? state, bool live, string? why)
     {
         var clans = _customize.Clans;
         int clan = state?.Value(CustomizeKey.Clan) ?? 0;
@@ -164,7 +171,7 @@ public sealed partial class AppearancePane
                 clanIndex = i;
         }
 
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         form.Custom("Clan", theme.Controls.FormRowHeight, row =>
         {
             float s = row.Scale;
@@ -177,11 +184,11 @@ public sealed partial class AppearancePane
                 Disabled = !live,
             };
             const string caption = "Gender";
-            float captionW = Crystarium.MeasureText(caption, captionStyle).X;
+            float captionW = MeasureText(caption, captionStyle).X;
             float dropW = MathF.Max(1f, row.ControlWidth - gap - captionW - gap - square * s);
             var seat = row.CenterControl(square);
             ImGui.SetCursorScreenPos(seat);
-            Crystarium.Dropdown("appearance-clan", clanNames, clanIndex, index =>
+            Dropdown("appearance-clan", clanNames, clanIndex, index =>
                 Body(actor, "Change clan", new Dictionary<CustomizeKey, int>
                 {
                     [CustomizeKey.Race] = clans[index].Race,
@@ -190,12 +197,12 @@ public sealed partial class AppearancePane
                 ControlStyle.Workspace with { Width = UiWidth.Fixed(dropW / s) },
                 !live || clans.Count == 0, live ? "The clan · redraws" : why,
                 disruptive: true);
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(seat.X + dropW + gap, row.Origin.Y),
                 new Vector2(captionW, row.RowHeight * s),
                 caption, captionStyle);
             ImGui.SetCursorScreenPos(new Vector2(seat.X + dropW + gap + captionW + gap, seat.Y));
-            Crystarium.IconButton(
+            IconButton(
                 gender == 1 ? TablerIcon.GenderFemale : TablerIcon.GenderMale,
                 () => Body(actor, "Swap gender", new Dictionary<CustomizeKey, int>
                 {
@@ -223,7 +230,7 @@ public sealed partial class AppearancePane
     /// plus and minus well on the second, stepping only through the
     /// values the clan has.</summary>
     private void TilesRow(
-        Crystarium.FormScope form, ActorId actor, CustomizeMenu? menu,
+        FormScope form, ActorId actor, CustomizeMenu? menu,
         CustomizeState? state, bool live, string? why)
     {
         form.PairRows();
@@ -233,10 +240,10 @@ public sealed partial class AppearancePane
     }
 
     private void TileCard(
-        Crystarium.FormScope form, ActorId actor, CustomizeMenu? menu,
+        FormScope form, ActorId actor, CustomizeMenu? menu,
         CustomizeState? state, CustomizeKey key, bool live, string? why)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float tile = theme.Controls.FormRowHeight * 2f;
         form.Custom(TileName(key), tile, row =>
         {
@@ -253,7 +260,7 @@ public sealed partial class AppearancePane
 
             bool redraws = key == CustomizeKey.Face;
             ImGui.SetCursorScreenPos(origin);
-            bool opened = Crystarium.ImageTile(
+            bool opened = ImageTile(
                 $"appearance-tile-{key}",
                 option is { Icon: not 0 } ? ResolveIcon(option.Icon) : 0,
                 tile,
@@ -272,10 +279,10 @@ public sealed partial class AppearancePane
                 Color = theme.Text,
                 Disabled = !has,
             };
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(x, origin.Y),
                 new Vector2(width, half),
-                Crystarium.TruncateText(feature is null ? "—" : name, nameStyle, width),
+                TruncateText(feature is null ? "—" : name, nameStyle, width),
                 nameStyle);
             float square = theme.Controls.WorkspaceHeight;
             StepperAt(
@@ -295,10 +302,10 @@ public sealed partial class AppearancePane
     /// <summary>A named option — brows, eyes, nose — as a plus and minus
     /// well that steps only through the values the clan has.</summary>
     private void OptionCell(
-        in Crystarium.FormPairCell cell, ActorId actor, CustomizeMenu? menu,
+        in FormPairCell cell, ActorId actor, CustomizeMenu? menu,
         CustomizeState? state, CustomizeKey key, bool live, string? why)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var feature = menu?.Feature(key);
         int current = state?.Value(key) ?? 0;
         var seat = cell.Center(theme.Controls.WorkspaceHeight);
@@ -314,7 +321,7 @@ public sealed partial class AppearancePane
         Vector2 at, float width, float s, string id, CustomizeFeature? feature,
         int current, bool enabled, string? why, Action<int> apply, bool disruptive = false)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float square = theme.Controls.WorkspaceHeight;
         float narrow = square;
         var stepStyle = ControlStyle.Square(square);
@@ -327,11 +334,11 @@ public sealed partial class AppearancePane
         string? help = enabled ? null : why;
 
         ImGui.SetCursorScreenPos(at);
-        Crystarium.IconButton(TablerIcon.Minus,
+        IconButton(TablerIcon.Minus,
             () => apply(options[index < 0 ? 0 : index - 1].Value),
             stepStyle, !canDown, help ?? "Previous", id: id + "-down", disruptive: disruptive);
         ImGui.SetCursorScreenPos(new Vector2(at.X + narrow * s + tight, at.Y));
-        Crystarium.AxisWell(
+        AxisWell(
             id + "-well",
             string.Empty,
             current,
@@ -348,7 +355,7 @@ public sealed partial class AppearancePane
             ControlStyle.Workspace with { Width = UiWidth.Fixed(wellW / s) },
             disabled: !enabled || options.Count == 0);
         ImGui.SetCursorScreenPos(new Vector2(at.X + narrow * s + tight + wellW + tight, at.Y));
-        Crystarium.IconButton(TablerIcon.Plus,
+        IconButton(TablerIcon.Plus,
             () => apply(options[index < 0 ? 0 : index + 1].Value),
             stepStyle, !canUp, help ?? "Next", id: id + "-up", disruptive: disruptive);
     }
@@ -356,10 +363,10 @@ public sealed partial class AppearancePane
     /// <summary>The seven facial features and the legacy tattoo as one row
     /// of small icon tiles, each a toggle.</summary>
     private void FeatureRow(
-        Crystarium.FormScope form, ActorId actor, CustomizeMenu? menu,
+        FormScope form, ActorId actor, CustomizeMenu? menu,
         CustomizeState? state, bool live, string? why)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float big = theme.Controls.FormRowHeight * 2f;
         float line = theme.Controls.FormRowHeight;
         form.Custom("Features", line + big, row =>
@@ -389,7 +396,7 @@ public sealed partial class AppearancePane
                     : LegacyTattooHandle();
                 ImGui.SetCursorScreenPos(new Vector2(left + i * (side + gap), top));
                 int index = i;
-                Crystarium.ImageTile(
+                ImageTile(
                     $"appearance-feature-{i}",
                     texture,
                     side / s,
@@ -408,13 +415,13 @@ public sealed partial class AppearancePane
         Vector2 origin, float width, ActorId actor, CustomizeState? state,
         CustomizeKey key, uint[]? palette, bool live, string? why)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var colors = palette is { Length: > 0 } ? PaletteColors(palette) : null;
         int current = state?.Value(key) ?? 0;
         Vector4? color = colors is not null && current >= 0 && current < colors.Count ? colors[current] : null;
         bool enabled = live && colors is not null;
         ImGui.SetCursorScreenPos(origin);
-        bool opened = Crystarium.ColorTile(
+        bool opened = ColorTile(
             $"appearance-color-{key}", color, width, theme.Controls.WorkspaceHeight,
             null, label: color is null ? "—" : null,
             help: enabled ? "Choose a colour" : why, disabled: !enabled);
@@ -504,7 +511,7 @@ public sealed partial class AppearancePane
 
     /// <summary>The grid for a tile: the texture picker fed the feature's
     /// icons. A value without an icon still lists, as a bare tile.</summary>
-    private Crystarium.TexturePicker TilePicker(CustomizeMenu menu, CustomizeFeature feature)
+    private TexturePicker TilePicker(CustomizeMenu menu, CustomizeFeature feature)
     {
         var key = (menu.Clan, menu.Gender, feature.Key);
         if (_tilePickers.TryGetValue(key, out var picker))
@@ -516,7 +523,7 @@ public sealed partial class AppearancePane
             icons[option.Value] = option.Icon;
             top = Math.Max(top, option.Value);
         }
-        picker = new Crystarium.TexturePicker(
+        picker = new TexturePicker(
             $"appearance-{menu.Clan}-{menu.Gender}-{feature.Key}",
             (uint id, out nint handle, out Vector2 pixels) =>
             {

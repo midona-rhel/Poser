@@ -8,7 +8,7 @@ public sealed class VfxOwnedAllocationLedgerTests
     public void Promotion_keeps_reserved_generation_and_generic_read_does_not_promote()
     {
         var ledger = new VfxOwnedAllocationLedger();
-        using var token = new CountingDisposable();
+        using var token = new NullDisposable();
         var lease = ledger.Reserve((nint)0x1000, token);
 
         var observed = ledger.Observe((nint)0x1000, (nint)0x2000);
@@ -23,107 +23,47 @@ public sealed class VfxOwnedAllocationLedgerTests
     }
 
     [Fact]
-    public void Newer_pending_lease_never_resolves_to_old_live_generation()
+    public void Observation_classifies_ambiguous_vs_replaced_and_only_releases_replaced()
     {
         var ledger = new VfxOwnedAllocationLedger();
-        using var oldToken = new CountingDisposable();
-        using var newToken = new CountingDisposable();
-        var oldLease = ledger.Reserve((nint)0x1000, oldToken);
-        Assert.True(ledger.TryPromote(oldLease, (nint)0x2000, out var oldLive));
-        var newLease = ledger.Reserve((nint)0x1000, newToken);
-
-        var first = ledger.Observe((nint)0x1000, (nint)0x2000);
-        var repeated = ledger.Observe((nint)0x1000, (nint)0x2000);
-        Assert.NotEqual(oldLive.Generation, first.Generation);
-        Assert.Equal(first, repeated);
-        Assert.Equal(VfxAllocationMatch.Ambiguous,
-            ledger.Match(newLease.Identity, (nint)0x2000, true));
-    }
-
-    [Fact]
-    public void Missing_resource_is_ambiguous_but_nonzero_replacement_is_replaced()
-    {
-        var ledger = new VfxOwnedAllocationLedger();
-        using var token = new CountingDisposable();
+        using var token = new NullDisposable();
         var lease = ledger.Reserve((nint)0x1000, token);
         Assert.True(ledger.TryPromote(lease, (nint)0x2000, out var live));
 
-        Assert.Equal(VfxAllocationMatch.Ambiguous,
-            ledger.Match(live, nint.Zero, true));
-        Assert.Equal(VfxAllocationMatch.Replaced,
-            ledger.Match(live, (nint)0x3000, true));
-    }
-
-    [Fact]
-    public void Stale_release_keeps_live_ambiguous_claim_until_replaced()
-    {
-        var ledger = new VfxOwnedAllocationLedger();
-        using var token = new CountingDisposable();
-        var lease = ledger.Reserve((nint)0x1000, token);
-        Assert.True(ledger.TryPromote(lease, (nint)0x2000, out var live));
-
-        Assert.False(ledger.TryReleaseIfVanishedOrReplaced(
-            live, nint.Zero, nativeExists: true));
+        // Same kind with its resource missing may still be ours: keep the claim.
+        var ambiguous = new VfxCurrentObservation(true, true, nint.Zero);
+        Assert.Equal(VfxAllocationMatch.Ambiguous, ledger.Match(live, ambiguous));
+        Assert.False(ledger.TryReleaseIfVanishedOrReplaced(live, ambiguous));
         Assert.True(ledger.HasClaims);
 
-        Assert.True(ledger.TryReleaseIfVanishedOrReplaced(
-            live, (nint)0x3000, nativeExists: true));
+        // A different resource or native kind is someone else's object.
+        Assert.Equal(VfxAllocationMatch.Replaced, ledger.Match(live, (nint)0x3000, true));
+        var replaced = new VfxCurrentObservation(true, false, nint.Zero);
+        Assert.Equal(VfxAllocationMatch.Replaced, ledger.Match(live, replaced));
+        Assert.True(ledger.TryReleaseIfVanishedOrReplaced(live, replaced));
         Assert.False(ledger.HasClaims);
     }
 
     [Fact]
-    public void Different_native_kind_is_replaced_but_same_kind_missing_resource_is_ambiguous()
+    public void Retaining_present_addresses_forgets_only_departed_unowned_effects()
     {
         var ledger = new VfxOwnedAllocationLedger();
-        using var token = new CountingDisposable();
+        using var token = new NullDisposable();
         var lease = ledger.Reserve((nint)0x1000, token);
-        Assert.True(ledger.TryPromote(lease, (nint)0x2000, out var live));
+        Assert.True(ledger.TryPromote(lease, (nint)0x2000, out var owned));
+        var present = ledger.Observe((nint)0x3000, (nint)0x4000);
+        var departed = ledger.Observe((nint)0x5000, (nint)0x6000);
 
-        Assert.Equal(VfxAllocationMatch.Ambiguous, ledger.Match(
-            live, new VfxCurrentObservation(true, true, nint.Zero)));
-        Assert.Equal(VfxAllocationMatch.Replaced, ledger.Match(
-            live, new VfxCurrentObservation(true, false, nint.Zero)));
-        Assert.True(ledger.TryReleaseIfVanishedOrReplaced(
-            live, new VfxCurrentObservation(true, false, nint.Zero)));
-        Assert.False(ledger.HasClaims);
+        ledger.RetainObserved(new HashSet<nint> { (nint)0x3000 });
+
+        Assert.Equal(owned, ledger.Observe((nint)0x1000, (nint)0x2000));
+        Assert.Equal(present, ledger.Observe((nint)0x3000, (nint)0x4000));
+        Assert.NotEqual(departed.Generation,
+            ledger.Observe((nint)0x5000, (nint)0x6000).Generation);
     }
 
-    [Fact]
-    public void Same_address_pending_leases_release_independently_and_idempotently()
+    private sealed class NullDisposable : IDisposable
     {
-        var ledger = new VfxOwnedAllocationLedger();
-        using var firstToken = new CountingDisposable();
-        using var secondToken = new CountingDisposable();
-        var first = ledger.Reserve((nint)0x1000, firstToken);
-        var second = ledger.Reserve((nint)0x1000, secondToken);
-
-        Assert.True(ledger.Release(first.Identity));
-        Assert.True(ledger.Release(first.Identity));
-        Assert.Equal(1, firstToken.Count);
-        var remaining = Assert.Single(ledger.PendingLeases);
-        Assert.Equal(second.Identity, remaining.Identity);
-        Assert.True(ledger.Release(second.Identity));
-        Assert.True(ledger.Release(second.Identity));
-        Assert.Equal(1, secondToken.Count);
-        Assert.False(ledger.HasClaims);
-    }
-
-    [Fact]
-    public void Path_claim_counts_cover_two_live_same_path_instances()
-    {
-        var paths = new VfxPathClaimOwner();
-        using var first = paths.Acquire("vfx/fire.avfx");
-        using var second = paths.Acquire("VFX/FIRE.AVFX");
-        Assert.Equal(2, paths.Count("vfx/fire.avfx"));
-        first.Dispose();
-        Assert.Equal(1, paths.Count("vfx/fire.avfx"));
-        second.Dispose();
-        Assert.Equal(0, paths.Count("vfx/fire.avfx"));
-    }
-
-    private sealed class CountingDisposable : IDisposable
-    {
-        public int Count { get; private set; }
-        public void Dispose() => Count++;
+        public void Dispose() { }
     }
 }

@@ -4,10 +4,10 @@ using Poser.Application.Presentation;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
-using Poser.Entities;
 using Poser.Game.Scene;
-using Poser.Game.World;
-using Poser.Services;
+using Poser.Game.WorldObjects;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Journal;
 
@@ -15,19 +15,19 @@ namespace Poser.Game.Journal;
 public sealed class WorldActorSession
 {
     private readonly WorldActorDiscovery _discovery;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly Func<IActor, bool> _release;
     private readonly IActorLifecycle? _state;
     private readonly ActorPresentationSession? _presentation;
     private readonly Func<IActor, ActorId?>? _actorId;
     private readonly Func<IActor, bool> _rollback;
 
-    public WorldActorSession(WorldActorDiscovery discovery, TransformHistory history, IActorSpawnService spawns,
+    public WorldActorSession(WorldActorDiscovery discovery, EditHistory history, IActorSpawnService spawns,
         SceneLifecycleHistory lifecycle, ActorPresentationSession presentation, IEntityBindings bindings, IActorManager actors)
         : this(discovery, history, spawns.RemoveActorFromScene, lifecycle.ActorStatePort, presentation, bindings.GetActorId,
             actor => !actors.IsAdopted(actor) || spawns.RemoveActorFromScene(actor)) { }
 
-    internal WorldActorSession(WorldActorDiscovery discovery, TransformHistory history, Func<IActor, bool> release,
+    internal WorldActorSession(WorldActorDiscovery discovery, EditHistory history, Func<IActor, bool> release,
         IActorLifecycle? state = null, ActorPresentationSession? presentation = null, Func<IActor, ActorId?>? actorId = null,
         Func<IActor, bool>? rollback = null)
     {

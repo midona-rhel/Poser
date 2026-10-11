@@ -9,16 +9,14 @@ using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Presentation;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -27,7 +25,7 @@ public sealed partial class PropertiesContent
 {
     /// <summary>Draws one exact actor and its flat concrete-bone picker.</summary>
     private void DrawCameraTrackingActors(
-        Crystarium.FormScope form, CameraId cameraId)
+        FormScope form, CameraId cameraId)
     {
         if (_cameraTargets.Read(cameraId) is not { } camera)
         {
@@ -73,7 +71,7 @@ public sealed partial class PropertiesContent
                 // keeps adding within the currently followed actor.
                 actions.IconButton(
                     TablerIcon.Crosshair,
-                    () => global::Poser.UI.Controls.BonePick.Begin(
+                    () => _bonePick.Begin(
                         multi: true,
                         bone =>
                         {

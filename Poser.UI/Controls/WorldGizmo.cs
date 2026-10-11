@@ -1,9 +1,10 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Poser.Services;
 
 using Poser.Application.Viewport;
+using Poser.Domain.Preferences;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Controls;
 
@@ -614,9 +615,9 @@ public static class WorldGizmo
 
     private static Vector4 AxisColor(int axis) => axis switch
     {
-        0 => Crystarium.ActiveTheme.Palette.AxisX,
-        1 => Crystarium.ActiveTheme.Palette.AxisY,
-        _ => Crystarium.ActiveTheme.Palette.AxisZ,
+        0 => ActiveTheme.Palette.AxisX,
+        1 => ActiveTheme.Palette.AxisY,
+        _ => ActiveTheme.Palette.AxisZ,
     };
 
     private static bool IsHot(

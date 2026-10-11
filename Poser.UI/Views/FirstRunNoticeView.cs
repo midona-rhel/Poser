@@ -2,7 +2,13 @@ using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Config;
+using Poser.Documents.Config;
+using Poser.Application.Settings;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.TextInputWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Views;
 
@@ -39,7 +45,7 @@ public sealed class FirstRunNoticeView(ConfigurationService configuration)
         if (!Pending || _dismissed)
             return;
 
-        Crystarium.Dialog(
+        Dialog(
             "##first-run-notice",
             true,
             open => _dismissed = !open,
@@ -54,7 +60,7 @@ public sealed class FirstRunNoticeView(ConfigurationService configuration)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float width = ImGui.GetContentRegionAvail().X;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
 
         Paragraph(
             "Poser was coded with the use of artificial intelligence.",
@@ -76,7 +82,7 @@ public sealed class FirstRunNoticeView(ConfigurationService configuration)
             var project = FirstRunNotice.Upstream[i];
             if (i > 0)
                 ImGui.SameLine(0f, 8f * scale);
-            Crystarium.Button(
+            Button(
                 project.Name,
                 () => OnOpenUrl?.Invoke(project.Url),
                 id: $"notice-link-{project.Name}",
@@ -115,7 +121,7 @@ public sealed class FirstRunNoticeView(ConfigurationService configuration)
 
     private void DrawFooter()
     {
-        Crystarium.TextInput(
+        TextInput(
             "##first-run-accept",
             _typed,
             next => _typed = next,
@@ -125,7 +131,7 @@ public sealed class FirstRunNoticeView(ConfigurationService configuration)
             },
             placeholder: FirstRunNotice.ConfirmationPhrase);
         ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-        Crystarium.Button(
+        Button(
             "Accept",
             Accept,
             ButtonVariant.Primary,
@@ -148,7 +154,7 @@ public sealed class FirstRunNoticeView(ConfigurationService configuration)
         in TextStyle style,
         float gap = ParagraphGap)
     {
-        Crystarium.Text(text, style, TextConstraint.Wrap(width));
+        Text(text, style, TextConstraint.Wrap(width));
         if (gap > 0f)
             ImGui.Dummy(new Vector2(0f, gap * ImGuiHelpers.GlobalScale));
     }

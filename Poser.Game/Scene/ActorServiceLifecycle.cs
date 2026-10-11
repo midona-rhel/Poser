@@ -1,11 +1,12 @@
 using Poser.Application.Posing;
 using System;
 using Dalamud.Plugin.Services;
-using Poser.Entities;
 using Poser.Domain.Scene;
-using Poser.Files;
 using Poser.Game.Posing;
-using Poser.Services;
+using Poser.Domain.Transforms;
+using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
@@ -60,9 +61,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
-    private readonly IGazeService _gaze;
-    private readonly Poser.Application.Integration.ActorIntegrationSession
-        _integration;
+    private readonly GazeService _gaze;
+    private readonly Poser.Application.Integration.IntegrationSelectors _integration;
+    private readonly Poser.Application.Integration.McdfTransaction _mcdf;
+    private readonly Poser.Application.Integration.IntegrationReset _reset;
     private readonly Bindings.StableBindingRegistry _bindings;
     private readonly IBonePosingService _bonePosing;
     private readonly IActorManager _actorManager;
@@ -75,10 +77,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private static readonly string[] PhysicsPrefixes =
         { "j_ex_h", "j_kami_", "j_ex_met_va", "j_sk_", "j_ex_top_", "j_ex_met_a", "j_ex_met_b", "j_ex_met_c", "j_ex_met_d", "j_zacc", "n_hijisoubi_", "n_hizasoubi_", "n_kataarmor_" };
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public ActorServiceLifecycle(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IActorSpawnService spawns,
         IPosingService posing,
         ISkeletonService skeletons,
@@ -88,8 +90,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         Poser.Application.Animation.AnimationSession animation,
         IFramework framework,
         IPluginLog log,
-        IGazeService gaze,
-        Poser.Application.Integration.ActorIntegrationSession integration,
+        GazeService gaze,
+        Poser.Application.Integration.IntegrationSelectors integration,
+        Poser.Application.Integration.McdfTransaction mcdf,
+        Poser.Application.Integration.IntegrationReset reset,
         Bindings.StableBindingRegistry bindings,
         IBonePosingService bonePosing,
         IActorManager actorManager,
@@ -112,6 +116,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         _log = log;
         _gaze = gaze;
         _integration = integration;
+        _mcdf = mcdf;
+        _reset = reset;
         _bindings = bindings;
     }
 
@@ -120,7 +126,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         var target = (IActor)actor;
         return _bindings.GetActorId(target) is { } id
             ? _configuration.GetDisplayName(id.LogicalId, target.Name)
-            : Config.ConfigurationService.StripObjectIndex(target.Name);
+            : Application.Settings.ConfigurationService.StripObjectIndex(target.Name);
     }
 
     public void SetName(object actor, string name) =>
@@ -160,36 +166,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         // cleanup a scene clear gives it — gaze released, appearance
         // reverted — because after the delete there is nothing left to name.
         if (!_spawns.IsSpawnedActor(target))
-            PrepareAdoptedRemoval(target);
+            ActorRemovalCleanup.Prepare(target, _gaze, _reset, _bindings, Note);
         return _spawns.RemoveActorFromScene(target);
-    }
-
-    private void PrepareAdoptedRemoval(IActor actor)
-    {
-        try
-        {
-            _gaze.ResetGaze(actor);
-        }
-        catch (Exception ex)
-        {
-            Note($"'{actor.Name}': the gaze could not be released before " +
-                $"removal ({ex.Message}).");
-        }
-
-        if (_bindings.GetActorId(actor) is not { } id)
-            return;
-        try
-        {
-            var reverted = _integration.ResetActor(id);
-            if (!reverted.Success)
-                Note($"'{actor.Name}': the appearance could not be reverted " +
-                    $"before removal ({reverted.Detail ?? "the revert was refused"}).");
-        }
-        catch (Exception ex)
-        {
-            Note($"'{actor.Name}': the appearance could not be reverted " +
-                $"before removal ({ex.Message}).");
-        }
     }
 
     public ActorState Read(object actor)

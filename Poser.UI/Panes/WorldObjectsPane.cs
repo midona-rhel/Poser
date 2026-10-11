@@ -1,5 +1,5 @@
 using Poser.Application.Selection;
-using Poser.Services;
+using Poser.Domain;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -7,8 +7,11 @@ using System.Threading.Tasks;
 using Poser.Application.Scene;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.UI.Widgets;
+using Poser.Domain.Scene;
+using Poser.Application.Catalog;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -39,7 +42,7 @@ public sealed class WorldObjectsPane
 
     /// <summary>The whole-game asset browser, for re-modelling the
     /// selected spawned object in place.</summary>
-    private readonly Crystarium.SearchPicker<WorldAsset>
+    private readonly SearchPicker<WorldAsset>
         _assetPicker = new("world-object-asset");
 
     /// <summary>The combined picker list — models and effects both, told
@@ -54,7 +57,7 @@ public sealed class WorldObjectsPane
     private WorldObjectId? _pathDraftFor;
     private string _pathDraft = string.Empty;
     private string _status = string.Empty;
-    private Task<ValueWriteResult>? _respawn;
+    private Task<Outcome>? _respawn;
     private WorldObjectId? _respawnTarget;
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
@@ -95,7 +98,7 @@ public sealed class WorldObjectsPane
             _respawn = null;
             _respawnTarget = null;
         }
-        Crystarium.Page("world-object", origin, size, page =>
+        Page("world-object", origin, size, page =>
         {
             if (SelectedWorldObject() is not { } worldObject)
             {
@@ -128,7 +131,7 @@ public sealed class WorldObjectsPane
             && SelectedWorldObject() is { } selectedFurniture && selectedFurniture.Id == furniture)
         {
             _values.Seal();
-            _values.SetStain(furniture, stain.Item.Id);
+            _values.Set(furniture, WorldObjectProperties.Stain, (stain.Item.Id, null));
             _values.Seal();
         }
 
@@ -181,14 +184,14 @@ public sealed class WorldObjectsPane
     // ── sections ─────────────────────────────────────────────────────────
 
     private void ObjectRows(
-        Crystarium.FormScope form, WorldObjectReading worldObject)
+        FormScope form, WorldObjectReading worldObject)
     {
         // Identity first: the name is Poser's to give even on a borrowed
         // thing; the model path below stays the map's fact.
         form.TextInput(
             "Name",
             worldObject.Name,
-            next => _values.SetName(worldObject.Id, next),
+            next => _values.Set(worldObject.Id, WorldObjectProperties.Name, next),
             placeholder: worldObject.IsFurniture ? "Furniture" : "Object",
             help: "What the sidebar calls this object");
         // A SPAWNED object's model is editable — an explicit-apply field,
@@ -239,7 +242,7 @@ public sealed class WorldObjectsPane
             cell => cell.Switch(
                 "##world-object-visible",
                 worldObject.Visible,
-                next => _values.SetVisible(worldObject.Id, next),
+                next => _values.Set(worldObject.Id, WorldObjectProperties.Visible, next),
                 help: "Hide this object without moving it"),
             "Opacity",
             cell => cell.Slider(
@@ -247,7 +250,7 @@ public sealed class WorldObjectsPane
                 worldObject.Opacity,
                 0f,
                 1f,
-                next => _values.SetOpacity(worldObject.Id, next),
+                next => _values.Set(worldObject.Id, WorldObjectProperties.Opacity, next),
                 help: "Fade the whole object",
                 onBegin: _values.Seal));
         var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
@@ -262,17 +265,17 @@ public sealed class WorldObjectsPane
                 }, () =>
                 {
                     _values.Seal();
-                    _values.SetStain(worldObject.Id, 0);
+                    _values.Set(worldObject.Id, WorldObjectProperties.Stain, ((byte)0, null));
                     _values.Seal();
                 }),
                 "Tint",
                 cell => cell.ColorWell("##furniture-tint", new Vector4(tint, 1f),
-                    value => _values.SetTint(worldObject.Id, new Vector3(value.X, value.Y, value.Z))));
+                    value => _values.Set(worldObject.Id, WorldObjectProperties.Tint, new Vector3(value.X, value.Y, value.Z))));
             var lights = worldObject.FurnitureLights;
             form.Cells(cells =>
             {
                 cells.Cell("Night", cell => cell.Switch("##furniture-night", worldObject.NightState,
-                    next => _values.SetNightState(worldObject.Id, next),
+                    next => _values.Set(worldObject.Id, WorldObjectProperties.NightState, next),
                     help: "Set the furniture's child models to their night state"));
                 for (int i = 0; i < lights.Count; i++)
                 {
@@ -287,8 +290,8 @@ public sealed class WorldObjectsPane
             form.ColorWells("Tint", wells => wells.Well(
                 "Tint",
                 new Vector4(tint, 1f),
-                value => _values.SetTint(
-                    worldObject.Id, new Vector3(value.X, value.Y, value.Z))),
+                value => _values.Set(
+                    worldObject.Id, WorldObjectProperties.Tint, new Vector3(value.X, value.Y, value.Z))),
                 help: "Multiply the effect's colours");
         }
         else
@@ -301,8 +304,8 @@ public sealed class WorldObjectsPane
                 cell => cell.ColorWell(
                     "##world-object-tint",
                     new Vector4(tint, 1f),
-                    value => _values.SetTint(
-                        worldObject.Id, new Vector3(value.X, value.Y, value.Z)),
+                    value => _values.Set(
+                        worldObject.Id, WorldObjectProperties.Tint, new Vector3(value.X, value.Y, value.Z)),
                     disabled: undyeable,
                     help: undyeable
                         ? "This model takes no dye"
@@ -311,7 +314,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##world-object-night",
                     worldObject.NightState,
-                    next => _values.SetNightState(worldObject.Id, next),
+                    next => _values.Set(worldObject.Id, WorldObjectProperties.NightState, next),
                     help: "Toggles night state"));
             // BORROWED scenery only: a spawned copy cannot be animated
             // by the game (the layout drives only its own instances), so
@@ -321,7 +324,7 @@ public sealed class WorldObjectsPane
                 form.Switch(
                     "Paused",
                     worldObject.AnimationPaused,
-                    next => _values.SetAnimationPaused(worldObject.Id, next),
+                    next => _values.Set(worldObject.Id, WorldObjectProperties.AnimationPaused, next),
                     help: "Pauses the animation");
         }
         if (worldObject.IsVfx)
@@ -332,7 +335,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##vfx-loop",
                     worldObject.LoopVfx,
-                    next => _values.SetLoopVfx(worldObject.Id, next),
+                    next => _values.Set(worldObject.Id, WorldObjectProperties.LoopVfx, next),
                     help: "Replay the effect when it runs out"),
                 "Speed",
                 cell => cell.Slider(
@@ -340,7 +343,7 @@ public sealed class WorldObjectsPane
                     worldObject.VfxSpeed,
                     0f,
                     3f,
-                    next => _values.SetVfxSpeed(worldObject.Id, next),
+                    next => _values.Set(worldObject.Id, WorldObjectProperties.VfxSpeed, next),
                     help: "Playback speed",
                     onBegin: _values.Seal));
             form.Pair(
@@ -348,7 +351,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##vfx-paused",
                     worldObject.VfxPaused,
-                    next => _values.SetVfxPaused(worldObject.Id, next),
+                    next => _values.Set(worldObject.Id, WorldObjectProperties.VfxPaused, next),
                     help: "Freeze the effect mid-frame"),
                 "Intensity",
                 cell => cell.Slider(
@@ -356,7 +359,7 @@ public sealed class WorldObjectsPane
                     worldObject.VfxIntensity,
                     0f,
                     4f,
-                    next => _values.SetVfxIntensity(worldObject.Id, next),
+                    next => _values.Set(worldObject.Id, WorldObjectProperties.VfxIntensity, next),
                     help: "Brighten or dim the effect",
                     onBegin: _values.Seal));
         }

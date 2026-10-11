@@ -25,6 +25,16 @@ internal static class McdfPlatformFileOwnership
     private const int FileRenameInfo = 3;
     private const int FileDispositionInfo = 4;
 
+    /// <summary>Full-path equality, ignoring trailing separators, with the
+    /// platform's path case rules.</summary>
+    internal static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
+
     internal static bool TryCreateDirectoryExclusive(string path)
         => CreateDirectory(path, IntPtr.Zero);
 

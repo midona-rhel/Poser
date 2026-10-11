@@ -18,9 +18,14 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Application.Transforms;
+using Poser.Application.Input;
+using Poser.Application.Lifecycle;
+using Poser.Game.Entities;
+using Poser.Game.Services;
+using Poser.UI;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.Bridge;
 
@@ -36,27 +41,29 @@ public sealed partial class DebugBridge : IDisposable
 
     private readonly IFramework _framework;
     private readonly IEnvironmentRuntimePort _environment;
-    private readonly IEnvironmentControl _environmentControl;
+    private readonly EnvironmentControl _environmentControl;
     private readonly global::Poser.UI.PoseFileInspectorSection _poseFiles;
     private readonly global::Poser.UI.PoseLibraryPane _poseLibrary;
     private readonly IPluginLog _log;
     private readonly AnimationSession _animation;
-    private readonly Game.Animation.AnimationRuntimePort _port;
+    private readonly Game.Animation.AnimationNativeState _port;
     private readonly IActorManager _actors;
     private readonly StableBindingRegistry _bindings;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly ISceneCreation _creation;
-    private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
-    private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
+    private readonly global::Poser.Game.Integration.PenumbraIpc _penumbra;
+    private readonly global::Poser.Application.Integration.IGlamourerPort _glamourer;
+    private readonly global::Poser.Application.Integration.ICustomizePlusPort _customizePlus;
+    private readonly global::Poser.Application.Integration.IntegrationSelectors _session;
     private readonly global::Poser.Application.Appearance.IActorAppearanceControl _appearance;
     private readonly global::Poser.Application.Settings.ReleaseNotesSession _releaseNotes;
-    private readonly global::Poser.Services.ISkeletonService _skeletons;
+    private readonly global::Poser.Game.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
-    private readonly global::Poser.Library.IPoseLibraryService _library;
-    private readonly global::Poser.Services.ISpawnCatalogService _catalog;
+    private readonly global::Poser.Application.Library.IPoseLibraryService _library;
+    private readonly global::Poser.Application.Catalog.ISpawnCatalogService _catalog;
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
-    private readonly global::Poser.Services.IBonePosingService _bonePosing;
+    private readonly global::Poser.Game.Services.IBonePosingService _bonePosing;
     private readonly Application.Posing.IIkConfigurationPort _ikConfiguration;
     private readonly ITransformFacade _transforms;
     private readonly global::Poser.UI.SkeletonOverlayWindow _overlay;
@@ -66,7 +73,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly ITextureProvider _textures;
     private readonly ITextureReadbackProvider _readback;
     private readonly ISceneWorkflow _scenes;
-    private readonly IIdleModExport _idleExport;
+    private readonly IdleModExport _idleExport;
     private readonly IDataManager _idleData;
     private readonly ISigScanner _idleScanner;
     private readonly Application.Scene.SceneLoadPreferences _scenePreferences;
@@ -81,37 +88,39 @@ public sealed partial class DebugBridge : IDisposable
     private readonly Application.Viewport.ICameraProjection _cameraProjection;
     private readonly CancellationTokenSource _stop = new();
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
     private readonly IServiceProvider _services;
     private Task<SelectionRemovalResult>? _selectionRemovalProbe;
 
     public DebugBridge(
         IServiceProvider services,
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IEnvironmentRuntimePort environment,
-        IEnvironmentControl environmentControl,
-        global::Poser.UI.PoseFileInspectorSection poseFiles,
+        EnvironmentControl environmentControl,
+        global::Poser.UI.PropertiesContent properties,
         global::Poser.UI.PoseLibraryPane poseLibrary,
         IFramework framework,
         IPluginLog log,
         AnimationSession animation,
-        Game.Animation.AnimationRuntimePort port,
+        Game.Animation.AnimationNativeState port,
         IActorManager actors,
         StableBindingRegistry bindings,
         Game.Scene.SceneLifecycleHistory lifecycle,
         ISceneCreation creation,
-        global::Poser.Application.Integration.IIntegrationRuntimePort integration,
-        global::Poser.Application.Integration.ActorIntegrationSession session,
+        global::Poser.Game.Integration.PenumbraIpc penumbra,
+        global::Poser.Application.Integration.IGlamourerPort glamourer,
+        global::Poser.Application.Integration.ICustomizePlusPort customizePlus,
+        global::Poser.Application.Integration.IntegrationSelectors session,
         global::Poser.Application.Appearance.IActorAppearanceControl appearance,
         global::Poser.Application.Settings.ReleaseNotesSession releaseNotes,
-        global::Poser.Services.ISkeletonService skeletons,
+        global::Poser.Game.Services.ISkeletonService skeletons,
         global::Poser.Application.Gaze.IGazeControl gaze,
-        global::Poser.Services.IBonePosingService bonePosing,
+        global::Poser.Game.Services.IBonePosingService bonePosing,
         Application.Posing.IIkConfigurationPort ikConfiguration,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
-        global::Poser.Services.ISpawnCatalogService catalog,
+        global::Poser.Application.Catalog.ISpawnCatalogService catalog,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
-        global::Poser.Library.IPoseLibraryService library,
+        global::Poser.Application.Library.IPoseLibraryService library,
         ITransformFacade transforms,
         global::Poser.Application.Viewport.IViewportReads viewport,
         global::Poser.UI.SkeletonOverlayWindow overlay,
@@ -130,12 +139,12 @@ public sealed partial class DebugBridge : IDisposable
         Application.Transforms.TransformParenting parenting,
         Application.Transforms.IParentingRuntime parentingRuntime,
         SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders,
-        IIdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
+        IdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
     {
         _services = services;
         _configuration = configuration;
         _environmentControl = environmentControl;
-        _poseFiles = poseFiles;
+        _poseFiles = properties.PoseFiles;
         _poseLibrary = poseLibrary;
         _idleExport = idleExport;
         _idleData = idleData; _idleScanner = idleScanner;
@@ -165,7 +174,9 @@ public sealed partial class DebugBridge : IDisposable
         _library = library;
         _bonePosing = bonePosing;
         _ikConfiguration = ikConfiguration;
-        _integration = integration;
+        _penumbra = penumbra;
+        _glamourer = glamourer;
+        _customizePlus = customizePlus;
         _session = session;
         _appearance = appearance;
         _releaseNotes = releaseNotes;
@@ -434,7 +445,7 @@ public sealed partial class DebugBridge : IDisposable
                     return Json(ui.DebugShortcut(chord,
                         Enum.Parse<KeyEventKind>(query.GetValueOrDefault("kind", "Down"), true)));
                 }
-                return Json(global::Poser.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
+                return Json(global::Poser.Documents.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
             }
             case "/selection":
             {
@@ -539,8 +550,8 @@ public sealed partial class DebugBridge : IDisposable
                         var target = FindActor(onlyActor);
                         if (target == null || _bindings.GetActorId(target) is not { } targetId)
                             return Json(new { error = "No such actor." });
-                        saveOptions = SceneSaveOptions.ActorEntry(targetId.LogicalId)
-                            with { IncludeModdedAppearance = false };
+                        saveOptions = SceneSaveOptions.Only(
+                            SceneCategories.Actors, new[] { targetId.LogicalId });
                     }
                     var saved = _scenes.BeginSave(scenePath, options: saveOptions);
                     return Json(new { ok = saved.Success, saved.Detail, progress = _scenes.Progress });
@@ -604,11 +615,11 @@ public sealed partial class DebugBridge : IDisposable
                 var result = query.GetValueOrDefault("action") switch
                 {
                     "live" => _cameraControl.SetLive(cameraId, true),
-                    "angle" => _cameraControl.SetAngle(cameraId, new(Number("x"), Number("y"))),
-                    "pan" => _cameraControl.SetPan(cameraId, new(Number("x"), Number("y"))),
-                    "roll" => _cameraControl.SetRoll(cameraId, Number("x")),
-                    "fov" => _cameraControl.SetFoV(cameraId, Number("x")),
-                    _ => new Application.Transforms.ValueWriteResult(false, "Unknown camera command."),
+                    "angle" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Angle, new(Number("x"), Number("y"))),
+                    "pan" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Pan, new(Number("x"), Number("y"))),
+                    "roll" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Roll, Number("x")),
+                    "fov" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.FoV, Number("x")),
+                    _ => new Application.Transforms.Outcome(false, "Unknown camera command."),
                 };
                 _cameraControl.Seal();
                 return Json(result);
@@ -618,23 +629,24 @@ public sealed partial class DebugBridge : IDisposable
                 // The frame profiler's own ledger — the instrument Midona reads
                 // — plus the GC counters, so a stopwatch cost the sampler
                 // cannot see (a collection pausing the render thread) shows.
-                global::Poser.UI.FrameProfiler.SetEnabled(true);
+                var profiler = (global::Poser.UI.FrameProfiler)_services.GetService(typeof(global::Poser.UI.FrameProfiler))!;
+                profiler.SetEnabled(true);
                 var samples = new global::Poser.UI.FrameProfiler.Sample[64];
-                int n = global::Poser.UI.FrameProfiler.Snapshot(samples);
+                int n = profiler.Snapshot(samples);
                 var units = new List<object>();
                 for (int i = 0; i < n; i++)
                     units.Add(new { samples[i].Label, self = Math.Round(samples[i].AverageSelfMs, 3), peak = Math.Round(samples[i].PeakSelfMs, 1), incl = Math.Round(samples[i].AverageInclusiveMs, 3), samples[i].Hits });
                 return Json(new
                 {
                     frame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount(),
-                    avgMs = Math.Round(global::Poser.UI.FrameProfiler.AverageFrameMs, 3),
-                    peakMs = Math.Round(global::Poser.UI.FrameProfiler.PeakFrameMs, 1),
+                    avgMs = Math.Round(profiler.AverageFrameMs, 3),
+                    peakMs = Math.Round(profiler.PeakFrameMs, 1),
                     gc0 = GC.CollectionCount(0), gc1 = GC.CollectionCount(1), gc2 = GC.CollectionCount(2),
                     allocated = GC.GetTotalAllocatedBytes(false),
-                    resolveUs = global::Poser.Entities.Skeleton.ResolveCalls == 0 ? 0.0
-                        : Math.Round(global::Poser.Entities.Skeleton.ResolveTicks * 1_000_000.0
-                            / System.Diagnostics.Stopwatch.Frequency / global::Poser.Entities.Skeleton.ResolveCalls, 2),
-                    resolveCalls = global::Poser.Entities.Skeleton.ResolveCalls,
+                    resolveUs = global::Poser.Game.Entities.Skeleton.ResolveCalls == 0 ? 0.0
+                        : Math.Round(global::Poser.Game.Entities.Skeleton.ResolveTicks * 1_000_000.0
+                            / System.Diagnostics.Stopwatch.Frequency / global::Poser.Game.Entities.Skeleton.ResolveCalls, 2),
+                    resolveCalls = global::Poser.Game.Entities.Skeleton.ResolveCalls,
                     units,
                 });
             }
@@ -660,7 +672,7 @@ public sealed partial class DebugBridge : IDisposable
                     _overlayPresentation.SetVisible(everyBone, show == "1");
                 }
                 if (query.TryGetValue("mode", out var mode))
-                    skeleton.SkeletonViewMode = Enum.Parse<global::Poser.Services.SkeletonViewMode>(mode, true);
+                    skeleton.SkeletonViewMode = Enum.Parse<global::Poser.Domain.Preferences.SkeletonViewMode>(mode, true);
                 return Json(new { onlyActiveActor = skeleton.OnlyActiveActorBones, visible = _overlay.UserVisible, open = _overlay.IsOpen, bones = _overlay.LastBoneCount, mode = skeleton.SkeletonViewMode.ToString() });
             }
             case "/history":
@@ -822,7 +834,7 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(new { ok = true });
             case "/setcollection":
             {
-                var read = _integration.GetCollectionAssignment(id);
+                var read = _penumbra.GetCollectionAssignment(id);
                 if (!read.Success || read.Value is not { } cur)
                     return Json(new { error = read.Detail });
                 var guid = query.TryGetValue("id", out var g) ? Guid.Parse(g) : cur.EffectiveId;
@@ -833,7 +845,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/resources":
             {
-                var paths = _integration.GetActorResourcePaths(id);
+                var paths = _penumbra.GetActorResourcePaths(id);
                 if (!paths.Success || paths.Value is not { } tree)
                     return Json(new { error = paths.Detail });
                 var modded = tree.Where(p => !p.Value.Contains(p.Key)).Select(p => p.Key).ToArray();
@@ -885,7 +897,7 @@ public sealed partial class DebugBridge : IDisposable
             case "/mcdf":
             {
                 if (query.TryGetValue("resolve", out var resourcePath))
-                    return Json(((Game.Integration.IntegrationRuntimePort)_integration).DebugResolveResourcePath(id, resourcePath));
+                    return Json(_penumbra.DebugResolveResourcePath(id, resourcePath));
                 if (query.TryGetValue("spawn", out var packagePath))
                     return Json(_characterFiles.Spawn(packagePath));
                 if (query.GetValueOrDefault("reset") == "1")
@@ -898,12 +910,12 @@ public sealed partial class DebugBridge : IDisposable
                 if (query.TryGetValue("import", out var source))
                     return Json(_characterFiles.Import(id, source));
                 return Json(new { busy = _characterFiles.Busy, progress = _characterFiles.Progress,
-                    owned = Owned(id), collection = _integration.GetCollectionAssignment(id) });
+                    owned = Owned(id), collection = _penumbra.GetCollectionAssignment(id) });
             }
             case "/bonediff":
             {
                 var other = _actors.Actors[int.Parse(query["other"])];
-                var mine = new Dictionary<string, (int Partial, global::Poser.Transform T)>();
+                var mine = new Dictionary<string, (int Partial, global::Poser.Domain.Transforms.Transform T)>();
                 foreach (var sk in _skeletons.GetSkeletons(actor))
                     foreach (var b in sk.Bones)
                         mine[$"{b.PartialId}:{b.BoneName}"] = (b.PartialId, b.LastTransform);
@@ -963,7 +975,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/fonts":
             {
-                var typography = global::Poser.UI.Crystarium.ActiveTheme.Typography;
+                var typography = ActiveTheme.Typography;
                 object Probe(float size)
                 {
                     var handle = global::Poser.UI.FontRegistry.Resolve(
@@ -1083,7 +1095,7 @@ public sealed partial class DebugBridge : IDisposable
                     .SelectMany(s => s.Bones).Where(b => b.BoneName == name && b.PartialId == partial).ToArray();
                 if (matches.Length != 1 || _bindings.GetBoneId(matches[0]) is not { } boneId)
                     return Json(new { error = "Expected one exact bound bone." });
-                var pane = (global::Poser.UI.GraphicalBonePane)_services.GetService(typeof(global::Poser.UI.GraphicalBonePane))!;
+                var pane = ((global::Poser.UI.PropertiesContent)_services.GetService(typeof(global::Poser.UI.PropertiesContent))!).BoneMap;
                 var map = query.GetValueOrDefault("map", "Body");
                 var actions = pane.AddToPresetActions(boneId).FirstOrDefault(item => item.Label == map).SubmenuItems;
                 if (actions == null) return Json(new { error = "No preset actions for this actor/map." });
@@ -1138,7 +1150,7 @@ public sealed partial class DebugBridge : IDisposable
                             float dy = query.TryGetValue("dy", out var dys) ? float.Parse(dys, CultureInfo.InvariantCulture) : 0f;
                             float dz = query.TryGetValue("dz", out var dzs) ? float.Parse(dzs, CultureInfo.InvariantCulture) : 0f;
                             float scale = query.TryGetValue("scale", out var factor) ? float.Parse(factor, CultureInfo.InvariantCulture) : 1f;
-                            var wanted = new global::Poser.Transform(raw.Position + new System.Numerics.Vector3(dx, dy, dz), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale * scale);
+                            var wanted = new global::Poser.Domain.Transforms.Transform(raw.Position + new System.Numerics.Vector3(dx, dy, dz), System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale * scale);
                             var pose = _bonePosing.GetPoseInfo(skeleton).GetPoseInfo(bone.BoneName, bone.PartialId);
                             var propagation = pose.DefaultPropagation;
                             try
@@ -1161,7 +1173,7 @@ public sealed partial class DebugBridge : IDisposable
                         if (bone.BoneName == name && bone.PartialId == part)
                         {
                             var raw = bone.LastRawTransform;
-                            var wanted = new global::Poser.Transform(raw.Position, raw.Rotation, new System.Numerics.Vector3(sc, sc, sc));
+                            var wanted = new global::Poser.Domain.Transforms.Transform(raw.Position, raw.Rotation, new System.Numerics.Vector3(sc, sc, sc));
                             _bonePosing.ApplyTransform(bone, wanted, raw);
                             return Json(new { ok = true, raw = new { raw.Scale.X, raw.Rotation.W }, modification = _bonePosing.GetModification(bone)?.Scale.X });
                         }
@@ -1272,7 +1284,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/meta":
             {
-                var meta = _integration.GetActorMetaManipulations(id);
+                var meta = _penumbra.GetActorMetaManipulations(id);
                 if (!meta.Success || meta.Value is not { } m)
                     return Json(new { error = meta.Detail });
                 return Json(new { length = m.Length, hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(m)))[..12] });
@@ -1292,8 +1304,8 @@ public sealed partial class DebugBridge : IDisposable
             case "/spawnobject":
             {
                 string modelPath = query.TryGetValue("path", out var sp) ? sp : "bgcommon/hou/outdoor/general/0022/bgparts/gar_b0_m0022a.mdl";
-                var seat = _worldObjects.Adopted.Count > 0 ? _worldObjects.Adopted[0].Transform : global::Poser.Transform.Identity;
-                var placement = new global::Poser.Transform(seat.Position + new System.Numerics.Vector3(0f, 0.5f, 0f), seat.Rotation, System.Numerics.Vector3.One);
+                var seat = _worldObjects.Adopted.Count > 0 ? _worldObjects.Adopted[0].Transform : global::Poser.Domain.Transforms.Transform.Identity;
+                var placement = new global::Poser.Domain.Transforms.Transform(seat.Position + new System.Numerics.Vector3(0f, 0.5f, 0f), seat.Rotation, System.Numerics.Vector3.One);
                 var made = _worldObjects.Spawn(modelPath, placement, true, out var detail);
                 return Json(new { ok = made != null, detail, address = made == null ? null : $"0x{made.Address:X}", name = made?.Name });
             }
@@ -1313,7 +1325,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/redraw":
             {
-                var r = _integration.RequestRedraw(id);
+                var r = _penumbra.RequestRedraw(id);
                 return Json(new { ok = r.Success, r.Detail });
             }
             case "/collections":
@@ -1439,8 +1451,8 @@ public sealed partial class DebugBridge : IDisposable
                     ? new { name = reference.Name.TextValue, type = reference.GetType().Name, id = reference.GameObjectId,
                         world = (reference as Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter)?.HomeWorld.RowId } : null,
             },
-            penumbra = _integration.Penumbra,
-            glamourer = _integration.Glamourer,
+            penumbra = _penumbra.Penumbra,
+            glamourer = _glamourer.Glamourer,
             paused = _animation.IsPaused(id),
             anyPlaying = _animation.AnyPlaying(id),
             overallSpeed = reading?.OverallSpeed,
@@ -1449,7 +1461,7 @@ public sealed partial class DebugBridge : IDisposable
             mode = snapshot?.Mode,
             renderFlags = snapshot?.RenderFlags,
             hasDrawObject = snapshot?.HasDrawObject,
-            physicsFrozen = _port.IsPhysicsFrozen,
+            physicsFrozen = _animation.IsPhysicsFrozen,
             drawObject = DrawObjectAddress(actor),
             drawObjectVisible = snapshot?.DrawObjectVisible,
             weaponDrawn = snapshot?.WeaponDrawn,
@@ -1537,7 +1549,7 @@ public sealed partial class DebugBridge : IDisposable
 
     private object BodyProfile(ActorId id)
     {
-        var probe = _integration.ProbeBodyProfile(id);
+        var probe = _customizePlus.ProbeBodyProfile(id);
         return new
         {
             ok = probe.Success,

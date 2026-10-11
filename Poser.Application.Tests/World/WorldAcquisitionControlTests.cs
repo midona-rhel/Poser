@@ -9,23 +9,21 @@ namespace Poser.Application.Tests.World;
 
 public sealed class WorldAcquisitionControlTests
 {
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Completion_selects_without_a_panel_but_never_enters_a_replacement_session(bool replaceSession)
+    [Fact]
+    public void Completion_never_enters_a_replacement_session()
     {
         var service = DispatchProxy.Create<IWorldService, World>();
         var world = (World)(object)service;
         var sessions = new Sessions();
         var selection = new SelectionSession();
-        var failures = new List<string>();
-        var control = new WorldAcquisitionControl(service, sessions, selection, failures.Add);
+        var failures = new Fixtures.NoticeLog();
+        var control = new WorldAcquisitionControl(service, sessions, selection, failures);
         var target = SelectionId.ForActor(ActorId.New());
         control.Acquire(new(Guid.NewGuid()));
-        if (replaceSession) sessions.ActiveSessionGeneration = SessionGeneration.New();
+        sessions.ActiveSessionGeneration = SessionGeneration.New();
         world.Complete.SetResult(new(WorldCommandStatus.Applied, new(Guid.NewGuid()), target));
         control.Tick();
-        Assert.Equal(replaceSession ? null : (SelectionId?)target, selection.Primary);
+        Assert.Null(selection.Primary);
         Assert.Empty(failures);
     }
 

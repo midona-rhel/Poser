@@ -15,14 +15,14 @@ namespace Poser.Application.Appearance;
 public sealed class CustomizeSession : ICustomizeControl
 {
     private readonly ValueJournal _journal;
-    private readonly ActorIntegrationSession _integration;
-    private readonly IIntegrationRuntimePort _runtime;
+    private readonly IntegrationSelectors _integration;
+    private readonly IIntegrationResolutionPort _runtime;
     private readonly DisruptiveSteps _disruptive;
 
     public CustomizeSession(
         ValueJournal journal,
-        ActorIntegrationSession integration,
-        IIntegrationRuntimePort runtime,
+        IntegrationSelectors integration,
+        IIntegrationResolutionPort runtime,
         DisruptiveSteps disruptive)
     {
         _journal = journal;
@@ -51,22 +51,24 @@ public sealed class CustomizeSession : ICustomizeControl
         if (before == value)
             return IntegrationResult.Ok();
         IntegrationResult result = IntegrationResult.Ok();
-        var written = _journal.TrySet((actor, key), description,
+        var written = _journal.Set((actor, key), description,
             () => before,
             next =>
             {
                 result = Apply(actor, new Dictionary<CustomizeKey, int> { [key] = next });
-                return new ValueWriteResult(result.Success, result.Detail);
+                return result.Outcome;
             },
             value,
             () => Alive(actor));
         return written.Success ? result : new(false, written.Detail, result.AppearanceRefusal);
     }
 
-    /// <summary>Several values as one step.</summary>
+#if DEBUG
+    /// <summary>Several values as one step. Debug bridge only.</summary>
     public IntegrationResult SetMany(
         ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description) =>
         SetValues(actor, values, description, disruptive: false);
+#endif
 
     public IntegrationResult SetBody(
         ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description) =>
@@ -99,12 +101,12 @@ public sealed class CustomizeSession : ICustomizeControl
         var result = Apply(actor, after);
         if (!result.Success)
             return result;
-        _journal.RecordResult<IReadOnlyDictionary<CustomizeKey, int>>(description, before, after,
+        _journal.Record<IReadOnlyDictionary<CustomizeKey, int>>(SelectionId.ForActor(actor), description, before, after,
             next =>
             {
                 var applied = Apply(actor, next);
-                return new ValueWriteResult(applied.Success, applied.Detail);
-            }, () => Alive(actor), SelectionId.ForActor(actor));
+                return applied.Outcome;
+            }, () => Alive(actor));
         return result;
     }
 

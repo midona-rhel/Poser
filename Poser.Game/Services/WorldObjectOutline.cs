@@ -1,4 +1,4 @@
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// The two outline bytes this feature writes.

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -98,17 +99,39 @@ public readonly struct InteractionResult
 /// </summary>
 public static class Interactive
 {
-    private readonly record struct Occluder(
+    /// <summary>Occlusion geometry, the owner stack, the exclusive chain and the accepted drag.</summary>
+    internal sealed class InteractionState
+    {
+        internal List<Occluder> PreviousOccluders = new();
+        internal List<Occluder> CurrentOccluders = new();
+        internal readonly PointerQuery[] PointerQueries =
+            new PointerQuery[PointerQueryCapacity];
+        internal int PointerQueryGeneration = 1;
+        internal readonly List<InteractionOwner> OwnerStack = new();
+        internal readonly List<ExclusiveNode> ExclusiveChain = new();
+        internal int NextOrder;
+        internal int NextSurfaceToken;
+        internal int Frame;
+        internal InteractionOwner? OpeningBarrier;
+        // The ImGui id whose drag press was ACCEPTED (unoccluded, enabled).
+        // Ownership is what pairs DragBegan with DragEnded: a press swallowed
+        // by an occluder never records an owner and therefore can never
+        // produce a release, while an accepted drag keeps reporting its
+        // release even if a surface opens over the control mid-drag.
+        internal uint? DragOwner;
+    }
+
+    private static InteractionState State => UiContext.Current.Interaction;
+
+    internal readonly record struct Occluder(
         InteractionOwner Owner,
         Vector2 Min,
         Vector2 Max);
 
-    private static List<Occluder> _previousOccluders = new();
-    private static List<Occluder> _currentOccluders = new();
     // Reserve asks the same owner about the same pointer once for every
     // control in a surface. Keep that repeated query bounded and allocation
     // free; any geometry or exclusive-state mutation retires the entries.
-    private struct PointerQuery
+    internal struct PointerQuery
     {
         public int Generation;
         public InteractionOwner Owner;
@@ -117,11 +140,7 @@ public static class Interactive
     }
 
     private const int PointerQueryCapacity = 64;
-    private static readonly PointerQuery[] PointerQueries =
-        new PointerQuery[PointerQueryCapacity];
-    private static int _pointerQueryGeneration = 1;
-    private static readonly List<InteractionOwner> OwnerStack = new();
-    private sealed class ExclusiveNode
+    internal sealed class ExclusiveNode
     {
         public required string Id;
         public required InteractionLayer Layer;
@@ -129,43 +148,30 @@ public static class Interactive
         public int LastSeenFrame;
     }
 
-    private static readonly List<ExclusiveNode> ExclusiveChain = new();
-    private static int _nextOrder;
-    private static int _nextSurfaceToken;
-    private static int _frame;
-    private static InteractionOwner? _openingBarrier;
-
-    // The ImGui id whose drag press was ACCEPTED (unoccluded, enabled).
-    // Ownership is what pairs DragBegan with DragEnded: a press swallowed
-    // by an occluder never records an owner and therefore can never
-    // produce a release, while an accepted drag keeps reporting its
-    // release even if a surface opens over the control mid-drag.
-    private static uint? _dragOwner;
-
     public static InteractionOwner CurrentOwner =>
-        OwnerStack.Count == 0
+        State.OwnerStack.Count == 0
             ? InteractionOwner.World
-            : OwnerStack[^1];
+            : State.OwnerStack[^1];
 
     public static void BeginFrame()
     {
-        (_previousOccluders, _currentOccluders) =
-            (_currentOccluders, _previousOccluders);
-        _currentOccluders.Clear();
-        OwnerStack.Clear();
-        _nextOrder = 0;
-        _frame = ImGui.GetFrameCount();
-        _openingBarrier = null;
+        (State.PreviousOccluders, State.CurrentOccluders) =
+            (State.CurrentOccluders, State.PreviousOccluders);
+        State.CurrentOccluders.Clear();
+        State.OwnerStack.Clear();
+        State.NextOrder = 0;
+        State.Frame = ImGui.GetFrameCount();
+        State.OpeningBarrier = null;
         ClearPointerQueries();
     }
 
     public static void EndFrame()
     {
-        for (int i = 0; i < ExclusiveChain.Count; i++)
+        for (int i = 0; i < State.ExclusiveChain.Count; i++)
         {
-            if (ExclusiveChain[i].LastSeenFrame == _frame)
+            if (State.ExclusiveChain[i].LastSeenFrame == State.Frame)
                 continue;
-            ExclusiveChain.RemoveRange(i, ExclusiveChain.Count - i);
+            State.ExclusiveChain.RemoveRange(i, State.ExclusiveChain.Count - i);
             break;
         }
         ClearPointerQueries();
@@ -178,30 +184,30 @@ public static class Interactive
         Vector2 max)
     {
         int surfaceToken = 0;
-        for (int i = ExclusiveChain.Count - 1; i >= 0; i--)
+        for (int i = State.ExclusiveChain.Count - 1; i >= 0; i--)
         {
             if (!string.Equals(
-                    ExclusiveChain[i].Id,
+                    State.ExclusiveChain[i].Id,
                     id,
                     StringComparison.Ordinal))
                 continue;
-            surfaceToken = ExclusiveChain[i].Token;
-            ExclusiveChain[i].LastSeenFrame = _frame;
+            surfaceToken = State.ExclusiveChain[i].Token;
+            State.ExclusiveChain[i].LastSeenFrame = State.Frame;
             break;
         }
         var owner = new InteractionOwner(
-            id, layer, ++_nextOrder, surfaceToken);
-        OwnerStack.Add(owner);
-        _currentOccluders.Add(new Occluder(owner, min, max));
+            id, layer, ++State.NextOrder, surfaceToken);
+        State.OwnerStack.Add(owner);
+        State.CurrentOccluders.Add(new Occluder(owner, min, max));
         ClearPointerQueries();
         return owner;
     }
 
     public static void EndOwner(InteractionOwner owner)
     {
-        if (OwnerStack.Count > 0 && OwnerStack[^1] == owner)
+        if (State.OwnerStack.Count > 0 && State.OwnerStack[^1] == owner)
         {
-            OwnerStack.RemoveAt(OwnerStack.Count - 1);
+            State.OwnerStack.RemoveAt(State.OwnerStack.Count - 1);
             return;
         }
 
@@ -212,11 +218,11 @@ public static class Interactive
         // animation pane's real error for a whole session). When the owner is
         // deeper in the stack this is that unwind: pop down to and through it
         // and let the true exception keep travelling.
-        for (int i = OwnerStack.Count - 1; i >= 0; i--)
+        for (int i = State.OwnerStack.Count - 1; i >= 0; i--)
         {
-            if (OwnerStack[i] != owner)
+            if (State.OwnerStack[i] != owner)
                 continue;
-            OwnerStack.RemoveRange(i, OwnerStack.Count - i);
+            State.OwnerStack.RemoveRange(i, State.OwnerStack.Count - i);
             return;
         }
 
@@ -227,7 +233,7 @@ public static class Interactive
 
     public static void RegisterOccluder(Vector2 min, Vector2 max)
     {
-        _currentOccluders.Add(new Occluder(CurrentOwner, min, max));
+        State.CurrentOccluders.Add(new Occluder(CurrentOwner, min, max));
         ClearPointerQueries();
     }
 
@@ -242,7 +248,7 @@ public static class Interactive
         Vector2 min,
         Vector2 max)
     {
-        _currentOccluders.Add(new Occluder(owner, min, max));
+        State.CurrentOccluders.Add(new Occluder(owner, min, max));
         ClearPointerQueries();
     }
 
@@ -253,63 +259,63 @@ public static class Interactive
         int parentIndex = -1;
         int parentToken = CurrentOwner.SurfaceToken;
         if (parentToken != 0)
-            parentIndex = ExclusiveChain.FindIndex(
+            parentIndex = State.ExclusiveChain.FindIndex(
                 node => node.Token == parentToken);
 
-        int existingIndex = ExclusiveChain.FindIndex(
+        int existingIndex = State.ExclusiveChain.FindIndex(
             node => string.Equals(node.Id, id, StringComparison.Ordinal));
         ExclusiveNode node;
         if (existingIndex >= 0
             && (existingIndex == parentIndex
                 || existingIndex == parentIndex + 1))
         {
-            if (existingIndex + 1 < ExclusiveChain.Count)
-                ExclusiveChain.RemoveRange(
+            if (existingIndex + 1 < State.ExclusiveChain.Count)
+                State.ExclusiveChain.RemoveRange(
                     existingIndex + 1,
-                    ExclusiveChain.Count - existingIndex - 1);
-            node = ExclusiveChain[existingIndex];
+                    State.ExclusiveChain.Count - existingIndex - 1);
+            node = State.ExclusiveChain[existingIndex];
         }
         else
         {
             int keep = parentIndex + 1;
-            if (keep < ExclusiveChain.Count)
-                ExclusiveChain.RemoveRange(
-                    keep, ExclusiveChain.Count - keep);
+            if (keep < State.ExclusiveChain.Count)
+                State.ExclusiveChain.RemoveRange(
+                    keep, State.ExclusiveChain.Count - keep);
             node = new ExclusiveNode
             {
                 Id = id,
                 Layer = layer,
-                Token = ++_nextSurfaceToken,
+                Token = ++State.NextSurfaceToken,
             };
-            ExclusiveChain.Add(node);
+            State.ExclusiveChain.Add(node);
         }
-        node.LastSeenFrame = _frame;
-        _openingBarrier = new InteractionOwner(
+        node.LastSeenFrame = State.Frame;
+        State.OpeningBarrier = new InteractionOwner(
             id, layer, int.MaxValue, node.Token);
         ClearPointerQueries();
     }
 
     public static bool OwnsExclusive(string id) =>
-        ExclusiveChain.Exists(
+        State.ExclusiveChain.Exists(
             node => string.Equals(node.Id, id, StringComparison.Ordinal));
 
     public static void TouchExclusive(string id)
     {
-        var node = ExclusiveChain.Find(
+        var node = State.ExclusiveChain.Find(
             candidate => string.Equals(
                 candidate.Id, id, StringComparison.Ordinal));
         if (node != null)
-            node.LastSeenFrame = _frame;
+            node.LastSeenFrame = State.Frame;
     }
 
     public static void ReleaseExclusive(string id)
     {
-        int index = ExclusiveChain.FindIndex(
+        int index = State.ExclusiveChain.FindIndex(
             node => string.Equals(node.Id, id, StringComparison.Ordinal));
         if (index >= 0)
         {
-            ExclusiveChain.RemoveRange(
-                index, ExclusiveChain.Count - index);
+            State.ExclusiveChain.RemoveRange(
+                index, State.ExclusiveChain.Count - index);
             ClearPointerQueries();
         }
     }
@@ -321,14 +327,14 @@ public static class Interactive
         InteractionOwner owner,
         Vector2 point)
     {
-        ref readonly var cached = ref PointerQueries[
+        ref readonly var cached = ref State.PointerQueries[
             PointerQueryIndex(owner, point)];
-        if (cached.Generation == _pointerQueryGeneration
+        if (cached.Generation == State.PointerQueryGeneration
             && cached.Owner == owner
             && cached.Point == point)
             return cached.Result;
 
-        if (_openingBarrier is { } barrier
+        if (State.OpeningBarrier is { } barrier
             && IsHigher(barrier, owner))
         {
             StorePointerQuery(owner, point, true);
@@ -357,10 +363,10 @@ public static class Interactive
     /// </summary>
     private static bool KeyboardDisowned(InteractionOwner owner)
     {
-        if (_openingBarrier is { } barrier && IsHigher(barrier, owner))
+        if (State.OpeningBarrier is { } barrier && IsHigher(barrier, owner))
             return true;
-        return ExclusiveChain.Count > 0
-            && SurfaceIndex(owner.SurfaceToken) != ExclusiveChain.Count - 1;
+        return State.ExclusiveChain.Count > 0
+            && SurfaceIndex(owner.SurfaceToken) != State.ExclusiveChain.Count - 1;
     }
 
     public static bool RectOccluded(
@@ -368,10 +374,10 @@ public static class Interactive
         Vector2 min,
         Vector2 max)
     {
-        foreach (var occluder in _currentOccluders)
+        foreach (var occluder in State.CurrentOccluders)
             if (Blocks(occluder, owner) && Intersects(occluder, min, max))
                 return true;
-        foreach (var occluder in _previousOccluders)
+        foreach (var occluder in State.PreviousOccluders)
             if (Blocks(occluder, owner) && Intersects(occluder, min, max))
                 return true;
         return false;
@@ -385,8 +391,8 @@ public static class Interactive
         bool found = false;
         var boundsMin = new Vector2(float.MaxValue);
         var boundsMax = new Vector2(float.MinValue);
-        Include(_previousOccluders);
-        Include(_currentOccluders);
+        Include(State.PreviousOccluders);
+        Include(State.CurrentOccluders);
         min = found ? boundsMin : default;
         max = found ? boundsMax : default;
         return found;
@@ -448,12 +454,12 @@ public static class Interactive
         if (!disabled && !occluded && ImGui.IsItemActivated())
         {
             dragBegan = true;
-            _dragOwner = itemId;
+            State.DragOwner = itemId;
         }
-        bool dragEnded = ImGui.IsItemDeactivated() && _dragOwner == itemId;
+        bool dragEnded = ImGui.IsItemDeactivated() && State.DragOwner == itemId;
         if (dragEnded)
-            _dragOwner = null;
-        var dragDelta = active && _dragOwner == itemId
+            State.DragOwner = null;
+        var dragDelta = active && State.DragOwner == itemId
             ? ImGui.GetIO().MouseDelta
             : Vector2.Zero;
         // Keyboard activation has no pointer to hit-test, so it takes two
@@ -496,8 +502,8 @@ public static class Interactive
         InteractionOwner candidate)
     {
         Occluder? highest = null;
-        Consider(_previousOccluders);
-        Consider(_currentOccluders);
+        Consider(State.PreviousOccluders);
+        Consider(State.CurrentOccluders);
         return highest;
 
         void Consider(List<Occluder> occluders)
@@ -552,11 +558,11 @@ public static class Interactive
         SurfaceIndex(token) >= 0;
 
     private static int SurfaceIndex(int token) =>
-        ExclusiveChain.FindIndex(node => node.Token == token);
+        State.ExclusiveChain.FindIndex(node => node.Token == token);
 
     private static void ClearPointerQueries()
     {
-        _pointerQueryGeneration++;
+        State.PointerQueryGeneration++;
     }
 
     private static void StorePointerQuery(
@@ -566,9 +572,9 @@ public static class Interactive
     {
         int index = PointerQueryIndex(owner, point);
 
-        PointerQueries[index] = new PointerQuery
+        State.PointerQueries[index] = new PointerQuery
         {
-            Generation = _pointerQueryGeneration,
+            Generation = State.PointerQueryGeneration,
             Owner = owner,
             Point = point,
             Result = result,

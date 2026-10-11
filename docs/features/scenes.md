@@ -11,14 +11,19 @@ external appearance providers use them as identity.
 New captures mark names as display names. Unmarked legacy names use the normal
 object-index cleanup; authored numeric suffixes in marked files remain intact.
 
-A completed scene load records one undo step. Undo removes that load's
-created entities and restores its captured baselines; redo reads the file
-again and retargets the same step to the new load. Repeated undo never uses
-an earlier load's emptied cleanup lists. Wait for loading to finish before
-undoing it. Clearing existing scene content before a load remains destructive.
-Loaded groups and their transform baselines are restored before completion,
-even with the sidebar closed. Missing bindings time out through load rollback;
-undo removes only that load's groups alongside its created entities.
+Every committed scene load — complete, or partial with named refusals —
+records one undo step. Undo removes that load's created entities, groups and
+imported parent links, runs the same gaze and appearance teardown a clear
+runs on each removed actor, and restores its captured baselines, including
+the default camera's followed actor and the live camera. Redo reads the file
+again additively (it never clears the session a second time), retargets the
+same step to the new load, and lands only when that load commits; a replay
+that rolls back reports why and stays redoable. Repeated undo never uses an
+earlier load's emptied cleanup lists. Undo while another scene operation runs
+is refused and the step kept. Clearing existing scene content before a load
+remains destructive. Loaded groups and their transform baselines are restored
+before completion, even with the sidebar closed; a member whose binding does
+not arrive in time is left out of its group by name.
 Actor imports wait for a bound character skeleton, not merely a ready weapon.
 Embedded actor and companion poses stay frozen and suppress their own history;
 the scene-load entry is their only undo boundary.
@@ -73,7 +78,11 @@ stacks directly, like Brio's pose history, rather than exporting and re-importin
 the evaluated animation frame. Untouched bones remain untouched. Animation is not
 recovered: no timeline, frame, speed or loop restoration, and no added freeze policy.
 The user handles animation after undo/redo. Scene files remain pictures, as described
-below. A repeated removal captures the latest edits again.
+below. A repeated removal captures the latest edits again. An actor whose
+appearance Glamourer cannot read at all (for example `ActorNotFound`) is still
+removed: the entry is recorded without its Glamourer state, the removal notice
+says so, and undo brings the actor back with its spawn appearance. A foreign
+Glamourer hold or a busy character-file operation still refuses removal.
 
 Camera removal includes tracking, target and lock settings; light removal
 includes its bone attachment as well as emission, shadow and texture values.
@@ -91,6 +100,9 @@ Earlier edits survive acquisition undo/redo and removal undo/redo. Expired publi
 selection IDs and acquisition receipts never redirect to the restored instance.
 Duplicate collections retain their resolved resource paths and meta values;
 restoration creates a new owned collection rather than reusing its deleted ID.
+A duplicate's temporary collection is deleted by its GUID even when the clone's
+slot vanished first, and the delete's result code is checked, so none outlives
+its clone and a later spawn at the same address never inherits a stale one.
 MCDF history reuses its package reference; it is not a portable appearance export.
 Embedded scene packages stay staged until the GPose session ends or the plugin
 unloads, so deleting an actor does not invalidate its history's appearance source.
@@ -130,10 +142,19 @@ before individual library entries; a mixed group does not belong only to Actors.
 An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
 with embedded poses, objects, lights, cameras, environment, overlays, adopted
 world objects, relationships, and optional world toggles. An actor can store
-model id, companion attachment and pose, visibility, absolute transform, gaze,
-and an appearance payload. Permanent Penumbra collections are local GUID
+model id, catalog kind, companion attachment and pose, visibility, absolute
+transform, gaze, and an appearance payload. A minion, mount or ornament spawned
+as an actor respawns through the catalog by its saved kind; older files without
+a kind load it as a character. Every loaded character is a clone of the local
+player, so an actor other than the player saved without an appearance payload
+is noted at save and again at load: it comes back wearing the player's look. Permanent Penumbra collections are local GUID
 references, restored and redrawn before companions and poses, as in Brio's
-`ActorDTO.PenumbraCollection`/`SceneService`. They do not package mods.
+`ActorDTO.PenumbraCollection`/`SceneService`. They do not package mods. Only
+a collection chosen for the actor is saved: every plain spawn is assigned the
+player's collection, and wearing it is inheriting, so it is not recorded. On
+load an actor already wearing the saved collection (an older file that recorded
+the player's) is left alone with no redraw; the rest are assigned and redrawn
+in parallel, not one barrier after another.
 Temporary collection IDs are not saved; those require the modded-appearance
 payload. Older files without collection references retain their existing load
 behavior. Other appearance remains external.
@@ -145,11 +166,34 @@ copy. Payload entries are written and read as streams, so a scene carrying
 hundreds of megabytes of appearance still has a small document and never puts
 that payload in memory.
 
-The extension and the file version are one identity: `.xivs` is format version
-2, and the reader accepts that version alone. `.xivs` is the only scene format
-Poser has; anything else is not a scene and is not listed, opened or migrated.
-The file viewer states the format, the version and the size before a load, and
-the size includes the appearance payloads.
+Library entries (`.xiva`, `.xivl`, `.xivc`, `.xivp`, `.xivw`, `.xivo`,
+`.xivg`, `.xive`) are the same container narrowed to one entity, group or the
+environment. A reference to an actor the entry left out is cleared with a named
+note: a gaze or camera target is dropped, and an attached light is saved at its
+world placement. A camera entry without the session default creates a new
+camera on load. `.xivl` and `.xivc` files written as bare JSON by older builds
+are still read, as a one-light or one-camera entry; nothing writes that form.
+
+`.xivs` is the only scene format Poser has; anything else is not a scene and is
+not listed, opened or migrated. The file viewer states the format, the version
+and the size before a load, and the size includes the appearance payloads.
+
+**Format versioning.** Every scene document (and every library entry, which is
+the same document) carries an integer `FileVersion`; `SceneFile.CurrentVersion`
+is what this build writes, and every write stamps it. Bump it for ANY change an
+older reader would lose or misread — a new member, a new enum name, a changed
+meaning — not only for breaking ones: an older build skips unknown members and
+would silently destroy them on re-save, and fails a whole file on an unknown
+enum name. Readers accept every version from `SceneFile.MinimumVersion` (2, the
+first `.xivs`) through the current one, defaulting members an older version
+lacks, and refuse a newer version as a typed Future outcome ("saved by a newer
+Poser … update Poser to open it") before anything changes the game. Version 3
+covers groups, parent links, overlays, world-object extras and anchors that
+shipped under 2. Older readers report a version-3 file as Future rather than
+dropping those members. Pose files follow Brio's `FileVersion` the same way:
+only a format version above `PoseFile.CurrentFileVersion` is Future. The
+`Version` string is the author's free-text pose version and never decides
+support.
 
 The only size refusal is the MCDF importer's own per-package ceiling: a package
 Poser could not import back is one there is no point saving. There is no
@@ -161,8 +205,14 @@ partial result, not a success.
 Placements in the file are absolute. An optional origin records a capture
 anchor for relative loading; it is not needed to read the stored numbers.
 Territory id and capture-time place name are optional metadata. Missing place
-data is never guessed. Unsupported versions, malformed structure, oversized
-input, and invalid numbers fail before Poser changes the game.
+data is never guessed. Unsupported versions, oversized input, and a malformed
+document — its identity, collection caps, text, camera live/default rules, or
+the group and parent graph — fail before Poser changes the game. An entity
+whose own data is invalid (a name over 256 characters, a non-finite value, a
+character-file payload whose entry is not the one its digest names) is left out
+of the load by name and the rest of the scene loads; a bad character file or
+gaze drops only that part of its actor. Writes stay strict. The description is
+prose and allows 4096 characters.
 
 Capture does not change the scene. It refreshes pose data, takes the document
 on the framework thread, then validates and writes it in the background. A
@@ -197,18 +247,40 @@ republished for these skeleton instances. Bone ids are published by the binding
 registry's own commit pass, so after a redraw the skeleton service hands out
 new bone objects while the registry still holds the previous ones, and every
 bone resolves to null until that pass runs. The barrier polls, so a skeleton
-mid-publication is waited for; only one that never publishes inside the bound
-is refused.
+mid-publication is waited for. The bound is per actor: an actor still not
+pose-ready when it runs out stays in the session, is named in the result, and
+leaves every later phase; the other actors load on. A spawned actor's first
+draw is held until the game reports it ready, for as long as the spawn lives,
+so a busy frame delays the body rather than losing it. A companion body is
+waited for with the same three-part test.
+
+The per-actor steps wait for shared single-flight slots instead of refusing on
+a busy one. Each pose import waits, within its bound, for the pose slot (an
+import, IK bake or open transform gesture); from its first native step to its
+terminal the load holds that slot, so pose imports it did not start (library,
+inspector, presets) are refused rather than superseding its own. An import
+that does not finish within its bound, or whose load is cancelled, is
+cancelled by its operation id and never left armed. Character-file imports
+wait for the MCDF slot — which a clear-first load's own teardown can hold for
+seconds — and report it busy only at the bound. Housing furniture is waited
+for until its model streams in; one still loading at the readiness bound is
+kept and named in the result, never released afterwards. Every wait honours
+cancellation, and a cancelled load always ends Cancelled.
 
 Each phase checks that the load is still running and belongs to the same
 session. Character files come before body-dependent state because import
 redraws the actor. Loads add to the current session by default. Clearing the
-session is outside rollback. Relative loading moves the whole scene from its
-saved origin before game work.
+session is outside rollback, so a clear-first load first checks it can spawn
+at all (a local player exists) and refuses without clearing when it cannot; a
+rollback after the clear reads "the session was already cleared". Relative
+loading moves the whole scene from its saved origin before game work. A
+library placement (at the camera or an actor) replaces relative loading for
+that load, so content is moved once.
 
 Clearing the session removes everything it holds, actors included: an actor
 Poser spawned goes through its ownership ledger, an adopted one through the
-native scene table. Before either delete the actor's gaze is released and its
+native scene table; a companion body leaves with its owner. Before either
+delete the actor's gaze is released and its
 appearance reverted, while it still exists to release them against; an Entity
 gaze target that LEAVES the scene is kept by id and marked stale, so another
 actor's intent to look at it is refused by name rather than scrubbed. A
@@ -219,9 +291,16 @@ removed actor deselects its whole lineage — the actor, its bones and its bone
 groups — and emptying the session drops the selection entirely, because props,
 overlays, lights, cameras and borrowed objects carry no lineage of their own.
 
-If a load must stop after creating things, Poser removes only the actors and
-objects it created, in reverse order. A refused item does not remove successful
-items, and Poser names each refusal. A borrowed world object is matched by
+What a failure costs is decided in one place, the load policy on
+`SceneLoadTransaction`. Required steps — reading the file, the session staying the
+same, cancellation, and creating each actor — stop the load: Poser removes only
+what it created, in reverse order. Everything else is optional and becomes a
+named refusal beside what did restore: an actor that never became pose-ready,
+appearance, companions, gaze, pose, objects, cameras, lights, environment,
+sidebar groups and order (a member that did not bind in time is left
+out of its group), and parent links (a missing parent bone or a refused link
+leaves the entity where it was saved). A refused actor spawn names its cause,
+such as a full actor table. A borrowed world object is matched by
 model path and map placement in the current territory, never by pointer or
 object index. Rollback releases its claim.
 
@@ -232,7 +311,10 @@ background.
 Every terminal writes one correlated Scene operation line plus one line per
 entity with its kind, scene name, outcome, reason and next step. A refused
 entity carries both a reason and a corrective action, and neither is truncated
-in the result list. Completion and failure are also announced once through the
+in the result list. An entity restored with a caveat (a missing gobo, a changed
+character file, a model still streaming) is listed with its caveat and logged
+at Information. Every outcome kind has its next step; the kinds are an enum
+whose label and remedy switches do not build with a kind missing. Completion and failure are also announced once through the
 normal Dalamud notification channel; the per-entity detail stays in the Scene
 tab rather than being repeated in a notification.
 
@@ -356,8 +438,26 @@ other live handle is not a portable save.
 
 Restoring an embedded payload streams the container entry into one owned
 temporary file retained for the session and imports it through the same MCDF
-transaction a hand-driven import uses. Its checksum is not consulted: the bytes in the container are the
-package, so there is nothing to identify them against.
+transaction a hand-driven import uses. The entry must be the one its recorded
+SHA-256 names, and the bytes are hashed while they are staged: a payload that
+does not match its digest is refused by name, never imported.
+
+A scene load's character-file import and a save's appearance export are
+children of that load or save. When the parent's bound expires or it is
+cancelled, it cancels the child by its own operation id, never the shared
+slot, so a newer operation is never touched. It then waits up to 15 seconds
+for the child to stop. Once cancelled, the child's remaining phases refuse
+and roll back, so a late completion cannot change the actor. A staged
+package or export file is deleted only after its child stops. A child that
+outlives that wait has its file deleted when it does stop, and the outcome
+and log say so. A child that committed before the matched cancel is a
+successful import. While the parent waits, the scene pane reads
+"Cancelling…" rather than holding the last step.
+
+Plugin unload does not drain: the framework thread is blocked in disposal,
+so the drain's framework hop could never run. Disposal cancels the children
+directly first, the parent returns at once, and the MCDF transaction's own
+bounded drain joins the child.
 
 ## Appearance identity
 
@@ -392,7 +492,8 @@ takes precedence. Choosing a stain clears that tint in the same history edit.
 The backend follows Brio's `SGLService`/`FurnitureObject`: one owned shared-group
 layout contains the furnishing's entire child graph. Children are not independent
 borrow candidates. Graphics edits wait for layout readiness; a fresh load that
-times out after 15 seconds is removed. Release/GPose exit tears down the owning
+times out after 15 seconds is removed, unless a scene load already named it as
+still loading and kept it. Release/GPose exit tears down the owning
 layout, never individual children. Raw BG debug controls do not apply. Furniture's
 Night toggle applies the scenery day/night byte only to its BG child models,
 not to the owning layout or its light nodes. Its visible effect is asset-dependent.

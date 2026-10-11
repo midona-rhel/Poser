@@ -1,5 +1,4 @@
 using System;
-using Poser.Services;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -9,8 +8,8 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
-
-using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+using Poser.Game.Core;
+using Poser.Application.Appearance;
 
 namespace Poser.Game.Integration;
 
@@ -28,7 +27,7 @@ namespace Poser.Game.Integration;
 /// </summary>
 public sealed class InvisibleSkinService : IInvisibleSkinService
 {
-    private readonly IntegrationRuntimePort _port;
+    private readonly PenumbraIpc _port;
     private readonly IFramework _framework;
     private readonly Lazy<StableBindingRegistry> _bindings;
     private readonly IDalamudPluginInterface _pluginInterface;
@@ -41,7 +40,7 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
     private bool _pathsLoaded;
 
     public InvisibleSkinService(
-        IntegrationRuntimePort port,
+        PenumbraIpc port,
         IFramework framework,
         Lazy<StableBindingRegistry> bindings,
         IDalamudPluginInterface pluginInterface,
@@ -61,10 +60,8 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
     {
         if (actorAddress == nint.Zero)
             return false;
-        var characterBase = SlotCharacterBases.Resolve(
-            actorAddress, PoseSlot.Character);
-        return characterBase != null
-            && characterBase->GetModelType() == CharacterBase.ModelType.Human;
+        return GPoseObjectTable.AsHuman(
+            SlotCharacterBases.Resolve(actorAddress, PoseSlot.Character)) != null;
     }
 
     /// <inheritdoc cref="IsHuman(nint)"/>
@@ -141,13 +138,11 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
         if (!resolved.Success || resolved.Value is not { } legacy
             || legacy.Address == nint.Zero)
             return;
-        int index = ((CSGameObject*)legacy.Address)->ObjectIndex;
-        if (index is < 201 or > 439)
+        if (!GPoseObjectTable.IsActorIndex(GPoseObjectTable.IndexOf(legacy.Address)))
             return;
         var characterBase = SlotCharacterBases.Resolve(
             legacy.Address, PoseSlot.Character);
-        if (characterBase == null
-            || characterBase->GetModelType() != CharacterBase.ModelType.Human)
+        if (GPoseObjectTable.AsHuman(characterBase) == null)
             return;
         for (int slot = HairModelSlot; slot <= TailModelSlot; slot++)
         {

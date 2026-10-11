@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
@@ -175,7 +176,7 @@ internal static class CharaRequest
 
     private static bool Present(JObject file, string name) => file[name] is { Type: not JTokenType.Null };
     private static int Number(JToken? token, int max) => token?.Type == JTokenType.Integer
-        && long.TryParse(token.ToString(), out long value) && value >= 0 && value <= max
+        && long.TryParse(token.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long value) && value >= 0 && value <= max
             ? (int)value : throw new JsonException($"Expected a number between 0 and {max}.");
     private static int FeatureMask(string text)
     {

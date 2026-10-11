@@ -1,12 +1,13 @@
 using System.Numerics;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Poser.Domain;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
-public readonly record struct WorldObjectRespawnResult(bool Succeeded, string? Detail = null);
 
 
 /// <summary>A world object the scene holds: a spawned or adopted map object or effect with its placement, look and animation state.</summary>
@@ -30,7 +31,7 @@ public interface IWorldObject
     bool? Dyeable { get; }
     bool NightState { get; set; }
     bool AnimationPaused { get; set; }
-    Task<WorldObjectRespawnResult> Respawn(string path);
+    Task<Outcome> Respawn(string path);
     Transform InitialPlacement { get; }
     byte InitialFlags { get; }
     bool InitialVisible { get; }

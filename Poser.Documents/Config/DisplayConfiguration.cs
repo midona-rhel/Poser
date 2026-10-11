@@ -1,4 +1,4 @@
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// Configuration for display/visibility settings.

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Domain.Posing;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 public enum BoneMapKind { Body, Face }
 

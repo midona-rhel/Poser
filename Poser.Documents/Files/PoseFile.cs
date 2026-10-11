@@ -5,8 +5,11 @@ using System.Linq;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+using Poser.Domain.Transforms;
+using Poser.Documents.Files.Converters;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// Brio-compatible pose file format (.pose).
@@ -170,6 +173,43 @@ public class PoseFile
     };
 
     /// <summary>
+    /// <see cref="JsonOptions"/> for metadata probes: the same contract, but
+    /// <see cref="Base64Image"/> reads as a one-character presence marker so
+    /// indexing a library never materializes every thumbnail string.
+    /// </summary>
+    internal static readonly JsonSerializerOptions MetadataJsonOptions = new(JsonOptions)
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver
+        {
+            Modifiers =
+            {
+                info =>
+                {
+                    if (info.Type != typeof(PoseFile))
+                        return;
+                    foreach (var property in info.Properties)
+                        if (property.Name == nameof(Base64Image))
+                            property.CustomConverter = new ThumbnailPresenceConverter();
+                },
+            },
+        },
+    };
+
+    private sealed class ThumbnailPresenceConverter : JsonConverter<string>
+    {
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.String)
+                throw new JsonException($"{nameof(Base64Image)} must be a string.");
+            var length = reader.HasValueSequence ? reader.ValueSequence.Length : reader.ValueSpan.Length;
+            return length == 0 ? string.Empty : "*";
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
+    }
+
+    /// <summary>
     /// Lossy compatibility load. Returns null for every typed read, size,
     /// JSON, or validation failure; new storage workflows use
     /// <see cref="AtomicPoseFileStore.Read"/>.
@@ -191,18 +231,6 @@ public class PoseFile
         // Intentionally lossy compatibility wrapper for clipboard/rest-pose
         // callers that predate the typed ordinary-pose codec outcome.
         return AtomicPoseFileStore.Default.Parse(json).Pose;
-    }
-
-    /// <summary>
-    /// Lossy compatibility save. Returns false for every typed validation,
-    /// serialization, temp, flush, validation, replace, or move failure; new
-    /// storage workflows use <see cref="AtomicPoseFileStore.Write"/>.
-    /// </summary>
-    public bool Save(string path)
-    {
-        // Intentionally lossy compatibility wrapper. The typed store retains
-        // the phase and any undeletable temp as recovery evidence.
-        return AtomicPoseFileStore.Default.Write(this, path).Succeeded;
     }
 
     /// <summary>

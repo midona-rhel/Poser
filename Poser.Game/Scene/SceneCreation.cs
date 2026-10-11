@@ -9,10 +9,10 @@ using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Services;
 
 using Poser.Application.Viewport;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
@@ -32,14 +32,14 @@ public sealed class SceneCreation : ISceneCreation
     private readonly IVirtualCameraService _cameras;
     private readonly ILightingService _lighting;
     private readonly IOverlayNodeService _overlays;
-    private readonly Application.Integration.ActorIntegrationSession _integration;
+    private readonly Application.Integration.IntegrationSelectors _integration;
     private readonly IPluginLog _log;
     private readonly Application.Transforms.TransformParenting _parenting;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
         IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
-        Application.Integration.ActorIntegrationSession integration, IPluginLog log,
+        Application.Integration.IntegrationSelectors integration, IPluginLog log,
         Application.Transforms.TransformParenting parenting)
     {
         _framework = framework;
@@ -86,49 +86,8 @@ public sealed class SceneCreation : ISceneCreation
     public SceneCreationResult CreateLight(LightKind kind) =>
         Create(SceneEntityKind.Light, () => _lifecycle.SpawnLight(kind));
 
-    public SceneCreationResult CreateLight(Poser.Files.LightFile document, string description) =>
-        Create(SceneEntityKind.Light, () =>
-        {
-            var light = _lighting.SpawnLight(document.Kind);
-            if (light is null) return null;
-            try
-            {
-                Lights.LightDocument.Apply(document, light);
-                if (!string.IsNullOrEmpty(document.Gobo))
-                {
-                    var gobo = _lighting.Gobos.FirstOrDefault(g =>
-                        string.Equals(g.Path, document.Gobo, StringComparison.OrdinalIgnoreCase));
-                    if (gobo is not null) _lighting.ApplyGobo(light, gobo);
-                }
-                return _lifecycle.RecordSpawnedLight(description, light);
-            }
-            catch
-            {
-                _lighting.DestroyLight(light);
-                throw;
-            }
-        });
-
     public SceneCreationResult CreateCamera(CameraKind kind) =>
         Create(SceneEntityKind.Camera, () => _lifecycle.CreateCamera(kind));
-
-    public SceneCreationResult CreateCamera(Poser.Files.CameraFile document, string description) =>
-        Create(SceneEntityKind.Camera, () =>
-        {
-            var camera = _cameras.CreateCamera(document.Kind);
-            if (camera is null) return null;
-            try
-            {
-                Cameras.CameraDocument.Apply(document, camera);
-                // Record the applied file, not the spawn defaults, as the redo baseline.
-                return _lifecycle.RecordSpawnedCamera(description, camera);
-            }
-            catch
-            {
-                _cameras.DestroyCamera(camera);
-                throw;
-            }
-        });
 
     public SceneCreationResult CreateProp(PropModel? model = null) =>
         Create(SceneEntityKind.Prop, () => model is { } value
@@ -225,11 +184,16 @@ public sealed class SceneCreation : ISceneCreation
             });
             return clone;
         }
-        string name = Config.ConfigurationService.StripObjectIndex(source.Name);
+        string name = Application.Settings.ConfigurationService.StripObjectIndex(source.Name);
         if (!withPose || _skeletons.GetSkeleton(source) is null)
             return _lifecycle.SpawnActor($"Duplicate actor '{name}'", Clone, source: source);
         var posed = _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source);
-        if (posed is not null && _bindings.GetActorId(posed) is { } id) _animation.Pause(id);
+        // The copy binds on the scene's next refresh, not inside this call.
+        if (posed is not null)
+            _lifecycle.WhenPosable(posed, copy =>
+            {
+                if (_bindings.GetActorId(copy) is { } id) _animation.Pause(id);
+            });
         return posed;
     }
 

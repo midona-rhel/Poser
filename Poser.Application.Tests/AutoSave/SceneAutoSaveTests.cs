@@ -1,7 +1,11 @@
+using System.Globalization;
+using System.Numerics;
 using Poser.Application.AutoSave;
 using Poser.Application.Scene;
-using Poser.Config;
-using Poser.Files;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Config;
+using Poser.Documents.Files;
+using Poser.Application.Settings;
 
 namespace Poser.Application.Tests.AutoSave;
 
@@ -39,7 +43,55 @@ public sealed class SceneAutoSaveTests
         test.Pending!(SceneCaptureOutcome.Fail("Actor disappeared during capture."));
         Assert.Equal(SceneAutoSaveStatus.Failed, test.Service.LastResult.Status);
         Assert.Contains("disappeared", test.Service.LastResult.Detail);
+        Assert.Contains(test.Warnings, warning => warning.Contains("disappeared"));
         Assert.Empty(Directory.GetFiles(test.Root, "*.xivs", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void Signature_changes_when_only_a_bone_or_prop_transform_moves()
+    {
+        var bone = new PoseFile.BoneData
+        {
+            Position = Vector3.Zero, Rotation = Quaternion.Identity, Scale = Vector3.One,
+        };
+        var prop = new SceneProp { Key = Guid.NewGuid(), Name = "Prop" };
+        var actorPose = new PoseFile();
+        actorPose.Bones["j_kosi"] = bone;
+        var scene = new SceneFile
+        {
+            SceneId = Guid.NewGuid(),
+            Actors = [new SceneActor { Key = Guid.NewGuid(), Name = "Actor", Pose = actorPose }],
+            Props = [prop],
+        };
+
+        var before = SceneAutoSaveStore.Signature(scene);
+        bone.Position = new Vector3(0, 0.25f, 0);
+        var posed = SceneAutoSaveStore.Signature(scene);
+        prop.Transform.Position = new Vector3(1, 2, 3);
+        var moved = SceneAutoSaveStore.Signature(scene);
+
+        Assert.NotNull(before);
+        Assert.NotEqual(before, posed);
+        Assert.NotEqual(posed, moved);
+    }
+
+    [Fact]
+    public void Day_folder_name_is_gregorian_under_a_non_gregorian_culture()
+    {
+        using var test = new Harness();
+        var store = new SceneAutoSaveStore(test.Root, _ => { });
+        var previous = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("th-TH");
+        try
+        {
+            var (path, _) = store.Write(test.Scene, new DateTime(2026, 9, 1, 10, 0, 0));
+            Assert.Equal("2026-09-01", Path.GetFileName(Path.GetDirectoryName(path)));
+            Assert.Equal("10-00-00 Scene.xivs", Path.GetFileName(path));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
     }
 
     [Fact]
@@ -74,6 +126,7 @@ public sealed class SceneAutoSaveTests
         public ConfigurationService Configuration { get; } = new(new MemorySettings());
         public SceneAutoSaveService Service { get; }
         public Action<SceneCaptureOutcome>? Pending;
+        public List<string> Warnings { get; } = [];
         public Func<Action, bool> Dispatch = work => { work(); return true; };
         // A scene containing only scenery still has authored content to preserve.
         public SceneFile Scene { get; } = new()
@@ -91,7 +144,7 @@ public sealed class SceneAutoSaveTests
             Configuration.Config.AutoSave.MaxSceneSnapshots = 2;
             Service = new SceneAutoSaveService(Configuration,
                 (id, _, complete) => { Scene.SceneId = id; Pending = complete; return null; },
-                () => false, new SceneAutoSaveStore(Root, _ => { }),
+                () => false, new SceneAutoSaveStore(Root, _ => { }), Warnings.Add,
                 () => Now, work => Dispatch(work));
         }
 

@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using System.IO;
-using Poser.Scene;
+using Poser.Documents.Files;
 
-namespace Poser.Files;
+namespace Poser.Documents.Scene;
 
 /// <summary>One format-routing store for Poser scenes and Stagehand documents.</summary>
 public sealed class SceneDocumentStore : ISceneDocumentStore
@@ -12,7 +12,7 @@ public sealed class SceneDocumentStore : ISceneDocumentStore
     public SceneDocumentStore() : this(SceneFileStore.Default) { }
     public SceneDocumentStore(SceneFileStore scenes) => _scenes = scenes;
 
-    public Stream? OpenAppearance(string path, string entry) => _scenes.OpenAppearance(path, entry);
+    public SceneAppearanceOpen OpenAppearance(string path, string entry) => _scenes.OpenAppearance(path, entry);
 
     public SceneDocumentRead Read(string path)
     {

@@ -13,8 +13,8 @@ namespace Poser.Application.Posing;
 public sealed class ActorResetControl(
     SceneSession scene, TransformGestureService gestures, PoseEditService poses,
     IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, AnimationSession animation,
-    ActorPresentationSession presentation, ActorIntegrationSession integration,
-    TransformHistory history, ValueJournal values, IActorStateSnapshots snapshots)
+    ActorPresentationSession presentation, IntegrationReset integration,
+    EditHistory history, ValueJournal values, IActorStateSnapshots snapshots)
     : IActorResetControl
 {
     public PoseEditResult ResetAll(ActorId actor)
@@ -37,7 +37,7 @@ public sealed class ActorResetControl(
             () => ResetCore(actor).Success)
         {
             AffectedEntities = new[] { SelectionId.ForActor(actor) },
-            RetainOnFailure = true,
+            OnRefusal = () => RefusalAction.Keep,
             CompleteReplay = (undo, current, cancellation, completed) =>
             {
                 if (undo) snapshots.Restore(before, current, cancellation, completed);

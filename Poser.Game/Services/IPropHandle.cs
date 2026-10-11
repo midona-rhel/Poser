@@ -1,8 +1,9 @@
 using Poser.Domain.Scene;
 using System.Numerics;
 using Poser.Domain.Presentation;
+using Poser.Domain.Transforms;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>A prop the scene holds: a spawned weapon model with a placement, a dye pair and a visibility.</summary>
 public interface IPropHandle

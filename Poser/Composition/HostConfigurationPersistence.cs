@@ -1,5 +1,6 @@
 using Dalamud.Plugin;
-using Poser.Config;
+using Poser.Documents.Config;
+using Poser.Application.Settings;
 
 namespace Poser.Composition;
 

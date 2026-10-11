@@ -1,6 +1,6 @@
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
-using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
@@ -64,7 +64,7 @@ internal static class SceneStructureCodec
                 if (slot.IsGroup)
                     order.Add(new SceneStructureRef
                     {
-                        Kind = "group",
+                        Kind = SceneStructureKind.Group,
                         Key = slot.GroupId,
                     });
                 else if (slot.Entity is { } entity

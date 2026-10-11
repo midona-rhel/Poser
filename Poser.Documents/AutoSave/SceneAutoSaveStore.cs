@@ -1,4 +1,7 @@
-namespace Poser.Files;
+using System.Globalization;
+using Poser.Documents.Files;
+
+namespace Poser.Documents.AutoSave;
 
 /// <summary>Whole-scene snapshot filenames and disk retention, separate from pose snapshots.</summary>
 public sealed class SceneAutoSaveStore
@@ -24,6 +27,10 @@ public sealed class SceneAutoSaveStore
     /// the user's work, which is far worse than a duplicate file. A document
     /// this cannot describe answers null, and a null signature never matches
     /// anything — an unreadable scene is written, not skipped.</para>
+    ///
+    /// <para>It hashes with the document's own wire options: without the
+    /// numerics converters every vector serializes as <c>{}</c>, so a moved
+    /// bone or prop would hash the same as before.</para>
     /// </summary>
     public static string? Signature(SceneFile scene)
     {
@@ -33,7 +40,7 @@ public sealed class SceneAutoSaveStore
         {
             return Convert.ToHexString(System.Security.Cryptography.SHA256
                 .HashData(System.Text.Json.JsonSerializer
-                    .SerializeToUtf8Bytes(scene)));
+                    .SerializeToUtf8Bytes(scene, SceneFile.JsonOptions)));
         }
         catch (Exception)
         {
@@ -47,7 +54,7 @@ public sealed class SceneAutoSaveStore
 
     public (string Path, SceneWriteOutcome Result) Write(SceneFile scene, DateTime localNow)
     {
-        var folder = Path.Combine(RootDirectory, localNow.ToString("yyyy-MM-dd"));
+        var folder = Path.Combine(RootDirectory, localNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         Directory.CreateDirectory(folder);
         var path = UniquePath(folder, localNow);
         return (path, _store.Write(scene, path));
@@ -57,7 +64,7 @@ public sealed class SceneAutoSaveStore
     /// overwriting — same convention the pose auto-save uses.</summary>
     private static string UniquePath(string folder, DateTime localNow)
     {
-        string stem = $"{localNow:HH-mm-ss} Scene";
+        string stem = localNow.ToString("HH-mm-ss", CultureInfo.InvariantCulture) + " Scene";
         string candidate = System.IO.Path.Combine(
             folder, stem + SceneFile.Extension);
         for (int suffix = 2; File.Exists(candidate) && suffix < 100; suffix++)

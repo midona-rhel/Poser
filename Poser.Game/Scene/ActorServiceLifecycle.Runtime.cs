@@ -6,10 +6,9 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Posing;
 using Poser.Domain.Presentation;
-using Poser.Entities;
-using Poser.Services;
 
 using Poser.Domain.Scene;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Scene;
 
@@ -63,7 +62,9 @@ internal sealed partial class ActorServiceLifecycle
             ? _collections.CaptureInheritedCollection(actor.Address)
             : Poser.Domain.Integration.IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
         if (!collection.Success) throw new InvalidOperationException(collection.Detail);
-        var captured = _actorStates.CaptureProperties(bound, captureCollection: collection.Value == null);
+        // Removal capture: an actor Glamourer cannot read stays removable, recorded without its look.
+        var captured = _actorStates.CaptureProperties(bound, captureCollection: collection.Value == null,
+            omitUnreadableLook: true);
         if (!captured.Success || captured.Value is not { } properties)
             throw new InvalidOperationException(captured.Detail ?? "Actor state capture failed.");
         var companion = actor.IsCompanion ? null : _spawns.GetCompanionInfo(actor);
@@ -93,7 +94,7 @@ internal sealed partial class ActorServiceLifecycle
         void Next() => _framework.RunOnTick(
             () => PrepareRuntime(actor, state, attempts - 1, current), delayTicks: 1);
         if (_bindings.GetActorId(actor) is not { } id || !_poses.HasPosableSkeleton(id)
-            || _poses.IsImportBusy || _integration.McdfBusy)
+            || _poses.IsImportBusy || _mcdf.Busy)
         { Next(); return; }
         // A redraw can publish a skeleton before its stable bone bindings.
         var skeletons = _skeletons.GetSkeletons(actor);

@@ -1,5 +1,6 @@
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
@@ -27,10 +28,10 @@ public sealed class AnimationSteps : IAnimationActions
         _expressions = expressions;
     }
 
-    public AnimationResult SetAdvanced(ActorId actor, bool enabled)
+    public Outcome SetAdvanced(ActorId actor, bool enabled)
     {
-        if (!Alive(actor)) return AnimationResult.Fail("The actor is no longer available.");
-        if (_animation.IsAdvanced(actor) == enabled) return AnimationResult.Ok();
+        if (!Alive(actor)) return Outcome.Fail("The actor is no longer available.");
+        if (_animation.IsAdvanced(actor) == enabled) return Outcome.Ok();
         if (!enabled)
         {
             var expression = _expressions.Reset(actor);
@@ -41,7 +42,7 @@ public sealed class AnimationSteps : IAnimationActions
         // Entering only exposes the existing layers. Leaving keeps the prior
         // non-atomic restore policy, and publishes Basic only after success.
         _animation.SetAdvanced(actor, enabled);
-        return AnimationResult.Ok();
+        return Outcome.Ok();
     }
 
     private bool Alive(ActorId actor) => _scene.Snapshot.FindActor(actor) is not null;
@@ -49,7 +50,7 @@ public sealed class AnimationSteps : IAnimationActions
     private ushort? Applied(ActorId actor, AnimationSlot slot) =>
         _animation.OverridesFor(actor).AppliedSlots.TryGetValue(slot, out var timeline) ? timeline : null;
 
-    public AnimationResult Play(
+    public Outcome Play(
         ActorId actor, AnimationSlot slot, TimelineEntry? entry, bool playFromStart, bool resume = true)
     {
         var before = Applied(actor, slot);
@@ -57,33 +58,31 @@ public sealed class AnimationSteps : IAnimationActions
         if (!result.Success)
             return result;
         var after = Applied(actor, slot);
-        _journal.Record($"Play {AnimationSlots.DisplayName(slot)}", before, after,
-            next => Put(actor, slot, next, playFromStart), () => Alive(actor), SelectionId.ForActor(actor));
+        _journal.Record(SelectionId.ForActor(actor), $"Play {AnimationSlots.DisplayName(slot)}", before, after,
+            ValueWrites.Unchecked<ushort?>(next => Put(actor, slot, next, playFromStart)), () => Alive(actor));
         return result;
     }
 
-    public AnimationResult ResetSlot(ActorId actor, AnimationSlot slot)
+    public Outcome ResetSlot(ActorId actor, AnimationSlot slot)
     {
         var before = Applied(actor, slot);
         var result = _animation.ResetSlot(actor, slot);
         if (!result.Success)
             return result;
-        _journal.Record($"Reset {AnimationSlots.DisplayName(slot)}", before, (ushort?)null,
-            next => Put(actor, slot, next, false), () => Alive(actor), SelectionId.ForActor(actor));
+        _journal.Record(SelectionId.ForActor(actor), $"Reset {AnimationSlots.DisplayName(slot)}", before, (ushort?)null,
+            ValueWrites.Unchecked<ushort?>(next => Put(actor, slot, next, false)), () => Alive(actor));
         return result;
     }
 
-    public AnimationResult SetLoop(ActorId actor, AnimationSlot slot, bool on)
+    public Outcome SetLoop(ActorId actor, AnimationSlot slot, bool on)
     {
-        AnimationResult result = AnimationResult.Ok();
-        _journal.Set((actor, slot, "Loop"), on ? "Loop on" : "Loop off",
+        return _journal.Set((actor, slot, "Loop"), on ? "Loop on" : "Loop off",
             () => _animation.LoopWantedFor(actor, slot),
-            x => result = _animation.SetSlotLoop(actor, slot, 0, x),
+            x => _animation.SetSlotLoop(actor, slot, 0, x),
             on, () => Alive(actor));
-        return result;
     }
 
-    public AnimationResult ResetGeneral(ActorId actor)
+    public Outcome ResetGeneral(ActorId actor)
     {
         var reset = ResetSlot(actor, AnimationSlot.Base);
         return reset.Success && _animation.LoopWantedFor(actor, AnimationSlot.Base)
@@ -93,7 +92,7 @@ public sealed class AnimationSteps : IAnimationActions
 
     /// <summary>Restores outgoing advanced layers in their existing order.
     /// A failed restore leaves earlier successes intact and keeps the mode unchanged.</summary>
-    public AnimationResult ResetLayers(ActorId actor)
+    private Outcome ResetLayers(ActorId actor)
     {
         foreach (var slot in new[] { AnimationSlot.Base, AnimationSlot.UpperBody,
                      AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips })
@@ -102,7 +101,7 @@ public sealed class AnimationSteps : IAnimationActions
             if (!reset.Success)
                 return reset;
         }
-        return AnimationResult.Ok();
+        return Outcome.Ok();
     }
 
     private void Put(ActorId actor, AnimationSlot slot, ushort? timeline, bool playFromStart)

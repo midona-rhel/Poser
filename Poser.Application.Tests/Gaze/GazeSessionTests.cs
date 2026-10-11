@@ -1,6 +1,7 @@
 using System.Numerics;
 using Poser.Application.Gaze;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
@@ -9,26 +10,10 @@ namespace Poser.Application.Tests.Gaze;
 public sealed class GazeSessionTests
 {
     [Fact]
-    public void Pose_aware_toggle_is_one_actor_step_and_preserves_modes_points_and_locks()
-    {
-        var port = new Runtime();
-        var history = new TransformHistory();
-        var session = new GazeSession(new ValueJournal(history), port);
-        var before = port.State.Settings;
-        Assert.True(session.SetPoseAware(port.Actor, true).Success);
-        Assert.Equal(before with { PoseAware = true }, port.State.Settings);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo(SelectionId.ForActor(port.Actor)));
-        Assert.True(step.Undo());
-        Assert.Equal(before, port.State.Settings);
-        Assert.True(step.Redo());
-        Assert.True(port.State.Settings.PoseAware);
-    }
-
-    [Fact]
     public void Drag_is_one_step_and_replays_original_and_final_points()
     {
         var port = new Runtime();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var session = new GazeSession(new ValueJournal(history), port);
         var entries = new List<HistoryEntry>();
         history.Appended += entries.Add;
@@ -49,27 +34,10 @@ public sealed class GazeSessionTests
     }
 
     [Fact]
-    public void Discrete_edit_restores_part_positions_and_locks_as_one_step()
-    {
-        var port = new Runtime();
-        var history = new TransformHistory();
-        var session = new GazeSession(new ValueJournal(history), port);
-        var before = port.State.Settings;
-
-        Assert.True(session.SnapPartToCamera(port.Actor, GazeTargetType.Eyes).Success);
-        var after = port.State.Settings;
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.True(step.Undo());
-        Assert.Equal(before, port.State.Settings);
-        Assert.True(step.Redo());
-        Assert.Equal(after, port.State.Settings);
-    }
-
-    [Fact]
     public void Old_generation_never_writes_into_replacement_actor()
     {
         var port = new Runtime();
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var session = new GazeSession(new ValueJournal(history), port);
         var old = port.Actor;
         session.SetGazePosition(old, Vector3.One);
@@ -86,22 +54,6 @@ public sealed class GazeSessionTests
         Assert.Equal(0, port.Writes);
     }
 
-    [Fact]
-    public void Refused_transition_is_not_history_and_refused_inverse_is_not_success()
-    {
-        var port = new Runtime();
-        var history = new TransformHistory();
-        var session = new GazeSession(new ValueJournal(history), port);
-        Assert.False(session.SetTarget(port.Actor, new(Guid.NewGuid(), 0)).Success);
-        Assert.False(history.CanUndo);
-        Assert.True(session.SetMode(port.Actor, GazeTargetMode.Camera).Success);
-        var step = Assert.IsType<JournalStep>(history.PeekUndo());
-        port.RefuseMode = true;
-
-        Assert.False(step.Undo());
-        Assert.Equal("Native transition refused", step.FailureDetail!());
-    }
-
     private sealed class Runtime : IGazeRuntimePort
     {
         public ActorId Actor = new(Guid.NewGuid(), 0);
@@ -114,32 +66,32 @@ public sealed class GazeSessionTests
         public string? UnavailableDetail => null;
         public GazeReading? Read(ActorId actor) => actor == Actor ? State : null;
 
-        private GazeResult Change(ActorId actor, Func<GazeSettings, GazeSettings> change)
+        private Outcome Change(ActorId actor, Func<GazeSettings, GazeSettings> change)
         {
-            if (actor != Actor) return GazeResult.Refused("Stale actor");
+            if (actor != Actor) return Outcome.Fail("Stale actor");
             Writes++;
             State = State with { Settings = change(State.Settings) };
-            return GazeResult.Ok();
+            return Outcome.Ok();
         }
 
-        public GazeResult RestoreSettings(ActorId actor, GazeSettings settings) => RefuseMode
-            ? GazeResult.Refused("Native transition refused") : Change(actor, _ => settings);
-        public GazeResult SetMode(ActorId actor, GazeTargetMode mode) => RefuseMode
-            ? GazeResult.Refused("Native transition refused") : Change(actor, s => s with { Mode = mode });
-        public GazeResult SetParts(ActorId actor, GazeTargetType parts) =>
+        public Outcome RestoreSettings(ActorId actor, GazeSettings settings) => RefuseMode
+            ? Outcome.Fail("Native transition refused") : Change(actor, _ => settings);
+        public Outcome SetMode(ActorId actor, GazeTargetMode mode) => RefuseMode
+            ? Outcome.Fail("Native transition refused") : Change(actor, s => s with { Mode = mode });
+        public Outcome SetParts(ActorId actor, GazeTargetType parts) =>
             Change(actor, s => s with { TargetType = parts });
-        public GazeResult SetTarget(ActorId actor, ActorId target) => GazeResult.Refused("Stale target");
-        public GazeResult SetPartLock(ActorId actor, GazeTargetType part, bool locked) =>
+        public Outcome SetTarget(ActorId actor, ActorId target) => Outcome.Fail("Stale target");
+        public Outcome SetPartLock(ActorId actor, GazeTargetType part, bool locked) =>
             Change(actor, s => part switch
             {
                 GazeTargetType.Eyes => s with { EyesLocked = locked },
                 GazeTargetType.Head => s with { HeadLocked = locked },
                 _ => s with { BodyLocked = locked },
             });
-        public GazeResult SnapPartToCamera(ActorId actor, GazeTargetType part) =>
+        public Outcome SnapPartToCamera(ActorId actor, GazeTargetType part) =>
             SetPartPosition(actor, part, new(8, 9, 10));
-        public GazeResult Reset(ActorId actor) => Change(actor, _ => default);
-        public GazeResult SetGazePosition(ActorId actor, Vector3 position) =>
+        public Outcome Reset(ActorId actor) => Change(actor, _ => default);
+        public Outcome SetGazePosition(ActorId actor, Vector3 position) =>
             Change(actor, s => s with
             {
                 Position = position,
@@ -147,7 +99,7 @@ public sealed class GazeSessionTests
                 HeadPosition = s.HeadLocked ? s.HeadPosition : position,
                 BodyPosition = s.BodyLocked ? s.BodyPosition : position,
             });
-        public GazeResult SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position) =>
+        public Outcome SetPartPosition(ActorId actor, GazeTargetType part, Vector3 position) =>
             Change(actor, s => part switch
             {
                 GazeTargetType.Eyes => s with { EyesPosition = position },

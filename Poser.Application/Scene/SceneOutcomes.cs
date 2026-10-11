@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Poser.Domain;
 using Poser.Domain.Operations;
+using Poser.Domain.Scene;
 
 namespace Poser.Application.Scene;
 
@@ -41,6 +43,9 @@ public enum ScenePhase
     ApplyingEnvironment,
     Committing,
     RollingBack,
+    /// <summary>The user cancelled; the operation is stopping its children
+    /// (a bounded drain) before it can report Cancelled.</summary>
+    Cancelling,
     Completed,
     RolledBack,
     Failed,
@@ -64,15 +69,24 @@ public sealed record SceneSealOutcome(
 /// <para><see cref="Detail"/> is what happened; <see cref="Remedy"/> is what
 /// the user can do about it. A refused entity carries BOTH — a row that only
 /// restates the entity's own name is the defect issue #41 reported — and the
-/// workflow fills the remedy in from <c>SceneEntityRemedy</c> at the terminal
-/// publication, so the result list and the operation log say the same thing.
-/// </para></summary>
+/// workflow fills the remedy in from <see cref="SceneOutcomeKinds.Remedy"/>
+/// at the terminal publication, so the result list and the operation log say
+/// the same thing.
+/// </para>
+///
+/// <para>Restored WITH a detail is a degraded restore — kept, with a caveat
+/// (a gobo the client no longer ships, a changed character file, a model
+/// still streaming). It is shown and logged like a refusal's reason, never
+/// hidden among the plain successes.</para></summary>
 public sealed record SceneEntityOutcome(
-    string Kind,
+    SceneOutcomeKind Kind,
     string Name,
     bool Restored,
     string? Detail = null,
-    string? Remedy = null);
+    string? Remedy = null)
+{
+    public bool Degraded => Restored && Detail != null;
+}
 
 /// <summary>
 /// Immutable terminal outcome of one scene operation. The state is the SAME
@@ -96,6 +110,12 @@ public sealed record SceneOutcome(
     /// completed rollback and a clean cancel leave nothing behind.</summary>
     public bool LeftEntitiesBehind => State is not (
         OperationReceiptState.RolledBack or OperationReceiptState.Cancelled);
+
+    /// <summary>The load cleared the session before restoring. A rollback
+    /// then leaves nothing of the load behind, but the session it cleared is
+    /// gone too — "nothing was left behind" would read as "nothing changed".
+    /// </summary>
+    public bool SessionCleared { get; init; }
 }
 
 /// <summary>Immutable snapshot of the single running (or last finished)
@@ -127,13 +147,6 @@ public readonly record struct SceneMcdfOutcome(bool Restored, string? Detail)
     public static SceneMcdfOutcome Refused(string detail) => new(false, detail);
 }
 
-/// <summary>Typed admission result for starting a scene operation.</summary>
-public readonly record struct SceneActionResult(bool Success, string? Detail = null)
-{
-    public static SceneActionResult Ok() => new(true);
-    public static SceneActionResult Fail(string detail) => new(false, detail);
-}
-
 /// <summary>
 /// What a destroy-first clear actually removed, per kind. It is counted rather
 /// than assumed because the clear is the ONE part of a load that cannot be
@@ -149,7 +162,7 @@ public readonly record struct SceneClearOutcome(
 
     /// <summary>Actors the clear could not remove, BY NAME. The clear takes
     /// everything the session holds, so this is the exception path — a stale
-    /// wrapper, a companion body, the GPose primary — and it is never silent:
+    /// wrapper or the GPose primary — and it is never silent:
     /// the user asked for an empty session and has to know what is left.
     /// </summary>
     public IReadOnlyList<string> Refused =>

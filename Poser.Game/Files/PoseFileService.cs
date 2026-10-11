@@ -3,15 +3,17 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Domain.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Documents.Files;
+using Poser.Documents.Files.Converters;
+using Poser.Application.Posing;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
-namespace Poser.Files;
+namespace Poser.Game.Files;
 
 /// <summary>
 /// Brio-compatible .pose import/export over an actor's slot skeleton set.
@@ -222,15 +224,24 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    public PoseImportPlan BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null) =>
+    public PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null) =>
         BuildImportPlan(slots, poseFile, options, TransformComponents.All);
 
-    private PoseImportPlan BuildImportPlan(
+    private PoseImportPlan? BuildImportPlan(
         IReadOnlyList<ISkeleton> slots,
         PoseFile poseFile,
         PoseImportOptions? options,
         TransformComponents maskLimit)
     {
+        // The one choke point every import source passes — .pose, .cmp,
+        // clipboard, presets, live captures — so no NaN/infinity or null
+        // collection reaches a plan whatever decoded the document.
+        var validation = PoseFileValidation.Validate(poseFile);
+        if (!validation.Succeeded)
+        {
+            _log.Error($"Pose import refused: {validation.Failure!.Detail}");
+            return null;
+        }
         options ??= DefaultImportOptions;
         // Component selection is a DELTA mask (Brio PoseImporter.cs:35, the
         // 4th Apply argument), applied inside the apply pass — never an
@@ -633,7 +644,7 @@ public class PoseFileService : IPoseFileService
     /// <summary>Selective-import filter: the slot-qualified bone itself, or
     /// any same-slot ancestor when descendants are requested.</summary>
     private static BoneFilterMatch ClassifyBoneFilter(
-        Poser.Entities.IBone bone, PoseImportOptions options)
+        Poser.Game.Entities.IBone bone, PoseImportOptions options)
     {
         if (options.BoneFilter == null)
             return BoneFilterMatch.Unfiltered;

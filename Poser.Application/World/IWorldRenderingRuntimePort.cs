@@ -1,3 +1,5 @@
+using Poser.Domain;
+
 namespace Poser.Application.World;
 
 /// <summary>
@@ -15,4 +17,10 @@ public interface IWorldRenderingRuntimePort
     bool IsWaterFreezeAvailable { get; }
 
     bool ResetWaterOnGPoseExit { get; set; }
+
+    /// <summary>Physics freeze is a global code patch, not per-actor; the
+    /// animation session still records who asked so the last release
+    /// restores it.</summary>
+    bool IsPhysicsFrozen { get; }
+    Outcome SetPhysicsFrozen(bool frozen);
 }

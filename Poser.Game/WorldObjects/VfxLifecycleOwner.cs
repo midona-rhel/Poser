@@ -1,3 +1,5 @@
+using Poser.Domain.Transforms;
+
 namespace Poser.Game.WorldObjects;
 
 internal enum VfxTransformWriteResult
@@ -15,9 +17,9 @@ internal enum VfxTransformWriteResult
 /// </summary>
 internal sealed class VfxLifecycleOwner
 {
-    private readonly IWorldObjectPort _port;
+    private readonly IVfxObjectPort _port;
 
-    public VfxLifecycleOwner(IWorldObjectPort port) => _port = port;
+    public VfxLifecycleOwner(IVfxObjectPort port) => _port = port;
 
     public bool TryCapture(
         nint address,

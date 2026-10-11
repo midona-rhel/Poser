@@ -9,7 +9,8 @@ using Poser.Domain.Operations;
 namespace Poser.Application.Integration;
 
 public sealed class CharacterFileSession(
-    ActorIntegrationSession integration,
+    IntegrationSelectors integration,
+    McdfTransaction mcdf,
     ICharacterAppearanceFiles files,
     DisruptiveSteps history,
     ISceneCreation creation,
@@ -20,10 +21,10 @@ public sealed class CharacterFileSession(
     private PendingSpawn? _pending;
     private sealed record PendingSpawn(SceneEntityHandle Body, string Path, string? Appearance, long Started);
 
-    public McdfProgress? Progress => integration.Mcdf;
-    public OperationReceipt? Receipt => integration.McdfReceipt;
-    public bool Busy => integration.McdfBusy;
-    public void Cancel() => integration.CancelMcdf();
+    public McdfProgress? Progress => mcdf.Progress;
+    public OperationReceipt? Receipt => mcdf.Receipt;
+    public bool Busy => mcdf.Busy;
+    public void Cancel() => mcdf.Cancel();
 
     public IntegrationResult Import(ActorId actor, string path)
     {
@@ -34,16 +35,16 @@ public sealed class CharacterFileSession(
     }
 
     public IntegrationResult Export(ActorId actor, string path, string description) =>
-        integration.BeginExport(actor, path, description);
+        mcdf.BeginExport(actor, path, description);
 
     public IntegrationResult Reset(ActorId actor) =>
-        history.Run(actor, "Reset MCDF", () => integration.ResetMcdf(actor));
+        history.Run(actor, "Reset MCDF", () => mcdf.Reset(actor));
 
     public SceneCreationResult Spawn(string path)
     {
         if (_pending is { } old && old.Body.Session != sessions.ActiveSessionGeneration)
             _pending = null;
-        if (_pending is not null || integration.McdfBusy)
+        if (_pending is not null || mcdf.Busy)
             return new(null, "A character-file import is already pending.");
 
         // Validate before creating a body, and retain these exact bytes until it binds.
@@ -86,7 +87,7 @@ public sealed class CharacterFileSession(
 
     private IntegrationResult ImportPackage(ActorId actor, string path) =>
         history.Run(actor, "Import character file",
-            () => integration.BeginImport(actor, path));
+            () => mcdf.BeginImport(actor, path));
 
     private IntegrationResult ApplyAppearance(ActorId actor, string document)
     {

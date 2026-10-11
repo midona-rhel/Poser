@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using Poser.Core.BoneInfo;
+using Poser.Domain.Posing;
 
-namespace Poser.Config;
+namespace Poser.Documents.Config;
 
 /// <summary>
 /// The stock bone filters, built from Ktisis's category tree so they name

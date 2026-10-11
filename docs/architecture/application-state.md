@@ -40,11 +40,17 @@ Successful removal inverses form one history entry, even if another member
 refuses. Earlier unfinished value edits are sealed separately. This batch is
 synchronous: it never stays open across an await or captures unrelated edits.
 
-Native discovery runs on the framework thread. Notifications during refresh
-coalesce into one immediate follow-up; notifications during that pass remain
-pending for the next tick, never recursive. Unchanged structure and auxiliary
-bindings publish nothing. GPose exit cancels old pending work before requesting
-the exit scene; disposal stops queued refresh callbacks altogether.
+Native discovery runs on the framework thread. Notifications only request a
+refresh; the framework update runs at most one per frame, never inside the
+publisher, so a load that spawns N actors costs one rebuild. Notifications
+during that pass wait for the next frame. Skeleton changes found inside native
+hooks are queued and published on the next update. While idle, a bone-free
+signature (actor slots, attachments and row fields) is polled once a second and
+a rebuild runs only when it moves. Event payloads are value snapshots, never
+live lists or native wrappers. Unchanged structure and auxiliary bindings
+publish nothing. GPose exit cancels old pending work before requesting the exit
+scene and drops the session's actor lineages; disposal stops queued refresh
+callbacks altogether.
 
 One drag or typed transform edit is one gesture. It captures each baseline
 once, then applies total deltas from those values. If a write fails, the
@@ -63,7 +69,8 @@ of the same file creates independent groups.
 
 `PortablePose` does not depend on an actor. It uses bone paths and keys, keeps
 duplicate-name variants in order, and uses game indices only to find bones.
-Legacy matching and broadcast are explicit compatibility choices. Game access
+Name-only legacy entries match by name; an ambiguous match fails rather than
+broadcasting. Game access
 goes through [posing-runtime.md](posing-runtime.md).
 
 Spawn search, library actor creation and entity duplication use the shared
@@ -86,8 +93,8 @@ hit-testing and gesture input. Collider reads preserve their immutable geometry
 identity for rendering caches; copying mesh arrays every frame is not required.
 
 Prop, scenery, furniture and VFX editors read detached values and send exact IDs
-through `ISceneObjectControl`; Game resolves native objects and uses the existing
-value journals. Picker targets and deferred callbacks cannot follow a replacement
+through `ISceneObjectControl`; Game resolves native objects and writes their
+declared properties through the shared value journal. Picker targets and deferred callbacks cannot follow a replacement
 generation or a newly selected entity. Native respawn and diagnostic offsets
 stay behind that boundary, rather than in editor closures.
 
@@ -103,11 +110,10 @@ readings and the same value journal. A joystick gesture retains its initial
 camera ID; changing selection cannot redirect a held gesture. Native units
 and ownership reset baselines remain backend values. Portrait edits capture
 both the mode and roll so undo restores the authored framing.
-Camera file dialogs retain exact IDs or shared creation receipts through
-`ICameraFiles`; Game resolves and captures on the framework thread. File import
-applies its document before recording the shared lifecycle step, so redo restores
-the imported state. The native document mapping is shared with scene capture
-and history, not implemented in presentation.
+Camera and light file dialogs save and load library entries: the save is the
+library entry save written to the chosen path, and the load is the scene load.
+The native document mapping is shared with scene capture and history, not
+implemented in presentation.
 
 Overlay properties and the inspector pad use detached readings and exact IDs
 through `IOverlayControl`, retaining the existing shared value journal.
@@ -233,9 +239,25 @@ failed, or needs recovery. Results from an old session or operation are ignored.
 
 ## Session lifecycle
 
+Startup: the host builds the provider (`ValidateOnBuild`), applies the theme,
+then runs every registered startable once, in `StartStage` order:
+auto-save, prop spawns, overlay nodes, world objects, lighting, virtual
+cameras, environment, stable bindings, animation, (Debug: debug bridge), gaze,
+actor integration, appearance-catalog warm-up, world rendering, scene
+workflow, scene creation, camera workspace, parenting frames, scene
+auto-save snapshots, clean scene lifecycle, target sync, GPose mouse target,
+character-file pump. Each feature module registers its own entries; the enum
+is the one order. Fonts, texture uploaders, the UI manager and the `/poser`
+command follow. Shutdown reverses it: warm-up cancel, framework-thread GPose
+exit, pose-import and session invalidation, command removal, UI manager (Draw unhooked), uploaders and fonts, then
+the provider disposes its singletons in reverse construction order.
+
 The host keeps failed-startup cleanup armed until activation finishes. The
 provider owns service disposal; host-owned fonts, command registration and
-global UI callbacks are unwound separately in reverse acquisition order.
+global UI callbacks are unwound separately in reverse acquisition order. On
+unload the host first cancels the catalog warm-up (with a short bounded wait),
+and unhooks Draw by disposing the UI manager before any font, atlas or
+texture uploader is released; only then does the provider dispose.
 Cleanup failures are logged without replacing the original startup exception.
 Rollback never resolves additional services merely to dispose them.
 
@@ -248,10 +270,21 @@ When GPose closes, Poser asks for one final autosave before cleanup. Taking or
 queuing that snapshot does not prove it was saved. GPose cleanup is reported
 separately, and the background worker receives snapshots only. Autosave rules
 are in [files-and-transfer.md](../features/files-and-transfer.md).
-After final capture, `GPoseExitingEvent` restores presentation while actor
-bindings still exist; only then does `GPoseStateChangedEvent(false)` clear
-actors and bindings. Normal exit and plugin unload share this ordering.
-Destroyed native bodies are skipped, not written through retained bindings.
+After final capture, `GPoseExitingEvent` runs the whole owned-state teardown
+while spawns, clones and actor bindings still exist; only then does
+`GPoseStateChangedEvent(false)` clear actors, destroy spawns and drop
+bindings. The teardown therefore does not depend on DI subscription order.
+Normal exit and plugin unload share this ordering. Destroyed native bodies
+are skipped, not written through retained bindings.
+
+`CleanSceneLifecycle` owns the ordered teardown: cancel facial capture, then
+reset animation, presentation, model id and appearance (Penumbra collection,
+Glamourer state, MCDF), then clear scene groups and their transform state.
+Every step runs even when an earlier one fails. Each step returns its result.
+Failures are logged and shown together in one notice, in teardown order.
+Nothing is retried here; owners keep failed state retryable themselves. On plugin disposal the groups are
+also cleared directly after that reset, because an off-thread disposal's
+bounded framework hop can abandon the reset.
 
 Actor nicknames and anonymous-name masks last for one GPose session. The exit
 notification clears them after final-save capture, since native slot reuse can

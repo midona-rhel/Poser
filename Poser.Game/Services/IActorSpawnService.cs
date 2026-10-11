@@ -1,9 +1,9 @@
 ﻿using System;
-using Poser.Entities;
 
 using Poser.Domain.Companions;
+using Poser.Game.Entities;
 
-namespace Poser.Services;
+namespace Poser.Game.Services;
 
 /// <summary>
 /// Service for spawning and destroying actors in GPose.
@@ -19,6 +19,11 @@ public interface IActorSpawnService : IDisposable
     /// </summary>
     /// <returns>The spawned actor, or null if failed.</returns>
     IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId = 0);
+
+    /// <summary>The same spawn, answering WHY when it returns null — a full
+    /// actor table, no local player, no authoritative lifetime — in the
+    /// user's words, so a scene load can name the cause.</summary>
+    IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId, out string? refusal);
 
     /// <summary>
     /// Spawn a clone of an arbitrary scene actor (appearance + position copy —
@@ -108,9 +113,6 @@ public interface IActorSpawnService : IDisposable
     /// (clones spawn with one reserved).
     /// </summary>
     bool SetCompanion(IActor owner, CompanionAttachment? container);
-
-    /// <summary>Detach the actor's companion/mount/ornament.</summary>
-    void DestroyCompanion(IActor owner);
 
     /// <summary>Current companion attachment; null when the slot is empty,
     /// absent, or unreadable.</summary>

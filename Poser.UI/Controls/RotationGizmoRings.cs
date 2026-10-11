@@ -1,9 +1,9 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Poser.Services;
 
 using Poser.Application.Viewport;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Controls;
 
@@ -375,9 +375,9 @@ public static class RotationGizmoRings
             {
                 var axisColor = a switch
                 {
-                    0 => Crystarium.ActiveTheme.Palette.AxisX,
-                    1 => Crystarium.ActiveTheme.Palette.AxisY,
-                    _ => Crystarium.ActiveTheme.Palette.AxisZ,
+                    0 => ActiveTheme.Palette.AxisX,
+                    1 => ActiveTheme.Palette.AxisY,
+                    _ => ActiveTheme.Palette.AxisZ,
                 };
                 bool hot = hoverAxis == a || dragAxis == a;
                 float alpha = (frontPass ? (hot ? 1f : 0.85f) : 0.12f)
@@ -470,117 +470,4 @@ public static class RotationGizmoRings
         float t = Math.Clamp(Vector2.Dot(point - a, ab) / lengthSq, 0f, 1f);
         return Vector2.Distance(point, a + ab * t);
     }
-}
-
-/// <summary>
-/// Shared pointer ownership for custom gizmo gestures: while a ring drag —
-/// or its release frame — owns the pointer, selection surfaces (skeleton
-/// overlay, 3D view) must not treat the click as a bone/actor pick.
-/// </summary>
-/// <summary>Whether the shell windows hide because a world manipulation
-/// is HELD (#77): the setting AND a live drag — hovering a handle never
-/// hides. Written once per frame by the UI root; the shell fades over
-/// 250 ms rather than popping, and windows skip their draw only when
-/// fully faded. Reference images and the overlays deliberately stay
-/// visible.</summary>
-public static class ManipulationHide
-{
-    public static bool Active;
-
-    /// <summary>The dependent option: the world gizmo's CHROME rides the
-    /// same fade — the drag's own sweep and readout never do.</summary>
-    public static bool HideGizmo;
-
-    /// <summary>The shell's eased opacity: 1 shown, 0 hidden.</summary>
-    public static float Opacity { get; private set; } = 1f;
-
-    private const float FadeSeconds = 0.10f;
-
-    /// <summary>Advanced once per frame by the UI root, after Active is
-    /// written.</summary>
-    public static void Advance()
-    {
-        float step = ImGui.GetIO().DeltaTime / FadeSeconds;
-        Opacity = Active
-            ? MathF.Max(0f, Opacity - step)
-            : MathF.Min(1f, Opacity + step);
-    }
-
-    /// <summary>Fully faded: the shell windows skip their draw.</summary>
-    public static bool Hidden => Opacity <= 0f;
-
-    /// <summary>Scopes the fade over one window's draw: pushes the global
-    /// alpha (which every Crystarium color multiplies through) while the
-    /// shell is mid-fade, and pops it on ANY exit path.</summary>
-    public static FadeHandle FadeScope()
-    {
-        bool pushed = Opacity < 1f;
-        // Never exactly zero: ImGui hides a window whose alpha is zero
-        // and skips its items, and a drag held on one of them would end.
-        // A hair above zero is invisible and alive.
-        if (pushed)
-            ImGui.PushStyleVar(
-                ImGuiStyleVar.Alpha,
-                ImGui.GetStyle().Alpha * MathF.Max(0.002f, Opacity));
-        return new FadeHandle(pushed);
-    }
-
-    public readonly struct FadeHandle : IDisposable
-    {
-        private readonly bool _pushed;
-        internal FadeHandle(bool pushed) => _pushed = pushed;
-        public void Dispose()
-        {
-            if (_pushed)
-                ImGui.PopStyleVar();
-        }
-    }
-}
-
-/// <summary>Frame-stamped hold for a LIVE world drag — the hide signal.
-/// Distinct from <see cref="GizmoPointerOwnership"/>, which hover also
-/// holds so a click on a handle is never a pick: only a held gesture
-/// holds this.</summary>
-public static class ManipulationDrag
-{
-    private static int _heldUntilFrame = -1;
-    private static int _shellUntilFrame = -1;
-    private static int _readoutFrame = -1;
-    private static (Vector2 Min, string Text) _readout;
-
-    public static void Hold() =>
-        _heldUntilFrame = ImGui.GetFrameCount() + 1;
-
-    public static bool Held =>
-        ImGui.GetFrameCount() <= _heldUntilFrame;
-
-    /// <summary>A drag held on a control INSIDE a shell window (the
-    /// inspector's rotation ball): the shell fades like it does for a
-    /// world drag, but the window keeps drawing at zero alpha so the
-    /// held item lives on, and the readout is handed to the overlay.</summary>
-    public static void HoldFromShell(Vector2 readoutMin, string readout)
-    {
-        _shellUntilFrame = ImGui.GetFrameCount() + 1;
-        _readoutFrame = ImGui.GetFrameCount() + 1;
-        _readout = (readoutMin, readout);
-    }
-
-    public static bool ShellHeld =>
-        ImGui.GetFrameCount() <= _shellUntilFrame;
-
-    /// <summary>The shell drag's readout for this frame, if any.</summary>
-    public static (Vector2 Min, string Text)? ShellReadout =>
-        ImGui.GetFrameCount() <= _readoutFrame ? _readout : null;
-}
-
-public static class GizmoPointerOwnership
-{
-    private static int _hoverFrame = -1;
-
-    /// <summary>Call every frame the pointer engages a custom gizmo.</summary>
-    public static void Hold() =>
-        _hoverFrame = ImGui.GetFrameCount();
-
-    public static bool Owned =>
-        ManipulationDrag.Held || ImGui.GetFrameCount() == _hoverFrame;
 }

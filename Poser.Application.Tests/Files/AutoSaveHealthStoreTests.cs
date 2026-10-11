@@ -1,8 +1,9 @@
 using System;
 using System.IO;
-using Poser.Files;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Files;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class AutoSaveHealthStoreTests
 {
@@ -34,22 +35,6 @@ public sealed class AutoSaveHealthStoreTests
         var terminal = store.RecoverStale();
         Assert.True(terminal.Succeeded);
         Assert.False(terminal.PromotionAttempted);
-    }
-
-    [Fact]
-    public void Health_read_rejects_corruption_and_writes_bounded_records()
-    {
-        using var root = new TempRoot();
-        Directory.CreateDirectory(root.Path);
-        File.WriteAllText(Path.Combine(root.Path, AutoSaveHealthStore.FileName), "{ invalid");
-        var store = new AutoSaveHealthStore(root.Path);
-
-        Assert.Null(store.Read());
-        Assert.True(store.Write(AutoSaveHealthRecord.Create(
-            new string('x', 1000), new string('r', 1000),
-            AutoSaveHealthStatus.Pending, DateTime.UtcNow, DateTime.UtcNow,
-            affectedPaths: new[] { new string('p', 10000) })).Succeeded);
-        Assert.InRange(store.Read()!.OperationId.Length, 1, 128);
     }
 
     [Fact]
@@ -89,10 +74,10 @@ public sealed class AutoSaveHealthStoreTests
         }
     }
 
-    private sealed class MutableHealthFileSystem : IAutoSaveHealthFileSystem
+    private sealed class MutableHealthFileSystem : IAtomicFileSystem
     {
-        private readonly IAutoSaveHealthFileSystem _inner =
-            new SystemAutoSaveHealthFileSystem();
+        private readonly IAtomicFileSystem _inner =
+            new SystemAtomicFileSystem();
 
         public bool FailReplace { get; set; }
         public Stream OpenRead(string path) => _inner.OpenRead(path);

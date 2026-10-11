@@ -13,7 +13,7 @@ public sealed class InheritedResourcePathsTests
             ["mods/body.mdl"] = ["body.mdl"],
         };
         var requested = new List<string>();
-        var result = IntegrationRuntimePort.CaptureRedirects(tree, path =>
+        var result = PenumbraIpc.CaptureRedirects(tree, path =>
         {
             requested.Add(path);
             return path == "hair.mdl" ? "mods/hair.mdl" : path;
@@ -24,13 +24,10 @@ public sealed class InheritedResourcePathsTests
         Assert.Equal("mods/hair.mdl", result["hair.mdl"]);
         Assert.Equal("mods/body.mdl", result["body.mdl"]);
         Assert.Equal(2, result.Count);
-    }
 
-    [Fact]
-    public void Unresolved_skeleton_refuses_capture_instead_of_installing_an_empty_redirect()
-    {
-        var tree = new Dictionary<string, HashSet<string>> { [""] = ["base.sklb"] };
+        // An unresolved skeleton refuses capture instead of installing an empty redirect.
         Assert.Throws<InvalidOperationException>(() =>
-            IntegrationRuntimePort.CaptureRedirects(tree, _ => ""));
+            PenumbraIpc.CaptureRedirects(
+                new Dictionary<string, HashSet<string>> { [""] = ["base.sklb"] }, _ => ""));
     }
 }

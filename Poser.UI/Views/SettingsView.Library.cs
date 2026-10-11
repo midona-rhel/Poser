@@ -4,13 +4,18 @@ using System.Numerics;
 using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Library;
+using Poser.Domain.Library;
+using Poser.Documents.Library;
+using Poser.Application.Library;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI.Views;
 
 public static partial class SettingsView
 {
-    private static void DrawLibrary(SettingsViewModel vm, Crystarium.PageScope page)
+    private static void DrawLibrary(SettingsViewModel vm, PageScope page)
     {
         var issues = vm.SourceSnapshot is { } snapshot
             ? vm.Library.Issues(snapshot, vm.SavedLibrary) : Array.Empty<LibrarySourceIssue>();
@@ -48,7 +53,7 @@ public static partial class SettingsView
                     var health = vm.SourceSnapshot is { } current
                         ? vm.Library.RowHealth(source, current, vm.SavedLibrary) : null;
                     string path = vm.Library.PathFor(source);
-                    void FolderActions(Crystarium.ActionScope actions)
+                    void FolderActions(ActionScope actions)
                     {
                         actions.IconButton(TablerIcon.Copy, () => ImGui.SetClipboardText(path),
                             help: "Copy full path");
@@ -101,7 +106,7 @@ public static partial class SettingsView
         });
     }
 
-    private static void DrawSourceIssues(SettingsViewModel vm, Crystarium.PageScope page,
+    private static void DrawSourceIssues(SettingsViewModel vm, PageScope page,
         IReadOnlyList<LibrarySourceIssue> issues, int skipped)
     {
         page.Section("Source issues", form =>
@@ -167,25 +172,25 @@ public static partial class SettingsView
         _ => "Folder could not be scanned",
     };
 
-    private static void SourceError(Crystarium.FormScope form, string text, string detail)
+    private static void SourceError(FormScope form, string text, string detail)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         ImGui.PushID("source-error");
         try
         {
-            form.Custom(string.Empty, theme.Controls.FormRowHeight, row => Crystarium.TextInBand(
+            form.Custom(string.Empty, theme.Controls.FormRowHeight, row => TextInBand(
                 row.Origin, new Vector2(row.Width, theme.Controls.FormRowHeight * row.Scale), text,
                 new TextStyle { Size = theme.Typography.CaptionSize, Color = theme.Danger }), help: detail);
         }
         finally { ImGui.PopID(); }
     }
 
-    private static void SourceParagraph(SettingsViewModel vm, Crystarium.FormScope form, string text)
+    private static void SourceParagraph(SettingsViewModel vm, FormScope form, string text)
     {
         var scale = ImGuiHelpers.GlobalScale;
         var width = MathF.Max(1f, vm.LibraryContentWidth);
         var style = new TextStyle
-            { Size = Crystarium.ActiveTheme.Typography.BodySize, Color = Crystarium.ActiveTheme.Text };
+            { Size = ActiveTheme.Typography.BodySize, Color = ActiveTheme.Text };
         // The shared text primitive allows long words to overflow. Break only
         // the display string so paths fit Settings; Copy path stays lossless.
         var display = new StringBuilder();
@@ -196,7 +201,7 @@ public static partial class SettingsView
                 while (low < high)
                 {
                     int middle = (low + high + 1) / 2;
-                    if (Crystarium.MeasureText(paragraph.Substring(start, middle), style).X <= width * scale)
+                    if (MeasureText(paragraph.Substring(start, middle), style).X <= width * scale)
                         low = middle;
                     else
                         high = middle - 1;
@@ -208,12 +213,12 @@ public static partial class SettingsView
             }
         var rendered = display.ToString().TrimEnd('\n');
         var constraint = TextConstraint.Wrap(width, whitespace: TextWhitespace.PreWrap);
-        float height = MathF.Max(Crystarium.MeasureText(rendered, style, constraint).Y / scale,
-            Crystarium.ActiveTheme.Controls.FormRowHeight);
+        float height = MathF.Max(MeasureText(rendered, style, constraint).Y / scale,
+            ActiveTheme.Controls.FormRowHeight);
         ImGui.PushID(text);
         try
         {
-            form.Custom(string.Empty, height, row => Crystarium.TextInBand(
+            form.Custom(string.Empty, height, row => TextInBand(
                 row.Origin, new Vector2(row.Width, height * scale), rendered, style, constraint, TextAlign.Start));
         }
         finally { ImGui.PopID(); }

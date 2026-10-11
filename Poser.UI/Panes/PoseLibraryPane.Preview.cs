@@ -12,13 +12,8 @@ using Poser.Application.Integration;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Library;
-using Poser.Services;
 using Poser.UI.Views;
 
 namespace Poser.UI;
@@ -155,7 +150,7 @@ public sealed partial class PoseLibraryPane
             string reading = path;
             Task.Run(() =>
             {
-                var read = _integration.ReadMcdfSummary(reading);
+                var read = _mcdf.ReadSummary(reading);
                 var landed = new CharacterFileState(
                     reading,
                     read.Success ? read.Value : null,

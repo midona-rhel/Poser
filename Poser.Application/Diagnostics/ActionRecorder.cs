@@ -42,7 +42,7 @@ public sealed class ActionRecorder : IDisposable
 {
     public const int Capacity = 500;
 
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly ActionRecord?[] _ring = new ActionRecord?[Capacity];
     private int _next;
     private int _count;
@@ -56,7 +56,7 @@ public sealed class ActionRecorder : IDisposable
     /// a tilde. Set by the UI.</summary>
     public Func<string, string> Scrub { get; set; } = text => text;
 
-    public ActionRecorder(TransformHistory history)
+    public ActionRecorder(EditHistory history)
     {
         _history = history;
         _history.Appended += OnAppended;

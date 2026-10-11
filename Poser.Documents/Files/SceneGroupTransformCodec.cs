@@ -5,7 +5,7 @@ using System.Numerics;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 public static class SceneGroupTransformCodec
 {
@@ -23,12 +23,12 @@ public static class SceneGroupTransformCodec
             && !groups.Any(candidate => candidate.Key == parent)))
             return "A group parent reference is missing.";
         var known = new HashSet<(string, Guid)>();
-        foreach (var actor in scene.Actors) known.Add(("actor", actor.Key));
-        foreach (var prop in scene.Props) known.Add(("prop", prop.Key));
-        foreach (var light in scene.Lights.Where(light => light.Attachment == null)) known.Add(("light", light.Key));
-        foreach (var world in scene.WorldObjects ?? []) known.Add(("worldObject", world.Key));
+        foreach (var actor in scene.Actors) known.Add((SceneStructureKind.Actor, actor.Key));
+        foreach (var prop in scene.Props) known.Add((SceneStructureKind.Prop, prop.Key));
+        foreach (var light in scene.Lights.Where(light => light.Attachment == null)) known.Add((SceneStructureKind.Light, light.Key));
+        foreach (var world in scene.WorldObjects ?? []) known.Add((SceneStructureKind.WorldObject, world.Key));
         foreach (var overlay in scene.Overlays ?? [])
-            if (overlay.Node?.Collider != null) known.Add(("overlay", overlay.Key));
+            if (overlay.Node?.Collider != null) known.Add((SceneStructureKind.Overlay, overlay.Key));
         foreach (var group in groups.Where(group => group.Transform != null))
         {
             var effective = new HashSet<(string, Guid)>();

@@ -4,7 +4,13 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
-using Poser.Config;
+using Poser.Domain;
+using Poser.Application.Settings;
+using static Poser.UI.Widgets.ActionBarWidgets;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.WindowFrameWidgets;
 
 namespace Poser.UI;
 
@@ -42,6 +48,7 @@ public sealed class FrameProfilerWindow : Window
     private const float HeaderRowHeight = 20f;
 
     private readonly ConfigurationService _configuration;
+    private readonly FrameProfiler _profiler;
 
     // Reused across frames: reading the ledger must not allocate a buffer per
     // frame, which is the whole reason Snapshot fills one the caller owns.
@@ -49,15 +56,16 @@ public sealed class FrameProfilerWindow : Window
     private double[] _keys = Array.Empty<double>();
     private int[] _order = Array.Empty<int>();
 
-    private Action<Crystarium.ActionBarScope>? _footer;
+    private Action<ActionBarScope>? _footer;
 
-    public FrameProfilerWindow(ConfigurationService configuration)
+    public FrameProfilerWindow(ConfigurationService configuration, FrameProfiler profiler)
         : base($"Frame profiler###{PluginConstants.PluginName}_frameprofiler",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {
         _configuration = configuration;
+        _profiler = profiler;
         RespectCloseHotkey = false;
     }
 
@@ -73,7 +81,7 @@ public sealed class FrameProfilerWindow : Window
 
     public override void Draw()
     {
-        using var _ = FrameProfiler.Scope("Window · Frame profiler");
+        using var _ = _profiler.Scope("Window · Frame profiler");
         var min = ImGui.GetWindowPos();
         var size = ImGui.GetWindowSize();
         var owner = Interactive.BeginOwner(
@@ -82,10 +90,10 @@ public sealed class FrameProfilerWindow : Window
         {
             _footer ??= right => right.Button(
                 "Reset peaks",
-                FrameProfiler.ResetPeaks,
+                _profiler.ResetPeaks,
                 "Clear the worst-frame column and start watching again");
 
-            var rects = Crystarium.WindowFrame(
+            var rects = WindowFrame(
                 "frame-profiler",
                 min,
                 size,
@@ -112,7 +120,7 @@ public sealed class FrameProfilerWindow : Window
 
     private void DrawBody(WindowFrameRect body)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float s = ImGuiHelpers.GlobalScale;
         float inset = theme.Page.Inset * s;
         var left = new Vector2(body.Min.X + inset, body.Min.Y);
@@ -126,11 +134,11 @@ public sealed class FrameProfilerWindow : Window
             Family = FontFamily.Mono,
             Color = theme.Text,
         };
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(left.X, left.Y),
             new Vector2(width, TotalsHeight * s),
-            Milliseconds(FrameProfiler.AverageFrameMs) + " ms avg   "
-                + Milliseconds(FrameProfiler.PeakFrameMs) + " ms peak",
+            Milliseconds(_profiler.AverageFrameMs) + " ms avg   "
+                + Milliseconds(_profiler.PeakFrameMs) + " ms peak",
             totalStyle);
 
         var noteStyle = new TextStyle
@@ -139,11 +147,11 @@ public sealed class FrameProfilerWindow : Window
             Color = theme.TextMuted,
         };
         float noteY = left.Y + TotalsHeight * s;
-        Crystarium.TextAt(
+        TextAt(
             new Vector2(left.X, noteY),
             "CPU inside the draw callback only. The backdrop blur's GPU cost is",
             noteStyle);
-        Crystarium.TextAt(
+        TextAt(
             new Vector2(left.X, noteY + 13f * s),
             "submitted here and executed later — it is invisible to these numbers.",
             noteStyle);
@@ -157,19 +165,19 @@ public sealed class FrameProfilerWindow : Window
         };
         float column = NumberColumn * s;
         var headerBand = new Vector2(0f, HeaderRowHeight * s);
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(left.X, headerY),
             new Vector2(width - column * 3f, HeaderRowHeight * s),
             "DRAW UNIT", headerStyle);
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(left.X + width - column * 3f, headerY),
             new Vector2(column, headerBand.Y),
             "self", headerStyle, TextAlign.End);
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(left.X + width - column * 2f, headerY),
             new Vector2(column, headerBand.Y),
             "peak", headerStyle, TextAlign.End);
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(left.X + width - column, headerY),
             new Vector2(column, headerBand.Y),
             "incl", headerStyle, TextAlign.End);
@@ -184,7 +192,7 @@ public sealed class FrameProfilerWindow : Window
         int count = Rank();
         float listTop = ruleY + theme.Spacing.Two * s;
         ImGui.SetCursorScreenPos(new Vector2(body.Min.X, listTop));
-        Crystarium.ScrollRegion(
+        ScrollRegion(
             "##frame-profiler-rows",
             body.Size.X / s,
             MathF.Max(1f, (body.Max.Y - listTop) / s),
@@ -196,10 +204,10 @@ public sealed class FrameProfilerWindow : Window
     /// allocates nothing.</summary>
     private int Rank()
     {
-        if (_samples.Length < FrameProfiler.LabelCount)
+        if (_samples.Length < _profiler.LabelCount)
             _samples = new FrameProfiler.Sample[
-                Math.Max(FrameProfiler.LabelCount, _samples.Length * 2)];
-        int count = FrameProfiler.Snapshot(_samples);
+                Math.Max(_profiler.LabelCount, _samples.Length * 2)];
+        int count = _profiler.Snapshot(_samples);
         if (_keys.Length < count)
         {
             _keys = new double[_samples.Length];
@@ -216,9 +224,9 @@ public sealed class FrameProfilerWindow : Window
     }
 
     private void DrawRows(
-        Crystarium.ScrollRegionScope region, int count, float column)
+        ScrollRegionScope region, int count, float column)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float s = ImGuiHelpers.GlobalScale;
         float inset = theme.Page.Inset * s;
         var origin = ImGui.GetCursorScreenPos();
@@ -252,19 +260,19 @@ public sealed class FrameProfilerWindow : Window
             if (sample.AverageSelfMs < FloorMs && sample.Hits == 0)
                 continue;
             float labelWidth = MathF.Max(1f, width - column * 3f);
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(x, y),
                 new Vector2(labelWidth, RowHeight * s),
                 sample.Label,
                 labelStyle,
                 TextConstraint.Truncate(labelWidth, TextAlign.Start));
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(x + width - column * 3f, y), band,
                 Milliseconds(sample.AverageSelfMs), valueStyle, TextAlign.End);
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(x + width - column * 2f, y), band,
                 Milliseconds(sample.PeakSelfMs), dimStyle, TextAlign.End);
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(x + width - column, y), band,
                 Milliseconds(sample.AverageInclusiveMs), dimStyle,
                 TextAlign.End);
@@ -273,7 +281,7 @@ public sealed class FrameProfilerWindow : Window
         }
 
         if (drawn == 0)
-            Crystarium.TextAt(
+            TextAt(
                 new Vector2(x, y + theme.Spacing.Two * s),
                 "Nothing measured yet.",
                 new TextStyle

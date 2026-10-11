@@ -28,23 +28,10 @@
   and `/gazeparts` use production gaze commands. `/undo?selected=1` and
   `/redo?selected=1` use the same scoped facade as the shortcuts.
 
-- The in-game harness is the wiring/native gate. `/poser test basic` runs
-  these eight scenarios once: `selection.actor-bone-clear`,
-  `transform.actor-components`, `transform.actor-undo-redo`,
-  `posing.bone-components`, `posing.animation-interference`,
-  `posing.reset-region`, `posing.copy-paste-pose`, and `posing.ik-bake`.
-  A scenario id narrows diagnosis; `/poser test full` runs all eight at the
-  acceptance repetition count; `status` and `cancel` manage runs.
-- The harness drives production command routes in GPose, snapshots boundaries,
-  checks shared invariants, and restores the user's actors and selection. It
-  does not judge visual UI conformance. `run.json` is the authoritative,
-  atomically written verdict; only `Succeeded` is success, and
-  `AcceptanceQualified` additionally requires the repetition count. Never
-  infer success from chat text or file existence.
-- `tools/Test-PoserLiveRun.ps1` reads the persisted verdict outside the game
-  (exit 0 success, 1 failure, 2 running, 3 invalid). Artifacts per run are
-  `live-tests/<UTC>/run.json`, `events.jsonl`, `report.json`, `summary.md`,
-  and `snapshots/`.
+- Validation is the Release build plus every test project, run locally and in
+  CI (`.github/workflows/architecture.yml`), plus the user's in-game test card.
+  There is no in-game automated harness; wiring and native behavior are judged
+  by the user against that card in the running game.
 - Visual and behavioral acceptance belongs to the user in the running game.
   Give a short starting-state/actions/expected-result card and ask for observed
   pass/fail and reproduction details. No video verification or recording is

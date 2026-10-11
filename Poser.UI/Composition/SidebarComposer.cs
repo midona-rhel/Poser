@@ -9,14 +9,11 @@ using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 
@@ -27,7 +24,7 @@ internal sealed partial class SidebarComposer
 {
     private static readonly bool[] RootTreeLines = Array.Empty<bool>();
     private readonly AppShellViewModel _vm;
-    private readonly Config.ConfigurationService _configuration;
+    private readonly Application.Settings.ConfigurationService _configuration;
     private readonly SceneSession _scene;
     private readonly SceneGroups _groups;
     private readonly SelectionSession _selection;
@@ -87,7 +84,7 @@ internal sealed partial class SidebarComposer
 
     public SidebarComposer(
         AppShellViewModel vm,
-        Config.ConfigurationService configuration,
+        Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         SceneGroups groups,
         SelectionSession selection,
@@ -799,14 +796,14 @@ internal sealed partial class SidebarComposer
                 (companions ??= new List<ActorDescriptor>()).Add(candidate);
         }
 
-        var groups = new List<(Core.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
+        var groups = new List<(Domain.Posing.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
         var skeleton = actor.CharacterSkeleton;
         if (skeleton != null)
         {
             foreach (var bone in skeleton.Bones)
             {
                 if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
-                var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
+                var cat = Domain.Posing.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
                 var slot = groups.FindIndex(g => g.Cat == cat);
                 if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
                 groups[slot].Bones.Add(bone);
@@ -958,7 +955,7 @@ internal sealed partial class SidebarComposer
 
             var claimed = new HashSet<string>(StringComparer.Ordinal);
             var built = new List<BuiltCategory>();
-            foreach (var rootCategory in Core.BoneInfo.KtisisBoneCategories.Roots)
+            foreach (var rootCategory in Domain.Posing.KtisisBoneCategories.Roots)
                 if (BuildKtisisCategory(
                         rootCategory, byName, claimed, filter, filtering)
                     is { } presentRoot)
@@ -1033,7 +1030,7 @@ internal sealed partial class SidebarComposer
 
     /// <summary>Every category label, flattened once, for the filter
     /// oracle: a query naming any category keeps the actor visible.</summary>
-    private static string[]? _ktisisLabels;
+    private static readonly string[] KtisisLabels = FlattenKtisisLabels();
 
     /// <summary>Whether an actor, any of its bones or slots, or any actor
     /// attached to it satisfies the sidebar filter.</summary>
@@ -1056,10 +1053,10 @@ internal sealed partial class SidebarComposer
                 if (MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName))
                     return true;
                 if (!character) continue;
-                var cat = Core.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
+                var cat = Domain.Posing.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
                 if (MatchesSidebarFilter(
                         filter,
-                        Core.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
+                        Domain.Posing.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
                         cat.ToString()))
                     return true;
             }
@@ -1236,6 +1233,6 @@ internal sealed partial class SidebarComposer
     /// IsHidden and every selection path are untouched.</summary>
     public bool IsBoneSuppressed(BoneDescriptor bone)
         => !_configuration.Config.Display.ShowNsfwBones
-            && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
+            && Domain.Posing.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
 
 }

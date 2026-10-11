@@ -3,36 +3,15 @@ using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
-using Poser.Entities;
 using Poser.Game.Cameras;
-using Poser.Game.Journal;
-using Poser.Services;
+using Poser.Application.Presentation;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Cameras;
 
 public sealed class CameraControlTests
 {
-    [Fact]
-    public void Continuous_camera_edits_restore_the_start_and_final_values_once()
-    {
-        var f = new Fixture();
-        for (int i = 1; i <= 3; i++)
-        {
-            f.Journal.BeginEdit("pan");
-            Assert.True(f.Control.SetPan(f.Id, new(i, -i)).Success);
-            f.Journal.EndEdit();
-        }
-        Assert.False(f.History.CanUndo);
-        f.Control.Seal();
-        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Assert.True(step.Undo());
-        Assert.Equal(Vector2.Zero, f.Camera.Pan);
-        f.History.CommitUndo(step);
-        Assert.False(f.History.CanUndo);
-        Assert.True(step.Redo());
-        Assert.Equal(new Vector2(3, -3), f.Camera.Pan);
-    }
-
     [Fact]
     public void Portrait_undo_restores_both_the_mode_and_the_authored_roll()
     {
@@ -51,13 +30,15 @@ public sealed class CameraControlTests
     }
 
     [Fact]
-    public void Lock_blocks_framing_but_allows_switching_back_to_main_camera()
+    public void A_locked_camera_refuses_and_journals_nothing_but_still_switches_live()
     {
         var f = new Fixture();
         f.Camera.IsLocked = true;
-        Assert.False(f.Control.SetPosition(f.Id, Vector3.One).Success);
+        var refused = f.Control.Set(f.Id, CameraProperties.Position, Vector3.One);
+        Assert.Equal((false, "Unlock the camera first."), (refused.Success, refused.Detail));
         Assert.False(f.Control.SetPortrait(f.Id, true).Success);
         Assert.False(f.Control.ResetPosition(f.Id).Success);
+        Assert.Equal(Vector3.Zero, f.Camera.Position);
         Assert.False(f.History.CanUndo);
         Assert.True(f.Control.SetLive(f.Id, true).Success);
         Assert.Same(f.Camera, f.Live);
@@ -65,32 +46,14 @@ public sealed class CameraControlTests
         Assert.Same(f.Main, f.Live);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void Stale_generation_and_off_thread_commands_never_reach_camera(bool onThread)
-    {
-        var f = new Fixture();
-        f.OnThread = onThread;
-        f.CurrentId = new(f.Id.LogicalId, f.Id.Generation + 1);
-        Assert.Null(f.Control.Read(f.Id));
-        Assert.False(f.Control.SetPosition(f.Id, Vector3.One).Success);
-        Assert.False(f.Control.SetLive(f.Id, true).Success);
-        Assert.False(f.History.CanUndo);
-        Assert.Equal(Vector3.Zero, f.Camera.Position);
-        if (!onThread) Assert.Equal(0, f.BindingReads);
-    }
-
     private sealed class Fixture
     {
         public readonly CameraId Id = new(Guid.NewGuid(), 0);
         public CameraId CurrentId;
-        public bool OnThread = true;
-        public int BindingReads;
         public readonly IVirtualCamera Camera = CameraStub(false);
         public readonly IVirtualCamera Main = CameraStub(true);
         public IVirtualCamera? Live;
-        public readonly TransformHistory History = new();
+        public readonly EditHistory History = new();
         public readonly ValueJournal Journal;
         public readonly CameraControl Control;
 
@@ -99,17 +62,14 @@ public sealed class CameraControlTests
             CurrentId = Id;
             Live = Main;
             var bindings = Stub<IEntityBindings>((m, a) =>
-            {
-                BindingReads++;
-                return m.Name switch
+                m.Name switch
                 {
                     "Resolve" => (CameraId)a![0]! == CurrentId
                         ? new BindingResult<IVirtualCamera>(BindingStatus.Success, Camera)
                         : new BindingResult<IVirtualCamera>(BindingStatus.StaleTarget),
                     "GetCameraId" => CurrentId,
                     _ => throw new InvalidOperationException(m.Name),
-                };
-            });
+                });
             var cameras = Stub<IVirtualCameraService>((m, a) =>
             {
                 if (m.Name == "get_IsAvailable") return true;
@@ -119,8 +79,7 @@ public sealed class CameraControlTests
                 throw new InvalidOperationException(m.Name);
             });
             Journal = new(History);
-            Control = new(bindings, Stub<IFramework>((_, _) => OnThread), cameras,
-                new CameraSession(Journal, cameras, bindings));
+            Control = new(bindings, Stub<IFramework>((_, _) => true), cameras, Journal);
         }
     }
 

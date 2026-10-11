@@ -1,5 +1,4 @@
 using System.Numerics;
-using Poser.Core.BoneInfo;
 using Poser.Domain.Posing;
 using static Poser.Game.Posing.ActorColliderMeshBuilder;
 

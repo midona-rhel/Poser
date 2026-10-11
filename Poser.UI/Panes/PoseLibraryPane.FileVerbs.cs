@@ -12,14 +12,11 @@ using Poser.Application.Integration;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Library;
-using Poser.Services;
 using Poser.UI.Views;
+using Poser.Domain.Library;
+using Poser.Documents.Library;
 
 namespace Poser.UI;
 

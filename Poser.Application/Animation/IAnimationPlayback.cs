@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
@@ -16,21 +17,21 @@ public interface IAnimationPlayback
     ushort? HeldExpressionFor(ActorId actor);
     bool IsPaused(ActorId actor);
     bool AnyPlaying(ActorId actor);
-    AnimationResult ChooseSlot(ActorId actor, AnimationSlot slot, ushort timeline);
-    AnimationResult SetSpeed(ActorId actor, float speed);
-    AnimationResult ClearSpeed(ActorId actor);
+    Outcome ChooseSlot(ActorId actor, AnimationSlot slot, ushort timeline);
+    Outcome SetSpeed(ActorId actor, float speed);
+    Outcome ClearSpeed(ActorId actor);
     bool IsPhysicsFrozen { get; }
-    AnimationResult SetScenePhysicsFrozen(bool frozen);
-    AnimationResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
-    AnimationResult Pause(ActorId actor);
-    AnimationResult Resume(ActorId actor);
-    AnimationResult PauseSlot(ActorId actor, AnimationSlot slot);
-    AnimationResult SetStance(ActorId actor, AnimationStance stance, int pose);
-    AnimationResult SetWeaponDrawn(ActorId actor, bool drawn);
-    AnimationResult SetPositionLock(ActorId actor, bool locked);
+    Outcome SetScenePhysicsFrozen(bool frozen);
+    Outcome SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
+    Outcome Pause(ActorId actor);
+    Outcome Resume(ActorId actor);
+    Outcome PauseSlot(ActorId actor, AnimationSlot slot);
+    Outcome SetStance(ActorId actor, AnimationStance stance, int pose);
+    Outcome SetWeaponDrawn(ActorId actor, bool drawn);
+    Outcome SetPositionLock(ActorId actor, bool locked);
     ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot);
     bool IsAdvanced(ActorId actor);
-    AnimationResult BeginScrub(ActorId actor, ScrubControlId control, Guid owner);
-    AnimationResult UpdateScrub(ActorId actor, float time, Guid owner);
+    Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner);
+    Outcome UpdateScrub(ActorId actor, float time, Guid owner);
     void EndScrub(Guid owner);
 }

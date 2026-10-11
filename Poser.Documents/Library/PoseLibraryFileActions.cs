@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using Poser.Files;
+using Poser.Domain.Library;
+using Poser.Documents.Files;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 /// <summary>What a library file action was asked to do.</summary>
 public enum PoseLibraryFileActionKind : byte
@@ -109,12 +110,16 @@ public sealed class PoseLibraryFileActions
     public static (PoseLibraryMetadataStatus Status, string Detail) Classify(
         PoseFileMetadataReadOutcome metadata)
     {
+        // Only the FORMAT version decides Future. `Version` is the author's
+        // free-text pose version (Anamnesis FileBase, Brio JsonDocumentBase)
+        // and says nothing about whether this build can read the file.
         if (metadata.Succeeded)
         {
-            return string.IsNullOrWhiteSpace(metadata.Version)
+            return metadata.FileVersion <= PoseFile.CurrentFileVersion
                 ? (PoseLibraryMetadataStatus.Valid, string.Empty)
                 : (PoseLibraryMetadataStatus.Future,
-                    $"Pose version '{metadata.Version}' is not supported.");
+                    $"The pose was saved in format version {metadata.FileVersion}; " +
+                    $"this build reads up to {PoseFile.CurrentFileVersion}.");
         }
 
         return (
@@ -141,13 +146,6 @@ public sealed class PoseLibraryFileActions
         };
         return (status, metadata.Failure?.Detail ?? "The scene could not be read.");
     }
-
-    /// <summary>Whether the path names a whole scene rather than a pose. The
-    /// two are different documents with different codecs, so every read the
-    /// library performs has to pick one.</summary>
-    private static bool IsScene(string path) =>
-        Path.GetExtension(path).Equals(
-            SceneFile.Extension, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Renames the file in place, keeping its extension. The new
     /// name must be a bare file name; an empty, invalid, or taken name is
@@ -316,9 +314,16 @@ public sealed class PoseLibraryFileActions
         const PoseLibraryFileActionKind kind = PoseLibraryFileActionKind.Probe;
         try
         {
-            var (status, detail) = IsScene(path)
-                ? Classify(_sceneStore.ReadMetadata(path))
-                : Classify(_store.ReadMetadata(path));
+            // The scan's own kind answers which codec reads the file: every
+            // scene-container kind goes through the scene codec, and a
+            // character file is never opened by the scan at all.
+            var (status, detail) = LibraryScanner.KindOf(path) switch
+            {
+                PoseLibraryEntryKind.Pose => Classify(_store.ReadMetadata(path)),
+                PoseLibraryEntryKind.Mcdf or PoseLibraryEntryKind.Chara =>
+                    (PoseLibraryMetadataStatus.Valid, string.Empty),
+                _ => Classify(_sceneStore.ReadMetadata(path)),
+            };
             return new PoseLibraryFileActionResult
             {
                 Kind = kind,
@@ -373,11 +378,11 @@ public sealed class PoseLibraryFileActions
                     read.Failure?.Detail ?? "The pose file could not be read.");
 
             var pose = read.Pose!;
-            if (!string.IsNullOrWhiteSpace(pose.Version))
+            if (pose.FileVersion > PoseFile.CurrentFileVersion)
                 return Refused(
                     kind,
-                    $"Pose version '{pose.Version}' is not supported, so the " +
-                    "file is not rewritten.");
+                    $"The pose was saved in format version {pose.FileVersion}, " +
+                    "newer than this build reads, so the file is not rewritten.");
 
             var trimmedAuthor = author?.Trim();
             pose.Author = string.IsNullOrEmpty(trimmedAuthor) ? null : trimmedAuthor;

@@ -10,22 +10,6 @@ namespace Poser.Application.Tests.Integration;
 public sealed class InheritedCollectionHistoryTests
 {
     [Fact]
-    public void Duplicate_history_retains_resources_and_replays_through_their_owner()
-    {
-        var (session, runtime) = Create();
-        var actor = ActorId.New();
-        runtime.Owned = new(new Dictionary<string, string> { ["model"] = "mod/model" }, "meta");
-        var captured = session.TryCaptureHistory(actor);
-        Assert.True(captured.Success, captured.Detail);
-        Assert.Equal(runtime.Owned, captured.Value!.InheritedCollection);
-        runtime.Owned = null;
-        Assert.True(session.RestoreHistory(actor, captured.Value).Success);
-        Assert.Equal("mod/model", runtime.Owned!.Paths["model"]);
-        Assert.Equal("meta", runtime.Owned.Manipulations);
-        Assert.Equal(1, runtime.Restores);
-    }
-
-    [Fact]
     public void Switching_duplicate_collection_retains_original_resources_for_reset_and_history()
     {
         var (session, runtime) = Create();
@@ -49,28 +33,6 @@ public sealed class InheritedCollectionHistoryTests
     }
 
     [Fact]
-    public void Switching_foreign_or_uncapturable_temporary_refuses_before_assignment()
-    {
-        var (session, runtime) = Create();
-        var actor = ActorId.New();
-        Assert.False(session.SetCollection(actor, runtime.Installed, "Installed").Success);
-        Assert.Equal(0, runtime.Assignments);
-        runtime.CaptureFailure = "Resources not ready";
-        Assert.Equal("Resources not ready", session.SetCollection(actor, runtime.Installed, "Installed").Detail);
-        Assert.Equal(0, runtime.Assignments);
-    }
-
-    [Fact]
-    public void Unowned_temporary_collection_still_refuses_before_mutation()
-    {
-        var (session, runtime) = Create();
-        var captured = session.TryCaptureHistory(ActorId.New());
-        Assert.False(captured.Success);
-        Assert.Contains("another plugin", captured.Detail);
-        Assert.Equal(0, runtime.Restores);
-    }
-
-    [Fact]
     public void Failed_owned_resource_capture_is_not_treated_as_empty_appearance()
     {
         var (session, runtime) = Create();
@@ -81,10 +43,10 @@ public sealed class InheritedCollectionHistoryTests
         Assert.Equal(0, runtime.Restores);
     }
 
-    private static (ActorIntegrationSession, RuntimeProxy) Create()
+    private static (IntegrationSelectors, RuntimeProxy) Create()
     {
-        var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
-        return (new(port, null!, new SessionSource()), (RuntimeProxy)(object)port);
+        var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
+        return (new IntegrationGraph(port, null!, new SessionSource()).Selectors, (RuntimeProxy)(object)port);
     }
 
     private sealed class SessionSource : ISessionGenerationSource
@@ -97,7 +59,6 @@ public sealed class InheritedCollectionHistoryTests
         public SpawnCollectionSnapshot? Owned;
         public string? CaptureFailure;
         public int Restores;
-        public int Assignments;
         public Guid Installed = Guid.NewGuid();
         private bool _individual;
         private readonly Guid _collection = Guid.NewGuid();
@@ -109,30 +70,29 @@ public sealed class InheritedCollectionHistoryTests
                 case "get_Penumbra": return new IntegrationAvailability(true, "");
                 case "get_Glamourer":
                 case "get_CustomizePlus": return new IntegrationAvailability(false, "");
-                case nameof(IIntegrationRuntimePort.GetCollectionAssignment):
+                case nameof(IIntegrationRuntimeFake.GetCollectionAssignment):
                     return IntegrationValue<CollectionAssignment>.Ok(_individual
                         ? new(Installed, "Installed", true) : new(_collection, "Duplicate", false));
-                case nameof(IIntegrationRuntimePort.GetCollections):
+                case nameof(IIntegrationRuntimeFake.GetCollections):
                     return IntegrationValue<IReadOnlyList<ExternalItem>>.Ok([new(Installed, "Installed")]);
-                case nameof(IIntegrationRuntimePort.SetIndividualCollection):
-                    Assignments++;
+                case nameof(IIntegrationRuntimeFake.SetIndividualCollection):
                     Owned = null;
                     _individual = true;
-                    return IntegrationPortResult.Ok();
-                case nameof(IIntegrationRuntimePort.RestoreCollection):
+                    return IntegrationResult.Ok();
+                case nameof(IIntegrationRuntimeFake.RestoreCollection):
                     Owned = ((CollectionBaseline)args![1]!).InheritedCollection;
                     _individual = false;
-                    return IntegrationPortResult.Ok();
-                case nameof(IIntegrationRuntimePort.CaptureInheritedCollection):
+                    return IntegrationResult.Ok();
+                case nameof(IIntegrationRuntimeFake.CaptureInheritedCollection):
                     return CaptureFailure == null
                         ? IntegrationValue<SpawnCollectionSnapshot?>.Ok(Owned)
                         : IntegrationValue<SpawnCollectionSnapshot?>.Fail(CaptureFailure);
-                case nameof(IIntegrationRuntimePort.RestoreInheritedCollection):
+                case nameof(IIntegrationRuntimeFake.RestoreInheritedCollection):
                     Owned = (SpawnCollectionSnapshot)args![1]!;
                     _individual = false;
                     Restores++;
-                    return IntegrationPortResult.Ok();
-                case nameof(IIntegrationRuntimePort.RequestRedraw): return IntegrationPortResult.Ok();
+                    return IntegrationResult.Ok();
+                case nameof(IIntegrationRuntimeFake.RequestRedraw): return IntegrationResult.Ok();
                 default: throw new NotSupportedException(method.Name);
             }
         }

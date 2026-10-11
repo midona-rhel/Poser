@@ -9,14 +9,11 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
 
@@ -41,10 +38,10 @@ public partial class MainWindow
         => _entityCommands.ReadVisibility(id);
 
     private int SetEntityVisible(SelectionId id, bool visible) =>
-        _entityCommands.SetVisibility([id], visible);
+        _entityActions.SetVisibility([id], visible);
 
     private void SetSelectionVisible(bool visible) =>
-        _entityCommands.SetVisibility(_selection.Selected.ToArray(), visible);
+        _entityActions.SetVisibility(_selection.Selected.ToArray(), visible);
 
     /// <summary>One animation state for every selected actor.</summary>
     private void SetSelectionPaused(bool paused)

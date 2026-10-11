@@ -11,15 +11,15 @@ using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Poser.Application.Lifecycle;
 using Poser.Composition;
-using Poser.Config;
-using Poser.Core;
-using Poser.Core.BoneInfo;
 using Poser.Game;
 using Poser.Game.Posing;
 using Poser.Game.Scene;
-using Poser.Services;
 using Poser.Application.Scene;
 using Poser.UI;
+using Poser.UI.Widgets;
+using Poser.Domain;
+using Poser.Domain.Posing.BoneInfo;
+using Poser.Application.Settings;
 
 namespace Poser;
 
@@ -76,75 +76,19 @@ public class Poser : IDalamudPlugin
         log.Debug("Load stage: configuration");
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
+        // The widgets draw through one context, installed as it is built;
+        // the UI manager owns it from here and disposes it on unload.
+        _ = _serviceProvider.GetRequiredService<UiContext>();
         ThemeSelection.Apply(
             configuration.Config.UI.Theme,
             configuration.Config.UI.AccentIndex);
         // Install the saved surface recipe before any UI draws.
-        Crystarium.FloatingSurface.ConfigureEffects(
+        FloatingSurface.ConfigureEffects(
             configuration.Config.UI.FillOpacity,
             configuration.Config.UI.BackdropBlur);
-        // Resolving these lazy singletons activates their subscriptions in runtime order before UI draws.
-        log.Debug("Load stage: auto-save");
-        _ = _serviceProvider.GetRequiredService<AutoSaveRuntime>();
-        log.Debug("Load link: prop spawns");
-        _ = _serviceProvider.GetRequiredService<Game.PropSpawnService>();
-        log.Debug("Load link: overlay nodes");
-        _ = _serviceProvider.GetRequiredService<Game.Overlays.OverlayNodeService>();
-        log.Debug("Load link: world objects");
-        _ = _serviceProvider.GetRequiredService<Game.WorldObjects.WorldObjectService>();
-        log.Debug("Load link: lighting");
-        _ = _serviceProvider.GetRequiredService<ILightingService>();
-        _ = _serviceProvider.GetRequiredService<Game.Scene.SceneGroupsLifetime>();
-        log.Debug("Load link: cameras");
-        _ = _serviceProvider.GetRequiredService<IVirtualCameraService>();
-        log.Debug("Load link: environment");
-        _ = _serviceProvider.GetRequiredService<IEnvironmentRuntimePort>();
-        log.Debug("Load link: bindings");
-        _ = _serviceProvider.GetRequiredService<Game.Bindings.StableBindingRegistry>();
-        log.Debug("Load link: animation");
-        _ = _serviceProvider.GetRequiredService<Application.Animation.AnimationSession>();
-#if DEBUG
-        log.Debug("Load link: debug bridge");
-        _ = _serviceProvider.GetRequiredService<global::Poser.Bridge.DebugBridge>();
-#endif
-        log.Debug("Load link: gaze");
-        _ = _serviceProvider.GetRequiredService<IGazeService>();
-        log.Debug("Load link: integration");
-        _ = _serviceProvider.GetRequiredService<Application.Integration.ActorIntegrationSession>();
-        // Catalog startup belongs to the host, not to constructing or drawing an appearance pane.
-        var wardrobeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.WardrobeCatalog>();
-        var customizeCatalog = _serviceProvider.GetRequiredService<Game.Wardrobe.CustomizeCatalog>();
-        _ = System.Threading.Tasks.Task.Run(() =>
-        {
-            try
-            {
-                wardrobeCatalog.Warm();
-                customizeCatalog.Warm();
-            }
-            catch (Exception ex)
-            {
-                log.Debug(ex, "Appearance catalog warm-up failed; catalogs will retry on demand.");
-            }
-        });
-        log.Debug("Load link: world rendering");
-        _ = _serviceProvider.GetRequiredService<IWorldRenderingRuntimePort>();
-        log.Debug("Load link: scene workflow");
-        _ = _serviceProvider.GetRequiredService<SceneWorkflow>();
-        _ = _serviceProvider.GetRequiredService<Game.Scene.SceneCreationRuntime>();
-        _ = _serviceProvider.GetRequiredService<Game.Cameras.CameraWorkspaceRuntime>();
-        _ = _serviceProvider.GetRequiredService<Game.Transforms.ParentingFrameRuntime>();
-        log.Debug("Load stage: scene auto-save");
-        _serviceProvider.GetRequiredService<AutoSaveRuntime>().StartSceneSnapshots(
-            _serviceProvider.GetRequiredService<SceneAutoSaveService>());
-        log.Debug("Load stage: scene lifecycle");
-        _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
-        startup.OnFailure(() => global::Poser.UI.Crystarium.Log = null);
-        global::Poser.UI.Crystarium.Log = message =>
-            _serviceProvider.GetRequiredService<
-                Dalamud.Plugin.Services.IPluginLog>().Debug(message);
-        log.Debug("Load stage: target sync");
-        _ = _serviceProvider.GetRequiredService<TargetSyncService>();
-        _ = _serviceProvider.GetRequiredService<Game.Input.GPoseMouseTargetHook>();
+        // Every feature registered its own startables; this is the one place
+        // they run, in StartStage order, before any UI draws.
+        Startables.StartAll(_serviceProvider, log);
         // The other polarity's fonts warm on a second atlas, so the atlas
         // the UI draws with is never rebuilt once it is up: the rebuild's
         // landing frame was the one frame the whole UI went missing.
@@ -159,25 +103,13 @@ public class Poser : IDalamudPlugin
                 pluginInterface.AssemblyLocation.DirectoryName ?? ".",
                 "Data", "Fonts"),
             _standbyFontAtlas);
-        Func<byte[], int, int, (nint, IDisposable?)> textureUploader = (pixels, width, height) =>
-        {
-            var wrap = textureProvider.CreateFromRaw(
-                RawImageSpecification.Rgba32(width, height),
-                pixels,
-                "Crystarium icon");
-            return ((nint)wrap.Handle.Handle, wrap);
-        };
-        startup.OnFailure(() => Crystarium.IconTextureUploader = null);
-        startup.OnFailure(() => Crystarium.PanelShadowTextureUploader = null);
-        startup.OnFailure(() => Crystarium.FloatingSurface.BackdropBlurAvailable = false);
-        Crystarium.IconTextureUploader = textureUploader;
-        Crystarium.PanelShadowTextureUploader = textureUploader;
-        Crystarium.FloatingSurface.BackdropBlurAvailable = true;
         log.Debug("Load stage: UI manager");
-        _ = _serviceProvider.GetRequiredService<IUIManager>();
+        var uiManager = _serviceProvider.GetRequiredService<IUIManager>();
+        // Unwinds before the fonts registered above.
+        startup.OnFailure(uiManager.Dispose);
         if (!_commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Poser. Use \"/poser test\" for the focused in-game validation harness."
+            HelpMessage = "Open Poser."
         }))
             throw new InvalidOperationException("The /poser command is already registered.");
         startup.OnFailure(() => _commandManager.RemoveHandler(CommandName));
@@ -244,7 +176,7 @@ public class Poser : IDalamudPlugin
         IPluginLog log,
         Action cleanup)
     {
-        var lifecycle = serviceProvider.GetService<ISessionLifecycleCoordinator>();
+        var lifecycle = serviceProvider.GetService<SessionLifecycleCoordinator>();
         try
         {
             if (framework.IsInFrameworkUpdateThread)
@@ -277,6 +209,7 @@ public class Poser : IDalamudPlugin
 
     public void Dispose()
     {
+        _serviceProvider.GetRequiredService<global::Poser.Lifecycle.AppearanceCatalogWarmup>().Dispose();
         var framework = _serviceProvider.GetRequiredService<IFramework>();
         var gpose = _serviceProvider.GetRequiredService<IGPoseService>();
         var log = _serviceProvider.GetRequiredService<IPluginLog>();
@@ -288,10 +221,9 @@ public class Poser : IDalamudPlugin
             () =>
             {
                 _commandManager.RemoveHandler(CommandName);
-                Crystarium.IconTextureUploader = null;
-                Crystarium.PanelShadowTextureUploader = null;
-                Crystarium.Log = null;
-                Crystarium.FloatingSurface.BackdropBlurAvailable = false;
+                // Draw stops before any resource it draws with is released;
+                // the provider's later dispose of the manager is a no-op.
+                _serviceProvider.GetRequiredService<IUIManager>().Dispose();
                 FontRegistry.Dispose();
                 _standbyFontAtlas.Dispose();
             });

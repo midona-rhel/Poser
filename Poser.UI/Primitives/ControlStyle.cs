@@ -2,6 +2,7 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -92,7 +93,7 @@ public readonly record struct ControlStyle
     /// <summary>CSS <c>max-width</c>, in logical units: caps whatever
     /// <see cref="Width"/> resolves to — intrinsic, Fixed, Fill, or a
     /// control's own usability floor. A layout track that must contain its
-    /// control (a <see cref="Crystarium.FormPairCell"/> half) states its
+    /// control (a <see cref="PageForm.FormPairCell"/> half) states its
     /// span here; containment outranks any minimum the control would
     /// otherwise enforce.</summary>
     public float? MaxWidth { get; init; }
@@ -165,8 +166,8 @@ internal static class ControlSizing
     public static float Height(UiHeight height, float fallback) =>
         height.Kind switch
         {
-            UiHeightKind.Workspace => Crystarium.ActiveTheme.Controls.WorkspaceHeight,
-            UiHeightKind.Comfortable => Crystarium.ActiveTheme.Controls.ComfortableHeight,
+            UiHeightKind.Workspace => ActiveTheme.Controls.WorkspaceHeight,
+            UiHeightKind.Comfortable => ActiveTheme.Controls.ComfortableHeight,
             UiHeightKind.Fixed => height.Value,
             _ => fallback,
         };

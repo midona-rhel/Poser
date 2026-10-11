@@ -1,7 +1,7 @@
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
-using Poser.Scene;
 using Poser.Application.AutoSave;
 using System;
 using System.Collections.Concurrent;
@@ -11,11 +11,21 @@ using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using Poser.Domain.Operations;
-using Poser.Config;
-using Poser.Files;
 using Dalamud.Bindings.ImGui;
-using Poser.Library;
-using Poser.Services;
+using Poser.UI.Widgets;
+using Poser.Domain.Library;
+using Poser.Documents.Files;
+using Poser.Application.Library;
+using Poser.Application.Settings;
+using Poser.Application.World;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.SwitchWidgets;
+using static Poser.UI.Widgets.TextInputWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -25,11 +35,11 @@ namespace Poser.UI;
 /// behind — every named refusal and every recovered file.
 ///
 /// <para>It composes existing idioms rather than restating them: the two
-/// destinations are <see cref="Crystarium.FileDialog"/>s exactly as the light
+/// destinations are <see cref="FileDialog"/>s exactly as the light
 /// and camera files are, the load dialog's side panel is the codec's own
 /// verdict on the highlighted file (so a corrupt or future scene says so
 /// before it is opened, not after), and the page is
-/// <see cref="Crystarium.Page"/> sections throughout.</para>
+/// <see cref="PageForm.Page"/> sections throughout.</para>
 ///
 /// <para>The pane owns no scene state. Progress, the terminal receipt and the
 /// snapshot result are read from their owners' immutable read models every
@@ -40,29 +50,29 @@ public sealed class ScenePane
     private readonly ISceneWorkflow _workflow;
     private readonly IPlacementAnchorSource _anchors;
     private readonly ConfigurationService _config;
-    private readonly ISceneAutoSave _snapshots;
+    private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
     private readonly Poser.Application.Library.ILibrarySceneSave _librarySave;
 
-    private readonly Crystarium.FileDialog _saveBrowser =
+    private readonly FileDialog _saveBrowser =
         new("Save Scene", new[] { SceneFile.Extension }, isSaveMode: true);
-    private readonly Crystarium.FileDialog _loadBrowser =
+    private readonly FileDialog _loadBrowser =
         new("Load Scene", new[] { SceneFile.Extension });
-    private readonly Crystarium.FileDialog _snapshotBrowser =
+    private readonly FileDialog _snapshotBrowser =
         new("Load Snapshot", new[] { SceneFile.Extension });
 
     // The Stagehand seam: a Stage is a plain .json in Documents\Stages,
     // and both dialogs open there so the two plugins read one folder.
-    private readonly Crystarium.FileDialog _stageSaveBrowser =
-        new("Export Stage", new[] { global::Poser.Files.StageFile.Extension },
+    private readonly FileDialog _stageSaveBrowser =
+        new("Export Stage", new[] { global::Poser.Documents.Scene.StageFile.Extension },
             isSaveMode: true);
-    private readonly Crystarium.FileDialog _stageLoadBrowser =
-        new("Import Stage", new[] { global::Poser.Files.StageFile.Extension });
+    private readonly FileDialog _stageLoadBrowser =
+        new("Import Stage", new[] { global::Poser.Documents.Scene.StageFile.Extension });
 
     /// <summary>ONE dialog serves every "from file" row in the portal: an
     /// entry's kind lives in its extension, and the load takes any of
     /// them through the same placement-anchored BeginLoad.</summary>
-    private readonly Crystarium.FileDialog _entryBrowser =
+    private readonly FileDialog _entryBrowser =
         new("Add from file", new[]
         {
             SceneFile.ActorEntryExtension,
@@ -174,10 +184,15 @@ public sealed class ScenePane
     public bool SaveEntry(SelectionId target, string displayName) =>
         ReportLibrarySave(_librarySave.SaveEntry(target, displayName));
 
+    /// <summary>A pane's "Save to file…": the same entry save, written to
+    /// the path the dialog chose.</summary>
+    public bool SaveEntryTo(SelectionId target, string path) =>
+        ReportLibrarySave(_librarySave.SaveEntryTo(target, path));
+
     public bool SaveGroupEntry(IReadOnlyList<SelectionId> members, string displayName) =>
         ReportLibrarySave(_librarySave.SaveGroup(members, displayName));
 
-    private bool ReportLibrarySave(SceneActionResult result)
+    private bool ReportLibrarySave(Outcome result)
     {
         if (!result.Success) _notices.Refused(result.Detail ?? "The library save could not start.");
         return result.Success;
@@ -186,28 +201,32 @@ public sealed class ScenePane
     /// <summary>The portal's "from file" rows: pick ANY entry file and
     /// load it through the standing placement rule — the same
     /// anchored BeginLoad a library activation runs.</summary>
-    public void OpenEntryLoad()
+    public void OpenEntryLoad() =>
+        _folder.Open(_entryBrowser,
+            path => LoadEntry(path, _config.Config.DefaultSpawnPlacement));
+
+    /// <summary>Loads one entry file through the anchored BeginLoad. An
+    /// anchor that cannot be resolved loads the entry as saved.</summary>
+    public void LoadEntry(string path, global::Poser.Domain.Scene.ObjectPlacementMode mode)
     {
-        _folder.Open(_entryBrowser, path =>
-        {
-            var options = new SceneLoadOptions();
-            var mode = _config.Config.DefaultSpawnPlacement;
-            if (mode != global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved
-                && _anchors.TryCurrentFor(
-                    mode, out var position, out var yaw, out _))
-                options = options with
-                {
-                    Placement = mode,
-                    PlacementPosition = position,
-                    PlacementYaw = yaw,
-                };
-            _workflow.BeginLoad(path, options);
-        });
+        var options = new SceneLoadOptions();
+        if (mode != global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved
+            && _anchors.TryCurrentFor(
+                mode, out var position, out var yaw, out _))
+            options = options with
+            {
+                Placement = mode,
+                PlacementPosition = position,
+                PlacementYaw = yaw,
+            };
+        var result = _workflow.BeginLoad(path, options);
+        if (!result.Success)
+            _notices.Refused(result.Detail ?? "The entry could not be loaded.");
     }
 
     public ScenePane(
         ISceneWorkflow workflow,
-        ISceneAutoSave snapshots,
+        SceneAutoSaveService snapshots,
         IPoseLibraryService library,
         ConfigurationService config,
         IPlaceService place,
@@ -265,7 +284,7 @@ public sealed class ScenePane
     {
         if (!_librarySaveOpen)
             return;
-        Crystarium.Dialog(
+        Dialog(
             _librarySaveWindowId,
             _librarySaveOpen,
             next => _librarySaveOpen = next,
@@ -273,7 +292,7 @@ public sealed class ScenePane
             height: 196f,
             body: () =>
         {
-            Crystarium.TextInput(
+            TextInput(
                 "##scene-library-save-name", _librarySaveName,
                 next => _librarySaveName = next,
                 placeholder: "Scene name");
@@ -286,22 +305,22 @@ public sealed class ScenePane
             var rowStart = ImGui.GetCursorScreenPos();
             float rowWidth = ImGui.GetContentRegionAvail().X;
             float switchWidth =
-                Crystarium.ActiveTheme.Controls.SwitchWidth * rowScale;
+                ActiveTheme.Controls.SwitchWidth * rowScale;
             float switchHeight =
-                Crystarium.ActiveTheme.Controls.SwitchHeight * rowScale;
-            Crystarium.TextAt(
+                ActiveTheme.Controls.SwitchHeight * rowScale;
+            TextAt(
                 rowStart + new Vector2(0f, (switchHeight -
-                    Crystarium.ActiveTheme.Typography.LabelSize * rowScale)
+                    ActiveTheme.Typography.LabelSize * rowScale)
                     * 0.5f),
                 "Include appearance files",
                 new TextStyle
                 {
-                    Size = Crystarium.ActiveTheme.Typography.LabelSize,
-                    Color = Crystarium.ActiveTheme.Text,
+                    Size = ActiveTheme.Typography.LabelSize,
+                    Color = ActiveTheme.Text,
                 });
             ImGui.SetCursorScreenPos(
                 rowStart + new Vector2(rowWidth - switchWidth, 0f));
-            Crystarium.Switch(
+            Switch(
                 "##scene-library-save-appearance",
                 SaveOptions.IncludeModdedAppearance,
                 next => SaveOptions = SaveOptions with
@@ -312,14 +331,14 @@ public sealed class ScenePane
         },
             footer: () =>
         {
-            bool submit = Crystarium.DialogHasKeyboardFocus() && (
+            bool submit = DialogHasKeyboardFocus() && (
                 ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
                 ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false));
-            if (Crystarium.Button("Cancel", id: "scene-library-save-cancel"))
+            if (Button("Cancel", id: "scene-library-save-cancel"))
                 _librarySaveOpen = false;
             ImGui.SameLine(0f, 8f *
                 Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button(
+            if (Button(
                     "Save",
                     variant: ButtonVariant.Primary,
                     id: "scene-library-save-confirm") || submit)
@@ -390,7 +409,7 @@ public sealed class ScenePane
         var receipt = _workflow.Receipt;
         bool busy = _workflow.Busy;
 
-        Crystarium.Page("scene", origin, size, page =>
+        Page("scene", origin, size, page =>
         {
             page.Section("Scene", form =>
             {
@@ -528,7 +547,7 @@ public sealed class ScenePane
 
     // ── progress ─────────────────────────────────────────────────────────
 
-    private void DrawProgress(Crystarium.PageScope page, SceneProgress progress)
+    private void DrawProgress(PageScope page, SceneProgress progress)
     {
         page.Section("In progress", form =>
         {
@@ -547,7 +566,9 @@ public sealed class ScenePane
                 cancelDisabled: !progress.Cancellable,
                 cancelHelp: progress.Cancellable
                     ? "Stop and undo"
-                    : "Past the point of cancelling");
+                    : progress.Phase == ScenePhase.Cancelling
+                        ? "Already cancelling"
+                        : "Past the point of cancelling");
             form.Status(
                 $"{(progress.Kind == SceneOperationKind.Save ? "Saving" : "Loading")} " +
                 $"{progress.FileName}.");
@@ -574,6 +595,7 @@ public sealed class ScenePane
         ScenePhase.ApplyingEnvironment => "Restoring the environment",
         ScenePhase.Committing => "Finishing",
         ScenePhase.RollingBack => "Undoing what was created",
+        ScenePhase.Cancelling => "Cancelling…",
         ScenePhase.Completed => "Done",
         ScenePhase.RolledBack => "Undone",
         ScenePhase.Failed => "Failed",
@@ -584,16 +606,17 @@ public sealed class ScenePane
     // ── terminal result ──────────────────────────────────────────────────
 
     private void DrawOutcome(
-        Crystarium.PageScope page,
+        PageScope page,
         SceneOutcome outcome,
         OperationReceipt? receipt)
     {
         var refusals = outcome.Entities.Where(entity => !entity.Restored).ToList();
+        var degraded = outcome.Entities.Where(entity => entity.Degraded).ToList();
         page.Section("Last result", form =>
         {
             form.ReadOnly(
                 "Outcome",
-                StateLabel(outcome.State),
+                StateLabel(outcome),
                 unavailable: !outcome.Success,
                 help: receipt is null
                     ? null
@@ -612,12 +635,21 @@ public sealed class ScenePane
             // said was the actor's name back at the user.
             foreach (var refusal in refusals)
             {
-                form.ReadOnly(refusal.Kind, refusal.Name, unavailable: true);
+                form.ReadOnly(refusal.Kind.Label(), refusal.Name, unavailable: true);
                 form.Paragraph(
                     refusal.Detail ?? "It was refused without a stated reason.",
                     warning: true);
                 if (refusal.Remedy is { Length: > 0 } remedy)
                     form.Paragraph(remedy);
+            }
+
+            // Restored with a caveat: in the scene, and the caveat is the
+            // whole point of the row, so it is shown rather than folded into
+            // the successes.
+            foreach (var entity in degraded)
+            {
+                form.ReadOnly(entity.Kind.Label(), $"{entity.Name} (restored)");
+                form.Paragraph(entity.Detail!);
             }
 
             foreach (var note in outcome.Notes)
@@ -641,19 +673,24 @@ public sealed class ScenePane
             if (outcome.LeftEntitiesBehind && refusals.Count > 0)
             {
                 form.Status(
-                    "Everything that did restore was kept. Remove what you do " +
-                    "not want, or load the scene again.");
+                    "Everything that did restore was kept. Undo removes the " +
+                    "whole load in one step; loading it again without undoing " +
+                    "first would duplicate it.");
             }
         });
     }
 
-    private static string StateLabel(OperationReceiptState state) => state switch
+    private static string StateLabel(SceneOutcome outcome) => outcome.State switch
     {
+        OperationReceiptState.RolledBack or OperationReceiptState.Cancelled
+            when outcome.SessionCleared =>
+            $"{(outcome.State == OperationReceiptState.RolledBack ? "Rolled back" : "Cancelled")}; " +
+            "the session was already cleared",
         OperationReceiptState.Applied => "Applied",
         OperationReceiptState.RolledBack => "Rolled back — nothing was left behind",
         OperationReceiptState.Cancelled => "Cancelled — nothing was left behind",
         OperationReceiptState.Failed => "Failed",
-        _ => state.ToString(),
+        var state => state.ToString(),
     };
 
     // ── the load dialog's options band ───────────────────────────────────
@@ -683,7 +720,7 @@ public sealed class ScenePane
     private void DrawLoadOptionsBand(Vector2 origin, Vector2 size, string? path)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float inset = theme.Page.Inset;
         float regionWidth = (size.X / scale - inset) / 2f;
         float regionHeight = size.Y / scale - inset;
@@ -694,7 +731,7 @@ public sealed class ScenePane
             ImGui.SetCursorScreenPos(new Vector2(
                 origin.X + (inset + regionWidth * column) * scale,
                 origin.Y + inset * scale));
-            Crystarium.ScrollRegion(
+            ScrollRegion(
                 $"{OptionsBandId}-{column}",
                 regionWidth,
                 regionHeight,
@@ -737,52 +774,55 @@ public sealed class ScenePane
     /// in — and they are drawn from here in both mounts, so the workspace and
     /// the dialog cannot drift into two wordings of one option.
     /// </summary>
-    private void DrawSessionOptions(Crystarium.FormScope form, bool disabled) =>
+    private void DrawSessionOptions(FormScope form, bool disabled) =>
         form.Checkboxes(
             "Session",
             disabled,
             fullWidth: false,
-            new Crystarium.CheckItem(
+            new CheckItem(
                 "Clear the session first",
                 Options.ClearExistingScene,
                 next => Options = Options with { ClearExistingScene = next },
                 "Removes everything first"),
-            new Crystarium.CheckItem(
+            new CheckItem(
                 "Place relative to me",
                 Options.PlaceRelativeToCurrentOrigin,
                 next => Options =
                     Options with { PlaceRelativeToCurrentOrigin = next },
                 "Places it where you stand"));
 
-    /// <summary>The six INCLUSION filters, one group, in the order the load
+    /// <summary>The seven INCLUSION filters, one group, in the order the load
     /// restores them. Only the three whose scope is not obvious from the word
     /// carry help — a tooltip that repeats its own label is noise.</summary>
-    private void DrawIncludeOptions(Crystarium.FormScope form, bool disabled) =>
+    private void DrawIncludeOptions(FormScope form, bool disabled) =>
         form.Checkboxes(
             "Include",
             disabled,
             fullWidth: false,
-            new Crystarium.CheckItem(
+            new CheckItem(
                 "Actors", Options.IncludeActors,
                 next => Options = Options with { IncludeActors = next },
                 "Poses, companions and gaze"),
-            new Crystarium.CheckItem(
+            new CheckItem(
                 "Objects", Options.IncludeProps,
                 next => Options = Options with { IncludeProps = next }),
-            new Crystarium.CheckItem(
+            new CheckItem(
                 "Lights", Options.IncludeLights,
                 next => Options = Options with { IncludeLights = next }),
-            new Crystarium.CheckItem(
+            new CheckItem(
                 "Cameras", Options.IncludeCameras,
                 next => Options = Options with { IncludeCameras = next }),
-            new Crystarium.CheckItem(
+            new CheckItem(
                 "Environment", Options.IncludeEnvironment,
                 next => Options = Options with { IncludeEnvironment = next },
                 "Time, weather and sky"),
-            new Crystarium.CheckItem(
+            new CheckItem(
                 "Overlays", Options.IncludeOverlays,
                 next => Options = Options with { IncludeOverlays = next },
-                "Dialogue and status nodes"));
+                "Dialogue and status nodes"),
+            new CheckItem(
+                "World objects", Options.IncludeWorldObjects,
+                next => Options = Options with { IncludeWorldObjects = next }));
 
     // ── the save dialog's options band ───────────────────────────────────
 
@@ -798,7 +838,7 @@ public sealed class ScenePane
     private void DrawSaveOptionsBand(Vector2 origin, Vector2 size, string? path)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        float inset = Crystarium.ActiveTheme.Page.Inset * scale;
+        float inset = ActiveTheme.Page.Inset * scale;
         Section(
             "##scene-save-options",
             origin + new Vector2(inset, inset),
@@ -807,7 +847,7 @@ public sealed class ScenePane
                 "Include",
                 disabled: false,
                 fullWidth: false,
-                new Crystarium.CheckItem(
+                new CheckItem(
                     "Modded appearance",
                     SaveOptions.IncludeModdedAppearance,
                     next => SaveOptions = SaveOptions with
@@ -820,8 +860,8 @@ public sealed class ScenePane
     /// <summary>One headerless dense option section, the band's only shape.
     /// </summary>
     private static float Section(
-        string id, Vector2 origin, float width, Action<Crystarium.FormScope> rows) =>
-        Crystarium.Section(
+        string id, Vector2 origin, float width, Action<FormScope> rows) =>
+        PageForm.Section(
             id,
             string.Empty,
             origin,
@@ -848,7 +888,7 @@ public sealed class ScenePane
     /// </summary>
     private void DrawVerdictPanel(Vector2 origin, Vector2 size, string? path)
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         float inset = theme.Spacing.Four * scale;
         float width = size.X - inset * 2f;
@@ -861,7 +901,7 @@ public sealed class ScenePane
         // left-aligned on the same start edge.
         if (path is null)
         {
-            Crystarium.TextInBand(
+            TextInBand(
                 new Vector2(origin.X + inset, origin.Y),
                 new Vector2(width, size.Y),
                 "Choose a scene to see what is in it.",
@@ -880,7 +920,7 @@ public sealed class ScenePane
 
         void Line(string text, Vector4 color, float size)
         {
-            Crystarium.TextInBand(
+            TextInBand(
                 cursor,
                 new Vector2(width, line),
                 text,
@@ -1087,7 +1127,7 @@ public sealed class ScenePane
     /// dialog has somewhere to land.</summary>
     private static string StageFolder()
     {
-        string folder = global::Poser.Files.StageFile.DefaultFolder;
+        string folder = global::Poser.Documents.Scene.StageFile.DefaultFolder;
         try
         {
             Directory.CreateDirectory(folder);
@@ -1104,9 +1144,9 @@ public sealed class ScenePane
         StageFolder(), path =>
     {
         if (!path.EndsWith(
-                global::Poser.Files.StageFile.Extension,
+                global::Poser.Documents.Scene.StageFile.Extension,
                 StringComparison.OrdinalIgnoreCase))
-            path += global::Poser.Files.StageFile.Extension;
+            path += global::Poser.Documents.Scene.StageFile.Extension;
         var started = _workflow.BeginSave(
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description,

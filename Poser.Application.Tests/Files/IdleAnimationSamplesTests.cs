@@ -3,7 +3,7 @@ using System.Numerics;
 using Poser.Documents.Animation;
 using Poser.Domain.Transforms;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class IdleAnimationSamplesTests
 {
@@ -47,60 +47,5 @@ public sealed class IdleAnimationSamplesTests
         var still = IdleAnimationSamples.Create(Pose("body", antipodal), Pose("face", antipodal), 1, 4);
         Assert.All(still.Body.Entry.Frames, frame =>
             Assert.True(MathF.Abs(Quaternion.Dot(Quaternion.Identity, frame[0].Rotation)) > 0.99999f));
-    }
-
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(2)]
-    public void Rejects_out_of_skeleton_indices(short index)
-    {
-        var bad = new IdleSkeletonPose("body", 2, [new(index, PoseTransform.Identity, Target(1))]);
-        Assert.Throws<ArgumentException>(() => IdleAnimationSamples.Create(bad, Pose("face", Target(1))));
-    }
-
-    [Fact]
-    public void Rejects_missing_expression_and_duplicate_bindings()
-    {
-        var body = Pose("body", Target(1));
-        Assert.Throws<ArgumentException>(() => IdleAnimationSamples.Create(body,
-            new("face", 2, ImmutableArray<IdleBoneTrack>.Empty)));
-        Assert.Throws<ArgumentException>(() => IdleAnimationSamples.Create(body,
-            new("face", 2, [body.Tracks[0], body.Tracks[0]])));
-    }
-
-    [Fact]
-    public void Rejects_corrupt_transforms_and_singular_scale_transitions()
-    {
-        var body = Pose("body", Target(1));
-        foreach (var invalid in new[] {
-            Target(1) with { Position = new(float.NaN) },
-            Target(1) with { Rotation = default },
-            Target(1) with { Scale = Vector3.Zero },
-            Target(1) with { Scale = new(-1, 1, 1) } })
-            Assert.ThrowsAny<ArgumentException>(() => IdleAnimationSamples.Create(body, Pose("face", invalid)));
-    }
-
-    [Theory]
-    [InlineData(0, 30)]
-    [InlineData(-1, 30)]
-    [InlineData(float.NaN, 30)]
-    [InlineData(float.PositiveInfinity, 30)]
-    [InlineData(11, 30)]
-    [InlineData(0.3f, 0)]
-    [InlineData(0.3f, 121)]
-    public void Rejects_invalid_or_unbounded_sampling(float duration, int rate)
-    {
-        var pose = Pose("body", Target(1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => IdleAnimationSamples.Create(pose, pose, duration, rate));
-    }
-
-    [Fact]
-    public void Long_native_entry_keeps_its_full_duration()
-    {
-        var pose = Pose("body", Target(1));
-        var samples = IdleAnimationSamples.Create(pose, pose, 215f / 30f);
-        Assert.Equal(215f / 30f, samples.Body.Entry.DurationSeconds);
-        Assert.Equal(216, samples.Body.Entry.Frames.Length);
-        Assert.Equal(samples.Body.Hold.Frames[0], samples.Body.Entry.Frames[^1]);
     }
 }

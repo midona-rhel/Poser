@@ -12,14 +12,13 @@ using Poser.Application.Integration;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Library;
-using Poser.Services;
 using Poser.UI.Views;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -33,7 +32,7 @@ public sealed partial class PoseLibraryPane
     {
         if (!_deleteOpen)
             return;
-        Crystarium.Dialog(
+        Dialog(
             "##library-delete",
             _deleteOpen,
             next => _deleteOpen = next,
@@ -42,7 +41,7 @@ public sealed partial class PoseLibraryPane
             body: () =>
         {
             float scale = ImGuiHelpers.GlobalScale;
-            var theme = Crystarium.ActiveTheme;
+            var theme = ActiveTheme;
             var captionStyle = new TextStyle
             {
                 Size = theme.Typography.CaptionSize,
@@ -51,7 +50,7 @@ public sealed partial class PoseLibraryPane
             float captionAdvance = (theme.Typography.CaptionSize + 4f) * scale;
             float rowGap = 8f * scale;
 
-            Crystarium.TextAt(
+            TextAt(
                 ImGui.GetCursorScreenPos(), _deleteName,
                 new TextStyle
                 {
@@ -59,7 +58,7 @@ public sealed partial class PoseLibraryPane
                     Color = theme.Text,
                 });
             ImGui.Dummy(new Vector2(1f, captionAdvance));
-            Crystarium.TextAt(
+            TextAt(
                 ImGui.GetCursorScreenPos(),
                 "This permanently deletes the file from disk.",
                 captionStyle);
@@ -72,7 +71,7 @@ public sealed partial class PoseLibraryPane
             {
                 Width = UiWidth.Fixed(MathF.Max(1f, half)),
             };
-            if (Crystarium.Button(
+            if (Button(
                     "Delete",
                     variant: ButtonVariant.Danger,
                     style: pairStyle,
@@ -100,7 +99,7 @@ public sealed partial class PoseLibraryPane
                 _deleteOpen = false;
             }
             ImGui.SameLine(0f, gap);
-            if (Crystarium.Button(
+            if (Button(
                     "Cancel", style: pairStyle, id: "library-delete-cancel"))
                 _deleteOpen = false;
         });

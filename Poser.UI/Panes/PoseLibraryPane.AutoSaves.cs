@@ -12,14 +12,12 @@ using Poser.Application.Integration;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Library;
-using Poser.Services;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
+using Poser.Domain.Library;
+using Poser.Documents.Library;
 
 namespace Poser.UI;
 
@@ -79,8 +77,8 @@ public sealed partial class PoseLibraryPane
             _rangeEnd = -1;
             _vm.SelectedFolder = 0;
             _vm.Folders.Clear();
-            Crystarium.FloatingMenu.Dismiss(TileMenuId);
-            Crystarium.FloatingMenu.Dismiss("##library-apply-target");
+            FloatingMenu.Dismiss(TileMenuId);
+            FloatingMenu.Dismiss("##library-apply-target");
             _vm.Tiles.Clear();
             _tileTags.Clear();
             _tileAuthors.Clear();
@@ -212,10 +210,10 @@ public sealed partial class PoseLibraryPane
                     LabelLower = entry.NameLower,
                     Sub = entry.Stamp,
                     ThumbKey = entry.FilePath,
-                    // An auto-save is a normal export, so it carries whatever
-                    // preview the exporter wrote; the cache probes once and
-                    // memoizes a file without one.
-                    HasThumbnail = true,
+                    // Only a file whose document says it embeds an image asks
+                    // the cache: auto-saves are written without one, and a
+                    // blanket claim made the cache open every visible file.
+                    HasThumbnail = entry.HasThumbnail,
                     Favorite = favorites.Contains(entry.FilePath),
                     Folder = group,
                 });

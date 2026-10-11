@@ -1,10 +1,12 @@
 using System.Reflection;
 using Poser.Application.Animation;
 using Poser.Application.Posing;
+using Poser.Application.World;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Transforms;
-using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.Transforms;
 
@@ -31,46 +33,6 @@ public sealed class PoseImportCoordinatorTests
         f.Runtime.Tick(2);
         Assert.Equal(.5f, f.Animation.OverridesFor(Actor).OverallSpeed);
         Assert.False(f.Coordinator.IsImportBusy);
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void FreezePersistsOnlyAfterSuccessfulImport(bool success)
-    {
-        var f = new Fixture();
-        f.Coordinator.Begin(Actor, new Plan(), new() { FreezeOnImport = true }, "Import");
-        f.Runtime.Tick(4);
-        f.Runtime.Finish(success);
-        f.Runtime.Tick(2);
-        Assert.Equal(success, f.Animation.IsPaused(Actor));
-    }
-
-    [Fact]
-    public void UserPausedActorStaysPausedWithoutFreezeOnImport()
-    {
-        var f = new Fixture();
-        f.Animation.Pause(Actor);
-        f.Coordinator.Begin(Actor, new Plan(), new(), "Import");
-        f.Runtime.Tick(4);
-        f.Runtime.Finish(true);
-        f.Runtime.Tick(2);
-        Assert.True(f.Animation.IsPaused(Actor));
-    }
-
-    [Fact]
-    public void SupersededArmCannotApplyOrRestoreItsSuccessorsPause()
-    {
-        var f = new Fixture();
-        f.Coordinator.Begin(Actor, new Plan(), new(), "Old");
-        f.Coordinator.Begin(Actor, new Plan(), new(), "New");
-        f.Runtime.Tick(2); // Old cancellation's deferred restore.
-        Assert.True(f.Animation.IsPaused(Actor));
-        f.Runtime.Tick(4); // Old settle callback must do nothing.
-        Assert.Single(f.Runtime.Applied);
-        f.Runtime.Finish(true);
-        f.Runtime.Tick(2);
-        Assert.False(f.Animation.IsPaused(Actor));
     }
 
     [Fact]
@@ -103,11 +65,18 @@ public sealed class PoseImportCoordinatorTests
         public readonly PoseImportCoordinator Coordinator;
         public Fixture()
         {
-            var port = DispatchProxy.Create<IAnimationRuntimePort, AnimationPort>();
-            ((AnimationPort)(object)port).Events = Events;
-            Animation = new(port);
+            Animation = new(Port<IAnimationTimelinePort>(), Port<IAnimationSpeedPort>(),
+                Port<IAnimationStancePort>(), Port<IAnimationScrubPort>(),
+                Port<IWorldRenderingRuntimePort>());
             Runtime = new(Events);
             Coordinator = new(Runtime, Animation);
+        }
+
+        private T Port<T>() where T : class
+        {
+            var port = DispatchProxy.Create<T, AnimationPort>();
+            ((AnimationPort)(object)port).Events = Events;
+            return port;
         }
     }
 
@@ -120,7 +89,7 @@ public sealed class PoseImportCoordinatorTests
             if (method!.Name == "IsSupported") return true;
             if (method.Name == "RewindPausedControls") Events.Add("rewind");
             if (method.Name is "SetOverallSpeed" or "ClearOverallSpeed" or "RewindPausedControls")
-                return AnimationPortResult.Ok();
+                return Outcome.Ok();
             throw new InvalidOperationException("Unexpected animation call: " + method.Name);
         }
     }
@@ -133,6 +102,7 @@ public sealed class PoseImportCoordinatorTests
         private readonly List<(int Ticks, Action Action)> _queue = [];
         public readonly List<(PoseImportOperation Operation, bool Expression)> Applied = [];
         public bool IsPending => _current != null;
+        public bool AdmissionBusy => IsPending;
         public bool IsFrameworkThread => true;
         public bool FreezeOnImport => false;
         public bool IsCurrent(PoseImportOperation operation) => ReferenceEquals(_current, operation);

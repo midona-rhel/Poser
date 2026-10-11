@@ -7,12 +7,13 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
 using Poser.Domain.Animation;
-using Poser.Entities;
-using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
-using Poser.Services;
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
+using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
@@ -49,20 +50,20 @@ public sealed class SceneCaptureService
     private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly IEnvironmentControl _environment;
+    private readonly EnvironmentControl _environment;
     private readonly StableBindingRegistry _bindings;
     private readonly IPoseImportCommands _poses;
     private readonly IPlaceService _place;
     private readonly IObjectTable _objects;
     private readonly IPosingService _posing;
     private readonly AnimationSession _animation;
-    private readonly IGazeService _gaze;
+    private readonly GazeService _gaze;
     private readonly PoseExportCapture _exports;
-    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
+    private readonly Poser.Application.Integration.IntegrationSelectors _integration;
     private readonly IWorldRenderingRuntimePort _rendering;
-    private readonly World.WorldService _worldObjects;
+    private readonly WorldObjects.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
-    private readonly Poser.Config.ConfigurationService _configuration;
+    private readonly Poser.Application.Settings.ConfigurationService _configuration;
 
     public SceneCaptureService(
         IFramework framework,
@@ -74,20 +75,20 @@ public sealed class SceneCaptureService
         Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IEnvironmentControl environment,
+        EnvironmentControl environment,
         StableBindingRegistry bindings,
         IPoseImportCommands poses,
         IPlaceService place,
         IObjectTable objects,
         IPosingService posing,
         AnimationSession animation,
-        IGazeService gaze,
+        GazeService gaze,
         PoseExportCapture exports,
-        Poser.Application.Integration.ActorIntegrationSession integration,
+        Poser.Application.Integration.IntegrationSelectors integration,
         IWorldRenderingRuntimePort rendering,
-        World.WorldService worldObjects,
+        WorldObjects.WorldService worldObjects,
         PlacementAnchorSource anchors,
-        Poser.Config.ConfigurationService configuration)
+        Poser.Application.Settings.ConfigurationService configuration)
     {
         _configuration = configuration;
         _anchors = anchors;
@@ -197,7 +198,9 @@ public sealed class SceneCaptureService
             var scene = new SceneFile
             {
                 SceneId = sceneId,
-                Description = description,
+                Description = description is { Length: > SceneFileLimits.MaxDescriptionCharacters }
+                    ? description[..SceneFileLimits.MaxDescriptionCharacters]
+                    : description,
                 SavedAt = DateTimeOffset.UtcNow,
             };
             CaptureTerritory(scene);
@@ -282,6 +285,7 @@ public sealed class SceneCaptureService
             }
 
             var companion = _spawns.GetCompanionInfo(actor);
+            var spawnedKind = _spawns.GetSpawnedKind(actor);
             var id = _bindings.GetActorId(actor);
             var key = id?.LogicalId ?? Guid.NewGuid();
             keys[actor] = key;
@@ -293,8 +297,14 @@ public sealed class SceneCaptureService
                 // Save the authored nickname, not a transient anonymous UI mask
                 // or the generated native name needed by appearance providers.
                 Name = Bounded((id is { } named ? _configuration.GetNickname(named.LogicalId) : null)
-                    ?? Poser.Config.ConfigurationService.StripObjectIndex(actor.Name), $"Actor {key:N}"),
+                    ?? Poser.Application.Settings.ConfigurationService.StripObjectIndex(actor.Name), $"Actor {key:N}"),
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
+                SpawnedKind = spawnedKind,
+                // Every loaded character is a clone of the local player, so
+                // anyone else's look exists only in an appearance package.
+                // Marked here and settled by the save policy, which is the
+                // step that knows whether a package survived.
+                AppearanceNotSaved = spawnedKind is null && !_actors.IsLocalPlayer(actor),
                 NameIsDisplayName = true,
                 PenumbraCollection = id is { } collectionActor ? CaptureCollection(collectionActor) : null,
                 Visible = _spawns.IsVisible(actor),
@@ -326,6 +336,13 @@ public sealed class SceneCaptureService
     private Guid? CaptureCollection(Poser.Domain.Identity.ActorId actor)
     {
         if (_integration.ReadCollection(actor) is not { Success: true, Value: { } assignment })
+            return null;
+        // Every plain spawn is ASSIGNED the player's collection, so wearing
+        // it is inheriting: saved, it would force an assignment and a redraw
+        // per actor on load, and name a GUID other machines do not have.
+        if (!assignment.HasIndividualAssignment
+            || _integration.ReadPlayerCollection() is { Success: true, Value: var player }
+                && player == assignment.EffectiveId)
             return null;
         // A duplicate/MCDF temporary collection's ID dies with its actor.
         // Only permanent local references can be reused on a later load.
@@ -428,15 +445,17 @@ public sealed class SceneCaptureService
             Guid? target = null;
             if (state.Mode == GazeTargetMode.Entity)
             {
-                var address = _gaze.GetGazeTargetAddress(actor);
-                foreach (var (candidate, _) in captured)
-                {
-                    if (candidate.Address == address && address != nint.Zero)
+                // By stable id: a GPose copy shares its source's GameObjectId,
+                // so only the binding names which body the gaze follows.
+                if (state.TargetActor is { } followed)
+                    foreach (var (candidate, _) in captured)
                     {
-                        target = keys[candidate];
-                        break;
+                        if (_bindings.GetActorId(candidate) == followed)
+                        {
+                            target = keys[candidate];
+                            break;
+                        }
                     }
-                }
                 if (target is null)
                     notes.Add(
                         $"Actor '{actor.Name}' looks at an uncaptured actor; the gaze target was not saved.");
@@ -603,7 +622,7 @@ public sealed class SceneCaptureService
                 continue;
             }
 
-            var document = Lights.LightDocument.Capture(light);
+            var document = Lighting.LightDocument.Capture(light);
             document.Name = Bounded(document.Name, "Light");
             document.Transform = NormalizedTransform(
                 (Transform)document.Transform, $"Light '{light.Name}'", notes);
@@ -693,8 +712,7 @@ public sealed class SceneCaptureService
         if (camera.TargetActorId is not { } targetId ||
             _bindings.Resolve(targetId) is not
                 { Success: true, Value: { } exact } ||
-            !ReferenceEquals(exact, camera.TargetActor) ||
-            _bindings.GetActorId(exact) != targetId)
+            !ReferenceEquals(exact, camera.TargetActor))
             return null;
         return actorKeys.TryGetValue(exact, out var key) ? key : null;
     }

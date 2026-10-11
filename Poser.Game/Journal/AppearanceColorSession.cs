@@ -2,16 +2,17 @@ using System.Numerics;
 using Poser.Application.Integration;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Journal;
 
 /// <summary>Actor-facing custom colour commands; ownership stays in presentation.</summary>
 public sealed class AppearanceColorSession(
-    ActorPresentationSession presentation, ActorIntegrationSession integration,
+    ActorPresentationSession presentation, IntegrationSelectors integration,
     ValueJournal journal, TransformGestureService runner, IEntityBindings bindings) : IAppearanceColorControl
 {
     public IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> Read(ActorId actor) => presentation.ReadColors(actor);
@@ -19,23 +20,21 @@ public sealed class AppearanceColorSession(
         presentation.OverridesFor(actor).Colors.TryGetValue(channel, out var value) ? value : null;
     public void Seal() => journal.Seal();
 
-    private ValueWriteResult Put(ActorId actor, AppearanceColorChannel channel, Vector4? value)
+    private Outcome Put(ActorId actor, AppearanceColorChannel channel, Vector4? value)
     {
         if (value is { } color)
         {
             var own = integration.OwnLook(actor);
-            if (!own.Success) return new(false, own.Detail);
-            var result = presentation.SetColor(actor, channel, color);
-            return new(result.Success, result.Detail);
+            if (!own.Success) return own.Outcome;
+            return presentation.SetColor(actor, channel, color);
         }
-        var cleared = presentation.ClearColor(actor, channel);
-        return new(cleared.Success, cleared.Detail);
+        return presentation.ClearColor(actor, channel);
     }
 
-    public ValueWriteResult Set(ActorId actor, AppearanceColorChannel channel, Vector4 value) =>
+    public Outcome Set(ActorId actor, AppearanceColorChannel channel, Vector4 value) =>
         Change(actor, channel, value);
 
-    public ValueWriteResult Clear(ActorId actor, AppearanceColorChannel channel)
+    public Outcome Clear(ActorId actor, AppearanceColorChannel channel)
     {
         Seal();
         var result = Change(actor, channel, null);
@@ -43,13 +42,13 @@ public sealed class AppearanceColorSession(
         return result;
     }
 
-    private ValueWriteResult Change(ActorId actor, AppearanceColorChannel channel, Vector4? value)
+    private Outcome Change(ActorId actor, AppearanceColorChannel channel, Vector4? value)
     {
-        ValueWriteResult result = new(false, "The colour change did not run.");
-        var guarded = runner.RunValueTransition(() => result = journal.TrySet<Vector4?>(
+        Outcome result = new(false, "The colour change did not run.");
+        var guarded = runner.RunValueTransition(() => result = journal.Set<Vector4?>(
             (actor, channel), value.HasValue ? $"Set custom {channel} colour" : $"Reset custom {channel} colour",
             () => Override(actor, channel), next => Put(actor, channel, next), value,
             alive: () => bindings.Resolve(actor).Success));
-        return guarded.Success ? result : new(false, guarded.Detail);
+        return guarded.Success ? result : guarded.Outcome;
     }
 }

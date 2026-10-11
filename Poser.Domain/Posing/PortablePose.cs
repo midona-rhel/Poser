@@ -161,12 +161,6 @@ public readonly record struct PortableBoneTarget(
             nativeIndexHint ?? bone.BoneIndex);
 }
 
-public enum PortableLegacyMatchPolicy
-{
-    RejectAmbiguous,
-    BroadcastAmbiguous,
-}
-
 public readonly record struct PortableBoneMatch(
     PortableBoneEntry Source,
     PortableBoneTarget Target);
@@ -195,20 +189,17 @@ public sealed class PortablePoseMatchResult
     internal PortablePoseMatchResult(
         IEnumerable<PortableBoneMatch> matches,
         IEnumerable<PortableBoneMatchFailure> ambiguous,
-        IEnumerable<PortableBoneMatchFailure> unmatched,
-        IEnumerable<PortableBoneEntry> broadcasted)
+        IEnumerable<PortableBoneMatchFailure> unmatched)
     {
         Matches = Array.AsReadOnly(matches.ToArray());
         Ambiguous = Array.AsReadOnly(ambiguous.ToArray());
         Unmatched = Array.AsReadOnly(unmatched.ToArray());
-        Broadcasted = Array.AsReadOnly(broadcasted.ToArray());
     }
 
     public bool Success => Ambiguous.Count == 0 && Unmatched.Count == 0;
     public IReadOnlyList<PortableBoneMatch> Matches { get; }
     public IReadOnlyList<PortableBoneMatchFailure> Ambiguous { get; }
     public IReadOnlyList<PortableBoneMatchFailure> Unmatched { get; }
-    public IReadOnlyList<PortableBoneEntry> Broadcasted { get; }
 }
 
 /// <summary>
@@ -301,16 +292,13 @@ public sealed class PortablePose
     }
 
     public PortablePoseMatchResult Match(
-        IEnumerable<PortableBoneTarget> targets,
-        PortableLegacyMatchPolicy legacyPolicy =
-            PortableLegacyMatchPolicy.RejectAmbiguous)
+        IEnumerable<PortableBoneTarget> targets)
     {
         ArgumentNullException.ThrowIfNull(targets);
         var targetArray = targets.ToArray();
         var matches = new List<PortableBoneMatch>();
         var ambiguous = new List<PortableBoneMatchFailure>();
         var unmatched = new List<PortableBoneMatchFailure>();
-        var broadcasted = new List<PortableBoneEntry>();
 
         foreach (var entry in _entries)
         {
@@ -333,15 +321,6 @@ public sealed class PortablePose
                 continue;
             }
 
-            if (entry.Key.IsLegacy &&
-                legacyPolicy == PortableLegacyMatchPolicy.BroadcastAmbiguous)
-            {
-                broadcasted.Add(entry);
-                matches.AddRange(candidates.Select(
-                    target => new PortableBoneMatch(entry, target)));
-                continue;
-            }
-
             ambiguous.Add(new PortableBoneMatchFailure(
                 entry,
                 $"Portable bone '{entry.Key.CanonicalName}' matches multiple destinations.",
@@ -351,8 +330,7 @@ public sealed class PortablePose
         return new PortablePoseMatchResult(
             matches,
             ambiguous,
-            unmatched,
-            broadcasted);
+            unmatched);
     }
 
     private static bool IsMatch(
@@ -370,125 +348,4 @@ public sealed class PortablePose
             PortableBoneKey.Legacy(item.Bone),
             item.Pose));
     }
-}
-
-/// <summary>Pure input shape for adapting a name-only legacy pose.</summary>
-public readonly record struct LegacyPortableBoneEntry(
-    PoseSlot Slot,
-    string CanonicalName,
-    BonePose Pose,
-    int PartialId = 0)
-{
-    public PortableBoneId LegacyId =>
-        new(Slot, PartialId, CanonicalName);
-}
-
-public sealed class LegacyPortablePoseAdapterResult
-{
-    internal LegacyPortablePoseAdapterResult(
-        bool lossDetected,
-        PortablePose? pose,
-        IEnumerable<PortableBoneMatchFailure> ambiguous,
-        IEnumerable<PortableBoneMatchFailure> unmatched,
-        string? detail)
-    {
-        LossDetected = lossDetected;
-        Pose = pose;
-        Ambiguous = Array.AsReadOnly(ambiguous.ToArray());
-        Unmatched = Array.AsReadOnly(unmatched.ToArray());
-        Detail = detail;
-    }
-
-    public bool Success => !LossDetected && Pose is not null;
-    public bool LossDetected { get; }
-    public PortablePose? Pose { get; }
-    public IReadOnlyList<PortableBoneMatchFailure> Ambiguous { get; }
-    public IReadOnlyList<PortableBoneMatchFailure> Unmatched { get; }
-    public string? Detail { get; }
-}
-
-/// <summary>
-/// Upgrades legacy name-only data when it has one structural destination per
-/// entry. It reports ambiguity or unmatched data instead of losing it.
-/// Codec/file-level loss reporting remains outside this pure Domain adapter.
-/// </summary>
-public static class LegacyPortablePoseAdapter
-{
-    public static LegacyPortablePoseAdapterResult TryAdapt(
-        IEnumerable<LegacyPortableBoneEntry> legacyEntries,
-        IReadOnlyList<PortableBoneTarget> targets)
-    {
-        ArgumentNullException.ThrowIfNull(legacyEntries);
-        ArgumentNullException.ThrowIfNull(targets);
-
-        var legacy = legacyEntries.ToArray();
-        PortablePose source;
-        try
-        {
-            source = new PortablePose(legacy.Select(entry =>
-                new PortableBoneEntry(
-                    PortableBoneKey.Legacy(entry.LegacyId),
-                    entry.Pose)));
-        }
-        catch (ArgumentException exception)
-        {
-            return Failure(
-                $"Legacy portable pose is not representable: {exception.Message}");
-        }
-
-        var match = source.Match(targets);
-        if (!match.Success)
-        {
-            return new LegacyPortablePoseAdapterResult(
-                lossDetected: true,
-                pose: null,
-                match.Ambiguous,
-                match.Unmatched,
-                "Legacy portable pose cannot be upgraded without loss.");
-        }
-
-        var upgraded = match.Matches
-            .GroupBy(item => item.Source.Key)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Single().Target);
-        var entries = source.Entries
-            .Select(entry => new PortableBoneEntry(
-                upgraded[entry.Key].Key,
-                entry.Pose,
-                entry.NativeIndexHint))
-            .ToArray();
-
-        if (entries
-            .Select(entry => entry.Key)
-            .Distinct()
-            .Count() != entries.Length)
-        {
-            return Failure(
-                "Multiple legacy entries resolve to one structural destination.");
-        }
-
-        try
-        {
-            return new LegacyPortablePoseAdapterResult(
-                lossDetected: false,
-                pose: new PortablePose(entries),
-                Array.Empty<PortableBoneMatchFailure>(),
-                Array.Empty<PortableBoneMatchFailure>(),
-                null);
-        }
-        catch (ArgumentException exception)
-        {
-            return Failure(
-                $"Upgraded portable pose is not representable: {exception.Message}");
-        }
-    }
-
-    private static LegacyPortablePoseAdapterResult Failure(string detail) =>
-        new(
-            lossDetected: true,
-            pose: null,
-            Array.Empty<PortableBoneMatchFailure>(),
-            Array.Empty<PortableBoneMatchFailure>(),
-            detail);
 }

@@ -1,10 +1,11 @@
 ﻿using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
-using Poser.Core;
+using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Game.Bindings;
-using Poser.Services;
+using Poser.Application.Events;
+using Poser.Game.Core;
 
 namespace Poser.Game.Scene;
 
@@ -13,9 +14,11 @@ namespace Poser.Game.Scene;
 /// discovery belongs HERE, not to any inspector section: an actor whose draw
 /// object or Havok skeleton is not ready at first discovery is retried on
 /// the framework thread at a bounded backoff cadence while it remains
-/// present. Refreshes are coalesced through a structural signature — an
-/// attempt that finds no change publishes nothing, increments no scene
-/// revision, and cancels no active transform gesture.
+/// present. Every notification only requests a refresh; the framework
+/// update runs at most one per frame, never inside the publisher (which may be
+/// a native hook). A refresh that finds no structural change publishes
+/// nothing, increments no scene revision, and cancels no active transform
+/// gesture.
 /// </summary>
 public sealed class CleanSceneLifecycle : IDisposable
 {
@@ -25,18 +28,25 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly StableBindingRegistry _bindings;
     private readonly SceneSession _scene;
     private readonly TransformGestureService _gestures;
-    private readonly TransformHistory _history;
+    private readonly EditHistory _history;
     private readonly GroupTransformCoordinator? _groupCoordinator;
     private readonly IGroupTransformSource? _groupSource;
     private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
     private readonly Poser.Application.Appearance.ActorModelIdSession _modelId;
-    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
-    private readonly Poser.Game.Animation.AnimationRuntimePort _animationPort;
+    private readonly Poser.Application.Integration.IntegrationReset _integration;
+    private readonly Poser.Game.Animation.AnimationSpeedRuntimePort _animationPort;
     private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
+    private readonly GazeService _gaze;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
-    private readonly Config.ConfigurationService _configuration;
+    private readonly Application.Settings.ConfigurationService _configuration;
+    private readonly SceneGroups _groups;
+    private readonly GroupTransformState _groupTransforms;
+
+    /// <summary>The user-facing notice for a teardown that left owned state
+    /// behind. Null under tests; the log line is written either way.</summary>
+    private readonly Poser.Application.Presentation.IUserNotices? _notices;
 
     private static readonly TimeSpan SlotPollInterval = TimeSpan.FromSeconds(1);
 
@@ -44,6 +54,10 @@ public sealed class CleanSceneLifecycle : IDisposable
     private bool _disposeRestoreAbandoned;
 
     private SceneSnapshot? _lastSignature;
+    /// <summary>The bone-free fingerprint of the scene the last refresh
+    /// settled on; the idle poll rebuilds only when it moves. Null after a
+    /// rejected candidate, so the next poll retries.</summary>
+    private IReadOnlyList<object?>? _idleSignature;
     private readonly CoalescedRefresh _refreshQueue = new();
     private bool _retryPending;
     private TimeSpan _retryInterval = TimeSpan.FromMilliseconds(500);
@@ -60,21 +74,28 @@ public sealed class CleanSceneLifecycle : IDisposable
         StableBindingRegistry bindings,
         SceneSession scene,
         TransformGestureService gestures,
-        TransformHistory history,
+        EditHistory history,
         Poser.Application.Animation.AnimationSession animation,
         Poser.Application.Presentation.ActorPresentationSession presentation,
         Poser.Application.Appearance.ActorModelIdSession modelId,
-        Poser.Application.Integration.ActorIntegrationSession integration,
-        Poser.Game.Animation.AnimationRuntimePort animationPort,
+        Poser.Application.Integration.IntegrationReset integration,
+        Poser.Game.Animation.AnimationSpeedRuntimePort animationPort,
         Poser.Game.Animation.FacialPoseCapture facialCapture,
+        GazeService gaze,
         IEventBus events,
         IFramework framework,
-        Config.ConfigurationService configuration,
+        Application.Settings.ConfigurationService configuration,
+        SceneGroups groups,
+        GroupTransformState groupTransforms,
         IPluginLog? log = null,
+        Poser.Application.Presentation.IUserNotices? notices = null,
         GroupTransformCoordinator? groupCoordinator = null,
         IGroupTransformSource? groupSource = null)
     {
         _log = log;
+        _notices = notices;
+        _groups = groups;
+        _groupTransforms = groupTransforms;
         _bindings = bindings;
         _scene = scene;
         _gestures = gestures;
@@ -87,6 +108,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _integration = integration;
         _animationPort = animationPort;
         _facialCapture = facialCapture;
+        _gaze = gaze;
         _events = events;
         _framework = framework;
         _configuration = configuration;
@@ -104,7 +126,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         // bone-name state, while events publish from the framework thread —
         // a concurrent ctor-thread refresh corrupted shared collections.
         _framework.Update += OnFrameworkUpdate;
-        _ = framework.RunOnFrameworkThread(Refresh);
+        _refreshQueue.Request();
     }
 
     public void Dispose()
@@ -169,6 +191,19 @@ public sealed class CleanSceneLifecycle : IDisposable
             // is tearing down anyway; there is nothing left to restore
             // into.
         }
+
+        // Groups are plain managed state, so they end with the plugin
+        // whether or not the reset above ran: the bounded hop can abandon
+        // it. Past the gate, a reset that did run has already finished.
+        try
+        {
+            _groups.Clear();
+            _groupTransforms.Clear();
+        }
+        catch
+        {
+            // Disposal must not throw.
+        }
     }
 
     private void Refresh()
@@ -176,7 +211,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         var refreshWatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            RefreshGuarded();
+            RefreshCore();
         }
         finally
         {
@@ -188,13 +223,14 @@ public sealed class CleanSceneLifecycle : IDisposable
         }
     }
 
-    private void RefreshGuarded()
-    {
-        _refreshQueue.Request(RefreshCore);
-    }
+    private void RequestRefresh() => _refreshQueue.Request();
 
     private void RefreshCore()
     {
+        // Taken before the candidate: reading the skeletons here can rebuild
+        // one, and the candidate below must already include that rebuild.
+        var idle = _bindings.IdleSignature();
+        _idleSignature = null;
         var staged = _bindings.RefreshCandidate();
         var candidate = staged.Snapshot;
         var admitted = false;
@@ -205,7 +241,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // untranslated. One line per refresh instead of one per bone: a modded
             // 400-bone character used to pay hundreds of synchronous log writes on
             // this exact tick. No-op when nothing new was seen.
-            Poser.Core.BoneInfo.BoneInfoService.FlushUntranslatedLog();
+            Poser.Domain.Posing.BoneInfo.BoneInfoService.FlushUntranslatedLog();
             // One structural signature coalesces every refresh source (events,
             // retries, session transitions): identical scenes publish nothing —
             // no snapshot churn, no revision increment, no gesture cancellation.
@@ -227,6 +263,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             if (_lastSignature?.ContentEquals(signature) == true
                 && !_bindings.AuxiliaryBindingsChanged(staged))
             {
+                _idleSignature = idle;
                 return;
             }
 
@@ -251,6 +288,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // A rejected candidate is deliberately retried: recording its
             // signature would coalesce away the correction opportunity.
             _lastSignature = signature;
+            _idleSignature = idle;
             _retryInterval = InitialRetryInterval;
             if (!result.StateChanged)
                 return;
@@ -275,6 +313,9 @@ public sealed class CleanSceneLifecycle : IDisposable
             _modelId.Reconcile(_scene.Snapshot);
             _integration.Reconcile(_scene.Snapshot);
             _animationPort.SyncEnforcementIndex();
+            // Gaze is keyed by the same exact generations; a replaced body
+            // must not keep the previous one's gaze.
+            _gaze.Reconcile();
         }
         finally
         {
@@ -284,35 +325,36 @@ public sealed class CleanSceneLifecycle : IDisposable
     }
 
     /// <summary>
-    /// Bounded retry pump for actors whose skeletons were not ready at
-    /// discovery: retries at a backoff cadence (0.5 s doubling to 5 s) while
-    /// such an actor remains present. Runs only on the framework tick.
+    /// The one place a refresh runs: at most one per frame, for whatever
+    /// requested it since the last. Also the bounded retry pump for actors
+    /// whose skeletons were not ready at discovery (0.5 s doubling to 5 s
+    /// while such an actor remains present) and the idle poll.
     /// </summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
-        _refreshQueue.Drain(RefreshCore);
         var now = DateTime.UtcNow;
-
-        // Auxiliary slot changes (sheathe/unsheathe, equipment or prop
-        // replacement, ornament spawn/despawn) fire none of our events, so
-        // slot presence is polled at a steady cadence. The structural
-        // signature makes an unchanged scene free: no snapshot, no
-        // revision, no gesture cancellation.
-        if (!_retryPending)
+        if (_retryPending)
         {
-            if (now < _nextSlotPollUtc)
-                return;
-            _nextSlotPollUtc = now + SlotPollInterval;
-            Refresh();
-            return;
+            if (now >= _nextRetryUtc)
+            {
+                _nextRetryUtc = now + _retryInterval;
+                var doubled = _retryInterval + _retryInterval;
+                _retryInterval = doubled > MaxRetryInterval ? MaxRetryInterval : doubled;
+                RequestRefresh();
+            }
         }
-
-        if (now < _nextRetryUtc)
-            return;
-        _nextRetryUtc = now + _retryInterval;
-        var doubled = _retryInterval + _retryInterval;
-        _retryInterval = doubled > MaxRetryInterval ? MaxRetryInterval : doubled;
-        Refresh();
+        else if (now >= _nextSlotPollUtc)
+        {
+            // Auxiliary slot changes (sheathe/unsheathe, equipment or prop
+            // replacement, ornament spawn/despawn) and some row fields fire
+            // none of our events, so they are polled — through the bone-free
+            // signature, so an unchanged scene costs no rebuild at all.
+            _nextSlotPollUtc = now + SlotPollInterval;
+            if (!StableBindingRegistry.SameIdleSignature(
+                    _idleSignature, _bindings.IdleSignature()))
+                RequestRefresh();
+        }
+        _refreshQueue.Drain(Refresh);
     }
 
     /// <summary>
@@ -345,78 +387,160 @@ public sealed class CleanSceneLifecycle : IDisposable
     }
 
     private void OnActorListChanged(ActorListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnLightListChanged(LightListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnPropListChanged(PropListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnOverlayListChanged(OverlayNodeListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     /// <summary>Borrowing a map object and releasing it both move the scene,
     /// and this event was published from the first day with nothing listening:
     /// an adopted object appeared only if some unrelated list happened to
     /// change and kick a refresh.</summary>
     private void OnWorldObjectListChanged(WorldObjectListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnCameraListChanged(CameraListChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
     private void OnSkeletonChanged(SkeletonChangedEvent _) =>
-        Refresh();
+        RequestRefresh();
 
-    private void OnGPoseExiting(GPoseExitingEvent _) => _presentation.ResetAll();
-
-    private void OnGPoseChanged(GPoseStateChangedEvent evt)
+    /// <summary>
+    /// Leaving GPose is the last chance to write into the actors Poser
+    /// overrode, so everything owned is put back here rather than dropped
+    /// when they disappear. GPoseService publishes this after the final
+    /// capture and before the state change, so it runs while every spawn,
+    /// clone and binding is still alive: the state-change subscribers that
+    /// unbind actors and destroy spawns subscribed first (DI order) and
+    /// would otherwise run before this restore. Normal exit and plugin
+    /// unload share this edge. The game's own GPose actors can still be gone
+    /// already (the edge is observed after IsGPosing flips), so the MCDF
+    /// teardown keeps its by-name Glamourer release for them.
+    /// </summary>
+    private void OnGPoseExiting(GPoseExitingEvent _)
     {
-        if (!evt.IsGPosing)
-        {
-            _refreshQueue.Cancel();
-            if (_gestures.ActiveGesture is { } gesture)
-                _gestures.Cancel(gesture);
-            _history.Clear();
-            // GPoseService captured the final save before this exit notification.
-            _configuration.ResetSessionNames();
-            // Leaving GPose is the last chance to write into the actors
-            // Poser overrode, so everything owned is put back here rather
-            // than dropped when they disappear. "Last chance" is not
-            // "guaranteed": the edge is observed after IsGPosing has
-            // already flipped, so the clone may ALREADY be destroyed and
-            // the exact generation unresolvable by the time this runs.
-            // Owners that hold state the object does not own must carry
-            // their own fallback — see the MCDF teardown's by-name
-            // Glamourer release in runtime-appearance.md.
-            ResetOwnedState("GPose exited.");
-        }
-        Refresh();
+        _refreshQueue.Cancel();
+        if (_gestures.ActiveGesture is { } gesture)
+            _gestures.Cancel(gesture);
+        _history.Clear();
+        // GPoseService captured the final save before this exit notification.
+        _configuration.ResetSessionNames();
+        ResetOwnedState("GPose exited.");
+    }
+
+    private void OnGPoseChanged(GPoseStateChangedEvent e)
+    {
+        // Lineages are per native object; a finished session's can never
+        // match again, and keeping them grew the registry for good.
+        if (!e.IsGPosing)
+            _bindings.ResetLineages();
+        RequestRefresh();
     }
 
     private void ResetOwnedState(string reason) =>
         ResetOwnedStateForLifecycle(
             reason,
-            detail => { _facialCapture.CancelPending(detail); },
-            () => { _animation.ResetAll(); },
-            () => { _presentation.ResetAll(); },
-            () => { _modelId.ResetAll(); },
-            () => { _integration.ResetAll(); });
+            detail =>
+            {
+                // The receipt is the capture's last operation, not this
+                // cancel's result; a cancel has nothing of its own to fail.
+                _facialCapture.CancelPending(detail);
+                return null;
+            },
+            () => Failure(_animation.ResetAll()),
+            () => Failure(_presentation.ResetAll()),
+            () => Failure(_modelId.ResetAll()),
+            () => Failure(_integration.ResetAll().Outcome),
+            () =>
+            {
+                // Groups are scene state: they end with the session and the
+                // plugin, like every entity they hold.
+                _groups.Clear();
+                _groupTransforms.Clear();
+                return null;
+            },
+            message => Report(reason, message));
 
-    /// <summary>One teardown order for GPose exit and plugin disposal.</summary>
-    internal static void ResetOwnedStateForLifecycle(
-        string reason,
-        Action<string> cancelFacialCapture,
-        Action resetAnimation,
-        Action resetPresentation,
-        Action resetModelId,
-        Action resetIntegration)
+    private static string? Failure(Outcome result) =>
+        result.Success ? null : result.Detail ?? "failed";
+
+    /// <summary>One named teardown step; returns its failure, or null.</summary>
+    internal readonly record struct TeardownStep(string Name, Func<string?> Run);
+
+    /// <summary>
+    /// Runs every step in order and collects each failure under its name. A
+    /// throwing step is a failure like any other and does not skip the
+    /// steps after it; nothing is retried here.
+    /// </summary>
+    internal static IReadOnlyList<string> RunSteps(IReadOnlyList<TeardownStep> steps)
     {
-        cancelFacialCapture(reason);
-        resetAnimation();
-        resetPresentation();
-        resetModelId();
-        resetIntegration();
+        var failures = new List<string>();
+        foreach (var step in steps)
+        {
+            string? failure;
+            try
+            {
+                failure = step.Run();
+            }
+            catch (Exception ex)
+            {
+                failure = ex.Message;
+            }
+            if (failure != null)
+                failures.Add($"{step.Name}: {failure}");
+        }
+        return failures;
+    }
+
+    private void Report(string reason, IReadOnlyList<string> failures)
+    {
+        if (failures.Count > 0)
+            Report(reason, string.Join(" | ", failures));
+    }
+
+    private void Report(string reason, string message)
+    {
+        _log?.Error($"Scene teardown ({reason}) left owned state unrestored: {message}");
+        try
+        {
+            _notices?.Failed($"Restoring the scene failed: {message}");
+        }
+        catch (Exception)
+        {
+            // The notice surface may already be gone at unload; the log has it.
+        }
+    }
+
+    /// <summary>One teardown order for GPose exit and plugin disposal. Every
+    /// step runs; their failures are reported once, together, in this order.
+    /// </summary>
+    internal static IReadOnlyList<string> ResetOwnedStateForLifecycle(
+        string reason,
+        Func<string, string?> cancelFacialCapture,
+        Func<string?> resetAnimation,
+        Func<string?> resetPresentation,
+        Func<string?> resetModelId,
+        Func<string?> resetIntegration,
+        Func<string?> clearGroups,
+        Action<string> report)
+    {
+        var failures = RunSteps(
+        [
+            new("Facial capture", () => cancelFacialCapture(reason)),
+            new("Animation", resetAnimation),
+            new("Presentation", resetPresentation),
+            new("Model id", resetModelId),
+            new("Appearance", resetIntegration),
+            new("Groups", clearGroups),
+        ]);
+        if (failures.Count > 0)
+            report(string.Join(" | ", failures));
+        return failures;
     }
 }

@@ -216,6 +216,16 @@ Explicit multi-frame restoration waits for completion before advancing history;
 it is separate from automatic fallback. Individual runtime writes still enforce
 their own identity and availability checks.
 
+Every value write reports a result: a refused initial write appends nothing
+and leaves redo intact. A refused inverse never moves the cursor and reports
+its detail. What happens next is one per-entry decision shared by global undo,
+scoped undo and each child of a removal batch: keep the entry for retry (value
+writes that return a refusal, disruptive restores, group restores waiting for
+member poses, and lifecycle entries by default), drop it on the second
+consecutive refusal (a value write that throws, other journal steps), or drop
+it at once when the refusal is permanent (an unrestorable
+borrowed world object, or a batch whose children are all discarded).
+
 A step that came from a file (a pose import, a scene load) checks the
 file before redo and refuses with one notice when it is gone.
 
@@ -224,6 +234,22 @@ chains the bake disarmed.
 
 Transport (play, pause, scrub, speed) is never a step. Choosing a
 timeline and toggling loop are. A locked camera never journals.
+
+Each entity property (lights, overlays, cameras, props, world objects) is
+declared once per kind and written by stable ID through one path: bind the
+exact current entity, apply the kind's refusal policy, then journal under
+(entity, property) so continuous edits stage. A stale ID writes nothing and
+appends nothing. Transport properties (effect pause and speed, scenery
+animation pause) write and report but never journal. Undo and redo re-resolve
+the bound instance through the history-only resolver, so a lifecycle restore
+that replaced the native wrapper still receives its edits; public IDs are
+never repaired.
+
+Show and Hide report a result per target. A refused or stale target writes
+nothing and appends nothing; every surface (sidebar eye, context menu,
+selection section) shows the same refusal notice. One target is its own value
+step. Several targets are one entry that holds only the targets that landed, so
+undo and redo touch only those targets.
 
 Selected-entity undo (Alt+Z) and redo (Alt+Y / Alt+Shift+Z) use the same journal;
 global Ctrl-based shortcuts are unchanged. Bindings are configurable. Bones and

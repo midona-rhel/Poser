@@ -6,16 +6,17 @@ namespace Poser.UI.Controls;
 /// <summary>Overlay bone picking: a surface asks for a bone and the
 /// skeleton overlay shows every actor's bones until one is clicked. Single
 /// takes the first click; multi keeps going while Ctrl is held on the
-/// click. Escape, a right-click or a click on nothing ends it.</summary>
-public static class BonePick
+/// click. Escape, a right-click or a click on nothing ends it. One instance
+/// per plugin load, shared by the asking surfaces and the overlay.</summary>
+public sealed class BonePick
 {
-    public static bool Active { get; private set; }
-    public static bool Multi { get; private set; }
+    public bool Active { get; private set; }
+    public bool Multi { get; private set; }
     /// <summary>When set, only this actor's bones show and take.</summary>
-    public static ActorId? OnlyActor { get; private set; }
-    private static Action<BoneId>? _onPick;
+    public ActorId? OnlyActor { get; private set; }
+    private Action<BoneId>? _onPick;
 
-    public static void Begin(bool multi, Action<BoneId> onPick, ActorId? onlyActor = null)
+    public void Begin(bool multi, Action<BoneId> onPick, ActorId? onlyActor = null)
     {
         Active = true;
         Multi = multi;
@@ -23,14 +24,14 @@ public static class BonePick
         _onPick = onPick;
     }
 
-    public static void Take(BoneId bone, bool keepGoing)
+    public void Take(BoneId bone, bool keepGoing)
     {
         _onPick?.Invoke(bone);
         if (!Multi || !keepGoing)
             Cancel();
     }
 
-    public static void Cancel()
+    public void Cancel()
     {
         Active = false;
         Multi = false;

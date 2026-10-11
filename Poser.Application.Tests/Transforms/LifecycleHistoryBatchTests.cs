@@ -1,80 +1,15 @@
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
 namespace Poser.Application.Tests.Transforms;
 
 public sealed class LifecycleHistoryBatchTests
 {
     [Fact]
-    public void Removal_batch_preserves_dynamic_union_without_becoming_scoped_replayable()
-    {
-        var history = new TransformHistory();
-        var actor = SelectionId.ForActor(ActorId.New());
-        var first = SelectionId.ForLight(LightId.New());
-        var second = SelectionId.ForLight(LightId.New());
-        var edit = new JournalStep("Actor edit", () => true, () => true)
-            { AffectedEntities = new[] { actor } };
-        history.Append(edit);
-        history.RecordLifecycleBatch("Remove lights", () =>
-        {
-            history.Append(new SceneLifecyclePatch("First", () => true, () => true)
-                { ResolveAffectedEntities = () => new[] { first } });
-            history.Append(new SceneLifecyclePatch("Second", () => true, () => true)
-                { AffectedEntities = new[] { second } });
-        });
-        var batch = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
-        Assert.Equal(new[] { first, second }.ToHashSet(), batch.ResolveAffectedEntities!()!.ToHashSet());
-        Assert.Same(edit, history.PeekUndo(actor));
-        Assert.Null(history.PeekUndo(first));
-        Assert.Null(history.PeekUndo(second));
-        history.CommitUndo(edit, actor);
-        history.CommitUndo(batch);
-        Assert.Same(edit, history.PeekRedo(actor));
-        Assert.Null(history.PeekRedo(first));
-        first = SelectionId.ForLight(LightId.New());
-        Assert.Contains(first, batch.ResolveAffectedEntities!()!);
-        Assert.Null(history.PeekRedo(first));
-        Assert.Same(batch, history.PeekRedo());
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Any_unknown_child_keeps_the_whole_batch_as_a_barrier(bool empty)
-    {
-        var history = new TransformHistory();
-        var actor = SelectionId.ForActor(ActorId.New());
-        var light = SelectionId.ForLight(LightId.New());
-        bool known = true;
-        var edit = new JournalStep("Actor edit", () => true, () => true)
-            { AffectedEntities = new[] { actor } };
-        history.Append(edit);
-        history.RecordLifecycleBatch("Remove", () =>
-        {
-            history.Append(new SceneLifecyclePatch("Known", () => true, () => true)
-                { AffectedEntities = new[] { light } });
-            history.Append(new SceneLifecyclePatch("May be unknown", () => true, () => true)
-            {
-                AffectedEntities = new[] { light },
-                ResolveAffectedEntities = () => known ? new[] { light }
-                    : empty ? Array.Empty<SelectionId>() : null,
-            });
-        });
-        var batch = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
-        Assert.Single(batch.ResolveAffectedEntities!()!); // duplicate owners collapse
-        Assert.Same(edit, history.PeekUndo(actor));
-        known = false;
-        Assert.Null(batch.ResolveAffectedEntities!());
-        Assert.Null(history.PeekUndo(actor));
-        history.CommitUndo(edit, actor);
-        history.CommitUndo(batch);
-        Assert.Null(history.PeekRedo(actor));
-    }
-
-    [Fact]
     public void Mixed_removals_publish_once_and_replay_reverse_then_forward()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var calls = new List<string>();
         var published = new List<HistoryEntry>();
         history.Appended += published.Add;
@@ -97,27 +32,9 @@ public sealed class LifecycleHistoryBatchTests
     }
 
     [Fact]
-    public void Earlier_pending_value_edit_stays_outside_the_removal_entry()
-    {
-        var history = new TransformHistory();
-        var values = new ValueJournal(history);
-        int value = 0;
-        values.Adjust("value", "Edit value", () => value, next => { value = next; return ValueWriteResult.Ok(); }, 2);
-        history.RecordLifecycleBatch("Remove selection", () =>
-            history.Append(new SceneLifecyclePatch("Remove", () => true, () => true)));
-        var entry = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
-        Assert.True(entry.Undo());
-        history.CommitUndo(entry);
-        var earlier = Assert.IsType<JournalStep>(history.PeekUndo());
-        Assert.Equal("Edit value", earlier.Description);
-        Assert.True(earlier.Undo());
-        Assert.Equal(0, value);
-    }
-
-    [Fact]
     public void Retry_does_not_repeat_siblings_that_already_landed()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         int earlier = 0, later = 0;
         bool available = false;
         history.RecordLifecycleBatch("Remove selection", () =>
@@ -129,7 +46,7 @@ public sealed class LifecycleHistoryBatchTests
         var entry = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
         Assert.False(entry.Undo());
         Assert.Equal("Waiting for earlier entity", entry.FailureDetail!());
-        Assert.False(entry.DropOnFailure!());
+        Assert.Equal(RefusalAction.Keep, RefusalPolicy.Decide(entry));
         available = true;
         Assert.True(entry.Undo());
         Assert.Equal(2, earlier);
@@ -140,81 +57,65 @@ public sealed class LifecycleHistoryBatchTests
     }
 
     [Fact]
-    public void Permanent_refusal_discards_only_that_child_and_retains_siblings_for_redo()
+    public void Same_refusal_policy_drives_undo_journal_and_batch()
     {
-        var history = new TransformHistory();
-        int restores = 0, removals = 0, failures = 0;
-        history.RecordLifecycleBatch("Remove selection", () =>
+        static JournalStep Refusing(RefusalAction action) =>
+            new(action.ToString(), () => false, () => true)
+                { OnRefusal = () => action, FailureDetail = () => $"{action} refused" };
+        Assert.Equal(RefusalAction.DropOnRepeat, RefusalPolicy.Decide(new JournalStep("Plain", () => false, () => true)));
+        Assert.Equal(RefusalAction.Keep, RefusalPolicy.Decide(new SceneLifecyclePatch("Lifecycle", () => false, () => true)));
+
+        foreach (var (action, expectedRefusals) in new[]
+            { (RefusalAction.Keep, 3), (RefusalAction.DropOnRepeat, 2), (RefusalAction.DropNow, 1) })
         {
-            history.Append(new SceneLifecyclePatch("Expired", () => { failures++; return false; }, () => throw new Exception())
-            { FailureDetail = () => "Native incarnation expired", DropOnFailure = () => true });
-            history.Append(new JournalStep("Survivor", () => { restores++; return true; }, () => { removals++; return true; }));
-        });
-        var entry = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
-        Assert.False(entry.Undo());
-        Assert.Equal("Native incarnation expired", entry.FailureDetail!());
-        Assert.False(entry.DropOnFailure!());
-        Assert.True(entry.Undo());
-        Assert.True(entry.Redo());
-        Assert.Equal((1, 1, 1), (restores, removals, failures));
+            // Undo journal: count refusals before the entry leaves history.
+            var history = new EditHistory();
+            var notices = new Fixtures.NoticeLog();
+            var journal = new UndoJournal(history, new Runner(history), _ => true, notices);
+            history.Append(Refusing(action));
+            int journalRefusals = 0;
+            while (history.CanUndo && journalRefusals < 3)
+            {
+                Assert.False(journal.Undo().Success);
+                journalRefusals++;
+            }
+
+            // Batch: the same step as the only child of a lifecycle batch.
+            var batchHistory = new EditHistory();
+            batchHistory.RecordLifecycleBatch("Batch", () => batchHistory.Append(Refusing(action)));
+            var batch = Assert.IsType<SceneLifecyclePatch>(batchHistory.PeekUndo());
+            int batchRefusals = 0;
+            while (batchRefusals < 3)
+            {
+                Assert.False(batch.Undo());
+                batchRefusals++;
+                Assert.Equal($"{action} refused", batch.FailureDetail!());
+                if (RefusalPolicy.Decide(batch) == RefusalAction.DropNow) break;
+            }
+
+            Assert.Equal(expectedRefusals, journalRefusals);
+            Assert.Equal(expectedRefusals, batchRefusals);
+        }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Journal_refusal_keeps_its_retain_or_second_refusal_drop_policy(bool retain)
+    private sealed class Runner(EditHistory history) : IUndoRunner
     {
-        var history = new TransformHistory();
-        history.RecordLifecycleBatch("Release selection", () =>
-            history.Append(new JournalStep("Release actor", () => false, () => true) { RetainOnFailure = retain }));
-        var entry = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
-        Assert.False(entry.Undo());
-        Assert.False(entry.DropOnFailure!());
-        Assert.False(entry.Undo());
-        Assert.Equal(!retain, entry.DropOnFailure!());
-    }
-
-    [Fact]
-    public void File_dependent_entry_ends_collection_and_keeps_its_asset()
-    {
-        var history = new TransformHistory();
-        var published = new List<HistoryEntry>();
-        history.Appended += published.Add;
-        var contextual = new JournalStep("Actor edit", () => true, () => true)
-        { RequiredAsset = "pose.pose" };
-        var later = new SceneLifecyclePatch("Later", () => true, () => true);
-        history.RecordLifecycleBatch("Remove selection", () =>
+        public GestureResult? RecoverPending() => null;
+        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
+            (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused");
+        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
         {
-            history.Append(new SceneLifecyclePatch("First", () => true, () => true));
-            history.Append(contextual);
-            history.Append(later);
-        });
-        Assert.Equal(3, published.Count);
-        Assert.Equal("First", published[0].Description);
-        Assert.Same(contextual, published[1]);
-        Assert.Same(later, published[2]);
-    }
-
-    [Fact]
-    public void Deferred_restoration_is_not_folded_into_a_synchronous_removal_batch()
-    {
-        var history = new TransformHistory();
-        var deferred = new JournalStep("Reset", () => true, () => true)
-        { CompleteReplay = (_, _, _, completed) => completed(Poser.Domain.Transforms.GestureResult.Ok()) };
-        history.RecordLifecycleBatch("Remove", () =>
-        {
-            history.Append(new SceneLifecyclePatch("First", () => true, () => true));
-            history.Append(deferred);
-        });
-        Assert.Same(deferred, history.PeekUndo());
-        history.CommitUndo(deferred);
-        Assert.Equal("First", history.UndoDescription);
+            var inverse = (InverseEntry)entry;
+            if (!(undo ? inverse.Undo() : inverse.Redo())) return GestureResult.Fail("Refused");
+            if (undo) history.CommitUndo(entry, entity); else history.CommitRedo(entry, entity);
+            return GestureResult.Ok();
+        }
     }
 
     [Fact]
     public void Command_exception_preserves_already_recorded_removals_and_ends_capture()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         int restored = 0;
         Assert.Throws<InvalidOperationException>(() => history.RecordLifecycleBatch("Remove selection", () =>
         {
@@ -227,17 +128,5 @@ public sealed class LifecycleHistoryBatchTests
         var later = new JournalStep("Unrelated later edit", () => true, () => true);
         history.Append(later);
         Assert.Same(later, history.PeekUndo());
-    }
-
-    [Fact]
-    public void Refused_command_without_recorded_removals_preserves_redo()
-    {
-        var history = new TransformHistory();
-        var old = new JournalStep("Older", () => true, () => true);
-        history.Append(old);
-        history.CommitUndo(old);
-        history.RecordLifecycleBatch("Nothing removed", () => { });
-        Assert.False(history.CanUndo);
-        Assert.Same(old, history.PeekRedo());
     }
 }

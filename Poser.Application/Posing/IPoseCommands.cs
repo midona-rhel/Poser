@@ -15,8 +15,6 @@ public interface IPoseCommands
     PoseEditResult FlipBone(TransformTargetId bone, string name);
     PoseEditResult Reset(ActorId actor, PoseRegion region);
     PoseEditResult Mirror(ActorId actor);
-    PoseCaptureResult Copy(ActorId actor);
-    PoseEditResult Paste(ActorId actor, PortablePose pose);
     PoseEditResult Stash(ActorId actor, string sourceLabel);
     PoseEditResult ApplyStash(ActorId actor);
 }

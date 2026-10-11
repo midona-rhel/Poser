@@ -1,17 +1,16 @@
-using Dalamud.Plugin.Services;
 using Poser.Application.Posing;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 
 public sealed class ExpressionRuntimePort(
-    IFramework framework, IEntityBindings bindings, IExpressionService expressions) : IExpressionRuntimePort
+    IEntityBindings bindings, IExpressionService expressions) : IExpressionRuntimePort
 {
-    private IActor? Resolve(ActorId actor) =>
-        framework.IsInFrameworkUpdateThread ? bindings.Resolve(actor).Value : null;
+    private IActor? Resolve(ActorId actor) => bindings.Resolve(actor).Value;
 
     public bool IsAvailable => expressions.IsAvailable;
     public bool HasActor(ActorId actor) => Resolve(actor) is not null;
@@ -22,7 +21,7 @@ public sealed class ExpressionRuntimePort(
     public bool HasActiveExpression(ActorId actor) =>
         Resolve(actor) is { } current && expressions.HasActiveExpression(current);
 
-    public ValueWriteResult Write(ActorId actor, IReadOnlyList<(string Id, float Weight)> weights, bool reset)
+    public Outcome Write(ActorId actor, IReadOnlyList<(string Id, float Weight)> weights, bool reset)
     {
         if (Resolve(actor) is not { } current)
             return new(false, "The actor is no longer available.");
@@ -31,6 +30,6 @@ public sealed class ExpressionRuntimePort(
         if (reset) expressions.ResetExpression(current);
         foreach (var (id, weight) in weights)
             expressions.SetWeight(current, id, weight);
-        return ValueWriteResult.Ok();
+        return Outcome.Ok();
     }
 }

@@ -8,16 +8,20 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
+using Poser.Domain.Posing;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.TextInputWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -34,14 +38,14 @@ internal sealed partial class EntityContextMenus
     /// the duration of one frame and is dropped when resolution fails.</summary>
     public void DrawActorContextMenu()
     {
-        if (!_ctxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##actor-ctx")) return;
+        if (!_ctxOpenRequested && !FloatingMenu.IsOpen("##actor-ctx")) return;
         if (_ctxActorId is not { } actorId)
             return;
         var actor = ResolveActorDescriptor(actorId);
         if (actor == null)
         {
             _ctxActorId = null;
-            Crystarium.FloatingMenu.Dismiss("##actor-ctx");
+            FloatingMenu.Dismiss("##actor-ctx");
             return;
         }
         var descriptor = actor;
@@ -66,13 +70,8 @@ internal sealed partial class EntityContextMenus
         {
             () => _actorControl.SetGameTarget(actorId),
             () => _cameraPane.CenterOnActor(actorId),
-            () =>
-            {
-                if (SetEntityVisible(SelectionId.ForActor(actorId),
-                        !(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false)) == 0)
-                    _notices.Refused(
-                        "Visibility", "The change was refused.");
-            },
+            () => SetEntityVisible(SelectionId.ForActor(actorId),
+                !(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false)),
             () =>
             {
                 if (_animation.AnyPlaying(actorId))
@@ -238,12 +237,12 @@ internal sealed partial class EntityContextMenus
         }
         // The preset rows show live checks: the menu takes this frame's
         // rows so a toggle shows at once while the menu stays open.
-        Crystarium.FloatingMenu.Refresh("##actor-ctx", items.ToArray());
-        int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
+        FloatingMenu.Refresh("##actor-ctx", items.ToArray());
+        int clicked = FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
         // Route each submenu click through its parent row.
-        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+        int subClicked = FloatingMenu.ConsumeSubmenuClick(
             out int subParent);
         if (InvokeComposedAction(items, subParent, subClicked)) return;
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Count)
@@ -345,7 +344,7 @@ internal sealed partial class EntityContextMenus
             return;
         var actor = _presetActorId is { } id ? _scene.Snapshot.FindActor(id.LogicalId) : null;
         float gap = 8f * ImGuiHelpers.GlobalScale;
-        Crystarium.Dialog(
+        Dialog(
             "##bone-presets-manage",
             _presetManagerOpen,
             next => _presetManagerOpen = next,
@@ -354,11 +353,11 @@ internal sealed partial class EntityContextMenus
         {
             var presets = _bonePresets.Presets;
             if (presets.Count == 0)
-                Crystarium.Text("No presets stored yet.");
-            var theme = Crystarium.ActiveTheme;
+                Text("No presets stored yet.");
+            var theme = ActiveTheme;
             float rowHeight = theme.Controls.ShellIconAction * ImGuiHelpers.GlobalScale;
             var countStyle = new TextStyle { Color = theme.TextDim };
-            float countWidth = Crystarium.MeasureText("99999 bones", countStyle).X;
+            float countWidth = MeasureText("99999 bones", countStyle).X;
             string? doomed = null;
             for (int i = 0; i < presets.Count; i++)
             {
@@ -367,14 +366,14 @@ internal sealed partial class EntityContextMenus
                 var row = ImGui.GetCursorScreenPos();
                 float width = ImGui.GetContentRegionAvail().X;
                 float nameWidth = MathF.Max(0f, width - rowHeight - countWidth - gap * 2f);
-                Crystarium.TextInBand(row, new Vector2(nameWidth, rowHeight), name,
+                TextInBand(row, new Vector2(nameWidth, rowHeight), name,
                     default, TextConstraint.Truncate(nameWidth));
-                Crystarium.TextInBand(
+                TextInBand(
                     row + new Vector2(width - rowHeight - gap - countWidth, 0f),
                     new Vector2(countWidth, rowHeight), $"{preset.Bones.Count} bones",
                     countStyle, TextAlign.End);
                 ImGui.SetCursorScreenPos(row + new Vector2(width - rowHeight, 0f));
-                if (Crystarium.IconButton(
+                if (IconButton(
                         TablerIcon.Trash,
                         style: ControlStyle.Square(theme.Controls.ShellIconAction),
                         id: $"bone-preset-delete-{i}",
@@ -388,20 +387,20 @@ internal sealed partial class EntityContextMenus
                 _presetSaveNote = null;
             }
             ImGui.Dummy(new Vector2(0f, gap));
-            Crystarium.TextInput(
+            TextInput(
                 "##bone-preset-name",
                 _presetNameValue,
                 next => _presetNameValue = next,
                 placeholder: "New preset name");
             if (_presetSaveNote is { Length: > 0 } note)
-                Crystarium.Text(note);
+                Text(note);
         },
         footer: () =>
         {
-            if (Crystarium.Button("Close", id: "bone-preset-close"))
+            if (Button("Close", id: "bone-preset-close"))
                 _presetManagerOpen = false;
             ImGui.SameLine(0f, gap);
-            if (Crystarium.Button(
+            if (Button(
                     "Save preset",
                     variant: ButtonVariant.Primary,
                     id: "bone-preset-save",
@@ -423,7 +422,7 @@ internal sealed partial class EntityContextMenus
     public void DrawBoneContextMenu()
     {
         const string menu = "##bone-ctx";
-        if (!_boneCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen(menu)) return;
+        if (!_boneCtxOpenRequested && !FloatingMenu.IsOpen(menu)) return;
         if (_ctxBoneId is not { } boneId) return;
         var owner = _scene.Snapshot.FindActor(boneId.Skeleton.Actor);
         var bones = owner?.GetSkeleton(boneId.Slot)?.Bones;
@@ -431,7 +430,7 @@ internal sealed partial class EntityContextMenus
         if (owner == null || bones == null || descriptor == null)
         {
             _ctxBoneId = null;
-            Crystarium.FloatingMenu.Dismiss(menu);
+            FloatingMenu.Dismiss(menu);
             return;
         }
         var mirrorName = PoseMath.GetMirrorBoneName(boneId.CanonicalName);
@@ -491,7 +490,7 @@ internal sealed partial class EntityContextMenus
     /// </summary>
     public void DrawReferenceImageContextMenu()
     {
-        if (!_referenceCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##reference-ctx")) return;
+        if (!_referenceCtxOpenRequested && !FloatingMenu.IsOpen("##reference-ctx")) return;
         if (_ctxReferenceImage is not { } image)
             return;
         // A picture closed from its own bar while the menu is up leaves the
@@ -499,7 +498,7 @@ internal sealed partial class EntityContextMenus
         if (!_referenceImages.Instances.Contains(image))
         {
             _ctxReferenceImage = null;
-            Crystarium.FloatingMenu.Dismiss("##reference-ctx");
+            FloatingMenu.Dismiss("##reference-ctx");
             return;
         }
         bool hidden = ReferenceImageSession.IsHidden(image);
@@ -525,8 +524,8 @@ internal sealed partial class EntityContextMenus
             _referenceCtxOpenRequested = false;
             OpenContextMenu("##reference-ctx", items);
         }
-        Crystarium.FloatingMenu.Refresh("##reference-ctx", items);
-        int clicked = Crystarium.FloatingMenu.Draw("##reference-ctx");
+        FloatingMenu.Refresh("##reference-ctx", items);
+        int clicked = FloatingMenu.Draw("##reference-ctx");
         if (clicked < 0)
             return;
         if (clicked < actions.Length) actions[clicked]?.Invoke();
@@ -544,13 +543,13 @@ internal sealed partial class EntityContextMenus
     /// rule answers everywhere.</summary>
     public void DrawOverlayNodeContextMenu()
     {
-        if (!_overlayNodeCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##overlay-node-ctx")) return;
+        if (!_overlayNodeCtxOpenRequested && !FloatingMenu.IsOpen("##overlay-node-ctx")) return;
         if (_ctxOverlayNodeId is not { } overlayId)
             return;
         if (_overlayControl.Read(overlayId) is not { } node)
         {
             _ctxOverlayNodeId = null;
-            Crystarium.FloatingMenu.Dismiss("##overlay-node-ctx");
+            FloatingMenu.Dismiss("##overlay-node-ctx");
             return;
         }
         var items = new[]
@@ -570,7 +569,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForOverlay(overlayId), !node.State.Visible),
             () => OpenEntityRename(
-                "Rename overlay", node.State.Name, next => _overlayControl.SetName(overlayId, next)),
+                "Rename overlay", node.State.Name, next => _overlayControl.Set(overlayId, Application.Presentation.OverlayProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForOverlay(overlayId)),
             () => OpenEntityRename(
                 "Save overlay to library", node.State.Name,
@@ -592,8 +591,8 @@ internal sealed partial class EntityContextMenus
                 new ContextMenuItem(collider.Enabled ? "Disable collision" : "Enable collision", TablerIcon.Cube) }
                 .Concat(items).ToArray();
             actions = new Action?[] {
-                () => _overlayControl.SetColliderLocked(overlayId, !collider.Locked),
-                () => _overlayControl.SetCollisionEnabled(overlayId, !collider.Enabled) }
+                () => _overlayControl.EditCollider(overlayId, c => c with { Locked = !collider.Locked }),
+                () => _overlayControl.EditCollider(overlayId, c => c with { Enabled = !collider.Enabled }) }
                 .Concat(actions).ToArray();
         }
         AddHandleAction(ref items, ref actions, SelectionId.ForOverlay(overlayId));
@@ -603,8 +602,8 @@ internal sealed partial class EntityContextMenus
             _overlayNodeCtxOpenRequested = false;
             OpenContextMenu("##overlay-node-ctx", items);
         }
-        Crystarium.FloatingMenu.Refresh("##overlay-node-ctx", items);
-        int clicked = Crystarium.FloatingMenu.Draw("##overlay-node-ctx");
+        FloatingMenu.Refresh("##overlay-node-ctx", items);
+        int clicked = FloatingMenu.Draw("##overlay-node-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
         DrawMoreAction(items, moreActions);
@@ -613,7 +612,7 @@ internal sealed partial class EntityContextMenus
     public void DrawOverlayContextMenu()
     {
         const string menu = "##overlay-ctx";
-        if (!_overlayCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen(menu)) return;
+        if (!_overlayCtxOpenRequested && !FloatingMenu.IsOpen(menu)) return;
         if (_ctxOverlayBones is not { Count: > 0 } captured) return;
         var ownerId = _ctxBranchSkeleton?.Actor ?? captured[0].Skeleton.Actor;
         var owner = _scene.Snapshot.FindActor(ownerId);
@@ -621,7 +620,7 @@ internal sealed partial class EntityContextMenus
         if (owner == null || (_ctxBranchSkeleton != null && slot == null))
         {
             _ctxOverlayBones = null;
-            Crystarium.FloatingMenu.Dismiss(menu);
+            FloatingMenu.Dismiss(menu);
             return;
         }
         var bones = slot != null ? slot.Bones.Select(b => b.Id).ToArray() : captured;
@@ -699,13 +698,13 @@ internal sealed partial class EntityContextMenus
     /// </summary>
     public void DrawLightContextMenu()
     {
-        if (!_lightCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##light-ctx")) return;
+        if (!_lightCtxOpenRequested && !FloatingMenu.IsOpen("##light-ctx")) return;
         if (_ctxLightId is not { } lightId)
             return;
         if (_lightControl.Read(lightId) is not { } light)
         {
             _ctxLightId = null;
-            Crystarium.FloatingMenu.Dismiss("##light-ctx");
+            FloatingMenu.Dismiss("##light-ctx");
             return;
         }
 
@@ -724,7 +723,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForLight(lightId), !light.IsOn),
             () => OpenEntityRename(
-                "Rename light", light.Name, next => _lightControl.SetName(lightId, next)),
+                "Rename light", light.Name, next => _lightControl.Set(lightId, Application.Presentation.LightProperties.Name, next)),
             () => _lightPane.MoveToCamera(lightId),
             () => DuplicateAndSelect(SelectionId.ForLight(lightId)),
             () => _lightPane.OpenSave(lightId),
@@ -770,8 +769,8 @@ internal sealed partial class EntityContextMenus
             _lightCtxOpenRequested = false;
             OpenContextMenu("##light-ctx", items.ToArray());
         }
-        Crystarium.FloatingMenu.Refresh("##light-ctx", items.ToArray());
-        int clicked = Crystarium.FloatingMenu.Draw("##light-ctx");
+        FloatingMenu.Refresh("##light-ctx", items.ToArray());
+        int clicked = FloatingMenu.Draw("##light-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
         DrawMoreAction(items, moreActions);
@@ -790,13 +789,13 @@ internal sealed partial class EntityContextMenus
     /// </summary>
     public void DrawPropContextMenu()
     {
-        if (!_propCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##prop-ctx")) return;
+        if (!_propCtxOpenRequested && !FloatingMenu.IsOpen("##prop-ctx")) return;
         if (_ctxPropId is not { } propId)
             return;
         if (_objectControl.Read(propId) is not { } prop)
         {
             _ctxPropId = null;
-            Crystarium.FloatingMenu.Dismiss("##prop-ctx");
+            FloatingMenu.Dismiss("##prop-ctx");
             return;
         }
 
@@ -817,7 +816,7 @@ internal sealed partial class EntityContextMenus
         {
             () => SetEntityVisible(SelectionId.ForProp(propId), !prop.Visible),
             () => OpenEntityRename(
-                "Rename object", prop.Name, next => _objectControl.SetName(propId, next)),
+                "Rename object", prop.Name, next => _objectControl.Set(propId, Application.Presentation.PropProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForProp(propId)),
             () => OpenEntityRename(
                 "Save prop to library", prop.Name,
@@ -840,8 +839,8 @@ internal sealed partial class EntityContextMenus
             _propCtxOpenRequested = false;
             OpenContextMenu("##prop-ctx", items);
         }
-        Crystarium.FloatingMenu.Refresh("##prop-ctx", items);
-        int clicked = Crystarium.FloatingMenu.Draw("##prop-ctx");
+        FloatingMenu.Refresh("##prop-ctx", items);
+        int clicked = FloatingMenu.Draw("##prop-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
         DrawMoreAction(items, moreActions);
@@ -852,13 +851,13 @@ internal sealed partial class EntityContextMenus
     /// </summary>
     public void DrawCameraContextMenu()
     {
-        if (!_cameraCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##camera-ctx")) return;
+        if (!_cameraCtxOpenRequested && !FloatingMenu.IsOpen("##camera-ctx")) return;
         if (_ctxCameraId is not { } cameraId)
             return;
         if (_cameraControl.Read(cameraId) is not { } camera)
         {
             _ctxCameraId = null;
-            Crystarium.FloatingMenu.Dismiss("##camera-ctx");
+            FloatingMenu.Dismiss("##camera-ctx");
             return;
         }
 
@@ -888,10 +887,10 @@ internal sealed partial class EntityContextMenus
         var actions = new List<Action?>
         {
             () => _cameraControl.SetLive(cameraId, !camera.IsLive),
-            () => _cameraControl.SetLocked(cameraId, !camera.IsLocked),
+            () => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.IsLocked, !camera.IsLocked),
             () => RecenterCameraOnTrackedActor(cameraId),
             () => OpenEntityRename(
-                "Rename camera", camera.Name, next => _cameraControl.SetName(cameraId, next)),
+                "Rename camera", camera.Name, next => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Name, next)),
             () => DuplicateAndSelect(SelectionId.ForCamera(cameraId)),
             () => _cameraPane.OpenSave(cameraId),
             () => OpenEntityRename(
@@ -926,11 +925,11 @@ internal sealed partial class EntityContextMenus
             _cameraCtxOpenRequested = false;
             OpenContextMenu("##camera-ctx", items.ToArray());
         }
-        Crystarium.FloatingMenu.Refresh("##camera-ctx", items.ToArray());
-        int clicked = Crystarium.FloatingMenu.Draw("##camera-ctx");
+        FloatingMenu.Refresh("##camera-ctx", items.ToArray());
+        int clicked = FloatingMenu.Draw("##camera-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
-        int sub = Crystarium.FloatingMenu.ConsumeSubmenuClick(out int parent);
+        int sub = FloatingMenu.ConsumeSubmenuClick(out int parent);
         if (parent >= 0 && parent < items.Count)
         {
             if (InvokeComposedAction(items, parent, sub)) return;
@@ -961,13 +960,13 @@ internal sealed partial class EntityContextMenus
     /// map owns the thing and gets it back where it stood.</summary>
     public void DrawWorldObjectContextMenu()
     {
-        if (!_worldObjectCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##world-object-ctx")) return;
+        if (!_worldObjectCtxOpenRequested && !FloatingMenu.IsOpen("##world-object-ctx")) return;
         if (_ctxWorldObjectId is not { } worldObjectId)
             return;
         if (_objectControl.Read(worldObjectId) is not { } worldObject)
         {
             _ctxWorldObjectId = null;
-            Crystarium.FloatingMenu.Dismiss("##world-object-ctx");
+            FloatingMenu.Dismiss("##world-object-ctx");
             return;
         }
         var items = new[]
@@ -990,7 +989,7 @@ internal sealed partial class EntityContextMenus
             () => SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), !worldObject.Visible),
             () => OpenEntityRename(
                 worldObject.IsFurniture ? "Rename furniture" : "Rename object", worldObject.Name,
-                next => _objectControl.SetName(worldObjectId, next)),
+                next => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.Name, next)),
             () =>
             {
                 DuplicateAndSelect(SelectionId.ForWorldObject(worldObjectId));
@@ -1024,18 +1023,18 @@ internal sealed partial class EntityContextMenus
         {
             stateItems.Add(new(worldObject.VfxPaused ? "Play" : "Pause",
                 worldObject.VfxPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
-            stateActions.Add(() => _objectControl.SetVfxPaused(worldObjectId, !worldObject.VfxPaused));
+            stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.VfxPaused, !worldObject.VfxPaused));
         }
         else
         {
             stateItems.Add(new(worldObject.NightState ? "Day" : "Night",
                 worldObject.NightState ? TablerIcon.Sun : TablerIcon.Moon));
-            stateActions.Add(() => _objectControl.SetNightState(worldObjectId, !worldObject.NightState));
+            stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.NightState, !worldObject.NightState));
             if (!worldObject.Spawned)
             {
                 stateItems.Add(new(worldObject.AnimationPaused ? "Play" : "Pause",
                     worldObject.AnimationPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
-                stateActions.Add(() => _objectControl.SetAnimationPaused(worldObjectId, !worldObject.AnimationPaused));
+                stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.AnimationPaused, !worldObject.AnimationPaused));
             }
         }
         items = stateItems.Concat(items).ToArray();
@@ -1047,8 +1046,8 @@ internal sealed partial class EntityContextMenus
             _worldObjectCtxOpenRequested = false;
             OpenContextMenu("##world-object-ctx", items);
         }
-        Crystarium.FloatingMenu.Refresh("##world-object-ctx", items);
-        int clicked = Crystarium.FloatingMenu.Draw("##world-object-ctx");
+        FloatingMenu.Refresh("##world-object-ctx", items);
+        int clicked = FloatingMenu.Draw("##world-object-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
         DrawMoreAction(items, moreActions);
@@ -1059,13 +1058,13 @@ internal sealed partial class EntityContextMenus
     /// member selection, whose own menu then answers.</summary>
     public void DrawGroupContextMenu()
     {
-        if (!_groupCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##group-ctx")) return;
+        if (!_groupCtxOpenRequested && !FloatingMenu.IsOpen("##group-ctx")) return;
         if (_ctxGroupId is not { } groupId)
             return;
         if (_groups.Find(groupId) is not { } group)
         {
             _ctxGroupId = null;
-            Crystarium.FloatingMenu.Dismiss("##group-ctx");
+            FloatingMenu.Dismiss("##group-ctx");
             return;
         }
         bool locked = group.Locked;
@@ -1135,11 +1134,11 @@ internal sealed partial class EntityContextMenus
             _groupCtxOpenRequested = false;
             OpenContextMenu("##group-ctx", items);
         }
-        Crystarium.FloatingMenu.Refresh("##group-ctx", items);
-        int clicked = Crystarium.FloatingMenu.Draw("##group-ctx");
+        FloatingMenu.Refresh("##group-ctx", items);
+        int clicked = FloatingMenu.Draw("##group-ctx");
         if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
-        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+        int subClicked = FloatingMenu.ConsumeSubmenuClick(
             out int subParent);
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
             && InvokeComposedAction(items, subParent, subClicked)) return;
@@ -1162,12 +1161,12 @@ internal sealed partial class EntityContextMenus
     /// answers disable in place.</summary>
     public void DrawSelectionContextMenu()
     {
-        if (!_selectionCtxOpenRequested && !Crystarium.FloatingMenu.IsOpen("##selection-ctx")) return;
+        if (!_selectionCtxOpenRequested && !FloatingMenu.IsOpen("##selection-ctx")) return;
         int entities = global::Poser.Application.Selection.EntitySelection
             .CountEntities(_selection.Selected);
         if (entities < 2)
         {
-            Crystarium.FloatingMenu.Dismiss("##selection-ctx");
+            FloatingMenu.Dismiss("##selection-ctx");
             return;
         }
 
@@ -1252,11 +1251,11 @@ internal sealed partial class EntityContextMenus
             _selectionCtxOpenRequested = false;
             OpenContextMenu("##selection-ctx", items.ToArray());
         }
-        Crystarium.FloatingMenu.Refresh("##selection-ctx", items.ToArray());
-        int clicked = Crystarium.FloatingMenu.Draw("##selection-ctx");
+        FloatingMenu.Refresh("##selection-ctx", items.ToArray());
+        int clicked = FloatingMenu.Draw("##selection-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
-        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+        int subClicked = FloatingMenu.ConsumeSubmenuClick(
             out int subParent);
         if (subClicked >= 0 && subParent >= 0 && subParent < items.Count
             && InvokeComposedAction(items, subParent, subClicked)) return;

@@ -3,14 +3,16 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Poser.Config;
-using Poser.Files;
 using Poser.Application.Scene;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Config;
+using Poser.Documents.Files;
+using Poser.Application.Settings;
 
 namespace Poser.Application.AutoSave;
 
 /// <summary>Whole-scene autosave cadence, admission, deduplication and progress.</summary>
-public sealed class SceneAutoSaveService : ISceneAutoSave
+public sealed class SceneAutoSaveService : IDisposable
 {
     private readonly ConfigurationService _configuration;
     /// <summary>ARMS a capture: the bone-transform caches a scene serializes
@@ -20,6 +22,7 @@ public sealed class SceneAutoSaveService : ISceneAutoSave
     /// armed.</summary>
     private readonly Func<Guid, string?, Action<SceneCaptureOutcome>, string?> _capture;
     private readonly SceneAutoSaveStore _store;
+    private readonly Action<string> _warning;
     private readonly Func<bool> _sceneOperationRunning;
     private readonly Func<DateTime> _clock;
     private readonly Func<Action, bool> _dispatch;
@@ -46,6 +49,7 @@ public sealed class SceneAutoSaveService : ISceneAutoSave
         Func<Guid, string?, Action<SceneCaptureOutcome>, string?> capture,
         Func<bool> sceneOperationRunning,
         SceneAutoSaveStore store,
+        Action<string> warning,
         Func<DateTime>? utcClock = null,
         Func<Action, bool>? dispatch = null)
     {
@@ -60,11 +64,13 @@ public sealed class SceneAutoSaveService : ISceneAutoSave
             return true;
         });
         _store = store;
+        _warning = warning;
     }
 
     public string RootDirectory { get; }
 
-    public SceneAutoSaveResult LastResult
+    /// <summary>Latest published outcome; tests observe the cadence through it.</summary>
+    internal SceneAutoSaveResult LastResult
     {
         get
         {
@@ -72,10 +78,6 @@ public sealed class SceneAutoSaveService : ISceneAutoSave
                 return _lastResult;
         }
     }
-
-    /// <summary>Raised after every published result; the UI reads the
-    /// immutable record, never service internals.</summary>
-    public event Action? Changed;
 
     private AutoSaveConfiguration Settings => _configuration.Config.AutoSave;
 
@@ -273,17 +275,19 @@ public sealed class SceneAutoSaveService : ISceneAutoSave
         }
     }
 
+    /// <summary>Records the outcome; a snapshot that failed or left recovery
+    /// evidence is logged, since nothing else surfaces it.</summary>
     private void Publish(SceneAutoSaveResult result)
     {
         lock (_gate)
             _lastResult = result;
-        try
+        if (result.Status is SceneAutoSaveStatus.Failed or SceneAutoSaveStatus.RecoveryRequired)
         {
-            Changed?.Invoke();
-        }
-        catch
-        {
-            // An observer failure never poisons the snapshot cadence.
+            var evidence = result.Evidence.Count > 0
+                ? $" Recovery evidence: {string.Join(", ", result.Evidence)}"
+                : string.Empty;
+            var path = result.Path is { } target ? $" ({target})" : string.Empty;
+            _warning($"Scene auto-save {result.Status}{path}: {result.Detail}{evidence}");
         }
     }
 

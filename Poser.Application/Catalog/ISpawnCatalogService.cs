@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Poser.Domain.Companions;
 
-namespace Poser.Services;
+namespace Poser.Application.Catalog;
 
 /// <summary>
 /// Every minion, mount and fashion accessory as ONE flat immutable list.

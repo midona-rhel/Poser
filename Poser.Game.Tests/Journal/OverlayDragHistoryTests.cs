@@ -2,9 +2,9 @@ using System.Numerics;
 using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
-using Poser.Core;
 using Poser.Domain.Presentation;
 using Poser.Game.Overlays;
+using Poser.Game.Core;
 
 namespace Poser.Game.Tests.Journal;
 
@@ -13,20 +13,16 @@ public class OverlayDragHistoryTests
     [Fact]
     public void NativeDragReleaseRecordsOneStepAndRestoresDocumentAndNativeState()
     {
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var journal = new ValueJournal(history);
-        bool journalResolved = false;
-        var lazyJournal = new Lazy<ValueJournal>(() => { journalResolved = true; return journal; });
         var port = new Port();
         using var events = new EventBus(DispatchProxy.Create<IPluginLog, Log>());
         using var service = new OverlayNodeService(port, events,
-            DispatchProxy.Create<IPluginLog, Log>(), lazyJournal);
+            DispatchProxy.Create<IPluginLog, Log>(), journal);
         var node = Assert.IsType<OverlayNodeHandle>(service.Create(OverlayNodeKind.Talk));
-        Assert.False(journalResolved);
         Vector2 before = node.Position;
         var after = before + new Vector2(100, 40);
         port.Moved!(port.Token, after);
-        Assert.True(journalResolved);
         Assert.Equal(after, node.Position);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         Assert.True(step.Undo());

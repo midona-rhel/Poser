@@ -7,6 +7,7 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Integration;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Application.Presentation;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Game.Bindings;
@@ -72,13 +73,14 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     // throw. Tint commands gate on this, set only after Enable returned;
     // a partially constructed hook is still disposed.
     private readonly bool _tintHookEnabled;
+    private bool _tintFaultLogged;
 
     public PresentationRuntimePort(
         IFramework framework,
         IGameInteropProvider hooking,
         IPluginLog log,
         StableBindingRegistry bindings,
-        IIntegrationRuntimePort integration,
+        IGlamourerPort integration,
         IObjectTable objects)
     {
         _framework = framework;
@@ -112,21 +114,28 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         // else keeps the game's own tinting.
         // One read of the field, then work off that snapshot: a concurrent
         // rebuild replaces the reference, it never edits this instance.
-        if (_ownedTintBases.Contains(characterBase))
-            return 0;
+        try
+        {
+            if (_ownedTintBases.Contains(characterBase))
+                return 0;
+        }
+        catch (Exception ex)
+        {
+            // Never throw into the game: a fault keeps the game's tinting.
+            if (!_tintFaultLogged)
+            {
+                _tintFaultLogged = true;
+                _log.Error($"Tint detour faulted (logged once): {ex}");
+            }
+        }
         return _updateTintHook!.Original(characterBase, tint);
     }
 
-    // ── Resolution (the AnimationRuntimePort pattern, verbatim) ───────
+    // ── Resolution (the AnimationNativeState pattern, verbatim) ───────
 
     private CSCharacter* Resolve(ActorId actor, out string? detail)
     {
         detail = null;
-        if (!_framework.IsInFrameworkUpdateThread)
-        {
-            detail = "Presentation writes must run on the framework thread.";
-            return null;
-        }
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
         {
@@ -189,39 +198,39 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
 
     // ── Opacity ───────────────────────────────────────────────────────
 
-    public PresentationPortResult SetOpacity(ActorId actor, float opacity)
+    public Outcome SetOpacity(ActorId actor, float opacity)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return PresentationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         if (!float.IsFinite(opacity))
-            return PresentationPortResult.Fail("Opacity must be a finite number.");
+            return Outcome.Fail("Opacity must be a finite number.");
         character->Alpha = Math.Clamp(opacity, 0f, 1f);
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public PresentationPortResult RestoreOpacity(ActorId actor, float incoming)
+    public Outcome RestoreOpacity(ActorId actor, float incoming)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return PresentationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         character->Alpha = incoming;
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     // ── Tint ──────────────────────────────────────────────────────────
 
-    public PresentationPortResult SetTint(ActorId actor, PresentationModel model, Vector4 tint)
+    public Outcome SetTint(ActorId actor, PresentationModel model, Vector4 tint)
     {
         if (!_tintHookEnabled)
-            return PresentationPortResult.Fail(
+            return Outcome.Fail(
                 "Tint is unavailable: the game's tint update is not hooked.");
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return PresentationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         var characterBase = BaseFor(character, model);
         if (characterBase == null)
-            return PresentationPortResult.Fail(
+            return Outcome.Fail(
                 model == PresentationModel.Character
                     ? "The character model is not available."
                     : "That weapon model is not present.");
@@ -229,14 +238,14 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         characterBase->Tint = tint;
         OwnedFor(actor).Tints[model] = tint;
         RebuildTintIndex();
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public PresentationPortResult RestoreTint(ActorId actor, PresentationModel model, Vector4 incoming)
+    public Outcome RestoreTint(ActorId actor, PresentationModel model, Vector4 incoming)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return PresentationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
 
         var characterBase = BaseFor(character, model);
         if (characterBase != null)
@@ -245,37 +254,37 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         // rebuilt it with its own defaults, so releasing ownership IS the
         // restoration.
         Release(actor, owned => owned.Tints.Remove(model));
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     // ── Wetness ───────────────────────────────────────────────────────
 
-    public PresentationPortResult SetWetness(ActorId actor, WetnessState state)
+    public Outcome SetWetness(ActorId actor, WetnessState state)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return PresentationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         var characterBase = BaseFor(character, PresentationModel.Character);
         if (characterBase == null)
-            return PresentationPortResult.Fail("The character model is not available.");
+            return Outcome.Fail("The character model is not available.");
 
         WriteWetness(characterBase, state);
         OwnedFor(actor).Wetness = state;
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 
-    public PresentationPortResult ClearWetness(ActorId actor, WetnessState incoming)
+    public Outcome ClearWetness(ActorId actor, WetnessState incoming)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
-            return PresentationPortResult.Fail(detail!);
+            return Outcome.Fail(detail!);
         var characterBase = BaseFor(character, PresentationModel.Character);
         if (characterBase == null)
-            return PresentationPortResult.Fail("The character model is not available.");
+            return Outcome.Fail("The character model is not available.");
 
         WriteWetness(characterBase, incoming);
         Release(actor, owned => owned.Wetness = null);
-        return PresentationPortResult.Ok();
+        return Outcome.Ok();
     }
 
     private static void WriteWetness(CharacterBase* characterBase, WetnessState state)

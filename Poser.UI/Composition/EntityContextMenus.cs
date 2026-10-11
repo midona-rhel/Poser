@@ -11,16 +11,14 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.Application.Transforms;
 
 namespace Poser.UI;
 
@@ -35,7 +33,7 @@ internal sealed partial class EntityContextMenus
     private readonly CameraPane _cameraPane;
     private readonly Application.Posing.IPoseCommands _cleanPose;
     private readonly CompanionSection _companions;
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
     private readonly global::Poser.Application.Scene.GroupSteps _groupSteps;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly Application.Presentation.ILightControl _lightControl;
@@ -100,7 +98,7 @@ internal sealed partial class EntityContextMenus
         CameraPane cameraPane,
         Application.Posing.IPoseCommands cleanPose,
         CompanionSection companions,
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         global::Poser.Application.Scene.GroupSteps groupSteps,
         global::Poser.Application.Scene.SceneGroups groups,
         Application.Presentation.ILightControl lightControl,
@@ -254,8 +252,8 @@ internal sealed partial class EntityContextMenus
     private ActorDescriptor? ResolveActorDescriptor(ActorId id) =>
         _actorControl.Read(id) != null ? _scene.Snapshot.FindActor(id) : null;
     private bool? IsEntityVisible(SelectionId id) => _entityCommands.ReadVisibility(id);
-    private int SetEntityVisible(SelectionId id, bool visible) => _entityCommands.SetVisibility([id], visible);
-    private void SetSelectionVisible(bool visible) => _entityCommands.SetVisibility(_selection.Selected, visible);
+    private int SetEntityVisible(SelectionId id, bool visible) => _entityActions.SetVisibility([id], visible);
+    private void SetSelectionVisible(bool visible) => _entityActions.SetVisibility(_selection.Selected.ToArray(), visible);
     private bool? PlayingOf(SelectionId id) => _playback.ReadPlaying(id);
     private void SetSelectionPaused(bool paused)
     {

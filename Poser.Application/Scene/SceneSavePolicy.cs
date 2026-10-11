@@ -1,7 +1,6 @@
 using Poser.Application.Scene;
-using Poser.Scene;
 using System.Collections.Generic;
-using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
@@ -45,10 +44,9 @@ internal static class SceneSavePolicy
             scene.World = null;
         }
         if (!options.IncludeOverlays)
-        {
             scene.Overlays = null;
+        if (!options.IncludeWorldObjects)
             scene.WorldObjects = null;
-        }
 
         int excluded = 0;
         int unsealed = 0;
@@ -72,6 +70,15 @@ internal static class SceneSavePolicy
             unsealed++;
         }
 
+        // Settled only now that it is known which packages survived.
+        foreach (var actor in scene.Actors)
+        {
+            if (actor.Mcdf is not null)
+                actor.AppearanceNotSaved = false;
+            else if (actor.AppearanceNotSaved)
+                notes.Add(AppearanceNotSavedNote(actor.Name));
+        }
+
         if (excluded == 1)
             notes.Add("Modded appearance was not saved.");
         else if (excluded > 1)
@@ -89,4 +96,9 @@ internal static class SceneSavePolicy
 
         return unsealed;
     }
+
+    /// <summary>The one wording for an actor saved without its own look, used
+    /// by the save that drops it and by every load of the file.</summary>
+    public static string AppearanceNotSavedNote(string actor) =>
+        $"Actor '{actor}''s appearance was not saved, so it loads wearing your character's appearance.";
 }

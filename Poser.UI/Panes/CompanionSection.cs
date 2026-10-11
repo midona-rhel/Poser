@@ -6,12 +6,14 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Companions;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
-using Poser.Services;
+using Poser.UI.Widgets;
+using Poser.Application.Catalog;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
 /// <summary>
-/// The companion-slot attach surface: a <see cref="Crystarium.SearchPicker{T}"/>
+/// The companion-slot attach surface: a <see cref="SearchPicker{T}"/>
 /// over the whole minion/mount/ornament catalog, opened from an actor's
 /// context menu or Actor &gt; General and applied to that actor's native slot.
 /// Standalone creatures still come from the spawn browser; this control owns
@@ -24,7 +26,7 @@ public sealed class CompanionSection
     private readonly ICompanionControl _companions;
     private readonly UserNotices _notices;
 
-    private readonly Crystarium.SearchPicker<CompanionEntry> _picker =
+    private readonly SearchPicker<CompanionEntry> _picker =
         new("companion");
 
     /// <summary>The OWNER actor frozen when the surface opened — a minion row
@@ -167,7 +169,7 @@ public sealed class CompanionSection
         Strip = new PickerStrip(KindLabels, _kindIndex, _setKind),
         // A row carries an icon, a name and a badge, and the narrow picker
         // cuts all three.
-        Width = Crystarium.ActiveTheme.Picker.WideWidth,
+        Width = ActiveTheme.Picker.WideWidth,
     };
 
     private IReadOnlyList<CompanionEntry> Compute(string search)

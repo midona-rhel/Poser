@@ -1,7 +1,7 @@
 using System.Numerics;
 using Poser.Domain.Scene;
-using Poser.Entities;
-using PoserTransform = Poser.Transform;
+using Poser.Game.Entities;
+using PoserTransform = Poser.Domain.Transforms.Transform;
 
 namespace Poser.Game.Lighting;
 

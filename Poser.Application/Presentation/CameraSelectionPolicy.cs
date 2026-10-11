@@ -1,6 +1,6 @@
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Identity;
+using Poser.Application.Settings;
 
 namespace Poser.Application.Presentation;
 

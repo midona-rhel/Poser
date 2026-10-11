@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using Poser.Domain.Identity;
+using Poser.UI.Widgets;
 
 namespace Poser.UI;
 
@@ -68,9 +69,9 @@ internal sealed partial class EntityContextMenus
     {
         // Right-clicking another target of the same kind replaces the menu;
         // the toggle behavior used by toolbar dropdowns must not close it.
-        Crystarium.FloatingMenu.Dismiss(id);
-        Crystarium.FloatingMenu.Open(id, ImGui.GetMousePos(), items,
-            Crystarium.FloatingMenu.MeasureWidth(items));
+        FloatingMenu.Dismiss(id);
+        FloatingMenu.Open(id, ImGui.GetMousePos(), items,
+            FloatingMenu.MeasureWidth(items));
     }
 
     private void SetGroupTreeCollapsed(Guid id, bool collapsed, bool subtree)

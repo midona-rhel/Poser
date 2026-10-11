@@ -1,5 +1,5 @@
-using Poser.Entities;
-using Poser.Files;
+using Poser.Documents.Files;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Cameras;
 

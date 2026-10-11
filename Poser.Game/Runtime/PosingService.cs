@@ -1,0 +1,389 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using Dalamud.Hooking;
+using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using Poser.Game.Posing;
+using Poser.Domain.Transforms;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
+using Poser.Game.Core;
+using Poser.Game.Entities;
+using Poser.Game.Services;
+
+using StructsGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+
+namespace Poser.Game;
+
+/// <summary>
+/// Service that applies transform overrides to actors.
+/// Hooks SetPosition to intercept game reset attempts.
+/// </summary>
+public unsafe class PosingService : IPosingService
+{
+    private readonly IPluginLog _log;
+    private readonly IFramework _framework;
+    private readonly IGPoseService _gPoseService;
+    private readonly IEventBus _eventBus;
+    private readonly IActorManager _actors;
+    private readonly ConfigurationService _configuration;
+    private readonly IVirtualCameraService _cameras;
+    private readonly Dictionary<nint, ActorOrbitPosition> _orbitPositions = new();
+    private readonly Application.Input.CameraInputState _input;
+
+    /// <summary>Reused per-frame buffer for entries whose stored address no
+    /// longer resolves in the object table (single-threaded framework tick;
+    /// a per-frame ToArray would charge the steady state one array per frame).</summary>
+    private readonly List<nint> _staleOverrideBuffer = new();
+
+    // One-shot fault flag: the detour runs per game reset attempt, so a
+    // repeating fault must not turn the log into a firehose.
+    private bool _setPositionDetourFaultLogged;
+
+    // Hook for intercepting position resets
+    private delegate void SetPositionDelegate(StructsGameObject* gameObject, float x, float y, float z);
+    private readonly Hook<SetPositionDelegate>? _setPositionHook;
+
+    // Transform overrides keyed by actor address
+    private readonly Dictionary<nint, Transform> _transformOverrides = new();
+
+    // Original transforms before override (for restoration)
+    private readonly Dictionary<nint, Transform> _originalTransforms = new();
+    private readonly Dictionary<nint, IActor> _liveActors = new();
+
+    public PosingService(
+        IPluginLog log,
+        IFramework framework,
+        IGPoseService gPoseService,
+        IEventBus eventBus,
+        IGameInteropProvider hooking,
+        IActorManager actors,
+        ConfigurationService configuration,
+        IVirtualCameraService cameras,
+        Application.Input.CameraInputState input)
+    {
+        _log = log;
+        _framework = framework;
+        _gPoseService = gPoseService;
+        _eventBus = eventBus;
+        _actors = actors;
+        _configuration = configuration;
+        _cameras = cameras;
+        _input = input;
+
+        // Hook SetPosition to intercept game reset attempts (like Brio does)
+        try
+        {
+            var setPositionAddress = (nint)StructsGameObject.Addresses.SetPosition.Value;
+            _setPositionHook = hooking.HookFromAddress<SetPositionDelegate>(setPositionAddress, SetPositionDetour);
+            _setPositionHook.Enable();
+            _log.Debug("PosingService: SetPosition hook initialized");
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"PosingService: Failed to hook SetPosition: {ex.Message}");
+        }
+
+        // Apply overrides every frame as backup
+        _framework.Update += OnFrameworkUpdate;
+
+        // Reset all when exiting GPose
+        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Subscribe<GPoseExitingEvent>(OnGPoseExiting);
+        _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+
+        _log.Debug("PosingService initialized");
+    }
+
+    /// <summary>
+    /// Intercepts the game's SetPosition calls. If we have an override, apply it instead.
+    /// </summary>
+    private void SetPositionDetour(StructsGameObject* gameObject, float x, float y, float z)
+    {
+        // Never fault the native caller (CharacterFinalizeDetour standard):
+        // a managed fault falls through to Original so the game's own write
+        // still happens.
+        try
+        {
+            if (_gPoseService.IsGPosing && IsAvailable((nint)gameObject) &&
+                _transformOverrides.TryGetValue((nint)gameObject, out var transform))
+            {
+                // Reapply our override instead of game's reset
+                ApplyTransformToActor((nint)gameObject, transform);
+                return; // Don't call original - we override completely
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_setPositionDetourFaultLogged)
+            {
+                _setPositionDetourFaultLogged = true;
+                _log.Error($"PosingService: SetPosition detour faulted (logged once): {ex}");
+            }
+        }
+
+        _setPositionHook?.Original(gameObject, x, y, z);
+    }
+
+    private void OnGPoseStateChanged(GPoseStateChangedEvent e)
+    {
+        if (!e.IsGPosing)
+        {
+            ClearAllOverrides();
+        }
+    }
+
+    private void OnGPoseExiting(GPoseExitingEvent e) => ClearAllOverrides();
+
+    private bool IsAvailable(nint address) =>
+        _liveActors.TryGetValue(address, out var actor) && _actors.IsAvailable(actor);
+
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        if (!_gPoseService.IsGPosing)
+            return;
+
+        // Apply ALL overrides every frame as backup
+        // The hook handles most cases, but this ensures persistence.
+        // Deref-time revalidation (spawn/gaze standard): a stored address is
+        // only a claim — between an external despawn and the next
+        // ActorListChangedEvent prune, the write would land in freed/reused
+        // object memory. Unresolved is refusal, and the entry is dropped so
+        // the stale claim cannot be replayed next frame.
+        _staleOverrideBuffer.Clear();
+        foreach (var (actorAddress, transform) in _transformOverrides)
+        {
+            if (!IsAvailable(actorAddress))
+            {
+                _staleOverrideBuffer.Add(actorAddress);
+                continue;
+            }
+
+            UpdateCameraOrbit(actorAddress);
+            ApplyTransformToActor(actorAddress, transform);
+        }
+
+        foreach (var address in _staleOverrideBuffer)
+        {
+            _transformOverrides.Remove(address);
+            _originalTransforms.Remove(address);
+            _orbitPositions.Remove(address);
+        }
+    }
+
+    private void UpdateCameraOrbit(nint address)
+    {
+        if (_setPositionHook == null || !_orbitPositions.TryGetValue(address, out var state))
+            return;
+        var native = (GameObject*)address;
+        if (native->DrawObject == null || !state.TryTake(native->DrawOffset,
+                _configuration.Config.Camera.UpdateOrbitWithActorPosition,
+                _input.PointerDragHeld, _cameras.LiveCamera is { IsLocked: true }, out var position))
+            return;
+        // Our Brio-style detour blocks game resets while the draw transform
+        // is held. This intentional Ktisis pivot update must bypass it.
+        _setPositionHook.Original(native, position.X, position.Y, position.Z);
+        native->DefaultPosition = native->Position;
+        // The caller reapplies the authored draw transform after SetPosition.
+    }
+
+    private void ApplyTransformToActor(nint actorAddress, Transform transform)
+    {
+        if (!IsAvailable(actorAddress))
+            return;
+
+        var gameObject = (GameObject*)actorAddress;
+        if (gameObject == null)
+            return;
+
+        var drawObject = gameObject->DrawObject;
+        if (drawObject == null)
+            return;
+
+        // Write transform directly to the draw object
+        drawObject->Object.Position = transform.Position;
+        drawObject->Object.Rotation = transform.Rotation;
+        drawObject->Object.Scale = transform.Scale;
+    }
+
+    public Transform? GetTransformOverride(IActor actor)
+    {
+        return _transformOverrides.TryGetValue(actor.Address, out var transform) ? transform : (Transform?)null;
+    }
+
+    public void SetTransformOverride(IActor actor, Transform transform)
+    {
+        if (!_gPoseService.IsGPosing ||
+            !_actors.IsAvailable(actor) ||
+            !TrySanitizeTransform(transform, out transform))
+        {
+            return;
+        }
+
+        // Store original if we haven't already
+        if (!_originalTransforms.ContainsKey(actor.Address))
+        {
+            _originalTransforms[actor.Address] = GetOriginalTransform(actor);
+            var native = (GameObject*)actor.Address;
+            _orbitPositions[actor.Address] = new(native->Position, native->DefaultPosition);
+        }
+
+        _transformOverrides[actor.Address] = transform;
+        _orbitPositions[actor.Address].Schedule(transform.Position,
+            _configuration.Config.Camera.UpdateOrbitWithActorPosition);
+
+        // Apply immediately for responsive feedback
+        ApplyTransformToActor(actor.Address, transform);
+    }
+
+    private void OnActorListChanged(ActorListChangedEvent e)
+    {
+        foreach (var address in _transformOverrides.Keys
+                     .Where(address => !IsAvailable(address))
+                     .ToArray())
+        {
+            // The native object is gone or the address has been recycled. Drop
+            // state without writing the old transform through a stale pointer.
+            _transformOverrides.Remove(address);
+            _originalTransforms.Remove(address);
+            _orbitPositions.Remove(address);
+        }
+        _liveActors.Clear();
+        foreach (var actor in _actors.Actors.Concat(_actors.AuxiliaryActors))
+            _liveActors[actor.Address] = actor;
+    }
+
+    private static bool TrySanitizeTransform(Transform input, out Transform sanitized)
+    {
+        if (!TransformMath.IsFinite(input) || input.Rotation.LengthSquared() < 0.000001f)
+        {
+            sanitized = default;
+            return false;
+        }
+
+        sanitized = input with
+        {
+            Rotation = Quaternion.Normalize(input.Rotation),
+            Scale = Vector3.Clamp(input.Scale, new Vector3(0.01f), new Vector3(100f)),
+        };
+        return true;
+    }
+
+    public Transform GetOriginalTransform(IActor actor)
+    {
+        if (!_actors.IsAvailable(actor))
+            return Transform.Identity;
+        if (_originalTransforms.TryGetValue(actor.Address, out var original))
+        {
+            return original;
+        }
+
+        return ReadTransformFromGame(actor.Address);
+    }
+
+    public Transform GetEffectiveTransform(IActor actor)
+    {
+        if (!_actors.IsAvailable(actor))
+            return Transform.Identity;
+        if (_transformOverrides.TryGetValue(actor.Address, out var transform))
+        {
+            return transform;
+        }
+
+        return ReadTransformFromGame(actor.Address);
+    }
+
+    private Transform ReadTransformFromGame(nint actorAddress)
+    {
+        if (actorAddress == nint.Zero)
+            return Transform.Identity;
+
+        var gameObject = (GameObject*)actorAddress;
+        if (gameObject == null)
+            return Transform.Identity;
+
+        var drawObject = gameObject->DrawObject;
+        if (drawObject == null)
+        {
+            return new Transform
+            {
+                Position = gameObject->Position,
+                Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, gameObject->Rotation),
+                Scale = Vector3.One
+            };
+        }
+
+        return new Transform
+        {
+            Position = drawObject->Object.Position,
+            Rotation = drawObject->Object.Rotation,
+            Scale = drawObject->Object.Scale
+        };
+    }
+
+    public void ClearTransformOverride(IActor actor)
+    {
+        ClearTransformOverrideByAddress(actor.Address);
+    }
+
+    private void ClearTransformOverrideByAddress(nint address)
+    {
+        if (_transformOverrides.Remove(address))
+        {
+            if (_originalTransforms.TryGetValue(address, out var original))
+            {
+                if (IsAvailable(address))
+                {
+                    RestoreCameraOrbit(address);
+                    ApplyTransformToActor(address, original);
+                }
+                _originalTransforms.Remove(address);
+            }
+            _orbitPositions.Remove(address);
+        }
+    }
+
+    private void RestoreCameraOrbit(nint address)
+    {
+        if (_setPositionHook == null || !_orbitPositions.TryGetValue(address, out var state) || !state.Applied)
+            return;
+        var native = (GameObject*)address;
+        var original = state.OriginalPosition;
+        _setPositionHook.Original(native, original.X, original.Y, original.Z);
+        native->DefaultPosition = state.OriginalDefaultPosition;
+    }
+
+    public void ClearAllOverrides()
+    {
+        // Restore all original transforms
+        foreach (var (actorAddress, original) in _originalTransforms)
+        {
+            if (!IsAvailable(actorAddress)) continue;
+            RestoreCameraOrbit(actorAddress);
+            ApplyTransformToActor(actorAddress, original);
+        }
+
+        _transformOverrides.Clear();
+        _originalTransforms.Clear();
+        _orbitPositions.Clear();
+    }
+
+    public bool HasTransformOverride(IActor actor)
+    {
+        return _transformOverrides.ContainsKey(actor.Address);
+    }
+
+    public void Dispose()
+    {
+        ClearAllOverrides();
+        _setPositionHook?.Dispose();
+        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _eventBus.Unsubscribe<GPoseExitingEvent>(OnGPoseExiting);
+        _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+        _framework.Update -= OnFrameworkUpdate;
+        GC.SuppressFinalize(this);
+    }
+}

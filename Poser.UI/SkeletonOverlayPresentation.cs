@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Config;
+using Poser.Application.Settings;
 
 namespace Poser.UI;
 
@@ -34,6 +34,17 @@ public sealed class SkeletonOverlayPresentation
         _mapHover = bone;
         _mapHoverFrame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount();
     }
+
+    /// <summary>Whether the armature overlay's master toggle drew bones this
+    /// frame — the one boolean the skeleton window computes and the gizmo's
+    /// visibility gate reads.</summary>
+    public bool ArmatureShown { get; set; } = true;
+
+    /// <summary>The bone whose IK width the inspector's slider is previewing,
+    /// and the previewed radius: transient feedback, never saved or used by
+    /// the solver.</summary>
+    public BoneId? IkWidthTarget { get; set; }
+    public float IkWidthRadius { get; set; }
 
     private readonly ConfigurationService _configuration;
 

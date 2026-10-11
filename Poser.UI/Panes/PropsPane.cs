@@ -1,11 +1,11 @@
 using Poser.Application.Selection;
 using System;
-using Poser.Services;
 using Poser.Application.Presentation;
 using System.Numerics;
 using Poser.Application.Scene;
-using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.Application.Catalog;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -68,7 +68,7 @@ public sealed class PropsPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
-        Crystarium.Page("prop", origin, size, page =>
+        Page("prop", origin, size, page =>
         {
             if (SelectedProp() is not { } prop)
             {
@@ -119,19 +119,19 @@ public sealed class PropsPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    private void PropRows(Crystarium.FormScope form, PropReading prop)
+    private void PropRows(FormScope form, PropReading prop)
     {
         // Identity first, the camera pattern: the name leads the page.
         form.TextInput(
             "Name",
             prop.Name,
-            next => _values.SetName(prop.Id, next),
+            next => _values.Set(prop.Id, PropProperties.Name, next),
             placeholder: "Object",
             help: "What the sidebar calls this object");
         form.Switch(
             "Visible",
             prop.Visible,
-            next => _values.SetVisible(prop.Id, next),
+            next => _values.Set(prop.Id, PropProperties.Visible, next),
             help: "Hide this object without destroying it");
         // The dyes bake at creation, so choosing one respawns the weapon
         // in place — handle, name, and placement survive.

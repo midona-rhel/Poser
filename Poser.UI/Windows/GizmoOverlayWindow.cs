@@ -6,7 +6,6 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
-using Poser.Core;
 using Poser.Application.Transforms;
 using Poser.Domain.Transforms;
 using Poser.Application.Scene;
@@ -14,11 +13,15 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.Posing;
-using Poser.Services;
 using Poser.UI.Controls;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
-using LegacyTransform = Poser.Transform;
+using LegacyTransform = Poser.Domain.Transforms.Transform;
+using Poser.UI.Widgets;
+using Poser.Domain.Preferences;
+using Poser.Application.Settings;
+using static Poser.UI.Widgets.TablerIconWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -47,7 +50,7 @@ public class GizmoOverlayWindow : Window
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
     private readonly IViewportReads _viewport;
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
     private readonly ICameraProjection _cameraService;
     private readonly IPoseInteraction _poseInteraction;
     private readonly IIkConfigurationPort _ikPort;
@@ -55,10 +58,11 @@ public class GizmoOverlayWindow : Window
     private readonly IGazeControl _gazeValues;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
+    private readonly ManipulationState _manipulation;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly GroupTransformCoordinator _groupCoordinator;
 
-    private Config.GizmoConfiguration GizmoConfig =>
+    private Documents.Config.GizmoConfiguration GizmoConfig =>
         _configuration.Config.Gizmo;
 
     /// <summary>Configured handle span before UI scaling.</summary>
@@ -83,7 +87,7 @@ public class GizmoOverlayWindow : Window
         public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
         public Vector3 Pivot { get; init; }
         // Pivot choice is fixed for the gesture.
-        public Core.RotationPivot PivotChoice { get; init; } = Core.RotationPivot.Self;
+        public Domain.Preferences.RotationPivot PivotChoice { get; init; } = Domain.Preferences.RotationPivot.Self;
     }
 
     // One gesture slot and one press-suppression flag cover the overlay.
@@ -173,13 +177,13 @@ public class GizmoOverlayWindow : Window
             _beginSuppressed = false;
     }
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public GizmoOverlayWindow(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         IViewportReads viewport,
-        IEditorState editorState,
+        EditorState editorState,
         ICameraProjection cameraService,
         IPoseInteraction poseInteraction,
         IIkConfigurationPort ikPort,
@@ -188,6 +192,7 @@ public class GizmoOverlayWindow : Window
         SkeletonOverlayPresentation presentation,
         global::Poser.Application.Scene.SceneGroups groups,
         GroupTransformCoordinator groupCoordinator,
+        ManipulationState manipulation,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -217,6 +222,7 @@ public class GizmoOverlayWindow : Window
         _presentation = presentation;
         _groups = groups;
         _groupCoordinator = groupCoordinator;
+        _manipulation = manipulation;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -370,10 +376,10 @@ public class GizmoOverlayWindow : Window
         // With the option on, the gizmo's chrome rides the shell's fade
         // during a held drag; the gaze identity marker below stays.
         if (layout != null && !io.KeyAlt
-            && !(ManipulationHide.HideGizmo && ManipulationHide.Hidden))
+            && !(_manipulation.HideGizmo && _manipulation.Hidden))
         {
-            using var manipulationFade = ManipulationHide.HideGizmo
-                ? ManipulationHide.FadeScope()
+            using var manipulationFade = _manipulation.HideGizmo
+                ? _manipulation.FadeScope()
                 : default;
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
@@ -388,10 +394,10 @@ public class GizmoOverlayWindow : Window
         {
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
-            GizmoPointerOwnership.Hold();
+            _manipulation.HoldPointer();
             // Only the HELD gesture is a manipulation; hover is not.
             if (_gazeGesture != null)
-                ManipulationDrag.Hold();
+                _manipulation.HoldDrag();
         }
 
         if (_gazeGesture == null && hover is { } grab && projection != null &&
@@ -428,7 +434,7 @@ public class GizmoOverlayWindow : Window
         bool chromeHidden)
     {
         // The held glyph is bright; diverged markers are dim.
-        var accent = Crystarium.ActiveTheme.Palette.Primary;
+        var accent = ActiveTheme.Palette.Primary;
         var held = ColorEx.ApplyAlpha(accent with { W = 1f });
         var diverged = ColorEx.ApplyAlpha(accent with { W = 0.45f });
 
@@ -447,9 +453,9 @@ public class GizmoOverlayWindow : Window
             foreach (var offset in GlyphOutlineOffsets)
             {
                 var shifted = at + offset * outline;
-                Crystarium.IconIn(shifted - half, shifted + half, name, shade);
+                IconIn(shifted - half, shifted + half, name, shade);
             }
-            Crystarium.IconIn(at - half, at + half, name, color);
+            IconIn(at - half, at + half, name, color);
         }
 
         // Keep diverged markers clear of the held glyph.
@@ -538,7 +544,7 @@ public class GizmoOverlayWindow : Window
             PrevHit = hit,
             Accum = Vector3.Zero,
         };
-        ManipulationDrag.Hold();
+        _manipulation.HoldDrag();
     }
 
     /// <summary>Updates a gaze drag from its frozen plane.</summary>
@@ -617,7 +623,7 @@ public class GizmoOverlayWindow : Window
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
         TransformOrientation currentOrientation,
-        Core.RotationPivot currentPivot)
+        Domain.Preferences.RotationPivot currentPivot)
     {
         if (_gesture is not { } gesture)
             return null;
@@ -689,7 +695,7 @@ public class GizmoOverlayWindow : Window
                     return;
                 // Per SKELETON: this actor's bones must be shown, not anyone's.
                 if (GizmoConfig.HideGizmoWithoutArmature
-                    && !(ArmatureVisibility.MasterOn
+                    && !(_presentation.ArmatureShown
                         && _presentation.AnyVisibleFor(primaryBoneId)))
                     return;
             }
@@ -808,7 +814,7 @@ public class GizmoOverlayWindow : Window
 
         // Parent pivot applies only to bone rotation with a valid parent.
         bool pivotActive = tool == TransformTool.Rotate && isBone &&
-            pivotChoice != Core.RotationPivot.Self;
+            pivotChoice != Domain.Preferences.RotationPivot.Self;
         Vector3? restPivot = null;
         if (pivotActive && gesture == null)
         {
@@ -871,15 +877,15 @@ public class GizmoOverlayWindow : Window
         // With the option on, the gizmo's chrome rides the shell's fade
         // during a held drag; the drag's sweep and readout, drawn below,
         // never hide.
-        bool keepIkVisible = ManipulationDrag.Held && isBone && primaryBone is { } ikBoneId
+        bool keepIkVisible = _manipulation.DragHeld && isBone && primaryBone is { } ikBoneId
             && _configuration.Config.UI.KeepIkGizmoVisibleWhileManipulating
             && _ikPort.Get(TransformTargetId.ForBone(ikBoneId)) is { Enabled: true };
-        bool hideGizmo = ManipulationHide.HideGizmo && !keepIkVisible;
+        bool hideGizmo = _manipulation.HideGizmo && !keepIkVisible;
         if (layout != null && !io.KeyAlt
-            && !(hideGizmo && ManipulationHide.Hidden))
+            && !(hideGizmo && _manipulation.Hidden))
         {
             using var manipulationFade = hideGizmo
-                ? ManipulationHide.FadeScope()
+                ? _manipulation.FadeScope()
                 : default;
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
@@ -891,10 +897,10 @@ public class GizmoOverlayWindow : Window
         {
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
-            GizmoPointerOwnership.Hold();
+            _manipulation.HoldPointer();
             // Only the HELD gesture is a manipulation; hover is not.
             if (gesture != null)
-                ManipulationDrag.Hold();
+                _manipulation.HoldDrag();
         }
 
         if (gesture == null && hover is { } grab && layout != null &&
@@ -945,9 +951,9 @@ public class GizmoOverlayWindow : Window
                 new Vector4(1f, 1f, 1f, 1f),
             _ => gesture.Handle.Axis switch
             {
-                0 => Crystarium.ActiveTheme.Palette.AxisX,
-                1 => Crystarium.ActiveTheme.Palette.AxisY,
-                _ => Crystarium.ActiveTheme.Palette.AxisZ,
+                0 => ActiveTheme.Palette.AxisX,
+                1 => ActiveTheme.Palette.AxisY,
+                _ => ActiveTheme.Palette.AxisZ,
             },
         };
         uint fill = ImGui.ColorConvertFloat4ToU32(
@@ -1053,15 +1059,15 @@ public class GizmoOverlayWindow : Window
         };
 
         var min = mouse + new Vector2(18f, 14f) * uiScale;
-        Crystarium.HoverHelp.Readout(min, text);
+        HoverHelp.Readout(min, text);
     }
 
     /// <summary>The readout of a drag held on a shell control, drawn here
     /// because the shell itself is faded out under it.</summary>
-    private static void DrawShellDragReadout()
+    private void DrawShellDragReadout()
     {
-        if (ManipulationDrag.ShellReadout is { } readout)
-            Crystarium.HoverHelp.Readout(readout.Min, readout.Text);
+        if (_manipulation.ShellReadout is { } readout)
+            HoverHelp.Readout(readout.Min, readout.Text);
     }
 
     /// <summary>Draws the current free-camera speed notice.</summary>
@@ -1075,10 +1081,10 @@ public class GizmoOverlayWindow : Window
 
         float uiScale = ImGuiHelpers.GlobalScale;
         string text = notice.Text;
-        var size = Crystarium.HoverHelp.ReadoutSize(text);
+        var size = HoverHelp.ReadoutSize(text);
         var min = ImGui.GetMousePos() + new Vector2(18f, -14f) * uiScale
             - new Vector2(0f, size.Y);
-        Crystarium.HoverHelp.Readout(min, text, opacity);
+        HoverHelp.Readout(min, text, opacity);
     }
 
     /// <summary>Freezes the handle mapping and opens the transform gesture.</summary>
@@ -1091,7 +1097,7 @@ public class GizmoOverlayWindow : Window
         BoneId? primaryBone,
         TransformTool tool,
         TransformOrientation orientation,
-        Core.RotationPivot pivotChoice,
+        Domain.Preferences.RotationPivot pivotChoice,
         bool pivotActive,
         Vector3 pivotModel,
         Vector3 pivotWorld,
@@ -1278,7 +1284,7 @@ public class GizmoOverlayWindow : Window
             PivotChoice = pivotChoice,
         };
         _gestureTargetType = targetType;
-        ManipulationDrag.Hold();
+        _manipulation.HoldDrag();
 
         _dragProjection = projection;
         _dragInvModel = invModel;
@@ -1538,7 +1544,7 @@ public class GizmoOverlayWindow : Window
     {
         var configuration =
             _configuration.Config;
-        return Core.BoneSymmetry.EffectiveMode(
+        return Domain.Posing.BoneSymmetry.EffectiveMode(
             configuration.PerBoneSymmetry,
             configuration.BoneSymmetryOverrides,
             configuration.AutoLinkPairedBones,

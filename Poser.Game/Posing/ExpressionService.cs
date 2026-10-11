@@ -5,10 +5,12 @@ using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Services;
+using Poser.Domain.Transforms;
+using Poser.Domain.Identity;
+using Poser.Application.Events;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game;
 
@@ -44,7 +46,7 @@ public interface IExpressionService
     bool HasActiveExpression(IActor actor);
 }
 
-public class ExpressionService : IExpressionService
+public class ExpressionService : IExpressionService, IDisposable
 {
     private const string ExpressionLayer = "expression";
 
@@ -108,6 +110,9 @@ public class ExpressionService : IExpressionService
         LoadCatalogs();
     }
 
+    public void Dispose() =>
+        _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)
     {
         if (!evt.IsGPosing)
@@ -117,7 +122,7 @@ public class ExpressionService : IExpressionService
     private void LoadCatalogs()
     {
         // The catalogs remain embedded in Core with their existing resource names.
-        var assembly = typeof(Poser.Files.PoseFileService).Assembly;
+        var assembly = typeof(Poser.Game.Files.PoseFileService).Assembly;
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, IncludeFields = true };
         foreach (var name in assembly.GetManifestResourceNames())
         {
@@ -352,7 +357,7 @@ public class ExpressionService : IExpressionService
             foreach (var bone in ResolveExpressionBones(byName, boneName))
             {
                 var info = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
-                if (blended.TryGetValue(boneName, out var delta) && !IsIdentityDelta(delta))
+                if (blended.TryGetValue(boneName, out var delta) && !TransformMath.IsIdentityDeltaByLength(delta))
                     info.SetLayerTransform(ExpressionLayer, delta, TransformComponents.All, TransformFrame.ParentRelative);
                 else info.RemoveLayer(ExpressionLayer);
             }
@@ -400,9 +405,4 @@ public class ExpressionService : IExpressionService
                 _log.Debug($"ExpressionService: {unit.Id} ({catalogKey}) resolves {line}");
         }
     }
-
-    private static bool IsIdentityDelta(Transform delta)
-        => delta.Position.LengthSquared() < 1e-12f
-           && delta.Scale.LengthSquared() < 1e-12f
-           && MathF.Abs(Quaternion.Dot(delta.Rotation, Quaternion.Identity)) > 0.999999f;
 }

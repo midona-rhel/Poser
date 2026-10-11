@@ -1,6 +1,6 @@
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 

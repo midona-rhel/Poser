@@ -1,6 +1,5 @@
 using Poser.Application.Scene;
-using Poser.Scene;
-using Poser.Files;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.Scene;
 
@@ -11,21 +10,6 @@ namespace Poser.Application.Tests.Scene;
 /// </summary>
 public sealed class ScenePortableAppearanceTests
 {
-    [Fact]
-    public void Appearance_is_excluded_by_default_and_opted_in_per_save()
-    {
-        var excluded = SceneWithReference();
-        var excludedNotes = new List<string>();
-
-        Assert.Equal(
-            0, SceneSavePolicy.Apply(excluded, SceneSaveOptions.Default, excludedNotes));
-
-        Assert.Null(Assert.Single(excluded.Actors).Mcdf);
-        Assert.Equal(
-            "Modded appearance was not saved.", Assert.Single(excludedNotes));
-        Assert.False(SceneSaveOptions.Default.IncludeModdedAppearance);
-    }
-
     [Fact]
     public void A_portable_save_keeps_bytes_and_drops_an_unsealed_reference()
     {
@@ -53,32 +37,23 @@ public sealed class ScenePortableAppearanceTests
     }
 
     [Fact]
-    public void An_embedded_payload_needs_its_own_digest_and_fits_the_actor_cap()
+    public void An_actor_saved_without_its_own_appearance_is_marked_and_named()
     {
-        var missingDigest = SceneWith(PortableActor("A", 16));
-        missingDigest.Actors[0].Mcdf!.ContentHash = string.Empty;
-        Assert.False(SceneFileValidation.Validate(missingDigest).Succeeded);
+        var scene = SceneWithReference();
+        scene.Actors.Add(PortableActor("Sealed", 4));
+        foreach (var actor in scene.Actors)
+            actor.AppearanceNotSaved = true;
+        var notes = new List<string>();
 
-        // The one remaining refusal is the importer's own ceiling: a package
-        // Poser could not import back is one there is no point saving.
-        var oversized = SceneWith(PortableActor(
-            "A", SceneFileLimits.MaxEmbeddedAppearanceBytes + 1));
-        var refusal = SceneFileValidation.Validate(oversized);
-        Assert.False(refusal.Succeeded);
-        Assert.Contains("over the", refusal.Failure!.Detail);
-    }
+        SceneSavePolicy.Apply(
+            scene, new SceneSaveOptions { IncludeModdedAppearance = true }, notes);
 
-    [Fact]
-    public void A_large_payload_saves_rather_than_being_refused()
-    {
-        // Well past the old 24 MiB refusal and past the warning threshold:
-        // real character files are this big, and a save the user asked for
-        // must produce one.
-        long large = SceneFileLimits.LargeAppearanceWarningBytes + 1;
-        var scene = SceneWith(PortableActor("Big", large));
-
-        Assert.True(SceneFileValidation.Validate(scene).Succeeded);
-        Assert.True(large < SceneFileLimits.MaxEmbeddedAppearanceBytes);
+        // The dropped reference leaves the actor wearing the player's look on
+        // load, so the file says so; the sealed package carries its own.
+        Assert.True(scene.Actors[0].AppearanceNotSaved);
+        Assert.False(scene.Actors[1].AppearanceNotSaved);
+        Assert.Contains(SceneSavePolicy.AppearanceNotSavedNote("Reference"), notes);
+        Assert.DoesNotContain(SceneSavePolicy.AppearanceNotSavedNote("Sealed"), notes);
     }
 
     private static SceneFile SceneWith(params SceneActor[] actors)

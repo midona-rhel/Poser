@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
-using Poser.Core;
-using Poser.Core.BoneInfo;
+using Poser.Domain.Identity;
+using Poser.Domain.Posing.BoneInfo;
+using Poser.Domain.Transforms;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// Represents a bone in a skeleton hierarchy.
@@ -60,8 +61,6 @@ public class Bone : EntityBase, IBone
 
     public System.Numerics.Vector3? PartialRootScale { get; set; }
 
-    #region ITransformable
-
     /// <summary>
     /// Gets the current transform of this bone (from LastTransform cache).
     /// </summary>
@@ -72,28 +71,6 @@ public class Bone : EntityBase, IBone
     }
 
     /// <summary>
-    /// Bones show gizmo when visible.
-    /// </summary>
-    public bool ShowGizmo => IsVisible;
-
-    /// <summary>
-    /// Bone transforms can be set directly (updates LastTransform cache).
-    /// </summary>
-    public bool CanSetTransform => true;
-
-    #endregion
-
-    /// <summary>
-    /// Bones are collapsible if they have children.
-    /// </summary>
-    public override bool IsCollapsible => _childBones.Count > 0;
-
-    /// <summary>
-    /// Entity type is Bone.
-    /// </summary>
-    public override EntityType EntityType => EntityType.Bone;
-
-    /// <summary>
     /// Gets the display name with translation: "Translation (internal_name)" or just "internal_name".
     /// The TRANSLATION is resolved once at construction: the bone tables are
     /// immutable after BoneInfoService.Initialize (which runs before the
@@ -101,13 +78,13 @@ public class Bone : EntityBase, IBone
     /// while this property is read per bone per frame by every tree, overlay
     /// and descriptor rebuild.
     ///
-    /// <para>WHICH of the two names is handed back is a live read of a static
-    /// field (Ktisis' <c>ShowFriendlyBoneNames</c>), because the switch has to
+    /// <para>WHICH of the two names is handed back is a live read of the
+    /// config (Ktisis' <c>ShowFriendlyBoneNames</c>), because the switch has to
     /// take effect on the next frame rather than the next skeleton rebuild.
     /// </para>
     /// </summary>
     public override string Name =>
-        BoneInfoService.ShowFriendlyNames ? _displayName : BoneName;
+        _showFriendlyNames() ? _displayName : BoneName;
 
     /// <summary>
     /// Gets the category for this bone.
@@ -116,6 +93,7 @@ public class Bone : EntityBase, IBone
 
     private readonly string _displayName;
     private readonly BoneCategory _category;
+    private readonly Func<bool> _showFriendlyNames;
 
     /// <summary>
     /// The legacy-dedupe and race-feature verdicts, decided once per skeleton
@@ -144,7 +122,8 @@ public class Bone : EntityBase, IBone
         }
     }
 
-    public Bone(ISkeleton skeleton, int partialId, int boneIndex, string boneName)
+    public Bone(ISkeleton skeleton, int partialId, int boneIndex, string boneName,
+        Func<bool> showFriendlyNames)
         : base(EntityId.New(), boneName)
     {
         Skeleton = skeleton;
@@ -154,12 +133,12 @@ public class Bone : EntityBase, IBone
         _childBonesView = _childBones.AsReadOnly();
         _displayName = BoneInfoService.GetDisplayName(boneName);
         _category = BoneInfoService.GetCategory(boneName);
+        _showFriendlyNames = showFriendlyNames;
 
-        // Collapsed by default (tree semantics). VISIBLE by default — the
-        // overlay must show the skeleton out of the box (Ktisis/Brio parity);
-        // hiding is the opt-out filter, and the legacy tree that used to flip
-        // visibility on is gone. IsHiddenBone still filters curated junk bones.
-        IsCollapsed = true;
+        // VISIBLE by default — the overlay must show the skeleton out of the
+        // box (Ktisis/Brio parity); hiding is the opt-out filter, and the
+        // legacy tree that used to flip visibility on is gone. IsHiddenBone
+        // still filters curated junk bones.
         IsVisible = true;
     }
 
@@ -177,13 +156,5 @@ public class Bone : EntityBase, IBone
             child.ParentBone = this;
             AttachChild(child);
         }
-    }
-
-    /// <summary>
-    /// Gets a friendly display name for the bone (translation only, no internal name).
-    /// </summary>
-    public string GetFriendlyName()
-    {
-        return BoneInfoService.GetTranslation(BoneName) ?? BoneName;
     }
 }

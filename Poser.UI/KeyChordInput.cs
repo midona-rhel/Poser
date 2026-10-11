@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
-using Poser.Config;
+using Poser.Domain.Preferences;
 
 namespace Poser.UI;
 

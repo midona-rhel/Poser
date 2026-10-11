@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 
-namespace Poser.Library;
+namespace Poser.Documents.Library;
 
 /// <summary>
 /// One configured root the library scans.
@@ -109,13 +110,11 @@ public partial class LibraryConfiguration
     ];
 
     /// <summary>
-    /// Where Poser's own documents live by default: under Documents beside the
-    /// other tools' roots rather than in the plugin config directory. A pose,
-    /// a scene and a character file are documents a user shares and backs up,
-    /// not plugin state.
+    /// The one Poser folder; every home is a reserved leaf inside it. It sits
+    /// under Documents beside the other tools' roots rather than in the plugin
+    /// config directory: a pose, a scene and a character file are documents a
+    /// user shares and backs up, not plugin state.
     /// </summary>
-    /// <summary>The one Poser folder; every home is a reserved leaf
-    /// inside it.</summary>
     public static string DefaultRoot => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
         "Poser");
@@ -184,10 +183,6 @@ public partial class LibraryConfiguration
     }
 
     /// <inheritdoc cref="ResolveHomeRoot"/>
-    public string ResolvePoseRoot() =>
-        ResolveHomeRoot(PoseSourceName, DefaultPoseRoot);
-
-    /// <inheritdoc cref="ResolveHomeRoot"/>
     public string ResolveSceneRoot() =>
         ResolveHomeRoot(SceneSourceName, DefaultSceneRoot);
 
@@ -198,26 +193,6 @@ public partial class LibraryConfiguration
     /// <inheritdoc cref="ResolveHomeRoot"/>
     public string ResolveObjectsRoot() =>
         ResolveHomeRoot(ObjectsSourceName, DefaultObjectsRoot);
-
-    /// <summary>
-    /// Re-points one home at <paramref name="path"/>, re-adding the source
-    /// when it is missing so the new path is a SCANNED root and not merely a
-    /// place saves disappear into. A blank path means the shipped one.
-    /// </summary>
-    public void SetHomeRoot(string sourceName, string shipped, string? path)
-    {
-        var chosen = string.IsNullOrWhiteSpace(path) ? shipped : path!.Trim();
-        foreach (var source in Sources)
-        {
-            if (Classify(source) != HomeKind(sourceName))
-                continue;
-            source.Kind = HomeKind(sourceName);
-            source.Path = chosen;
-            source.Enabled = true;
-            return;
-        }
-        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = chosen, Kind = HomeKind(sourceName) });
-    }
 
     /// <summary>
     /// Makes one home exist and answers with the configured path a file dialog
@@ -270,10 +245,6 @@ public partial class LibraryConfiguration
     public string EnsureMcdfRootExists() =>
         EnsureHomeRootExists(McdfSourceName, DefaultMcdfRoot);
 
-    /// <inheritdoc cref="EnsureHomeRootExists"/>
-    public string EnsureObjectsRootExists() =>
-        EnsureHomeRootExists(ObjectsSourceName, DefaultObjectsRoot);
-
     /// <summary>
     /// A collision-safe path for a new library entry: the cleaned name as
     /// is, or with a four-digit timestamp when that file already exists — a
@@ -293,7 +264,8 @@ public partial class LibraryConfiguration
         if (File.Exists(path))
             path = Path.Combine(
                 root,
-                $"{cleaned} {DateTime.Now:yyyy-MM-dd HH.mm.ss}{extension}");
+                string.Create(CultureInfo.InvariantCulture,
+                    $"{cleaned} {DateTime.Now:yyyy-MM-dd HH.mm.ss}{extension}"));
         return path;
     }
 

@@ -1,6 +1,6 @@
 using System;
 
-namespace Poser.Entities;
+namespace Poser.Game.Entities;
 
 /// <summary>
 /// The two name-shaped bones a skeleton carries that no one ever wants to see,

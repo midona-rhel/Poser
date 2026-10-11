@@ -6,7 +6,7 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// The pose clipboard's wire format, Brio-compatible both ways.
@@ -162,7 +162,8 @@ public static class PoseClipboard
 
     /// <summary>
     /// The pose a clipboard payload carries, or null with a reason fit to show
-    /// in a status line. Accepts Brio's compressed base64 and bare JSON in
+    /// in a status line. Every accepted pose has passed
+    /// <see cref="PoseFileValidation"/>. Accepts Brio's compressed base64 and bare JSON in
     /// either numerics shape, and either TAG shape — Brio's TagCollection
     /// writes tag objects where Poser writes strings, and a mismatch there
     /// used to reject the whole payload
@@ -176,7 +177,7 @@ public static class PoseClipboard
     public static PoseFile? Decode(string? text, out string? error)
     {
         error = null;
-        var payload = text?.Trim();
+        var payload = text?.Trim().TrimStart('\uFEFF');
         if (string.IsNullOrEmpty(payload))
         {
             error = "The clipboard is empty.";
@@ -189,6 +190,14 @@ public static class PoseClipboard
         if (pose == null)
         {
             error = "The clipboard does not hold a pose.";
+            return null;
+        }
+        // Brio's clipboard shape bypasses the file codec, so it is validated
+        // here: a null collection or a non-finite number is refused by name.
+        var validation = PoseFileValidation.Validate(pose);
+        if (!validation.Succeeded)
+        {
+            error = $"The clipboard pose is invalid: {validation.Failure!.Detail}";
             return null;
         }
         if (pose.Bones.Count == 0 && pose.MainHand.Count == 0 &&
@@ -220,7 +229,7 @@ public static class PoseClipboard
             // The leading byte is the format version, not JSON. Brio ignores
             // the value on paste (FileUIHelpers.cs:577 discards the return),
             // so a future version still parses as far as its shape allows.
-            return Encoding.UTF8.GetString(bytes, 1, bytes.Length - 1);
+            return Encoding.UTF8.GetString(Utf8Bom.Strip(bytes.AsSpan(1)));
         }
         catch (Exception)
         {

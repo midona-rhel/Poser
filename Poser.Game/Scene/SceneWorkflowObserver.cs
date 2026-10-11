@@ -1,7 +1,8 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Domain.Operations;
-using Poser.Library;
+using Poser.Domain.Scene;
+using Poser.Application.Library;
 
 namespace Poser.Game.Scene;
 
@@ -32,13 +33,15 @@ internal sealed class SceneWorkflowObserver(IPluginLog log, IPoseLibraryService 
 
         foreach (var entity in entities)
         {
-            string line = $"{prefix}: {entity.Kind} '{entity.Name}': " +
+            string line = $"{prefix}: {entity.Kind.Label()} '{entity.Name}': " +
                 (entity.Restored ? "restored" : "refused");
             if (!string.IsNullOrWhiteSpace(entity.Detail))
                 line += $": {entity.Detail}";
             if (!entity.Restored && !string.IsNullOrWhiteSpace(entity.Remedy))
                 line += $" Next: {entity.Remedy}";
-            if (entity.Restored)
+            if (entity.Degraded)
+                log.Information(line);
+            else if (entity.Restored)
                 log.Debug(line);
             else
                 log.Warning(line);

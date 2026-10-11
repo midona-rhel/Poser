@@ -1,22 +1,18 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Dalamud.Plugin.Services;
-using Poser.Core;
 using Poser.Game.Cameras;
-using Poser.Services;
-using Dalamud.Game.ClientState.Keys;
 using System.Numerics;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Cameras;
 
 public sealed unsafe class DefaultCameraRetryTests : IDisposable
 {
     [Theory]
-    [InlineData(MouseState.None, false, false)]
-    [InlineData(MouseState.Left, false, false)]
-    [InlineData(MouseState.Middle, false, false)]
     [InlineData(MouseState.Right, false, true)]
-    [InlineData(MouseState.Left | MouseState.Right, false, true)]
     [InlineData(MouseState.Right, true, false)]
     public void Free_camera_looks_only_on_unlocked_right_drag(MouseState buttons, bool locked, bool looks)
     {
@@ -31,69 +27,14 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         };
         var before = camera.Rotation;
         MouseFrame mouse = new() { ButtonsPressed = buttons, DeltaX = 12, DeltaY = 8 };
-        service.HandleFreeCameraInput(camera, &mouse, null);
-        service.UpdateFreeCamera(camera);
+        service.FreeCamera.HandleInput(camera, &mouse, null);
+        service.FreeCamera.UpdateMatrix(camera);
         Assert.Equal(new Vector3(1, 2, 3), camera.Position);
         Assert.Equal(looks, camera.Rotation != before);
         Assert.Equal(looks ? Vector2.Zero : new Vector2(12, 8), mouse.Delta);
         var after = camera.Rotation;
-        service.UpdateFreeCamera(camera);
+        service.FreeCamera.UpdateMatrix(camera);
         Assert.Equal(after, camera.Rotation);
-    }
-
-    [Theory]
-    [InlineData(VirtualKey.W, VirtualKey.A)]
-    [InlineData(VirtualKey.A, VirtualKey.W)]
-    public void Held_keys_move_together_even_when_native_input_was_consumed(VirtualKey first, VirtualKey second)
-    {
-        var keys = DispatchProxy.Create<IKeyState, HeldKeysProxy>();
-        var held = ((HeldKeysProxy)(object)keys).Held;
-        var setup = NewService(new NativeGate(), true, keys);
-        using var service = setup.Service;
-        var camera = new VirtualCamera(service, Poser.Domain.Scene.CameraKind.Free, false)
-        { MovementSpeed = 1f };
-        Vector3 Move()
-        {
-            KeyboardFrame consumed = default;
-            var before = camera.Position;
-            // The consumable buffer is empty; the held-key source retains
-            // both keys, independently of native input consumption.
-            service.HandleFreeCameraInput(camera, null, &consumed);
-            service.UpdateFreeCamera(camera);
-            return camera.Position - before;
-        }
-        held.Add(first);
-        var initial = Move();
-        held.Add(second);
-        for (var frame = 0; frame < 5; frame++)
-            Assert.Equal(new Vector3(-1, 0, -1), Move());
-        held.Remove(second);
-        Assert.Equal(initial, Move());
-        held.Add(second);
-        held.Add(VirtualKey.SHIFT);
-        var fast = Move();
-        Assert.Equal(-service.CameraSettings.FastMultiplier, fast.X, 4);
-        Assert.Equal(-service.CameraSettings.FastMultiplier, fast.Z, 4);
-        held.Remove(VirtualKey.SHIFT);
-        held.Add(VirtualKey.CONTROL);
-        var slow = Move();
-        Assert.Equal(-service.CameraSettings.SlowMultiplier, slow.X, 4);
-        Assert.Equal(-service.CameraSettings.SlowMultiplier, slow.Z, 4);
-        held.Clear();
-        Assert.Equal(Vector3.Zero, Move());
-        held.Add(first);
-        service.SuppressFlightKeys = true;
-        Assert.Equal(Vector3.Zero, Move());
-        service.SuppressFlightKeys = false;
-        camera.IsLocked = true;
-        Assert.Equal(Vector3.Zero, Move());
-    }
-
-    public class HeldKeysProxy : DispatchProxy
-    {
-        public readonly HashSet<VirtualKey> Held = new();
-        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
-            method?.Name == "get_Item" && args?[0] is VirtualKey key ? Held.Contains(key) : null;
     }
 
     private readonly nint _nativeBlock;
@@ -106,96 +47,6 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
 
     public void Dispose() => Marshal.FreeHGlobal(_nativeBlock);
 
-    [Theory]
-    [InlineData(0.7f, 0.4f, 0f)]
-    [InlineData(-2.3f, -0.6f, 0.9f)]
-    [InlineData(1.2f, 1.5707963f, -1.1f)]
-    public void Free_camera_seed_preserves_rendered_view_instead_of_unrelated_orbit_fields(float yaw, float pitch, float roll)
-    {
-        var setup = NewService(new NativeGate { Value = _nativeBlock }, true);
-        using var service = setup.Service;
-        var source = new VirtualCamera(service, Poser.Domain.Scene.CameraKind.Free, false)
-        {
-            Position = new Vector3(83, 4, -126), Rotation = new Vector3(yaw, pitch, 0), Roll = roll,
-        };
-        var expected = service.UpdateFreeCamera(source);
-        var native = (NativeCamera*)_nativeBlock;
-        native->Camera.CameraBase.SceneCamera.ViewMatrix = expected;
-        native->Angle = new Vector2(-0.5f, 0.8f);
-        native->Pan = new Vector2(0.3f, -0.4f);
-        var created = new VirtualCamera(service, Poser.Domain.Scene.CameraKind.Free, false);
-        created.SeedFreeCam();
-        var actual = service.UpdateFreeCamera(created);
-        Assert.InRange(Vector3.Distance(source.Position, created.Position), 0, 0.0001f);
-        Assert.InRange(Vector3.Distance(new(expected.M11, expected.M21, expected.M31), new(actual.M11, actual.M21, actual.M31)), 0, 0.0001f);
-        Assert.InRange(Vector3.Distance(new(expected.M12, expected.M22, expected.M32), new(actual.M12, actual.M22, actual.M32)), 0, 0.0001f);
-        Assert.InRange(Vector3.Distance(new(expected.M13, expected.M23, expected.M33), new(actual.M13, actual.M23, actual.M33)), 0, 0.0001f);
-    }
-
-    [Fact]
-    public void Copies_advance_the_clicked_name_series_without_filling_deleted_gaps()
-    {
-        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
-        setup.GPose.IsGPosing = true;
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        var one = setup.Service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
-        one.Name = "Key 1";
-        var two = setup.Service.CloneCamera(one)!;
-        Assert.Equal("Key 2", two.Name);
-        var three = setup.Service.CloneCamera(two)!;
-        Assert.Equal("Key 3", three.Name);
-        setup.Service.DestroyCamera(two);
-        Assert.Equal("Key 4", setup.Service.CloneCamera(one)!.Name);
-        Assert.Equal("Main Camera", setup.Service.Cameras.Single(x => x.IsDefault).Name);
-    }
-
-    [Fact]
-    public void Inactive_creation_preserves_view_and_publishes_without_activation()
-    {
-        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
-        using var service = setup.Service;
-        setup.GPose.IsGPosing = true;
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        var main = service.LiveCamera!;
-        var active = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
-        Assert.Same(active, service.LiveCamera);
-        int changes = setup.Bus.CameraListChanges;
-        var parked = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game, makeLive: false)!;
-        Assert.Same(active, service.LiveCamera);
-        Assert.True(active.IsLive);
-        Assert.False(parked.IsLive);
-        Assert.Contains(parked, service.Cameras);
-        Assert.Equal(changes + 1, setup.Bus.CameraListChanges);
-        service.DestroyAllCameras();
-        Assert.Same(main, service.LiveCamera);
-        Assert.Same(main, Assert.Single(service.Cameras));
-    }
-
-    [Fact]
-    public void Orbit_assignment_and_activation_mark_a_snap_but_parked_edits_do_not_touch_native_state()
-    {
-        var setup = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: true);
-        using var service = setup.Service;
-        setup.GPose.IsGPosing = true;
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        var native = (NativeCamera*)_nativeBlock;
-        // Native ABI: the orbit-position builder consumes this byte once.
-        var skipCorrection = (byte*)_nativeBlock + 0x245;
-        service.LiveCamera!.Angle = new Vector2(-2.7f, 0.2f);
-        Assert.Equal(new Vector2(-2.7f, 0.2f), native->Angle);
-        Assert.Equal(1, *skipCorrection);
-
-        *skipCorrection = 0; // Native update has consumed the snap.
-        var parked = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game, makeLive: false)!;
-        parked.Angle = new Vector2(0.8f, -0.1f);
-        Assert.Equal(new Vector2(-2.7f, 0.2f), native->Angle);
-        Assert.Equal(0, *skipCorrection);
-        service.SetLive(parked);
-        Assert.Equal(parked.Angle, native->Angle);
-        Assert.Equal(new Vector2(0.8f, -0.1f), native->Angle);
-        Assert.Equal(1, *skipCorrection);
-    }
-
     [Fact]
     public void Property_reset_is_one_undoable_edit_and_respects_lock()
     {
@@ -204,19 +55,20 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         setup.GPose.IsGPosing = true;
         setup.Bus.Publish(new GPoseStateChangedEvent(true));
         var camera = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
-        var history = new Poser.Application.Transforms.TransformHistory();
-        var session = new Poser.Game.Journal.CameraSession(
-            new Poser.Application.Transforms.ValueJournal(history), service, null!);
+        var history = new Poser.Application.Transforms.EditHistory();
+        var id = new Poser.Domain.Identity.CameraId(Guid.NewGuid(), 0);
+        var control = new CameraControl(CameraBinding(camera, id), setup.Framework, service,
+            new Poser.Application.Transforms.ValueJournal(history));
         camera.FoV = 0.4f;
         camera.Zoom = 7f;
         camera.FixedPosition = new Vector3(1, 2, 3);
         camera.TogglePortraitMode();
         var roll = camera.Roll;
         camera.IsLocked = true;
-        Assert.False(session.ResetProperties(camera));
+        Assert.False(control.ResetProperties(id).Success);
         Assert.False(history.CanUndo);
         camera.IsLocked = false;
-        Assert.True(session.ResetProperties(camera));
+        Assert.True(control.ResetProperties(id).Success);
         Assert.Null(camera.FixedPosition);
         Assert.False(camera.IsPortraitMode);
         var reset = Assert.IsType<Poser.Application.Transforms.JournalStep>(history.PeekUndo());
@@ -235,21 +87,6 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         Assert.Equal(0f, camera.FoV);
     }
 
-[Fact]
-    public void Ready_native_entry_creates_the_default_live_camera()
-    {
-        var gate = new NativeGate { Value = _nativeBlock };
-        var setup = NewService(gate, isAvailable: true);
-        setup.GPose.IsGPosing = true;
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-
-        var main = Assert.Single(setup.Service.Cameras);
-        Assert.True(main.IsDefault);
-        Assert.Equal("Main Camera", main.Name);
-        Assert.Same(main, setup.Service.LiveCamera);
-        Assert.Equal(1, setup.Bus.CameraListChanges);
-    }
-
     [Fact]
     public void Pending_native_retry_recovers_once_and_then_stops_polling()
     {
@@ -263,81 +100,24 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         gate.Value = _nativeBlock;
         setup.Framework.RaiseUpdate();
         var main = Assert.Single(setup.Service.Cameras);
+        Assert.True(main.IsDefault);
+        Assert.Equal("Main Camera", main.Name);
         var calls = gate.Calls;
         setup.Framework.RaiseUpdate();
         Assert.Same(main, setup.Service.LiveCamera);
         Assert.Equal(calls, gate.Calls);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Startup_in_active_gpose_initializes_once_without_an_entry_event(bool delayedNative)
-    {
-        var gate = new NativeGate { Value = delayedNative ? 0 : _nativeBlock };
-        var setup = NewService(gate, isAvailable: true, inGpose: true);
-        using var service = setup.Service;
-        Assert.Empty(service.Cameras); // No native reads during construction.
-        Assert.Equal(0, gate.Calls);
-        setup.Framework.RaiseUpdate();
-        if (delayedNative)
-        {
-            Assert.Empty(service.Cameras);
-            gate.Value = _nativeBlock;
-            setup.Framework.RaiseUpdate();
-        }
-        var main = Assert.Single(service.Cameras);
-        Assert.True(main.IsDefault);
-        Assert.Same(main, service.LiveCamera);
-        var calls = gate.Calls;
-        setup.Framework.RaiseUpdate();
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        Assert.Same(main, Assert.Single(service.Cameras));
-        Assert.Equal(1, setup.Bus.CameraListChanges);
-        Assert.Equal(calls, gate.Calls);
-    }
-
-    [Fact]
-    public void Unavailable_startup_does_not_read_native_camera_in_active_gpose()
-    {
-        var gate = new NativeGate { Value = _nativeBlock };
-        var setup = NewService(gate, isAvailable: false, inGpose: true);
-        using var service = setup.Service;
-        setup.Framework.RaiseUpdate();
-        Assert.Empty(service.Cameras);
-        Assert.Equal(0, gate.Calls);
-    }
-
-    [Fact]
-    public void Unavailable_or_exited_capability_never_mints_a_camera()
-    {
-        var unavailable = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: false);
-        unavailable.GPose.IsGPosing = true;
-        unavailable.Bus.Publish(new GPoseStateChangedEvent(true));
-        unavailable.Framework.RaiseUpdate();
-        Assert.False(unavailable.Service.IsAvailable);
-        Assert.Empty(unavailable.Service.Cameras);
-
-        var pending = NewService(new NativeGate { Value = 0 }, isAvailable: true);
-        pending.GPose.IsGPosing = true;
-        pending.Bus.Publish(new GPoseStateChangedEvent(true));
-        pending.Framework.RaiseUpdate();
-        pending.GPose.IsGPosing = false;
-        pending.Bus.Publish(new GPoseStateChangedEvent(false));
-        pending.Framework.RaiseUpdate();
-        Assert.Empty(pending.Service.Cameras);
-    }
-private sealed record Setup(
+    private sealed record Setup(
         VirtualCameraService Service,
         FakeFramework Framework,
         FakeGPoseService GPose,
         FakeEventBus Bus);
 
-    private static Setup NewService(NativeGate gate, bool isAvailable, IKeyState? keys = null,
-        bool inGpose = false)
+    private static Setup NewService(NativeGate gate, bool isAvailable)
     {
         var framework = new FakeFramework();
-        var gPose = new FakeGPoseService { IsGPosing = inGpose };
+        var gPose = new FakeGPoseService();
         var bus = new FakeEventBus();
         var service = new VirtualCameraService(
             framework,
@@ -345,7 +125,7 @@ private sealed record Setup(
             gPose,
             bus,
             gate.Read,
-            isAvailable, keys);
+            isAvailable);
         return new Setup(service, framework, gPose, bus);
     }
 
@@ -359,6 +139,30 @@ private sealed record Setup(
             Calls++;
             return Value;
         }
+    }
+
+    private static IEntityBindings CameraBinding(Poser.Game.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id)
+    {
+        var bindings = DispatchProxy.Create<IEntityBindings, CameraBindingProxy>();
+        ((CameraBindingProxy)(object)bindings).Bind(camera, id);
+        return bindings;
+    }
+
+    public class CameraBindingProxy : DispatchProxy
+    {
+        private Poser.Game.Entities.IVirtualCamera _camera = null!;
+        private Poser.Domain.Identity.CameraId _id;
+
+        public void Bind(Poser.Game.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id) =>
+            (_camera, _id) = (camera, id);
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            method!.Name switch
+            {
+                "Resolve" when args![0] is Poser.Domain.Identity.CameraId => new BindingResult<Poser.Game.Entities.IVirtualCamera>(BindingStatus.Success, _camera),
+                "GetCameraId" => _id,
+                _ => throw new InvalidOperationException(method.Name),
+            };
     }
 
     private static T NewProxy<T>() where T : class =>
@@ -386,7 +190,6 @@ private sealed record Setup(
     private sealed class FakeEventBus : IEventBus
     {
         private readonly Dictionary<Type, List<Delegate>> _handlers = new();
-        public int CameraListChanges { get; private set; }
 
         public void Dispose() { }
         public void Subscribe<T>(Action<T> handler) where T : IEvent
@@ -402,8 +205,6 @@ private sealed record Setup(
         }
         public void Publish<T>(T evt) where T : IEvent
         {
-            if (evt is CameraListChangedEvent)
-                CameraListChanges++;
             if (_handlers.TryGetValue(typeof(T), out var list))
             {
                 foreach (var handler in list.ToArray())

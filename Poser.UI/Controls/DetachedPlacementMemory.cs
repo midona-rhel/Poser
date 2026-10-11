@@ -1,6 +1,7 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Poser.Config;
+using Poser.Documents.Config;
+using Poser.Application.Settings;
 
 namespace Poser.UI.Controls;
 

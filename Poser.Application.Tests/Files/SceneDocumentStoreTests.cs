@@ -1,7 +1,7 @@
 using System.IO;
-using Poser.Files;
+using Poser.Documents.Scene;
 
-namespace Poser.Tests.Files;
+namespace Poser.Application.Tests.Files;
 
 public sealed class SceneDocumentStoreTests
 {

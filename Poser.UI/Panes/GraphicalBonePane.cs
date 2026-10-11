@@ -12,12 +12,18 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Data;
-using Poser.Data.Config;
 using Poser.Domain.Identity;
-using Poser.Entities;
-using Poser.Services;
 using Poser.UI.Controls;
+using Poser.UI.Widgets;
+using Poser.Domain.Preferences;
+using Poser.Documents.Data;
+using Poser.Documents.Data.Config;
+using Poser.Application.Settings;
+using static Poser.UI.Widgets.DropdownWidgets;
+using static Poser.UI.Widgets.FilterPillWidgets;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -91,15 +97,16 @@ public sealed partial class GraphicalBonePane : IDisposable
     private readonly Dictionary<BoneId, SelectionId> _dotIds = new();
 
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
     private readonly IPoseInteraction _bonePosing;
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly BoneMapEditorRegistry _editors;
+    private readonly Controls.ManipulationState _manipulation;
 
     public GraphicalBonePane(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         PropertiesContext properties,
         ITextureProvider textureProvider,
@@ -108,9 +115,11 @@ public sealed partial class GraphicalBonePane : IDisposable
         SkeletonOverlayPresentation presentation,
         BoneMapEditorRegistry editors,
         Application.Posing.IIkConfigurationPort ikPort,
-        IEditorState editorState,
-        IPoseInteraction bonePosing)
+        EditorState editorState,
+        IPoseInteraction bonePosing,
+        Controls.ManipulationState manipulation)
     {
+        _manipulation = manipulation;
         _configuration = configuration;
         _presentation = presentation;
         _editors = editors;
@@ -171,7 +180,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         _mapBackground = !humanoid ? null : liveDraft != null ? liveDraft.Background : preset?.Background;
         _mapTemplate = !humanoid ? null : liveDraft != null ? liveDraft.Template : preset?.Template;
 
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         // The filter is a FIXED HEADER over the map: it breathes off the
         // surface top and closes with a separator, exactly as the matrix's
@@ -183,7 +192,7 @@ public sealed partial class GraphicalBonePane : IDisposable
             + theme.Controls.WorkspaceHeight * scale
             + theme.Page.ActionGap * scale;
         ImGui.SetCursorScreenPos(bandOrigin);
-        if (!editing) Crystarium.FilterPill(
+        if (!editing) FilterPill(
             "##graphical-bone-filter",
             _filter,
             next => _filter = next,
@@ -196,7 +205,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         if (!humanoid)
         {
             ImGui.SetCursorScreenPos(bandOrigin + new Vector2(contentArea.X - 158f * scale, 0));
-            Crystarium.Dropdown("##rig-map-view", ["Best view", "Front", "Side", "Top", "Branches"], _generatedView,
+            Dropdown("##rig-map-view", ["Best view", "Front", "Side", "Top", "Branches"], _generatedView,
                 value => { _generatedView = value; _generatedLayoutSize = Vector2.Zero; },
                 ControlStyle.Workspace with { Width = UiWidth.Fixed(158f) });
         }
@@ -221,7 +230,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         if (!humanoid)
         {
             ImGui.SetCursorScreenPos(origin);
-            Crystarium.ScrollRegion("##generated-bones", mapArea.X / scale, mapArea.Y / scale,
+            ScrollRegion("##generated-bones", mapArea.X / scale, mapArea.Y / scale,
                 scope =>
                 {
                     EnsureGeneratedBones(actor, new(scope.ContentWidth, mapArea.Y / scale));
@@ -445,15 +454,15 @@ public sealed partial class GraphicalBonePane : IDisposable
         float s = ImGuiHelpers.GlobalScale;
         var style = new TextStyle
         {
-            Size = Crystarium.ActiveTheme.Typography.LabelSize,
-            Color = Crystarium.ActiveTheme.FormHint,
+            Size = ActiveTheme.Typography.LabelSize,
+            Color = ActiveTheme.FormHint,
         };
         // Wrapped to a comfortable measure and centred horizontally; the run
         // sits at the page's upper third, where a reader looks first, rather
         // than at a vertical centre that would need the wrapped height.
         float wrap = MathF.Max(1f, MathF.Min(contentArea.X - 32f * s, 360f * s));
         var origin = ImGui.GetCursorScreenPos();
-        Crystarium.TextAt(
+        TextAt(
             origin + new Vector2(
                 (contentArea.X - wrap) * 0.5f,
                 contentArea.Y * 0.35f),
@@ -643,13 +652,13 @@ public sealed partial class GraphicalBonePane : IDisposable
             // the one symmetry rule, in the maps exactly as the overlay.
             var appConfig =
                 _configuration.Config;
-            if (Core.BoneSymmetry.EffectiveMode(
+            if (Domain.Posing.BoneSymmetry.EffectiveMode(
                     appConfig.PerBoneSymmetry,
                     appConfig.BoneSymmetryOverrides,
                     appConfig.AutoLinkPairedBones,
                     _editorState.SymmetryMode,
                     fact.CanonicalName) != SymmetryMode.Off
-                && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)
+                && Domain.Posing.PoseMath.GetMirrorBoneName(fact.CanonicalName)
                     is { } mirror)
                 mirrorPartners.Add((fact.Skeleton, fact.PartialId, mirror));
             if (_bonePosing.LinkedBonesEnabled)
@@ -724,7 +733,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         if (hoveredName != null
             && ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
         {
-            Crystarium.HoverHelp.Preview("gbp-dot",
+            HoverHelp.Preview("gbp-dot",
                 mouse - new Vector2(4f, 4f),
                 mouse + new Vector2(4f, 4f),
                 hoveredName);
@@ -740,8 +749,8 @@ public sealed partial class GraphicalBonePane : IDisposable
             min,
             min + size,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                Crystarium.ActiveTheme.SurfaceRaised)),
-            Crystarium.ActiveTheme.Radii.Surface * ImGuiHelpers.GlobalScale);
+                ActiveTheme.SurfaceRaised)),
+            ActiveTheme.Radii.Surface * ImGuiHelpers.GlobalScale);
     }
 
     private IDalamudTextureWrap? GetTexture(string imageName)
@@ -799,7 +808,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         {
             if (bone.IsHidden) continue;
             bool showNsfw = _configuration.Config.Display.ShowNsfwBones;
-            if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
+            if (!showNsfw && Domain.Posing.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                 continue;
             _dotIds[bone.Id] = SelectionId.ForBone(bone.Id);
         }

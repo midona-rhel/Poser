@@ -1,15 +1,15 @@
 using Poser.Application.World;
 using Poser.Application.Scene;
-using Poser.Scene;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
-using Poser.Files;
-using Poser.Services;
 using Poser.Domain.Scene;
+using Poser.UI.Widgets;
+using Poser.Documents.Files;
+using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
@@ -64,7 +64,7 @@ public enum EnvironmentTab
 public sealed class EnvironmentPane
 {
     private EnvironmentReading _reading = new();
-    private readonly IEnvironmentControl _values;
+    private readonly EnvironmentControl _values;
     private readonly ITextureProvider _textures;
     private readonly ISceneWorkflow _workflow;
 
@@ -109,20 +109,20 @@ public sealed class EnvironmentPane
     /// the surface is open re-answers it on the same frame.</summary>
     private bool _showAllWeathers;
 
-    private readonly Crystarium.SearchPicker<WeatherOption> _weatherPicker =
+    private readonly SearchPicker<WeatherOption> _weatherPicker =
         new("environment-weather");
-    private readonly Crystarium.SearchPicker<FestivalEntry> _festivalPicker =
+    private readonly SearchPicker<FestivalEntry> _festivalPicker =
         new("environment-festival");
 
     /// <summary>The three skybox catalogs. One picker per control: each walks
     /// its OWN texture path, and two of them stand on the same row.</summary>
-    private readonly Crystarium.TexturePicker _skyTexture;
-    private readonly Crystarium.TexturePicker _cloudTexture;
-    private readonly Crystarium.TexturePicker _cloudSideTexture;
+    private readonly TexturePicker _skyTexture;
+    private readonly TexturePicker _cloudTexture;
+    private readonly TexturePicker _cloudSideTexture;
 
     /// <summary>The particle catalog, which is TWO game families behind one
     /// id: see <see cref="ParticleTexturePath"/>.</summary>
-    private readonly Crystarium.TexturePicker _particleTexture;
+    private readonly TexturePicker _particleTexture;
 
     /// <summary>The clock's own quarters, so the track reads as a day rather
     /// than as a number between 0 and 1439.</summary>
@@ -176,15 +176,15 @@ public sealed class EnvironmentPane
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public EnvironmentPane(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         ITextureProvider textures,
         ISceneWorkflow workflow,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
-        IEnvironmentControl values)
+        EnvironmentControl values)
     {
         _configuration = configuration;
         _values = values;
@@ -201,25 +201,25 @@ public sealed class EnvironmentPane
         // The paths are Ktisis's, which is also where the 0..999 walk comes
         // from: the game exposes no list of these, only files that either
         // exist or do not.
-        _skyTexture = new Crystarium.TexturePicker(
+        _skyTexture = new TexturePicker(
             "environment-sky-texture",
             (uint id, out nint handle, out Vector2 pixels) => Preview(
                 $"bgcommon/nature/sky/texture/sky_{id:D3}.tex",
                 out handle,
                 out pixels));
-        _cloudTexture = new Crystarium.TexturePicker(
+        _cloudTexture = new TexturePicker(
             "environment-cloud-texture",
             (uint id, out nint handle, out Vector2 pixels) => Preview(
                 $"bgcommon/nature/cloud/texture/cloud_{id:D3}.tex",
                 out handle,
                 out pixels));
-        _cloudSideTexture = new Crystarium.TexturePicker(
+        _cloudSideTexture = new TexturePicker(
             "environment-cloud-side-texture",
             (uint id, out nint handle, out Vector2 pixels) => Preview(
                 $"bgcommon/nature/cloud/texture/cloudside_{id:D3}.tex",
                 out handle,
                 out pixels));
-        _particleTexture = new Crystarium.TexturePicker(
+        _particleTexture = new TexturePicker(
             "environment-particle-texture",
             (uint id, out nint handle, out Vector2 pixels) =>
                 Preview(ParticleTexturePath(id), out handle, out pixels));
@@ -258,17 +258,17 @@ public sealed class EnvironmentPane
         switch (tab)
         {
             case EnvironmentTab.Sky:
-                Crystarium.Page("environment-sky", origin, size, SkyPage);
+                Page("environment-sky", origin, size, SkyPage);
                 break;
             case EnvironmentTab.Atmosphere:
-                Crystarium.Page(
+                Page(
                     "environment-atmosphere", origin, size, AtmospherePage);
                 break;
             case EnvironmentTab.World:
-                Crystarium.Page("environment-world", origin, size, WorldPage);
+                Page("environment-world", origin, size, WorldPage);
                 break;
             default:
-                Crystarium.Page(
+                Page(
                     "environment-lighting", origin, size, LightingPage);
                 break;
         }
@@ -279,7 +279,7 @@ public sealed class EnvironmentPane
     // The rule is a divider BETWEEN sections, so EVERY page's first section
     // states divider: false and draws neither the rule nor the margin above it.
 
-    private void LightingPage(Crystarium.PageScope page)
+    private void LightingPage(PageScope page)
     {
         page.Section("Time", _openTime, next => _openTime = next,
             TimeRows, divider: false);
@@ -289,7 +289,7 @@ public sealed class EnvironmentPane
             next => _openLighting = next, LightingRows);
     }
 
-    private void SkyPage(Crystarium.PageScope page)
+    private void SkyPage(PageScope page)
     {
         page.Section("Sky", _openSky, next => _openSky = next, SkyRows,
             divider: false);
@@ -298,7 +298,7 @@ public sealed class EnvironmentPane
         page.Section("Stars", _openStars, next => _openStars = next, StarRows);
     }
 
-    private void AtmospherePage(Crystarium.PageScope page)
+    private void AtmospherePage(PageScope page)
     {
         page.Section("Fog", _openFog, next => _openFog = next, FogRows,
             divider: false);
@@ -308,7 +308,7 @@ public sealed class EnvironmentPane
         page.Section("Wind", _openWind, next => _openWind = next, WindRows);
     }
 
-    private void WorldPage(Crystarium.PageScope page)
+    private void WorldPage(PageScope page)
     {
         page.Section("Rendering", _openRendering,
             next => _openRendering = next, RenderingRows, divider: false);
@@ -400,7 +400,7 @@ public sealed class EnvironmentPane
 
     // ── time ─────────────────────────────────────────────────────────────
 
-    private void TimeRows(Crystarium.FormScope form)
+    private void TimeRows(FormScope form)
     {
         bool available = _reading.IsTimeFreezeAvailable;
         int minute = _reading.MinuteOfDay;
@@ -453,7 +453,7 @@ public sealed class EnvironmentPane
 
     // ── weather ──────────────────────────────────────────────────────────
 
-    private void WeatherRows(Crystarium.FormScope form)
+    private void WeatherRows(FormScope form)
     {
         bool available = _reading.IsWeatherOverrideAvailable;
         uint current = _reading.CurrentWeatherId;
@@ -571,7 +571,7 @@ public sealed class EnvironmentPane
 
     // ── sky and clouds ───────────────────────────────────────────────────
 
-    private void SkyRows(Crystarium.FormScope form)
+    private void SkyRows(FormScope form)
     {
         SectionSwitch(form, "Natural", EnvSection.Sky,
             "Let the game run the skybox. Changing any sky value below holds "
@@ -599,7 +599,7 @@ public sealed class EnvironmentPane
         });
     }
 
-    private void CloudRows(Crystarium.FormScope form)
+    private void CloudRows(FormScope form)
     {
         SectionSwitch(form, "Natural", EnvSection.Clouds,
             "Let the game run the clouds. Changing any cloud value below "
@@ -650,7 +650,7 @@ public sealed class EnvironmentPane
 
     // ── lighting ─────────────────────────────────────────────────────────
 
-    private void LightingRows(Crystarium.FormScope form)
+    private void LightingRows(FormScope form)
     {
         bool housing = _reading.IsHousingInterior;
         form.Slider("Interior",
@@ -745,7 +745,7 @@ public sealed class EnvironmentPane
 
     // ── fog ──────────────────────────────────────────────────────────────
 
-    private void FogRows(Crystarium.FormScope form)
+    private void FogRows(FormScope form)
     {
         form.PairRows();
         SectionSwitch(form, "Natural", EnvSection.Fog,
@@ -807,7 +807,7 @@ public sealed class EnvironmentPane
 
     // ── rain ─────────────────────────────────────────────────────────────
 
-    private void RainRows(Crystarium.FormScope form)
+    private void RainRows(FormScope form)
     {
         form.PairRows();
         SectionSwitch(form, "Natural", EnvSection.Rain,
@@ -847,7 +847,7 @@ public sealed class EnvironmentPane
 
     // ── particles ────────────────────────────────────────────────────────
 
-    private void ParticleRows(Crystarium.FormScope form)
+    private void ParticleRows(FormScope form)
     {
         form.PairRows();
         SectionSwitch(form, "Natural", EnvSection.Particles,
@@ -910,7 +910,7 @@ public sealed class EnvironmentPane
 
     // ── stars ────────────────────────────────────────────────────────────
 
-    private void StarRows(Crystarium.FormScope form)
+    private void StarRows(FormScope form)
     {
         SectionSwitch(form, "Natural", EnvSection.Stars,
             "Let the game run the night sky. Changing any value below holds "
@@ -996,7 +996,7 @@ public sealed class EnvironmentPane
 
     // ── wind ─────────────────────────────────────────────────────────────
 
-    private void WindRows(Crystarium.FormScope form)
+    private void WindRows(FormScope form)
     {
         form.PairRows();
         SectionSwitch(form, "Natural", EnvSection.Wind,
@@ -1016,7 +1016,7 @@ public sealed class EnvironmentPane
 
     // ── rendering ────────────────────────────────────────────────────────
 
-    private void RenderingRows(Crystarium.FormScope form)
+    private void RenderingRows(FormScope form)
     {
         bool water = _reading.IsWaterFreezeAvailable;
         // Two rows, not four: the water pair, then the lifetime pair.
@@ -1054,15 +1054,15 @@ public sealed class EnvironmentPane
     {
         var root = _configuration.Config.Library
             .ResolveObjectsRoot();
-        if (!global::Poser.Library.LibraryConfiguration.TryEnsureDirectory(root, out var detail))
+        if (!global::Poser.Documents.Library.LibraryConfiguration.TryEnsureDirectory(root, out var detail))
         {
             _notices.Refused(detail);
             return;
         }
-        var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
+        var path = global::Poser.Documents.Library.LibraryConfiguration.NewEntryPath(
             root, name, SceneFile.EnvironmentEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.EnvironmentEntry);
+            path, null, SceneSaveOptions.Only(SceneCategories.Environment));
         if (!result.Success)
             _notices.Refused(
                 result.Detail ?? "The environment could not be saved.");
@@ -1070,7 +1070,7 @@ public sealed class EnvironmentPane
 
     // ── festivals ────────────────────────────────────────────────────────
 
-    private void FestivalRows(Crystarium.FormScope form)
+    private void FestivalRows(FormScope form)
     {
         bool canModify = _reading.CanModify;
         var slots = _reading.ActiveFestivals;
@@ -1221,7 +1221,7 @@ public sealed class EnvironmentPane
     /// the only place the eight section switches invert.
     /// </summary>
     private void SectionSwitch(
-        Crystarium.FormScope form, string label, EnvSection section,
+        FormScope form, string label, EnvSection section,
         string help)
     {
         bool available = _reading.IsSectionHoldAvailable;

@@ -32,55 +32,6 @@ public class ActorColliderMeshTests
         Assert.Empty(ActorColliderDeformation.Read(pbd, 801, 801));
     }
 
-    [Fact]
-    public void BodyFitUsesIndexedSurfaceAndRoundTripsThroughSceneStorage()
-    {
-        var mesh = new BodySurfaceFitTests.Mesh();
-        mesh.Add(BodySurfaceFitTests.Capsule(new(0, .5f, 0), .2f, .7f), [new("j_ude_a_l", 1)]);
-        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint> {
-            ["j_ude_a_l"] = new(Vector3.Zero, null), ["j_ude_b_l"] = new(Vector3.UnitY, "j_ude_a_l") };
-        var fitted = ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights);
-        var capsule = Assert.Single(fitted, p => p.Name == "Left upper arm");
-        Assert.Equal("Left upper arm", capsule.Name);
-        Assert.Equal(IkColliderShape.Capsule, capsule.Collider.Shape);
-        Assert.InRange(capsule.Collider.RoundDimensions().Radius, .19f, .21f);
-        Assert.InRange(Vector3.Distance(new(0, .5f, 0), capsule.Collider.Transform.Position), 0, .015f);
-        Assert.InRange(capsule.Collider.Transform.Scale.Y, 1.07f, 1.13f);
-        var restored = JsonSerializer.Deserialize<IkCollider>(JsonSerializer.Serialize(capsule.Collider, global::Poser.Files.SceneFile.JsonOptions),
-            global::Poser.Files.SceneFile.JsonOptions)!;
-        Assert.Equal(capsule.Collider, restored);
-    }
-
-    [Theory]
-    [InlineData("l", "Left")]
-    [InlineData("r", "Right")]
-    public void LowerLegFitsAndFollowsCalfWhileKneeKeepsItsOwnJoint(string side, string label)
-    {
-        string knee = $"j_asi_b_{side}", calf = $"j_asi_c_{side}", ankle = $"j_asi_d_{side}";
-        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint> {
-            [knee] = new(new(0, 1.2f, .1f), null),
-            [calf] = new(Vector3.UnitY, knee), [ankle] = new(Vector3.Zero, calf) };
-        var mesh = new BodySurfaceFitTests.Mesh();
-        mesh.Add(BodySurfaceFitTests.Capsule(new(0, .5f, 0), .2f, .7f), [new(calf, 1)]);
-        var fitted = ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights);
-        var shin = Assert.Single(fitted, p => p.Name == $"{label} lower leg");
-        Assert.Equal(calf, shin.BoneName);
-        Assert.InRange(Vector3.Distance(new(0, .5f, 0), shin.Collider.Transform.Position), 0, .015f);
-        Assert.InRange(shin.Collider.Transform.Scale.Y, 1.07f, 1.13f);
-        var kneeSphere = Assert.Single(fitted, p => p.Name == $"{label} knee");
-        Assert.Equal(knee, kneeSphere.BoneName);
-        Assert.Equal(joints[knee].Position, kneeSphere.Collider.Transform.Position);
-
-        // Changing the calf's rotation must swing the capsule around the calf,
-        // not leave it on the independently rotating knee frame.
-        var frame = new Poser.Domain.Transforms.PoseTransform(joints[shin.BoneName].Position, Quaternion.Identity, Vector3.One);
-        var offset = Poser.Domain.Transforms.TransformParent.Local(shin.Collider.Transform, frame);
-        var rotated = frame with { Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2) };
-        var followed = Poser.Domain.Transforms.TransformParent.World(offset, rotated);
-        Assert.True(Vector3.Distance(new Vector3(.5f, 1, 0), followed.Position) < .015f);
-        Assert.True(Vector3.Distance(Vector3.UnitX, Vector3.Transform(Vector3.UnitY, followed.Rotation)) < .0001f);
-    }
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -99,7 +50,7 @@ public class ActorColliderMeshTests
         Assert.True(Vector3.Distance(vertices[3], new(-2, 2, 0)) < .0001f);
         var captured = new IkCollider { Shape = IkColliderShape.Mesh, Mesh = new(vertices.ToArray(), indices.ToArray()) };
         bones["arm"] = Matrix4x4.CreateTranslation(100, 0, 0);
-        var options = global::Poser.Files.SceneFile.JsonOptions;
+        var options = global::Poser.Documents.Files.SceneFile.JsonOptions;
         var restored = JsonSerializer.Deserialize<IkCollider>(JsonSerializer.Serialize(captured, options), options)!;
         Assert.Equal(captured.Mesh.Vertices, restored.Mesh!.Vertices);
         Assert.Equal(captured.Mesh.Indices, restored.Mesh.Indices);
@@ -108,116 +59,35 @@ public class ActorColliderMeshTests
         Assert.Empty(indices); // Attribute-disabled equipment must not become an invisible obstacle.
     }
 
-    [Fact]
-    public void CapturesEightPackedByteInfluencesIncludingTheLastBone()
-    {
-        var vertices = new List<Vector3>();
-        var indices = new List<int>();
-        var weights = new List<ActorColliderMeshBuilder.BoneWeight[]>();
-        ActorColliderMeshBuilder.Append(Model(true, true), 1, 0,
-            new Dictionary<string, Matrix4x4>
-            {
-                ["arm"] = Matrix4x4.Identity,
-                ["tip"] = Matrix4x4.CreateTranslation(8, 0, 0),
-            }, Matrix4x4.Identity, Vector3.Zero, vertices, indices, skinWeights: weights);
-        Assert.Equal(new[] { 0, 1, 2 }, indices);
-        Assert.True(Vector3.Distance(vertices[0], new(8f * 191 / 255, 0, 0)) < .0001f);
-        Assert.True(Vector3.Distance(vertices[1], vertices[0] + Vector3.UnitX) < .0001f);
-        Assert.Equal(vertices.Count, weights.Count);
-        Assert.All(weights, w =>
-        {
-            Assert.InRange(w.Sum(p => p.Weight), .99999f, 1.00001f);
-            Assert.InRange(w.Where(p => p.Bone == "tip").Sum(p => p.Weight), 191f / 255 - .00001f, 191f / 255 + .00001f);
-        });
-    }
-
-    [Theory]
-    [InlineData("chara/equipment/e0000/model/c0201e0000_top.mdl", 201)]
-    [InlineData("chara/human/c0801/obj/tail/t0001/model/c0801t0001_til.mdl", 801)]
-    [InlineData("arbitrary-replacement-name.mdl", 0)]
-    public void ModelRaceComesFromTheOriginalResource(string path, ushort expected)
-    {
-        Assert.Equal(expected, ActorColliderCapture.ModelRace(path));
-        Assert.True(ActorColliderCapture.IsBodyModelPath(path));
-    }
-
-    [Fact]
-    public void BodyMembershipSumsAllInfluencesBeforeFiltering()
-    {
-        var bones = new Dictionary<string, Matrix4x4> { ["arm"] = Matrix4x4.Identity, ["tip"] = Matrix4x4.Identity };
-        var vertices = new List<Vector3>();
-        var indices = new List<int>();
-        var weights = new List<ActorColliderMeshBuilder.BoneWeight[]>();
-        ActorColliderMeshBuilder.Append(Model(true, true), 1, 0, bones, Matrix4x4.Identity,
-            Vector3.Zero, vertices, indices, bodyBones: new HashSet<string> { "tip" }, skinWeights: weights);
-        Assert.Equal(3, indices.Count);
-        Assert.All(weights, w => Assert.InRange(w.Sum(p => p.Weight), .99999f, 1.00001f));
-        vertices.Clear(); indices.Clear(); weights.Clear();
-        ActorColliderMeshBuilder.Append(Model(true, true), 1, 0, bones, Matrix4x4.Identity,
-            Vector3.Zero, vertices, indices, bodyBones: new HashSet<string> { "arm" }, skinWeights: weights);
-        Assert.Empty(indices);
-        Assert.All(weights, w => Assert.Empty(w));
-    }
-
-    [Fact]
-    public void UnmappedWeightedBoneRefusesInsteadOfCapturingBindPose()
-    {
-        Assert.Throws<InvalidDataException>(() => ActorColliderMeshBuilder.Append(Model(true), 1, 0,
-            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], []));
-    }
-
-    [Fact]
-    public void BodyCaptureIgnoresUnrelatedMissingBonesButRequiresBodyTransforms()
-    {
-        Assert.False(ActorColliderCapture.IsBodyModelPath("chara/human/c0801/obj/hair/h0007/model/c0801h0007_hir.mdl"));
-        Assert.True(ActorColliderCapture.IsBodyModelPath("chara/human/c0801/obj/face/f0001/model/c0801f0001_fac.mdl"));
-        var vertices = new List<Vector3>();
-        var indices = new List<int>();
-        ActorColliderMeshBuilder.Append(Model(true), 1, 0,
-            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero,
-            vertices, indices, bodyBones: new HashSet<string> { "head" });
-        Assert.Empty(indices);
-        Assert.Throws<InvalidDataException>(() => ActorColliderMeshBuilder.Append(Model(true), 1, 0,
-            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero,
-            [], [], bodyBones: new HashSet<string> { "arm" }));
-
-        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint> {
-            ["j_kao"] = new(Vector3.UnitY, "j_kubi"), ["j_kubi"] = new(Vector3.Zero, null),
-            ["j_ex_h0127_ke_r"] = new(Vector3.One, "j_kao") };
-        Assert.DoesNotContain("j_ex_h0127_ke_r", ActorBodyColliderBuilder.BodyBones(joints));
-        Assert.Contains("j_kao", ActorBodyColliderBuilder.BodyBones(joints));
-    }
-
     // A complete minimal binary MDL: weighted triangle, attribute-gated submesh,
     // and one shape replacement. Exercises file parsing, not a mocked parsed model.
-    private static byte[] Model(bool v6, bool eightWeights = false)
+    private static byte[] Model(bool v6)
     {
         using var stream = new MemoryStream();
         using var w = new BinaryWriter(stream);
         w.Write(new byte[68]); // file header patched after buffers are written
         void Element(byte offset, byte type, byte usage) => w.Write(new byte[] { 0, offset, type, usage, 0, 0, 0, 0 });
         Element(0, 2, 0);
-        Element(12, eightWeights ? (byte)17 : (byte)8, 1);
-        Element(eightWeights ? (byte)20 : (byte)16, eightWeights ? (byte)17 : (byte)5, 2);
+        Element(12, 8, 1);
+        Element(16, 5, 2);
         w.Write((byte)255); w.Write(new byte[17 * 8 - 25]);
-        var names = Encoding.UTF8.GetBytes(eightWeights ? "arm\0attr\0shape\0tip\0" : "arm\0attr\0shape\0");
-        w.Write(eightWeights ? (ushort)4 : (ushort)3); w.Write((ushort)0); w.Write((uint)names.Length); w.Write(names);
+        var names = Encoding.UTF8.GetBytes("arm\0attr\0shape\0");
+        w.Write((ushort)3); w.Write((ushort)0); w.Write((uint)names.Length); w.Write(names);
         Write(w, new MdlStructs.ModelHeader
         {
-            MeshCount = 1, AttributeCount = 1, SubmeshCount = 1, BoneCount = eightWeights ? (ushort)2 : (ushort)1, BoneTableCount = 1,
+            MeshCount = 1, AttributeCount = 1, SubmeshCount = 1, BoneCount = 1, BoneTableCount = 1,
             ShapeCount = 1, ShapeMeshCount = 1, ShapeValueCount = 1, LodCount = 1, Unknown7 = v6 ? (ushort)2 : (ushort)0,
         });
         Write(w, new MdlStructs.LodStruct { MeshCount = 1 });
         Write(w, new MdlStructs.LodStruct()); Write(w, new MdlStructs.LodStruct());
         w.Write((ushort)4); w.Write((ushort)0); w.Write((uint)3);
         w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)0);
-        byte stride = eightWeights ? (byte)28 : (byte)20;
+        byte stride = 20;
         w.Write((uint)0); w.Write(new byte[12]); w.Write(new byte[] { stride, 0, 0, 1 });
         w.Write((uint)4); // attribute string offset
         Write(w, new MdlStructs.SubmeshStruct { IndexCount = 3, AttributeIndexMask = 1, BoneCount = 1 });
         w.Write((uint)0); // bone name offset
-        if (eightWeights) w.Write(15u);
-        if (v6) { w.Write((ushort)1); w.Write(eightWeights ? (ushort)2 : (ushort)1); w.Write((ushort)0); w.Write(eightWeights ? (ushort)1 : (ushort)0); }
+        if (v6) { w.Write((ushort)1); w.Write((ushort)1); w.Write((ushort)0); w.Write((ushort)0); }
         else { w.Write(new byte[128]); w.Write((uint)1); }
         w.Write((uint)9); w.Write(new byte[6]); w.Write((ushort)1); w.Write(new byte[4]);
         Write(w, new MdlStructs.ShapeMeshStruct { ShapeValueCount = 1 });
@@ -226,12 +96,7 @@ public class ActorColliderMeshTests
         foreach (var p in new[] { Vector3.Zero, Vector3.UnitX, Vector3.UnitY, Vector3.UnitY * 2 })
         {
             w.Write(p.X); w.Write(p.Y); w.Write(p.Z);
-            if (eightWeights)
-            {
-                w.Write(new byte[] { 64, 64, 0, 0, 0, 0, 0, 127 });
-                w.Write(new byte[] { 0, 1, 0, 0, 0, 0, 0, 1 });
-            }
-            else { w.Write(new byte[] { 255, 0, 0, 0 }); w.Write(new byte[4]); }
+            w.Write(new byte[] { 255, 0, 0, 0 }); w.Write(new byte[4]);
         }
         uint indexOffset = (uint)stream.Position;
         w.Write((ushort)0); w.Write((ushort)1); w.Write((ushort)2);

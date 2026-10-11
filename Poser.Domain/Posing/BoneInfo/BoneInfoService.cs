@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using System;
+using Poser.Domain.Posing.BoneInfo.Categories;
 
-namespace Poser.Core.BoneInfo;
+namespace Poser.Domain.Posing.BoneInfo;
 
 /// <summary>
 /// Central service for bone information (translations and categories).
@@ -27,16 +28,6 @@ public static class BoneInfoService
 
     private static readonly Dictionary<string, BoneData> _boneData = new();
     private static readonly HashSet<string> _nsfwBones = new();
-
-    /// <summary>
-    /// Ktisis' <c>ShowFriendlyBoneNames</c>, published here rather than read
-    /// from config at every call site: <see cref="Poser.Entities.Bone.Name"/>
-    /// consults it per bone per frame, so it has to be a field read. The
-    /// settings page writes it on save; the plugin writes it once on load from
-    /// the stored value. True is the shipped state, which is what Poser has
-    /// always done.
-    /// </summary>
-    public static bool ShowFriendlyNames { get; set; } = true;
 
     /// <summary>
     /// Initializes the bone info service with a logger.
@@ -87,16 +78,6 @@ public static class BoneInfoService
     /// <summary>True for IVCS/extended-group bones — the set the
     /// Display.ShowNsfwBones switch shows and hides.</summary>
     public static bool IsNsfw(string boneName) => _nsfwBones.Contains(boneName);
-
-    /// <summary>
-    /// Gets the translated name for a bone, or null if no translation exists.
-    /// </summary>
-    public static string? GetTranslation(string boneName)
-    {
-        if (_boneData.TryGetValue(boneName, out var data))
-            return data.Translation;
-        return null;
-    }
 
     /// <summary>
     /// Gets the category for a bone.
@@ -178,14 +159,6 @@ public static class BoneInfoService
     }
 
     /// <summary>
-    /// Checks if bone data exists for the given bone name.
-    /// </summary>
-    public static bool HasBoneData(string boneName)
-    {
-        return _boneData.ContainsKey(boneName);
-    }
-
-    /// <summary>
     /// Gets the display name for a category.
     /// </summary>
     public static string GetCategoryDisplayName(BoneCategory category)
@@ -230,45 +203,4 @@ public static class BoneInfoService
             _ => subcategory.ToString()
         };
     }
-
-    /// <summary>
-    /// Gets the subcategory for a bone.
-    /// </summary>
-    public static BoneSubcategory GetSubcategory(string boneName)
-    {
-        if (_boneData.TryGetValue(boneName, out var data))
-            return data.Subcategory;
-        return BoneSubcategory.None;
-    }
-
-    /// <summary>
-    /// Gets the root bone name for a category (the actual bone that represents the category).
-    /// Returns null for abstract categories like Equipment and Other.
-    /// </summary>
-    public static string? GetCategoryRootBone(BoneCategory category) => category switch
-    {
-        BoneCategory.Root => "n_root",
-        BoneCategory.Spine => "j_kosi",
-        BoneCategory.Head => "j_kao",
-        BoneCategory.LeftArm => "j_ude_a_l",
-        BoneCategory.RightArm => "j_ude_a_r",
-        BoneCategory.LeftLeg => "j_asi_a_l",
-        BoneCategory.RightLeg => "j_asi_a_r",
-        BoneCategory.Tail => "n_sippo_a",
-        _ => null  // Equipment and Other stay abstract
-    };
-
-    /// <summary>
-    /// Gets the root bone name for a subcategory (the actual bone that represents the subcategory).
-    /// Returns null for abstract subcategories or those without a clear root bone.
-    /// </summary>
-    public static string? GetSubcategoryRootBone(BoneSubcategory subcategory) => subcategory switch
-    {
-        BoneSubcategory.Hair => "j_kami_a",
-        BoneSubcategory.Ears => "j_mimi_l",
-        BoneSubcategory.LeftEye => "j_f_eye_l",
-        BoneSubcategory.RightEye => "j_f_eye_r",
-        BoneSubcategory.Mouth => "j_ago",
-        _ => null  // Most subcategories stay abstract
-    };
 }

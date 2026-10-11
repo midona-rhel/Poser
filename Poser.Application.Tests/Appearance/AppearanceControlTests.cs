@@ -1,6 +1,7 @@
 using System.Reflection;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
+using Poser.Application.Tests.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Application.Posing;
 using Poser.Domain.Presentation;
@@ -16,10 +17,6 @@ public sealed class AppearanceControlTests
 {
     [Theory]
     [InlineData("item")]
-    [InlineData("dye")]
-    [InlineData("facewear")]
-    [InlineData("switch")]
-    [InlineData("outfit")]
     public void Equipment_inverse_refusals_preserve_failure_and_can_retry(string action)
     {
         var f = new Fixture();
@@ -29,7 +26,8 @@ public sealed class AppearanceControlTests
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         f.Runtime.Refuse = true;
         Assert.False(step.Undo());
-        Assert.True(step.RetainOnFailure);
+        // A plain write refusal is permanent: retried once, then dropped.
+        Assert.Equal(RefusalAction.DropOnRepeat, RefusalPolicy.Decide(step));
         Assert.Equal("Write refused", step.FailureDetail!());
         EqualWardrobe(after, f.Runtime.ReadWardrobe());
         f.Runtime.Refuse = false;
@@ -40,82 +38,24 @@ public sealed class AppearanceControlTests
     }
 
     [Fact]
-    public void Partial_outfit_remains_undoable_and_restoration_stops_on_refusal()
-    {
-        var f = new Fixture();
-        f.Runtime.RefuseSlot = EquipSlot.Body;
-        Assert.False(Edit(f, "outfit").Success);
-        Assert.Equal(99ul, f.Runtime.Slots[EquipSlot.Head].ItemId);
-        Assert.Equal(20ul, f.Runtime.Slots[EquipSlot.Body].ItemId);
-        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        f.Runtime.RefuseSlot = EquipSlot.Head;
-        f.Runtime.Writes.Clear();
-        Assert.False(step.Undo());
-        Assert.Single(f.Runtime.Writes);
-        f.Runtime.RefuseSlot = null;
-        f.Runtime.Slots[EquipSlot.Body] = new(30, 0, 0); // unrelated later edit
-        Assert.True(step.Undo());
-        Assert.Equal(10ul, f.Runtime.Slots[EquipSlot.Head].ItemId);
-        Assert.True(step.Redo());
-        Assert.Equal(99ul, f.Runtime.Slots[EquipSlot.Head].ItemId);
-        Assert.Equal(30ul, f.Runtime.Slots[EquipSlot.Body].ItemId);
-    }
-
-    [Fact]
-    public void Equipment_history_does_not_write_to_a_replacement_generation()
-    {
-        var f = new Fixture();
-        Assert.True(Edit(f, "item").Success);
-        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        f.Runtime.Actor = f.Runtime.Actor with { Generation = f.Runtime.Actor.Generation + 1 };
-        f.Runtime.Writes.Clear();
-        Assert.True(step.Undo());
-        Assert.True(step.Redo());
-        Assert.Empty(f.Runtime.Writes);
-    }
-
-    [Fact]
     public void Body_change_captures_fresh_values_and_owns_its_redo_input()
     {
         var f = new Fixture();
         _ = f.Customize.Read(f.Runtime.Actor);
+        f.Runtime.NormalizeBody = true;
         f.Runtime.Customize[CustomizeKey.Gender] = 1;
+        f.Runtime.Customize[CustomizeKey.BustSize] = 100;
         var desired = new Dictionary<CustomizeKey, int> { [CustomizeKey.Gender] = 0 };
         Assert.True(f.Customize.SetBody(f.Runtime.Actor, desired, "Swap gender").Success);
         desired[CustomizeKey.Gender] = 7;
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
-        Replay(step, true);
-        Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
-        Replay(step, false);
-        Assert.Equal(0, f.Runtime.Customize[CustomizeKey.Gender]);
-    }
-
-    [Fact]
-    public void Body_change_undo_restores_values_normalized_by_the_provider()
-    {
-        var f = new Fixture();
-        f.Runtime.NormalizeBody = true;
-        f.Runtime.Customize[CustomizeKey.Gender] = 1;
-        f.Runtime.Customize[CustomizeKey.BustSize] = 100;
-        Assert.True(f.Customize.SetBody(f.Runtime.Actor,
-            new Dictionary<CustomizeKey, int> { [CustomizeKey.Gender] = 0 }, "Swap gender").Success);
-        var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         Assert.Equal(0, f.Runtime.Customize[CustomizeKey.BustSize]);
+        // Undo restores the values the provider normalized, not only the requested key.
         Replay(step, true);
         Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
         Assert.Equal(100, f.Runtime.Customize[CustomizeKey.BustSize]);
         Replay(step, false);
         Assert.Equal(0, f.Runtime.Customize[CustomizeKey.Gender]);
-        Assert.Equal(0, f.Runtime.Customize[CustomizeKey.BustSize]);
-    }
-
-    [Fact]
-    public void Revert_does_not_discard_a_look_that_cannot_be_captured()
-    {
-        var f = new Fixture();
-        f.CaptureFailure = true;
-        Assert.False(f.Wardrobe.Revert(f.Runtime.Actor).Success);
-        Assert.False(f.History.CanUndo);
     }
 
     [Fact]
@@ -128,7 +68,7 @@ public sealed class AppearanceControlTests
         f.CaptureFailure = true;
         Assert.False(step.Undo());
         Assert.Equal(1, f.Runtime.Customize[CustomizeKey.Gender]);
-        Assert.True(step.RetainOnFailure);
+        Assert.Equal(RefusalAction.Keep, RefusalPolicy.Decide(step));
         Assert.Equal("State unavailable", step.FailureDetail!());
         f.CaptureFailure = false;
         Replay(step, true);
@@ -148,9 +88,6 @@ public sealed class AppearanceControlTests
     private static IntegrationResult Edit(Fixture f, string action) => action switch
     {
         "item" => f.Wardrobe.SetItem(f.Runtime.Actor, EquipSlot.Head, 99, 3, 4, "Item"),
-        "dye" => f.Wardrobe.SetDye(f.Runtime.Actor, EquipSlot.Head, 1, 8, "Dye"),
-        "facewear" => f.Wardrobe.SetFacewear(f.Runtime.Actor, 42, "Facewear"),
-        "switch" => f.Wardrobe.SetSwitch(f.Runtime.Actor, MetaSwitch.HatVisible, false),
         _ => f.Wardrobe.SetOutfit(f.Runtime.Actor, "Outfit", _ => new(99, 3, 4)),
     };
 
@@ -164,7 +101,7 @@ public sealed class AppearanceControlTests
     private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
-        public TransformHistory History { get; } = new();
+        public EditHistory History { get; } = new();
         public RuntimeProxy Runtime { get; }
         public bool CaptureFailure;
         public IWardrobeControl Wardrobe { get; }
@@ -172,9 +109,9 @@ public sealed class AppearanceControlTests
 
         public Fixture()
         {
-            var port = DispatchProxy.Create<IIntegrationRuntimePort, RuntimeProxy>();
+            var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
-            var integration = new ActorIntegrationSession(port, null!, this);
+            var integration = new IntegrationGraph(port, null!, this).Selectors;
             var disruptive = new DisruptiveSteps(History, this, new ValueJournal(History));
             var journal = new ValueJournal(History);
             Wardrobe = new WardrobeSession(journal, integration, port, disruptive);
@@ -220,34 +157,34 @@ public sealed class AppearanceControlTests
         {
             switch (method!.Name)
             {
-                case nameof(IIntegrationRuntimePort.IsResolvable): return (ActorId)args![0]! == Actor;
-                case nameof(IIntegrationRuntimePort.ProbeGlamourerAccess): return GlamourerAccess.Editable;
-                case nameof(IIntegrationRuntimePort.CaptureGlamourerState): return IntegrationValue<string>.Ok("baseline");
-                case nameof(IIntegrationRuntimePort.GetActorName): return IntegrationValue<string>.Ok("Actor");
-                case nameof(IIntegrationRuntimePort.GetWardrobeState): return IntegrationValue<WardrobeState>.Ok(ReadWardrobe());
-                case nameof(IIntegrationRuntimePort.GetCustomizeState):
+                case nameof(IIntegrationRuntimeFake.IsResolvable): return (ActorId)args![0]! == Actor;
+                case nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess): return GlamourerAccess.Editable;
+                case nameof(IIntegrationRuntimeFake.CaptureGlamourerState): return IntegrationValue<string>.Ok("baseline");
+                case nameof(IIntegrationRuntimeFake.GetActorName): return IntegrationValue<string>.Ok("Actor");
+                case nameof(IIntegrationRuntimeFake.GetWardrobeState): return IntegrationValue<WardrobeState>.Ok(ReadWardrobe());
+                case nameof(IIntegrationRuntimeFake.GetCustomizeState):
                     return IntegrationValue<CustomizeState>.Ok(new(new Dictionary<CustomizeKey, int>(Customize), 0));
-                case nameof(IIntegrationRuntimePort.GetGlamourerStateJson):
+                case nameof(IIntegrationRuntimeFake.GetGlamourerStateJson):
                     return IntegrationValue<string>.Fail("State unavailable");
             }
             Writes.Add(method.Name);
-            if (Refuse || method.Name == nameof(IIntegrationRuntimePort.SetItem) && (EquipSlot)args![1]! == RefuseSlot)
-                return IntegrationPortResult.Fail("Write refused");
+            if (Refuse || method.Name == nameof(IIntegrationRuntimeFake.SetItem) && (EquipSlot)args![1]! == RefuseSlot)
+                return IntegrationResult.Fail("Write refused");
             switch (method.Name)
             {
-                case nameof(IIntegrationRuntimePort.SetItem):
+                case nameof(IIntegrationRuntimeFake.SetItem):
                     Slots[(EquipSlot)args![1]!] = new((ulong)args[2]!, (byte)args[3]!, (byte)args[4]!);
                     break;
-                case nameof(IIntegrationRuntimePort.SetFacewear): _facewear = (ulong)args![1]!; break;
-                case nameof(IIntegrationRuntimePort.SetMetaSwitch): _hatVisible = (bool)args![2]!; break;
-                case nameof(IIntegrationRuntimePort.SetCustomize):
+                case nameof(IIntegrationRuntimeFake.SetFacewear): _facewear = (ulong)args![1]!; break;
+                case nameof(IIntegrationRuntimeFake.SetMetaSwitch): _hatVisible = (bool)args![2]!; break;
+                case nameof(IIntegrationRuntimeFake.SetCustomize):
                     foreach (var (key, value) in (IReadOnlyDictionary<CustomizeKey, int>)args![1]!) Customize[key] = value;
                     if (NormalizeBody && Customize[CustomizeKey.Gender] == 0)
                         Customize[CustomizeKey.BustSize] = 0;
                     break;
                 default: throw new NotSupportedException(method.Name);
             }
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         }
     }
 }

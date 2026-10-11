@@ -8,16 +8,16 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -364,7 +364,7 @@ public sealed partial class PropertiesContent
 
         var groupTargets = _selection.Selected.ToArray();
         var matched = _groups.MatchingSelection(groupTargets);
-        Crystarium.Page("multiselect-page", origin, size, page =>
+        Page("multiselect-page", origin, size, page =>
         {
             // The title is STABLE: the group's name lives in the field
             // below, never in the section header — a header that renamed
@@ -434,7 +434,7 @@ public sealed partial class PropertiesContent
 
         if (!_gPoseService.IsGPosing)
         {
-            Crystarium.TextAt(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale, "Enter GPose to start posing.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
+            TextAt(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale, "Enter GPose to start posing.", new TextStyle { Size = ActiveTheme.Typography.LabelSize, Color = ActiveTheme.FormHint });
             return;
         }
 
@@ -447,12 +447,12 @@ public sealed partial class PropertiesContent
         {
             var emptyStyle = new TextStyle
             {
-                Size = Crystarium.ActiveTheme.Typography.LabelSize,
-                Color = Crystarium.ActiveTheme.FormHint,
+                Size = ActiveTheme.Typography.LabelSize,
+                Color = ActiveTheme.FormHint,
             };
-            var measured = Crystarium.MeasureText(
+            var measured = MeasureText(
                 "Nothing selected", emptyStyle);
-            Crystarium.TextAt(
+            TextAt(
                 origin + (size - measured) * 0.5f,
                 "Nothing selected", emptyStyle);
             return;

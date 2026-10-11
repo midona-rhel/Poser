@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
@@ -19,11 +20,11 @@ public interface ITransformParenting
 {
     TransformParent? Read(SelectionId child);
     bool CanParent(SelectionId child);
-    ValueWriteResult Attach(SelectionId child, SelectionId? target);
+    Outcome Attach(SelectionId child, SelectionId? target);
 }
 
 /// <summary>One relationship owner; native following and UI do not own offsets or history.</summary>
-public sealed class TransformParenting(IParentingRuntime runtime, TransformHistory history,
+public sealed class TransformParenting(IParentingRuntime runtime, EditHistory history,
     ValueJournal journal) : ITransformParenting
 {
     private readonly Dictionary<SelectionId, TransformParent> _links = new();
@@ -36,7 +37,7 @@ public sealed class TransformParenting(IParentingRuntime runtime, TransformHisto
     public ActorId? CompanionOwner(ActorId actor) => runtime.CompanionOwner(actor);
     public ActorId? ResolveCompanion(ActorId owner) => runtime.ResolveCompanion(owner);
 
-    public ValueWriteResult Attach(SelectionId child, SelectionId? target)
+    public Outcome Attach(SelectionId child, SelectionId? target)
     {
         runtime.BeginRead();
         if (!runtime.CanEdit(child)) return new(false, "Unlock the entity or its group before changing its parent.");
@@ -51,10 +52,11 @@ public sealed class TransformParenting(IParentingRuntime runtime, TransformHisto
         }
         var before = Read(child);
         Set(child, link);
-        journal.Record(target == null ? "Detach entity" : "Parent entity", before, link,
-            value => Set(history.ResolveLifecycleEntity(child), Rebind(value)),
+        // Keyed by this owner, not the child: relationship changes stay global.
+        journal.Record((this, child), target == null ? "Detach entity" : "Parent entity", before, link,
+            ValueWrites.Unchecked<TransformParent?>(value => Set(history.ResolveLifecycleEntity(child), Rebind(value))),
             () => runtime.Read(history.ResolveLifecycleEntity(child)) != null);
-        return ValueWriteResult.Ok();
+        return Outcome.Ok();
     }
 
     public bool Import(SelectionId child, TransformParent link)
@@ -62,6 +64,15 @@ public sealed class TransformParenting(IParentingRuntime runtime, TransformHisto
         if (!CanParent(child) || !link.Offset.IsValid || WouldCycle(child, link.Target)) return false;
         Set(child, link);
         return true;
+    }
+
+    /// <summary>Drops a link <see cref="Import"/> made; the importer's own
+    /// rollback owns it, so no history is recorded. Follows the child's
+    /// lifecycle replacement, since undo/redo may have rebound it.</summary>
+    public void Remove(SelectionId child)
+    {
+        _links.Remove(child);
+        _links.Remove(history.ResolveLifecycleEntity(child));
     }
 
     /// <summary>Creation owns the history entry; a duplicate inherits its source's attachment and offset.</summary>

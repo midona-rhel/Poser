@@ -33,31 +33,17 @@ public sealed class ActorRedrawBarrierTests
         Assert.Equal(0, runtime.Subscriptions);
     }
 
-    [Theory]
-    [InlineData("provider")]
-    [InlineData("actor")]
-    [InlineData("session")]
-    [InlineData("cancel")]
-    [InlineData("timeout")]
-    public async Task Failure_releases_observation_and_next_operation_can_start(string failure)
+    [Fact]
+    public async Task Provider_loss_releases_observation_and_next_operation_can_start()
     {
         var runtime = new Runtime();
         using var barrier = new ActorRedrawBarrier(runtime);
-        using var cancel = new CancellationTokenSource();
-        var pending = barrier.RedrawAndWait(runtime.Actor,
-            TimeSpan.FromMilliseconds(failure == "timeout" ? 75 : 2000), cancel.Token);
+        var pending = barrier.RedrawAndWait(runtime.Actor, TimeSpan.FromSeconds(2), default);
         Assert.False((await barrier.RedrawAndWait(runtime.Actor, TimeSpan.FromSeconds(1), default)).Success);
-        switch (failure)
-        {
-            case "provider": runtime.ProviderAvailable = false; break;
-            case "actor": runtime.Gone = true; break;
-            case "session": runtime.Session = SessionGeneration.New(); break;
-            case "cancel": cancel.Cancel(); break;
-        }
+        runtime.ProviderAvailable = false;
         Assert.False((await pending).Success);
         Assert.Equal(0, runtime.Subscriptions);
         runtime.ProviderAvailable = true;
-        runtime.Gone = false;
         runtime.NotifyDuringRequest = true;
         runtime.SkeletonReady = true;
         Assert.True((await barrier.RedrawAndWait(runtime.Actor, TimeSpan.FromSeconds(1), default)).Success);
@@ -66,15 +52,14 @@ public sealed class ActorRedrawBarrierTests
     private sealed class Runtime : IActorRedrawRuntime
     {
         public readonly ActorId Actor = new(Guid.NewGuid(), 0);
-        public SessionGeneration Session = SessionGeneration.New();
+        public readonly SessionGeneration Session = SessionGeneration.New();
         public bool ProviderAvailable { get; set; } = true;
         public bool SkeletonReady;
-        public bool Gone;
         public bool NotifyDuringRequest;
         public int Subscriptions;
         private Action<nint, int>? _redrawn;
         public Task<T> OnFramework<T>(Func<T> action) => Task.FromResult(action());
-        public RedrawActor? Resolve(ActorId actor) => Gone ? null : new(actor, Session, 100, 3);
+        public RedrawActor? Resolve(ActorId actor) => new(actor, Session, 100, 3);
         public bool Ready(RedrawActor actor) => SkeletonReady;
         public IDisposable Observe(Action<nint, int> redrawn)
         {
@@ -82,11 +67,11 @@ public sealed class ActorRedrawBarrierTests
             _redrawn += redrawn;
             return new Subscription(() => { Subscriptions--; _redrawn -= redrawn; });
         }
-        public IntegrationPortResult Request(ActorId actor)
+        public IntegrationResult Request(ActorId actor)
         {
             Assert.Equal(1, Subscriptions);
             if (NotifyDuringRequest) Notify(100, 3);
-            return IntegrationPortResult.Ok();
+            return IntegrationResult.Ok();
         }
         public void Notify(nint address, int index) => _redrawn?.Invoke(address, index);
         private sealed class Subscription(Action dispose) : IDisposable

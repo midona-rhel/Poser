@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Poser.Files.Converters;
+namespace Poser.Documents.Files.Converters;
 
 /// <summary>
 /// Reads either tag shape into Poser's plain string list.

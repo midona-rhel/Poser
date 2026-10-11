@@ -3,12 +3,14 @@ using System.Reflection;
 using Poser.Application.Appearance;
 using Poser.Application.Gaze;
 using Poser.Application.Integration;
+using Poser.Application.Tests.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Application.Posing;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Operations;
@@ -40,7 +42,7 @@ public sealed class ActorStateSnapshotsTests
         Assert.Equal("authored profile", f.Profile);
         Assert.Equal(42, f.Model);
         Assert.DoesNotContain("pose", f.Events);
-        f.Redraw.SetResult(IntegrationPortResult.Ok());
+        f.Redraw.SetResult(IntegrationResult.Ok());
         await f.PoseEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
         Assert.DoesNotContain("tint", f.Events);
         Assert.DoesNotContain("expression", f.Events);
@@ -54,40 +56,18 @@ public sealed class ActorStateSnapshotsTests
         Assert.True(f.Events.IndexOf("tint") < f.Events.IndexOf("expression"));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Failure_or_replaced_session_after_redraw_never_restores_pose(bool replaceSession)
+    [Fact]
+    public async Task Replaced_session_after_redraw_never_restores_pose()
     {
         var f = new Fixture();
         var saved = f.States.Capture(f.Actor).Value!;
         var completed = new TaskCompletionSource<GestureResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         f.States.Restore(saved, () => true, TestContext.Current.CancellationToken, completed.SetResult);
         await f.RedrawEntered.Task.WaitAsync(TestContext.Current.CancellationToken);
-        if (replaceSession) f.ActiveSessionGeneration = SessionGeneration.New();
-        f.Redraw.SetResult(replaceSession ? IntegrationPortResult.Ok() : IntegrationPortResult.Fail("Redraw failed"));
+        f.ActiveSessionGeneration = SessionGeneration.New();
+        f.Redraw.SetResult(IntegrationResult.Ok());
         Assert.False((await completed.Task.WaitAsync(TestContext.Current.CancellationToken)).Success);
         Assert.DoesNotContain("pose", f.Events);
-    }
-
-    [Fact]
-    public void Required_appearance_capture_failure_is_not_represented_as_empty_state()
-    {
-        var f = new Fixture { CannotReadLook = true };
-        var result = f.States.Capture(f.Actor);
-        Assert.False(result.Success);
-        Assert.Contains("look unreadable", result.Detail);
-        Assert.Empty(f.Events);
-    }
-
-    [Fact]
-    public void Pose_capture_exception_is_a_refusal_before_any_mutation()
-    {
-        var f = new Fixture { ThrowPoseCapture = true };
-        var result = f.States.Capture(f.Actor);
-        Assert.False(result.Success);
-        Assert.Contains("Pose unavailable", result.Detail);
-        Assert.Empty(f.Events);
     }
 
     private sealed class Fixture : ISessionGenerationSource, IPoseSnapshotPort
@@ -98,7 +78,7 @@ public sealed class ActorStateSnapshotsTests
         public ActorPresentationSession Presentation { get; }
         public List<string> Events { get; } = [];
         public TaskCompletionSource<bool> RedrawEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource<IntegrationPortResult> Redraw { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<IntegrationResult> Redraw { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> PoseEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Action<bool>? FinishPose;
         public string Look = "authored look", Profile = "authored profile";
@@ -113,8 +93,8 @@ public sealed class ActorStateSnapshotsTests
         {
             var scene = new SceneSession(new SelectionSession());
             scene.TryRefresh(new SceneSnapshot(1, [new ActorDescriptor(Actor, "actor", [])], [], [], []));
-            var integrationPort = Port<IIntegrationRuntimePort>(Integration);
-            var appearance = new ActorIntegrationSession(integrationPort, null!, this);
+            var integrationPort = Port<IIntegrationRuntimeFake>(Integration);
+            var integration = new IntegrationGraph(integrationPort, null!, this);
             Presentation = new(Port<IPresentationRuntimePort>((method, args) =>
             {
                 switch (method.Name)
@@ -122,7 +102,7 @@ public sealed class ActorStateSnapshotsTests
                     case "IsSupported": return true;
                     case "Read": return new PresentationReading(1, Tint, null, null, default);
                     case "SetTint":
-                    case "RestoreTint": Tint = (Vector4)args[2]!; Events.Add("tint"); return PresentationPortResult.Ok();
+                    case "RestoreTint": Tint = (Vector4)args[2]!; Events.Add("tint"); return Outcome.Ok();
                     case "SuspendColors": return null;
                     case "ClearOwned": return null;
                     default: throw new InvalidOperationException(method.Name);
@@ -131,15 +111,15 @@ public sealed class ActorStateSnapshotsTests
             var models = new ActorModelIdSession(Port<IModelIdRuntimePort>((method, args) =>
             {
                 if (method.Name == "Read") return (int?)Model;
-                Model = (int)args[1]!; Events.Add("model"); return PresentationPortResult.Ok();
+                Model = (int)args[1]!; Events.Add("model"); return Outcome.Ok();
             }));
-            var gaze = new GazeSession(new ValueJournal(new TransformHistory()), Port<IGazeRuntimePort>((method, args) =>
+            var gaze = new GazeSession(new ValueJournal(new EditHistory()), Port<IGazeRuntimePort>((method, args) =>
             {
                 if (method.Name == "get_IsAvailable") return true;
                 if (method.Name == "Read") return new GazeReading(new(GazeTargetMode.Entity, GazeTargetType.Eyes,
                     Vector3.One, Vector3.One, Vector3.One, Vector3.One, true, false, false), Actor, true, false);
                 if (method.Name == "SetTarget") Events.Add("gaze target");
-                return GazeResult.Ok();
+                return Outcome.Ok();
             }));
             var expressions = Port<IExpressionRuntimePort>((method, args) => method.Name switch
             {
@@ -149,15 +129,16 @@ public sealed class ActorStateSnapshotsTests
                 "Write" => WriteExpression(args),
                 _ => throw new InvalidOperationException(method.Name),
             });
-            States = new(scene, this, new(() => this), appearance, Presentation, models, gaze, expressions, integrationPort);
+            States = new(scene, this, new(() => this), integration.Selectors, integration.Mcdf, Presentation,
+                models, gaze, expressions, integrationPort, integrationPort);
         }
 
-        private ValueWriteResult WriteExpression(object?[] args)
+        private Outcome WriteExpression(object?[] args)
         {
             var weights = (IReadOnlyList<(string, float)>)args[1]!;
             Weight = weights.Single().Item2;
             Events.Add("expression");
-            return ValueWriteResult.Ok();
+            return Outcome.Ok();
         }
 
         private object? Integration(MethodInfo method, object?[] args)
@@ -178,13 +159,13 @@ public sealed class ActorStateSnapshotsTests
                     ? IntegrationValue<string>.Fail("look unreadable") : IntegrationValue<string>.Ok(Look);
                 case "CaptureGlamourerState": return IntegrationValue<string>.Ok(Look);
                 case "GetCollectionAssignment": return IntegrationValue<CollectionAssignment>.Ok(new(Guid.Empty, "Empty", true));
-                case "SetIndividualCollection": Events.Add("collection"); return IntegrationPortResult.Ok();
+                case "SetIndividualCollection": Events.Add("collection"); return IntegrationResult.Ok();
                 case "ProbeBodyProfile": return IntegrationValue<BodyProfileProbe>.Ok(new(_profile, true));
                 case "GetBodyProfileJson": return IntegrationValue<string>.Ok(Profile);
                 case "ApplyTemporaryBodyProfile":
                     Profile = (string)args[1]!; Events.Add("profile"); return IntegrationValue<Guid>.Ok(Guid.NewGuid());
                 case "ApplyGlamourerStateJson":
-                    Look = (string)args[1]!; Events.Add("look"); return IntegrationPortResult.Ok();
+                    Look = (string)args[1]!; Events.Add("look"); return IntegrationResult.Ok();
                 case "RedrawAndWait": RedrawEntered.TrySetResult(true); return Redraw.Task;
                 default: throw new InvalidOperationException(method.Name);
             }

@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Operations;
 
 namespace Poser.Application.Scene;
@@ -10,6 +11,6 @@ public interface ISceneWorkflow
     OperationReceipt? Receipt { get; }
     bool Busy { get; }
     void Cancel();
-    SceneActionResult BeginSave(string path, string? description = null, SceneSaveOptions? options = null);
-    SceneActionResult BeginLoad(string path, SceneLoadOptions? options = null);
+    Outcome BeginSave(string path, string? description = null, SceneSaveOptions? options = null);
+    Outcome BeginLoad(string path, SceneLoadOptions? options = null);
 }

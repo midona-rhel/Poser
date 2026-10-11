@@ -4,6 +4,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
+    <!-- A switch expression that misses a named enum value does not build:
+         SceneOutcomeKind's labels and remedies rely on it. -->
+    <WarningsAsErrors>$(WarningsAsErrors);CS8509</WarningsAsErrors>
   </PropertyGroup>
 
   <!-- Release identity; rationale and dependency verdicts live in

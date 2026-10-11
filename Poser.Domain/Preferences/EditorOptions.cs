@@ -1,4 +1,4 @@
-namespace Poser.Services;
+namespace Poser.Domain.Preferences;
 
 /// <summary>
 /// Transform orientation - which coordinate axes to use for transforms.

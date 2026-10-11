@@ -10,10 +10,9 @@ using Poser.Application.Transforms;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.Bindings;
-using Poser.Services;
-using LegacyTransform = Poser.Transform;
+using Poser.Game.Services;
+using LegacyTransform = Poser.Domain.Transforms.Transform;
 
 namespace Poser.Game.Animation;
 
@@ -118,12 +117,6 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
     public bool IsPending => _pending != null;
 
     public OperationReceipt? LastReceipt => _lastReceipt;
-
-    /// <summary>Returns the last receipt when it belongs to the actor.</summary>
-    public OperationReceipt? ReceiptFor(ActorId actor) =>
-        _lastReceipt is { TargetActorId: var target } && target == actor
-            ? _lastReceipt
-            : null;
 
     private static bool IsFaceBone(string name) =>
         name.StartsWith("j_f_", StringComparison.Ordinal) ||

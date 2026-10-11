@@ -1,12 +1,13 @@
 using System.Numerics;
+using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Entities;
 using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
-using Poser.Services;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
 namespace Poser.Game.Bindings;
 
@@ -26,7 +27,9 @@ internal readonly record struct ActorAttachment(
 
 /// <summary>
 /// Private identity map between domain ids and current legacy/native entities.
-/// Refresh and resolution must run on the framework thread.
+/// Refresh and resolution must run on the framework thread. Every Resolve
+/// enforces that thread and exact-generation identity itself, so callers
+/// need not repeat either check.
 /// </summary>
 public sealed class StableBindingRegistry : IEntityBindings
 {
@@ -35,11 +38,15 @@ public sealed class StableBindingRegistry : IEntityBindings
     private readonly IActorSpawnService _spawn;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
+    private readonly IFramework _framework;
     private Dictionary<string, ActorLineage> _lineages =
         new(StringComparer.Ordinal);
     private BindingCandidate? _stagedCandidate;
     private Dictionary<ActorId, IActor> _actorBindings = new();
     private Dictionary<BoneId, IBone> _boneBindings = new();
+    // The first bound bone of each skeleton generation, so ResolveSkeleton
+    // does not scan every bone. Rebuilt whenever the bone map is published.
+    private Dictionary<SkeletonId, BoneId> _skeletonBones = new();
     private Dictionary<string, ActorId> _legacyActorIds =
         new(StringComparer.Ordinal);
     private Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>
@@ -85,8 +92,10 @@ public sealed class StableBindingRegistry : IEntityBindings
         IVirtualCameraService cameras,
         PropSpawnService props,
         OverlayNodeService overlays,
-        WorldObjectService worldObjects)
+        WorldObjectService worldObjects,
+        IFramework framework)
     {
+        _framework = framework;
         _actors = actors;
         _skeletons = skeletons;
         _spawn = spawn;
@@ -508,6 +517,126 @@ public sealed class StableBindingRegistry : IEntityBindings
     }
 
     /// <summary>
+    /// Everything a candidate reads except the bone walk: per actor its
+    /// address, row fields, attachments and each present slot skeleton's
+    /// build; per light, camera, prop, overlay and adopted object its instance
+    /// and row fields. While this is unchanged a new candidate would equal the
+    /// last one, so the idle poll compares it instead of rebuilding. Asking
+    /// for the skeletons also lets the cache notice an in-place rebuild,
+    /// which it reports by itself.
+    /// </summary>
+    public List<object?> IdleSignature()
+    {
+        var signature = new List<object?>();
+        AddActors(_actors.Actors);
+        signature.Add(null);
+        AddActors(_actors.AuxiliaryActors);
+
+        void AddActors(IReadOnlyList<IActor> actors)
+        {
+            foreach (var actor in actors)
+            {
+                signature.Add(actor);
+                if (!_actors.IsAvailable(actor))
+                    continue;
+                var (companion, mount, ornament) = Attachments(actor.Address);
+                signature.Add(actor.Address);
+                signature.Add(actor.Name);
+                signature.Add(actor.IsPlayer);
+                signature.Add(actor.IsCompanion);
+                signature.Add(_spawn.IsVisible(actor));
+                signature.Add(_spawn.IsSpawnedActor(actor));
+                signature.Add(_actors.IsLocalPlayer(actor));
+                signature.Add(_actors.IsAdopted(actor));
+                signature.Add(companion);
+                signature.Add(mount);
+                signature.Add(ornament);
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                {
+                    signature.Add(skeleton.Slot);
+                    signature.Add(skeleton.IsValid);
+                    signature.Add(skeleton.BuildRevision);
+                }
+            }
+        }
+
+        foreach (var light in _lighting.Lights)
+        {
+            signature.Add(light);
+            signature.Add(light.IsValid);
+            signature.Add(light.Name);
+            signature.Add(light.Kind);
+            signature.Add(light.IsOn);
+            signature.Add(light.Ownership);
+            signature.Add(light.AttachedBone);
+        }
+        foreach (var camera in _cameras.Cameras)
+        {
+            signature.Add(camera);
+            signature.Add(camera.IsValid);
+            signature.Add(camera.Name);
+            signature.Add(camera.Kind);
+            signature.Add(camera.IsLive);
+            signature.Add(camera.IsDefault);
+            signature.Add(camera.IsLocked);
+        }
+        foreach (var prop in _props.Props)
+        {
+            signature.Add(prop);
+            signature.Add(prop.IsValid);
+            signature.Add(prop.Name);
+            signature.Add(prop.Visible);
+        }
+        foreach (var overlay in _overlays.Nodes)
+        {
+            signature.Add(overlay);
+            signature.Add(overlay.IsValid);
+            signature.Add(overlay.Name);
+            signature.Add(overlay.Kind);
+            signature.Add(overlay.Visible);
+        }
+        foreach (var worldObject in _worldObjects.Adopted)
+        {
+            signature.Add(worldObject);
+            signature.Add(worldObject.IsValid);
+            signature.Add(worldObject.Name);
+            signature.Add(worldObject.Path);
+            signature.Add(worldObject.Visible);
+            signature.Add(worldObject.Spawned);
+            signature.Add(worldObject.VfxPaused);
+            signature.Add(worldObject.AnimationPaused);
+            signature.Add(worldObject.NightState);
+        }
+        return signature;
+    }
+
+    /// <summary>Entities compare by instance, values by value.</summary>
+    public static bool SameIdleSignature(
+        IReadOnlyList<object?>? previous,
+        IReadOnlyList<object?> current)
+    {
+        if (previous is null || previous.Count != current.Count)
+            return false;
+        for (int i = 0; i < current.Count; i++)
+        {
+            var (a, b) = (previous[i], current[i]);
+            if (!ReferenceEquals(a, b) && !(a is ValueType or string && Equals(a, b)))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Forgets every actor lineage. Lineages are keyed per native object and
+    /// slot index, so they only accumulate within a GPose session; once the
+    /// session's actors are gone none of them can be matched again.
+    /// </summary>
+    public void ResetLineages()
+    {
+        _lineages = new Dictionary<string, ActorLineage>(StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// Publishes the exact staged maps after scene admission. The structural
     /// comparison matters for NoChange: a native refresh may only replace maps
     /// when every published id and generation still names this scene.
@@ -523,6 +652,11 @@ public sealed class StableBindingRegistry : IEntityBindings
         _lineages = candidate.Lineages;
         _actorBindings = candidate.ActorBindings;
         _boneBindings = candidate.BoneBindings;
+        // Insertion order: the same first bone the old full scan found.
+        var skeletonBones = new Dictionary<SkeletonId, BoneId>();
+        foreach (var boneId in _boneBindings.Keys)
+            skeletonBones.TryAdd(boneId.Skeleton, boneId);
+        _skeletonBones = skeletonBones;
         _legacyActorIds = candidate.LegacyActorIds;
         _legacyBoneIds = candidate.LegacyBoneIds;
         _lightIds = candidate.LightIds;
@@ -661,26 +795,32 @@ public sealed class StableBindingRegistry : IEntityBindings
     /// only their own fields are read: no native sibling or child chain is
     /// ever traversed, so the map stays a one-level companion→owner relation.
     /// </summary>
-    private static unsafe void CollectAttachments(
+    private static void CollectAttachments(
         nint address,
         ActorId owner,
         Dictionary<nint, ActorAttachment> companionOwners)
     {
-        if (address == nint.Zero)
-            return;
-        var native = (Character*)address;
-        if (native == null || native->ChildObject == null)
-            return;
+        var (companion, mount, ornament) = Attachments(address);
+        if (companion != nint.Zero)
+            companionOwners[companion] = new(owner, CompanionKind.Companion);
+        if (mount != nint.Zero)
+            companionOwners[mount] = new(owner, CompanionKind.Mount);
+        if (ornament != nint.Zero)
+            companionOwners[ornament] = new(owner, CompanionKind.Ornament);
+    }
 
-        if (native->CompanionData.CompanionObject != null)
-            companionOwners[(nint)native->CompanionData.CompanionObject] =
-                new(owner, CompanionKind.Companion);
-        if (native->Mount.MountObject != null)
-            companionOwners[(nint)native->Mount.MountObject] =
-                new(owner, CompanionKind.Mount);
-        if (native->OrnamentData.OrnamentObject != null)
-            companionOwners[(nint)native->OrnamentData.OrnamentObject] =
-                new(owner, CompanionKind.Ornament);
+    private static unsafe (nint Companion, nint Mount, nint Ornament) Attachments(
+        nint address)
+    {
+        if (address == nint.Zero)
+            return default;
+        var native = (Character*)address;
+        if (native->ChildObject == null)
+            return default;
+        return (
+            (nint)native->CompanionData.CompanionObject,
+            (nint)native->Mount.MountObject,
+            (nint)native->OrnamentData.OrnamentObject);
     }
 
     /// <summary>Projects the native owner pointers onto the already-minted
@@ -765,46 +905,12 @@ public sealed class StableBindingRegistry : IEntityBindings
             ? id
             : null;
 
-    public BindingResult<IVirtualCamera> Resolve(CameraId id)
-    {
-        if (_cameraBindings.TryGetValue(id, out var camera) && camera.IsValid)
-            return new BindingResult<IVirtualCamera>(
-                BindingStatus.Success,
-                camera);
-
-        foreach (var candidate in _cameraBindings.Keys)
-        {
-            if (candidate.LogicalId != id.LogicalId)
-                continue;
-            return new BindingResult<IVirtualCamera>(
-                BindingStatus.StaleTarget,
-                Detail:
-                $"Camera generation {id.Generation} is stale; current is {candidate.Generation}.");
-        }
-
-        return new BindingResult<IVirtualCamera>(
-            BindingStatus.Missing,
-            Detail: $"Camera {id.LogicalId:N} is not present.");
-    }
-
     public PropId? GetPropId(PropHandle prop) =>
         _propIds.TryGetValue(prop, out var id) &&
         _propBindings.TryGetValue(id, out var bound) &&
         ReferenceEquals(bound, prop)
             ? id
             : null;
-
-    public BindingResult<PropHandle> Resolve(PropId id)
-    {
-        if (_propBindings.TryGetValue(id, out var prop) && prop.IsValid)
-            return new BindingResult<PropHandle>(
-                BindingStatus.Success,
-                prop);
-
-        return new BindingResult<PropHandle>(
-            BindingStatus.Missing,
-            Detail: $"Object {id.LogicalId:N} is not present.");
-    }
 
     public WorldObjectId? GetWorldObjectId(AdoptedWorldObject worldObject) =>
         _worldObjectIds.TryGetValue(worldObject, out var id) &&
@@ -813,19 +919,6 @@ public sealed class StableBindingRegistry : IEntityBindings
             ? id
             : null;
 
-    public BindingResult<AdoptedWorldObject> Resolve(WorldObjectId id)
-    {
-        if (_worldObjectBindings.TryGetValue(id, out var worldObject) &&
-            worldObject.IsValid)
-            return new BindingResult<AdoptedWorldObject>(
-                BindingStatus.Success,
-                worldObject);
-
-        return new BindingResult<AdoptedWorldObject>(
-            BindingStatus.Missing,
-            Detail: $"World object {id.LogicalId:N} is not present.");
-    }
-
     public OverlayId? GetOverlayId(OverlayNodeHandle overlay) =>
         _overlayIds.TryGetValue(overlay, out var id) &&
         _overlayBindings.TryGetValue(id, out var bound) &&
@@ -833,69 +926,144 @@ public sealed class StableBindingRegistry : IEntityBindings
             ? id
             : null;
 
-    public BindingResult<OverlayNodeHandle> Resolve(OverlayId id)
-    {
-        if (_overlayBindings.TryGetValue(id, out var overlay) && overlay.IsValid)
-            return new BindingResult<OverlayNodeHandle>(
-                BindingStatus.Success,
-                overlay);
+    // ── Resolution ───────────────────────────────────────────────────
+    // Each kind keeps its own liveness rule and stale-vs-missing detail; the
+    // thread and identity checks live once, in the generic helper.
 
-        return new BindingResult<OverlayNodeHandle>(
-            BindingStatus.Missing,
-            Detail: $"Overlay {id.LogicalId:N} is not present.");
+    public BindingResult<IActor> Resolve(ActorId id) => Resolve("Actor", id, _actorBindings,
+        static (r, _, actor) => r._actors.IsAvailable(actor) ? null
+            : Missing<IActor>("The actor's native body is no longer available."),
+        static (r, actor) => r.GetActorId(actor), static (r, id) => r.AbsentActor(id));
+
+    public BindingResult<IBone> Resolve(BoneId id) => Resolve("Bone", id, _boneBindings,
+        static (r, id, bone) => r.RefuseBone(id, bone),
+        static (r, bone) => r.GetBoneId(bone), static (r, id) => r.AbsentBone(id));
+
+    public BindingResult<ILight> Resolve(LightId id) => Resolve("Light", id, _lightBindings,
+        static (r, id, light) => light.IsValid ? null : r.AbsentLight(id),
+        static (r, light) => r.GetLightId(light), static (r, id) => r.AbsentLight(id));
+
+    public BindingResult<IVirtualCamera> Resolve(CameraId id) => Resolve("Camera", id, _cameraBindings,
+        static (r, id, camera) => camera.IsValid ? null : r.AbsentCamera(id),
+        static (r, camera) => r.GetCameraId(camera), static (r, id) => r.AbsentCamera(id));
+
+    public BindingResult<PropHandle> Resolve(PropId id) => Resolve("Object", id, _propBindings,
+        static (_, id, prop) => prop.IsValid ? null : AbsentHandle<PropHandle>("Object", id.LogicalId),
+        static (r, prop) => r.GetPropId(prop),
+        static (_, id) => AbsentHandle<PropHandle>("Object", id.LogicalId));
+
+    public BindingResult<AdoptedWorldObject> Resolve(WorldObjectId id) => Resolve("World object", id,
+        _worldObjectBindings,
+        static (_, id, world) => world.IsValid ? null
+            : AbsentHandle<AdoptedWorldObject>("World object", id.LogicalId),
+        static (r, world) => r.GetWorldObjectId(world),
+        static (_, id) => AbsentHandle<AdoptedWorldObject>("World object", id.LogicalId));
+
+    public BindingResult<OverlayNodeHandle> Resolve(OverlayId id) => Resolve("Overlay", id, _overlayBindings,
+        static (_, id, overlay) => overlay.IsValid ? null
+            : AbsentHandle<OverlayNodeHandle>("Overlay", id.LogicalId),
+        static (r, overlay) => r.GetOverlayId(overlay),
+        static (_, id) => AbsentHandle<OverlayNodeHandle>("Overlay", id.LogicalId));
+
+    /// <summary>The one resolve path. Off the framework thread the maps may be
+    /// mid-swap and the entity mid-teardown, so it fails closed with
+    /// <see cref="BindingStatus.WrongThread"/>. A bound, live entity must also
+    /// map back to exactly this id: an instance listed twice by its service in
+    /// one refresh is minted two ids, and only the last one is its own.</summary>
+    private BindingResult<T> Resolve<TId, T>(
+        string kind,
+        TId id,
+        Dictionary<TId, T> bindings,
+        Func<StableBindingRegistry, TId, T, BindingResult<T>?> refuse,
+        Func<StableBindingRegistry, T, TId?> reverse,
+        Func<StableBindingRegistry, TId, BindingResult<T>> absent)
+        where TId : struct, IEquatable<TId>
+        where T : class
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            return new BindingResult<T>(BindingStatus.WrongThread,
+                Detail: $"{kind} {id} can only be resolved on the framework thread.");
+        if (!bindings.TryGetValue(id, out var value))
+            return absent(this, id);
+        if (refuse(this, id, value) is { } refusal)
+            return refusal;
+        return reverse(this, value) is { } bound && bound.Equals(id)
+            ? new BindingResult<T>(BindingStatus.Success, value)
+            : new BindingResult<T>(BindingStatus.IdentityMismatch,
+                Detail: $"{kind} {id} is bound under another id.");
     }
 
-    public BindingResult<ILight> Resolve(LightId id)
-    {
-        if (_lightBindings.TryGetValue(id, out var light) && light.IsValid)
-            return new BindingResult<ILight>(
-                BindingStatus.Success,
-                light);
+    private static BindingResult<T> Missing<T>(string detail) where T : class =>
+        new(BindingStatus.Missing, Detail: detail);
 
-        foreach (var candidate in _lightBindings.Keys)
+    private static BindingResult<T> AbsentHandle<T>(string kind, Guid logicalId) where T : class =>
+        Missing<T>($"{kind} {logicalId:N} is not present.");
+
+    private BindingResult<IActor> AbsentActor(ActorId id)
+    {
+        foreach (var current in _actorBindings.Keys)
+            if (current.LogicalId == id.LogicalId)
+                return new BindingResult<IActor>(BindingStatus.StaleTarget,
+                    Detail: $"Actor generation {id.Generation} is stale; current is {current.Generation}.");
+        return Missing<IActor>($"Actor {id.LogicalId:N} is not present.");
+    }
+
+    private BindingResult<ILight> AbsentLight(LightId id)
+    {
+        foreach (var current in _lightBindings.Keys)
+            if (current.LogicalId == id.LogicalId)
+                return new BindingResult<ILight>(BindingStatus.StaleTarget,
+                    Detail: $"Light generation {id.Generation} is stale; current is {current.Generation}.");
+        return Missing<ILight>($"Light {id.LogicalId:N} is not present.");
+    }
+
+    private BindingResult<IVirtualCamera> AbsentCamera(CameraId id)
+    {
+        foreach (var current in _cameraBindings.Keys)
+            if (current.LogicalId == id.LogicalId)
+                return new BindingResult<IVirtualCamera>(BindingStatus.StaleTarget,
+                    Detail: $"Camera generation {id.Generation} is stale; current is {current.Generation}.");
+        return Missing<IVirtualCamera>($"Camera {id.LogicalId:N} is not present.");
+    }
+
+    /// <summary>A bound bone is live only while its actor resolves and that
+    /// actor's current slot skeleton still holds this exact bone.</summary>
+    private BindingResult<IBone>? RefuseBone(BoneId id, IBone bone)
+    {
+        var actor = Resolve(id.Skeleton.Actor);
+        if (!actor.Success)
+            return new BindingResult<IBone>(actor.Status, Detail: actor.Detail);
+        var current = _skeletons.GetSkeleton(actor.Value!, id.Slot);
+        if (current is { IsValid: true } &&
+            ReferenceEquals(current.GetBone(id.PartialId, id.BoneIndex), bone))
+            return null;
+        return new BindingResult<IBone>(BindingStatus.StaleTarget,
+            Detail: "The native skeleton changed since this bone was bound.");
+    }
+
+    private BindingResult<IBone> AbsentBone(BoneId id)
+    {
+        foreach (var key in _boneBindings.Keys)
         {
-            if (candidate.LogicalId != id.LogicalId)
+            if (key.Skeleton.Actor.LogicalId != id.Skeleton.Actor.LogicalId ||
+                key.Slot != id.Slot ||
+                key.PartialId != id.PartialId ||
+                key.BoneIndex != id.BoneIndex)
                 continue;
-            return new BindingResult<ILight>(
-                BindingStatus.StaleTarget,
-                Detail:
-                $"Light generation {id.Generation} is stale; current is {candidate.Generation}.");
+            return key.CanonicalName.Equals(id.CanonicalName, StringComparison.Ordinal)
+                ? new BindingResult<IBone>(BindingStatus.StaleTarget,
+                    Detail: $"Bone {id.CanonicalName} belongs to a stale actor/skeleton generation.")
+                : new BindingResult<IBone>(BindingStatus.IdentityMismatch,
+                    Detail: $"Bone {id.PartialId}:{id.BoneIndex} changed from {id.CanonicalName} to {key.CanonicalName}.");
         }
-
-        return new BindingResult<ILight>(
-            BindingStatus.Missing,
-            Detail: $"Light {id.LogicalId:N} is not present.");
-    }
-
-    public BindingResult<IActor> Resolve(ActorId id)
-    {
-        if (_actorBindings.TryGetValue(id, out var actor))
-            return _actors.IsAvailable(actor)
-                ? new BindingResult<IActor>(BindingStatus.Success, actor)
-                : new BindingResult<IActor>(BindingStatus.Missing,
-                    Detail: "The actor's native body is no longer available.");
-
-        var current = _actorBindings.Keys.FirstOrDefault(
-            candidate => candidate.LogicalId == id.LogicalId);
-        return current.LogicalId == id.LogicalId
-            ? new BindingResult<IActor>(
-                BindingStatus.StaleTarget,
-                Detail: $"Actor generation {id.Generation} is stale; current is {current.Generation}.")
-            : new BindingResult<IActor>(
-                BindingStatus.Missing,
-                Detail: $"Actor {id.LogicalId:N} is not present.");
+        return Missing<IBone>($"Bone {id} is not present.");
     }
 
     /// <summary>The live skeleton behind an exact skeleton generation, reached
-    /// through the bones bound to it — the registry keys on bones, and a
+    /// through its first bound bone — the registry keys on bones, and a
     /// skeleton with no bound bone is one nothing can be asked about.</summary>
-    public ISkeleton? ResolveSkeleton(SkeletonId id)
-    {
-        foreach (var (boneId, live) in _boneBindings)
-            if (boneId.Skeleton == id)
-                return Resolve(boneId).Value?.Skeleton;
-        return null;
-    }
+    public ISkeleton? ResolveSkeleton(SkeletonId id) =>
+        _skeletonBones.TryGetValue(id, out var bone) ? Resolve(bone).Value?.Skeleton : null;
 
     /// <summary>The current-generation id for a target whose actor is still
     /// in the scene: the same bone by slot, partial, index and name on the
@@ -932,47 +1100,6 @@ public sealed class StableBindingRegistry : IEntityBindings
             default:
                 return null;
         }
-    }
-
-    public BindingResult<IBone> Resolve(BoneId id)
-    {
-        if (_boneBindings.TryGetValue(id, out var bone))
-        {
-            var actor = Resolve(id.Skeleton.Actor);
-            if (!actor.Success)
-                return new BindingResult<IBone>(actor.Status, Detail: actor.Detail);
-            var current = _skeletons.GetSkeleton(actor.Value!, id.Slot);
-            if (current is { IsValid: true } &&
-                ReferenceEquals(current.GetBone(id.PartialId, id.BoneIndex), bone))
-                return new BindingResult<IBone>(BindingStatus.Success, bone);
-            return new BindingResult<IBone>(BindingStatus.StaleTarget,
-                Detail: "The native skeleton changed since this bone was bound.");
-        }
-
-        var sameIndex = _boneBindings.FirstOrDefault(pair =>
-            pair.Key.Skeleton.Actor.LogicalId ==
-                id.Skeleton.Actor.LogicalId &&
-            pair.Key.Slot == id.Slot &&
-            pair.Key.PartialId == id.PartialId &&
-            pair.Key.BoneIndex == id.BoneIndex);
-        if (sameIndex.Value != null)
-        {
-            if (!sameIndex.Key.CanonicalName.Equals(
-                    id.CanonicalName,
-                    StringComparison.Ordinal))
-                return new BindingResult<IBone>(
-                    BindingStatus.IdentityMismatch,
-                    Detail:
-                    $"Bone {id.PartialId}:{id.BoneIndex} changed from {id.CanonicalName} to {sameIndex.Key.CanonicalName}.");
-            return new BindingResult<IBone>(
-                BindingStatus.StaleTarget,
-                Detail:
-                $"Bone {id.CanonicalName} belongs to a stale actor/skeleton generation.");
-        }
-
-        return new BindingResult<IBone>(
-            BindingStatus.Missing,
-            Detail: $"Bone {id} is not present.");
     }
 
     /// <summary>Light identity is instance identity: two distinct lights with

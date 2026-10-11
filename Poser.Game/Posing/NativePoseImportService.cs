@@ -3,9 +3,10 @@ using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
+using Poser.Documents.Files;
+using Poser.Game.Entities;
+using Poser.Game.Files;
+using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 
@@ -14,22 +15,19 @@ public sealed class NativePoseImportService : IPoseImportCommands
 {
     private readonly IEntityBindings _bindings;
     private readonly PoseImportCoordinator _imports;
-    private readonly IFramework _framework;
 
     public NativePoseImportService(
         IEntityBindings bindings,
         PoseImportCoordinator imports,
         IPoseFileService poseFiles,
         ISkeletonService skeletons,
-        IPluginLog log,
-        IFramework framework)
+        IPluginLog log)
     {
         _bindings = bindings;
         _imports = imports;
         _poseFiles = poseFiles;
         _skeletons = skeletons;
         _log = log;
-        _framework = framework;
     }
 
     public bool IsImportBusy => _imports.IsImportBusy;
@@ -43,7 +41,7 @@ public sealed class NativePoseImportService : IPoseImportCommands
             || _skeletons.GetSkeleton(current) is not { } skeleton)
             return null;
         return new(
-            Poser.Files.PoseFileClassification.IsExpressionOnly(pose),
+            Poser.Documents.Files.PoseFileClassification.IsExpressionOnly(pose),
             PoseFileService.IsBodyOnlyPose(pose),
             PoseFileService.IsDawntrailSkeleton(skeleton)
                 && PoseFileService.IsLikelyDawntrailPose(pose),
@@ -73,9 +71,8 @@ public sealed class NativePoseImportService : IPoseImportCommands
     private PoseEditResult? ResolveTarget(ActorId id, out IActor actor)
     {
         actor = null!;
-        // Planning reads native skeleton caches too, not just the later apply pass.
-        if (!_framework.IsInFrameworkUpdateThread)
-            return PoseEditResult.Fail("Pose import must run on the framework thread.");
+        // Planning reads native skeleton caches too, so a refused resolve
+        // (including off the framework thread) stops before any planning.
         var resolved = _bindings.Resolve(id);
         if (!resolved.Success || resolved.Value is not { } current)
             return PoseEditResult.Fail(resolved.Detail ?? "The actor is no longer available.");
@@ -119,7 +116,7 @@ public sealed class NativePoseImportService : IPoseImportCommands
 
         var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
         if (plan == null)
-            return PoseEditResult.Fail("The pose file could not be read.");
+            return PoseEditResult.Fail("The pose file could not be read or failed validation.");
         return BeginImport(actor, plan, options,
             $"Import {System.IO.Path.GetFileName(path)}", onReceipt, asset: path);
     }
@@ -141,6 +138,8 @@ public sealed class NativePoseImportService : IPoseImportCommands
 
         var plan = _poseFiles.BuildImportPlan(
             _skeletons.GetSkeletons(actor), poseFile, options);
+        if (plan == null)
+            return PoseEditResult.Fail("The pose failed validation and was not imported.");
         return BeginImport(actor, plan, options, description, onReceipt);
     }
 

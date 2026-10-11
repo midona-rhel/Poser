@@ -11,7 +11,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Domain.Scene;
 
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// Poser scene file format (.xivs): one versioned JSON
@@ -34,10 +34,15 @@ namespace Poser.Files;
 [Serializable]
 public class SceneFile
 {
-    /// <summary>Bumped on any breaking meaning change of a persisted field.
-    /// Readers refuse versions above this as typed Future outcomes instead
-    /// of guessing at unknown semantics.</summary>
-    public const int CurrentVersion = 2;
+    /// <summary>The scene format version this build writes. The rule is in
+    /// <c>docs/features/scenes.md</c> (Format versioning): bump it for any
+    /// change an older reader would lose or misread; readers accept
+    /// <see cref="MinimumVersion"/> through this and refuse anything newer as
+    /// a typed Future outcome.</summary>
+    public const int CurrentVersion = 3;
+
+    /// <summary>The oldest scene format this build still reads.</summary>
+    public const int MinimumVersion = 2;
 
     /// <summary>The one extension every scene reader, writer and listing
     /// filters on.</summary>
@@ -93,9 +98,9 @@ public class SceneFile
     /// <summary>
     /// A light library entry. ONE pipeline for every entry (ruled
     /// 2026-08-31): the scene container restricted to one light, saved
-    /// through the workflow and restored through the load — the pane-direct
-    /// LightFile write this replaced left old-format entries behind, which
-    /// read as unreadable and are re-saved.
+    /// through the workflow and restored through the load. Bare-JSON files
+    /// older builds wrote are still read (see <see cref="SceneFileStore"/>);
+    /// nothing writes them.
     /// </summary>
     public const string LightEntryExtension = ".xivl";
 
@@ -198,6 +203,10 @@ public class SceneFile
     /// seats entities in kind order.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneStructureRef>? RootOrder { get; set; }
+
+    /// <summary>Parent links between saved entities, ABSENT when the scene
+    /// has none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneParentLink>? Parents { get; set; }
 
     // The same wire style every Poser document uses — numerics as
@@ -245,6 +254,10 @@ public static class SceneFileLimits
     public const int MaxCameras = 50;
     public const int MaxOverlays = 50;
     public const int MaxNameCharacters = 256;
+
+    /// <summary>The scene's free-text description: prose, not a name, so it
+    /// gets room the description field can actually fill.</summary>
+    public const int MaxDescriptionCharacters = 4096;
 
     /// <summary>Bound for stated filesystem paths, which are legitimately
     /// longer than a name — a long-path prefix plus a deep library.</summary>
@@ -295,6 +308,17 @@ public class SceneActor
 
     /// <summary>The actor's ModelChara row id; 0 is the human base.</summary>
     public int ModelCharaId { get; set; }
+
+    /// <summary>The catalog kind of a minion, mount or ornament spawned as an
+    /// actor of its own. Absent for a character, and in files written before
+    /// the kind was saved, which load as characters exactly as they did.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CompanionKind? SpawnedKind { get; set; }
+
+    /// <summary>The actor wore an appearance of its own that this file does
+    /// not carry, so it loads wearing the local player's.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AppearanceNotSaved { get; set; }
 
     /// <summary>Local permanent Penumbra collection, restored before posing.
     /// Temporary collections travel through the appearance package instead.</summary>
@@ -361,8 +385,13 @@ public class SceneActor
     /// configured, which is the ordinary case.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneActorGaze? Gaze { get; set; }
+
+    /// <summary>FABRIK chains written before #229 stopped capturing them. The
+    /// actor's pose already carries their baked result, so a load ignores them
+    /// with a note instead of restarting a solver over it; the payload is read
+    /// opaquely, never validated, and no capture sets it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<SceneFabrikChain>? Fabrik { get; set; }
+    public JsonElement? Fabrik { get; set; }
 
     /// <summary>The character file the actor is WEARING. Absent when the
     /// actor's appearance is not an imported MCDF, which is the ordinary
@@ -606,9 +635,6 @@ public class SceneWorldObject
     public bool AnimPaused { get; set; }
 }
 
-/// <summary>Exact bone identity inside a saved scene: the owning actor's
-/// in-document key plus the slot/partial/name triple that resolves the bone
-/// on the restored actor. Never a native index or pointer.</summary>
 /// <summary>One reference into the scene's structure: an entity of the
 /// named kind (actor, prop, worldObject, light, camera, overlay) by the
 /// key its entity list carries, or a group by its entry's key (Kind

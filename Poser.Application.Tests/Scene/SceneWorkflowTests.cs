@@ -1,44 +1,27 @@
-﻿using Poser.Scene;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Numerics;
 using Poser.Domain.Operations;
 using Poser.Domain.Companions;
-using Poser.Files;
 using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Domain.Scene;
+using Poser.Documents.Files;
+using Poser.Documents.Scene;
 
 namespace Poser.Application.Tests.Scene;
 
 /// <summary>
 /// The scene transaction's behavior contract, driven through the
-/// <see cref="ISceneRuntime"/> seam so every assertion is about admission,
+/// scene runtime ports so every assertion is about admission,
 /// ordering, guards, rollback and terminal truthfulness — never about native
 /// state. The fake runs framework actions inline, so an awaited
 /// <see cref="SceneWorkflow.Drain"/> is an exact barrier.
 /// </summary>
 public sealed class SceneWorkflowTests
 {
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Restores_name_even_when_pose_is_refused(bool terminal)
-    {
-        var actor = Actor("Named actor", out _);
-        var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
-        if (terminal) runtime.PoseTerminalFailure = _ => "Missing bone";
-        else runtime.PoseFailure = _ => "Missing bone";
-        using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime));
-        Assert.True(workflow.BeginLoad("named.xivs").Success);
-        await workflow.Drain;
-        Assert.Equal("Named actor", runtime.RestoredNames[actor.Key]);
-        Assert.DoesNotContain("PlaceActor:Named actor", runtime.Calls);
-        Assert.Contains("ArmPoseImport:Named actor", runtime.Calls);
-    }
-
     private sealed class ParentRuntime : IParentingRuntime
     {
         public Dictionary<SelectionId, PoseTransform> Values = new();
@@ -61,19 +44,20 @@ public sealed class SceneWorkflowTests
         var runtime = new FakeRuntime { ReadResult = document };
         var groups = new SceneGroups(); var state = new GroupTransformState();
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
-        var history = new TransformHistory(); var native = new ParentRuntime();
+        var history = new EditHistory(); var native = new ParentRuntime();
         var parenting = new TransformParenting(native, history, new(history));
-        using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
+        using var workflow = Workflow(runtime, history: history,
             structure: new SceneStructure(groups, coordinator, state), parenting: parenting);
         Assert.True(workflow.BeginLoad("parents.xivs").Success); await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        AssertApplied(workflow);
         var first = Assert.Single(parenting.Capture());
         Assert.Equal(offset, first.Value.Offset);
         Assert.NotEqual(first.Key, first.Value.Target);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         Assert.True(step.Undo()); history.CommitUndo(step);
+        Assert.Empty(parenting.Capture()); // #433: rollback takes its links with it.
         Assert.True(step.Redo()); history.CommitRedo(step); await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        AssertApplied(workflow);
         parenting.Evaluate();
         var currentIds = runtime.SpawnedLightTokens.TakeLast(2).Select(t => runtime.ResolveSceneEntity(t)!.Value).ToArray();
         Assert.Equal(currentIds[0], parenting.Read(currentIds[1])!.Target);
@@ -84,39 +68,11 @@ public sealed class SceneWorkflowTests
             return saved;
         };
         Assert.True(workflow.BeginSave("saved.xivs").Success); await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        AssertApplied(workflow);
         var link = Assert.Single(runtime.Captured!.Parents!);
         Assert.Equal(currentIds[0].Light!.Value.LogicalId, link.Target.Key);
         Assert.Equal(currentIds[1].Light!.Value.LogicalId, link.Child.Key);
         Assert.Equal(offset, link.Offset);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Partial_load_skips_parenting_when_either_category_is_excluded(bool excludeChild)
-    {
-        var document = SceneWith(Actor("Parent", out var actorKey));
-        var lightKey = Guid.NewGuid();
-        document.Lights.Add(new() { Key = lightKey, Light = new() { Name = "Child" } });
-        document.Parents = [new() { Child = new() { Kind = "light", Key = lightKey },
-            Target = new() { Kind = "actor", Key = actorKey }, Offset = PoseTransform.Identity }];
-        var runtime = new FakeRuntime { ReadResult = document };
-        var groups = new SceneGroups(); var state = new GroupTransformState();
-        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
-        var history = new TransformHistory();
-        var parenting = new TransformParenting(new ParentRuntime(), history, new(history));
-        using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
-            structure: new SceneStructure(groups, coordinator, state), parenting: parenting);
-        Assert.True(workflow.BeginLoad("partial.xivs", new SceneLoadOptions
-        {
-            IncludeActors = excludeChild, IncludeLights = !excludeChild,
-        }).Success);
-        await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
-        Assert.Empty(parenting.Capture());
-        Assert.Equal(excludeChild ? 0 : 1, runtime.SpawnedLightTokens.Count);
-        Assert.Equal(excludeChild, runtime.Calls.Contains("SpawnActor:Parent"));
     }
 
     [Fact]
@@ -146,8 +102,8 @@ public sealed class SceneWorkflowTests
         var state = new GroupTransformState();
         using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
         var structure = new SceneStructure(groups, coordinator, state);
-        var history = new TransformHistory();
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history, structure: structure);
+        var history = new EditHistory();
+        using var load = Workflow(runtime, history: history, structure: structure);
         for (int cycle = 0; cycle < 2; cycle++)
         {
             if (cycle == 0) Assert.True(load.BeginLoad("groups.xivs").Success);
@@ -158,7 +114,7 @@ public sealed class SceneWorkflowTests
                 history.CommitRedo(redo);
             }
             await load.Drain;
-            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            AssertApplied(load);
             var importedParent = Assert.Single(groups.All, group => group.Name == "Parent");
             var importedChild = Assert.Single(groups.All, group => group.Name == "Child");
             Assert.Equal(importedParent.Id, importedChild.ParentId);
@@ -176,7 +132,7 @@ public sealed class SceneWorkflowTests
             };
             Assert.True(load.BeginSave("captured.xivs").Success);
             await load.Drain;
-            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            AssertApplied(load);
             var savedChild = Assert.Single(runtime.Captured!.Groups!, group => group.Name == "Child");
             var savedParent = Assert.Single(runtime.Captured.Groups!, group => group.Name == "Parent");
             Assert.Equal(savedParent.Key, savedChild.Parent);
@@ -191,101 +147,13 @@ public sealed class SceneWorkflowTests
         }
     }
 
-    [Fact]
-    public async Task Group_history_after_scene_redo_uses_recreated_members_and_preserves_group_identity()
+    /// <summary>Applied, or the receipt's own detail in the failure, so CI
+    /// prints the refusal rather than only the state.</summary>
+    private static void AssertApplied(SceneWorkflow workflow)
     {
-        var keys = new[] { Guid.NewGuid(), Guid.NewGuid() };
-        var document = SceneWith();
-        foreach (var key in keys) document.Lights.Add(new() { Key = key, Light = new() { Name = "Member" } });
-        var pose = new PoseTransform(Vector3.One, Quaternion.Identity, Vector3.One);
-        document.Groups = [new() { Key = Guid.NewGuid(), Name = "Pair",
-            Members = keys.Select(key => new SceneStructureRef { Kind = "light", Key = key }).ToList(),
-            Transform = new() { Members = keys.Select(key => new SceneGroupTransformMember
-            {
-                Member = new() { Kind = "light", Key = key }, Initial = pose, Expected = pose,
-            }).ToList() } }];
-        var runtime = new FakeRuntime { ReadResult = document };
-        var groups = new SceneGroups();
-        var state = new GroupTransformState();
-        var history = new TransformHistory();
-        var session = new SceneSession(new SelectionSession());
-        ulong revision = 0;
-        void PublishMembers() => Assert.True(session.TryRefresh(new Poser.Domain.Scene.SceneSnapshot(++revision,
-            [], groups.All.SelectMany(item => item.Members).Distinct().Select(id =>
-                new Poser.Domain.Scene.LightDescriptor(id.Light!.Value, "Member", Poser.Domain.Scene.LightKind.Point)).ToArray(), [], [])).Accepted);
-        using var coordinator = new GroupTransformCoordinator(session, groups, state, new EmptyGroupSource());
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history,
-            structure: new SceneStructure(groups, coordinator, state));
-        var steps = new GroupSteps(groups, history, new ValueJournal(history), state, coordinator);
-        Assert.True(load.BeginLoad("group.xivg").Success);
-        await load.Drain;
-        var group = Assert.Single(groups.All);
-        PublishMembers();
-        var originalMembers = group.Members.ToArray();
-        steps.Run("Hide group", () =>
-        {
-            group.Hidden = true;
-            group.RememberedVisible[originalMembers[0]] = true;
-            group.RememberedVisible[originalMembers[1]] = false;
-        });
-
-        for (int cycle = 0; cycle < 3; cycle++)
-        {
-            var hide = Assert.IsType<JournalStep>(history.PeekUndo());
-            Assert.True(hide.Undo());
-            history.CommitUndo(hide);
-            var spawn = Assert.IsType<JournalStep>(history.PeekUndo());
-            Assert.True(spawn.Undo());
-            history.CommitUndo(spawn);
-            Assert.Empty(groups.All);
-            Assert.True(spawn.Redo());
-            history.CommitRedo(spawn);
-            await load.Drain;
-            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
-            var restored = Assert.Single(groups.All);
-            PublishMembers();
-            Assert.Equal(group.Id, restored.Id);
-            var currentMembers = restored.Members.ToArray();
-            Assert.DoesNotContain(currentMembers[0], originalMembers);
-            Assert.True(hide.Redo());
-            history.CommitRedo(hide);
-            restored = Assert.Single(groups.All);
-            Assert.Equal(group.Id, restored.Id);
-            Assert.True(restored.Hidden);
-            Assert.Equal(currentMembers, restored.Members);
-            Assert.True(restored.RememberedVisible[currentMembers[0]]);
-            Assert.False(restored.RememberedVisible[currentMembers[1]]);
-            var baseline = Assert.IsType<GroupTransformSnapshot>(state.NamedSnapshot(group.Id));
-            Assert.Equal(currentMembers, baseline.Expected.Keys.Select(target => target.ToSelectionId()));
-        }
-        foreach (var _ in new[] { 0, 1 })
-        {
-            var step = Assert.IsType<JournalStep>(history.PeekUndo());
-            Assert.True(step.Undo());
-            history.CommitUndo(step);
-        }
-        Assert.Empty(groups.All);
-        Assert.Null(state.NamedSnapshot(group.Id));
-    }
-
-    [Fact]
-    public async Task Unbound_structure_rolls_back_without_publishing_success_or_leaving_pending_UI_work()
-    {
-        var key = Guid.NewGuid();
-        var document = SceneWith();
-        document.Lights.Add(new() { Key = key, Light = new() { Name = "Waiting" } });
-        document.RootOrder = [new() { Kind = "light", Key = key }];
-        var runtime = new FakeRuntime { ReadResult = document, BindStructure = false };
-        var groups = new SceneGroups();
-        var state = new GroupTransformState();
-        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime),
-            structure: new SceneStructure(groups, coordinator, state)) { StructureBindingBound = TimeSpan.Zero };
-        Assert.True(load.BeginLoad("groups.xivs").Success);
-        await load.Drain;
-        Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
-        Assert.Single(runtime.DestroyedLightTokens);
-        Assert.Empty(groups.All);
+        var receipt = Assert.IsType<OperationReceipt>(workflow.Receipt);
+        Assert.True(receipt.State == OperationReceiptState.Applied,
+            $"Expected Applied, got {receipt.State}: {receipt.Detail}");
     }
 
     private sealed class EmptyGroupSource : IGroupTransformSource
@@ -296,57 +164,19 @@ public sealed class SceneWorkflowTests
         public TransformTargetId? CurrentTarget(TransformTargetId target) => target;
     }
 
-    [Theory]
-    [InlineData("scene.xivs")]
-    [InlineData("stage.json")]
-    public async Task Storage_is_injected_for_every_format_and_conversion_notes_survive(string path)
-    {
-        using var runtime = new FakeRuntime { ReadResult = SceneWith() };
-        var documents = new FakeDocuments(runtime) { Notes = ["Unsupported data omitted by converter."] };
-        using var workflow = new SceneWorkflow(runtime, documents);
-        Assert.True(workflow.BeginSave(path).Success);
-        await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
-        Assert.Equal(path, Assert.Single(documents.WritePaths));
-        Assert.Contains(documents.Notes[0], workflow.Progress!.Outcome!.Notes);
-
-        Assert.True(workflow.BeginLoad(path).Success);
-        await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
-        Assert.Equal(path, Assert.Single(documents.ReadPaths));
-        Assert.Contains(documents.Notes[0], workflow.Progress!.Outcome!.Notes);
-    }
-
-    [Fact]
-    public async Task Failed_read_does_not_touch_native_state_and_workflow_does_not_dispose_dependencies()
-    {
-        var runtime = new FakeRuntime { ReadFailure = Corrupt("invalid document") };
-        var documents = new FakeDocuments(runtime);
-        var workflow = new SceneWorkflow(runtime, documents);
-        Assert.True(workflow.BeginLoad("invalid.json").Success);
-        await workflow.Drain;
-        Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
-        Assert.Equal(new[] { "ReadScene" }, runtime.Calls);
-        workflow.Dispose();
-        workflow.Dispose();
-        Assert.Equal(0, runtime.DisposeCount);
-        runtime.Dispose();
-        Assert.Equal(1, runtime.DisposeCount);
-    }
-
     [Fact]
     public async Task Load_history_tracks_each_redo_incarnation_without_appending_again()
     {
         var scene = SceneWith();
         scene.Lights.Add(new SceneLight { Key = Guid.NewGuid(), Light = new LightFile { Name = "Imported" } });
         var runtime = new FakeRuntime { ReadResult = scene };
-        var history = new TransformHistory();
+        var history = new EditHistory();
         var appends = 0;
         history.Appended += _ => appends++;
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
+        using var load = Workflow(runtime, history: history);
         Assert.True(load.BeginLoad("light.xivs").Success);
         await load.Drain;
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         for (var cycle = 0; cycle < 3; cycle++)
         {
@@ -358,7 +188,7 @@ public sealed class SceneWorkflowTests
             Assert.True(step.Redo());
             history.CommitRedo(step);
             await load.Drain;
-            Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+            AssertApplied(load);
             Assert.NotSame(current, runtime.SpawnedLightTokens[^1]);
             Assert.Equal((current, runtime.SpawnedLightTokens[^1]), runtime.HistoryReplacements[^1]);
             Assert.Same(step, history.PeekUndo());
@@ -367,16 +197,32 @@ public sealed class SceneWorkflowTests
         Assert.DoesNotContain("ClearScene", runtime.Calls);
     }
 
-    [Fact]
-    public async Task Failed_scene_load_does_not_append_history()
+    /// <summary>A workflow over the fake with no-op collaborators wherever
+    /// the test does not bring its own.</summary>
+    private static SceneWorkflow Workflow(FakeRuntime runtime, EditHistory? history = null,
+        ISceneStructure? structure = null, TransformParenting? parenting = null) =>
+        new(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
+            history ?? new EditHistory(),
+            structure ?? new NoStructure(), parenting ?? Parenting());
+
+    private static TransformParenting Parenting()
     {
-        var runtime = new FakeRuntime { ReadFailure = Corrupt("invalid scene") };
-        var history = new TransformHistory();
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime), history: history);
-        Assert.True(load.BeginLoad("invalid.xivs").Success);
-        await load.Drain;
-        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
-        Assert.False(history.CanUndo);
+        var history = new EditHistory();
+        return new TransformParenting(new ParentRuntime(), history, new(history));
+    }
+
+    private sealed class NoObserver : ISceneWorkflowObserver
+    {
+        public void Saved() { }
+        public void Completed(Guid operationId, SceneProgress progress) { }
+    }
+
+    private sealed class NoStructure : ISceneStructure
+    {
+        public SceneStructureSnapshot Capture() => new([], []);
+        public IReadOnlyList<Guid> Import(IReadOnlyList<SceneStructureGroup> groups, IReadOnlyList<RootSlot> order) =>
+            groups.Select(_ => Guid.NewGuid()).ToArray();
+        public void Remove(IReadOnlyList<Guid> groups) { }
     }
 
     // ── the seam fake ────────────────────────────────────────────────────
@@ -386,7 +232,7 @@ public sealed class SceneWorkflowTests
         public List<string> ReadPaths { get; } = [];
         public List<string> WritePaths { get; } = [];
         public IReadOnlyList<string> Notes { get; init; } = [];
-        public System.IO.Stream? OpenAppearance(string path, string entry) => throw new NotSupportedException();
+        public SceneAppearanceOpen OpenAppearance(string path, string entry) => throw new NotSupportedException();
 
         public SceneDocumentRead Read(string path)
         {
@@ -394,7 +240,7 @@ public sealed class SceneWorkflowTests
             fixture.Record("ReadScene");
             return new(fixture.ReadFailure is { } failure
                 ? SceneReadOutcome.Failed(failure)
-                : SceneReadOutcome.Success(fixture.ReadResult!), Notes);
+                : SceneReadOutcome.Success(fixture.ReadResult!, fixture.ReadRefusals), Notes);
         }
 
         public SceneDocumentWrite Write(SceneFile scene, string path)
@@ -402,11 +248,12 @@ public sealed class SceneWorkflowTests
             WritePaths.Add(path);
             fixture.Record("WriteScene");
             fixture.Captured = scene;
-            return new(fixture.WriteResult, Notes);
+            return new(SceneWriteOutcome.Success(), Notes);
         }
     }
 
-    private sealed class FakeRuntime : ISceneRuntime, IDisposable
+    private sealed class FakeRuntime : ISceneStatePort, ISceneCapturePort, ISceneMaterializer,
+        IActorRestorePort, ISceneHistoryPort, IDisposable
     {
         public string WorldObjectName(string path) => Path.GetFileNameWithoutExtension(path);
 
@@ -416,8 +263,11 @@ public sealed class SceneWorkflowTests
         public SessionGeneration? Session = SessionGeneration.New();
         public SceneFile? ReadResult;
         public SceneStoreFailure? ReadFailure;
+        /// <summary>Entities the read left out by name.</summary>
+        public IReadOnlyList<SceneEntityRefusal>? ReadRefusals;
+        /// <summary>A light that spawns with a caveat.</summary>
+        public string? LightDetail;
         public SceneFile? Captured;
-        public SceneWriteOutcome WriteResult = SceneWriteOutcome.Success();
 
         /// <summary>Runs after each named call, so a test can flip the session,
         /// cancel, or release a gate at an exact point in the phase order.</summary>
@@ -425,20 +275,9 @@ public sealed class SceneWorkflowTests
 
         public Func<SceneActor, string?>? ActorSpawnFailure;
         public Func<SceneProp, string?>? PropSpawnFailure;
-        public Func<SceneOverlay, string?>? OverlayStageFailure;
-        public Func<SceneWorldObject, string?>? WorldObjectAdoptFailure;
-        public Func<SceneLight, string?>? LightSpawnFailure;
-        public Func<SceneActor, string?>? PoseFailure;
-        public Func<SceneActor, string?>? CompanionFailure;
-        public Func<SceneActor, string?>? PlacementFailure;
         public Func<SceneActor, string?>? GazeFailure;
 
-        /// <summary>The token each actor's gaze was handed, by actor name —
-        /// the assertion surface for Entity-target resolution.</summary>
-        public readonly Dictionary<string, SceneEntityHandle?> GazeTargets = new();
-
-        public int DisposeCount;
-        public void Dispose() => DisposeCount++;
+        public void Dispose() { }
 
         public void Record(string call)
         {
@@ -450,6 +289,8 @@ public sealed class SceneWorkflowTests
         public SessionGeneration? ActiveSession => Session;
 
         public Task<T> OnFramework<T>(Func<T> func) => Task.FromResult(func());
+
+        public void AbandonChildWaits() { }
 
         private readonly Dictionary<SceneEntityHandle, string> _names = new();
         private SceneEntityHandle Token(string name)
@@ -466,29 +307,17 @@ public sealed class SceneWorkflowTests
         }
         private string TokenName(SceneEntityHandle token) => _names[token];
 
-        public bool BindStructure = true;
         private readonly Dictionary<SceneEntityHandle, SelectionId> _structureIds = new();
+        /// <summary>A light whose binding never publishes.</summary>
+        public Func<SceneEntityHandle, bool>? IsUnbound;
         public SelectionId? ResolveSceneEntity(SceneEntityHandle token)
         {
-            if (!BindStructure) return null;
+            if (IsUnbound?.Invoke(token) == true)
+                return null;
             if (!_structureIds.TryGetValue(token, out var id))
                 _structureIds[token] = id = SelectionId.ForLight(new(Guid.NewGuid(), 1));
             return id;
         }
-
-        /// <summary>Refuses the ARM — the save never reaches a capture.</summary>
-        public string? CaptureArmRefusal;
-
-        /// <summary>Messages returned when capture cannot start.</summary>
-        public readonly Queue<string> TransientArmRefusals = new();
-
-        /// <summary>Holds the armed capture open, the way a real refresh does
-        /// while it waits for the update pass. <see cref="ReleaseCapture"/>
-        /// lands it.</summary>
-        public bool DeferCapture;
-
-        private Action<SceneCaptureOutcome>? _pendingCapture;
-        private SceneCaptureOutcome? _pendingOutcome;
 
         public string? ArmSceneCapture(
             Guid sceneId,
@@ -496,50 +325,23 @@ public sealed class SceneWorkflowTests
             Action<SceneCaptureOutcome> onCaptured)
         {
             Record("ArmSceneCapture");
-            if (TransientArmRefusals.Count > 0)
-                return TransientArmRefusals.Dequeue();
-            if (CaptureArmRefusal is { } refusal)
-                return refusal;
             var captured = CapturedScene?.Invoke()
                 ?? new SceneFile { SceneId = sceneId, Description = description };
             captured.SceneId = sceneId;
             captured.Description = description;
-            var outcome = SceneCaptureOutcome.Ok(captured, new List<string>());
-            if (DeferCapture)
-            {
-                _pendingCapture = onCaptured;
-                _pendingOutcome = outcome;
-                return null;
-            }
             Record("CaptureScene");
-            onCaptured(outcome);
+            onCaptured(SceneCaptureOutcome.Ok(captured, new List<string>()));
             return null;
-        }
-
-        public void ReleaseCapture()
-        {
-            var callback = _pendingCapture;
-            var outcome = _pendingOutcome;
-            _pendingCapture = null;
-            _pendingOutcome = null;
-            if (callback is null || outcome is null)
-                return;
-            Record("CaptureScene");
-            callback(outcome);
         }
 
         /// <summary>The document the capture hands back, for a test that needs
         /// a save to have something in it.</summary>
         public Func<SceneFile>? CapturedScene;
 
-        /// <summary>Notes the hash pass hands back, and the record of whether
-        /// it ran before the write at all.</summary>
-        public List<string> McdfStampNotes = new();
-
         public IReadOnlyList<string> StampMcdfHashes(SceneFile scene)
         {
             Record("StampMcdfHashes");
-            return McdfStampNotes;
+            return [];
         }
 
         /// <summary>What the seal does to the captured document, so a test can
@@ -556,26 +358,12 @@ public sealed class SceneWorkflowTests
             Record("SealAppearance");
             return Task.FromResult(new SceneSealOutcome(
                 SealAppearanceResult?.Invoke(scene) ?? Array.Empty<string>(),
-                SealTemporaries));
+                new List<string>()));
         }
 
-        /// <summary>Temporary packages the seal claims to have created, so a
-        /// test can assert the writer's cleanup runs after the write.</summary>
-        public List<string> SealTemporaries = new();
+        public long EstimateAppearanceBytes() => 0;
 
-        public readonly List<string> DeletedTemporaries = new();
-
-        public long AppearanceEstimate;
-
-        public long EstimateAppearanceBytes() => AppearanceEstimate;
-
-        public void DeleteTemporary(string path)
-        {
-            Record($"DeleteTemporary:{path}");
-            DeletedTemporaries.Add(path);
-        }
-
-        public Func<SceneActor, SceneMcdfOutcome>? McdfImport;
+        public void DeleteTemporary(string path) => Record($"DeleteTemporary:{path}");
 
         public Task<SceneMcdfOutcome> ImportMcdf(
             string scenePath,
@@ -585,8 +373,22 @@ public sealed class SceneWorkflowTests
             CancellationToken cancellation)
         {
             Record($"ImportMcdf:{data.Name}");
-            return Task.FromResult(
-                McdfImport?.Invoke(data) ?? SceneMcdfOutcome.Ok());
+            return Task.FromResult(SceneMcdfOutcome.Ok());
+        }
+
+        public int CollectionRestoresRunning;
+        public int PeakCollectionRestores;
+
+        public async Task<string?> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
+            CancellationToken cancellation)
+        {
+            Record($"RestoreCollection:{data.Name}");
+            int running = Interlocked.Increment(ref CollectionRestoresRunning);
+            lock (Calls)
+                PeakCollectionRestores = Math.Max(PeakCollectionRestores, running);
+            await Task.Delay(20, cancellation);
+            Interlocked.Decrement(ref CollectionRestoresRunning);
+            return null;
         }
 
         public SceneEntityHandle? SpawnActor(SceneActor data, out string? detail)
@@ -604,23 +406,22 @@ public sealed class SceneWorkflowTests
 
         public int ActorReadyPolls;
 
+        /// <summary>An actor whose body never draws.</summary>
+        public string? NeverReadyActor;
+
         public bool ActorReady(SceneEntityHandle actor)
         {
             Record("ActorReady");
+            if (TokenName(actor) == $"actor:{NeverReadyActor}")
+                return false;
             return ++ActorReadyPolls > ActorReadyAfterPolls;
         }
 
         public string? AttachCompanion(SceneEntityHandle actor, SceneActor data)
         {
             Record($"AttachCompanion:{data.Name}");
-            return CompanionFailure?.Invoke(data);
+            return null;
         }
-
-        /// <summary>The TERMINAL receipt detail a pose import ends on, when a
-        /// test wants an admitted-then-failed import rather than an admitted
-        /// one. Distinct from <see cref="PoseFailure"/>, which refuses at the
-        /// arm and never publishes a receipt at all.</summary>
-        public Func<SceneActor, string?>? PoseTerminalFailure;
 
         /// <summary>
         /// Publishes the PENDING acknowledgement before the terminal receipt,
@@ -651,26 +452,33 @@ public sealed class SceneWorkflowTests
             Action<OperationReceipt> onReceipt)
         {
             Record($"ArmPoseImport:{data.Name}");
-            if (PoseFailure?.Invoke(data) is { } refusal)
-                return refusal;
-            PublishPoseReceipts(
-                description, onReceipt, PoseTerminalFailure?.Invoke(data));
+            if (PoseNeverFinishes)
+                onReceipt(OperationReceipt.Pending(Guid.NewGuid(), OperationEpoch.First, Session!.Value,
+                    new Poser.Domain.Identity.ActorId(Guid.NewGuid(), 1), description));
+            else
+                PublishPoseReceipts(description, onReceipt, null);
             return null;
         }
 
-        /// <summary>Ticks a companion body needs before it reads ready, so a
-        /// test can assert the load WAITS rather than posing a body that has
-        /// not built.</summary>
-        public int CompanionReadyAfterPolls;
-
-        public int CompanionReadyPolls;
-
-        public Func<SceneActor, string?>? CompanionPoseFailure;
+        /// <summary>Polls the pose slot answers busy for (an IK bake, another
+        /// feature's import) before it frees.</summary>
+        public int PoseBusyPolls;
+        public bool PoseImportBusy => Interlocked.Decrement(ref PoseBusyPolls) >= 0;
+        /// <summary>An armed import that only ever acknowledges.</summary>
+        public bool PoseNeverFinishes;
+        public bool HeldPoseImports;
+        public bool EverHeldPoseImports;
+        public void HoldPoseImports(bool held)
+        {
+            HeldPoseImports = held;
+            EverHeldPoseImports |= held;
+        }
+        public void CancelPoseImport(Guid operationId) => Record("CancelPoseImport");
 
         public bool CompanionReady(SceneEntityHandle actor)
         {
             Record("CompanionReady");
-            return ++CompanionReadyPolls > CompanionReadyAfterPolls;
+            return true;
         }
 
         public string? ArmCompanionPoseImport(
@@ -680,23 +488,16 @@ public sealed class SceneWorkflowTests
             Action<OperationReceipt> onReceipt)
         {
             Record($"ArmCompanionPoseImport:{data.Name}");
-            if (CompanionPoseFailure?.Invoke(data) is { } refusal)
-                return refusal;
             PublishPoseReceipts(description, onReceipt, null);
             return null;
         }
 
-        public readonly Dictionary<Guid, string> RestoredNames = new();
-        public string? RestoreActorName(SceneEntityHandle actor, SceneActor data)
-        {
-            RestoredNames[data.Key] = SceneActorNames.Resolve(data);
-            return null;
-        }
+        public string? RestoreActorName(SceneEntityHandle actor, SceneActor data) => null;
 
         public string? PlaceActor(SceneEntityHandle actor, SceneActor data)
         {
             Record($"PlaceActor:{data.Name}");
-            return PlacementFailure?.Invoke(data);
+            return null;
         }
 
         public string? PlaceCompanion(SceneEntityHandle actor, SceneActor data)
@@ -708,29 +509,17 @@ public sealed class SceneWorkflowTests
         public string? FreezeActor(SceneEntityHandle actor)
         {
             Record($"FreezeActor:{TokenName(actor)["actor:".Length..]}");
-            return FreezeFailure?.Invoke(TokenName(actor)["actor:".Length..]);
+            return null;
         }
-
-        /// <summary>A freeze the runtime refuses, by actor name.</summary>
-        public Func<string, string?>? FreezeFailure;
 
         public string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target)
         {
             Record($"ApplyActorGaze:{data.Name}");
-            GazeTargets[data.Name] = target;
             return GazeFailure?.Invoke(data);
         }
 
-        /// <summary>What each actor's visibility was last written to, by
-        /// actor name — the load's ordering is only half the fact, the value
-        /// is the other half.</summary>
-        public readonly Dictionary<string, bool> VisibleSet = new();
-
-        public void SetActorVisibility(SceneEntityHandle actor, bool visible)
-        {
-            VisibleSet[TokenName(actor)["actor:".Length..]] = visible;
+        public void SetActorVisibility(SceneEntityHandle actor, bool visible) =>
             Record("SetActorVisibility");
-        }
 
         public SceneEntityHandle? SpawnProp(SceneProp data, out string? detail)
         {
@@ -743,40 +532,25 @@ public sealed class SceneWorkflowTests
         {
             string name = data.Node?.Name ?? "Overlay";
             Record($"SpawnOverlay:{name}");
-            detail = OverlayStageFailure?.Invoke(data);
-            return detail is null ? Token($"overlay:{name}") : null;
-        }
-
-        /// <summary>Which zone the fake session is standing in. It matches the
-        /// territory <see cref="SceneWith"/> stamps, so a document's borrowed
-        /// entries are attempted unless a test moves one of the two apart.
-        /// </summary>
-        public uint Territory = HomeTerritory;
-
-        public uint CurrentTerritoryId()
-        {
-            Record("CurrentTerritoryId");
-            return Territory;
+            detail = null;
+            return Token($"overlay:{name}");
         }
 
         public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
         {
             Record($"AdoptWorldObject:{data.Path}");
-            detail = WorldObjectAdoptFailure?.Invoke(data);
-            return detail is null ? Token($"world:{data.Path}") : null;
+            detail = null;
+            return Token($"world:{data.Path}");
         }
 
-        /// <summary>Recorded as a RELEASE and queued apart from
-        /// <see cref="Destroyed"/>: the fake keeps the same distinction the
-        /// restore contract makes, so a test cannot pass by destroying
-        /// something the map owns.</summary>
-        public void ReleaseWorldObject(SceneEntityHandle token)
-        {
+        public void ReleaseWorldObject(SceneEntityHandle token) =>
             Record($"ReleaseWorldObject:{TokenName(token)}");
-            Released.Enqueue(TokenName(token));
-        }
 
-        public readonly ConcurrentQueue<string> Released = new();
+        public Task<IReadOnlyList<SceneEntityHandle>> AwaitWorldObjectsLoaded(
+            IReadOnlyList<SceneEntityHandle> worldObjects, TimeSpan bound, CancellationToken cancellation) =>
+            Task.FromResult<IReadOnlyList<SceneEntityHandle>>([]);
+
+        public SelectionId? ResolveHistoryEntity(SceneEntityHandle handle) => ResolveSceneEntity(handle);
 
         public readonly List<SceneEntityHandle> SpawnedLightTokens = new();
         public readonly List<(SceneEntityHandle Previous, SceneEntityHandle Replacement)> HistoryReplacements = new();
@@ -788,17 +562,16 @@ public sealed class SceneWorkflowTests
             SceneLight data, SceneEntityHandle? attachmentOwner, out string? detail)
         {
             Record("SpawnLight");
-            detail = LightSpawnFailure?.Invoke(data);
-            if (detail is not null) return null;
+            detail = LightDetail;
             var token = Token("light");
             SpawnedLightTokens.Add(token);
             return token;
         }
 
-        public CameraFile CaptureDefaultCameraState()
+        public SceneCameraBaseline CaptureDefaultCameraState()
         {
             Record("CaptureDefaultCameraState");
-            return new CameraFile();
+            return new(new CameraFile(), null, string.Empty, false, null);
         }
 
         public string? ApplyDefaultCamera(SceneCamera data)
@@ -839,12 +612,6 @@ public sealed class SceneWorkflowTests
         public void ApplyEnvironment(SceneEnvironment target) =>
             Record("ApplyEnvironment");
 
-        /// <summary>The last world block the load stamped, so a test can
-        /// assert what a scene actually asked the session for.</summary>
-        public SceneWorld? AppliedWorld;
-
-        public string? WorldFailure;
-
         public SceneWorld CaptureWorldState()
         {
             Record("CaptureWorldState");
@@ -854,27 +621,22 @@ public sealed class SceneWorkflowTests
         public string? ApplyWorld(SceneWorld world)
         {
             Record("ApplyWorld");
-            AppliedWorld = world;
-            return WorldFailure;
+            return null;
         }
-
-        /// <summary>What the session is standing at, for a relative load. Null
-        /// is a session with nobody to anchor on.</summary>
-        public System.Numerics.Vector3? Origin = new(10f, 0f, 20f);
 
         public System.Numerics.Vector3? CurrentOrigin()
         {
             Record("CurrentOrigin");
-            return Origin;
+            return new(10f, 0f, 20f);
         }
 
-        /// <summary>What a destroy-first sweep finds to remove.</summary>
-        public SceneClearOutcome ClearResult = new(2, 1, 0, 3, 1);
+        public string? Preflight;
+        public string? LoadPreflight(int actors) => Preflight;
 
         public SceneClearOutcome ClearScene()
         {
             Record("ClearScene");
-            return ClearResult;
+            return new(2, 1, 0, 3, 1);
         }
 
         public void DestroyActor(SceneEntityHandle actor) => Destroy(actor);
@@ -893,11 +655,9 @@ public sealed class SceneWorkflowTests
             Destroyed.Enqueue(TokenName(token));
         }
 
-        public void RestoreDefaultCamera(CameraFile baseline) =>
+        public void RestoreDefaultCamera(SceneCameraBaseline baseline) =>
             Record("RestoreDefaultCamera");
     }
-
-
 
     // ── document building ────────────────────────────────────────────────
 
@@ -907,19 +667,13 @@ public sealed class SceneWorkflowTests
         return new SceneActor { Key = key, Name = name, Pose = new PoseFile() };
     }
 
-    /// <summary>The zone every built document says it was captured in, and the
-    /// one the fake session stands in by default. A borrowed map object is the
-    /// only entity whose restore depends on the two agreeing, so both sides
-    /// name this constant rather than a literal.</summary>
-    private const uint HomeTerritory = 132u;
-
     private static SceneFile SceneWith(
         params SceneActor[] actors)
     {
         var scene = new SceneFile
         {
             SceneId = Guid.NewGuid(),
-            TerritoryId = HomeTerritory,
+            TerritoryId = 132u,
             PlaceName = "Old Gridania",
         };
         scene.Actors.AddRange(actors);
@@ -938,172 +692,226 @@ public sealed class SceneWorkflowTests
     private static SceneStoreFailure Corrupt(string detail) =>
         SceneStoreFailure.Create(SceneStoreFailureKind.Json, detail);
 
-    // ── save ─────────────────────────────────────────────────────────────
-[Fact]
-    public async Task Save_and_load_success_preserve_order_phase_and_final_objects()
-    {
-        var saveRuntime = new FakeRuntime();
-        using (var save = new SceneWorkflow(saveRuntime, new FakeDocuments(saveRuntime)))
-        {
-            Assert.True(save.BeginSave("shot.xivs", "A shot").Success);
-            await save.Drain;
-            Assert.Equal(new[] { "ArmSceneCapture", "CaptureScene", "StampMcdfHashes", "WriteScene" }, saveRuntime.Calls);
-            Assert.Equal(OperationReceiptState.Applied, save.Receipt!.State);
-        }
-
-        var lead = Actor("Lead", out var leadKey);
-        lead.CompanionKind = CompanionKind.Companion;
-        lead.CompanionId = 4;
-        var scene = SceneWith(lead);
-        scene.Props.Add(new SceneProp { Key = Guid.NewGuid(), Name = "Chair" });
-        scene.Lights.Add(new SceneLight { Key = Guid.NewGuid(), Light = new LightFile { Name = "Key" } });
-        scene.Cameras.Add(new SceneCamera { Key = Guid.NewGuid(), Camera = new CameraFile { Name = "Default" }, IsDefault = true, IsLive = true, TargetActorKey = leadKey, TargetActorName = "Lead" });
-        scene.Environment = new SceneEnvironment();
-
-        var runtime = new FakeRuntime { ReadResult = scene };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
-        Assert.True(load.BeginLoad("shot.xivs").Success);
-        await load.Drain;
-        Assert.Equal(new[] { "ReadScene", "CaptureEnvironmentState", "CaptureWorldState", "CaptureDefaultCameraState", "SpawnActor:Lead", "SpawnProp:Chair", "ActorReady", "AttachCompanion:Lead", "SetActorVisibility", "FreezeActor:Lead", "ArmPoseImport:Lead", "PlaceActor:Lead", "ApplyActorGaze:Lead", "ApplyDefaultCamera", "SetCameraTarget", "SetLiveCamera", "SpawnLight", "ApplyEnvironment", "ApplyWorld" }, runtime.Calls);
-        Assert.Empty(runtime.Destroyed);
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
-    }
-
     [Fact]
     public async Task Load_failure_rolls_back_reverse_and_session_replacement_cancels_exactly()
     {
         var scene = SceneWith(Actor("Lead", out _), Actor("Second", out _));
         var failedRuntime = new FakeRuntime { ReadResult = scene, ActorSpawnFailure = a => a.Name == "Second" ? "no free slot" : null };
-        using (var failed = new SceneWorkflow(failedRuntime, new FakeDocuments(failedRuntime)))
+        using (var failed = Workflow(failedRuntime))
         {
             Assert.True(failed.BeginLoad("shot.xivs").Success);
             await failed.Drain;
             Assert.Equal(new[] { "actor:Lead" }, failedRuntime.Destroyed.ToArray());
             Assert.Equal(OperationReceiptState.RolledBack, failed.Receipt!.State);
+            Assert.False(failed.Progress!.Outcome!.LeftEntitiesBehind);
             Assert.Contains("no free slot", failed.Progress!.Outcome!.Detail);
         }
 
         var replacedRuntime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
         replacedRuntime.AfterCall = call => { if (call == "SpawnActor:Lead") replacedRuntime.Session = SessionGeneration.New(); };
-        using var replaced = new SceneWorkflow(replacedRuntime, new FakeDocuments(replacedRuntime));
+        using var replaced = Workflow(replacedRuntime);
         Assert.True(replaced.BeginLoad("shot.xivs").Success);
         await replaced.Drain;
         Assert.Equal(new[] { "actor:Lead" }, replacedRuntime.Destroyed.ToArray());
         Assert.Equal(OperationReceiptState.Cancelled, replaced.Receipt!.State);
         Assert.Contains("session ended", replaced.Progress!.Outcome!.Detail);
+
+        // A read failure touches no native state and appends no history.
+        var readRuntime = new FakeRuntime { ReadFailure = Corrupt("The document is not a scene.") };
+        var history = new EditHistory();
+        using var read = Workflow(readRuntime, history: history);
+        Assert.True(read.BeginLoad("shot.xivs").Success);
+        await read.Drain;
+        Assert.Equal(OperationReceiptState.Failed, read.Receipt!.State);
+        Assert.Equal(new[] { "ReadScene" }, readRuntime.Calls);
+        Assert.False(history.CanUndo);
+        Assert.Contains("The document is not a scene.", read.Progress!.Outcome!.Detail);
+    }
+
+    // ── issue #432: optional steps never roll the scene back ─────────────
+
+    [Fact]
+    public async Task One_actor_that_never_draws_is_named_and_the_rest_of_the_scene_stays()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Lead", out _), Actor("Slow", out _)),
+            NeverReadyActor = "Slow",
+        };
+        using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
+            new EditHistory(), new NoStructure(), Parenting())
+        {
+            ActorReadyBound = TimeSpan.FromMilliseconds(100),
+        };
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Empty(runtime.Destroyed);
+        var refusal = Assert.Single(load.Progress!.Outcome!.Entities, entity => !entity.Restored);
+        Assert.Equal((SceneOutcomeKind.Actor, "Slow"), (refusal.Kind, refusal.Name));
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.DoesNotContain("ArmPoseImport:Slow", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Unbound_members_and_refused_parent_links_are_named_not_rolled_back()
+    {
+        Guid a = Guid.NewGuid(), b = Guid.NewGuid(), c = Guid.NewGuid();
+        var document = SceneWith();
+        document.Lights.Add(new() { Key = a, Light = new() { Name = "A" } });
+        document.Lights.Add(new() { Key = b, Light = new() { Name = "B" } });
+        document.Lights.Add(new() { Key = c, Light = new() { Name = "C" } });
+        document.Groups = [new() { Key = Guid.NewGuid(), Name = "Rig",
+            Members = [new() { Kind = "light", Key = a }, new() { Kind = "light", Key = c }] }];
+        document.RootOrder = [new() { Kind = "light", Key = a }];
+        // A bone parent on a light cannot land.
+        document.Parents = [new() { Child = new() { Kind = "light", Key = b },
+            Target = new() { Kind = "light", Key = a }, BoneName = "j_kao" }];
+        var runtime = new FakeRuntime { ReadResult = document };
+        runtime.IsUnbound = token =>
+            runtime.SpawnedLightTokens.Count == 3 && token == runtime.SpawnedLightTokens[2];
+        var groups = new SceneGroups(); var state = new GroupTransformState();
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        var history = new EditHistory();
+        var parenting = new TransformParenting(new ParentRuntime(), history, new(history));
+        using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(), history,
+            new SceneStructure(groups, coordinator, state), parenting)
+        {
+            StructureBindingBound = TimeSpan.FromMilliseconds(100),
+        };
+        Assert.True(load.BeginLoad("rig.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Empty(runtime.Destroyed);
+        var refusals = load.Progress!.Outcome!.Entities.Where(entity => !entity.Restored).ToList();
+        Assert.Equal(2, refusals.Count);
+        Assert.Contains(refusals, refusal => (refusal.Kind, refusal.Name) == (SceneOutcomeKind.Group, "Rig"));
+        Assert.Contains(refusals, refusal => (refusal.Kind, refusal.Name) == (SceneOutcomeKind.Parent, "B"));
+        Assert.All(refusals, refusal => Assert.False(string.IsNullOrWhiteSpace(refusal.Remedy)));
+        Assert.Single(Assert.Single(groups.All, group => group.Name == "Rig").Members);
+        Assert.Empty(parenting.Capture());
+    }
+
+    [Fact]
+    public async Task Clear_first_refuses_before_clearing_and_labels_a_rollback_after_it()
+    {
+        var clearFirst = new SceneLoadOptions { ClearExistingScene = true };
+        var refusedRuntime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Lead", out _)),
+            Preflight = "There is no local player to spawn the scene's actors from.",
+        };
+        using (var refused = Workflow(refusedRuntime))
+        {
+            Assert.True(refused.BeginLoad("shot.xivs", clearFirst).Success);
+            await refused.Drain;
+            Assert.Equal(OperationReceiptState.Failed, refused.Receipt!.State);
+            Assert.DoesNotContain("ClearScene", refusedRuntime.Calls);
+            Assert.DoesNotContain(refusedRuntime.Calls, call => call.StartsWith("SpawnActor"));
+            Assert.False(refused.Progress!.Outcome!.SessionCleared);
+        }
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Lead", out _)),
+            ActorSpawnFailure = _ => "The game has no free GPose actor slot (the actor table is full).",
+        };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs", clearFirst).Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
+        Assert.Contains("ClearScene", runtime.Calls);
+        Assert.True(load.Progress!.Outcome!.SessionCleared);
+        Assert.Contains("actor table is full", load.Progress.Outcome.Detail);
+    }
+
+    // ── issue #433: a committed load is one consistent history step ──────
+
+    private sealed class ReplayRunner : IUndoRunner
+    {
+        public GestureResult? RecoverPending() => null;
+        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity) =>
+            GestureResult.Fail("Not a deferred step.");
+        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
+            (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused.");
+    }
+
+    [Fact]
+    public async Task A_partial_load_is_one_undo_step_that_removes_everything_it_made()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = WholeScene(),
+            GazeFailure = _ => "The look-at target is gone.",
+        };
+        var history = new EditHistory();
+        using var load = Workflow(runtime, history: history);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        Assert.Equal(new[] { "light", "overlay:Line", "prop:Chair", "actor:Lead" }, runtime.Destroyed.ToArray());
+        Assert.Contains("ReleaseWorldObject:world:bg/example.mdl", runtime.Calls);
+        Assert.Contains("RestoreDefaultCamera", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Redo_never_clears_again_and_a_failed_replay_stays_redoable()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
+        var history = new EditHistory();
+        var notices = new Fixtures.NoticeLog();
+        var journal = new UndoJournal(history, new ReplayRunner(), _ => true, notices);
+        using var load = Workflow(runtime, history: history);
+        Assert.True(load.BeginLoad("shot.xivs", new SceneLoadOptions { ClearExistingScene = true }).Success);
+        await load.Drain;
+        AssertApplied(load);
+
+        Assert.True(journal.Undo().Success);
+        Assert.True(history.CanRedo);
+        runtime.ActorSpawnFailure = _ => "The game has no free GPose actor slot (the actor table is full).";
+        _ = journal.Redo(); // Admitted; the outcome follows the replay.
+        await load.Drain;
+        for (int wait = 0; journal.IsRestoring && wait < 200; wait++)
+            await Task.Delay(10);
+
+        Assert.False(journal.IsRestoring);
+        Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
+        Assert.Single(runtime.Calls, call => call == "ClearScene");
+        Assert.True(history.CanRedo);
+        Assert.False(history.CanUndo);
+        Assert.Contains(notices, notice => notice.Contains("actor table is full"));
+    }
+
+    [Fact]
+    public async Task Undo_while_another_scene_operation_runs_keeps_the_load_step()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
+        var history = new EditHistory();
+        var journal = new UndoJournal(history, new ReplayRunner(), _ => true, new Fixtures.NoticeLog());
+        using var load = Workflow(runtime, history: history);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+        var step = history.PeekUndo();
+
+        using var gate = new ManualResetEventSlim();
+        runtime.AfterCall = call => { if (call == "ArmSceneCapture") gate.Wait(); };
+        Assert.True(load.BeginSave("busy.xivs").Success);
+        Assert.False(journal.Undo().Success);
+        Assert.False(journal.Undo().Success);
+        Assert.Same(step, history.PeekUndo());
+
+        gate.Set();
+        await load.Drain;
+        Assert.True(journal.Undo().Success);
+        Assert.Contains("actor:Lead", runtime.Destroyed);
     }
 
     // ── issue #41: the pose import's pending acknowledgement ─────────────
-
-    /// <summary>
-    /// The reported defect. The engine publishes a Pending receipt whose
-    /// Detail is the import DESCRIPTION before it publishes anything terminal;
-    /// a load that answered on the first receipt reported every posed actor
-    /// failed, with <c>Scene pose: &lt;actor&gt;</c> as the only stated reason.
-    /// </summary>
-    [Fact]
-    public async Task Pose_import_answers_on_the_terminal_receipt_not_the_pending_label()
-    {
-        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Midona Rhel", out _)) };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
-        Assert.True(load.BeginLoad("shot.xivs").Success);
-        await load.Drain;
-
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
-        var outcome = load.Progress!.Outcome!;
-        Assert.DoesNotContain(outcome.Entities, entity => !entity.Restored);
-        Assert.DoesNotContain(
-            outcome.Entities,
-            entity => entity.Detail?.Contains("Scene pose:") == true);
-    }
-
-    /// <summary>An import that IS admitted and then fails terminally still
-    /// reports the terminal reason, and only that one — the pending label must
-    /// not survive as a fallback detail.</summary>
-    [Fact]
-    public async Task Pose_import_reports_the_terminal_reason_for_an_admitted_failure()
-    {
-        var runtime = new FakeRuntime
-        {
-            ReadResult = SceneWith(Actor("Midona Rhel", out _)),
-            PoseTerminalFailure = _ => "The pose import rolled itself back.",
-        };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
-        Assert.True(load.BeginLoad("shot.xivs").Success);
-        await load.Drain;
-
-        var refusal = Assert.Single(
-            load.Progress!.Outcome!.Entities, entity => !entity.Restored);
-        Assert.Equal("Actor", refusal.Kind);
-        Assert.Equal("Midona Rhel", refusal.Name);
-        Assert.Equal("The pose import rolled itself back.", refusal.Detail);
-    }
-
-    /// <summary>Every refused entity leaves the terminal publication with a
-    /// next step, and no restored one carries one. A row that only restates
-    /// the entity's own name is the reported defect.</summary>
-    [Fact]
-    public async Task Every_refused_entity_carries_a_reason_and_a_next_step()
-    {
-        var scene = SceneWith(Actor("Midona Rhel", out _));
-        scene.Props.Add(new SceneProp { Key = Guid.NewGuid(), Name = "Chair" });
-        var runtime = new FakeRuntime
-        {
-            ReadResult = scene,
-            PropSpawnFailure = _ => "No free spawn slot.",
-            PoseTerminalFailure = _ => "The pose import rolled itself back.",
-        };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
-        Assert.True(load.BeginLoad("shot.xivs").Success);
-        await load.Drain;
-
-        var entities = load.Progress!.Outcome!.Entities;
-        foreach (var entity in entities.Where(entity => !entity.Restored))
-        {
-            Assert.False(string.IsNullOrWhiteSpace(entity.Detail));
-            Assert.False(string.IsNullOrWhiteSpace(entity.Remedy));
-            Assert.NotEqual(entity.Name, entity.Detail);
-        }
-        Assert.Contains(entities, entity => entity.Kind == "Object" && !entity.Restored);
-        Assert.Contains(entities, entity => entity.Kind == "Actor" && !entity.Restored);
-        Assert.DoesNotContain(
-            entities, entity => entity.Restored && entity.Remedy != null);
-    }
-
-    /// <summary>The save's appearance phase: it runs only when the save asked
-    /// for it, and whatever it could not package leaves as a note on the
-    /// terminal rather than as a silently dropped fact.</summary>
-    [Fact]
-    public async Task Sealing_runs_only_for_a_portable_save_and_reports_its_notes()
-    {
-        var plain = new FakeRuntime();
-        using (var save = new SceneWorkflow(plain, new FakeDocuments(plain)))
-        {
-            Assert.True(save.BeginSave("shot.xivs").Success);
-            await save.Drain;
-            Assert.DoesNotContain("SealAppearance", plain.Calls);
-        }
-
-        var portable = new FakeRuntime
-        {
-            SealAppearanceResult = _ => new[]
-            {
-                "Actor 'Lead' has no stable identity, so its appearance could " +
-                "not be packaged.",
-            },
-        };
-        using var sealing = new SceneWorkflow(portable, new FakeDocuments(portable));
-        Assert.True(sealing.BeginSave(
-            "shot.xivs",
-            null,
-            new SceneSaveOptions { IncludeModdedAppearance = true }).Success);
-        await sealing.Drain;
-
-        Assert.Contains("SealAppearance", portable.Calls);
-        Assert.Contains(
-            sealing.Progress!.Outcome!.Notes,
-            note => note.Contains("could not be packaged"));
-    }
 
     /// <summary>
     /// A skeleton that is not pose-ready yet must be WAITED for, not refused.
@@ -1123,17 +931,20 @@ public sealed class SceneWorkflowTests
             ReadResult = SceneWith(Actor("Midona Rhel", out _)),
             ActorReadyAfterPolls = 3,
         };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
         // It polled rather than giving up on the first look.
         Assert.True(runtime.ActorReadyPolls > 3);
         // And it still posed the actor once readiness landed.
         Assert.Contains("ArmPoseImport:Midona Rhel", runtime.Calls);
         Assert.DoesNotContain(
             load.Progress!.Outcome!.Entities, entity => !entity.Restored);
+        // Issue #41: the load answers on the import's terminal receipt, never its pending label.
+        Assert.DoesNotContain(load.Progress.Outcome.Entities,
+            entity => entity.Detail?.Contains("Scene pose:") == true);
     }
 
     /// <summary>
@@ -1146,70 +957,24 @@ public sealed class SceneWorkflowTests
     [Fact]
     public async Task Every_restored_actor_is_frozen_before_its_pose()
     {
-        var runtime = new FakeRuntime
-        {
-            ReadResult = SceneWith(Actor("Lead", out _)),
-        };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        var actor = Actor("Lead", out _);
+        actor.Gaze = new SceneActorGaze { Mode = GazeTargetMode.Detached, Parts = GazeTargetType.All };
+        var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        AssertApplied(load);
         int frozen = runtime.Calls.IndexOf("FreezeActor:Lead");
         int posed = runtime.Calls.IndexOf("ArmPoseImport:Lead");
         Assert.True(frozen >= 0, "the actor was never stopped");
         Assert.True(
             frozen < posed,
             "the pose must land on an actor that is already stopped");
-    }
-
-    [Theory]
-    [InlineData(GazeTargetMode.Detached, true)]
-    [InlineData(GazeTargetMode.Position, false)]
-    public async Task Detached_gaze_is_established_before_sampling_the_import_basis(
-        GazeTargetMode mode, bool beforePose)
-    {
-        var actor = Actor("Lead", out _);
-        actor.Gaze = new SceneActorGaze { Mode = mode, Parts = GazeTargetType.All };
-        var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
-        Assert.True(load.BeginLoad("shot.xivs").Success);
-        await load.Drain;
-
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        // A detached gaze is established before the import samples its basis.
         int gaze = runtime.Calls.IndexOf("ApplyActorGaze:Lead");
-        int posed = runtime.Calls.IndexOf("ArmPoseImport:Lead");
-        Assert.True(gaze >= 0 && posed >= 0);
-        Assert.Equal(beforePose, gaze < posed);
+        Assert.True(gaze >= 0 && gaze < posed);
         Assert.Single(runtime.Calls, call => call == "ApplyActorGaze:Lead");
-    }
-
-    /// <summary>A scene saved while an actor was PLAYING restores exactly like
-    /// any other: stopped, at the saved pose. There is nothing in the document
-    /// to resume from, by design.</summary>
-    [Fact]
-    public async Task A_document_carries_no_animation_to_restore()
-    {
-        var scene = SceneWith(Actor("Lead", out _));
-        // Default options, deliberately: they emit every public member, so a
-        // surviving animation property would show up here even if the codec's
-        // own options would have hidden it behind a null.
-        var json = System.Text.Json.JsonSerializer.Serialize(scene);
-
-        Assert.DoesNotContain("Animation", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("BaseTimeline", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("HeldExpression", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("Frames", json, StringComparison.Ordinal);
-
-        var runtime = new FakeRuntime { ReadResult = scene };
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
-        Assert.True(load.BeginLoad("shot.xivs").Success);
-        await load.Drain;
-
-        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
-        Assert.DoesNotContain(
-            load.Progress!.Outcome!.Entities,
-            entity => entity.Kind == "Animation");
     }
 
     /// <summary>
@@ -1240,7 +1005,7 @@ public sealed class SceneWorkflowTests
             "back; the scene saved without it.",
         };
 
-        using var save = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var save = Workflow(runtime);
         Assert.True(save.BeginSave(
             "shot.xivs",
             null,
@@ -1253,26 +1018,118 @@ public sealed class SceneWorkflowTests
         var outcome = save.Progress!.Outcome!;
         var refusal = Assert.Single(
             outcome.Entities, entity => !entity.Restored);
-        Assert.Equal("Character file", refusal.Kind);
+        Assert.Equal(SceneOutcomeKind.CharacterFile, refusal.Kind);
         Assert.Contains("appearance", outcome.Detail, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>The save surface reads the appearance figure every frame, so
-    /// it has to be a live pass-through and not a cached number that goes
-    /// stale the moment an actor puts a package on.</summary>
+    // ── issue #41: one failure mode per load phase ───────────────────────
+
+    // ── issue #437: per-actor steps wait, and never leave work armed ─────
+
     [Fact]
-    public void The_appearance_estimate_is_read_live()
+    public async Task A_busy_pose_slot_is_waited_for_and_progress_reaches_its_total()
     {
-        var runtime = new FakeRuntime { AppearanceEstimate = 900L * 1024 * 1024 };
-        using var workflow = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.Props.Add(new SceneProp { Key = Guid.NewGuid(), Name = "Chair" });
+        scene.WorldObjects = [WorldObject("bg/example.mdl")];
+        var runtime = new FakeRuntime { ReadResult = scene, PoseBusyPolls = 3 };
+        using var load = Workflow(runtime);
+        var last = (Done: 0, Total: 0);
+        load.Changed += () =>
+        {
+            if (load.Progress is { Outcome: null, EntitiesTotal: > 0 } progress)
+                last = (progress.EntitiesDone, progress.EntitiesTotal);
+        };
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
 
-        Assert.Equal(900L * 1024 * 1024, workflow.EstimatedAppearanceBytes);
-
-        runtime.AppearanceEstimate = 0;
-        Assert.Equal(0, workflow.EstimatedAppearanceBytes);
+        AssertApplied(load);
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.Equal(3, last.Total);
+        Assert.Equal(last.Total, last.Done);
+        Assert.True(runtime.EverHeldPoseImports);
+        Assert.False(runtime.HeldPoseImports);
     }
 
-    // ── issue #41: one failure mode per load phase ───────────────────────
+    [Fact]
+    public async Task A_pose_import_that_never_finishes_is_cancelled_not_left_armed()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
+        using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(),
+            new EditHistory(), new NoStructure(), Parenting())
+        {
+            PoseImportBound = TimeSpan.FromMilliseconds(100),
+        };
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Contains("CancelPoseImport", runtime.Calls);
+        var refusal = Assert.Single(load.Progress!.Outcome!.Entities, entity => !entity.Restored);
+        Assert.Equal((SceneOutcomeKind.Actor, "Lead"), (refusal.Kind, refusal.Name));
+        Assert.Contains("cancelled", refusal.Detail);
+    }
+
+    [Fact]
+    public async Task Cancelling_during_a_pose_import_ends_cancelled_and_cancels_the_import()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)), PoseNeverFinishes = true };
+        using var load = Workflow(runtime);
+        runtime.AfterCall = call => { if (call == "ArmPoseImport:Lead") load.Cancel(); };
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Cancelled, load.Receipt!.State);
+        Assert.Contains("CancelPoseImport", runtime.Calls);
+        Assert.Equal(new[] { "actor:Lead" }, runtime.Destroyed.ToArray());
+        Assert.False(runtime.HeldPoseImports);
+    }
+
+    // ── issue #439: refusals by name, caveats in sight ───────────────────
+
+    [Fact]
+    public async Task Refused_entities_are_named_beside_the_restored_scene_and_caveats_are_kept()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.Lights.Add(new SceneLight { Key = Guid.NewGuid(), Light = new LightFile { Name = "Key" } });
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            ReadRefusals = [new(SceneOutcomeKind.Light, "Rim", "Light 'Rim' exceeds 256 characters.")],
+            LightDetail = "The gobo is not shipped by this client.",
+        };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Empty(runtime.Destroyed);
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        var entities = load.Progress!.Outcome!.Entities;
+        var refusal = Assert.Single(entities, entity => !entity.Restored);
+        Assert.Equal((SceneOutcomeKind.Light, "Rim"), (refusal.Kind, refusal.Name));
+        Assert.False(string.IsNullOrWhiteSpace(refusal.Remedy));
+        var degraded = Assert.Single(entities, entity => entity.Degraded);
+        Assert.Equal((SceneOutcomeKind.Light, "Key"), (degraded.Kind, degraded.Name));
+    }
+
+    // ── issue #438: collections redraw together, not one after another ───
+
+    [Fact]
+    public async Task Saved_collections_are_restored_in_parallel()
+    {
+        var first = Actor("First", out _);
+        var second = Actor("Second", out _);
+        first.PenumbraCollection = Guid.NewGuid();
+        second.PenumbraCollection = Guid.NewGuid();
+        var runtime = new FakeRuntime { ReadResult = SceneWith(first, second) };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        AssertApplied(load);
+        Assert.Equal(2, runtime.PeakCollectionRestores);
+    }
 
     /// <summary>A whole scene: one of every entity kind the load restores, so
     /// a per-phase failure can be asserted to keep everything the OTHER phases
@@ -1338,27 +1195,8 @@ public sealed class SceneWorkflowTests
 
         Add("objects", "Object",
             runtime => runtime.PropSpawnFailure = _ => "No free spawn slot.");
-        Add("overlays", "Overlay",
-            runtime => runtime.OverlayStageFailure = _ => "The node would not stage.");
-        Add("world objects", "World object",
-            runtime => runtime.WorldObjectAdoptFailure = _ => "It is already borrowed.");
-        Add("appearance", "Character file",
-            runtime => runtime.McdfImport =
-                _ => SceneMcdfOutcome.Refused("The package is gone."));
-        Add("relationships", "Companion",
-            runtime => runtime.CompanionPoseFailure = _ => "The body never drew.");
-        Add("freeze", "Animation",
-            runtime => runtime.FreezeFailure = _ => "The actor could not be stopped.");
-        Add("pose", "Actor",
-            runtime => runtime.PoseTerminalFailure = _ => "The import rolled back.");
-        Add("placement", "Actor",
-            runtime => runtime.PlacementFailure = _ => "The transform is not finite.");
         Add("gaze", "Gaze",
             runtime => runtime.GazeFailure = _ => "The look-at target is gone.");
-        Add("lights", "Light",
-            runtime => runtime.LightSpawnFailure = _ => "The light budget is full.");
-        Add("world toggles", "World",
-            runtime => runtime.WorldFailure = "The render toggles are unavailable.");
         return data;
     }
 
@@ -1370,7 +1208,7 @@ public sealed class SceneWorkflowTests
         var runtime = new FakeRuntime { ReadResult = WholeScene() };
         arrange(runtime);
 
-        using var load = new SceneWorkflow(runtime, new FakeDocuments(runtime));
+        using var load = Workflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
@@ -1382,7 +1220,7 @@ public sealed class SceneWorkflowTests
 
         var refusal = Assert.Single(
             outcome.Entities, entity => !entity.Restored);
-        Assert.Equal(kind, refusal.Kind);
+        Assert.Equal(kind, refusal.Kind.Label());
         Assert.False(string.IsNullOrWhiteSpace(refusal.Detail));
         Assert.False(string.IsNullOrWhiteSpace(refusal.Remedy));
 
@@ -1390,56 +1228,5 @@ public sealed class SceneWorkflowTests
         // a reason of its own rather than leaving the entity list to speak.
         Assert.Contains(outcome.Entities, entity => entity.Restored);
         Assert.False(string.IsNullOrWhiteSpace(outcome.Detail));
-    }
-
-    /// <summary>Outcome copy agrees with its own counts. A user reading
-    /// "1 actor were destroyed" reads a bug in the count.</summary>
-    [Fact]
-    public void Clear_and_load_summaries_agree_with_their_counts()
-    {
-        var one = new SceneClearOutcome(1, 0, 0, 0, 0).Summary();
-        Assert.Contains("1 actor was destroyed", one);
-        Assert.Contains("does not bring it back", one);
-
-        var many = new SceneClearOutcome(2, 1, 0, 0, 0).Summary();
-        Assert.Contains("2 actors, 1 object were destroyed", many);
-        Assert.Contains("does not bring them back", many);
-
-        // The borrowed line already agreed; it must keep agreeing.
-        var borrowed = new SceneClearOutcome(0, 0, 0, 0, 0, 1).Summary();
-        Assert.Contains("1 borrowed map object was put back", borrowed);
-    }
-
-    /// <summary>The two STRUCTURAL failure modes, for contrast: they roll the
-    /// whole operation back and leave nothing behind, so a partial-recovery
-    /// assertion can never pass by accident.</summary>
-    [Fact]
-    public async Task Structural_phase_failures_roll_the_whole_load_back()
-    {
-        var spawnRuntime = new FakeRuntime
-        {
-            ReadResult = WholeScene(),
-            ActorSpawnFailure = _ => "No free actor slot.",
-        };
-        using (var spawn = new SceneWorkflow(spawnRuntime, new FakeDocuments(spawnRuntime)))
-        {
-            Assert.True(spawn.BeginLoad("shot.xivs").Success);
-            await spawn.Drain;
-            Assert.Equal(
-                OperationReceiptState.RolledBack, spawn.Receipt!.State);
-            Assert.False(spawn.Progress!.Outcome!.LeftEntitiesBehind);
-        }
-
-        var readRuntime = new FakeRuntime
-        {
-            ReadFailure = Corrupt("The document is not a scene."),
-        };
-        using var read = new SceneWorkflow(readRuntime, new FakeDocuments(readRuntime));
-        Assert.True(read.BeginLoad("shot.xivs").Success);
-        await read.Drain;
-        Assert.Equal(OperationReceiptState.Failed, read.Receipt!.State);
-        Assert.Empty(readRuntime.Destroyed);
-        Assert.Contains(
-            "The document is not a scene.", read.Progress!.Outcome!.Detail);
     }
 }

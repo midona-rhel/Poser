@@ -7,16 +7,29 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
-using Poser.Files;
 using Poser.Domain.Operations;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Integration;
-using Poser.Library;
-using Poser.Services;
 
 using Poser.Application.Posing;
+using Poser.UI.Widgets;
+using Poser.Documents.Files;
+using Poser.Documents.Library;
+using Poser.Application.AutoSave;
+using Poser.Application.Library;
+using static Poser.UI.Widgets.ActionBarWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
+using static Poser.UI.Widgets.DialogWidgets;
+using static Poser.UI.Widgets.DropdownWidgets;
+using static Poser.UI.Widgets.PageForm;
+using static Poser.UI.Widgets.PopoverWidgets;
+using static Poser.UI.Widgets.ScrollRegionWidgets;
+using static Poser.UI.Widgets.TextInputWidgets;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.WindowFrameWidgets;
 
 namespace Poser.UI;
 
@@ -32,7 +45,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private readonly IPoseImportCommands _imports;
     private readonly SceneSession _scene;
     private readonly SelectionScope _selection;
-    private readonly Config.ConfigurationService _config;
+    private readonly Application.Settings.ConfigurationService _config;
     private readonly IAutoSaveService _autoSave;
     private readonly IPosePreview _preview;
     private readonly ITextureProvider _textures;
@@ -43,9 +56,9 @@ public sealed class PoseFileInspectorSection : IDisposable
     private readonly PosePreviewController _importPreview;
 
     private readonly UserNotices _notices;
-    private readonly Crystarium.FileDialog _importBrowser =
+    private readonly FileDialog _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
-    private readonly Crystarium.FileDialog _exportBrowser =
+    private readonly FileDialog _exportBrowser =
         new("Export Pose", new[] { ".pose" }, isSaveMode: true);
     private readonly global::Poser.UI.Controls.RememberedFolder _folder;
     // Rotation is enabled by default; position and scale are opt-in.
@@ -92,7 +105,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
         PropertiesContext properties,
-        Config.ConfigurationService config,
+        Application.Settings.ConfigurationService config,
         IAutoSaveService autoSave,
         IPosePreview preview,
         ITextureProvider textures,
@@ -121,7 +134,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         _importBrowser.BeforeFrame = RefreshImportBand;
         _importBrowser.PersistentRightPanel =
             new FileSidePanel(
-                ImportPreviewImageWidth + Crystarium.ActiveTheme.Page.Inset * 2f,
+                ImportPreviewImageWidth + ActiveTheme.Page.Inset * 2f,
                 DrawImportPreviewPanel);
         _importBrowser.FooterBeforeCancel = DrawImportFooterFilter;
     }
@@ -224,7 +237,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private Vector2 _filterAnchor;
 
     public PoseImportOptions ApplyCategoryFilter(PoseImportOptions options) =>
-        Files.ImportBoneCategories.ApplyDisabledCategories(
+        Documents.Files.ImportBoneCategories.ApplyDisabledCategories(
             options, _disabledCategories);
 
     // Context menus target the clicked actor; dialogs freeze that exact generation.
@@ -269,10 +282,10 @@ public sealed class PoseFileInspectorSection : IDisposable
 
     private static float MenuTitleOffset(float scale)
     {
-        var page = Crystarium.ActiveTheme.Page;
+        var page = ActiveTheme.Page;
         return (page.SectionPaddingTop
             + (page.SectionHeaderHeight
-                - Crystarium.ActiveTheme.Typography.LabelSize) * 0.5f)
+                - ActiveTheme.Typography.LabelSize) * 0.5f)
             * 0.5f * scale;
     }
     private const float MenuWidth = 320f;
@@ -367,25 +380,25 @@ public sealed class PoseFileInspectorSection : IDisposable
             _importMenuRequested = false;
             _referenceArmed = false;
             _importMenuOpen = true;
-            Crystarium.FloatingSurface.OpenWindow(ImportMenuId);
+            FloatingSurface.OpenWindow(ImportMenuId);
         }
         if (_exportMenuRequested)
         {
             _exportMenuRequested = false;
-            Crystarium.FloatingMenu.Open(
+            FloatingMenu.Open(
                 ExportMenuId, _menuAnchor, BuildExportSubmenu(_exportMenuActor),
                 ExportMenuWidth);
         }
         if (_libraryMenuRequested)
         {
             _libraryMenuRequested = false;
-            Crystarium.OpenPopover(LibraryOptionsMenuId);
+            OpenPopover(LibraryOptionsMenuId);
         }
         {
             float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
             var anchor = _libraryMenuSeat - new Vector2(
                 (MenuWidth + MenuPadding) * scale, 0f);
-            Crystarium.FloatingSurface.Popup(
+            FloatingSurface.Popup(
                 LibraryOptionsMenuId,
                 new FloatingSurfaceProps
                 {
@@ -399,7 +412,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                 DrawLibraryOptionsMenuBody);
         }
         _menuActor = _importMenuActor;
-        Crystarium.FloatingSurface.Window(
+        FloatingSurface.Window(
             ImportMenuId, ref _importMenuOpen, 380f, 560f,
             DrawImportMenuFrame);
         _menuActor = null;
@@ -409,12 +422,12 @@ public sealed class PoseFileInspectorSection : IDisposable
             if (_boneFilterRequested)
             {
                 _boneFilterRequested = false;
-                Crystarium.OpenPopover(BoneFilterMenuId);
+                OpenPopover(BoneFilterMenuId);
             }
             DrawBoneFilterMenu(_filterAnchor);
         }
 
-        int exportClicked = Crystarium.FloatingMenu.Draw(ExportMenuId);
+        int exportClicked = FloatingMenu.Draw(ExportMenuId);
         if (exportClicked >= 0)
             ExecuteExport(exportClicked, _exportMenuActor);
     }
@@ -435,16 +448,16 @@ public sealed class PoseFileInspectorSection : IDisposable
             withPresets: false, withActions: false);
 
         _libraryMenuHeight = (y - origin.Y) / scale
-            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
+            + ActiveTheme.Page.Inset + MenuPadding * 2f;
         DrawNestedBoneFilter();
     }
 
-    private void DrawImportMenuFrame(Crystarium.FloatingSurfaceFrame frame)
+    private void DrawImportMenuFrame(FloatingSurfaceFrame frame)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var actorName = _importMenuActor is { } target && _scene.Snapshot.FindActor(target) is { } actor
             ? ActorNames.Display(_config, actor) : "Actor unavailable";
-        var rects = Crystarium.WindowFrame(ImportMenuId, frame.Min, frame.Size,
+        var rects = WindowFrame(ImportMenuId, frame.Min, frame.Size,
             new WindowFrameProps
             {
                 Title = $"Import pose — {actorName}",
@@ -452,7 +465,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                 HostPaintsChrome = true,
             });
         ImGui.SetCursorScreenPos(rects.Body.Min + new Vector2(MenuPadding * scale, 0f));
-        Crystarium.ScrollRegion("##import-options", rects.Body.Size.X / scale - MenuPadding * 2f,
+        ScrollRegion("##import-options", rects.Body.Size.X / scale - MenuPadding * 2f,
             rects.Body.Size.Y / scale, region =>
             {
                 var origin = ImGui.GetCursorScreenPos();
@@ -464,17 +477,17 @@ public sealed class PoseFileInspectorSection : IDisposable
         if (_boneFilterRequested)
         {
             _boneFilterRequested = false;
-            Crystarium.OpenPopover(BoneFilterMenuId);
+            OpenPopover(BoneFilterMenuId);
         }
         var menuPos = ImGui.GetWindowPos();
-        float gap = Crystarium.ActiveTheme.Floating.AnchorGap * scale;
+        float gap = ActiveTheme.Floating.AnchorGap * scale;
         DrawBoneFilterMenu(new Vector2(
             menuPos.X + ImGui.GetWindowSize().X + gap,
             menuPos.Y - gap));
     }
 
     private void DrawBoneFilterMenu(Vector2 anchor) =>
-        Crystarium.FloatingSurface.Popup(
+        FloatingSurface.Popup(
             BoneFilterMenuId,
             new FloatingSurfaceProps
             {
@@ -507,7 +520,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         SyncImportPreview(highlighted);
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         DrawPreviewBlock(
             origin,
             size,
@@ -522,7 +535,7 @@ public sealed class PoseFileInspectorSection : IDisposable
 
     private void ConfigureImportBand()
     {
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var grid = PoseImportOptionsGrid.Create(
             width: 0f,
             theme.Page.Inset,
@@ -556,7 +569,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         SyncCmpComponentLock(highlighted);
         SyncFaceWarning(highlighted);
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         var grid = PoseImportOptionsGrid.Create(
             size.X / scale,
             theme.Page.Inset,
@@ -589,7 +602,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         if (_boneFilterRequested)
         {
             _boneFilterRequested = false;
-            Crystarium.OpenPopover(BoneFilterMenuId);
+            OpenPopover(BoneFilterMenuId);
         }
         DrawBoneFilterMenu(_filterAnchor);
     }
@@ -720,7 +733,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private string? _characterFileStatus;
     private bool _characterFileStated;
 
-    private void DrawCharacterFileBody(Crystarium.FormScope form)
+    private void DrawCharacterFileBody(FormScope form)
     {
         if (_characterFile is not { } file)
         {
@@ -847,12 +860,12 @@ public sealed class PoseFileInspectorSection : IDisposable
         string title,
         Vector2 origin,
         float width,
-        Action<Crystarium.FormScope> rows,
+        Action<FormScope> rows,
         bool divider = true,
         bool dense = false,
         float? labelColumnWidth = null,
         bool showTitle = false) =>
-        Crystarium.Section(
+        Section(
             id,
             dense && !showTitle ? string.Empty : title,
             origin,
@@ -882,16 +895,16 @@ public sealed class PoseFileInspectorSection : IDisposable
             return;
         }
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         ImGui.SetCursorScreenPos(origin);
-        Crystarium.IconButton(
+        IconButton(
             "settings",
             () => RequestLibraryOptionsMenu(origin),
             ControlStyle.Square(side),
             help: "Import options",
             id: "##library-options");
-        Crystarium.TextInBand(
+        TextInBand(
             origin + new Vector2((side + theme.Spacing.Three) * scale, 0f),
             new Vector2(
                 MathF.Max(
@@ -1017,7 +1030,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     }
 
     private static float DenseImportGroupGap(bool dense) => dense
-        ? Crystarium.ActiveTheme.Spacing.Three
+        ? ActiveTheme.Spacing.Three
             * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale
         : 0f;
 
@@ -1030,7 +1043,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     }
 
     private float DrawImportOptionsCard(
-        Vector2 origin, float width, IReadOnlyList<Crystarium.CheckItem> scope) =>
+        Vector2 origin, float width, IReadOnlyList<CheckItem> scope) =>
         MenuSection(
             "##import-dialog-options-card", "Options",
             origin, width,
@@ -1041,7 +1054,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: true,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new Crystarium.CheckItem("Freeze", _freeze, next =>
+                    new CheckItem("Freeze", _freeze, next =>
                     {
                         _freeze = next;
                         _config.Config.FreezeActorOnPoseImport = next;
@@ -1083,14 +1096,14 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: typeLocked,
                     fullWidth: true,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Body", _typeBody,
                         next => _typeBody = next,
                         typeLocked
                             ? typeLockedWhy
                             : "Import the body. With Expression too, everything "
                                 + "imports with every component"),
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Expression", _typeExpression,
                         next => _typeExpression = next,
                         typeLocked
@@ -1123,10 +1136,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: true,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Position", _position, next => _position = next, why,
                         Disabled: locked),
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Rotation", _rotation, next => _rotation = next, why,
                         Disabled: locked));
                 form.Checkboxes(
@@ -1134,10 +1147,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: true,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Scale", _scale, next => _scale = next, why,
                         Disabled: locked),
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Model", _modelTransform,
                         next => _modelTransform = next,
                         "Also move the actor to the file's placement "
@@ -1150,7 +1163,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             showTitle: true);
 
     private float DrawImportOptionsContinuation(
-        Vector2 origin, float width, IReadOnlyList<Crystarium.CheckItem> scope) =>
+        Vector2 origin, float width, IReadOnlyList<CheckItem> scope) =>
         MenuSection(
             "##import-dialog-options-continuation", string.Empty,
             origin, width,
@@ -1160,14 +1173,14 @@ public sealed class PoseFileInspectorSection : IDisposable
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Smart", _smartImport, next => _smartImport = next,
                         "Route face-only files as expression imports automatically"));
                 form.Checkboxes(
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Single-click mode", _importBrowser.SingleClickActivation,
                         next => _importBrowser.SingleClickActivation = next,
                         "One click opens a folder or imports a pose and closes the browser"));
@@ -1187,12 +1200,12 @@ public sealed class PoseFileInspectorSection : IDisposable
             labelColumnWidth: 0f,
             showTitle: true);
 
-    private List<Crystarium.CheckItem> BuildImportScopeItems()
+    private List<CheckItem> BuildImportScopeItems()
     {
-        var scope = new List<Crystarium.CheckItem>(5);
+        var scope = new List<CheckItem>(5);
         bool hasSelection = HasSelectedBonesForImportTarget();
         bool anchorable = SelectiveImportAppliesPosition();
-        scope.Add(new Crystarium.CheckItem(
+        scope.Add(new CheckItem(
             "Selected bones", _selectiveImport,
             next => _selectiveImport = next,
             hasSelection || _selectiveImport
@@ -1200,13 +1213,13 @@ public sealed class PoseFileInspectorSection : IDisposable
                     + "selected on this actor"
                 : "Select bones on the target actor first",
             Disabled: !hasSelection && !_selectiveImport));
-        scope.Add(new Crystarium.CheckItem(
+        scope.Add(new CheckItem(
             "Include descendants", _selectiveDescendants,
             next => _selectiveDescendants = next,
             "Extend the selected-bones scope to every "
                 + "descendant of the selected bones",
             Disabled: !_selectiveImport));
-        scope.Add(new Crystarium.CheckItem(
+        scope.Add(new CheckItem(
             "Anchor positions", _selectiveAnchor,
             next => _selectiveAnchor = next,
             anchorable || !_selectiveImport
@@ -1220,11 +1233,11 @@ public sealed class PoseFileInspectorSection : IDisposable
                     : "Turn on the Position component first — "
                         + "without it there is nothing to anchor",
             Disabled: !_selectiveImport || !anchorable));
-        scope.Add(new Crystarium.CheckItem(
+        scope.Add(new CheckItem(
             "Reset first", _reset, next => _reset = next,
             "Clear every bone in scope before importing, "
                 + "including ones the file does not contain"));
-        scope.Add(new Crystarium.CheckItem(
+        scope.Add(new CheckItem(
             "Exclude ear bones", _excludeEars,
             next => _excludeEars = next,
             "Leave ears where they are — the six standard ear "
@@ -1232,7 +1245,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         return scope;
     }
 
-    private void DrawImportFooterFilter(Crystarium.ActionBarScope actions)
+    private void DrawImportFooterFilter(ActionBarScope actions)
     {
         bool typed = _typeBody || _typeExpression;
         actions.Button(
@@ -1259,13 +1272,13 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: false,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new Crystarium.CheckItem("Freeze", _freeze, next =>
+                    new CheckItem("Freeze", _freeze, next =>
                     {
                         _freeze = next;
                         _config.Config.FreezeActorOnPoseImport = next;
                         _config.Save();
                     }, "Keep the actor paused after the import"),
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Smart", _smartImport, next => _smartImport = next,
                         "Route face-only files as expression imports automatically"));
                 if (selective)
@@ -1274,7 +1287,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                         next => _importBrowser.SingleClickActivation = next,
                         help: "One click opens a folder or imports a pose and closes the browser");
                 if (dense)
-                    form.Canvas("type-gap", Crystarium.ActiveTheme.Spacing.Three,
+                    form.Canvas("type-gap", ActiveTheme.Spacing.Three,
                         static (_, _) => { });
                 bool typeLocked =
                     selective && _selectiveImport && !_selectiveDescendants;
@@ -1286,14 +1299,14 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: typeLocked,
                     fullWidth: false,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Body", _typeBody,
                         next => _typeBody = next,
                         typeLocked
                             ? typeLockedWhy
                             : "Import the body. With Expression too, everything "
                                 + "imports with every component"),
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Expression", _typeExpression,
                         next => _typeExpression = next,
                         typeLocked
@@ -1329,10 +1342,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: false,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Position", _position, next => _position = next, why,
                         Disabled: locked),
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Rotation", _rotation, next => _rotation = next, why,
                         Disabled: locked));
                 form.Checkboxes(
@@ -1340,10 +1353,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: false,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Scale", _scale, next => _scale = next, why,
                         Disabled: locked),
-                    new Crystarium.CheckItem(
+                    new CheckItem(
                         "Model", _modelTransform,
                         next => _modelTransform = next,
                         "Also move the actor to the file's placement "
@@ -1362,12 +1375,12 @@ public sealed class PoseFileInspectorSection : IDisposable
             origin, width,
             form =>
             {
-                var scope = new List<Crystarium.CheckItem>(4);
+                var scope = new List<CheckItem>(4);
                 if (selective)
                 {
                     bool hasSelection = HasSelectedBonesForImportTarget();
                     bool anchorable = SelectiveImportAppliesPosition();
-                    scope.Add(new Crystarium.CheckItem(
+                    scope.Add(new CheckItem(
                         "Selected bones", _selectiveImport,
                         next => _selectiveImport = next,
                         hasSelection || _selectiveImport
@@ -1375,13 +1388,13 @@ public sealed class PoseFileInspectorSection : IDisposable
                                 + "selected on this actor"
                             : "Select bones on the target actor first",
                         Disabled: !hasSelection && !_selectiveImport));
-                    scope.Add(new Crystarium.CheckItem(
+                    scope.Add(new CheckItem(
                         "Include descendants", _selectiveDescendants,
                         next => _selectiveDescendants = next,
                         "Extend the selected-bones scope to every "
                             + "descendant of the selected bones",
                         Disabled: !_selectiveImport));
-                    scope.Add(new Crystarium.CheckItem(
+                    scope.Add(new CheckItem(
                         "Anchor positions", _selectiveAnchor,
                         next => _selectiveAnchor = next,
                         anchorable || !_selectiveImport
@@ -1397,11 +1410,11 @@ public sealed class PoseFileInspectorSection : IDisposable
                                     + "without it there is nothing to anchor",
                         Disabled: !_selectiveImport || !anchorable));
                 }
-                scope.Add(new Crystarium.CheckItem(
+                scope.Add(new CheckItem(
                     "Reset first", _reset, next => _reset = next,
                     "Clear every bone in scope before importing, "
                         + "including ones the file does not contain"));
-                scope.Add(new Crystarium.CheckItem(
+                scope.Add(new CheckItem(
                     "Exclude ear bones", _excludeEars,
                     next => _excludeEars = next,
                     "Leave ears where they are — the six standard ear "
@@ -1412,7 +1425,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                 bool typed = _typeBody || _typeExpression;
                 if (dense)
                     form.Canvas("scope-filter-gap",
-                        Crystarium.ActiveTheme.Spacing.Three,
+                        ActiveTheme.Spacing.Three,
                         static (_, _) => { });
                 form.Actions(dense ? string.Empty : "Filter",
                     actions => actions.Button(
@@ -1430,10 +1443,10 @@ public sealed class PoseFileInspectorSection : IDisposable
             labelColumnWidth: ImportOptionLabelColumn);
 
     private void DrawPreviewBody(
-        Crystarium.FormScope form, float width, float cap)
+        FormScope form, float width, float cap)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float topPadding = PreviewTopPadding(theme);
         float imageWidth = MathF.Min(width, ImportPreviewImageWidth * scale);
         int rows = PreviewCameraRows(imageWidth, scale, theme);
@@ -1469,7 +1482,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         float topPadding = 0f, float imageWidth = 0f)
     {
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
+        var theme = ActiveTheme;
         float contentWidth = MathF.Max(0f, size.X - horizontalInset * 2f);
         float width = imageWidth > 0f
             ? MathF.Min(contentWidth, imageWidth)
@@ -1526,9 +1539,9 @@ public sealed class PoseFileInspectorSection : IDisposable
         fadeRamp = Math.Clamp(
             fadeRamp
                 + (handle != 0 ? 1f : -1f) * ImGui.GetIO().DeltaTime
-                    / Transition.PictoDefault.DurationSeconds,
+                    / Transition.EaseNormal.DurationSeconds,
             0f, 1f);
-        float fade = Transition.PictoDefault.Evaluate(fadeRamp);
+        float fade = Transition.EaseNormal.Evaluate(fadeRamp);
 
         nint backing = ResolvePreviewBacking();
         if (backing != 0)
@@ -1563,7 +1576,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         }
         else
         {
-            Crystarium.TextInBand(
+            TextInBand(
                 boxMin,
                 boxSize,
                 _preview.StatusText ?? emptyText ?? PreviewWaitingText,
@@ -1579,7 +1592,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             && _preview.RefusalText is { Length: > 0 } notice)
             DrawPreviewNotice(boxMin, boxSize, radius, scale, theme, notice);
 
-        Crystarium.FloatingSurface.DrawBorder(boxMin, boxMax, radius);
+        FloatingSurface.DrawBorder(boxMin, boxMax, radius);
     }
 
     private static void DrawPreviewNotice(
@@ -1592,7 +1605,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             Color = theme.Warning,
         };
         float inset = theme.Page.Inset * scale;
-        float band = Crystarium.MeasureText(notice, style).Y + inset;
+        float band = MeasureText(notice, style).Y + inset;
         float width = MathF.Max(1f, boxSize.X - inset * 2f);
         var bandMin = new Vector2(boxMin.X, boxMin.Y + boxSize.Y - band);
         ImGui.GetWindowDrawList().AddRectFilled(
@@ -1602,7 +1615,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                 ColorEx.ApplyAlpha(theme.Chrome.ModalDim)),
             radius,
             ImDrawFlags.RoundCornersBottom);
-        Crystarium.TextInBand(
+        TextInBand(
             new Vector2(bandMin.X + inset, bandMin.Y),
             new Vector2(width, band),
             notice,
@@ -1698,7 +1711,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         switch (index)
         {
             case 0:
-                Crystarium.IconButton(
+                IconButton(
                     TablerIcon.ZoomOut,
                     () => _preview.Zoom(PreviewZoomButtonStep),
                     style: style,
@@ -1706,7 +1719,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                     id: "##pose-preview-zoom-out");
                 break;
             case 1:
-                Crystarium.IconButton(
+                IconButton(
                     TablerIcon.ZoomIn,
                     () => _preview.Zoom(-PreviewZoomButtonStep),
                     style: style,
@@ -1714,7 +1727,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                     id: "##pose-preview-zoom-in");
                 break;
             default:
-                Crystarium.IconButton(
+                IconButton(
                     TablerIcon.ArrowBackUp,
                     () => _preview.ResetCamera(),
                     style: style,
@@ -1777,7 +1790,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var origin = ImGui.GetCursorScreenPos();
         float width = ImGui.GetContentRegionAvail().X;
-        var page = Crystarium.ActiveTheme.Page;
+        var page = ActiveTheme.Page;
 
         float top = origin.Y - MenuTitleOffset(scale);
         float y = top + MenuSection(
@@ -1788,7 +1801,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                 actions.Button("All", () => _disabledCategories.Clear());
                 actions.Button("None", () =>
                 {
-                    foreach (var group in Files.ImportBoneCategories.Groups)
+                    foreach (var group in Documents.Files.ImportBoneCategories.Groups)
                         foreach (var category in group.Categories)
                             _disabledCategories.Add(category.Id);
                 });
@@ -1799,20 +1812,20 @@ public sealed class PoseFileInspectorSection : IDisposable
         float scrollHeight =
             _boneFilterHeight - (y - origin.Y) / scale
             - page.Inset - MenuPadding * 2f;
-        Crystarium.ScrollRegion(
+        ScrollRegion(
             "##filter-scroll", width / scale + MenuPadding, scrollHeight, _ =>
             {
                 var top = ImGui.GetCursorScreenPos();
                 float innerWidth =
                     ImGui.GetContentRegionAvail().X - MenuPadding * scale;
                 float sy = top.Y;
-                sy += Crystarium.Section(
+                sy += Section(
                     "##filter-list", string.Empty,
                     new Vector2(top.X, sy), innerWidth, true, null,
                     form =>
                     {
                         bool first = true;
-                        foreach (var group in Files.ImportBoneCategories.Groups)
+                        foreach (var group in Documents.Files.ImportBoneCategories.Groups)
                         {
                             var categories = group.Categories;
                             int enabled = 0;
@@ -1867,7 +1880,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             });
     }
 
-    public void Draw(Crystarium.FormScope form, ActorId actorId)
+    public void Draw(FormScope form, ActorId actorId)
     {
         SetHostImportTarget(actorId, inLibrary: false);
 
@@ -2205,7 +2218,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (!_libraryExportOpen || _libraryExportActor is not { } actorId)
             return;
-        Crystarium.Dialog(
+        Dialog(
             _libraryExportWindowId,
             _libraryExportOpen,
             next => _libraryExportOpen = next,
@@ -2214,7 +2227,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             body: () =>
         {
             float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-            var theme = Crystarium.ActiveTheme;
+            var theme = ActiveTheme;
             var captionStyle = new TextStyle
             {
                 Size = theme.Typography.CaptionSize,
@@ -2224,16 +2237,16 @@ public sealed class PoseFileInspectorSection : IDisposable
                 (theme.Typography.CaptionSize + 4f) * scale;
             float rowGap = 8f * scale;
 
-            Crystarium.TextAt(
+            TextAt(
                 ImGui.GetCursorScreenPos(), "Name", captionStyle);
             ImGui.Dummy(new Vector2(1f, captionAdvance));
-            Crystarium.TextInput(
+            TextInput(
                 "##library-export-name", _libraryExportName,
                 next => _libraryExportName = SanitizeFileName(next),
                 placeholder: "Pose name");
             ImGui.Dummy(new Vector2(0f, rowGap));
 
-            Crystarium.TextAt(
+            TextAt(
                 ImGui.GetCursorScreenPos(), "Location", captionStyle);
             ImGui.Dummy(new Vector2(1f, captionAdvance));
             var sources = _libraryExportSources;
@@ -2241,14 +2254,14 @@ public sealed class PoseFileInspectorSection : IDisposable
                 _libraryExportSource, 0, sources.Count - 1);
             if (sources.Count > 1)
             {
-                Crystarium.Dropdown(
+                Dropdown(
                     "##library-export-location", _libraryExportLabels,
                     selected, next => _libraryExportSource = next);
                 ImGui.Dummy(new Vector2(0f, rowGap));
             }
             else
             {
-                Crystarium.TextAt(
+                TextAt(
                     ImGui.GetCursorScreenPos(),
                     _libraryExportLabels[selected],
                     new TextStyle
@@ -2280,7 +2293,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                     : null;
             if (problem is not null)
             {
-                Crystarium.TextAt(
+                TextAt(
                     ImGui.GetCursorScreenPos(), problem, captionStyle);
                 ImGui.Dummy(new Vector2(1f, captionAdvance));
             }
@@ -2293,7 +2306,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             {
                 Width = UiWidth.Fixed(MathF.Max(1f, half)),
             };
-            if (Crystarium.Button(
+            if (Button(
                     "Export",
                     variant: ButtonVariant.Primary,
                     style: pairStyle,
@@ -2305,7 +2318,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                     _libraryExportOpen = false;
             }
             ImGui.SameLine(0f, gap);
-            if (Crystarium.Button(
+            if (Button(
                     "Cancel", style: pairStyle, id: "library-export-cancel"))
                 _libraryExportOpen = false;
         });

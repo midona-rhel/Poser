@@ -4,13 +4,20 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
-using Poser.Config;
-using Poser.Core;
-using Poser.Services;
 using Poser.UI.Composition;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Poser.Application.Transforms;
+using Poser.UI.Widgets;
+using Poser.Domain.Preferences;
+using Poser.Documents.Config;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
+using static Poser.UI.Widgets.ValueEdits;
 
 namespace Poser.UI;
 
@@ -22,9 +29,9 @@ public sealed class UIManager : IUIManager
     private readonly ITransformFacade _cleanTransforms;
     private readonly UserNotices _notices;
     private readonly IKeyState _keyState;
-    private readonly global::Poser.Services.IKeyEvents _keyEvents;
+    private readonly global::Poser.Application.Input.IKeyEvents _keyEvents;
     private readonly global::Poser.Application.Transforms.ValueJournal _values;
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
     private readonly ConfigurationService _configService;
     private readonly UiWindowSet _windows;
     private readonly PoseFileInspectorSection _poseFileSection;
@@ -38,11 +45,17 @@ public sealed class UIManager : IUIManager
     private bool _uiHidden;
     private bool _capturingShortcutThisFrame;
 
+    private readonly UiContext _ui;
+    private readonly FrameProfiler _profiler;
+    private readonly Controls.ManipulationState _manipulation;
     private readonly global::Poser.Application.Diagnostics.ActionRecorder _recorder;
     private readonly Controls.IssueReportModal _issueReport;
     private readonly Views.ReleaseNotesView _releaseNotes;
 
     public UIManager(
+        UiContext ui,
+        FrameProfiler profiler,
+        Controls.ManipulationState manipulation,
         global::Poser.Application.Diagnostics.ActionRecorder recorder,
         Controls.IssueReportModal issueReport,
         Views.ReleaseNotesView releaseNotes,
@@ -52,12 +65,12 @@ public sealed class UIManager : IUIManager
         ITransformFacade cleanTransforms,
         UserNotices notices,
         IKeyState keyState,
-        global::Poser.Services.IKeyEvents keyEvents,
+        global::Poser.Application.Input.IKeyEvents keyEvents,
         global::Poser.Application.Transforms.ValueJournal values,
-        IEditorState editorState,
+        EditorState editorState,
         ConfigurationService configService,
         UiWindowSet windows,
-        PoseFileInspectorSection poseFileSection,
+        PropertiesContent properties,
         Application.Input.CameraInputState cameraInput,
         Application.Presentation.ICameraControl cameraControl,
         SceneSession scene,
@@ -65,6 +78,9 @@ public sealed class UIManager : IUIManager
         AnimationSession animation,
         Dalamud.Plugin.Services.IPluginLog log)
     {
+        _ui = ui;
+        _profiler = profiler;
+        _manipulation = manipulation;
         _recorder = recorder;
         _issueReport = issueReport;
         _releaseNotes = releaseNotes;
@@ -78,7 +94,7 @@ public sealed class UIManager : IUIManager
         _editorState = editorState;
         _configService = configService;
         _windows = windows;
-        _poseFileSection = poseFileSection;
+        _poseFileSection = properties.PoseFiles;
         _cameraInput = cameraInput;
         _cameraControl = cameraControl;
         _scene = scene;
@@ -94,10 +110,10 @@ public sealed class UIManager : IUIManager
         _keyEvents.KeyEvent += OnKeyEvent;
         // A released drag or an accepted typed value seals the journal's
         // open step, so every control's edit is one step, press to release.
-        Crystarium.ValueCommitted += _values.CommitEdit;
-        Crystarium.ValueEditBegan += _values.BeginEdit;
-        Crystarium.ValueEditEnded += _values.EndEdit;
-        Crystarium.ValueEditingIdle += _values.Seal;
+        _ui.ValueCommitted += _values.CommitEdit;
+        _ui.ValueEditBegan += _values.BeginEdit;
+        _ui.ValueEditEnded += _values.EndEdit;
+        _ui.ValueEditingIdle += _values.Seal;
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSkeletonSettingsRequested += OpenSkeletonSettings;
@@ -138,15 +154,15 @@ public sealed class UIManager : IUIManager
         _capturingShortcutThisFrame = _windows.Settings.IsRebindingShortcut;
         _cameraInput.PointerDragHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !_uiHidden);
-        if (!Crystarium.AdvanceTheme())
+        if (!AdvanceTheme())
             return;
 
         // Cache warming runs before primary windows can draw. Scoped so the
         // ledger can see it: the un-attributed spikes lived exactly here.
-        using (FrameProfiler.Scope("Shell · icon pump"))
-            Crystarium.PumpStartupIcons(_configService.Config.Library.IconSize);
+        using (_profiler.Scope("Shell · icon pump"))
+            _ui.Icons.PumpStartupIcons(_configService.Config.Library.IconSize);
         bool previewBackingReady;
-        using (FrameProfiler.Scope("Shell · preview backing"))
+        using (_profiler.Scope("Shell · preview backing"))
             previewBackingReady = !_windows.IsPrimaryOpen
                 || _poseFileSection.PrewarmPreviewBacking();
         _windows.AdvancePrimaryOpen(previewBackingReady);
@@ -154,8 +170,8 @@ public sealed class UIManager : IUIManager
         // is drawn from here, so this is the only place that can answer for a
         // whole frame. The close is unconditional — a window that threw must
         // not leave the ledger open across frames.
-        FrameProfiler.BeginFrame();
-        global::Poser.UI.Crystarium.BeginTextFrame();
+        _profiler.BeginFrame();
+        BeginTextFrame();
         try
         {
             Interactive.BeginFrame();
@@ -173,30 +189,30 @@ public sealed class UIManager : IUIManager
             }
             if (!_uiHidden)
             {
-                using (FrameProfiler.Scope("Shell · reference images"))
+                using (_profiler.Scope("Shell · reference images"))
                     _windows.PumpReferenceImages();
                 // The report dialog is a popup, not a window.
                 _issueReport.Draw();
                 _releaseNotes.Draw();
             }
-            using (FrameProfiler.Scope("Shell · floating menus"))
-                Crystarium.FloatingMenu.EndFrame();
-            using (FrameProfiler.Scope("Shell · hover help"))
+            using (_profiler.Scope("Shell · floating menus"))
+                FloatingMenu.EndFrame();
+            using (_profiler.Scope("Shell · hover help"))
                 if (!_uiHidden)
-                    Crystarium.HoverHelp.Render();
-            using (FrameProfiler.Scope("Shell · interactive end"))
+                    HoverHelp.Render();
+            using (_profiler.Scope("Shell · interactive end"))
                 Interactive.EndFrame();
         }
         finally
         {
-            Crystarium.EndValueFrame();
-            FrameProfiler.EndFrame();
+            EndValueFrame();
+            _profiler.EndFrame();
         }
         // Hide-while-manipulating (#77): the windows fade down while a
         // world drag is HELD — hover never hides — so the scene is clear
         // under the gesture.
-        bool held = Controls.ManipulationDrag.Held;
-        bool shellHeld = Controls.ManipulationDrag.ShellHeld;
+        bool held = _manipulation.DragHeld;
+        bool shellHeld = _manipulation.ShellDragHeld;
         bool active = _configService.Config.UI.HideWhileManipulating
             && (held || shellHeld);
         // Hide while the camera moves: the free camera's own input, or a
@@ -204,10 +220,10 @@ public sealed class UIManager : IUIManager
         if (_configService.Config.UI.HideWhileMovingCamera
             && (_cameraInput.FlightActive || EmptySpaceDrag()))
             active = true;
-        Controls.ManipulationHide.Active = active;
-        Controls.ManipulationHide.HideGizmo =
+        _manipulation.HideActive = active;
+        _manipulation.HideGizmo =
             _configService.Config.UI.HideGizmoWhileManipulating;
-        Controls.ManipulationHide.Advance();
+        _manipulation.AdvanceHide();
         // The focus rule, published once per frame: only typing owns the
         // keyboard. A hover over a handle or a window, or a drag in the
         // UI, never stands the flight keys down — the camera keys are the
@@ -231,7 +247,7 @@ public sealed class UIManager : IUIManager
             if (ImGui.IsMouseClicked(which))
             {
                 _emptyPress[button] = !io.WantCaptureMouse
-                    && !Controls.GizmoPointerOwnership.Owned;
+                    && !_manipulation.PointerOwned;
                 _pressAt[button] = io.MousePos;
             }
             if (!ImGui.IsMouseDown(which))
@@ -439,7 +455,7 @@ public sealed class UIManager : IUIManager
     /// press is swallowed too, so the game never sees half a chord. Ctrl+Z
     /// reset the game's camera while undoing (2026-09-03); clearing the
     /// key state on the draw frame came too late for the game's dispatch.</summary>
-    private bool OnKeyEvent(Config.KeyCode code, global::Poser.Services.KeyEventKind kind)
+    private bool OnKeyEvent(Domain.Preferences.KeyCode code, global::Poser.Application.Input.KeyEventKind kind)
         => ProcessShortcutKey(new KeyChord(_keyState[VirtualKey.CONTROL],
             _keyState[VirtualKey.SHIFT], _keyState[VirtualKey.MENU], code), kind);
 
@@ -447,7 +463,7 @@ public sealed class UIManager : IUIManager
         || ImGui.GetIO().WantTextInput || _windows.Settings.IsRebindingShortcut
         || _capturingShortcutThisFrame;
 
-    private bool ProcessShortcutKey(KeyChord chord, global::Poser.Services.KeyEventKind kind)
+    private bool ProcessShortcutKey(KeyChord chord, global::Poser.Application.Input.KeyEventKind kind)
     {
         var key = (VirtualKey)chord.Key;
         if (ShortcutsSuppressed)
@@ -466,7 +482,7 @@ public sealed class UIManager : IUIManager
                 continue;
             switch (kind)
             {
-                case global::Poser.Services.KeyEventKind.Down:
+                case global::Poser.Application.Input.KeyEventKind.Down:
                     if (!bind.Down)
                     {
                         bind.Down = true;
@@ -474,10 +490,10 @@ public sealed class UIManager : IUIManager
                     }
                     handled = true;
                     break;
-                case global::Poser.Services.KeyEventKind.Held:
+                case global::Poser.Application.Input.KeyEventKind.Held:
                     handled = true;
                     break;
-                case global::Poser.Services.KeyEventKind.Released:
+                case global::Poser.Application.Input.KeyEventKind.Released:
                     if (bind.Down)
                     {
                         bind.Down = false;
@@ -492,7 +508,7 @@ public sealed class UIManager : IUIManager
 #if DEBUG
     // Diagnostic input follows the real chord resolver and deferred draw-frame
     // dispatch, without sending keys to the game or desktop.
-    public object DebugShortcut(string chord, global::Poser.Services.KeyEventKind kind)
+    public object DebugShortcut(string chord, global::Poser.Application.Input.KeyEventKind kind)
     {
         bool suppressed = ShortcutsSuppressed;
         bool consumed = ProcessShortcutKey(KeyChord.Parse(chord), kind);
@@ -595,10 +611,10 @@ public sealed class UIManager : IUIManager
     {
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _keyEvents.KeyEvent -= OnKeyEvent;
-        Crystarium.ValueCommitted -= _values.CommitEdit;
-        Crystarium.ValueEditBegan -= _values.BeginEdit;
-        Crystarium.ValueEditEnded -= _values.EndEdit;
-        Crystarium.ValueEditingIdle -= _values.Seal;
+        _ui.ValueCommitted -= _values.CommitEdit;
+        _ui.ValueEditBegan -= _values.BeginEdit;
+        _ui.ValueEditEnded -= _values.EndEdit;
+        _ui.ValueEditingIdle -= _values.Seal;
 
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
         _windows.Main.OnSkeletonSettingsRequested -= OpenSkeletonSettings;
@@ -609,5 +625,7 @@ public sealed class UIManager : IUIManager
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
+        // Nothing draws past this point; the context and its textures go.
+        _ui.Dispose();
     }
 }

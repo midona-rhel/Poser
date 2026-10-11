@@ -2,7 +2,7 @@ name: Architecture boundaries
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, refactor]
 permissions:
   contents: read
 jobs:
@@ -19,7 +19,41 @@ jobs:
       - name: Validate portable application and documents without the game SDK
         shell: pwsh
         run: |
-          dotnet test Poser.Domain.Tests/Poser.Domain.Tests.csproj -c Release --nologo
+          dotnet test Poser.Domain.Tests/Poser.Domain.Tests.csproj -c Release --nologo --logger trx --results-directory TestResults
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          dotnet test Poser.Application.Tests/Poser.Application.Tests.csproj -c Release --nologo
+          dotnet test Poser.Application.Tests/Poser.Application.Tests.csproj -c Release --nologo --logger trx --results-directory TestResults
           exit $LASTEXITCODE
+      - name: Report failed tests
+        if: failure()
+        shell: pwsh
+        run: ./tools/Report-TestFailures.ps1
+  full:
+    # Compiles every project, including the Dalamud-dependent ones, and runs
+    # every test project. Release only: a Debug build deploys to the live game.
+    runs-on: windows-latest
+    env:
+      DALAMUD_HOME: ${{ github.workspace }}\dalamud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud.zip
+          Expand-Archive dalamud.zip -DestinationPath $env:DALAMUD_HOME -Force
+      - name: Build solution (Release)
+        shell: pwsh
+        run: |
+          dotnet build Poser.slnx -c Release --nologo
+          exit $LASTEXITCODE
+      - name: Test solution (Release)
+        shell: pwsh
+        run: |
+          dotnet test Poser.slnx -c Release --no-build --nologo --logger trx --results-directory TestResults
+          exit $LASTEXITCODE
+      - name: Report failed tests
+        if: failure()
+        shell: pwsh
+        run: ./tools/Report-TestFailures.ps1

@@ -11,16 +11,21 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Entities;
 using Poser.Domain.Companions;
-using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.Application.Transforms;
+using Poser.Domain;
+using Poser.Domain.Preferences;
+using Poser.Application.Catalog;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -66,7 +71,6 @@ public partial class MainWindow : Window
 
     private readonly IGazeControl _gazeService;
 
-    private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
 
     /// <summary>The reference-picture roster. The sidebar lists it and never
     /// owns it: a picture is not a scene entity — it needs no native
@@ -121,7 +125,7 @@ public partial class MainWindow : Window
     /// <summary>The split flags the rows were last built under, packed.</summary>
     private int _shellMenuLayoutState = -1;
 
-    private readonly IEditorState _editorState;
+    private readonly EditorState _editorState;
 
     private readonly ITransformFacade _cleanTransforms;
 
@@ -173,6 +177,10 @@ public partial class MainWindow : Window
     /// they are registered after this window, so a frame's model is already
     /// built when they read it.</summary>
     internal AppShellViewModel ShellVm => _vm;
+
+    /// <summary>The shared manipulation state, for the split-part windows'
+    /// hide-while-manipulating fade.</summary>
+    internal Controls.ManipulationState Manipulation { get; }
 
     private readonly PropertiesContent _properties;
     internal void PumpPropertiesInteraction(bool pointerHeld) => _properties.PumpInteraction(pointerHeld);
@@ -323,10 +331,10 @@ public partial class MainWindow : Window
 
     public Func<bool>? GetInspectorWindowOpen { get; set; }
 
-    private readonly global::Poser.Config.ConfigurationService _configuration;
+    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
     public MainWindow(
-        global::Poser.Config.ConfigurationService configuration,
+        global::Poser.Application.Settings.ConfigurationService configuration,
         IGPoseService gPoseService,
         PropertiesContent properties,
         IActorSceneControl actorControl,
@@ -341,56 +349,59 @@ public partial class MainWindow : Window
         ISceneCreation creation,
         IScenePlaybackControl playback,
         ISceneDuplication duplication,
-        IEditorState editorState,
+        EditorState editorState,
         ITransformFacade cleanTransforms,
         Application.Posing.IPoseCommands cleanPose,
-        PoseInspectorPane poseInspector,
-        AnimationPane animationPane,
-        AppearancePane appearancePane,
-        LightPane lightPane,
-        CameraPane cameraPane,
         Application.Presentation.ICameraTargetControl cameraTargets,
-        EnvironmentPane environmentPane,
         PoseLibraryPane libraryPane,
-        ScenePane scenePane,
-        PoseFileInspectorSection poseFileSection,
         IAnimationPlayback animation,
         IAnimationCatalogLoader animationCatalog,
         ICompanionCatalogLoader companionCatalog,
         PoseRailPane poseRail,
-        GraphicalBonePane graphicalBonePane,
         IPropCatalog propService,
-        PropsPane propsPane,
-        WorldObjectsPane worldObjectsPane,
-        OverlayPane overlayPane,
         Application.Posing.IActorColliderCapture actorColliderCapture,
-        CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
         BoneVisibilityPresetService bonePresets,
         ReferenceImageSession referenceImages,
         WorldAdoptionSource worldAdoption,
         IGazeControl gazeService,
         EntityActions entityActions,
-        global::Poser.Application.Integration.ActorIntegrationSession integration,
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
         global::Poser.Application.Scene.GroupSteps groupSteps,
         global::Poser.Application.Transforms.GroupTransformState groupTransforms,
         global::Poser.Application.Transforms.GroupTransformCoordinator groupCoordinator,
-        Controls.EntityNameModal names,
         Controls.IssueReportModal issueReport,
         ISceneWorkflow sceneWorkflow,
         ICameraProjection gameCamera,
         IViewportReads viewportProjection,
         Application.Selection.SelectionEntityCommands entityCommands,
-        IEventBus eventBus)
+        IEventBus eventBus,
+        Controls.ManipulationState manipulation)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
+        // The main surface's panes are its properties content's own, so the
+        // sidebar's verbs reach the instances the inspector draws.
+        var poseInspector = properties.PoseInspector;
+        var animationPane = properties.AnimationPanel;
+        var appearancePane = properties.AppearancePanel;
+        var lightPane = properties.LightPanel;
+        var cameraPane = properties.CameraPanel;
+        var environmentPane = properties.EnvironmentPanel;
+        var scenePane = properties.ScenePanel;
+        var poseFileSection = properties.PoseFiles;
+        var graphicalBonePane = properties.BoneMap;
+        var propsPane = properties.PropsPanel;
+        var worldObjectsPane = properties.WorldObjectsPanel;
+        var overlayPane = properties.OverlayPanel;
+        var companions = appearancePane.Companions;
+        var names = properties.Names;
         _configuration = configuration;
+        Manipulation = manipulation;
         _properties = properties;
         _properties.Bind(_vm);
         _vm.OnPopOut = () => OnPopOutRequested?.Invoke(
@@ -476,7 +487,6 @@ public partial class MainWindow : Window
         _referenceImages = referenceImages;
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
-        _integration = integration;
         _entityActions = entityActions;
         _entityCommands = entityCommands;
         _notices = notices;
@@ -624,22 +634,22 @@ public partial class MainWindow : Window
     private static void PushShellStyles()
     {
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
-        ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
-        ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
-        ImGui.PushStyleColor(ImGuiCol.Border, Crystarium.ActiveTheme.Border);
+        ImGui.PushStyleColor(ImGuiCol.Text, ActiveTheme.Text);
+        ImGui.PushStyleColor(ImGuiCol.TextDisabled, ActiveTheme.TextDim);
+        ImGui.PushStyleColor(ImGuiCol.Border, ActiveTheme.Border);
         // Resize feedback — the grip and the lit border edge — is the
         // theme's accent, never Dalamud's global highlight.
-        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.Button, Crystarium.ActiveTheme.SurfaceRaised);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Crystarium.ActiveTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Crystarium.ActiveTheme.AccentActive);
-        ImGui.PushStyleColor(ImGuiCol.FrameBg, Crystarium.ActiveTheme.SurfaceSunken);
-        ImGui.PushStyleColor(ImGuiCol.Header, Crystarium.ActiveTheme.Accent);
-        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Crystarium.ActiveTheme.AccentHover);
-        ImGui.PushStyleColor(ImGuiCol.HeaderActive, Crystarium.ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorHovered, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.SeparatorActive, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.Button, ActiveTheme.SurfaceRaised);
+        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.ButtonActive, ActiveTheme.AccentActive);
+        ImGui.PushStyleColor(ImGuiCol.FrameBg, ActiveTheme.SurfaceSunken);
+        ImGui.PushStyleColor(ImGuiCol.Header, ActiveTheme.Accent);
+        ImGui.PushStyleColor(ImGuiCol.HeaderHovered, ActiveTheme.AccentHover);
+        ImGui.PushStyleColor(ImGuiCol.HeaderActive, ActiveTheme.AccentActive);
 
         // The shell is the window chrome — the ImGui window must contribute
         // nothing; the retained shell owns its padding and borders.
@@ -682,7 +692,7 @@ public partial class MainWindow : Window
         _vm.UndoShortcut = PoserKeybinds.Effective(ui, "Undo");
         _vm.RedoShortcut = PoserKeybinds.Effective(ui, "Redo");
         if (ui.DetachedShell)
-            minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
+            minimum -= ActiveTheme.Shell.SidebarDefaultWidth;
         // A split inspector hands the rail's column back too.
         if (ui.SplitInspector)
             minimum -= Views.AppShellView.RailWidth;
@@ -771,9 +781,9 @@ public partial class MainWindow : Window
         // A drag held on the shell's own control keeps the window drawing
         // through the fade, invisible, so the held item is not torn away.
         if (!_contentHidden
-            && (!Controls.ManipulationHide.Hidden || Controls.ManipulationDrag.ShellHeld))
+            && (!Manipulation.Hidden || Manipulation.ShellDragHeld))
         {
-            using var manipulationFade = Controls.ManipulationHide.FadeScope();
+            using var manipulationFade = Manipulation.FadeScope();
             AppShellView.Draw(
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         }
@@ -941,7 +951,7 @@ public partial class MainWindow : Window
             _configuration.Config;
         var primaryBone = _scene.Selection.Primary?.Bone;
         _vm.SymmetryMode = primaryBone is { } describedBone
-            ? (int)Core.BoneSymmetry.EffectiveMode(
+            ? (int)Domain.Posing.BoneSymmetry.EffectiveMode(
                 symmetryConfig.PerBoneSymmetry,
                 symmetryConfig.BoneSymmetryOverrides,
                 symmetryConfig.AutoLinkPairedBones,

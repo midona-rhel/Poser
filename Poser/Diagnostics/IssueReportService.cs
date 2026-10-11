@@ -8,9 +8,8 @@ using Dalamud.Plugin.Services;
 using Newtonsoft.Json;
 using Poser.Application.Diagnostics;
 using Poser.Application.Scene;
-using Poser.Config;
-using Poser.Files;
-using Poser.Services;
+using Poser.Documents.Files;
+using Poser.Application.Settings;
 
 namespace Poser.Diagnostics;
 
@@ -26,6 +25,10 @@ namespace Poser.Diagnostics;
 public sealed class IssueReportService : IIssueReports, IDisposable
 {
     public const int LogLines = 200;
+
+    /// <summary>How much of the end of dalamud.log is scanned for Poser's
+    /// lines; the whole log can run to hundreds of megabytes.</summary>
+    private const int LogTailBytes = 1024 * 1024;
 
     private readonly IFramework _framework;
     private readonly UI.UserNotices _notices;
@@ -67,6 +70,25 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         _recorder.Scrub = Scrub;
         notices.Posted += _recorder.Notice;
         framework.Update += OnFrameworkUpdate;
+        // A crash mid-report leaves its unscrubbed scene behind. A day's
+        // margin spares a report another client is still writing.
+        _ = System.Threading.Tasks.Task.Run(DeleteStaleScenes);
+    }
+
+    private void DeleteStaleScenes()
+    {
+        try
+        {
+            if (!Directory.Exists(Folder)) return;
+            var cutoff = DateTime.UtcNow - TimeSpan.FromDays(1);
+            foreach (var path in Directory.EnumerateFiles(Folder, "scene-*" + SceneFile.Extension))
+                if (File.GetLastWriteTimeUtc(path) < cutoff)
+                    DeleteQuietly(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warning($"Issue report: stale scenes could not be listed: {ex.Message}");
+        }
     }
 
     /// <summary>Where the reports land.</summary>
@@ -82,7 +104,9 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         try
         {
             Directory.CreateDirectory(Folder);
-            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+            // Two reports in the same second must not collide.
+            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture)
+                + "-" + Guid.NewGuid().ToString("N")[..6];
             string zip = Path.Combine(Folder, $"poser-issue-{stamp}.zip");
             using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
             {
@@ -100,6 +124,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
             var begun = _scenes.BeginSave(scenePath, "Issue report scene");
             if (!begun.Success)
             {
+                DeleteQuietly(scenePath);
                 failed($"The scene could not be saved: {begun.Detail}. The report was written without it.");
                 done(zip);
                 return;
@@ -124,6 +149,21 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     {
         _framework.Update -= OnFrameworkUpdate;
         _notices.Posted -= _recorder.Notice;
+        // An unfinished report's scene is unscrubbed; it never outlives us.
+        if (_pendingScene is { } scene)
+            DeleteQuietly(scene);
+    }
+
+    private void DeleteQuietly(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Issue report: the temporary scene could not be deleted: {ex.Message}");
+        }
     }
 
     private void Tick()
@@ -161,13 +201,18 @@ public sealed class IssueReportService : IIssueReports, IDisposable
                 using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
                 writer.Write(scene);
             }
-            File.Delete(scenePath);
             done(zip);
         }
         catch (Exception ex)
         {
             _log.Error(ex, "Issue report scene failed");
             failed(ex.Message);
+        }
+        finally
+        {
+            // The saved scene is unscrubbed: only its scrubbed copy in the
+            // zip may remain, whether or not the report succeeded.
+            DeleteQuietly(scenePath);
         }
     }
 
@@ -210,7 +255,13 @@ public sealed class IssueReportService : IIssueReports, IDisposable
             using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             using (var reader = new StreamReader(stream))
             {
+                bool partial = stream.Length > LogTailBytes;
+                if (partial)
+                    stream.Seek(-LogTailBytes, SeekOrigin.End);
                 string? line;
+                // A seek lands mid-line; that first fragment is dropped.
+                if (partial)
+                    reader.ReadLine();
                 while ((line = reader.ReadLine()) != null)
                     if (line.Contains("Poser", StringComparison.Ordinal))
                         all.Add(line);

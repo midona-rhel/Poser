@@ -5,20 +5,24 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
-using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using NSubstitute;
 using NSubstitute.Core;
-using Poser.Config;
-using Poser.Core;
 using Poser.Domain.Posing;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Services;
+using Poser.Domain.Transforms;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Config;
+using Poser.Documents.Files;
+using Poser.Application.AutoSave;
+using Poser.Application.Events;
+using Poser.Application.Lifecycle;
+using Poser.Application.Settings;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
-namespace Poser.Tests.Fixtures;
+namespace Poser.Game.Tests.Fixtures;
 
 /// <summary>
 /// One actor wired into the harness together with the exact skeleton list
@@ -72,13 +76,6 @@ internal sealed class AutoSaveHarness : IDisposable
         return true;
     };
 
-    /// <summary>Optional health store seam for admission/startup fault tests.</summary>
-    public AutoSaveHealthStore? HealthStoreOverride { get; set; }
-
-    /// <summary>Where the snapshot is taken. Null is the composition with no
-    /// game data, which records no place — the legacy shape.</summary>
-    public IPlaceService? Place { get; set; }
-
     public AutoSaveConfiguration Settings => Configuration.Config.AutoSave;
 
     public AutoSaveHarness()
@@ -110,7 +107,7 @@ internal sealed class AutoSaveHarness : IDisposable
             .CreatePoseFile(Arg.Any<IReadOnlyList<ISkeleton>>())
             .Returns(_ => NewPoseFile());
 
-        Configuration = new ConfigurationService(new Poser.Tests.Fixtures.MemoryConfigurationPersistence());
+        Configuration = new ConfigurationService(new Poser.Application.Tests.Fixtures.MemoryConfigurationPersistence());
     }
 
     /// <summary>
@@ -118,12 +115,12 @@ internal sealed class AutoSaveHarness : IDisposable
     /// </summary>
     public AutoSaveService Service => _service ??= new AutoSaveService(
         new Poser.Game.AutoSave.PoseAutoSaveCapturePort(Log, () => ActorManager,
-            () => Skeletons, () => BonePosing, () => PoseFiles, Place),
+            () => Skeletons, () => BonePosing, () => PoseFiles),
         Configuration,
         new PoseAutoSaveStore(Root, message => Log.Error(message),
             message => Log.Info(message), message => Log.Debug(message)),
         message => Log.Error(message), message => Log.Debug(message),
-        () => NowUtc, Dispatch, HealthStoreOverride);
+        () => NowUtc, Dispatch);
 
     /// <summary>
     /// A minimal but genuine pose: two bones, so <c>PoseFile.Save</c> produces
@@ -143,13 +140,9 @@ internal sealed class AutoSaveHarness : IDisposable
         }
     };
 
-    /// <summary>
-    /// Adds an actor whose single Character skeleton either carries a
-    /// user-authored (unnamed-layer) stack or only a service-owned named layer.
-    /// The named-layer case is what proves the predicate discriminates on
-    /// <c>Layer == null</c> rather than merely on "has any stack".
-    /// </summary>
-    public FakeActor AddActor(string name, bool authored = true)
+    /// <summary>Adds an actor whose single Character skeleton carries a
+    /// user-authored stack.</summary>
+    public FakeActor AddActor(string name)
     {
         var actor = Substitute.For<IActor>();
         actor.Name.Returns(name);
@@ -157,7 +150,7 @@ internal sealed class AutoSaveHarness : IDisposable
         var skeleton = Substitute.For<ISkeleton>();
         var slots = new List<ISkeleton> { skeleton };
         Skeletons.GetSkeletons(actor).Returns(slots);
-        BonePosing.GetPoseInfo(skeleton).Returns(BuildPoseInfo(authored));
+        BonePosing.GetPoseInfo(skeleton).Returns(BuildPoseInfo());
 
         _actors.Add(actor);
         return new FakeActor(actor, slots);
@@ -176,27 +169,6 @@ internal sealed class AutoSaveHarness : IDisposable
         WaitForWrite();
     }
 
-    /// <summary>Actor whose skeleton lookup blows up during the scan.</summary>
-    public IActor AddActorThatThrows(string name, Exception failure)
-    {
-        var actor = Substitute.For<IActor>();
-        actor.Name.Returns(name);
-        Skeletons.GetSkeletons(actor).Returns(_ => throw failure);
-        _actors.Add(actor);
-        return actor;
-    }
-
-    /// <summary>
-    /// Makes the CAPTURE half fail for one actor. The service catches this
-    /// per-actor inside its scan loop, so the actor never becomes a candidate
-    /// and never counts towards <c>SaveNow</c>'s return.
-    /// </summary>
-    public void FailCaptureFor(FakeActor actor, Exception? failure = null)
-    {
-        var thrown = failure ?? new InvalidOperationException("capture failed");
-        PoseFiles.CreatePoseFile(actor.Skeletons).Returns(_ => throw thrown);
-    }
-
     /// <summary>
     /// Makes the WRITE half fail for one actor, by capturing a pose the worker
     /// cannot serialize. The actor is still captured (so it still counts
@@ -212,45 +184,6 @@ internal sealed class AutoSaveHarness : IDisposable
         PoseFiles.CreatePoseFile(actor.Skeletons).Returns((PoseFile)null!);
 
     /// <summary>
-    /// Parks the write worker part-way through, with the in-flight latch still
-    /// held, until the returned handle is released. The only deterministic way
-    /// to exercise the drop-not-queue path: without it a test would be betting
-    /// that the worker has not finished yet.
-    /// </summary>
-    public WorkerHold HoldWorker() => new(this);
-
-    /// <summary>
-    /// Holds the worker on the one collaborator it still touches after the
-    /// files are written: the substituted log.
-    /// </summary>
-    internal sealed class WorkerHold : IDisposable
-    {
-        private static readonly TimeSpan Limit = TimeSpan.FromSeconds(5);
-
-        private readonly ManualResetEventSlim _reached = new(false);
-        private readonly ManualResetEventSlim _release = new(false);
-
-        internal WorkerHold(AutoSaveHarness harness) =>
-            harness.Log
-                .When(log => log.Info(Arg.Any<string>(), Arg.Any<object[]>()))
-                .Do(_ =>
-                {
-                    _reached.Set();
-                    // Bounded, so a test that forgets to release still ends.
-                    _release.Wait(Limit);
-                });
-
-        /// <summary>Blocks until the worker is actually parked in the hold.</summary>
-        public void WaitUntilHeld() => Assert.True(
-            _reached.Wait(Limit),
-            "the auto-save write worker never reached the hold");
-
-        public void Release() => _release.Set();
-
-        public void Dispose() => Release();
-    }
-
-    /// <summary>
     /// Blocks until the write worker has finished everything it does — folder,
     /// files, prune — or fails the test. Returns immediately when nothing was
     /// dispatched, so it is safe to call unconditionally.
@@ -261,7 +194,7 @@ internal sealed class AutoSaveHarness : IDisposable
             Assert.Fail($"the auto-save write worker was still running after {timeoutMs} ms");
     }
 
-    private static SkeletonPoseInfo BuildPoseInfo(bool authored)
+    private static SkeletonPoseInfo BuildPoseInfo()
     {
         var info = new SkeletonPoseInfo();
         var bone = info.GetPoseInfo("j_kosi", partialId: 0);
@@ -273,18 +206,12 @@ internal sealed class AutoSaveHarness : IDisposable
             Scale = Vector3.Zero
         };
 
-        if (authored)
-            bone.SetStackTransform(delta);
-        else
-            bone.SetLayerTransform("expression", delta, TransformComponents.Rotation);
-
+        bone.SetStackTransform(delta);
         return info;
     }
 
     public static string Stamp(DateTime utc) =>
         utc.ToString(StampFormat, CultureInfo.InvariantCulture);
-
-    public string StampNow() => Stamp(NowUtc);
 
     /// <summary>The per-day layout's folder name for a UTC instant — LOCAL
     /// day, exactly the service's own conversion, so expectations follow the
@@ -348,11 +275,6 @@ internal sealed class AutoSaveHarness : IDisposable
     /// number <c>SaveNow</c> returns; it says nothing about what reached disk.
     /// </summary>
     public int CaptureCallCount => CaptureCalls.Count;
-
-    /// <summary>Skeleton lists handed to CreatePoseFile, in call order.</summary>
-    public IReadOnlyList<IReadOnlyList<ISkeleton>> CapturedSkeletons => CaptureCalls
-        .Select(call => (IReadOnlyList<ISkeleton>)call.GetArguments()[0]!)
-        .ToList();
 
     private IReadOnlyList<ICall> CaptureCalls => PoseFiles.ReceivedCalls()
         .Where(call => call.GetMethodInfo().Name == nameof(IPoseFileService.CreatePoseFile))

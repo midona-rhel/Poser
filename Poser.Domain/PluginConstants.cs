@@ -1,4 +1,4 @@
-namespace Poser;
+namespace Poser.Domain;
 
 public static class PluginConstants
 {

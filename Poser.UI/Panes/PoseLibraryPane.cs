@@ -16,14 +16,18 @@ using Poser.Application.Transforms;
 using Poser.Domain.Operations;
 using Poser.Application.Posing;
 using Poser.Application.Selection;
-using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Entities;
-using Poser.Files;
-using Poser.Library;
-using Poser.Services;
 using Poser.UI.Views;
+using Poser.UI.Widgets;
+using Poser.Domain.Library;
+using Poser.Documents.AutoSave;
+using Poser.Documents.Files;
+using Poser.Application.AutoSave;
+using Poser.Application.Library;
+using Poser.Application.Settings;
+using static Poser.UI.Widgets.ActionBarWidgets;
+using static Poser.UI.Widgets.ButtonWidgets;
 
 namespace Poser.UI;
 
@@ -135,7 +139,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly SceneSession _scene;
 
-    private readonly ActorIntegrationSession _integration;
+    private readonly McdfTransaction _mcdf;
 
     private readonly IAutoSaveService _autoSave;
 
@@ -196,7 +200,7 @@ public sealed partial class PoseLibraryPane
     /// and the footer caption read it, never the worker's flags.</summary>
     private bool _autoPending;
 
-    private readonly Application.Library.IAutoSaveLibrary _autoLibrary;
+    private readonly Application.Library.AutoSaveLibrary _autoLibrary;
 
     /// <summary>Lower-cased tags per TILE. Tiles are a filtered view of the
     /// snapshot's entries, so the tag test can no longer index the entries by
@@ -350,17 +354,17 @@ public sealed partial class PoseLibraryPane
         Application.Library.ILibrarySceneActions libraryScene,
         SelectionSession selection,
         SceneSession scene,
-        ActorIntegrationSession integration,
+        McdfTransaction mcdf,
         IAutoSaveService autoSave,
-        PoseFileInspectorSection files,
+        PropertiesContent properties,
         IPosePreview preview,
         ISceneWorkflow scenes,
         ObjectPlacementPreferences placement,
-        IEnvironmentControl environment,
+        EnvironmentControl environment,
         UserNotices notices,
         ICharacterFiles characterFiles,
         Application.Library.ILibraryFileOperations fileOperations,
-        Application.Library.IAutoSaveLibrary autoLibrary)
+        Application.Library.AutoSaveLibrary autoLibrary)
     {
         _autoLibrary = autoLibrary;
         _fileOperations = fileOperations;
@@ -376,9 +380,9 @@ public sealed partial class PoseLibraryPane
         _details = new(environment);
         _selection = selection;
         _scene = scene;
-        _integration = integration;
+        _mcdf = mcdf;
         _autoSave = autoSave;
-        _files = files;
+        _files = properties.PoseFiles;
         _notices = notices;
         _previewBinder = new PosePreviewController(previewRuntime, capture);
 
@@ -409,7 +413,7 @@ public sealed partial class PoseLibraryPane
         // The rail's "Options" is a BUTTON, so the menu hangs off it — the
         // same seat rule the Apply menu below already follows.
         _vm.OnImportMenu = () => _files.RequestImportMenu(
-            withPresets: false, target: CurrentApplyTarget(), anchor: Crystarium.ButtonSeat);
+            withPresets: false, target: CurrentApplyTarget(), anchor: ButtonSeat);
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {
@@ -431,7 +435,7 @@ public sealed partial class PoseLibraryPane
         // The character-file apply is the one long transaction this pane
         // starts, so this pane also carries its stop — the same cooperative
         // cancel the appearance pane's progress row calls.
-        _vm.OnCancelImport = _integration.CancelMcdf;
+        _vm.OnCancelImport = _mcdf.Cancel;
         _vm.OnSaveScene = () => OnSaveSceneRequested?.Invoke();
         _vm.OnEditMetadata = OpenMetadataEditor;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
@@ -524,7 +528,7 @@ public sealed partial class PoseLibraryPane
     /// every tab (left-aligned, user rule), the Objects tab's placement
     /// choice sits at the bottom where the spawn happens, and the status
     /// stays last.</summary>
-    private void DrawFooterLead(Crystarium.ActionBarScope scope)
+    private void DrawFooterLead(ActionBarScope scope)
     {
         scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
         scope.Label(_vm.Status);
@@ -646,8 +650,11 @@ public sealed partial class PoseLibraryPane
     private void Enter()
     {
         // Nothing is scanned until a surface asks, so the first entry is what
-        // pays for the file system.
+        // pays for the file system. The auto-save read starts here too, so the
+        // tab has a listing waiting when it is opened; the tab's own kick
+        // then only re-stats what this pass already read.
         _library.RequestScan();
+        _autoLibrary.RequestScan();
 
         // The type is a browsing mode, not a preference: every entry starts on
         // the poses, which is also what the import redirect expects to land on.
@@ -817,8 +824,8 @@ public sealed partial class PoseLibraryPane
 
         var tiles = _vm.Tiles;
         // Menu actions use tile indices; a refreshed/sorted list is a new target set.
-        Crystarium.FloatingMenu.Dismiss(TileMenuId);
-        Crystarium.FloatingMenu.Dismiss("##library-apply-target");
+        FloatingMenu.Dismiss(TileMenuId);
+        FloatingMenu.Dismiss("##library-apply-target");
         tiles.Clear();
         _tileTags.Clear();
         _tileAuthors.Clear();

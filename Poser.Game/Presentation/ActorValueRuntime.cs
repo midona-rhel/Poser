@@ -1,7 +1,8 @@
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
-using Poser.Services;
+using Poser.Game.Services;
 
 namespace Poser.Game.Presentation;
 
@@ -15,14 +16,14 @@ public sealed class ActorValueRuntime(IEntityBindings bindings, IActorSpawnServi
         return resolved.Success && resolved.Value is { } live ? spawns.IsVisible(live) : null;
     }
 
-    public ValueWriteResult SetVisibility(ActorId actor, bool visible)
+    public Outcome SetVisibility(ActorId actor, bool visible)
     {
         var resolved = bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } live)
             return new(false, "The actor is no longer available.");
         spawns.SetVisibility(live, visible);
         return spawns.IsVisible(live) == visible
-            ? ValueWriteResult.Ok()
+            ? Outcome.Ok()
             : new(false, "The game refused the visibility change.");
     }
 }

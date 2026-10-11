@@ -1,4 +1,4 @@
-namespace Poser.Files;
+namespace Poser.Documents.Files;
 
 /// <summary>
 /// ONE pose the preview body should stand in: a file on disk, or a pose held

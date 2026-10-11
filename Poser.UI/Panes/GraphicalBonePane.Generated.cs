@@ -8,6 +8,8 @@ using Dalamud.Interface.Utility;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.UI.Controls;
+using static Poser.UI.Widgets.TextWidgets;
+using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
@@ -299,15 +301,15 @@ public sealed partial class GraphicalBonePane
         {
             _pointSection = section.Key;
             var top = origin + new Vector2(16, section.Top) * scale;
-            var textStyle = new TextStyle { Size = 13, Color = Crystarium.ActiveTheme.FormHint };
+            var textStyle = new TextStyle { Size = 13, Color = ActiveTheme.FormHint };
             var constraint = TextConstraint.Truncate(MathF.Max(1, size.X - 28 * scale));
-            Crystarium.TextAt(top, section.Title, textStyle, constraint);
+            TextAt(top, section.Title, textStyle, constraint);
             if (section.Detail != null)
-                Crystarium.TextAt(top + new Vector2(0, 20 * scale), section.Detail, textStyle, constraint);
+                TextAt(top + new Vector2(0, 20 * scale), section.Detail, textStyle, constraint);
             if (section.Top > 8)
                 draw.AddLine(top - new Vector2(0, 10 * scale),
                     new(origin.X + size.X - 16 * scale, top.Y - 10 * scale),
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Crystarium.ActiveTheme.FormSeparator)));
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveTheme.FormSeparator)));
             foreach (var point in section.Points)
             {
                 var screen = origin + point.Position * scale;

@@ -1,7 +1,7 @@
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Domain.Integration;
-using Poser.Services;
+using Poser.Application.Catalog;
 
 namespace Poser.Game.Wardrobe;
 
@@ -29,11 +29,14 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
     }
 
     /// <summary>Reads every sheet now, off the draw thread, so the first
-    /// Equipment view pays nothing.</summary>
-    public void Warm()
+    /// Equipment view pays nothing. Cancellation stops between sheets; an
+    /// unread sheet still loads on first use.</summary>
+    public void Warm(CancellationToken cancel)
     {
         LoadItems();
+        cancel.ThrowIfCancellationRequested();
         LoadDyes();
+        cancel.ThrowIfCancellationRequested();
         _ = Facewear;
     }
 
@@ -64,6 +67,8 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
     {
         get
         {
+            lock (_gate)
+            {
             if (_facewear is not null)
                 return _facewear;
             var list = new List<FacewearEntry>();
@@ -82,6 +87,7 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
                 _log.Warning($"Wardrobe: the facewear sheet could not be read: {ex.Message}");
             }
             return _facewear = list;
+            }
         }
     }
 
