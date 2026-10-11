@@ -41,6 +41,15 @@ public sealed class EditHistory
         }
     }
 
+    /// <summary>Adds the structural half of the recording batch: it runs
+    /// before the batch's entries on redo and after them on undo.</summary>
+    public void AppendBatchPrologue(HistoryEntry entry)
+    {
+        if (_batch is not { } batch)
+            throw new InvalidOperationException("No lifecycle batch is recording.");
+        batch.AddPrologue(entry);
+    }
+
     private void FlushBatch()
     {
         var batch = _batch;
