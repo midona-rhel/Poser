@@ -827,7 +827,7 @@ public sealed partial class DebugBridge : IDisposable
                     actor = id.ToString(),
                     nativeName = actor.Name,
                     displayName = _configuration.GetDisplayName(id.LogicalId, actor.Name),
-                    objectIndex = global::Poser.Game.Runtime.GPoseObjectTable.IndexOf(actor.Address),
+                    objectIndex = _objects.CreateObjectReference(actor.Address)?.ObjectIndex,
                     actorKind = actor.ActorKind.ToString(),
                     isOwned = descriptor?.IsOwned,
                     isAdopted = descriptor?.IsAdopted,
