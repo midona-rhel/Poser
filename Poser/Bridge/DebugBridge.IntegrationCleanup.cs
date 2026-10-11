@@ -9,6 +9,7 @@ public sealed partial class DebugBridge
 {
     private readonly HashSet<Guid> _integrationCleanupPenumbraAllowlist = new();
     private readonly HashSet<Guid> _integrationCleanupCustomizeAllowlist = new();
+    private readonly Dictionary<Guid, (bool Readable, string? Detail)> _integrationCleanupCustomizePresence = new();
 
     private object IntegrationCleanupIds(Dictionary<string, string> query)
     {
@@ -18,6 +19,13 @@ public sealed partial class DebugBridge
                 .OrderBy(id => id).Select(id => id.ToString()).ToArray(),
             customizePlus = _integrationCleanupCustomizeAllowlist
                 .OrderBy(id => id).Select(id => id.ToString()).ToArray(),
+            customizePlusPresence = _integrationCleanupCustomizePresence
+                .OrderBy(pair => pair.Key).Select(pair => new
+                {
+                    id = pair.Key.ToString(),
+                    readable = pair.Value.Readable,
+                    detail = pair.Value.Detail,
+                }).ToArray(),
             providers = new
             {
                 penumbra = new
@@ -62,8 +70,18 @@ public sealed partial class DebugBridge
                 .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
             var customize = new[] { owned.TemporaryBodyProfile, owned.Mcdf?.TemporaryProfile }
                 .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
+            var customizePresence = customize.Select(id =>
+            {
+                var read = _customizePlus.GetBodyProfileJson(id);
+                return new { id = id.ToString(), readable = read.Success, detail = read.Detail };
+            }).ToArray();
             foreach (var id in penumbra) _integrationCleanupPenumbraAllowlist.Add(id);
-            foreach (var id in customize) _integrationCleanupCustomizeAllowlist.Add(id);
+            foreach (var presence in customizePresence)
+            {
+                var id = Guid.Parse(presence.id);
+                _integrationCleanupCustomizeAllowlist.Add(id);
+                _integrationCleanupCustomizePresence[id] = (presence.readable, presence.detail);
+            }
             return new
             {
                 command = "captureActor",
@@ -72,6 +90,7 @@ public sealed partial class DebugBridge
                 {
                     penumbra = penumbra.Select(id => id.ToString()).ToArray(),
                     customizePlus = customize.Select(id => id.ToString()).ToArray(),
+                    customizePlusPresence = customizePresence,
                 },
                 pending = Pending(),
             };
@@ -129,6 +148,7 @@ public sealed partial class DebugBridge
             if (CurrentOwner(id, penumbra: false) is { } owner)
                 return new { error = $"Captured Customize+ ID is still owned by current actor {owner}; ordinary teardown has not completed." };
             _integrationCleanupCustomizeAllowlist.Remove(id);
+            _integrationCleanupCustomizePresence.Remove(id);
             var read = _customizePlus.GetBodyProfileJson(id);
             bool missing = !read.Success
                 && read.Detail?.Contains("(code 3)", StringComparison.Ordinal) == true;
