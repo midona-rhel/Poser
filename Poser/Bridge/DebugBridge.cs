@@ -358,7 +358,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
                         "/uidrag?x=START_X&y=START_Y&toX=END_X&toY=END_Y&frames=12 (read status without coordinates; cancel=1 releases)",
-                        "/uiwindows (read); ?name=EXACT_POSER_WINDOW_NAME&x=SCREEN_X&y=SCREEN_Y restores a test window position",
+                        "/uiwindows (read); ?name=EXACT_POSER_WINDOW_NAME&open=true|false&x=SCREEN_X&y=SCREEN_Y&width=PIXELS&height=PIXELS controls a registered Poser window",
                         "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
@@ -563,17 +563,83 @@ public sealed partial class DebugBridge : IDisposable
             case "/uiwindows":
             {
                 var windows = (global::Poser.UI.Composition.UiWindowSet)_services.GetService(typeof(global::Poser.UI.Composition.UiWindowSet))!;
+                if (query.TryGetValue("name", out var requestedName))
+                {
+                    var requested = windows.System.Windows.SingleOrDefault(window => window.WindowName == requestedName);
+                    if (requested is null)
+                        return Json(new { error = "No registered Poser window has that exact name." });
+
+                    bool? requestedOpen = null;
+                    if (query.TryGetValue("open", out var openText))
+                    {
+                        if (!bool.TryParse(openText, out var open))
+                            return Json(new { error = "open must be true or false." });
+                        requestedOpen = open;
+                    }
+
+                    static bool TryWindowNumber(string? text, out float value)
+                    {
+                        value = default;
+                        return text is not null
+                            && float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                            && float.IsFinite(value);
+                    }
+
+                    var native = Dalamud.Bindings.ImGui.ImGuiP.FindWindowByName(requested.WindowName);
+                    var hasX = query.TryGetValue("x", out var xText);
+                    var hasY = query.TryGetValue("y", out var yText);
+                    var x = default(float);
+                    var y = default(float);
+                    if (hasX != hasY || hasX && (!TryWindowNumber(xText, out x) || !TryWindowNumber(yText, out y)))
+                        return Json(new { error = "x and y must be supplied together as finite numbers." });
+
+                    var hasWidth = query.TryGetValue("width", out var widthText);
+                    var hasHeight = query.TryGetValue("height", out var heightText);
+                    var width = default(float);
+                    var height = default(float);
+                    if (hasWidth != hasHeight
+                        || hasWidth && (!TryWindowNumber(widthText, out width) || !TryWindowNumber(heightText, out height)
+                            || width < 64f || width > 8192f || height < 64f || height > 8192f))
+                        return Json(new { error = "width and height must be supplied together as finite values from 64 through 8192 pixels." });
+
+                    if (requestedOpen is { } open) requested.IsOpen = open;
+                    if (hasX)
+                    {
+                        var position = new System.Numerics.Vector2(x, y);
+                        if (native.IsNull)
+                        {
+                            requested.Position = position;
+                            requested.PositionCondition = Dalamud.Bindings.ImGui.ImGuiCond.Once;
+                        }
+                        else Dalamud.Bindings.ImGui.ImGui.SetWindowPos(requested.WindowName, position);
+                    }
+                    if (hasWidth)
+                    {
+                        var size = new System.Numerics.Vector2(width, height);
+                        if (native.IsNull)
+                        {
+                            requested.Size = size;
+                            requested.SizeCondition = Dalamud.Bindings.ImGui.ImGuiCond.Once;
+                        }
+                        else Dalamud.Bindings.ImGui.ImGui.SetWindowSize(requested.WindowName, size);
+                    }
+                }
+
                 var result = new List<object>();
                 foreach (var window in windows.System.Windows)
                 {
                     var native = Dalamud.Bindings.ImGui.ImGuiP.FindWindowByName(window.WindowName);
-                    if (native.IsNull) continue;
-                    if (query.GetValueOrDefault("name") == window.WindowName
-                        && query.TryGetValue("x", out var px) && query.TryGetValue("y", out var py))
-                        Dalamud.Bindings.ImGui.ImGui.SetWindowPos(window.WindowName,
-                            new System.Numerics.Vector2(float.Parse(px, CultureInfo.InvariantCulture), float.Parse(py, CultureInfo.InvariantCulture)));
-                    result.Add(new { name = window.WindowName, x = native.Pos.X, y = native.Pos.Y,
-                        width = native.Size.X, height = native.Size.Y, open = window.IsOpen });
+                    result.Add(new
+                    {
+                        name = window.WindowName,
+                        registered = true,
+                        published = !native.IsNull,
+                        x = native.IsNull ? (float?)null : native.Pos.X,
+                        y = native.IsNull ? (float?)null : native.Pos.Y,
+                        width = native.IsNull ? (float?)null : native.Size.X,
+                        height = native.IsNull ? (float?)null : native.Size.Y,
+                        open = window.IsOpen,
+                    });
                 }
                 return Json(result);
             }

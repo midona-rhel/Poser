@@ -24,8 +24,10 @@
   UI input is not OS/game input; button/key presses require a matching release.
   Screenshots include the main game viewport and its plugin UI, not detached
   external viewports. These probes are diagnostics, not acceptance verdicts.
-  `/uiwindows` measures registered Poser windows and can restore a named test
-  window's position; it cannot target other plugins' windows.
+  `/uiwindows` lists every registered Poser window and can open, close, move,
+  or resize an exact named test window; it cannot target other plugins' windows.
+  A `published` readback distinguishes a registered window from one that has
+  produced an ImGui window in the current frame.
   `/uidrag` queues a bounded continuous ImGui gesture (at most eight seconds),
   releasing its button and restoring native event admission on completion,
   cancellation or disposal. Its bounded trace verifies the injected input,
