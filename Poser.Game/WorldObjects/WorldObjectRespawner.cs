@@ -27,7 +27,8 @@ internal sealed class WorldObjectRespawner
 
     private sealed record PendingRespawn(
         WorldObjectIncarnation Fresh, string Path, DateTime Deadline,
-        TaskCompletionSource<Outcome> Completion);
+        TaskCompletionSource<Outcome> Completion, Func<bool>? StillCurrent,
+        System.Threading.CancellationToken Cancellation);
 
     public WorldObjectRespawner(
         IWorldObjectPort port,
@@ -47,10 +48,13 @@ internal sealed class WorldObjectRespawner
 
     /// <summary>Starts a replacement for an admitted spawned handle. The
     /// caller has already checked that the service and the handle accept it.</summary>
-    public Task<Outcome> Respawn(AdoptedWorldObject handle, string path)
+    public Task<Outcome> Respawn(AdoptedWorldObject handle, string path,
+        Func<bool>? stillCurrent = null, System.Threading.CancellationToken cancellation = default)
     {
         static Task<Outcome> Refused(string detail) =>
             Task.FromResult(new Outcome(false, detail));
+        if (cancellation.IsCancellationRequested || stillCurrent?.Invoke() == false)
+            return Refused("Replacement cancelled because its operation is no longer current.");
         if (_respawns.ContainsKey(handle))
             return Refused("This object already has a replacement loading.");
         if (string.IsNullOrWhiteSpace(path))
@@ -78,7 +82,7 @@ internal sealed class WorldObjectRespawner
         }
         var pending = new PendingRespawn(freshIdentity, path,
             DateTime.UtcNow.AddSeconds(15),
-            new(TaskCreationOptions.RunContinuationsAsynchronously));
+            new(TaskCreationOptions.RunContinuationsAsynchronously), stillCurrent, cancellation);
         _respawns.Add(handle, pending);
         try
         {
@@ -121,6 +125,7 @@ internal sealed class WorldObjectRespawner
 
     private void Advance(AdoptedWorldObject handle, PendingRespawn pending, DateTime now)
     {
+        if (CancelIfStale(handle, pending)) return;
         var freshIdentity = pending.Fresh;
         if (!_isCurrent(handle)
             || !_port.TryReadIncarnation(handle.Address, out var oldIdentity)
@@ -159,6 +164,10 @@ internal sealed class WorldObjectRespawner
             Finish(handle, pending, false, detail);
             return;
         }
+        // Cancellation is checked on the framework thread, at the last
+        // reversible point. Cancelling only the journal callback is too late:
+        // the old native body would already be gone.
+        if (CancelIfStale(handle, pending)) return;
         bool oldDestroyed = TryDestroyIncarnation(handle.Identity);
         if (!oldDestroyed)
         {
@@ -189,6 +198,14 @@ internal sealed class WorldObjectRespawner
         }
         Finish(handle, pending, true, null);
         _events.Publish(new WorldObjectListChangedEvent());
+    }
+
+    private bool CancelIfStale(AdoptedWorldObject handle, PendingRespawn pending)
+    {
+        if (!pending.Cancellation.IsCancellationRequested && pending.StillCurrent?.Invoke() != false)
+            return false;
+        Finish(handle, pending, false, "Replacement cancelled because its operation is no longer current.");
+        return true;
     }
 
     private void Finish(AdoptedWorldObject handle, PendingRespawn pending,
