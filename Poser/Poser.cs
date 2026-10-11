@@ -76,8 +76,8 @@ public class Poser : IDalamudPlugin
         log.Debug("Load stage: configuration");
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
-        // The widgets draw through one context, installed as it is built;
-        // the UI manager owns it from here and disposes it on unload.
+        // Resolve the provider-owned context before any presentation graph.
+        // Reverse disposal then keeps widget state alive while panes close.
         _ = _serviceProvider.GetRequiredService<UiContext>();
         ThemeSelection.Apply(
             configuration.Config.UI.Theme,

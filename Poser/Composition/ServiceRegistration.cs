@@ -777,7 +777,8 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new global::Poser.Application.Settings.ReleaseNotesSession(
             sp.GetRequiredService<ConfigurationService>(), typeof(ServiceRegistration).Assembly.GetName().Version!));
         services.AddSingleton<global::Poser.UI.Views.ReleaseNotesView>();
-        // The widgets' state for this plugin load; the UI manager owns it.
+        // Provider-owned widget state; resolved before presentation at startup
+        // so it is released only after the windows and panes finish disposal.
         services.AddSingleton(sp =>
         {
             var textures = sp.GetRequiredService<ITextureProvider>();

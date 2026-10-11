@@ -7,8 +7,9 @@ namespace Poser.UI.Widgets;
 /// All mutable widget state in one place: the active theme, the text and
 /// texture caches, interaction, menu, help and animation state, the host's
 /// texture uploader and its log. The static widget classes draw through the
-/// installed context. The host registers one context; <see cref="UIManager"/>
-/// owns it and disposes it, which releases its textures and uninstalls it,
+/// installed context. The host's service provider owns one context, resolved
+/// before presentation so it outlives pane disposal. Disposing it releases
+/// its textures and uninstalls it,
 /// so a reload starts from fresh state with nothing for the host to reset.
 /// </summary>
 public sealed class UiContext : IDisposable

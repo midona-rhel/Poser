@@ -349,8 +349,12 @@ class per widget family (`ButtonWidgets`, `TextWidgets`, `FloatingMenu`, …);
 call sites import them with `using static`. Their mutable state (active
 theme, text and texture caches, interaction, menu, help and animation state,
 the texture uploader and log) lives in one `UiContext`. The host registers it
-with its texture uploader and log; `UIManager` owns it and disposes it on
-unload, which releases its textures, so the host resets no UI statics.
+with its texture uploader and log. The service provider owns it, resolving it
+before presentation graphs so reverse disposal releases it after panes and
+windows. `UIManager` detaches Draw and input callbacks first without disposing
+shared widget state: closing editors still dismisses menus through the context.
+Context disposal releases its textures and uninstalls it; the host resets no
+UI statics.
 App views hold no mutable statics either: state the windows and panes share
 (the hide-while-manipulating fade and gizmo pointer hold, overlay bone picking,
 the transform clipboard) and the frame profiler are container singletons
