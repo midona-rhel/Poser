@@ -42,7 +42,7 @@ public sealed class SceneAutoSaveService : IDisposable
     /// <summary>Content identity of the snapshot last written to disk, or null
     /// when this session has written none. Guarded by <see cref="_gate"/>: it
     /// is set on the writer and read there too.</summary>
-    private string? _writtenSignature;
+    private SceneAutoSaveIdentity? _writtenIdentity;
 
     public SceneAutoSaveService(
         ConfigurationService configuration,
@@ -221,13 +221,13 @@ public sealed class SceneAutoSaveService : IDisposable
             // The comparison runs HERE, on the writer, because that is where
             // the cost of describing a whole scene belongs — never on the
             // framework thread the capture ran on.
-            var signature = SceneAutoSaveStore.Signature(scene);
-            if (signature != null)
+            var identity = SceneAutoSaveStore.CaptureIdentity(scene);
+            if (identity != null)
             {
-                string? filed;
+                SceneAutoSaveIdentity? filed;
                 lock (_gate)
-                    filed = _writtenSignature;
-                if (string.Equals(signature, filed, StringComparison.Ordinal))
+                    filed = _writtenIdentity;
+                if (filed != null && SceneAutoSaveStore.SemanticallyEquals(identity, filed))
                 {
                     Publish(new SceneAutoSaveResult(
                         SceneAutoSaveStatus.Skipped,
@@ -254,7 +254,7 @@ public sealed class SceneAutoSaveService : IDisposable
             }
 
             lock (_gate)
-                _writtenSignature = signature;
+                _writtenIdentity = identity;
             _store.Prune(keep);
             Publish(new SceneAutoSaveResult(
                 SceneAutoSaveStatus.Written,
