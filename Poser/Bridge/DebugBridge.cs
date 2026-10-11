@@ -1466,10 +1466,12 @@ public sealed partial class DebugBridge : IDisposable
                     }
             var published = _sceneSession.Snapshot.Actors.FirstOrDefault(a => a.Id == _bindings.GetActorId(actor))?
                 .Skeletons.FirstOrDefault(s => s.Id.Slot == cached.Slot);
+            var visible = cached.Bones.Where(b => !b.IsHiddenBone).Select(b => b.BoneName).ToArray();
+            var publishedVisible = published?.Bones.Where(b => !b.IsHidden).Select(b => b.Id.CanonicalName).ToArray();
             slots.Add(new { slot = cached.Slot.ToString(), cachedBones = cached.Bones.Count,
                 cached.BuildRevision, skeletonId = published?.Id.ToString(),
-                visibleBoneNames = cached.Bones.Where(b => !b.IsHiddenBone).Select(b => b.BoneName).ToArray(),
-                publishedVisibleBoneNames = published?.Bones.Where(b => !b.IsHidden).Select(b => b.Id.CanonicalName).ToArray(),
+                visibleBoneNames = visible, publishedVisibleBoneNames = publishedVisible,
+                visible, published = publishedVisible, nativePartials = partials,
                 boneNames = cached.Bones.Select(b => b.BoneName).ToArray(), partials,
                 chains = _bonePosing.GetIkChains(cached).Select(c => new
                 {
