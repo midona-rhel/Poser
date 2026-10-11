@@ -309,6 +309,13 @@ public sealed partial class DebugBridge : IDisposable
             case "/help":
                 return Task.FromResult(Json(new
                 {
+                    bridgeVersion = 2,
+                    capabilities = new[]
+                    {
+                        "scene.load.additive",
+                        "scene.load.clear-first",
+                        "scene.load.placement",
+                    },
                     endpoints = new[]
                     {
                         "/actors",
@@ -319,7 +326,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
-                        "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera",
+                        "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera&clear=true|false",
                         "/screenshot", "/rig?actor=NAME|INDEX", "/resources?actor&full=1",
                         "/bonepresetaction?actor&name=BONE&slot=Character&partial=0&map=Body|Face&operation=Add|Remove (omit operation to inspect)",
                         "/uiinput?x=SCREEN_X&y=SCREEN_Y&button=0&down=1|0&key=Enter&text=TEXT&wheel=AMOUNT",
@@ -558,17 +565,25 @@ public sealed partial class DebugBridge : IDisposable
                     var saved = _scenes.BeginSave(scenePath, options: saveOptions);
                     return Json(new { ok = saved.Success, saved.Detail, progress = _scenes.Progress });
                 }
-                var options = _scenePreferences.Options with { ClearExistingScene = false };
-                var placement = query.TryGetValue("placement", out var requestedPlacement)
-                    ? Enum.Parse<global::Poser.Domain.Scene.ObjectPlacementMode>(requestedPlacement, true)
-                    : options.Placement;
+                bool clear = false;
+                if (query.TryGetValue("clear", out var requestedClear)
+                    && !bool.TryParse(requestedClear, out clear))
+                    return Json(new { error = "clear must be true or false." });
+                var options = _scenePreferences.Options with { ClearExistingScene = clear };
+                var placement = options.Placement;
+                if (query.TryGetValue("placement", out var requestedPlacement)
+                    && (!Enum.TryParse<global::Poser.Domain.Scene.ObjectPlacementMode>(
+                            requestedPlacement, true, out placement)
+                        || !Enum.IsDefined(placement)))
+                    return Json(new { error = "Unknown scene placement mode." });
                 if (!_anchors.TryCurrentFor(placement, out var position, out var yaw, out var refusal))
                     return Json(new { error = refusal });
                 var result = _scenes.BeginLoad(scenePath, options with
                 {
                     Placement = placement, PlacementPosition = position, PlacementYaw = yaw,
                 });
-                return Json(new { ok = result.Success, result.Detail, progress = _scenes.Progress });
+                return Json(new { ok = result.Success, result.Detail, clear,
+                    placement = placement.ToString(), progress = _scenes.Progress });
             }
             case "/lifetimetrace":
                 return Json(ConfigureLifetimeTrace(query));

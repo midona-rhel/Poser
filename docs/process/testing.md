@@ -19,7 +19,8 @@
 - The Debug-only loopback bridge and `tools/poser_mcp.py` can add a scene
   through `SceneWorkflow`, inspect load progress/resources/native rig counts,
   capture the rendered game via Dalamud's viewport texture API, and queue
-  ImGui input. Scene automation is additive and never clears existing entities.
+  ImGui input. Scene automation is additive by default; `clear=true` explicitly
+  exercises the production clear-first load contract in a disposable scene.
   UI input is not OS/game input; button/key presses require a matching release.
   Screenshots include the main game viewport and its plugin UI, not detached
   external viewports. These probes are diagnostics, not acceptance verdicts.
