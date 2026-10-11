@@ -198,6 +198,11 @@ Reset submenus. Bone presets apply to the owning actor, including when opened
 from a bone or branch; Head excludes the separately toggleable Face detail set.
 Jaw and Jaw Only sit directly under Head in the tree and stock presets; other
 mouth bones keep their existing categories. This does not change native parenting.
+The Ktisis tree (`KtisisBoneCategories`) is the only bone grouping: the sidebar,
+stock presets, the inspector matrix's "More" sections, the multi-bone header and
+category search all read it, and bones it doesn't list show under Other.
+`BoneInfoService` supplies only curated names and the NSFW set; pose-import
+filters keep their own Brio-style name prefixes.
 Skeleton Settings selects default presets for the character skeleton root's
 Wand action, immediately left of its eye. One click shows exactly the union of
 checked presets within that skeleton's scope; no matching defaults disables the

@@ -5,7 +5,8 @@ using Poser.Domain.Posing.BoneInfo.Categories;
 namespace Poser.Domain.Posing.BoneInfo;
 
 /// <summary>
-/// Central service for bone information (translations and categories).
+/// Central service for bone information: curated translations and the
+/// NSFW (IVCS/extended) set.
 /// Aggregates data from all category files.
 /// </summary>
 public static class BoneInfoService
@@ -79,18 +80,9 @@ public static class BoneInfoService
     /// Display.ShowNsfwBones switch shows and hides.</summary>
     public static bool IsNsfw(string boneName) => _nsfwBones.Contains(boneName);
 
-    /// <summary>
-    /// Gets the category for a bone.
-    /// </summary>
-    public static BoneCategory GetCategory(string boneName)
-    {
-        if (_boneData.TryGetValue(boneName, out var data))
-            return data.Category;
-        return BoneCategory.Other;
-    }
 
     /// <summary>
-    /// Gets both translation and category for a bone.
+    /// Gets the curated data for a bone.
     /// </summary>
     public static BoneData? GetBoneData(string boneName)
     {
@@ -156,51 +148,5 @@ public static class BoneInfoService
         var suffix = overflow > 0 ? $" (+{overflow} more)" : string.Empty;
         _log.Invoke(
             $"[BoneInfo] {names.Length} untranslated bone(s): {string.Join(", ", listed)}{suffix}");
-    }
-
-    /// <summary>
-    /// Gets the display name for a category.
-    /// </summary>
-    public static string GetCategoryDisplayName(BoneCategory category)
-    {
-        return category switch
-        {
-            BoneCategory.Root => "Root",
-            BoneCategory.Head => "Head",
-            BoneCategory.Spine => "Spine",
-            BoneCategory.LeftArm => "Left Arm",
-            BoneCategory.RightArm => "Right Arm",
-            BoneCategory.LeftLeg => "Left Leg",
-            BoneCategory.RightLeg => "Right Leg",
-            BoneCategory.Tail => "Tail",
-            BoneCategory.Equipment => "Equipment",
-            BoneCategory.Other => "Other",
-            _ => category.ToString()
-        };
-    }
-
-    /// <summary>
-    /// Gets the display name for a subcategory.
-    /// </summary>
-    public static string GetSubcategoryDisplayName(BoneSubcategory subcategory)
-    {
-        return subcategory switch
-        {
-            BoneSubcategory.None => "",
-            BoneSubcategory.Face => "Face",
-            BoneSubcategory.LeftEye => "Left Eye",
-            BoneSubcategory.RightEye => "Right Eye",
-            BoneSubcategory.Eyebrows => "Eyebrows",
-            BoneSubcategory.Nose => "Nose",
-            BoneSubcategory.Mouth => "Mouth",
-            BoneSubcategory.Cheeks => "Cheeks",
-            BoneSubcategory.Hair => "Hair",
-            BoneSubcategory.Ears => "Ears",
-            BoneSubcategory.Hand => "Hand",
-            BoneSubcategory.Fingers => "Fingers",
-            BoneSubcategory.Foot => "Foot",
-            BoneSubcategory.Toes => "Toes",
-            _ => subcategory.ToString()
-        };
     }
 }

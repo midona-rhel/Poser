@@ -796,20 +796,14 @@ internal sealed partial class SidebarComposer
                 (companions ??= new List<ActorDescriptor>()).Add(candidate);
         }
 
-        var groups = new List<(Domain.Posing.BoneInfo.BoneCategory Cat, List<BoneDescriptor> Bones)>();
+        // Visible character bones in skeleton order; the Ktisis tree below
+        // decides where each one is listed.
+        var visibleBones = new List<BoneDescriptor>();
         var skeleton = actor.CharacterSkeleton;
         if (skeleton != null)
-        {
             foreach (var bone in skeleton.Bones)
-            {
-                if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
-                var cat = Domain.Posing.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
-                var slot = groups.FindIndex(g => g.Cat == cat);
-                if (slot < 0) { groups.Add((cat, new List<BoneDescriptor>())); slot = groups.Count - 1; }
-                groups[slot].Bones.Add(bone);
-            }
-            groups.Sort((a, b) => ((int)a.Cat).CompareTo((int)b.Cat));
-        }
+                if (!bone.IsHidden && !IsBoneSuppressed(bone))
+                    visibleBones.Add(bone);
 
         // Present auxiliary slots become one additional group each under
         // the same actor row (slots are never separate actors).
@@ -820,9 +814,9 @@ internal sealed partial class SidebarComposer
 
         bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
         // Category labels match the rows emitted below.
-        bool hasMatchingBone = groups.Exists(group =>
-            group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)))
-            || (groups.Count > 0 && KtisisCategoryLabelMatches(filter));
+        bool hasMatchingBone = visibleBones.Exists(bone =>
+                MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName))
+            || (visibleBones.Count > 0 && KtisisCategoryLabelMatches(filter));
         bool hasMatchingAux = auxSkeletons.Exists(aux =>
             MatchesSidebarFilter(filter, SlotLabel(aux.Id.Slot))
             || aux.Bones.Any(bone => !bone.IsHidden && !IsBoneSuppressed(bone) &&
@@ -949,9 +943,8 @@ internal sealed partial class SidebarComposer
             var byName = new Dictionary<string, (BoneDescriptor Bone, int Ordinal)>(
                 StringComparer.Ordinal);
             int ordinal = 0;
-            foreach (var (_, bones) in groups)
-                foreach (var bone in bones)
-                    byName[bone.Id.CanonicalName] = (bone, ordinal++);
+            foreach (var bone in visibleBones)
+                byName[bone.Id.CanonicalName] = (bone, ordinal++);
 
             var claimed = new HashSet<string>(StringComparer.Ordinal);
             var built = new List<BuiltCategory>();
@@ -1052,12 +1045,7 @@ internal sealed partial class SidebarComposer
                 if (bone.IsHidden || IsBoneSuppressed(bone)) continue;
                 if (MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName))
                     return true;
-                if (!character) continue;
-                var cat = Domain.Posing.BoneInfo.BoneInfoService.GetCategory(bone.Id.CanonicalName);
-                if (MatchesSidebarFilter(
-                        filter,
-                        Domain.Posing.BoneInfo.BoneInfoService.GetCategoryDisplayName(cat),
-                        cat.ToString()))
+                if (character && KtisisCategoryLabelMatches(filter))
                     return true;
             }
         }

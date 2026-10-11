@@ -86,13 +86,7 @@ public class Bone : EntityBase, IBone
     public override string Name =>
         _showFriendlyNames() ? _displayName : BoneName;
 
-    /// <summary>
-    /// Gets the category for this bone.
-    /// </summary>
-    public BoneCategory Category => _category;
-
     private readonly string _displayName;
-    private readonly BoneCategory _category;
     private readonly Func<bool> _showFriendlyNames;
 
     /// <summary>
@@ -132,7 +126,6 @@ public class Bone : EntityBase, IBone
         BoneName = boneName;
         _childBonesView = _childBones.AsReadOnly();
         _displayName = BoneInfoService.GetDisplayName(boneName);
-        _category = BoneInfoService.GetCategory(boneName);
         _showFriendlyNames = showFriendlyNames;
 
         // VISIBLE by default — the overlay must show the skeleton out of the

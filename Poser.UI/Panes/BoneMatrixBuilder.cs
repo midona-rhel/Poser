@@ -6,6 +6,7 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.UI.Views;
+using Poser.Domain.Posing;
 using Poser.Domain.Posing.BoneInfo;
 using Poser.Documents.Files.Converters;
 
@@ -128,9 +129,9 @@ public static class BoneMatrixBuilder
         SelectionScope selection,
         HashSet<(string BoneName, int PartialId)> covered, bool showNsfw)
     {
-        // cluster: (category, subcategory, base name) → pills
-        var clusters = new Dictionary<(BoneCategory, BoneSubcategory, string), (string Label, List<PillInfo> Pills)>();
-        var clusterOrder = new List<(BoneCategory, BoneSubcategory, string)>();
+        // cluster: (Ktisis category id, base name) → pills; null id = Other
+        var clusters = new Dictionary<(string?, string), (string Label, List<PillInfo> Pills)>();
+        var clusterOrder = new List<(string?, string)>();
 
         foreach (var bone in skeleton.Bones)
         {
@@ -138,8 +139,7 @@ public static class BoneMatrixBuilder
                 covered.Contains((bone.Id.CanonicalName, bone.Id.PartialId))) continue;
 
             var data = BoneInfoService.GetBoneData(bone.Id.CanonicalName);
-            var category = data?.Category ?? BoneCategory.Other;
-            var subcategory = data?.Subcategory ?? BoneSubcategory.None;
+            var category = KtisisBoneCategories.CategoryOf(bone.Id.CanonicalName)?.Id;
 
             var m = Suffix.Match(bone.Id.CanonicalName);
             string baseName = m.Success ? m.Groups["base"].Value : bone.Id.CanonicalName;
@@ -152,7 +152,7 @@ public static class BoneMatrixBuilder
                 ? LabelTail.Replace(data.Value.Translation, "")
                 : bone.DisplayName;
 
-            var key = (category, subcategory, baseName);
+            var key = (category, baseName);
             if (!clusters.TryGetValue(key, out var cluster))
             {
                 cluster = (label, new List<PillInfo>());
@@ -162,19 +162,18 @@ public static class BoneMatrixBuilder
             cluster.Pills.Add(new PillInfo(bone, side, ordinal));
         }
 
-        // sections in curated order
-        var sections = new Dictionary<(BoneCategory, BoneSubcategory), BoneMatrixSection>();
-        foreach (var key in clusterOrder
-                     .OrderBy(k => (int)k.Item1)
-                     .ThenBy(k => (int)k.Item2))
+        // sections in sidebar tree order; Other last
+        var sections = new Dictionary<string, BoneMatrixSection>();
+        foreach (var key in clusterOrder.OrderBy(k =>
+                     k.Item1 is { } id ? KtisisBoneCategories.OrderById[id] : int.MaxValue))
         {
-            var (category, subcategory, _) = key;
-            var sectionKey = (category, subcategory);
+            var category = key.Item1;
+            var sectionKey = category ?? "";
             if (!sections.TryGetValue(sectionKey, out var section))
             {
-                string title = "MORE — " + (subcategory != BoneSubcategory.None
-                    ? BoneInfoService.GetSubcategoryDisplayName(subcategory)
-                    : BoneInfoService.GetCategoryDisplayName(category));
+                string title = "MORE — " + (category is { } id
+                    ? KtisisBoneCategories.ById[id].Label
+                    : "Other");
                 section = new BoneMatrixSection { Title = title.ToUpperInvariant() };
                 sections[sectionKey] = section;
                 vm.Sections.Add(section);

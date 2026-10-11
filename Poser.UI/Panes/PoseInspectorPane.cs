@@ -2664,9 +2664,9 @@ public partial class PoseInspectorPane : IDisposable
             var bones = SelectedBoneIds();
             if (bones.Count > 1)
             {
-                var cats = bones.Select(b => Domain.Posing.BoneInfo.BoneInfoService.GetCategory(b.CanonicalName)).Distinct().ToList();
+                var cats = bones.Select(b => Domain.Posing.KtisisBoneCategories.CategoryOf(b.CanonicalName)?.Label ?? "Other").Distinct().ToList();
                 string who = cats.Count == 1
-                    ? $"{Domain.Posing.BoneInfo.BoneInfoService.GetCategoryDisplayName(cats[0])} — {bones.Count} bones"
+                    ? $"{cats[0]} — {bones.Count} bones"
                     : $"{bones.Count} bones";
                 string sub = string.Join(" · ", bones.Take(3).Select(b => b.CanonicalName)) + (bones.Count > 3 ? " …" : "");
                 return (who, sub, bones.Count);

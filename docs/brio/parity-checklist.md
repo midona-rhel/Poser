@@ -352,7 +352,7 @@ is written by the "Cycle skeleton view" keybind (`UIManager.cs:186-191`) and by 
 (`:65,1330`) all have readers. `Display.ShowNsfwBones` now genuinely filters — the matrix
 (`BoneMatrixBuilder.cs:47`, `MainWindow.cs:2522`), the graphical maps
 (`GraphicalBonePane.cs:265,613`), the inspector (`PoseInspectorPane.cs:1375`), the overlay
-(`SkeletonOverlayWindow.cs:470`) and the curated categories (`BoneInfoService.cs:73,88`) —
+(`SkeletonOverlayWindow.cs:470`) and the curated NSFW set (`BoneInfoService.IsNsfw`) —
 so the default-off state no longer lies. `BoneDisplayMode` and `Skeleton.DebugMode` were
 deleted rather than wired; no reference to either survives.
 
@@ -384,7 +384,7 @@ built-ins is `Poser/UI/BoneVisibilityPresetService.cs` (registered in
 **Task:** Add a preset store to config (`name → bone-name set`), a "Presets…" submenu on the
 actor context menu listing presets with checked state + "Save current as…", and application
 through the existing per-bone overlay-visibility mask. Seed 4–5 built-ins (Body, Face,
-Hands, Tail, Weapons) from the curated `BoneInfoService` categories. Settings list for
+Hands, Tail, Weapons) from the Ktisis category tree. Settings list for
 rename/delete/default-on-spawn.
 
 ### 12. Cannot bring an overworld actor into the scene

@@ -251,6 +251,48 @@ public static class KtisisBoneCategories
     public static IReadOnlyDictionary<string, string> OwnerByBone { get; } =
         BuildOwners();
 
+    /// <summary>Every category node by id, at any depth.</summary>
+    public static IReadOnlyDictionary<string, KtisisBoneCategory> ById { get; } =
+        BuildById();
+
+    /// <summary>Category id -> pre-order position: the order the sidebar
+    /// tree shows categories in, used wherever bones are grouped.</summary>
+    public static IReadOnlyDictionary<string, int> OrderById { get; } =
+        BuildOrder();
+
+    /// <summary>The category a bone is listed under, or null when Ktisis
+    /// doesn't list it (shown under Other).</summary>
+    public static KtisisBoneCategory? CategoryOf(string boneName) =>
+        OwnerByBone.TryGetValue(boneName, out var id) ? ById[id] : null;
+
+    private static Dictionary<string, KtisisBoneCategory> BuildById()
+    {
+        var byId = new Dictionary<string, KtisisBoneCategory>();
+        void Walk(KtisisBoneCategory category)
+        {
+            byId[category.Id] = category;
+            foreach (var child in category.Children)
+                Walk(child);
+        }
+        foreach (var root in Roots)
+            Walk(root);
+        return byId;
+    }
+
+    private static Dictionary<string, int> BuildOrder()
+    {
+        var order = new Dictionary<string, int>();
+        void Walk(KtisisBoneCategory category)
+        {
+            order[category.Id] = order.Count;
+            foreach (var child in category.Children)
+                Walk(child);
+        }
+        foreach (var root in Roots)
+            Walk(root);
+        return order;
+    }
+
     private static Dictionary<string, string> BuildOwners()
     {
         var owners = new Dictionary<string, string>();
