@@ -60,8 +60,20 @@ public static class SceneOutcomeKinds
     /// reason varies with the failure, but the recovery is a property of the
     /// thing that did not come back. A site with a genuinely better step
     /// states its own and this leaves it alone.
+    /// <para>The per-kind steps assume the load kept what it made: several
+    /// tell the user to select an actor or companion that is in the scene.
+    /// When the operation left nothing behind (rolled back or cancelled,
+    /// e.g. by leaving GPose), that is false, and the one honest step is to
+    /// load again (#501).</para>
     /// </summary>
-    public static string Remedy(this SceneOutcomeKind kind) => kind switch
+    public static string Remedy(this SceneOutcomeKind kind, bool keptInScene = true) =>
+        keptInScene ? KeptRemedy(kind) : NothingKept;
+
+    private const string NothingKept =
+        "This load kept nothing it made. Load the scene again (in GPose) "
+        + "to restore it.";
+
+    private static string KeptRemedy(SceneOutcomeKind kind) => kind switch
     {
         SceneOutcomeKind.Actor =>
             "The actor is in the scene. Select it and apply its pose from the "
