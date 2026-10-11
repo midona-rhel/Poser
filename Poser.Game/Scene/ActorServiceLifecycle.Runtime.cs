@@ -117,11 +117,12 @@ internal sealed partial class ActorServiceLifecycle
                 {
                     if (!Current()) return;
                     if (!ready.Success) { Note($"'{actor.Name}': {ready.Detail}"); return; }
-                    if (state.FreezePoseOnRestore)
+                    if (state.RestoresPaused)
                     {
                         // A posed duplicate's deltas were captured against the
-                        // import's neutral frame. Redo must recreate that frozen
-                        // basis, not run a new idle underneath the saved pose.
+                        // import's neutral frame, and a paused actor was read
+                        // holding still: neither may come back running a new
+                        // idle underneath the saved pose.
                         var paused = _animation.Pause(id);
                         if (!paused.Success) { Note($"'{actor.Name}': {paused.Detail}"); return; }
                     }
@@ -130,7 +131,7 @@ internal sealed partial class ActorServiceLifecycle
                     { Note($"'{actor.Name}': companion attachment could not be restored."); return; }
                     // Same pause-settle-rewind ordering as PoseImportCoordinator.
                     Schedule(actor, state, ReadyAttempts, Current,
-                        delayTicks: state.FreezePoseOnRestore ? 4 : 1);
+                        delayTicks: state.RestoresPaused ? 4 : 1);
                 });
             }
             catch (Exception ex) { Note($"Lifecycle appearance restore failed: {ex.Message}"); }
