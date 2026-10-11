@@ -152,15 +152,16 @@ public sealed partial class DebugBridge
                 return new { accepted = false, detail = "spawn must be a positive model id." };
             var result = _creation.CreateActor(new(ModelCharaId: spawnModel));
             var resolved = result.Handle is { } created ? _creation.Resolve(created)?.Actor : null;
+            var handle = result.Handle is { } receipt ? new
+            {
+                session = receipt.Session.ToString(),
+                kind = receipt.Kind.ToString(),
+            } : null;
             return new
             {
                 accepted = result.Handle != null,
                 result.Detail,
-                handle = result.Handle == null ? null : new
-                {
-                    session = result.Handle.Session.ToString(),
-                    kind = result.Handle.Kind.ToString(),
-                },
+                handle,
                 actorGeneration = resolved?.ToString(),
             };
         }

@@ -328,6 +328,7 @@ public sealed partial class DebugBridge : IDisposable
                         "world-object.model.read", "world-object.model.respawn",
                         "overlay-node.create", "overlay-node.read",
                         "library.entry.save", "library.entry.spawn",
+                        "selection.entities",
                     },
                     endpoints = new[]
                     {

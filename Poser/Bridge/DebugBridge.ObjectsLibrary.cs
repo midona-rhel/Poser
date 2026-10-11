@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Poser.Application.Library;
 using Poser.Application.Presentation;
@@ -177,8 +178,11 @@ public sealed partial class DebugBridge
     }
 
     private static bool TryNumber<T>(Dictionary<string, string> query, string key, out T value)
-        where T : struct, System.Numerics.INumberBase<T> =>
-        query.TryGetValue(key, out var text)
-        && T.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        where T : struct, System.Numerics.INumberBase<T>
+    {
+        value = default;
+        return query.TryGetValue(key, out var text)
+            && T.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
 }
 #endif
