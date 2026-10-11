@@ -41,6 +41,7 @@ public sealed partial class DebugBridge
                 var owned = _session.OverridesFor(actorId);
                 bool matches = penumbra
                     ? owned.Mcdf?.TemporaryCollection == id
+                        || _penumbra.DebugOwnedDuplicateCollection(actor.Address) == id
                     : owned.TemporaryBodyProfile == id || owned.Mcdf?.TemporaryProfile == id;
                 if (matches) return actorId.ToString();
             }
@@ -53,7 +54,11 @@ public sealed partial class DebugBridge
             if (actor == null || _bindings.GetActorId(actor) is not { } actorId)
                 return new { error = "captureActor must identify one current stable actor." };
             var owned = _session.OverridesFor(actorId);
-            var penumbra = new[] { owned.Mcdf?.TemporaryCollection }
+            var penumbra = new[]
+                {
+                    owned.Mcdf?.TemporaryCollection,
+                    _penumbra.DebugOwnedDuplicateCollection(actor.Address),
+                }
                 .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
             var customize = new[] { owned.TemporaryBodyProfile, owned.Mcdf?.TemporaryProfile }
                 .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray();
@@ -69,6 +74,28 @@ public sealed partial class DebugBridge
                     customizePlus = customize.Select(id => id.ToString()).ToArray(),
                 },
                 pending = Pending(),
+            };
+        }
+
+        if (query.TryGetValue("prepareCustomizeActor", out var customizeActorKey))
+        {
+            var actor = FindActor(customizeActorKey);
+            if (actor == null || _bindings.GetActorId(actor) is not { } actorId)
+                return new { error = "prepareCustomizeActor must identify one current stable actor." };
+            var profiles = _session.ListBodyProfiles();
+            if (!profiles.Success || profiles.Value is not { Count: > 0 } values)
+                return new { command = "prepareCustomizeActor", accepted = false,
+                    detail = profiles.Detail ?? "Customize+ has no saved profile fixture." };
+            var selected = values.OrderBy(value => value.Name, StringComparer.Ordinal)
+                .ThenBy(value => value.Id).First();
+            var applied = _session.SetBodyProfile(actorId, selected.Id, selected.Name);
+            return new
+            {
+                command = "prepareCustomizeActor",
+                actor = actorId.ToString(),
+                accepted = applied.Success,
+                applied.Detail,
+                savedProfile = new { id = selected.Id.ToString(), selected.Name },
             };
         }
 

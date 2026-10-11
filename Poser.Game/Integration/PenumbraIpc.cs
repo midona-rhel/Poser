@@ -301,6 +301,9 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
         });
 
 #if DEBUG
+    public Guid? DebugOwnedDuplicateCollection(nint actorAddress) =>
+        _ledger.TryGetOwned(actorAddress, out var collection) ? collection : null;
+
     /// <summary>Destructive exact-id cleanup oracle for the Debug bridge.
     /// The bridge owns the allowlist; this method deliberately preserves the
     /// provider's raw distinction between absent and found resources.</summary>
