@@ -178,6 +178,10 @@ public partial class MainWindow : Window
     /// built when they read it.</summary>
     internal AppShellViewModel ShellVm => _vm;
 
+    /// <summary>The shared manipulation state, for the split-part windows'
+    /// hide-while-manipulating fade.</summary>
+    internal Controls.ManipulationState Manipulation { get; }
+
     private readonly PropertiesContent _properties;
     internal void PumpPropertiesInteraction(bool pointerHeld) => _properties.PumpInteraction(pointerHeld);
     private string _activeTab => _properties.ActiveTab;
@@ -373,7 +377,8 @@ public partial class MainWindow : Window
         ICameraProjection gameCamera,
         IViewportReads viewportProjection,
         Application.Selection.SelectionEntityCommands entityCommands,
-        IEventBus eventBus)
+        IEventBus eventBus,
+        Controls.ManipulationState manipulation)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -396,6 +401,7 @@ public partial class MainWindow : Window
         var companions = appearancePane.Companions;
         var names = properties.Names;
         _configuration = configuration;
+        Manipulation = manipulation;
         _properties = properties;
         _properties.Bind(_vm);
         _vm.OnPopOut = () => OnPopOutRequested?.Invoke(
@@ -775,9 +781,9 @@ public partial class MainWindow : Window
         // A drag held on the shell's own control keeps the window drawing
         // through the fade, invisible, so the held item is not torn away.
         if (!_contentHidden
-            && (!Controls.ManipulationHide.Hidden || Controls.ManipulationDrag.ShellHeld))
+            && (!Manipulation.Hidden || Manipulation.ShellDragHeld))
         {
-            using var manipulationFade = Controls.ManipulationHide.FadeScope();
+            using var manipulationFade = Manipulation.FadeScope();
             AppShellView.Draw(
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         }

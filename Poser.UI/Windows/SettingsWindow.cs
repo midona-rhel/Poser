@@ -23,6 +23,7 @@ namespace Poser.UI;
 public class SettingsWindow : Window
 {
     private SettingsViewModel _vm = new();
+    private readonly SettingsView.SearchSettle _search = new();
     public bool IsRebindingShortcut => IsOpen && _vm.RebindingAction != null;
     private bool _saving;
     private readonly IAutoSaveService _autoSave;
@@ -181,7 +182,7 @@ public class SettingsWindow : Window
             _vm.SourceSnapshot = _library.Snapshot;
             _vm.SavedLibrary = _configuration.Config.Library;
             _vm.SourceScanBusy = _library.IsScanning;
-            SettingsView.Draw(_vm, min);
+            SettingsView.Draw(_vm, _search, min);
             _folderDialog.Draw();
             // Live: a change lands on the config and is announced the
             // frame it happens, so every consumer follows at once; only

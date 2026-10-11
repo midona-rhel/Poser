@@ -58,6 +58,7 @@ public class GizmoOverlayWindow : Window
     private readonly IGazeControl _gazeValues;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
+    private readonly ManipulationState _manipulation;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly GroupTransformCoordinator _groupCoordinator;
 
@@ -191,6 +192,7 @@ public class GizmoOverlayWindow : Window
         SkeletonOverlayPresentation presentation,
         global::Poser.Application.Scene.SceneGroups groups,
         GroupTransformCoordinator groupCoordinator,
+        ManipulationState manipulation,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -220,6 +222,7 @@ public class GizmoOverlayWindow : Window
         _presentation = presentation;
         _groups = groups;
         _groupCoordinator = groupCoordinator;
+        _manipulation = manipulation;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -373,10 +376,10 @@ public class GizmoOverlayWindow : Window
         // With the option on, the gizmo's chrome rides the shell's fade
         // during a held drag; the gaze identity marker below stays.
         if (layout != null && !io.KeyAlt
-            && !(ManipulationHide.HideGizmo && ManipulationHide.Hidden))
+            && !(_manipulation.HideGizmo && _manipulation.Hidden))
         {
-            using var manipulationFade = ManipulationHide.HideGizmo
-                ? ManipulationHide.FadeScope()
+            using var manipulationFade = _manipulation.HideGizmo
+                ? _manipulation.FadeScope()
                 : default;
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
@@ -391,10 +394,10 @@ public class GizmoOverlayWindow : Window
         {
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
-            GizmoPointerOwnership.Hold();
+            _manipulation.HoldPointer();
             // Only the HELD gesture is a manipulation; hover is not.
             if (_gazeGesture != null)
-                ManipulationDrag.Hold();
+                _manipulation.HoldDrag();
         }
 
         if (_gazeGesture == null && hover is { } grab && projection != null &&
@@ -541,7 +544,7 @@ public class GizmoOverlayWindow : Window
             PrevHit = hit,
             Accum = Vector3.Zero,
         };
-        ManipulationDrag.Hold();
+        _manipulation.HoldDrag();
     }
 
     /// <summary>Updates a gaze drag from its frozen plane.</summary>
@@ -692,7 +695,7 @@ public class GizmoOverlayWindow : Window
                     return;
                 // Per SKELETON: this actor's bones must be shown, not anyone's.
                 if (GizmoConfig.HideGizmoWithoutArmature
-                    && !(ArmatureVisibility.MasterOn
+                    && !(_presentation.ArmatureShown
                         && _presentation.AnyVisibleFor(primaryBoneId)))
                     return;
             }
@@ -874,15 +877,15 @@ public class GizmoOverlayWindow : Window
         // With the option on, the gizmo's chrome rides the shell's fade
         // during a held drag; the drag's sweep and readout, drawn below,
         // never hide.
-        bool keepIkVisible = ManipulationDrag.Held && isBone && primaryBone is { } ikBoneId
+        bool keepIkVisible = _manipulation.DragHeld && isBone && primaryBone is { } ikBoneId
             && _configuration.Config.UI.KeepIkGizmoVisibleWhileManipulating
             && _ikPort.Get(TransformTargetId.ForBone(ikBoneId)) is { Enabled: true };
-        bool hideGizmo = ManipulationHide.HideGizmo && !keepIkVisible;
+        bool hideGizmo = _manipulation.HideGizmo && !keepIkVisible;
         if (layout != null && !io.KeyAlt
-            && !(hideGizmo && ManipulationHide.Hidden))
+            && !(hideGizmo && _manipulation.Hidden))
         {
             using var manipulationFade = hideGizmo
-                ? ManipulationHide.FadeScope()
+                ? _manipulation.FadeScope()
                 : default;
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
@@ -894,10 +897,10 @@ public class GizmoOverlayWindow : Window
         {
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
-            GizmoPointerOwnership.Hold();
+            _manipulation.HoldPointer();
             // Only the HELD gesture is a manipulation; hover is not.
             if (gesture != null)
-                ManipulationDrag.Hold();
+                _manipulation.HoldDrag();
         }
 
         if (gesture == null && hover is { } grab && layout != null &&
@@ -1061,9 +1064,9 @@ public class GizmoOverlayWindow : Window
 
     /// <summary>The readout of a drag held on a shell control, drawn here
     /// because the shell itself is faded out under it.</summary>
-    private static void DrawShellDragReadout()
+    private void DrawShellDragReadout()
     {
-        if (ManipulationDrag.ShellReadout is { } readout)
+        if (_manipulation.ShellReadout is { } readout)
             HoverHelp.Readout(readout.Min, readout.Text);
     }
 
@@ -1281,7 +1284,7 @@ public class GizmoOverlayWindow : Window
             PivotChoice = pivotChoice,
         };
         _gestureTargetType = targetType;
-        ManipulationDrag.Hold();
+        _manipulation.HoldDrag();
 
         _dragProjection = projection;
         _dragInvModel = invModel;

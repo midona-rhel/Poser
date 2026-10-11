@@ -756,6 +756,12 @@ internal static class ServiceRegistration
     private static IServiceCollection AddWindows(
         this IServiceCollection services)
     {
+        // Interaction state the windows and panes share, and the draw-cost
+        // ledger they all report into: one of each per plugin load.
+        services.AddSingleton<global::Poser.UI.Controls.ManipulationState>();
+        services.AddSingleton<global::Poser.UI.Controls.BonePick>();
+        services.AddSingleton<TransformClipboard>();
+        services.AddSingleton<FrameProfiler>();
         services.AddSingleton<SkeletonOverlayWindow>();
         services.AddSingleton<GizmoOverlayWindow>();
         services.AddSingleton<MainWindow>();

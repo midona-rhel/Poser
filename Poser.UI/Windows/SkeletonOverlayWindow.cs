@@ -32,6 +32,9 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     private readonly IViewportReads _viewport;
     private readonly EditorState _editorState;
     private readonly SkeletonOverlayPresentation _presentation;
+    private readonly Controls.ManipulationState _manipulation;
+    private readonly Controls.BonePick _bonePick;
+    private readonly FrameProfiler _profiler;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IPoseInteraction _poseInteraction;
     private readonly WorldAdoptionSource _adoption;
@@ -384,7 +387,10 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         WorldAdoptionSource adoption,
         Application.Scene.SceneGroups groups,
         Dalamud.Plugin.Services.IPluginLog log,
-        Dalamud.Plugin.Services.ITextureProvider textures)
+        Dalamud.Plugin.Services.ITextureProvider textures,
+        Controls.ManipulationState manipulation,
+        Controls.BonePick bonePick,
+        FrameProfiler profiler)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -409,6 +415,9 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         _groups = groups;
         _log = log;
         _textures = textures;
+        _manipulation = manipulation;
+        _bonePick = bonePick;
+        _profiler = profiler;
 
         RespectCloseHotkey = false;
     }
@@ -461,7 +470,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         // This surface reads the finalize hook's bone snapshot; asking for
         // it is what keeps the hook walking while the overlay shows.
         _viewport.RequestBoneSnapshot();
-        using var profile = FrameProfiler.Scope("Window · Bone overlay");
+        using var profile = _profiler.Scope("Window · Bone overlay");
         try
         {
             DrawCore();
@@ -494,8 +503,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                 ImGuiHoveredFlags.AnyWindow |
                 ImGuiHoveredFlags.AllowWhenBlockedByPopup |
                 ImGuiHoveredFlags.AllowWhenBlockedByActiveItem)
-            || Controls.GizmoPointerOwnership.Owned
-            || Controls.ManipulationDrag.ShellHeld;
+            || _manipulation.PointerOwned
+            || _manipulation.ShellDragHeld;
 
         // Ahead of the Alt gate: the listing's cadence and the select that
         // finishes an adoption are bookkeeping, and holding Alt is a request
@@ -518,7 +527,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         // whenever the scene holds lights — Ktisis and Brio both draw their
         // light handles unconditionally. Alt still hides everything.
         // Picking shows everything: every actor, every opted-out bone.
-        bool picking = global::Poser.UI.Controls.BonePick.Active;
+        bool picking = _bonePick.Active;
         bool drawArmature =
             (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor()
             || picking || _presentation.MapHoveredBone != null;
@@ -527,7 +536,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         // AnyVisibleFor, asked at the gizmo, so a hidden actor beside a
         // visible one still loses its gizmo. The selection-anchor dot
         // never counts as bones being shown.
-        ArmatureVisibility.MasterOn = UserVisible;
+        _presentation.ArmatureShown = UserVisible;
 
         var selectedIds = _selectedIds;
         selectedIds.Clear();
@@ -771,7 +780,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                 continue;
             // A pick limited to one actor shows that actor alone.
             if (picking
-                && global::Poser.UI.Controls.BonePick.OnlyActor is { } pickActor
+                && _bonePick.OnlyActor is { } pickActor
                 && pickActor != actor.Id)
                 continue;
             var actorSelectionId = SelectionId.ForActor(actor.Id);
@@ -965,8 +974,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         // Draw skeleton
         // A HELD drag, world gizmo or inspector ball: hovering a handle
         // is not a manipulation and hides nothing (Midona, 2026-09-02).
-        var isGizmoActive = Controls.ManipulationDrag.Held
-            || Controls.ManipulationDrag.ShellHeld;
+        var isGizmoActive = _manipulation.DragHeld
+            || _manipulation.ShellDragHeld;
         var lineOpacity = isGizmoActive ? LineOpacityWhileUsing : LineOpacity;
         // Brio's HideSkeletonWhenGizmoActive: the armature goes away for the
         // length of a drag rather than fading. Hover and press were resolved
@@ -1500,7 +1509,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         if (ImGui.IsKeyPressed(ImGuiKey.Escape)
             || ImGui.IsMouseClicked(ImGuiMouseButton.Right))
         {
-            global::Poser.UI.Controls.BonePick.Cancel();
+            _bonePick.Cancel();
             _pressedWorldTarget = null;
             return;
         }
@@ -1517,15 +1526,15 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             && target is { } released
             && pressed.Equals(released)
             && released.Bone is { } bone)
-            global::Poser.UI.Controls.BonePick.Take(bone, ImGui.GetIO().KeyCtrl);
+            _bonePick.Take(bone, ImGui.GetIO().KeyCtrl);
         else if (_pressedWorldTarget == null && target == null)
-            global::Poser.UI.Controls.BonePick.Cancel();
+            _bonePick.Cancel();
         _pressedWorldTarget = null;
     }
 
     private void UpdateGroupPress(Guid? target, bool pointerBlocked)
     {
-        if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
+        if (pointerBlocked || _manipulation.PointerOwned)
         {
             _pressedGroupTarget = null;
             return;
@@ -1597,13 +1606,13 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         SelectionId? target,
         bool pointerBlocked)
     {
-        if (global::Poser.UI.Controls.BonePick.Active)
+        if (_bonePick.Active)
         {
             UpdateBonePick(target, pointerBlocked);
             return;
         }
         _pressedWorldTarget = null;
-        if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
+        if (pointerBlocked || _manipulation.PointerOwned)
             return;
         // The PRESS selects, as both references do — nothing waits for the
         // release. Ktisis: Ctrl toggles and the highlighted entry is taken.
@@ -1696,7 +1705,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         WorldAdoptionCandidate? target,
         bool pointerBlocked)
     {
-        if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
+        if (pointerBlocked || _manipulation.PointerOwned)
         {
             _pressedAdoptTarget = null;
             return;
@@ -2552,12 +2561,4 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     {
         return ((color >> 24) & 0xFF) / 255f;
     }
-}
-
-/// <summary>Whether the armature overlay drew its bones this frame — the
-/// one boolean the skeleton window computes and the gizmo's visibility
-/// gate reads.</summary>
-public static class ArmatureVisibility
-{
-    public static bool MasterOn = true;
 }

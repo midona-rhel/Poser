@@ -30,6 +30,7 @@ public sealed class UiWindowSet : IDisposable
     private readonly ConfigurationService _configService;
     private readonly IServiceProvider _services;
     private readonly UiContext _ui;
+    private readonly FrameProfiler _profiler;
     // Requested state can wait for bounded icon warming.
     private bool _primaryOpenRequested;
     private (bool Open, bool Detached, bool SplitInspector)? _appliedLayout;
@@ -57,6 +58,7 @@ public sealed class UiWindowSet : IDisposable
         GizmoOverlayWindow gizmoOverlay,
         SettingsWindow settings,
         SpawnBrowserWindow spawnBrowser,
+        FrameProfiler profiler,
         SkeletonOverlayPresentation overlayPresentation,
         WorldAdoptionSource worldAdoption,
         ReferenceImageSession referenceImages,
@@ -130,7 +132,8 @@ public sealed class UiWindowSet : IDisposable
         // Last in draw order, and deliberately: it reports on every window
         // registered above it, and a panel that drew first would be reporting
         // on a frame that had not happened yet.
-        FrameProfilerPanel = new FrameProfilerWindow(configService);
+        _profiler = profiler;
+        FrameProfilerPanel = new FrameProfilerWindow(configService, profiler);
         System.AddWindow(FrameProfilerPanel);
 
 
@@ -150,7 +153,7 @@ public sealed class UiWindowSet : IDisposable
     {
         bool showing = _configService.Config.UI.ShowFrameProfiler;
         FrameProfilerPanel.IsOpen = showing;
-        FrameProfiler.SetEnabled(showing);
+        _profiler.SetEnabled(showing);
     }
 
     public void SetPrimaryOpen(bool isOpen)
@@ -383,7 +386,7 @@ public sealed class UiWindowSet : IDisposable
             var placement = PropertiesWindow.Cascade(_lastPropertiesPlacement, Main.LastPosition);
             _lastPropertiesPlacement = placement;
             var window = new PropertiesWindow(lease, Main.RequestSettings, placement,
-                next => _lastPropertiesPlacement = next);
+                next => _lastPropertiesPlacement = next, Main.Manipulation);
             _propertiesWindows.Add(window);
             System.AddWindow(window);
         }

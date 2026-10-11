@@ -21,22 +21,23 @@ namespace Poser.UI;
 /// <summary>Ktisis's bone categories: how a skeleton's bones fold into the sidebar tree.</summary>
 internal sealed partial class SidebarComposer
 {
+    private static string[] FlattenKtisisLabels()
+    {
+        var labels = new List<string>();
+        void Walk(Domain.Posing.KtisisBoneCategory category)
+        {
+            labels.Add(category.Label);
+            foreach (var child in category.Children)
+                Walk(child);
+        }
+        foreach (var root in Domain.Posing.KtisisBoneCategories.Roots)
+            Walk(root);
+        return labels.ToArray();
+    }
+
     private static bool KtisisCategoryLabelMatches(string filter)
     {
-        if (_ktisisLabels == null)
-        {
-            var labels = new List<string>();
-            void Walk(Domain.Posing.KtisisBoneCategory category)
-            {
-                labels.Add(category.Label);
-                foreach (var child in category.Children)
-                    Walk(child);
-            }
-            foreach (var root in Domain.Posing.KtisisBoneCategories.Roots)
-                Walk(root);
-            _ktisisLabels = labels.ToArray();
-        }
-        foreach (var label in _ktisisLabels)
+        foreach (var label in KtisisLabels)
             if (MatchesSidebarFilter(filter, label))
                 return true;
         return false;

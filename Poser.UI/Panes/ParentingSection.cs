@@ -11,7 +11,7 @@ using static Poser.UI.Widgets.PageForm;
 namespace Poser.UI;
 
 public sealed class ParentingSection(ITransformParenting parenting, SceneSession scene, UserNotices notices,
-    Application.Settings.ConfigurationService configuration)
+    Application.Settings.ConfigurationService configuration, Controls.BonePick bonePick)
 {
     private sealed record Choice(SelectionId Id, string Name, string Kind);
     private static readonly string[] Modes = ["None", "Entity", "Bone"];
@@ -109,7 +109,7 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
             form.Actions(string.Empty, actions =>
             {
                 if (_mode == 2)
-                    actions.IconButton(TablerIcon.Crosshair, () => Controls.BonePick.Begin(false,
+                    actions.IconButton(TablerIcon.Crosshair, () => bonePick.Begin(false,
                         bone => Apply(child, SelectionId.ForBone(bone)),
                         onlyActor: scene.Snapshot.Actors.FirstOrDefault(a => a.Id == _actor)?.Id),
                         help: "Pick the parent bone in the view");

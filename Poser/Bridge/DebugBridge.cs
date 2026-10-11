@@ -629,17 +629,18 @@ public sealed partial class DebugBridge : IDisposable
                 // The frame profiler's own ledger — the instrument Midona reads
                 // — plus the GC counters, so a stopwatch cost the sampler
                 // cannot see (a collection pausing the render thread) shows.
-                global::Poser.UI.FrameProfiler.SetEnabled(true);
+                var profiler = (global::Poser.UI.FrameProfiler)_services.GetService(typeof(global::Poser.UI.FrameProfiler))!;
+                profiler.SetEnabled(true);
                 var samples = new global::Poser.UI.FrameProfiler.Sample[64];
-                int n = global::Poser.UI.FrameProfiler.Snapshot(samples);
+                int n = profiler.Snapshot(samples);
                 var units = new List<object>();
                 for (int i = 0; i < n; i++)
                     units.Add(new { samples[i].Label, self = Math.Round(samples[i].AverageSelfMs, 3), peak = Math.Round(samples[i].PeakSelfMs, 1), incl = Math.Round(samples[i].AverageInclusiveMs, 3), samples[i].Hits });
                 return Json(new
                 {
                     frame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount(),
-                    avgMs = Math.Round(global::Poser.UI.FrameProfiler.AverageFrameMs, 3),
-                    peakMs = Math.Round(global::Poser.UI.FrameProfiler.PeakFrameMs, 1),
+                    avgMs = Math.Round(profiler.AverageFrameMs, 3),
+                    peakMs = Math.Round(profiler.PeakFrameMs, 1),
                     gc0 = GC.CollectionCount(0), gc1 = GC.CollectionCount(1), gc2 = GC.CollectionCount(2),
                     allocated = GC.GetTotalAllocatedBytes(false),
                     resolveUs = global::Poser.Game.Entities.Skeleton.ResolveCalls == 0 ? 0.0

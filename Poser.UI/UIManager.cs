@@ -46,12 +46,16 @@ public sealed class UIManager : IUIManager
     private bool _capturingShortcutThisFrame;
 
     private readonly UiContext _ui;
+    private readonly FrameProfiler _profiler;
+    private readonly Controls.ManipulationState _manipulation;
     private readonly global::Poser.Application.Diagnostics.ActionRecorder _recorder;
     private readonly Controls.IssueReportModal _issueReport;
     private readonly Views.ReleaseNotesView _releaseNotes;
 
     public UIManager(
         UiContext ui,
+        FrameProfiler profiler,
+        Controls.ManipulationState manipulation,
         global::Poser.Application.Diagnostics.ActionRecorder recorder,
         Controls.IssueReportModal issueReport,
         Views.ReleaseNotesView releaseNotes,
@@ -75,6 +79,8 @@ public sealed class UIManager : IUIManager
         Dalamud.Plugin.Services.IPluginLog log)
     {
         _ui = ui;
+        _profiler = profiler;
+        _manipulation = manipulation;
         _recorder = recorder;
         _issueReport = issueReport;
         _releaseNotes = releaseNotes;
@@ -153,10 +159,10 @@ public sealed class UIManager : IUIManager
 
         // Cache warming runs before primary windows can draw. Scoped so the
         // ledger can see it: the un-attributed spikes lived exactly here.
-        using (FrameProfiler.Scope("Shell · icon pump"))
+        using (_profiler.Scope("Shell · icon pump"))
             _ui.Icons.PumpStartupIcons(_configService.Config.Library.IconSize);
         bool previewBackingReady;
-        using (FrameProfiler.Scope("Shell · preview backing"))
+        using (_profiler.Scope("Shell · preview backing"))
             previewBackingReady = !_windows.IsPrimaryOpen
                 || _poseFileSection.PrewarmPreviewBacking();
         _windows.AdvancePrimaryOpen(previewBackingReady);
@@ -164,7 +170,7 @@ public sealed class UIManager : IUIManager
         // is drawn from here, so this is the only place that can answer for a
         // whole frame. The close is unconditional — a window that threw must
         // not leave the ledger open across frames.
-        FrameProfiler.BeginFrame();
+        _profiler.BeginFrame();
         BeginTextFrame();
         try
         {
@@ -183,30 +189,30 @@ public sealed class UIManager : IUIManager
             }
             if (!_uiHidden)
             {
-                using (FrameProfiler.Scope("Shell · reference images"))
+                using (_profiler.Scope("Shell · reference images"))
                     _windows.PumpReferenceImages();
                 // The report dialog is a popup, not a window.
                 _issueReport.Draw();
                 _releaseNotes.Draw();
             }
-            using (FrameProfiler.Scope("Shell · floating menus"))
+            using (_profiler.Scope("Shell · floating menus"))
                 FloatingMenu.EndFrame();
-            using (FrameProfiler.Scope("Shell · hover help"))
+            using (_profiler.Scope("Shell · hover help"))
                 if (!_uiHidden)
                     HoverHelp.Render();
-            using (FrameProfiler.Scope("Shell · interactive end"))
+            using (_profiler.Scope("Shell · interactive end"))
                 Interactive.EndFrame();
         }
         finally
         {
             EndValueFrame();
-            FrameProfiler.EndFrame();
+            _profiler.EndFrame();
         }
         // Hide-while-manipulating (#77): the windows fade down while a
         // world drag is HELD — hover never hides — so the scene is clear
         // under the gesture.
-        bool held = Controls.ManipulationDrag.Held;
-        bool shellHeld = Controls.ManipulationDrag.ShellHeld;
+        bool held = _manipulation.DragHeld;
+        bool shellHeld = _manipulation.ShellDragHeld;
         bool active = _configService.Config.UI.HideWhileManipulating
             && (held || shellHeld);
         // Hide while the camera moves: the free camera's own input, or a
@@ -214,10 +220,10 @@ public sealed class UIManager : IUIManager
         if (_configService.Config.UI.HideWhileMovingCamera
             && (_cameraInput.FlightActive || EmptySpaceDrag()))
             active = true;
-        Controls.ManipulationHide.Active = active;
-        Controls.ManipulationHide.HideGizmo =
+        _manipulation.HideActive = active;
+        _manipulation.HideGizmo =
             _configService.Config.UI.HideGizmoWhileManipulating;
-        Controls.ManipulationHide.Advance();
+        _manipulation.AdvanceHide();
         // The focus rule, published once per frame: only typing owns the
         // keyboard. A hover over a handle or a window, or a drag in the
         // UI, never stands the flight keys down — the camera keys are the
@@ -241,7 +247,7 @@ public sealed class UIManager : IUIManager
             if (ImGui.IsMouseClicked(which))
             {
                 _emptyPress[button] = !io.WantCaptureMouse
-                    && !Controls.GizmoPointerOwnership.Owned;
+                    && !_manipulation.PointerOwned;
                 _pressAt[button] = io.MousePos;
             }
             if (!ImGui.IsMouseDown(which))

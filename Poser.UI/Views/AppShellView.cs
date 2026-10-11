@@ -161,6 +161,11 @@ public sealed class ShellTab
 
 public sealed class AppShellViewModel
 {
+    /// <summary>The shell's retained draw state for this model. It rides the
+    /// model rather than the view, so a split part draws with the same state
+    /// it has inside the shell.</summary>
+    internal readonly AppShellView.RetainedState Retained = new();
+
     public bool ShowTreeGuides = true;
     public string UndoShortcut = "";
     public string RedoShortcut = "";
@@ -437,35 +442,46 @@ public static class AppShellView
     private static readonly string[] PivotItems = ["Self", "Parent"];
     private static readonly string[] SymmetryItems = ["Off", "Link", "Mirror"];
 
-    /// <summary>The one sidebar, retained: its flat cache is what makes a warm
-    /// frame cost the visible band instead of the whole tree.</summary>
-    private static readonly ShellSidebar Sidebar = new();
+    /// <summary>One shell model's retained draw state; see
+    /// <see cref="AppShellViewModel.Retained"/>.</summary>
+    internal sealed class RetainedState
+    {
+        /// <summary>The one sidebar, retained: its flat cache is what makes a
+        /// warm frame cost the visible band instead of the whole tree.</summary>
+        internal readonly ShellSidebar Sidebar = new();
 
-    /// <summary>The tab strip reads all of the array, so the buffer is exactly
-    /// the tab count and is reallocated only when that count changes.</summary>
-    private static string[] _tabLabels = [];
-    private static int _tabActive;
+        /// <summary>The tab strip reads all of the array, so the buffer is
+        /// exactly the tab count and is reallocated only when that count
+        /// changes.</summary>
+        internal string[] TabLabels = [];
+        internal int TabActive;
 
-    // Composing a keybind into a sentence is a string per frame, so the four
-    // sentences are minted only when the binding itself changes.
-    private static string _undoShortcut = string.Empty;
-    private static string _redoShortcut = string.Empty;
-    private static string _undoHelp = string.Empty;
-    private static string _undoEmptyHelp = string.Empty;
-    private static string _redoHelp = string.Empty;
-    private static string _redoEmptyHelp = string.Empty;
-    /// <summary>The burger's press, reported by a hoisted callback that closes
-    /// over nothing and is consumed inside the same seat.</summary>
-    private static bool _burgerPressed;
-    private static readonly Action BurgerPressed =
-        static () => _burgerPressed = true;
+        // Composing a keybind into a sentence is a string per frame, so the
+        // four sentences are minted only when the binding itself changes.
+        internal string UndoShortcut = string.Empty;
+        internal string RedoShortcut = string.Empty;
+        internal string UndoHelp = string.Empty;
+        internal string UndoEmptyHelp = string.Empty;
+        internal string RedoHelp = string.Empty;
+        internal string RedoEmptyHelp = string.Empty;
 
-    /// <summary>The titlebar plus's press, read back the same way and for the
-    /// same reason: the seat's anchor is a local, and a warm titlebar frame
-    /// must not mint a closure to carry it.</summary>
-    private static bool _spawnPressed;
-    private static readonly Action SpawnPressed =
-        static () => _spawnPressed = true;
+        /// <summary>The burger's press, reported by a hoisted callback and
+        /// consumed inside the same seat.</summary>
+        internal bool BurgerPressed;
+        internal readonly Action PressBurger;
+
+        /// <summary>The titlebar plus's press, read back the same way and for
+        /// the same reason: the seat's anchor is a local, and a warm titlebar
+        /// frame must not mint a closure to carry it.</summary>
+        internal bool SpawnPressed;
+        internal readonly Action PressSpawn;
+
+        internal RetainedState()
+        {
+            PressBurger = () => BurgerPressed = true;
+            PressSpawn = () => SpawnPressed = true;
+        }
+    }
 
     /// <summary>Shared glass fill for sidebar and rail panels.</summary>
     private static Vector4 Glass =>
@@ -722,12 +738,12 @@ public static class AppShellView
             float burgerY = min.Y + (height - burgerSide * s) * 0.5f;
             IconAt(
                 new Vector2(burgerX, burgerY),
-                TablerIcon.Menu2, burgerSide, BurgerPressed,
+                TablerIcon.Menu2, burgerSide, vm.Retained.PressBurger,
                 "##shell-burger",
                 help: "Actions");
-            if (_burgerPressed)
+            if (vm.Retained.BurgerPressed)
             {
-                _burgerPressed = false;
+                vm.Retained.BurgerPressed = false;
                 vm.OnBurger?.Invoke(
                     new Vector2(burgerX, burgerY + burgerSide * s));
             }
@@ -1100,7 +1116,7 @@ public static class AppShellView
         float footerTop = max.Y - FooterHeight * s;
         // The search band and the tree; the chassis, the divider rule and the
         // footer are the shell's.
-        Sidebar.Draw(
+        vm.Retained.Sidebar.Draw(
             vm,
             min,
             new Vector2(
@@ -1246,20 +1262,20 @@ public static class AppShellView
             U32(BorderSecondary));
 
         SyncTabs(vm);
-        if (_tabLabels.Length > 0)
+        if (vm.Retained.TabLabels.Length > 0)
         {
             // The tab strip uses the shared segmented pill every other mode
             // selector uses, not hand-drawn buttons; alignFirstTabToCursor
             // lands the first tab's label on the content inset, because the
             // pill's dark chrome is decoration and not padding.
-            var size = MeasureSegmentedControl(_tabLabels);
+            var size = MeasureSegmentedControl(vm.Retained.TabLabels);
             ImGui.SetCursorScreenPos(new Vector2(
                 min.X + inset,
                 min.Y + (ToolbarHeight * s - size.Y) * 0.5f));
             SegmentedControl(
                 "##shell-tabs",
-                _tabLabels,
-                _tabActive,
+                vm.Retained.TabLabels,
+                vm.Retained.TabActive,
                 vm.TabChosen!,
                 alignFirstTabToCursor: true);
         }
@@ -1501,7 +1517,7 @@ public static class AppShellView
         var dl = ImGui.GetWindowDrawList();
         float rule = 1f * s;
         float footerTop = max.Y - FooterHeight * s;
-        Sidebar.Draw(
+        vm.Retained.Sidebar.Draw(
             vm,
             min,
             new Vector2(
@@ -1599,33 +1615,33 @@ public static class AppShellView
     private static void SyncTabs(AppShellViewModel vm)
     {
         int count = vm.Tabs.Count;
-        if (_tabLabels.Length != count)
-            _tabLabels = new string[count];
-        _tabActive = 0;
+        if (vm.Retained.TabLabels.Length != count)
+            vm.Retained.TabLabels = new string[count];
+        vm.Retained.TabActive = 0;
         for (int i = 0; i < count; i++)
         {
-            _tabLabels[i] = vm.Tabs[i].Label;
+            vm.Retained.TabLabels[i] = vm.Tabs[i].Label;
             if (vm.Tabs[i].Active)
-                _tabActive = i;
+                vm.Retained.TabActive = i;
         }
     }
 
     private static void SyncKeybindHelp(AppShellViewModel vm)
     {
         string undo = vm.UndoShortcut;
-        if (!string.Equals(undo, _undoShortcut, StringComparison.Ordinal))
+        if (!string.Equals(undo, vm.Retained.UndoShortcut, StringComparison.Ordinal))
         {
-            _undoShortcut = undo;
-            _undoHelp = $"Undo the last move, rotation or scale · {undo}";
-            _undoEmptyHelp = $"Nothing to undo · {undo}";
+            vm.Retained.UndoShortcut = undo;
+            vm.Retained.UndoHelp = $"Undo the last move, rotation or scale · {undo}";
+            vm.Retained.UndoEmptyHelp = $"Nothing to undo · {undo}";
         }
 
         string redo = vm.RedoShortcut;
-        if (!string.Equals(redo, _redoShortcut, StringComparison.Ordinal))
+        if (!string.Equals(redo, vm.Retained.RedoShortcut, StringComparison.Ordinal))
         {
-            _redoShortcut = redo;
-            _redoHelp = $"Reapply the change you undid · {redo}";
-            _redoEmptyHelp = $"Nothing to redo · {redo}";
+            vm.Retained.RedoShortcut = redo;
+            vm.Retained.RedoHelp = $"Reapply the change you undid · {redo}";
+            vm.Retained.RedoEmptyHelp = $"Nothing to redo · {redo}";
         }
     }
 
@@ -1689,12 +1705,12 @@ public static class AppShellView
             return;
         float y = origin.Y + (height - side * s) * 0.5f;
         IconAt(
-            new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
+            new Vector2(x, y), TablerIcon.Menu2, side, vm.Retained.PressBurger,
             "##shell-burger",
             help: "Actions");
-        if (_burgerPressed)
+        if (vm.Retained.BurgerPressed)
         {
-            _burgerPressed = false;
+            vm.Retained.BurgerPressed = false;
             vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
         }
         x += step;
@@ -1703,8 +1719,8 @@ public static class AppShellView
             "##shell-undo",
             disabled: !vm.CanUndo,
             help: HistoryHelp(
-                vm.CanUndo, vm.UndoDescription, "Undo", _undoShortcut,
-                _undoHelp, _undoEmptyHelp));
+                vm.CanUndo, vm.UndoDescription, "Undo", vm.Retained.UndoShortcut,
+                vm.Retained.UndoHelp, vm.Retained.UndoEmptyHelp));
         x += step;
         IconAt(
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnRedo,
@@ -1712,18 +1728,18 @@ public static class AppShellView
             disabled: !vm.CanRedo,
             flipX: true,
             help: HistoryHelp(
-                vm.CanRedo, vm.RedoDescription, "Redo", _redoShortcut,
-                _redoHelp, _redoEmptyHelp));
+                vm.CanRedo, vm.RedoDescription, "Redo", vm.Retained.RedoShortcut,
+                vm.Retained.RedoHelp, vm.Retained.RedoEmptyHelp));
         x += step;
         if (vm.ShowSpawn)
         {
             IconAt(
-                new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
+                new Vector2(x, y), TablerIcon.Plus, side, vm.Retained.PressSpawn,
                 "##shell-spawn",
                 help: "Add an actor or object to the scene");
-            if (_spawnPressed)
+            if (vm.Retained.SpawnPressed)
             {
-                _spawnPressed = false;
+                vm.Retained.SpawnPressed = false;
                 vm.OnSpawn?.Invoke(new Vector2(x, y + side * s));
             }
             x += step;

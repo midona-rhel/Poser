@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Poser.UI.Widgets;
+using Dalamud.Plugin.Services;
 
 namespace Poser.UI;
 
@@ -16,15 +16,11 @@ namespace Poser.UI;
 /// </summary>
 public readonly ref struct ProfileScope
 {
-    private readonly bool _recording;
+    private readonly FrameProfiler? _profiler;
 
-    internal ProfileScope(bool recording) => _recording = recording;
+    internal ProfileScope(FrameProfiler profiler) => _profiler = profiler;
 
-    public void Dispose()
-    {
-        if (_recording)
-            FrameProfiler.Close();
-    }
+    public void Dispose() => _profiler?.Close();
 }
 
 /// <summary>
@@ -47,20 +43,22 @@ public readonly ref struct ProfileScope
 /// that is what the panel sorts on, because "what costs" is a question about
 /// the work a unit does itself.</para>
 ///
-/// <para>OFF IS FREE: <see cref="Enabled"/> is a plain static field read
-/// before anything else happens, and <see cref="ProfileScope"/> is an empty
-/// struct, so a disabled scope is a predictable branch and no allocation at
-/// all. ON is allocation-free too once a label has been seen once: label
+/// <para>OFF IS FREE: <see cref="Enabled"/> is a plain field read before
+/// anything else happens, and a disabled <see cref="ProfileScope"/> carries
+/// no profiler, so a disabled scope is a predictable branch and no allocation
+/// at all. ON is allocation-free too once a label has been seen once: label
 /// slots are interned on first sight and the per-frame accumulators are
-/// preallocated arrays indexed by slot. Both claims are pinned by
-/// FrameProfilerContractTests.</para>
+/// preallocated arrays indexed by slot.</para>
 ///
 /// <para>The switch is applied at the FRAME BOUNDARY, never mid-frame:
 /// flipping it between a scope's open and its close would unbalance the
 /// nesting stack. <see cref="SetEnabled"/> therefore records a request that
 /// <see cref="BeginFrame"/> honours.</para>
+///
+/// <para>One ledger per plugin load: the UI root frames it, the measured
+/// surfaces open scopes on it and the PERF panel reads it.</para>
 /// </summary>
-public static class FrameProfiler
+public sealed class FrameProfiler
 {
     /// <summary>The EMA weight given to the newest frame. 0.05 is roughly a
     /// 20-frame window — slow enough to read while the pointer moves, fast
@@ -76,73 +74,69 @@ public static class FrameProfiler
     internal static readonly double MillisecondsPerTick =
         1000.0 / Stopwatch.Frequency;
 
+    private readonly IPluginLog _log;
+
+    public FrameProfiler(IPluginLog log) => _log = log;
+
     /// <summary>Whether scopes record — the "near-zero when off" gate, read
     /// once at the head of every scope. Written only at a frame boundary; see
     /// <see cref="SetEnabled"/>.</summary>
-    public static bool Enabled { get; private set; }
+    public bool Enabled { get; private set; }
 
-    private static bool _pendingEnabled;
+    private bool _pendingEnabled;
 
-    /// <summary>
-    /// The clock, pinned. Null in every real run, so the reader below is a
-    /// predicted branch onto <see cref="Stopwatch.GetTimestamp"/>; the
-    /// profiler's own contract tests set it so the aggregation arithmetic can
-    /// be asserted on exact tick counts instead of on wall-clock noise.
-    /// </summary>
-    internal static long? ManualClock;
-
-    private static long Now() => ManualClock ?? Stopwatch.GetTimestamp();
+    private static long Now() => Stopwatch.GetTimestamp();
 
     // ── label slots (interned once, never per frame) ─────────────────────
-    private static readonly Dictionary<string, int> Slots =
+    private readonly Dictionary<string, int> Slots =
         new(64, StringComparer.Ordinal);
-    private static string[] _labels = new string[64];
-    private static long[] _frameSelfTicks = new long[64];
-    private static long[] _frameInclusiveTicks = new long[64];
-    private static int[] _frameHits = new int[64];
-    private static double[] _averageSelfMs = new double[64];
-    private static double[] _averageInclusiveMs = new double[64];
-    private static double[] _peakSelfMs = new double[64];
-    private static int[] _lastHits = new int[64];
-    private static bool[] _seeded = new bool[64];
-    private static int _count;
+    private string[] _labels = new string[64];
+    private long[] _frameSelfTicks = new long[64];
+    private long[] _frameInclusiveTicks = new long[64];
+    private int[] _frameHits = new int[64];
+    private double[] _averageSelfMs = new double[64];
+    private double[] _averageInclusiveMs = new double[64];
+    private double[] _peakSelfMs = new double[64];
+    private int[] _lastHits = new int[64];
+    private bool[] _seeded = new bool[64];
+    private int _count;
 
     // ── the open-scope stack ─────────────────────────────────────────────
-    private static readonly int[] StackSlot = new int[MaximumDepth];
-    private static readonly long[] StackStart = new long[MaximumDepth];
-    private static readonly long[] StackChild = new long[MaximumDepth];
-    private static int _depth;
+    private readonly int[] StackSlot = new int[MaximumDepth];
+    private readonly long[] StackStart = new long[MaximumDepth];
+    private readonly long[] StackChild = new long[MaximumDepth];
+    private int _depth;
 
-    private static long _frameStart;
-    private static bool _frameOpen;
-    private static bool _frameSeeded;
+    private long _frameStart;
+    private bool _frameOpen;
+    private bool _frameSeeded;
 
     /// <summary>The whole draw callback's CPU cost, last frame.</summary>
-    public static double LastFrameMs { get; private set; }
+    public double LastFrameMs { get; private set; }
 
     /// <summary>The whole draw callback's CPU cost, smoothed.</summary>
-    public static double AverageFrameMs { get; private set; }
+    public double AverageFrameMs { get; private set; }
 
     /// <summary>The worst whole-callback frame since the last peak reset.
     /// </summary>
-    public static double PeakFrameMs { get; private set; }
+    public double PeakFrameMs { get; private set; }
 
     /// <summary>How many distinct labels have been seen this session.
     /// </summary>
-    public static int LabelCount => _count;
+    public int LabelCount => _count;
 
     /// <summary>Requests the recording state. Honoured at the next
     /// <see cref="BeginFrame"/>, because the nesting stack cannot survive a
     /// mid-frame flip.</summary>
-    public static void SetEnabled(bool enabled) => _pendingEnabled = enabled;
+    public void SetEnabled(bool enabled) => _pendingEnabled = enabled;
 
     /// <summary>The requested state, whether or not a frame boundary has
     /// applied it yet.</summary>
-    public static bool Requested => _pendingEnabled;
+    public bool Requested => _pendingEnabled;
 
     /// <summary>Opens the frame. Idempotent per frame by construction — the
     /// UI root calls it exactly once, before any window draws.</summary>
-    public static void BeginFrame()
+    public void BeginFrame()
     {
         // The stack is reset rather than asserted: a draw that threw past a
         // `using` still unwound its scope, but a scope opened at MaximumDepth
@@ -170,9 +164,9 @@ public static class FrameProfiler
 
     /// <summary>A sustained overshoot logs once a second, not once a frame.
     /// </summary>
-    private static long _lastHitchLogTicks;
+    private long _lastHitchLogTicks;
 
-    public static void EndFrame()
+    public void EndFrame()
     {
         if (!_frameOpen)
             return;
@@ -192,7 +186,7 @@ public static class FrameProfiler
         // costliest units before the per-slot counters reset, so a periodic
         // spike names its owner in the log without anybody watching the
         // panel when it fires.
-        if (frameMs > HitchThresholdMs && UiContext.Current.Log is { } log &&
+        if (frameMs > HitchThresholdMs &&
             (Now() - _lastHitchLogTicks) * MillisecondsPerTick > 1000.0)
         {
             _lastHitchLogTicks = Now();
@@ -222,7 +216,7 @@ public static class FrameProfiler
             for (int slot = 0; slot < _count; slot++)
                 if (_frameSelfTicks[slot] < 0)
                     _frameSelfTicks[slot] = -_frameSelfTicks[slot];
-            log(lines.ToString());
+            _log.Debug(lines.ToString());
         }
 
         for (int slot = 0; slot < _count; slot++)
@@ -256,7 +250,7 @@ public static class FrameProfiler
     /// a constant — a per-frame built string would defeat the interned slot
     /// table and allocate on every frame.
     /// </summary>
-    public static ProfileScope Scope(string label)
+    public ProfileScope Scope(string label)
     {
         if (!Enabled || _depth >= MaximumDepth)
             return default;
@@ -265,10 +259,10 @@ public static class FrameProfiler
         StackChild[_depth] = 0L;
         StackStart[_depth] = Now();
         _depth++;
-        return new ProfileScope(true);
+        return new ProfileScope(this);
     }
 
-    internal static void Close()
+    internal void Close()
     {
         long now = Now();
         // A scope that recorded cannot close below zero: ProfileScope only
@@ -284,7 +278,7 @@ public static class FrameProfiler
             StackChild[_depth - 1] += inclusive;
     }
 
-    private static int SlotFor(string label)
+    private int SlotFor(string label)
     {
         if (Slots.TryGetValue(label, out int slot))
             return slot;
@@ -296,7 +290,7 @@ public static class FrameProfiler
         return slot;
     }
 
-    private static void Grow()
+    private void Grow()
     {
         int size = _labels.Length * 2;
         Array.Resize(ref _labels, size);
@@ -324,7 +318,7 @@ public static class FrameProfiler
     /// it, so reading the ledger allocates nothing; a buffer shorter than
     /// <see cref="LabelCount"/> is filled and the rest dropped.
     /// </summary>
-    public static int Snapshot(Sample[] destination)
+    public int Snapshot(Sample[] destination)
     {
         ArgumentNullException.ThrowIfNull(destination);
         int written = Math.Min(destination.Length, _count);
@@ -340,7 +334,7 @@ public static class FrameProfiler
 
     /// <summary>Clears the peaks — both the per-label ones and the frame's —
     /// leaving the averages running.</summary>
-    public static void ResetPeaks()
+    public void ResetPeaks()
     {
         PeakFrameMs = 0.0;
         for (int slot = 0; slot < _count; slot++)
@@ -349,7 +343,7 @@ public static class FrameProfiler
 
     /// <summary>Drops every label and every figure. The label slots stay
     /// allocated; they are the pool.</summary>
-    public static void Reset()
+    public void Reset()
     {
         Slots.Clear();
         Array.Clear(_labels);

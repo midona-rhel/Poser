@@ -1030,7 +1030,7 @@ internal sealed partial class SidebarComposer
 
     /// <summary>Every category label, flattened once, for the filter
     /// oracle: a query naming any category keeps the actor visible.</summary>
-    private static string[]? _ktisisLabels;
+    private static readonly string[] KtisisLabels = FlattenKtisisLabels();
 
     /// <summary>Whether an actor, any of its bones or slots, or any actor
     /// attached to it satisfies the sidebar filter.</summary>

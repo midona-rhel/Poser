@@ -172,9 +172,9 @@ public sealed class LibraryWindow : Window
 
     public override void Draw()
     {
-        if (!_main.IsOpen || Controls.ManipulationHide.Hidden)
+        if (!_main.IsOpen || _main.Manipulation.Hidden)
             return;
-        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        using var manipulationFade = _main.Manipulation.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         var min = ImGui.GetWindowPos();

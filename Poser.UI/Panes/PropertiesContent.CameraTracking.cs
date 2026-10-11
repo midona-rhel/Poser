@@ -71,7 +71,7 @@ public sealed partial class PropertiesContent
                 // keeps adding within the currently followed actor.
                 actions.IconButton(
                     TablerIcon.Crosshair,
-                    () => global::Poser.UI.Controls.BonePick.Begin(
+                    () => _bonePick.Begin(
                         multi: true,
                         bone =>
                         {

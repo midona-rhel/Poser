@@ -83,8 +83,8 @@ public sealed partial class GraphicalBonePane
             _editError = null;
         }
         if (_draft == null) return;
-        using var manipulationFade = Controls.ManipulationHide.FadeScope();
-        if (Controls.ManipulationHide.Active)
+        using var manipulationFade = _manipulation.FadeScope();
+        if (_manipulation.HideActive)
         {
             _presentation.PublishMapHover(_editorHoverOwner, null);
             FloatingMenu.Dismiss(_editorId + "-point");
@@ -119,7 +119,7 @@ public sealed partial class GraphicalBonePane
                 if (_draft == null) return;
                 DrawEditorPresetToolbar(rects.Band);
                 DrawEditorBody(actor, rects.Rail, rects.Body);
-            }, exclusive: false, hidden: Controls.ManipulationHide.Hidden);
+            }, exclusive: false, hidden: _manipulation.Hidden);
         if (!open) CloseEditor();
     }
 

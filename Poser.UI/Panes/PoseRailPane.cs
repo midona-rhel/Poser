@@ -29,6 +29,7 @@ namespace Poser.UI;
 public class PoseRailPane
 {
     private readonly PoseInspectorPane _inspector;
+    private readonly ManipulationState _manipulation;
     private readonly ICameraProjection _camera;
     private readonly ICameraControl _cameraValues;
     private CameraId? _joyCameraId;
@@ -81,8 +82,10 @@ public class PoseRailPane
         ICameraProjection camera,
         ICameraControl cameraValues,
         SelectionSection selection,
-        IOverlayControl overlayValues)
+        IOverlayControl overlayValues,
+        ManipulationState manipulation)
     {
+        _manipulation = manipulation;
         _inspector = inspector;
         _camera = camera;
         _cameraValues = cameraValues;
@@ -368,7 +371,7 @@ public class PoseRailPane
         Vector2 knob = center;
         if (active && camera != null)
         {
-            GizmoPointerOwnership.Hold();
+            _manipulation.HoldPointer();
             if (_joyRolling)
             {
                 float angle = MathF.Atan2(
@@ -379,7 +382,7 @@ public class PoseRailPane
                 ChangeValue("##rail-camera-joystick", () =>
                     _cameraValues.Set(camera.Id, CameraProperties.Roll, _joyRollStartValue + delta));
                 // The same hide and readout a world drag gets.
-                ManipulationDrag.HoldFromShell(
+                _manipulation.HoldDragFromShell(
                     mouse + new Vector2(18f, 14f) * s,
                     $"Roll  {delta * (180f / MathF.PI):+0.0;-0.0}°");
             }
@@ -417,7 +420,7 @@ public class PoseRailPane
                         Y = camera.Pan.Y + stepY,
                     }));
                 _joyAccumulated += new Vector2(stepX, stepY);
-                ManipulationDrag.HoldFromShell(
+                _manipulation.HoldDragFromShell(
                     mouse + new Vector2(18f, 14f) * s,
                     $"X {_joyAccumulated.X * (180f / MathF.PI):+0.0;-0.0}°  "
                     + $"Y {_joyAccumulated.Y * (180f / MathF.PI):+0.0;-0.0}°");
@@ -493,7 +496,7 @@ public class PoseRailPane
         Vector2 knob = center;
         if (active && _padOverlayId is { } id && _overlayValues.Read(id) is not null)
         {
-            GizmoPointerOwnership.Hold();
+            _manipulation.HoldPointer();
             // ONE-TO-ONE: this frame's pointer delta IS the move.
             var step = ImGui.GetIO().MouseDelta;
             if (step != Vector2.Zero)
@@ -504,7 +507,7 @@ public class PoseRailPane
             _padOffset += step;
             // The same hide and readout every rail drag gets: the move
             // since the press, in screen pixels.
-            ManipulationDrag.HoldFromShell(
+            _manipulation.HoldDragFromShell(
                 mouse + new Vector2(18f, 14f) * s,
                 $"X {_padOffset.X / s:+0;-0} px  Y {_padOffset.Y / s:+0;-0} px");
             var shown = _padOffset;
@@ -623,9 +626,9 @@ public class PoseRailPane
 
         if (active && _dragAxis >= 0)
         {
-            GizmoPointerOwnership.Hold();
+            _manipulation.HoldPointer();
             // The same hide and the same readout a world drag gets.
-            ManipulationDrag.HoldFromShell(
+            _manipulation.HoldDragFromShell(
                 mouse + new Vector2(18f, 14f) * s,
                 $"{RotationGizmoRings.AxisName(_dragAxis)}  {_dragAngle * (180f / MathF.PI):+0.0;-0.0}°");
             float newDistance = Vector2.Dot(mouse - _dragOrigin, _dragTangent);

@@ -287,11 +287,17 @@ public static partial class SettingsView
     /// <summary>Debounce filtering without replaying presentation animations
     /// on unchanged results as the user refines the query.</summary>
     private const double SearchSettleSeconds = 0.12;
-    private static string _lastSearch = string.Empty;
-    private static double _searchChangedAt;
-    private static string _settledSearch = string.Empty;
 
-    public static void Draw(SettingsViewModel vm, Vector2 origin)
+    /// <summary>The search debounce's state, owned by the window that draws
+    /// the view.</summary>
+    public sealed class SearchSettle
+    {
+        internal string Last = string.Empty;
+        internal double ChangedAt;
+        internal string Settled = string.Empty;
+    }
+
+    public static void Draw(SettingsViewModel vm, SearchSettle search, Vector2 origin)
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
@@ -324,7 +330,7 @@ public static partial class SettingsView
             });
 
         DrawNavigation(vm, rects.Rail);
-        DrawPage(vm, rects.Body);
+        DrawPage(vm, search, rects.Body);
 
         if (vm.RebindingAction != null)
             CaptureRebind(vm);
@@ -425,7 +431,8 @@ public static partial class SettingsView
         return hit.Activated;
     }
 
-    private static void DrawPage(SettingsViewModel vm, WindowFrameRect body)
+    private static void DrawPage(
+        SettingsViewModel vm, SearchSettle search, WindowFrameRect body)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float height = body.Size.Y;
@@ -453,7 +460,7 @@ public static partial class SettingsView
                         if (vm.Search.Trim().Length == 0)
                             DrawCategory(vm, page);
                         else
-                            DrawSearch(vm, page);
+                            DrawSearch(vm, search, page);
                     },
                     labelColumnWidth:
                         ActiveTheme.Settings.LabelColumnWidth);
@@ -464,21 +471,22 @@ public static partial class SettingsView
     /// whose title matches shows whole, otherwise the rows whose label or
     /// hover matches. Section titles carry their page's name; refining the
     /// query does not fade the result page out and back in.</summary>
-    private static void DrawSearch(SettingsViewModel vm, PageScope page)
+    private static void DrawSearch(
+        SettingsViewModel vm, SearchSettle search, PageScope page)
     {
         double now = ImGui.GetTime();
         string typed = vm.Search.Trim();
-        if (!string.Equals(typed, _lastSearch, StringComparison.Ordinal))
+        if (!string.Equals(typed, search.Last, StringComparison.Ordinal))
         {
-            _lastSearch = typed;
-            _searchChangedAt = now;
+            search.Last = typed;
+            search.ChangedAt = now;
         }
-        if (!string.Equals(_settledSearch, _lastSearch, StringComparison.Ordinal)
-            && now - _searchChangedAt >= SearchSettleSeconds)
+        if (!string.Equals(search.Settled, search.Last, StringComparison.Ordinal)
+            && now - search.ChangedAt >= SearchSettleSeconds)
         {
-            _settledSearch = _lastSearch;
+            search.Settled = search.Last;
         }
-        string needle = _settledSearch;
+        string needle = search.Settled;
         if (needle.Length == 0)
         {
             // Nothing has settled yet: the page stays until it does.

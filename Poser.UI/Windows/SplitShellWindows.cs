@@ -138,9 +138,9 @@ public sealed class SidebarPartWindow : Window
     public override void Draw()
     {
         if (!_main.IsOpen
-            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
+            || (_main.Manipulation.Hidden && !_main.Manipulation.ShellDragHeld))
             return;
-        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        using var manipulationFade = _main.Manipulation.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         var min = ImGui.GetWindowPos();
@@ -326,9 +326,9 @@ public sealed class ToolbarPartWindow : Window
     public override void Draw()
     {
         if (!_main.IsOpen
-            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
+            || (_main.Manipulation.Hidden && !_main.Manipulation.ShellDragHeld))
             return;
-        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        using var manipulationFade = _main.Manipulation.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         var min = ImGui.GetWindowPos();
@@ -470,9 +470,9 @@ public sealed class InspectorPartWindow : Window
     public override void Draw()
     {
         if (!_main.IsOpen
-            || (Controls.ManipulationHide.Hidden && !Controls.ManipulationDrag.ShellHeld))
+            || (_main.Manipulation.Hidden && !_main.Manipulation.ShellDragHeld))
             return;
-        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        using var manipulationFade = _main.Manipulation.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         var min = ImGui.GetWindowPos();

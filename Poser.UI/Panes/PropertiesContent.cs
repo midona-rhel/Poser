@@ -90,6 +90,7 @@ public sealed partial class PropertiesContent
     private IReadOnlyList<BoneChoice> _cameraBoneChoices = Array.Empty<BoneChoice>();
     private CameraId? _cameraBonePickerCamera;
     private ActorId? _cameraBonePickerActor;
+    private readonly Controls.BonePick _bonePick;
 
     public PropertiesContent(PropertiesContext context, SceneSession scene, ConfigurationService configuration,
         IGPoseService gPoseService, ISceneObjectControl objectControl, SceneGroups groups, GroupSteps groupSteps,
@@ -98,8 +99,10 @@ public sealed partial class PropertiesContent
         PoseInspectorPane poseInspector, AnimationPane animationPane, AppearancePane appearancePane,
         LightPane lightPane, CameraPane cameraPane, EnvironmentPane environmentPane, ScenePane scenePane,
         PropsPane propsPane, WorldObjectsPane worldObjectsPane, OverlayPane overlayPane,
-        PoseFileInspectorSection poseFiles, GraphicalBonePane map, EntityRemovalDialog removal)
+        PoseFileInspectorSection poseFiles, GraphicalBonePane map, EntityRemovalDialog removal,
+        Controls.BonePick bonePick)
     {
+        _bonePick = bonePick;
         Context = context; _scene = scene; _configuration = configuration; _gPoseService = gPoseService;
         _animation = animation;
         _objectControl = objectControl; _groups = groups; _groupSteps = groupSteps; _placement = placement;

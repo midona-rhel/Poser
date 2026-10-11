@@ -103,6 +103,7 @@ public sealed partial class GraphicalBonePane : IDisposable
     private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly BoneMapEditorRegistry _editors;
+    private readonly Controls.ManipulationState _manipulation;
 
     public GraphicalBonePane(
         global::Poser.Application.Settings.ConfigurationService configuration,
@@ -115,8 +116,10 @@ public sealed partial class GraphicalBonePane : IDisposable
         BoneMapEditorRegistry editors,
         Application.Posing.IIkConfigurationPort ikPort,
         EditorState editorState,
-        IPoseInteraction bonePosing)
+        IPoseInteraction bonePosing,
+        Controls.ManipulationState manipulation)
     {
+        _manipulation = manipulation;
         _configuration = configuration;
         _presentation = presentation;
         _editors = editors;

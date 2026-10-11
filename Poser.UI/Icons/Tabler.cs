@@ -137,12 +137,10 @@ public enum TablerIcon
 
 /// <summary>
 /// Registry of <see cref="TablerIcon"/> → <see cref="SvgDocument"/>. Lazily parses
-/// each icon on first access and caches the document. Plugins can add custom icons via
-/// <see cref="Register"/>.
+/// each icon on first access and caches the document.
 /// </summary>
 public static class Tabler
 {
-    private static readonly Dictionary<string, string> _custom = new();
     private static readonly Dictionary<string, SvgDocument?> _parsed = new();
 
     /// <summary>Get the parsed SVG document for a built-in icon, or null if it failed to parse.</summary>
@@ -160,8 +158,7 @@ public static class Tabler
     {
         if (_parsed.TryGetValue(name, out var cached)) return cached;
         string? xml = null;
-        if (_custom.TryGetValue(name, out var custom)) xml = custom;
-        else if (PoserIconSources.Sources.TryGetValue(name, out var own)) xml = own;
+        if (PoserIconSources.Sources.TryGetValue(name, out var own)) xml = own;
         else if (TablerSvgSources.Sources.TryGetValue(name, out var src)) xml = src;
         if (xml == null)
         {
@@ -210,13 +207,6 @@ public static class Tabler
     /// <inheritdoc cref="GetFilled(string)"/>
     public static SvgDocument? GetFilled(TablerIcon icon) =>
         GetFilled(NameFor(icon));
-
-    /// <summary>Register a plugin-specific icon by name + raw SVG XML.</summary>
-    public static void Register(string name, string svgXml)
-    {
-        _custom[name] = svgXml;
-        _parsed.Remove(name);
-    }
 
     /// <summary>Every shipped icon name — hand-authored sources plus the
     /// generated Tabler set, ordinal-sorted.</summary>

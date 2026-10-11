@@ -89,7 +89,9 @@ public partial class PoseInspectorPane : IDisposable
     private Vector3? _dragEuler;
 
     // All inspectors share one transform clipboard.
-    private static Transform? _transformClipboard;
+    private readonly TransformClipboard _transformClipboard;
+    private readonly BonePick _bonePick;
+    private readonly FrameProfiler _profiler;
     private string? _transformClipboardNote;
     private Transform? _dragStart;
     private Transform? _cleanModelStart;
@@ -215,8 +217,14 @@ public partial class PoseInspectorPane : IDisposable
         UserNotices notices,
         global::Poser.Application.Scene.SceneGroups groups,
         GroupTransformCoordinator groupCoordinator,
-        ParentingSection parentingSection)
+        ParentingSection parentingSection,
+        TransformClipboard transformClipboard,
+        BonePick bonePick,
+        FrameProfiler profiler)
     {
+        _transformClipboard = transformClipboard;
+        _bonePick = bonePick;
+        _profiler = profiler;
         _parentingSection = parentingSection;
         _configuration = configuration;
         _groups = groups;
@@ -393,7 +401,7 @@ public partial class PoseInspectorPane : IDisposable
     {
         RefreshSelection();
         _viewport.RequestBoneSnapshot();
-        using var profile = FrameProfiler.Scope("Workspace · Pose");
+        using var profile = _profiler.Scope("Workspace · Pose");
         float s = ImGuiHelpers.GlobalScale;
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
@@ -645,7 +653,7 @@ public partial class PoseInspectorPane : IDisposable
 
     public void DrawRailSections(Vector2 origin, float width)
     {
-        using var profile = FrameProfiler.Scope("Rail · sections");
+        using var profile = _profiler.Scope("Rail · sections");
         // The rail's bone rows read the finalize hook's snapshot.
         _viewport.RequestBoneSnapshot();
         // Gesture guards run even when Translation is collapsed.
@@ -1064,7 +1072,7 @@ public partial class PoseInspectorPane : IDisposable
         float viewportHeight,
         float s)
     {
-        using var profile = FrameProfiler.Scope("Surface · Matrix");
+        using var profile = _profiler.Scope("Surface · Matrix");
         var theme = ActiveTheme;
         if (!SurfaceBand(cursor, width, viewportHeight, s, out var min, out var max))
             return viewportHeight;
@@ -1143,13 +1151,13 @@ public partial class PoseInspectorPane : IDisposable
             _matrixRevision = _scene.Revision;
             _matrixSkeletonId = matrixSkeleton.Id;
         }
-        using (FrameProfiler.Scope("Matrix · selection sync"))
+        using (_profiler.Scope("Matrix · selection sync"))
             BoneMatrixBuilder.SyncSelection(_matrixVm, _workspaceSelection);
         InsetScrollSurface(
             "##pose-matrix-scroll", viewMin, viewMax, s,
             (contentOrigin, contentWidth) =>
             {
-                using var rows = FrameProfiler.Scope("Matrix · rows");
+                using var rows = _profiler.Scope("Matrix · rows");
                 return BoneMatrixView.Draw(
                     _matrixVm,
                     contentOrigin,
@@ -1382,7 +1390,7 @@ public partial class PoseInspectorPane : IDisposable
     // Axis rows update one shared transform gesture.
     private void DrawTransform(FormScope form)
     {
-        using var profile = FrameProfiler.Scope("Rail · TRANSLATION");
+        using var profile = _profiler.Scope("Rail · TRANSLATION");
         var (transform, canEdit) = ReadTransform();
         var pos = transform.Position;
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
@@ -1581,7 +1589,7 @@ public partial class PoseInspectorPane : IDisposable
                 "Copy",
                 () =>
                 {
-                    _transformClipboard = current;
+                    _transformClipboard.Copied = current;
                     _transformClipboardNote = null;
                 },
                 help: "Copy this actor's position, rotation and scale");
@@ -1589,7 +1597,7 @@ public partial class PoseInspectorPane : IDisposable
                 "Paste",
                 () =>
                 {
-                    if (_transformClipboard is not { } copied)
+                    if (_transformClipboard.Copied is not { } copied)
                         return;
                     var written = _cleanTransforms.SetAbsolute(
                         target,
@@ -1599,8 +1607,8 @@ public partial class PoseInspectorPane : IDisposable
                     _transformClipboardNote =
                         written.Success ? null : written.Detail;
                 },
-                disabled: !canEdit || _transformClipboard == null,
-                help: _transformClipboard == null
+                disabled: !canEdit || _transformClipboard.Copied == null,
+                help: _transformClipboard.Copied == null
                     ? "Nothing has been copied yet"
                     : "Write the copied position, rotation and scale onto this actor");
         });
@@ -1615,7 +1623,7 @@ public partial class PoseInspectorPane : IDisposable
 
     private void DrawGaze(FormScope form, ActorId actor, bool wide)
     {
-        using var profile = FrameProfiler.Scope(
+        using var profile = _profiler.Scope(
             wide ? "Surface · GAZE" : "Rail · GAZE");
         if (!_gazeValues.IsAvailable)
         {
@@ -2102,7 +2110,7 @@ public partial class PoseInspectorPane : IDisposable
                 help: "Pick the bone from a list");
             actions.IconButton(
                 TablerIcon.Crosshair,
-                () => global::Poser.UI.Controls.BonePick.Begin(
+                () => _bonePick.Begin(
                     multi: false, Aim, onlyActor: actorDescriptor?.Id),
                 help: actorDescriptor == null
                     ? "Pick the bone in the view"
@@ -2411,11 +2419,11 @@ public partial class PoseInspectorPane : IDisposable
                         next =>
                         {
                             Adjust(config with { CollisionRadius = next * .5f });
-                            IkWidthPreview.Radius = next * .5f;
+                            _overlayPresentation.IkWidthRadius = next * .5f;
                         },
                         format: "0.000", help: "Diameter of every segment in this chain, in world yalms",
-                        onBegin: () => { IkWidthPreview.Target = ikTarget.Bone; IkWidthPreview.Radius = config.CollisionRadius; },
-                        onCommit: () => IkWidthPreview.Target = null);
+                        onBegin: () => { _overlayPresentation.IkWidthTarget = ikTarget.Bone; _overlayPresentation.IkWidthRadius = config.CollisionRadius; },
+                        onCommit: () => _overlayPresentation.IkWidthTarget = null);
                 form.Slider("Child depth", config.ChildDepth, 0, IkChainConfig.MaxDepth - config.ParentDepth,
                     next => Adjust(config with { ChildDepth = (int)MathF.Round(next) }), format: "0",
                     help: "Links toward children; stops at a branch. Zero disables this side");
@@ -2528,7 +2536,7 @@ public partial class PoseInspectorPane : IDisposable
         SkeletonDescriptor skeleton,
         bool wide)
     {
-        using var profile = FrameProfiler.Scope(
+        using var profile = _profiler.Scope(
             wide ? "Surface · POSE" : "Rail · POSE");
         var actorId = skeleton.Id.Actor;
         var boneId = _primary?.Bone;

@@ -345,7 +345,13 @@ call sites import them with `using static`. Their mutable state (active
 theme, text and texture caches, interaction, menu, help and animation state,
 the texture uploader and log) lives in one `UiContext`. The host registers it
 with its texture uploader and log; `UIManager` owns it and disposes it on
-unload, which releases its textures, so the host resets no UI statics. `Interactive.Reserve`
+unload, which releases its textures, so the host resets no UI statics.
+App views hold no mutable statics either: state the windows and panes share
+(the hide-while-manipulating fade and gizmo pointer hold, overlay bone picking,
+the transform clipboard) and the frame profiler are container singletons
+injected where they are used, overlay hand-offs live on
+`SkeletonOverlayPresentation`, and a shell's retained draw state rides its
+`AppShellViewModel`. `Interactive.Reserve`
 owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
 completion. A drag ends once; a swallowed press has no drag end. Popovers,
 menus, and floating surfaces use the same input chain.

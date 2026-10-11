@@ -25,16 +25,19 @@ public sealed class ExpressionInspectorSection
 {
     private readonly IExpressionControl _expressions;
     private readonly ConfigurationService _configuration;
+    private readonly FrameProfiler _profiler;
     private readonly Dictionary<string, string> _partners = new();
     private bool Unlocked => _configuration.Config.UnlockExpressionWeights;
 
 
     public ExpressionInspectorSection(
         IExpressionControl expressions,
-        ConfigurationService configuration)
+        ConfigurationService configuration,
+        FrameProfiler profiler)
     {
         _expressions = expressions;
         _configuration = configuration;
+        _profiler = profiler;
     }
 
     /// <summary>Whether the action-unit backend is up. The section is drawn
@@ -53,7 +56,7 @@ public sealed class ExpressionInspectorSection
         bool paired, // both hosts pair now; kept for call-site stability
         Action<FormScope, ActorId>? expressionRow = null)
     {
-        using var profile = FrameProfiler.Scope(
+        using var profile = _profiler.Scope(
             paired ? "Surface · EXPRESSION" : "Rail · EXPRESSION");
         if (expressionRow is { } row && actorId is { } rowActor)
             row(form, rowActor);

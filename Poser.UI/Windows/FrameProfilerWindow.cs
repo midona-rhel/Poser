@@ -48,6 +48,7 @@ public sealed class FrameProfilerWindow : Window
     private const float HeaderRowHeight = 20f;
 
     private readonly ConfigurationService _configuration;
+    private readonly FrameProfiler _profiler;
 
     // Reused across frames: reading the ledger must not allocate a buffer per
     // frame, which is the whole reason Snapshot fills one the caller owns.
@@ -57,13 +58,14 @@ public sealed class FrameProfilerWindow : Window
 
     private Action<ActionBarScope>? _footer;
 
-    public FrameProfilerWindow(ConfigurationService configuration)
+    public FrameProfilerWindow(ConfigurationService configuration, FrameProfiler profiler)
         : base($"Frame profiler###{PluginConstants.PluginName}_frameprofiler",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {
         _configuration = configuration;
+        _profiler = profiler;
         RespectCloseHotkey = false;
     }
 
@@ -79,7 +81,7 @@ public sealed class FrameProfilerWindow : Window
 
     public override void Draw()
     {
-        using var _ = FrameProfiler.Scope("Window · Frame profiler");
+        using var _ = _profiler.Scope("Window · Frame profiler");
         var min = ImGui.GetWindowPos();
         var size = ImGui.GetWindowSize();
         var owner = Interactive.BeginOwner(
@@ -88,7 +90,7 @@ public sealed class FrameProfilerWindow : Window
         {
             _footer ??= right => right.Button(
                 "Reset peaks",
-                FrameProfiler.ResetPeaks,
+                _profiler.ResetPeaks,
                 "Clear the worst-frame column and start watching again");
 
             var rects = WindowFrame(
@@ -135,8 +137,8 @@ public sealed class FrameProfilerWindow : Window
         TextInBand(
             new Vector2(left.X, left.Y),
             new Vector2(width, TotalsHeight * s),
-            Milliseconds(FrameProfiler.AverageFrameMs) + " ms avg   "
-                + Milliseconds(FrameProfiler.PeakFrameMs) + " ms peak",
+            Milliseconds(_profiler.AverageFrameMs) + " ms avg   "
+                + Milliseconds(_profiler.PeakFrameMs) + " ms peak",
             totalStyle);
 
         var noteStyle = new TextStyle
@@ -202,10 +204,10 @@ public sealed class FrameProfilerWindow : Window
     /// allocates nothing.</summary>
     private int Rank()
     {
-        if (_samples.Length < FrameProfiler.LabelCount)
+        if (_samples.Length < _profiler.LabelCount)
             _samples = new FrameProfiler.Sample[
-                Math.Max(FrameProfiler.LabelCount, _samples.Length * 2)];
-        int count = FrameProfiler.Snapshot(_samples);
+                Math.Max(_profiler.LabelCount, _samples.Length * 2)];
+        int count = _profiler.Snapshot(_samples);
         if (_keys.Length < count)
         {
             _keys = new double[_samples.Length];
