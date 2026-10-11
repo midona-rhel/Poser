@@ -49,6 +49,29 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
+    public void Posed_duplicate_copies_body_profile_before_pose_on_first_spawn_and_redo()
+    {
+        var world = new World();
+        var source = world.Actors.Spawn("Source")!;
+        world.Actors.SetBodyProfile(source, "customize-plus-profile");
+        world.Actors.Edit(source, Posed(new Vector3(1, 2, 3), visible: true));
+
+        var copy = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+
+        Assert.Equal("customize-plus-profile", world.Actors.BodyProfileOf(copy));
+        Assert.Equal(new[] { "profile", "pose" }, world.Actors.CopyOperations);
+
+        Assert.True(world.Undo());
+        world.Actors.SetBodyProfile(source, "later-source-profile");
+        world.Actors.CopyOperations.Clear();
+        Assert.True(world.Redo());
+        copy = world.Actors.Live.Single(a => !ReferenceEquals(a, source));
+        Assert.Equal("customize-plus-profile", world.Actors.BodyProfileOf(copy));
+        Assert.Equal(new[] { "profile", "pose" }, world.Actors.CopyOperations);
+    }
+
+    [Fact]
     public void Posed_duplicate_restores_when_the_deferred_capture_lands()
     {
         var world = new World();
@@ -864,6 +887,8 @@ public sealed class SceneLifecycleHistoryTests
         /// </summary>
         private readonly Dictionary<IActor, ActorState> _states =
             new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<IActor, string> _bodyProfiles =
+            new(ReferenceEqualityComparer.Instance);
 
         private int _next;
 
@@ -873,6 +898,7 @@ public sealed class SceneLifecycleHistoryTests
         /// <summary>Every refusal the seam named rather than skipping.
         /// </summary>
         public List<string> Notes { get; } = new();
+        public List<string> CopyOperations { get; } = new();
 
         public IActor? Spawn(string name)
         {
@@ -890,6 +916,11 @@ public sealed class SceneLifecycleHistoryTests
         /// </summary>
         public void Edit(IActor actor, ActorState state) => _states[actor] = state;
 
+        public void SetBodyProfile(IActor actor, string profile) => _bodyProfiles[actor] = profile;
+
+        public string? BodyProfileOf(IActor actor) =>
+            _bodyProfiles.TryGetValue(actor, out var profile) ? profile : null;
+
         public ActorState StateOf(IActor actor) => _states[actor];
 
         /// <summary>The actor leaves without this seam's knowledge — a scene
@@ -903,10 +934,22 @@ public sealed class SceneLifecycleHistoryTests
             if (RefuseDestroy)
                 return false;
             _states.Remove((IActor)actor);
+            _bodyProfiles.Remove((IActor)actor);
             return _actors.Remove((IActor)actor);
         }
 
         public void WhenPosable(object actor, Action<object> act) => act(actor);
+
+        public Action<IActor>? CaptureBodyProfile(IActor source)
+        {
+            if (!_bodyProfiles.TryGetValue(source, out var profile))
+                return null;
+            return target =>
+            {
+                _bodyProfiles[target] = profile;
+                CopyOperations.Add("profile");
+            };
+        }
 
         /// <summary>When set, a copy's pose capture waits here until the
         /// test delivers it, as the live armed refresh does.</summary>
@@ -925,7 +968,10 @@ public sealed class SceneLifecycleHistoryTests
         public void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null)
         {
             if (stillCurrent?.Invoke() != false)
+            {
+                CopyOperations.Add("pose");
                 _states[(IActor)actor] = state;
+            }
         }
 
         public void Note(string detail) => Notes.Add(detail);

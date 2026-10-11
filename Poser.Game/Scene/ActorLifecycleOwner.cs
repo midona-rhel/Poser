@@ -57,7 +57,7 @@ internal interface IActorLifecycle
     void CapturePoseForCopy(object actor, Action<ActorState?> done) =>
         done(Read(actor) with { Runtime = null });
 
-    void CopyBodyProfile(IActor source, IActor target) { }
+    Action<IActor>? CaptureBodyProfile(IActor source) => null;
 
     IActor? Recreate(ActorState state) => null;
 
@@ -91,6 +91,7 @@ internal sealed class ActorLifecycleSlot
     public ActorState Document;
     public bool HasDocument;
     public bool PosedDuplicate;
+    public Action<IActor>? ApplyBodyProfile;
 }
 
 /// <summary>Owns actor lifecycle entries. An actor's document cannot rebuild
@@ -127,6 +128,7 @@ internal sealed class ActorLifecycleOwner
     public IActor? SpawnActor(string description, Func<IActor?> spawn, IActor? source = null, string? name = null)
     {
         var seed = name ?? (source == null ? "Actor" : _actors.GetName(source));
+        var bodyProfile = source is null ? null : _actors.CaptureBodyProfile(source);
         var actor = spawn();
         if (actor == null)
             return null;
@@ -135,8 +137,8 @@ internal sealed class ActorLifecycleOwner
         var slot = _slots.SlotFor(actor);
         slot.Respawn = spawn;
         slot.HasRespawn = true;
-        if (source is not null)
-            _actors.CopyBodyProfile(source, actor);
+        slot.ApplyBodyProfile = bodyProfile;
+        bodyProfile?.Invoke(actor);
         _history.Append(new SceneLifecyclePatch(
             description,
             () => _slots.CaptureAndRemove(slot),
@@ -161,16 +163,10 @@ internal sealed class ActorLifecycleOwner
         string description, Func<IActor?> spawn, IActor source)
     {
         var name = _actors.GetName(source);
-        // Read once, a tick or two after the click (see CapturePoseForCopy);
-        // the first copy and every redo get the same snapshot.
-        ActorState? state = null;
-        IActor? Posed()
-        {
-            var copy = spawn();
-            if (copy != null && state is { } captured)
-                _actors.Restore(copy, captured);
-            return copy;
-        }
+        var bodyProfile = _actors.CaptureBodyProfile(source);
+        // Read once, a tick or two after the click (see CapturePoseForCopy).
+        // Redo uses the removal snapshot captured by the lifecycle slot.
+        IActor? Posed() => spawn();
         var actor = Posed();
         if (actor == null)
             return null;
@@ -178,12 +174,16 @@ internal sealed class ActorLifecycleOwner
             _actors.NameCreated(actor, name);
         var slot = _slots.SlotFor(actor);
         slot.PosedDuplicate = true;
+        slot.ApplyBodyProfile = bodyProfile;
         slot.Respawn = Posed;
         slot.HasRespawn = true;
         _history.Append(new SceneLifecyclePatch(
             description,
             () => _slots.CaptureAndRemove(slot),
             () => _slots.Restore(slot)));
+        // Profile shaping establishes the target skeleton's basis; restore the
+        // raw pose only after its deferred application has been queued.
+        bodyProfile?.Invoke(actor);
         _actors.CapturePoseForCopy(source, captured =>
         {
             if (captured is null)
@@ -192,7 +192,6 @@ internal sealed class ActorLifecycleOwner
                 return;
             }
             var posed = captured.Value with { FreezePoseOnRestore = true };
-            state = posed;
             if (_slots.CurrentInstance(slot) is { } live)
                 _actors.Restore(live, posed, () => ReferenceEquals(_slots.CurrentInstance(slot), live));
         });
@@ -267,6 +266,7 @@ internal sealed class ActorLifecycleOwner
         slot.Live = actor;
         if (slot.Name is { } name)
             _actors.SetName(actor, name);
+        slot.ApplyBodyProfile?.Invoke(actor);
         // The body is back; the placement and the pose land on it over the
         // next few ticks, because the skeleton they need is built with a draw
         // object the spawn deliberately defers. The entry has landed either
