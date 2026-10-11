@@ -510,7 +510,7 @@ public sealed partial class DebugBridge : IDisposable
             {
                 if (query.TryGetValue("entities", out var entityKeys))
                 {
-                    var available = ParentProbeEntities().ToArray();
+                    var available = SelectionProbeEntities().ToArray();
                     var ids = new List<SelectionId>();
                     foreach (var key in entityKeys.Split(',', StringSplitOptions.RemoveEmptyEntries))
                     {
@@ -524,7 +524,7 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 else if (query.TryGetValue("entity", out var entityKey))
                 {
-                    var match = ParentProbeEntities().Where(entry => entry.Id.ToString() == entityKey).ToArray();
+                    var match = SelectionProbeEntities().Where(entry => entry.Id.ToString() == entityKey).ToArray();
                     if (match.Length != 1 || _sceneSession.Resolve(match[0].Id) != match[0].Id)
                         return Json(new { error = "No such current entity." });
                     _sceneSession.Selection.Select(match[0].Id);

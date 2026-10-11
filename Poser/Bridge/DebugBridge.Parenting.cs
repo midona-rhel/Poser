@@ -47,6 +47,13 @@ public sealed partial class DebugBridge
         foreach (var overlay in _sceneSession.Snapshot.Overlays) yield return (SelectionId.ForOverlay(overlay.Id), overlay.Name);
     }
 
+    private IEnumerable<(SelectionId Id, string Name)> SelectionProbeEntities()
+    {
+        foreach (var entity in ParentProbeEntities()) yield return entity;
+        foreach (var camera in _sceneSession.Snapshot.Cameras)
+            yield return (SelectionId.ForCamera(camera.Id), camera.Name);
+    }
+
     private string ParentingProbe(Dictionary<string, string> query)
     {
         if (query.TryGetValue("create", out var kind))
