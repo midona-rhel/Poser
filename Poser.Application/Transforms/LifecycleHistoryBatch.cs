@@ -18,14 +18,30 @@ internal sealed class LifecycleHistoryBatch(string description)
         return true;
     }
 
-    public SceneLifecyclePatch? Build() => _children.Count == 0 ? null : new(
-        _children.Count == 1 ? _children[0].Entry.Description : description,
-        () => Run(undo: true), () => Run(undo: false))
+    /// <summary>Seats <paramref name="entry"/> before every sibling: redone
+    /// first, undone last — after the siblings have put their entities back.
+    /// A batch of prologues alone records nothing.</summary>
+    public void AddPrologue(HistoryEntry entry)
     {
-        FailureDetail = () => _failure,
-        OnRefusal = () => _children.All(child => child.Dropped) ? RefusalAction.DropNow : RefusalAction.Keep,
-        ResolveAffectedEntities = ResolveAffectedEntities,
-    };
+        if (entry is not InverseEntry)
+            throw new ArgumentException("A batch prologue must be invertible.", nameof(entry));
+        _children.Insert(0, new(entry) { Prologue = true });
+    }
+
+    public SceneLifecyclePatch? Build()
+    {
+        var actions = _children.Where(child => !child.Prologue).ToArray();
+        if (actions.Length == 0)
+            return null;
+        return new(
+            actions.Length == 1 ? actions[0].Entry.Description : description,
+            () => Run(undo: true), () => Run(undo: false))
+        {
+            FailureDetail = () => _failure,
+            OnRefusal = () => _children.All(child => child.Dropped) ? RefusalAction.DropNow : RefusalAction.Keep,
+            ResolveAffectedEntities = ResolveAffectedEntities,
+        };
+    }
 
     private IReadOnlyList<SelectionId>? ResolveAffectedEntities()
     {
@@ -77,6 +93,7 @@ internal sealed class LifecycleHistoryBatch(string description)
     private sealed class Child(HistoryEntry entry)
     {
         public HistoryEntry Entry { get; } = entry;
+        public bool Prologue { get; init; }
         public bool Undone { get; set; }
         public bool Dropped { get; set; }
         public bool Refused { get; set; }

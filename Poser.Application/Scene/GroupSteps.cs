@@ -85,6 +85,27 @@ public sealed class GroupSteps
         return Capture();
     }
 
+    /// <summary>
+    /// The group model's half of a lifecycle removal batch (#494). Removed
+    /// members leave their groups through the scene prune, which dissolves a
+    /// group left with fewer than two items; the removal's undo must put that
+    /// structure back along with the entities. Added as the batch prologue,
+    /// so undo restores <paramref name="before"/> once the entities are back
+    /// (members rebind through the history's lifecycle successors). Redo has
+    /// nothing to do: removing the members again prunes the same way.
+    /// </summary>
+    public JournalStep RemovalStructure(GroupsSnapshot before)
+    {
+        bool deferredCapture = false;
+        return new JournalStep(
+            "Restore groups",
+            () => Put(ref before, out deferredCapture),
+            () => true)
+        {
+            OnRefusal = () => deferredCapture ? RefusalAction.Keep : RefusalAction.DropOnRepeat,
+        };
+    }
+
     public void Run(string description, Action act) =>
         Run(description, () => { act(); return true; });
 
