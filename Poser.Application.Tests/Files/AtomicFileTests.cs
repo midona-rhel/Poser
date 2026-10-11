@@ -70,6 +70,51 @@ public sealed class AtomicFileTests
         }
     }
 
+    [Fact]
+    public void Replace_hashes_the_temp_once_and_the_destination_once()
+    {
+        var root = Directory.CreateTempSubdirectory("poser-atomic-");
+        try
+        {
+            var path = Path.Combine(root.FullName, "target.json");
+            File.WriteAllText(path, "original");
+            var fileSystem = new ReadCountingFileSystem();
+
+            var result = AtomicFile.Write(fileSystem, path, "replacement"u8.ToArray(),
+                new AtomicWriteOptions { Subject = "test" });
+
+            Assert.True(result.Succeeded);
+            Assert.Equal("replacement", File.ReadAllText(path));
+            Assert.Single(root.GetFiles());
+            Assert.Equal(1, fileSystem.Reads(path));
+            Assert.Equal(2, fileSystem.TotalReads);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    private sealed class ReadCountingFileSystem : IAtomicFileSystem
+    {
+        private readonly SystemAtomicFileSystem _inner = new();
+        private readonly System.Collections.Generic.List<string> _reads = new();
+        public int TotalReads => _reads.Count;
+        public int Reads(string path) => _reads.FindAll(read => read == path).Count;
+        public Stream OpenRead(string path)
+        {
+            _reads.Add(Path.GetFullPath(path));
+            return _inner.OpenRead(path);
+        }
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream) => _inner.FlushToDisk(stream);
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup) =>
+            _inner.Replace(source, destination, backup);
+        public void Move(string source, string destination) => _inner.Move(source, destination);
+        public void Delete(string path) => _inner.Delete(path);
+    }
+
     // Replace is refused as by a sync client or network share.
     private sealed class ReplaceFailingFileSystem : IAtomicFileSystem
     {

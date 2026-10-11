@@ -103,8 +103,9 @@ internal sealed class AtomicWriteResult
 /// The one same-directory atomic write: a unique hidden temp beside the
 /// destination, written and flushed to disk, optionally validated, then
 /// <c>Replace</c> with a unique backup (existing destination) or <c>Move</c>.
-/// The committed bytes are confirmed by length and SHA-256 before the backup
-/// is deleted; whatever temp/backup survives a failure is reported as
+/// The flushed temp is stamped (length and SHA-256) once and the destination
+/// is checked against that stamp once, right after the commit and before the
+/// backup is deleted; whatever temp/backup survives a failure is reported as
 /// recovery evidence. The original destination is never opened for writing.
 /// </summary>
 internal static class AtomicFile
@@ -234,7 +235,7 @@ internal static class AtomicFile
                     ex), temporary, backup);
             }
         }
-        return CleanupConfirmedCommit(fileSystem, options, stamp, destination, temporary, backup);
+        return CleanupConfirmedCommit(fileSystem, options, temporary, backup);
     }
 
     private static AtomicWriteResult CommitNew(
@@ -278,7 +279,7 @@ internal static class AtomicFile
                     ex), temporary, null);
             }
         }
-        return CleanupConfirmedCommit(fileSystem, options, stamp, destination, temporary, null);
+        return CleanupConfirmedCommit(fileSystem, options, temporary, null);
     }
 
     // A failed commit keeps any backup (it may hold the original); the temp
@@ -307,16 +308,32 @@ internal static class AtomicFile
             : Surviving(fileSystem, temporary, backup));
     }
 
+    // Called only straight after the commit's one destination check proved
+    // the validated bytes landed. The backup goes first, so nothing of ours
+    // runs between that check and dropping the original; re-hashing the
+    // destination here would only re-read what was just confirmed.
     private static AtomicWriteResult CleanupConfirmedCommit(
         IAtomicFileSystem fileSystem,
         AtomicWriteOptions options,
-        FileStamp stamp,
-        string destination,
         string temporary,
         string? backup)
     {
         var errors = new List<string>();
         AtomicWritePhase? failed = null;
+        if (backup is not null)
+        {
+            try
+            {
+                Before(options, AtomicWritePhase.CleanupBackup, backup);
+                fileSystem.Delete(backup);
+            }
+            catch (Exception ex)
+            {
+                failed = AtomicWritePhase.CleanupBackup;
+                errors.Add($"{backup}: {ex.Message}");
+            }
+        }
+
         try
         {
             Before(options, AtomicWritePhase.CleanupTemporary, temporary);
@@ -326,28 +343,6 @@ internal static class AtomicFile
         {
             failed = AtomicWritePhase.CleanupTemporary;
             errors.Add($"{temporary}: {ex.Message}");
-        }
-
-        if (backup is not null)
-        {
-            if (!Matches(fileSystem, destination, stamp))
-            {
-                failed ??= AtomicWritePhase.CleanupBackup;
-                errors.Add($"{backup}: destination postcondition changed before backup cleanup");
-            }
-            else
-            {
-                try
-                {
-                    Before(options, AtomicWritePhase.CleanupBackup, backup);
-                    fileSystem.Delete(backup);
-                }
-                catch (Exception ex)
-                {
-                    failed ??= AtomicWritePhase.CleanupBackup;
-                    errors.Add($"{backup}: {ex.Message}");
-                }
-            }
         }
 
         if (failed is null)
