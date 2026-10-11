@@ -49,6 +49,33 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
+    public void Posed_duplicate_restores_when_the_deferred_capture_lands()
+    {
+        var world = new World();
+        var source = world.Actors.Spawn("Source")!;
+        var sourcePose = Posed(new Vector3(1, 2, 3), visible: true);
+        world.Actors.Edit(source, sourcePose);
+        world.Actors.DeferredCaptures = new();
+        var copy = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+
+        // Nothing is restored from a read that has not happened yet.
+        Assert.False(world.Actors.StateOf(copy).FreezePoseOnRestore);
+        var capture = Assert.Single(world.Actors.DeferredCaptures);
+        capture(sourcePose);
+        Assert.True(world.Actors.StateOf(copy).FreezePoseOnRestore);
+        Assert.Equal(sourcePose.Placement, world.Actors.StateOf(copy).Placement);
+
+        // A failed read leaves the copy as spawned and says so.
+        world.Actors.DeferredCaptures.Clear();
+        var second = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+        Assert.Single(world.Actors.DeferredCaptures)(null);
+        Assert.False(world.Actors.StateOf(second).FreezePoseOnRestore);
+        Assert.Contains(world.Actors.Notes, note => note.Contains("could not be read"));
+    }
+
+    [Fact]
     public void Prop_transform_history_rebinds_after_removal()
     {
         var world = new World();
@@ -880,6 +907,16 @@ public sealed class SceneLifecycleHistoryTests
         }
 
         public void WhenPosable(object actor, Action<object> act) => act(actor);
+
+        /// <summary>When set, a copy's pose capture waits here until the
+        /// test delivers it, as the live armed refresh does.</summary>
+        public List<Action<ActorState?>>? DeferredCaptures { get; set; }
+
+        public void CapturePoseForCopy(object actor, Action<ActorState?> done)
+        {
+            if (DeferredCaptures is { } waiting) waiting.Add(done);
+            else done(Read(actor) with { Runtime = null });
+        }
 
         public ActorState Read(object actor) => _states[(IActor)actor];
 

@@ -12,7 +12,8 @@ namespace Poser.Game.Posing;
 /// Requests a transitive-action pass to refresh raw transform caches before an
 /// export writes them. Every requested slot must refresh before a capture can
 /// succeed; an interrupted or timed-out pass refuses the write. File and
-/// clipboard exports use the same lifecycle.
+/// clipboard exports, scene capture and posed duplication use the same
+/// lifecycle; independent captures may be armed at once.
 /// </summary>
 public sealed class PoseExportCapture : IDisposable
 {
@@ -45,7 +46,7 @@ public sealed class PoseExportCapture : IDisposable
         public bool Completing;
     }
 
-    private Export? _pending;
+    private readonly List<Export> _pending = new();
     private long _generation;
 
     public PoseExportCapture(
@@ -62,7 +63,7 @@ public sealed class PoseExportCapture : IDisposable
     }
 
     /// <summary>Whether an export is waiting to complete.</summary>
-    public bool IsPending => _pending != null;
+    public bool IsPending => _pending.Count > 0;
 
     /// <summary>Arms a file export and reports its eventual write result.</summary>
     public GestureResult Begin(
@@ -79,8 +80,6 @@ public sealed class PoseExportCapture : IDisposable
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return GestureResult.Fail("Pose export must run on the framework thread.");
-        if (_pending != null)
-            return GestureResult.Fail("A pose export is already writing.");
         if (slots.Count == 0)
             return GestureResult.Fail("The actor has no skeleton to export.");
 
@@ -95,7 +94,7 @@ public sealed class PoseExportCapture : IDisposable
         foreach (var skeleton in slots)
             export.Slots.Add(new SlotExport { Skeleton = skeleton });
 
-        _pending = export;
+        _pending.Add(export);
         foreach (var slot in export.Slots)
         {
             // Registration requests the pass; the action itself has no work.
@@ -111,8 +110,12 @@ public sealed class PoseExportCapture : IDisposable
     /// <summary>Records a completed refresh batch; completion runs on the framework thread.</summary>
     private void OnTransitiveActionsEnded(TransitiveActionOutcome outcome)
     {
-        if (_pending is not { } export)
-            return;
+        foreach (var export in _pending.ToArray())
+            Record(export, outcome);
+    }
+
+    private void Record(Export export, TransitiveActionOutcome outcome)
+    {
         var complete = true;
         var known = false;
         foreach (var slot in export.Slots)
@@ -135,16 +138,15 @@ public sealed class PoseExportCapture : IDisposable
     /// <summary>Completes the export when the refresh window expires.</summary>
     private void OnTimeout(long generation)
     {
-        if (_pending is not { } export || export.Generation != generation)
-            return;
         Complete(generation);
     }
 
     private void Complete(long generation)
     {
-        if (_pending is not { } export || export.Generation != generation)
+        var export = _pending.Find(candidate => candidate.Generation == generation);
+        if (export is null)
             return;
-        _pending = null;
+        _pending.Remove(export);
 
         var refreshed = true;
         foreach (var slot in export.Slots)
@@ -182,6 +184,6 @@ public sealed class PoseExportCapture : IDisposable
     public void Dispose()
     {
         _posing.TransitiveActionsEnded -= OnTransitiveActionsEnded;
-        _pending = null;
+        _pending.Clear();
     }
 }
