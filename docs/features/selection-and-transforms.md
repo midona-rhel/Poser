@@ -259,6 +259,12 @@ not evidence that its bones were deleted. History stays in the same bounded
 journal, but replay waits without writing or entering recovery. When the body
 returns, all targets are re-keyed together; a missing slot, mismatched bone or
 absent owner discards the whole patch.
+Redraw cancels an active gesture, rather than committing its partial drag.
+Its baseline recovery uses the same retained-target identity rules, including
+ordinary bone gestures. During a publication gap it retains the requested
+baseline and blocks mutations; once the exact bone returns, recovery restores
+that baseline on its current generation. It never writes a different bone to
+clear the recovery barrier.
 
 Show and Hide report a result per target. A refused or stale target writes
 nothing and appends nothing; every surface (sidebar eye, context menu,

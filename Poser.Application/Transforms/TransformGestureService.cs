@@ -614,8 +614,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         Action? completed = null,
         bool remap = false)
     {
-        var requested = remap && _groupSource != null
-            ? states.Select(state => _groupSource.CurrentTarget(state.Target) is { } current
+        var requested = remap
+            ? states.Select(state => _scene.CurrentTransformTarget(state.Target) is { } current
                 ? state with { Target = current } : state).ToArray()
             : states;
         var recovery = TransformRecovery.RestoreAll(_runtime, requested);
@@ -723,6 +723,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return FailureAfterRecovery(detail, RecoverGesture(active));
     }
 
+    // A redraw cancels ordinary bone gestures too. Retain their baseline
+    // through the publication gap and resolve its exact bone identity on
+    // retry, rather than permanently retrying a retired skeleton generation.
     private TransformRecoveryReceipt RecoverGesture(ActiveGestureState active) =>
         AttemptRecovery(active.Before, () =>
         {
@@ -732,7 +735,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             if (restored != null)
                 _groupTransforms.Put(GroupTransformKey.For(active.Command.GroupId,
                     restored.Expected.Keys), restored);
-        }, remap: active.GroupBefore != null);
+        }, remap: true);
 
     /// <summary>
     /// A thrown port call is mutation-unknown, exactly like an explicit

@@ -15,6 +15,70 @@ namespace Poser.Application.Tests.Scene;
 public sealed class RetainedTransformTargetTests
 {
     [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(true, "actor")]
+    [InlineData(true, "slot")]
+    [InlineData(true, "partial")]
+    [InlineData(true, "index")]
+    [InlineData(true, "name")]
+    public void Active_bone_gesture_recovery_follows_only_the_same_bone_after_redraw(bool publicationGap, string? mismatch)
+    {
+        var actor = ActorId.New();
+        var old = new BoneId(new SkeletonId(actor, PoseSlot.Character, 0), 1, 3, "j_f_ago");
+        var current = old with { Skeleton = old.Skeleton.NextGeneration() };
+        current = mismatch switch
+        {
+            "actor" => current with { Skeleton = current.Skeleton with { Actor = ActorId.New() } },
+            "slot" => current with { Skeleton = current.Skeleton with { Slot = PoseSlot.MainHand } },
+            "partial" => current with { PartialId = 2 },
+            "index" => current with { BoneIndex = 4 },
+            "name" => current with { CanonicalName = "j_f_dago" },
+            _ => current,
+        };
+        var scene = Scene(old);
+        var runtime = Substitute.For<ITransformRuntimePort>();
+        var baseline = new TransformTargetState(TransformTargetId.ForBone(old),
+            PoseTransform.Identity with { Position = Vector3.One }, new BonePose(), true);
+        runtime.Capture(baseline.Target).Returns(TransformPortResult.Ok(baseline));
+        runtime.Restore(Arg.Any<TransformTargetState>()).Returns(call =>
+        {
+            var state = call.Arg<TransformTargetState>();
+            return scene.Contains(state.Target) ? TransformPortResult.Ok(state)
+                : TransformPortResult.Fail(TransformPortStatus.StaleTarget, "Stale skeleton");
+        });
+        using var service = new TransformGestureService(scene, runtime, new EditHistory());
+        Assert.True(service.Begin(new([baseline.Target], TransformOperation.Rotate,
+            TransformSpace.World, PivotMode.Primary)).Success);
+        if (publicationGap)
+        {
+            Assert.True(scene.TryRefresh(new SceneSnapshot(2,
+                [new ActorDescriptor(actor, "Actor", [])], [], [], [])).Accepted);
+            service.ReconcileScene(scene.Contains);
+            Assert.NotNull(service.PendingRecovery);
+            Assert.False(service.TryCompleteRecovery());
+        }
+        Assert.True(scene.TryRefresh(new SceneSnapshot(3,
+            [new ActorDescriptor(current.Skeleton.Actor, "Actor", [new SkeletonDescriptor(current.Skeleton,
+                [new BoneDescriptor(current, "Jaw", null)])])], [], [], [])).Accepted);
+        service.ReconcileScene(scene.Contains);
+
+        if (mismatch != null)
+        {
+            Assert.False(service.TryCompleteRecovery());
+            Assert.NotNull(service.PendingRecovery);
+            runtime.DidNotReceive().Restore(Arg.Is<TransformTargetState>(state =>
+                state.Target == TransformTargetId.ForBone(current)));
+            return;
+        }
+        Assert.True(service.TryCompleteRecovery());
+        Assert.Null(service.ActiveGesture);
+        Assert.Null(service.PendingRecovery);
+        runtime.Received().Restore(baseline with { Target = TransformTargetId.ForBone(current) });
+        Assert.Null(service.History.PeekUndo());
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void Redraw_gap_retains_whole_patch_then_rekeys_when_slot_returns(bool redo)
