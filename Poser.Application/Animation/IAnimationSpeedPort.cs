@@ -13,6 +13,10 @@ public interface IAnimationSpeedPort
     Outcome SetOverallSpeed(ActorId actor, float speed);
     /// <summary>Stops enforcing overall speed; the game's own value wins
     /// again from its next recalculation.</summary>
+    /// <summary>Drops Poser's speed enforcement for an actor whose body is
+    /// gone. No native write: there is nothing left to hand back.</summary>
+    void Forget(ActorId actor);
+
     Outcome ClearOverallSpeed(ActorId actor);
 
     /// <summary>

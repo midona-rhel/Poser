@@ -57,4 +57,33 @@ public sealed class AnimationInteractionOwnershipTests
         Assert.False(session.UpdateScrub(actor, 4, first).Success);
         port.DidNotReceive().SetControlTime(actor, control, Arg.Any<float>(), Arg.Any<ulong>());
     }
+
+    [Fact]
+    public void Reset_retires_a_gone_body_without_reporting_its_clears()
+    {
+        // #495: GPose exit reset an original actor whose body was already
+        // gone, and every native clear came back as "unrestored" state.
+        var actor = ActorId.New();
+        var timeline = Substitute.For<IAnimationTimelinePort>();
+        var speed = Substitute.For<IAnimationSpeedPort>();
+        timeline.IsSupported(actor).Returns(true);
+        speed.SetOverallSpeed(actor, 0).Returns(Outcome.Ok());
+        speed.ClearOverallSpeed(actor).Returns(Outcome.Fail("The actor's native body is no longer available."));
+        var session = new AnimationSession(timeline, speed,
+            Substitute.For<IAnimationStancePort>(), Substitute.For<IAnimationScrubPort>(),
+            Substitute.For<IWorldRenderingRuntimePort>());
+        Assert.True(session.Pause(actor).Success);
+
+        // A live actor's refused restore is still reported and kept.
+        Assert.False(session.ResetActor(actor).Success);
+        Assert.True(session.IsPaused(actor));
+
+        timeline.IsSupported(actor).Returns(false);
+        timeline.Read(actor).Returns((ActorAnimationReading?)null);
+        speed.ClearReceivedCalls();
+        Assert.True(session.ResetActor(actor).Success);
+        Assert.False(session.IsPaused(actor));
+        speed.Received(1).Forget(actor);
+        speed.DidNotReceive().ClearOverallSpeed(actor);
+    }
 }
