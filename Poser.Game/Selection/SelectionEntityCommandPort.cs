@@ -40,6 +40,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     private readonly EditHistory _history;
     private readonly SceneGroups _groups;
     private readonly SelectionSession _selection;
+    private readonly System.Lazy<GroupSteps>? _groupSteps;
 
     public SelectionEntityCommandPort(
         SceneSession scene,
@@ -59,8 +60,10 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         IWorldReleasePort worldRelease,
         SceneGroups groups,
         IFramework framework,
-        EditHistory history)
+        EditHistory history,
+        System.Lazy<GroupSteps>? groupSteps = null)
     {
+        _groupSteps = groupSteps;
         _scene = scene;
         _bindings = bindings;
         _actorValues = actorValues;
@@ -155,20 +158,30 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
             var outcomes = new List<SelectionRemovalItem>(captured.Length);
             _history.RecordLifecycleBatch("Remove entities", () =>
             {
+                // Members leave their groups through the scene prune; the
+                // undo puts the structure back with them (#494).
+                var structure = _groupSteps?.Value.Capture();
+                bool groupedRemoved = false;
                 foreach (var request in captured)
                 {
                     try
                     {
+                        bool grouped = _groups.GroupOf(request.Id) != null;
                         var result = RemoveOne(request);
                         outcomes.Add(result);
                         if (result.Status == SelectionRemovalStatus.Removed)
+                        {
                             _selection.Remove(result.Id);
+                            groupedRemoved |= grouped;
+                        }
                     }
                     catch (Exception ex)
                     {
                         outcomes.Add(new(request.Id, SelectionRemovalStatus.Failed, ex.Message));
                     }
                 }
+                if (groupedRemoved && structure is not null)
+                    _history.AppendBatchPrologue(_groupSteps!.Value.RemovalStructure(structure));
             });
             return new SelectionRemovalResult(outcomes);
         });

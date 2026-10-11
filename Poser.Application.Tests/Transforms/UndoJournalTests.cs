@@ -157,9 +157,9 @@ public sealed class UndoJournalTests
     private sealed class Runner(EditHistory history) : IUndoRunner
     {
         public GestureResult? RecoverPending() => null;
-        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
-            (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused");
-        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
+        public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity) =>
+            new((before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused"), true);
+        public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
         {
             bool success = entry switch
             {
@@ -167,9 +167,9 @@ public sealed class UndoJournalTests
                 SceneLifecyclePatch step => undo ? step.Undo() : step.Redo(),
                 _ => false,
             };
-            if (!success) return GestureResult.Fail("Refused");
+            if (!success) return new(GestureResult.Fail("Refused"), true);
             if (undo) history.CommitUndo(entry, entity); else history.CommitRedo(entry, entity);
-            return GestureResult.Ok();
+            return new(GestureResult.Ok(), true);
         }
     }
 }

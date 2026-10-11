@@ -39,6 +39,7 @@ public sealed class StableBindingRegistry : IEntityBindings
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
     private readonly IFramework _framework;
+    private readonly Poser.Application.Settings.ConfigurationService _configuration;
     private Dictionary<string, ActorLineage> _lineages =
         new(StringComparer.Ordinal);
     private BindingCandidate? _stagedCandidate;
@@ -93,9 +94,11 @@ public sealed class StableBindingRegistry : IEntityBindings
         PropSpawnService props,
         OverlayNodeService overlays,
         WorldObjectService worldObjects,
-        IFramework framework)
+        IFramework framework,
+        Poser.Application.Settings.ConfigurationService configuration)
     {
         _framework = framework;
+        _configuration = configuration;
         _actors = actors;
         _skeletons = skeletons;
         _spawn = spawn;
@@ -520,14 +523,18 @@ public sealed class StableBindingRegistry : IEntityBindings
     /// Everything a candidate reads except the bone walk: per actor its
     /// address, row fields, attachments and each present slot skeleton's
     /// build; per light, camera, prop, overlay and adopted object its instance
-    /// and row fields. While this is unchanged a new candidate would equal the
+    /// and row fields, plus the naming policy used by bone descriptors.
+    /// While this is unchanged a new candidate would equal the
     /// last one, so the idle poll compares it instead of rebuilding. Asking
     /// for the skeletons also lets the cache notice an in-place rebuild,
     /// which it reports by itself.
     /// </summary>
     public List<object?> IdleSignature()
     {
-        var signature = new List<object?>();
+        // Bone.Name follows this setting without rebuilding the native cache.
+        // Detached descriptors must refresh too, including preview/cancel and
+        // config resets; an unrelated actor event must not be required.
+        var signature = new List<object?> { _configuration.Config.Skeleton.ShowFriendlyBoneNames };
         AddActors(_actors.Actors);
         signature.Add(null);
         AddActors(_actors.AuxiliaryActors);
@@ -1064,43 +1071,6 @@ public sealed class StableBindingRegistry : IEntityBindings
     /// skeleton with no bound bone is one nothing can be asked about.</summary>
     public ISkeleton? ResolveSkeleton(SkeletonId id) =>
         _skeletonBones.TryGetValue(id, out var bone) ? Resolve(bone).Value?.Skeleton : null;
-
-    /// <summary>The current-generation id for a target whose actor is still
-    /// in the scene: the same bone by slot, partial, index and name on the
-    /// redrawn body, or the actor's current id. Null when nothing matches.
-    /// Used only on reconcile, so the scans are not per frame.</summary>
-    public TransformTargetId? CurrentTarget(TransformTargetId target)
-    {
-        if (target.Collider is { } collider)
-            foreach (var pair in _overlayBindings)
-                if (pair.Key.LogicalId == collider.LogicalId && pair.Value.State.Collider != null)
-                    return TransformTargetId.ForCollider(pair.Key);
-        switch (target.Kind)
-        {
-            case TransformTargetKind.Bone when target.Bone is { } bone:
-                foreach (var pair in _boneBindings)
-                {
-                    var key = pair.Key;
-                    if (key.Skeleton.Actor.LogicalId == bone.Skeleton.Actor.LogicalId
-                        && key.Skeleton.Slot == bone.Skeleton.Slot
-                        && key.PartialId == bone.PartialId
-                        && key.BoneIndex == bone.BoneIndex
-                        && key.CanonicalName.Equals(bone.CanonicalName, StringComparison.Ordinal))
-                        return TransformTargetId.ForBone(key);
-                }
-                return null;
-            case TransformTargetKind.Actor when target.Actor is { } actor:
-                foreach (var pair in _boneBindings)
-                {
-                    var current = pair.Key.Skeleton.Actor;
-                    if (current.LogicalId == actor.LogicalId)
-                        return TransformTargetId.ForActor(current);
-                }
-                return null;
-            default:
-                return null;
-        }
-    }
 
     /// <summary>Light identity is instance identity: two distinct lights with
     /// identical settings are never the same light.</summary>

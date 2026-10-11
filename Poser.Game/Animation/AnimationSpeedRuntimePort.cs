@@ -305,6 +305,11 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
 
     // ── Speed ─────────────────────────────────────────────────────────
 
+    /// <summary>Whether Poser is holding the actor's whole animation still
+    /// (overall speed zero: a pause or a scrub).</summary>
+    public bool IsHeld(ActorId actor) =>
+        _enforcement.TryGetValue(actor, out var enforced) && enforced.OverallSpeed == 0f;
+
     public Outcome SetOverallSpeed(ActorId actor, float speed)
     {
         var character = _native.Resolve(actor, out var detail);
@@ -321,6 +326,12 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         SyncEnforcementIndex();
         ApplySpeedNow(character, speed);
         return Outcome.Ok();
+    }
+
+    public void Forget(ActorId actor)
+    {
+        if (_enforcement.Remove(actor))
+            SyncEnforcementIndex();
     }
 
     public Outcome ClearOverallSpeed(ActorId actor)

@@ -30,7 +30,6 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly TransformGestureService _gestures;
     private readonly EditHistory _history;
     private readonly GroupTransformCoordinator? _groupCoordinator;
-    private readonly IGroupTransformSource? _groupSource;
     private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
     private readonly Poser.Application.Appearance.ActorModelIdSession _modelId;
@@ -89,8 +88,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         GroupTransformState groupTransforms,
         IPluginLog? log = null,
         Poser.Application.Presentation.IUserNotices? notices = null,
-        GroupTransformCoordinator? groupCoordinator = null,
-        IGroupTransformSource? groupSource = null)
+        GroupTransformCoordinator? groupCoordinator = null)
     {
         _log = log;
         _notices = notices;
@@ -101,7 +99,6 @@ public sealed class CleanSceneLifecycle : IDisposable
         _gestures = gestures;
         _history = history;
         _groupCoordinator = groupCoordinator;
-        _groupSource = groupSource;
         _animation = animation;
         _presentation = presentation;
         _modelId = modelId;
@@ -302,7 +299,8 @@ public sealed class CleanSceneLifecycle : IDisposable
             _gestures.ReconcileScene(_scene.Contains);
             _history.Reconcile(
                 _scene.Contains,
-                target => _groupSource?.CurrentTarget(target) ?? _bindings.CurrentTarget(target));
+                _scene.CurrentTransformTarget,
+                _scene.IsTransformTargetPending);
             // Animation follows the same exact-generation rule: a replaced
             // actor's old entry is released without touching the new body.
             // The port's detour-facing address index is rebuilt from the

@@ -101,14 +101,14 @@ public sealed class LifecycleHistoryBatchTests
     private sealed class Runner(EditHistory history) : IUndoRunner
     {
         public GestureResult? RecoverPending() => null;
-        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
-            (before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused");
-        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
+        public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity) =>
+            new((before ? step.Undo() : step.Redo()) ? GestureResult.Ok() : GestureResult.Fail("Refused"), true);
+        public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
         {
             var inverse = (InverseEntry)entry;
-            if (!(undo ? inverse.Undo() : inverse.Redo())) return GestureResult.Fail("Refused");
+            if (!(undo ? inverse.Undo() : inverse.Redo())) return new(GestureResult.Fail("Refused"), true);
             if (undo) history.CommitUndo(entry, entity); else history.CommitRedo(entry, entity);
-            return GestureResult.Ok();
+            return new(GestureResult.Ok(), true);
         }
     }
 

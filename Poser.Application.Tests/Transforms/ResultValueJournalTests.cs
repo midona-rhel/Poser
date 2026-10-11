@@ -126,15 +126,15 @@ public sealed class ResultValueJournalTests
     private sealed class Runner(EditHistory history) : IUndoRunner
     {
         public GestureResult? RecoverPending() => null;
-        public GestureResult Replay(JournalStep step, bool before, SelectionId? entity) =>
-            GestureResult.Fail("Deferred history replay is not supported by this runner.");
-        public GestureResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
+        public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity) =>
+            new(GestureResult.Fail("Deferred history replay is not supported by this runner."), false);
+        public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
         {
             var step = (JournalStep)entry;
             if (!(undo ? step.Undo() : step.Redo()))
-                return GestureResult.Fail(step.FailureDetail?.Invoke() ?? "failed");
+                return new(GestureResult.Fail(step.FailureDetail?.Invoke() ?? "failed"), true);
             if (undo) history.CommitUndo(step, entity); else history.CommitRedo(step, entity);
-            return GestureResult.Ok();
+            return new(GestureResult.Ok(), true);
         }
     }
 }

@@ -17,7 +17,7 @@ public sealed class StableBindingThreadTests
         // Nothing past the thread check may be touched: every other
         // dependency is null.
         var registry = new StableBindingRegistry(
-            null!, null!, null!, null!, null!, null!, null!, null!, framework);
+            null!, null!, null!, null!, null!, null!, null!, null!, framework, null!);
 
         var (status, detail) = kind == "actor"
             ? Read(registry.Resolve(ActorId.New()))

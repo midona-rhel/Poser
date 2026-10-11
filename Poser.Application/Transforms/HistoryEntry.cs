@@ -26,6 +26,10 @@ public sealed record TransformPatch(
     IReadOnlyList<TransformTargetState> Before,
     IReadOnlyList<TransformTargetState> After) : HistoryEntry(Description)
 {
+    /// <summary>Retained across a slot's redraw gap, but not replayable until
+    /// reconciliation has validated and re-keyed every target.</summary>
+    public bool AwaitingTargets { get; init; }
+
     /// <summary>Optional named/anonymous group presentation state changed by
     /// the same gesture. It is restored with the target snapshots, never by
     /// a post-commit observer.</summary>

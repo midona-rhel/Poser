@@ -249,6 +249,10 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<IGroupGateState, GroupGateState>();
         services.AddSingleton<Application.Scene.GroupSteps>();
+        // Lazy: removal restores group structure through the group steps,
+        // whose gates remove and show entities through the removal port.
+        services.AddSingleton(sp => new System.Lazy<Application.Scene.GroupSteps>(
+            sp.GetRequiredService<Application.Scene.GroupSteps>));
         services.AddSingleton<DisruptiveSteps>();
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<GroupTransformState>();
@@ -777,7 +781,8 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new global::Poser.Application.Settings.ReleaseNotesSession(
             sp.GetRequiredService<ConfigurationService>(), typeof(ServiceRegistration).Assembly.GetName().Version!));
         services.AddSingleton<global::Poser.UI.Views.ReleaseNotesView>();
-        // The widgets' state for this plugin load; the UI manager owns it.
+        // Provider-owned widget state; resolved before presentation at startup
+        // so it is released only after the windows and panes finish disposal.
         services.AddSingleton(sp =>
         {
             var textures = sp.GetRequiredService<ITextureProvider>();

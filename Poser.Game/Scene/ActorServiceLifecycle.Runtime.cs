@@ -32,21 +32,42 @@ internal sealed partial class ActorServiceLifecycle
     private readonly ActorStateSnapshots _actorStates;
     private readonly Integration.ISpawnCollectionPort _collections;
 
-    public void CopyBodyProfile(IActor source, IActor target)
+    public Action<IActor, Action>? CaptureBodyProfile(IActor source)
     {
-        if (_bindings.GetActorId(source) is not { } sourceId) return;
+        if (_bindings.GetActorId(source) is not { } sourceId) return null;
         var captured = _integration.CaptureBodyProfile(sourceId);
         if (!captured.Success)
         {
-            Note($"'{target.Name}': {captured.Detail}");
-            return;
+            Note($"'{source.Name}': {captured.Detail}");
+            return null;
         }
-        if (captured.Value is not { } profile) return;
-        WhenPosable(target, ready =>
+        if (captured.Value is not { } profile) return null;
+        return (target, readyToRestore) => WhenPosable(target, ready =>
         {
             if (_bindings.GetActorId((IActor)ready) is not { } targetId) return;
             var result = _integration.ApplyBodyProfileJson(targetId, profile, "Copied profile");
-            if (!result.Success) Note($"'{target.Name}': {result.Detail}");
+            if (!result.Success)
+            {
+                Note($"'{target.Name}': {result.Detail}");
+                readyToRestore();
+                return;
+            }
+            var skeletons = _skeletons.GetSkeletons(target);
+            if (skeletons.Count == 0)
+            {
+                readyToRestore();
+                return;
+            }
+            var begun = _exports.Begin(skeletons, static _ => true, ok =>
+            {
+                if (!ok) Note($"'{target.Name}': the copied body profile did not reach a refreshed pose frame.");
+                readyToRestore();
+            });
+            if (!begun.Success)
+            {
+                Note($"'{target.Name}': {begun.Detail}");
+                readyToRestore();
+            }
         });
     }
 
@@ -117,11 +138,12 @@ internal sealed partial class ActorServiceLifecycle
                 {
                     if (!Current()) return;
                     if (!ready.Success) { Note($"'{actor.Name}': {ready.Detail}"); return; }
-                    if (state.FreezePoseOnRestore)
+                    if (state.RestoresPaused)
                     {
                         // A posed duplicate's deltas were captured against the
-                        // import's neutral frame. Redo must recreate that frozen
-                        // basis, not run a new idle underneath the saved pose.
+                        // import's neutral frame, and a paused actor was read
+                        // holding still: neither may come back running a new
+                        // idle underneath the saved pose.
                         var paused = _animation.Pause(id);
                         if (!paused.Success) { Note($"'{actor.Name}': {paused.Detail}"); return; }
                     }
@@ -130,7 +152,7 @@ internal sealed partial class ActorServiceLifecycle
                     { Note($"'{actor.Name}': companion attachment could not be restored."); return; }
                     // Same pause-settle-rewind ordering as PoseImportCoordinator.
                     Schedule(actor, state, ReadyAttempts, Current,
-                        delayTicks: state.FreezePoseOnRestore ? 4 : 1);
+                        delayTicks: state.RestoresPaused ? 4 : 1);
                 });
             }
             catch (Exception ex) { Note($"Lifecycle appearance restore failed: {ex.Message}"); }

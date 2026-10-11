@@ -839,7 +839,10 @@ public static class AppShellView
                 if (!vm.PropertiesOnly)
                     DrawMainTitleOutline(titleMin,
                         MathF.Min(titleWidth, MeasureText(title, titleStyle).X), height, s, dl);
-                TextInBand(titleMin, new Vector2(titleWidth, height), title, titleStyle);
+                // The entity name is unbounded: one line, ellipsized and
+                // clipped to the space left of the tabs (#496).
+                TextInBand(titleMin, new Vector2(titleWidth, height), title, titleStyle,
+                    TextConstraint.Truncate(titleWidth));
             }
         }
     }

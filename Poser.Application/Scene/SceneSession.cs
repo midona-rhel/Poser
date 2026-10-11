@@ -326,6 +326,51 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
             _ => false,
         };
 
+    /// <summary>Resolves retained history/group metadata against the committed
+    /// scene after a redraw or replacement. This never authorizes a stale
+    /// public edit; those must still pass exact-id presence and native binding
+    /// checks. Unlike selection reconciliation, a missing bone cannot fall
+    /// back to its actor.</summary>
+    public TransformTargetId? CurrentTransformTarget(TransformTargetId target)
+    {
+        if (Contains(target)) return target;
+        if (target.Bone is { } bone)
+        {
+            if (!_actors.TryFind(bone.Skeleton.Actor.LogicalId, out var owner)
+                || owner.GetSkeleton(bone.Slot) is not { } skeleton)
+                return null;
+            var current = bone with { Skeleton = skeleton.Id };
+            return _bones.ContainsKey(current) ? TransformTargetId.ForBone(current) : null;
+        }
+
+        return target.Kind switch
+        {
+            TransformTargetKind.Actor when target.Actor is { } actor &&
+                _actors.TryFind(actor.LogicalId, out var current) => TransformTargetId.ForActor(current.Id),
+            TransformTargetKind.Light when target.Light is { } light &&
+                _lights.TryFind(light.LogicalId, out var current) => TransformTargetId.ForLight(current.Id),
+            TransformTargetKind.Prop when target.Prop is { } prop &&
+                _props.TryFind(prop.LogicalId, out var current) => TransformTargetId.ForProp(current.Id),
+            TransformTargetKind.WorldObject when target.WorldObject is { } world &&
+                _worldObjects.TryFind(world.LogicalId, out var current) => TransformTargetId.ForWorldObject(current.Id),
+            TransformTargetKind.Collider when target.Collider is { } collider &&
+                _overlays.TryFind(collider.LogicalId, out var current) &&
+                current.Kind == OverlayNodeKind.Collider => TransformTargetId.ForCollider(current.Id),
+            _ => null,
+        };
+    }
+
+    /// <summary>A whole-actor redraw publishes a skeleton-less interval.
+    /// History waits for its character skeleton before deciding whether a
+    /// retained slot/bone was removed. A missing weapon on an otherwise ready
+    /// actor is not kept pending indefinitely.
+    /// This never makes the old target available for a native write.</summary>
+    public bool IsTransformTargetPending(TransformTargetId target) =>
+        target.Bone is { } bone
+        && _actors.TryFind(bone.Skeleton.Actor.LogicalId, out var owner)
+        && owner.CharacterSkeleton is null
+        && owner.GetSkeleton(bone.Slot) is null;
+
     private static SceneRefreshResult Invalid(string detail) =>
         new(SceneRefreshOutcome.RejectedInvalidCandidate, detail);
 

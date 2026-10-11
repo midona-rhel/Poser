@@ -276,8 +276,9 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
     /// the new one took, so a bad path costs nothing.</summary>
-    public Task<Outcome> Respawn(string path) =>
-        _owner.Respawn(this, path);
+    public Task<Outcome> Respawn(string path, System.Func<bool>? stillCurrent = null,
+        System.Threading.CancellationToken cancellation = default) =>
+        _owner.Respawn(this, path, stillCurrent, cancellation);
 
     /// <summary>Placement captured when the object was adopted and restored on
     /// release.</summary>

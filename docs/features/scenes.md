@@ -155,6 +155,12 @@ player's collection, and wearing it is inheriting, so it is not recorded. On
 load an actor already wearing the saved collection (an older file that recorded
 the player's) is left alone with no redraw; the rest are assigned and redrawn
 in parallel, not one barrier after another.
+An embedded appearance payload takes precedence over a saved collection. If a
+saved collection GUID is absent locally, loading succeeds and keeps that actor's
+inherited local collection, with one informational notice and named actor details.
+It never guesses a replacement by collection name. Collection-list IPC errors,
+assignment/redraw failures, and invalid appearance packages remain real failures;
+they are not treated as missing local collections.
 Temporary collection IDs are not saved; those require the modded-appearance
 payload. Older files without collection references retain their existing load
 behavior. Other appearance remains external.
@@ -503,6 +509,12 @@ the equipment dye picker (one native furniture stain channel). Embedded lights
 have individual on/off controls in the inspector and context menu. Their states
 survive duplication, lifecycle history, and scene/library saving, addressed by
 child paths within the same furniture asset rather than native pointers.
+
+Deferred world-object model replacements retain their initiating operation's
+validity until commit. History invalidation cancels the hidden replacement on
+the framework thread before the original body is destroyed; rejecting only
+the later history callback is not sufficient. Failed replay still completes
+its journal callback so subsequent undo/redo is not left waiting.
 
 ## A scene is a picture, not a performance
 

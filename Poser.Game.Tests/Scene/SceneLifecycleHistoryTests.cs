@@ -32,6 +32,97 @@ namespace Poser.Game.Tests.Scene;
 public sealed class SceneLifecycleHistoryTests
 {
     [Fact]
+    public void Posed_duplicate_owns_freeze_in_its_restore_operation()
+    {
+        var world = new World();
+        var source = world.Actors.Spawn("Source")!;
+        world.Actors.Edit(source, Posed(Vector3.Zero, visible: true));
+        var copy = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+
+        Assert.True(world.Actors.StateOf(copy).FreezePoseOnRestore);
+        Assert.False(world.Actors.StateOf(source).FreezePoseOnRestore);
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+        copy = world.Actors.Live.Single(a => !ReferenceEquals(a, source));
+        Assert.True(world.Actors.StateOf(copy).FreezePoseOnRestore);
+    }
+
+    [Fact]
+    public void Posed_duplicate_copies_body_profile_before_pose_on_first_spawn_and_redo()
+    {
+        var world = new World();
+        var source = world.Actors.Spawn("Source")!;
+        world.Actors.SetBodyProfile(source, "customize-plus-profile");
+        world.Actors.Edit(source, Posed(new Vector3(1, 2, 3), visible: true));
+
+        var copy = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+
+        Assert.Equal("customize-plus-profile", world.Actors.BodyProfileOf(copy));
+        Assert.Equal(new[] { "profile", "pose" }, world.Actors.CopyOperations);
+
+        Assert.True(world.Undo());
+        world.Actors.SetBodyProfile(source, "later-source-profile");
+        world.Actors.CopyOperations.Clear();
+        Assert.True(world.Redo());
+        copy = world.Actors.Live.Single(a => !ReferenceEquals(a, source));
+        Assert.Equal("customize-plus-profile", world.Actors.BodyProfileOf(copy));
+        Assert.Equal(new[] { "profile", "pose" }, world.Actors.CopyOperations);
+    }
+
+    [Fact]
+    public void Posed_duplicate_waits_for_profile_apply_frame_before_first_pose_and_redo()
+    {
+        var world = new World();
+        var source = world.Actors.Spawn("Source")!;
+        world.Actors.SetBodyProfile(source, "customize-plus-profile");
+        world.Actors.Edit(source, Posed(Vector3.One, visible: true));
+        world.Actors.DeferredProfileApplications = new();
+
+        _ = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+        Assert.Equal(new[] { "profile" }, world.Actors.CopyOperations);
+        Assert.Single(world.Actors.DeferredProfileApplications)();
+        Assert.Equal(new[] { "profile", "pose" }, world.Actors.CopyOperations);
+
+        Assert.True(world.Undo());
+        world.Actors.CopyOperations.Clear();
+        world.Actors.DeferredProfileApplications.Clear();
+        Assert.True(world.Redo());
+        Assert.Equal(new[] { "profile" }, world.Actors.CopyOperations);
+        Assert.Single(world.Actors.DeferredProfileApplications)();
+        Assert.Equal(new[] { "profile", "pose" }, world.Actors.CopyOperations);
+    }
+
+    [Fact]
+    public void Posed_duplicate_restores_when_the_deferred_capture_lands()
+    {
+        var world = new World();
+        var source = world.Actors.Spawn("Source")!;
+        var sourcePose = Posed(new Vector3(1, 2, 3), visible: true);
+        world.Actors.Edit(source, sourcePose);
+        world.Actors.DeferredCaptures = new();
+        var copy = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+
+        // Nothing is restored from a read that has not happened yet.
+        Assert.False(world.Actors.StateOf(copy).FreezePoseOnRestore);
+        var capture = Assert.Single(world.Actors.DeferredCaptures);
+        capture(sourcePose);
+        Assert.True(world.Actors.StateOf(copy).FreezePoseOnRestore);
+        Assert.Equal(sourcePose.Placement, world.Actors.StateOf(copy).Placement);
+
+        // A failed read leaves the copy as spawned and says so.
+        world.Actors.DeferredCaptures.Clear();
+        var second = world.Lifecycle.SpawnActorWithPose("Copy pose",
+            () => world.Actors.Spawn("Copy"), source)!;
+        Assert.Single(world.Actors.DeferredCaptures)(null);
+        Assert.False(world.Actors.StateOf(second).FreezePoseOnRestore);
+        Assert.Contains(world.Actors.Notes, note => note.Contains("could not be read"));
+    }
+
+    [Fact]
     public void Prop_transform_history_rebinds_after_removal()
     {
         var world = new World();
@@ -808,7 +899,6 @@ public sealed class SceneLifecycleHistoryTests
 
     private sealed class FakeActors : IActorLifecycle
     {
-        public void DetachGaze(object actor) { }
         public string GetName(object actor) => ((IActor)actor).Name;
         public void SetName(object actor, string name) => ((IActor)actor).Name = name;
         public void NameCreated(object actor, string seed) => SetName(actor,
@@ -821,6 +911,8 @@ public sealed class SceneLifecycleHistoryTests
         /// </summary>
         private readonly Dictionary<IActor, ActorState> _states =
             new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<IActor, string> _bodyProfiles =
+            new(ReferenceEqualityComparer.Instance);
 
         private int _next;
 
@@ -830,6 +922,8 @@ public sealed class SceneLifecycleHistoryTests
         /// <summary>Every refusal the seam named rather than skipping.
         /// </summary>
         public List<string> Notes { get; } = new();
+        public List<string> CopyOperations { get; } = new();
+        public List<Action>? DeferredProfileApplications { get; set; }
 
         public IActor? Spawn(string name)
         {
@@ -847,6 +941,11 @@ public sealed class SceneLifecycleHistoryTests
         /// </summary>
         public void Edit(IActor actor, ActorState state) => _states[actor] = state;
 
+        public void SetBodyProfile(IActor actor, string profile) => _bodyProfiles[actor] = profile;
+
+        public string? BodyProfileOf(IActor actor) =>
+            _bodyProfiles.TryGetValue(actor, out var profile) ? profile : null;
+
         public ActorState StateOf(IActor actor) => _states[actor];
 
         /// <summary>The actor leaves without this seam's knowledge — a scene
@@ -860,10 +959,36 @@ public sealed class SceneLifecycleHistoryTests
             if (RefuseDestroy)
                 return false;
             _states.Remove((IActor)actor);
+            _bodyProfiles.Remove((IActor)actor);
             return _actors.Remove((IActor)actor);
         }
 
         public void WhenPosable(object actor, Action<object> act) => act(actor);
+
+        public Action<IActor, Action>? CaptureBodyProfile(IActor source)
+        {
+            if (!_bodyProfiles.TryGetValue(source, out var profile))
+                return null;
+            return (target, applied) =>
+            {
+                _bodyProfiles[target] = profile;
+                CopyOperations.Add("profile");
+                if (DeferredProfileApplications is { } deferred)
+                    deferred.Add(applied);
+                else
+                    applied();
+            };
+        }
+
+        /// <summary>When set, a copy's pose capture waits here until the
+        /// test delivers it, as the live armed refresh does.</summary>
+        public List<Action<ActorState?>>? DeferredCaptures { get; set; }
+
+        public void CapturePoseForCopy(object actor, Action<ActorState?> done)
+        {
+            if (DeferredCaptures is { } waiting) waiting.Add(done);
+            else done(Read(actor) with { Runtime = null });
+        }
 
         public ActorState Read(object actor) => _states[(IActor)actor];
 
@@ -872,7 +997,10 @@ public sealed class SceneLifecycleHistoryTests
         public void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null)
         {
             if (stillCurrent?.Invoke() != false)
+            {
+                CopyOperations.Add("pose");
                 _states[(IActor)actor] = state;
+            }
         }
 
         public void Note(string detail) => Notes.Add(detail);

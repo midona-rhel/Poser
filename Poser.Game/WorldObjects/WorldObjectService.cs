@@ -116,12 +116,13 @@ public sealed class WorldObjectService : IDisposable
     /// <summary>Replaces a spawned object's native body without changing its
     /// scene identity. Completion includes renderer readiness and property replay.</summary>
     internal Task<Outcome> Respawn(
-        AdoptedWorldObject handle, string path)
+        AdoptedWorldObject handle, string path, Func<bool>? stillCurrent = null,
+        System.Threading.CancellationToken cancellation = default)
     {
         if (_disposed || _teardownOnly || !handle.Spawned
             || !_adopted.Contains(handle))
             return Task.FromResult(new Outcome(false, "Only a spawned object can respawn."));
-        return _respawner.Respawn(handle, path);
+        return _respawner.Respawn(handle, path, stillCurrent, cancellation);
     }
 
     internal void PumpRespawns(DateTime now) => _respawner.Pump(now);

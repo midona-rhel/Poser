@@ -4,6 +4,7 @@ using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using System;
 using Poser.Domain.Identity;
+using Poser.Domain;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -417,26 +418,34 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
 
     // ── load side ────────────────────────────────────────────────────────
 
-    public async Task<string?> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
+    public async Task<Outcome> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
         if (data.PenumbraCollection is not { } collection || data.Mcdf is not null)
-            return null;
+            return Outcome.Ok();
         var target = await _framework.RunOnFrameworkThread(() =>
             _bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)));
-        if (target is not { } id) return "The actor is no longer bound.";
+        if (target is not { } id) return Outcome.Fail("The actor is no longer bound.");
         // Already wearing it (an older file that recorded the player's
         // collection a spawn inherits): no assignment, and no redraw.
         if (await _framework.RunOnFrameworkThread(() => _integration.ReadCollection(id)) is
             { Success: true, Value: { HasIndividualAssignment: true } current }
             && current.EffectiveId == collection)
-            return null;
-        var available = await _framework.RunOnFrameworkThread(() => _integration.ListCollections());
-        var name = collection == Guid.Empty ? "None"
-            : available.Value?.FirstOrDefault(x => x.Id == collection)?.Name;
-        if (name is null) return "The saved Penumbra collection is not available on this machine.";
+            return Outcome.Ok();
+        string name = "None";
+        if (collection != Guid.Empty)
+        {
+            var available = await _framework.RunOnFrameworkThread(() => _integration.ListCollections());
+            if (!available.Success || available.Value is null)
+                return Outcome.Fail(available.Detail ?? "Could not read the local Penumbra collections.");
+            var saved = available.Value.FirstOrDefault(x => x.Id == collection);
+            if (saved is null)
+                return new Outcome(true, "The saved Penumbra collection is not available on this machine. " +
+                    "This actor kept its local appearance settings; you can choose another collection in Appearance.");
+            name = saved.Name;
+        }
         var result = await _integration.SetCollectionAndWait(id, collection, name, bound, cancellation);
-        return result.Success ? null : result.Detail;
+        return result.Outcome;
     }
 
     /// <summary>

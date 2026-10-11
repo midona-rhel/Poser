@@ -15,16 +15,24 @@ public sealed class SceneObjectControl : ISceneObjectControl
     private readonly IEntityBindings _bindings;
     private readonly ValueJournal _journal;
     private readonly IEntityHistoryResolver<IPropHandle>? _propHistory;
+    private readonly IEntityHistoryResolver<IWorldObject>? _objectHistory;
+    private readonly EditHistory? _history;
+    private readonly Dalamud.Plugin.Services.IFramework? _framework;
     private readonly EntityValues<PropId> _props;
     private readonly EntityValues<WorldObjectId> _objects;
 
     public SceneObjectControl(IEntityBindings bindings, ValueJournal journal,
         IEntityHistoryResolver<IPropHandle>? propHistory = null,
-        IEntityHistoryResolver<IWorldObject>? objectHistory = null)
+        IEntityHistoryResolver<IWorldObject>? objectHistory = null,
+        EditHistory? history = null,
+        Dalamud.Plugin.Services.IFramework? framework = null)
     {
         _bindings = bindings;
         _journal = journal;
         _propHistory = propHistory;
+        _objectHistory = objectHistory;
+        _history = history;
+        _framework = framework;
         _props = new(journal, new HandleValuePort<PropId, IPropHandle>(Resolve, SelectionId.ForProp,
             prop => prop.IsValid, propHistory, SceneObjectAccessors.Props(), PropUnavailable), PropUnavailable);
         _objects = new(journal, new HandleValuePort<WorldObjectId, IWorldObject>(Resolve, SelectionId.ForWorldObject,
@@ -87,9 +95,67 @@ public sealed class SceneObjectControl : ISceneObjectControl
         return result;
     }
 
+    /// <summary>
+    /// Replaces the object's model in place. A replacement that landed on a
+    /// different path is one history step (#493); its undo and redo are
+    /// replacements too, so they complete when the model has loaded, like
+    /// the other multi-frame steps. A refused or cancelled replacement
+    /// records nothing.
+    /// </summary>
     public async Task<Outcome> Respawn(WorldObjectId id, string path)
     {
         if (Resolve(id) is not { } o) return new(false, ObjectUnavailable);
-        return await o.Respawn(path);
+        _journal.Seal();
+        var before = o.Path;
+        var result = await o.Respawn(path);
+        if (!result.Success || _history is null)
+            return result;
+        void Record()
+        {
+            var after = o.Path;
+            if (!string.Equals(before, after, StringComparison.Ordinal))
+                _history.Append(ModelStep(id, o, before, after));
+        }
+        // The replacement completes off the framework thread; history is
+        // framework-thread state.
+        if (_framework is null || _framework.IsInFrameworkUpdateThread) Record();
+        else await _framework.RunOnFrameworkThread(Record);
+        return result;
+    }
+
+    private JournalStep ModelStep(WorldObjectId id, IWorldObject original, string before, string after) =>
+        new("Change object model", () => true, () => true)
+        {
+            AffectedEntities = [SelectionId.ForWorldObject(id)],
+            BeforeValue = before,
+            AfterValue = after,
+            CompleteReplay = (undo, current, cancellation, completed) =>
+                _ = ReplayModel(original, undo ? before : after, current, cancellation, completed),
+        };
+
+    private async Task ReplayModel(IWorldObject original, string path, Func<bool> current,
+        System.Threading.CancellationToken cancellation, Action<Poser.Domain.Transforms.GestureResult> completed)
+    {
+        Poser.Domain.Transforms.GestureResult result;
+        try
+        {
+            var live = _objectHistory is null ? original : _objectHistory.Resolve(original);
+            if (live is not { IsValid: true })
+                result = Poser.Domain.Transforms.GestureResult.Fail(ObjectUnavailable);
+            else
+            {
+                var restored = await live.Respawn(path, current, cancellation);
+                result = restored.Success
+                    ? Poser.Domain.Transforms.GestureResult.Ok()
+                    : Poser.Domain.Transforms.GestureResult.Fail(restored.Detail ?? "The model could not be restored.");
+            }
+        }
+        catch (Exception ex)
+        {
+            result = Poser.Domain.Transforms.GestureResult.Fail(ex.Message);
+        }
+        void Finish() => completed(result);
+        if (_framework is null || _framework.IsInFrameworkUpdateThread) Finish();
+        else await _framework.RunOnFrameworkThread(Finish);
     }
 }

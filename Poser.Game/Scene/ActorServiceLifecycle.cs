@@ -68,6 +68,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private readonly Bindings.StableBindingRegistry _bindings;
     private readonly IBonePosingService _bonePosing;
     private readonly IActorManager _actorManager;
+    private readonly PoseExportCapture _exports;
 
     // Physics-driven bones (hair, clothing, the body-mod physics bones):
     // the game simulates them, so a captured pose must leave them alone —
@@ -98,8 +99,10 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         IBonePosingService bonePosing,
         IActorManager actorManager,
         ActorStateSnapshots actorStates,
-        Integration.ISpawnCollectionPort collections)
+        Integration.ISpawnCollectionPort collections,
+        PoseExportCapture exports)
     {
+        _exports = exports;
         _configuration = configuration;
         _collections = collections;
         _actorStates = actorStates;
@@ -179,32 +182,55 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         };
     }
 
-    public ActorState ReadPoseForCopy(object actor)
+    /// <summary>
+    /// Reads the source for a posed copy once the apply pass has refreshed its
+    /// raw caches (#499). The copy's import measures its deltas against the
+    /// copy's own <see cref="IBone.LastRawTransform"/>, so the source must be
+    /// read in that same apply frame: the finalize snapshot
+    /// (<see cref="IBone.LastTransform"/>) also carries what the game adds
+    /// after the pass, which the copy's body adds again — bust customization
+    /// scale compounded on every copy. Scene save and pose export already read
+    /// this frame; an unedited source's raw cache is only current after a
+    /// refresh, hence the armed capture rather than a synchronous read.
+    /// </summary>
+    public void CapturePoseForCopy(object actor, Action<ActorState?> done)
     {
         var target = (IActor)actor;
         var slots = _skeletons.GetSkeletons(target);
-        // The copy has no source gaze/profile drivers: capture its visible
-        // pose, not an unedited actor's potentially build-time raw cache.
-        // Never overwrite raw caches used for interactive delta math.
-        foreach (var skeleton in slots)
+        if (slots.Count == 0)
         {
-            foreach (var bone in skeleton.Bones) _ = bone.LastTransform;
-            if (skeleton is Skeleton live) live.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
+            done(ReadCopyState(target, slots));
+            return;
         }
-        var pose = slots.Count == 0 ? null : _poseFiles.CreatePoseFile(
-            slots, PoseBoneWanted, static bone => bone.LastTransform);
-        var rootScales = CapturePartialRootScales(target);
+        ActorState? state = null;
+        var begun = _exports.Begin(slots, refreshed =>
+        {
+            if (target.Address == nint.Zero || !_actorManager.IsAvailable(target))
+                return false;
+            state = ReadCopyState(target, refreshed);
+            return true;
+        }, ok => done(ok ? state : null));
+        if (!begun.Success)
+        {
+            Note($"Duplicate: {begun.Detail}");
+            done(null);
+        }
+    }
+
+    private ActorState ReadCopyState(IActor target, IReadOnlyList<ISkeleton> slots)
+    {
+        var pose = slots.Count == 0 ? null : _poseFiles.CreatePoseFile(slots, PoseBoneWanted);
         return new ActorState(
             _posing.GetEffectiveTransform(target),
             _spawns.IsVisible(target),
             pose)
         {
-            PartialRootScales = rootScales,
+            PartialRootScales = CapturePartialRootScales(target),
             CopyBones = slots.SelectMany(s => s.Bones.Where(b =>
                     (!b.IsPartialRoot || b.IsSkeletonRoot) && PoseBoneWanted(b)
-                    && b.LastTransform.Rotation.LengthSquared() > 1e-8f)
+                    && b.LastRawTransform.Rotation.LengthSquared() > 1e-8f)
                 .Select(b => new PoseImportWrite(s.Slot, b.PartialId, b.BoneName,
-                    b.LastTransform, Poser.Domain.Posing.TransformComponents.All))).ToArray(),
+                    b.LastRawTransform, Poser.Domain.Posing.TransformComponents.All))).ToArray(),
             PhysicsDeltas = CapturePhysicsDeltas(target),
         };
     }
@@ -223,8 +249,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                 {
                     if (!bone.IsPartialRoot || bone.IsSkeletonRoot)
                         continue;
-                    var own = bone.LastTransform.Scale;
-                    scales[$"{bone.PartialId}:{bone.BoneName}"] = own;
+                    // Apply frame, like the pose it accompanies.
+                    scales[$"{bone.PartialId}:{bone.BoneName}"] = bone.LastRawTransform.Scale;
                 }
             }
             return scales.Count == 0 ? null : scales;
@@ -385,14 +411,6 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 
     public void Note(string detail) => _log.Warning(detail);
 
-    public void DetachGaze(object actor)
-    {
-        // Before the first draw, so a posed duplicate never begins a look-at blend.
-        var result = _gaze.SetGazeMode((IActor)actor, GazeTargetMode.Detached);
-        if (!result.Success)
-            Note($"Duplicate: the gaze could not be detached: {result.Detail}");
-    }
-
     public void WhenPosable(object actor, Action<object> act) =>
         ScheduleReady((IActor)actor, act, ReadyAttempts);
 
@@ -478,6 +496,13 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             return;
         }
 
+        if (state.CopyBones is { } required &&
+            !ActorPoseReadiness.IsReady(_skeletons.GetSkeletons(actor), _bindings, required))
+        {
+            Schedule(actor, state, attempts - 1, stillCurrent);
+            return;
+        }
+
         _posing.SetTransformOverride(actor, state.Placement);
         if (_posing.GetTransformOverride(actor) is null)
             _log.Warning(
@@ -504,8 +529,18 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         if (state.PartialRootScales is { } rootScales)
             ApplyPartialRootScales(actor, rootScales);
         var options = RestoreOptions;
+        // The import owns pause and its delayed speed restoration. A separate
+        // WhenPosable pause can otherwise be undone by that restoration.
+        options.FreezeOnImport = state.FreezePoseOnRestore;
         if (_bindings.GetActorId(actor) is not { } actorId)
             return;
+        if (state.CopyBones is not null)
+        {
+            // Spawn has no published actor identity yet. Detach only after
+            // binding, but before the importer settles and samples its basis.
+            var detached = _gaze.SetGazeMode(actor, GazeTargetMode.Detached);
+            if (!detached.Success) { Note($"Duplicate: {detached.Detail}"); return; }
+        }
         void OnReceipt(Poser.Domain.Operations.OperationReceipt receipt)
             {
                 if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)

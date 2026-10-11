@@ -625,7 +625,7 @@ public sealed class UIManager : IUIManager
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
-        // Nothing draws past this point; the context and its textures go.
-        _ui.Dispose();
+        // The provider owns the context. Presentation disposal still dismisses
+        // menus through it after Draw stops, so keep it alive until then.
     }
 }

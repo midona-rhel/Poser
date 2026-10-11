@@ -1,7 +1,24 @@
 using System.Globalization;
+using System.Numerics;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Poser.Documents.Files;
+using Poser.Domain.Transforms;
 
 namespace Poser.Documents.AutoSave;
+
+/// <summary>Opaque comparison baseline retained only after a successful scene autosave.</summary>
+public sealed class SceneAutoSaveIdentity
+{
+    internal SceneAutoSaveIdentity(string exactHash, IReadOnlyList<Transform> bones)
+    {
+        ExactHash = exactHash;
+        Bones = bones;
+    }
+
+    internal string ExactHash { get; }
+    internal IReadOnlyList<Transform> Bones { get; }
+}
 
 /// <summary>Whole-scene snapshot filenames and disk retention, separate from pose snapshots.</summary>
 public sealed class SceneAutoSaveStore
@@ -49,6 +66,96 @@ public sealed class SceneAutoSaveStore
         finally
         {
             scene.SavedAt = savedAt;
+        }
+    }
+
+    /// <summary>Captures an exact hash of every non-bone value plus the bone
+    /// transforms in wire order. Comparing to the last successfully written
+    /// baseline absorbs sub-tolerance capture noise without hiding cumulative
+    /// motion or changing the document that is written.</summary>
+    public static SceneAutoSaveIdentity? CaptureIdentity(SceneFile scene)
+    {
+        var bones = new List<Transform>();
+        var options = new JsonSerializerOptions(SceneFile.JsonOptions);
+        options.Converters.Insert(0, new BoneIdentityConverter(bones));
+        var savedAt = scene.SavedAt;
+        scene.SavedAt = null;
+        try
+        {
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(scene, options);
+            return new SceneAutoSaveIdentity(
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)),
+                bones.ToArray());
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            scene.SavedAt = savedAt;
+        }
+    }
+
+    public static bool SemanticallyEquals(SceneAutoSaveIdentity left, SceneAutoSaveIdentity right)
+    {
+        if (!string.Equals(left.ExactHash, right.ExactHash, StringComparison.Ordinal)
+            || left.Bones.Count != right.Bones.Count)
+            return false;
+        for (var i = 0; i < left.Bones.Count; i++)
+            if (!Same(left.Bones[i], right.Bones[i]))
+                return false;
+        return true;
+    }
+
+    private static bool Same(Transform left, Transform right)
+    {
+        const float tolerance = TransformMath.ApproximateSameTolerance;
+        static bool Vector(Vector3 a, Vector3 b, float tolerance) =>
+            MathF.Abs(a.X - b.X) <= tolerance &&
+            MathF.Abs(a.Y - b.Y) <= tolerance &&
+            MathF.Abs(a.Z - b.Z) <= tolerance;
+        static bool ScaleComponent(float a, float b, float tolerance) =>
+            MathF.Abs(a - b) <= tolerance * (1f + MathF.Max(MathF.Abs(a), MathF.Abs(b)));
+        static bool Scale(Vector3 a, Vector3 b, float tolerance) =>
+            ScaleComponent(a.X, b.X, tolerance) &&
+            ScaleComponent(a.Y, b.Y, tolerance) &&
+            ScaleComponent(a.Z, b.Z, tolerance);
+        if (!Vector(left.Position, right.Position, tolerance)
+            // Repeated evaluated-scale composition accumulates relative as
+            // well as absolute float error; compare against the saved baseline.
+            || !Scale(left.Scale, right.Scale, tolerance))
+            return false;
+        var aLength = left.Rotation.LengthSquared();
+        var bLength = right.Rotation.LengthSquared();
+        if (aLength < float.Epsilon || bLength < float.Epsilon)
+            return left.Rotation == right.Rotation;
+        var a = Quaternion.Normalize(left.Rotation);
+        var b = Quaternion.Normalize(right.Rotation);
+        if (Quaternion.Dot(a, b) < 0f)
+            b = new Quaternion(-b.X, -b.Y, -b.Z, -b.W);
+        return MathF.Abs(a.X - b.X) <= tolerance &&
+            MathF.Abs(a.Y - b.Y) <= tolerance &&
+            MathF.Abs(a.Z - b.Z) <= tolerance &&
+            MathF.Abs(a.W - b.W) <= tolerance;
+    }
+
+    private sealed class BoneIdentityConverter(List<Transform> bones) : JsonConverter<PoseFile.BoneData>
+    {
+
+        public override PoseFile.BoneData Read(
+            ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            throw new NotSupportedException("The autosave signature converter only writes.");
+
+        public override void Write(
+            Utf8JsonWriter writer, PoseFile.BoneData value, JsonSerializerOptions options)
+        {
+            bones.Add(value);
+            // Keys, collection order and every surrounding field remain in
+            // the exact hash; only the three noisy transform values move to
+            // the baseline-relative comparison above.
+            writer.WriteStartObject();
+            writer.WriteEndObject();
         }
     }
 

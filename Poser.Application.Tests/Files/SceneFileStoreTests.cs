@@ -178,6 +178,61 @@ public sealed class SceneFileStoreTests
         Assert.Equal("old scene", File.ReadAllText(fixture.Path));
     }
 
+    [Fact]
+    public void Entity_counts_are_not_capped_by_the_file_format()
+    {
+        // The game has no light or prop cap; a 53-light capture used to be
+        // refused whole by an arbitrary 50.
+        using var fixture = new SceneFixture();
+        var scene = ValidScene();
+        var light = scene.Lights[0].Light!;
+        for (int i = 1; i < 53; i++)
+            scene.Lights.Add(new SceneLight
+            {
+                Key = Guid.NewGuid(),
+                Light = new LightFile { Name = $"Light {i}", Kind = light.Kind, Transform = light.Transform },
+            });
+        var prop = scene.Props[0];
+        for (int i = 1; i < 120; i++)
+            scene.Props.Add(new SceneProp
+            {
+                Key = Guid.NewGuid(),
+                Name = $"Chair {i}",
+                Model = prop.Model,
+                Submodel = prop.Submodel,
+                Variant = prop.Variant,
+                Transform = prop.Transform,
+            });
+
+        var write = SceneFileStore.Default.Write(scene, fixture.Path);
+        var read = SceneFileStore.Default.Read(fixture.Path);
+
+        Assert.True(write.Succeeded, write.Failure?.Detail);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Equal(53, read.Scene!.Lights.Count);
+        Assert.Equal(120, read.Scene.Props.Count);
+        Assert.True(SceneFileValidation.ValidateForLoad(read.Scene, out var refusals).Succeeded);
+        Assert.Empty(refusals);
+    }
+
+    [Fact]
+    public void An_oversized_scene_document_is_still_refused()
+    {
+        // The size cap, not entity counts, is what bounds a hostile file.
+        using var fixture = new SceneFixture();
+        Directory.CreateDirectory(fixture.Root);
+        using (var file = File.Create(fixture.Path))
+        using (var archive = new System.IO.Compression.ZipArchive(
+            file, System.IO.Compression.ZipArchiveMode.Create))
+        using (var entry = archive.CreateEntry(SceneFileStore.DocumentEntry).Open())
+            entry.Write(new byte[SceneFileLimits.MaxDocumentBytes + 1]);
+
+        var read = SceneFileStore.Default.Read(fixture.Path);
+
+        Assert.False(read.Succeeded);
+        Assert.Equal(SceneStoreFailureKind.SizeLimit, read.Failure!.Kind);
+    }
+
     // ── issue #439: one bad entity never refuses the whole scene ─────────
 
     [Fact]

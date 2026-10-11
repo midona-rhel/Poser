@@ -5,7 +5,6 @@ using Poser.Domain.Posing;
 using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Game.Overlays;
-using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
@@ -26,7 +25,6 @@ public sealed class SceneCreation : ISceneCreation
     private readonly ISceneLifecycleHistory _lifecycle;
     private readonly IEntityBindings _bindings;
     private readonly ISkeletonService _skeletons;
-    private readonly AnimationSession _animation;
     private readonly SceneRuntimeHandles _handles;
     private readonly ICameraProjection _camera;
     private readonly IVirtualCameraService _cameras;
@@ -38,7 +36,7 @@ public sealed class SceneCreation : ISceneCreation
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, AnimationSession animation, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
+        IEntityBindings bindings, ISkeletonService skeletons, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
         Application.Integration.IntegrationSelectors integration, IPluginLog log,
         Application.Transforms.TransformParenting parenting)
     {
@@ -49,7 +47,6 @@ public sealed class SceneCreation : ISceneCreation
         _lifecycle = lifecycle;
         _bindings = bindings;
         _skeletons = skeletons;
-        _animation = animation;
         _camera = camera;
         _cameras = cameras;
         _lighting = lighting;
@@ -187,14 +184,7 @@ public sealed class SceneCreation : ISceneCreation
         string name = Application.Settings.ConfigurationService.StripObjectIndex(source.Name);
         if (!withPose || _skeletons.GetSkeleton(source) is null)
             return _lifecycle.SpawnActor($"Duplicate actor '{name}'", Clone, source: source);
-        var posed = _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source);
-        // The copy binds on the scene's next refresh, not inside this call.
-        if (posed is not null)
-            _lifecycle.WhenPosable(posed, copy =>
-            {
-                if (_bindings.GetActorId(copy) is { } id) _animation.Pause(id);
-            });
-        return posed;
+        return _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source);
     }
 
     private SceneCreationResult Track(SceneEntityKind kind, object? entity) => entity is null
