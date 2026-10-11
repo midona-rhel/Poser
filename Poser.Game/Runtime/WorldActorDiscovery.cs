@@ -7,6 +7,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using Poser.Application.Lifecycle;
 using Poser.Game.Entities;
+using Poser.Game.Core;
 using Poser.Game.Services;
 
 namespace Poser.Game;
@@ -542,7 +543,7 @@ public sealed class WorldActorDiscovery
     /// candidate may never name an occupant of this band; Poser's own
     /// auxiliary bodies outside it (the 441 preview) are excluded by address.</summary>
     private static bool IsProtectedIndex(ushort objectIndex) =>
-        objectIndex is >= 200 and <= 439;
+        objectIndex is >= GPoseObjectTable.UiCopyIndex and <= GPoseObjectTable.LastActorIndex;
 
     private void Forget(WorldActorCandidateId id)
     {

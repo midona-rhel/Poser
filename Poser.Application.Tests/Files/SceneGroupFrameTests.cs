@@ -51,6 +51,27 @@ public sealed class SceneGroupFrameTests
     }
 
     [Fact]
+    public void Origin_rebase_only_translates_while_anchor_rebase_also_turns()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Origin = Vector3.Zero;
+        var prop = scene.Props[0].Transform;
+        prop.Position = new(1, 0, 0);
+        var rotation = new Quaternion(0, 0, 0, 2); // deliberately unnormalized
+        prop.Rotation = rotation;
+
+        Assert.Null(SceneRelativePlacement.Rebase(scene, new(0, 5, 0)));
+        Assert.Equal(new Vector3(1, 5, 0), prop.Position);
+        Assert.Equal(rotation, prop.Rotation);
+
+        Assert.Null(ScenePlacementRebase.Rebase(scene, new() { Position = new(0, 5, 0), Yaw = 0 },
+            new(0, 5, 0), MathF.PI / 2));
+        Assert.True(Vector3.Distance(new Vector3(0, 5, -1), prop.Position) < 1e-5f);
+        var turned = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2);
+        Assert.True(MathF.Abs(Quaternion.Dot(turned, prop.Rotation)) > .99999f);
+    }
+
+    [Fact]
     public void Legacy_absent_metadata_is_supported_but_invalid_present_state_is_not()
     {
         var scene = Scene();

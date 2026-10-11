@@ -9,6 +9,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Application.Viewport;
 using Poser.Domain.Scene;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
 using static Poser.Game.GazeEntryStore;
 
 namespace Poser.Game;
@@ -83,7 +84,7 @@ internal sealed unsafe class GazeNativeDriver
     internal static bool CanWriteCharacter([NotNullWhen(true)] IGameObject? character) =>
         character is { Address: not 0 }
         && character.IsValid()
-        && character.ObjectIndex is >= 201 and <= 439;
+        && GPoseObjectTable.IsActorIndex(character.ObjectIndex);
 
     /// <summary>
     /// Computes the character-target-id write this transition owes, and books

@@ -417,14 +417,27 @@ public static class TransformMath
         return IsFinite(normalized);
     }
 
+    public static bool IsFinite(Vector2 value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y);
+
     public static bool IsFinite(Vector3 value) =>
         float.IsFinite(value.X) &&
         float.IsFinite(value.Y) &&
         float.IsFinite(value.Z);
+
+    public static bool IsFinite(Vector4 value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y) &&
+        float.IsFinite(value.Z) &&
+        float.IsFinite(value.W);
 
     public static bool IsFinite(Quaternion value) =>
         float.IsFinite(value.X) &&
         float.IsFinite(value.Y) &&
         float.IsFinite(value.Z) &&
         float.IsFinite(value.W);
+
+    public static bool IsFinite(Transform value) =>
+        IsFinite(value.Position) && IsFinite(value.Rotation) && IsFinite(value.Scale);
 }

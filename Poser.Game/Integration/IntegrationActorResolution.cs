@@ -5,7 +5,7 @@ using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game.Bindings;
-using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+using Poser.Game.Core;
 
 namespace Poser.Game.Integration;
 
@@ -67,14 +67,11 @@ public sealed class IntegrationActorResolution : IIntegrationResolutionPort
             detail = resolved.Detail ?? "The actor is no longer available.";
             return -1;
         }
-        return IndexOf(legacy.Address);
+        return GPoseObjectTable.IndexOf(legacy.Address);
     }
 
     /// <summary>The resolved address; only after <see cref="ResolveIndex"/> succeeded.</summary>
     internal nint AddressOf(ActorId actor) => _bindings.Value.Resolve(actor).Value!.Address;
-
-    internal static unsafe int IndexOf(nint address) =>
-        ((CSGameObject*)address)->ObjectIndex;
 
     /// <summary>The shared preconditions of the address-addressed calls: the
     /// framework thread, and two addresses that are actually objects. The

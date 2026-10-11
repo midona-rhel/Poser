@@ -1,6 +1,7 @@
 using Dalamud.Plugin.Services;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
+using Poser.Game.Core;
 using Poser.Game.Entities;
 using Poser.Game.Services;
 
@@ -84,18 +85,6 @@ internal sealed class ActorRemoval
             return false;
         }
     }
-
-    /// <summary>
-    /// The GPose object table's range. Brio gates its own scene destruction on
-    /// exactly this and nothing else — <c>DestroyAll</c> walks
-    /// <c>_objectTable[GPoseStart..GPoseEnd]</c> and hands each object to
-    /// <c>DestroyObject</c> (<c>Brio/Game/Actor/ActorSpawnService.cs:175-183</c>,
-    /// <c>ActorTableHelpers.cs:5-8</c>). 200 is the GPose primary and is
-    /// deliberately outside the range, which is what makes "clear the scene"
-    /// safe to mean everything in it.
-    /// </summary>
-    private const int GPoseTableStart = 201;
-    private const int GPoseTableEnd = 439;
 
     /// <summary>
     /// Removes exactly one actor from the temporary GPose object table.
@@ -230,10 +219,16 @@ internal sealed class ActorRemoval
     }
 
     /// <summary>Whether this address is currently a GPose-table object.
-    /// Re-read at the write, never cached.</summary>
+    /// Re-read at the write, never cached. Brio gates its own scene
+    /// destruction on exactly this range and nothing else — <c>DestroyAll</c>
+    /// walks <c>_objectTable[GPoseStart..GPoseEnd]</c>
+    /// (<c>Brio/Game/Actor/ActorSpawnService.cs:175-183</c>,
+    /// <c>ActorTableHelpers.cs:5-8</c>). Slot 200, the game's UI copy, is
+    /// deliberately outside it, which is what makes "clear the scene" safe
+    /// to mean everything in it.</summary>
     private bool InGPoseTable(nint address)
     {
-        for (int index = GPoseTableStart; index <= GPoseTableEnd; index++)
+        for (int index = GPoseObjectTable.FirstActorIndex; index <= GPoseObjectTable.LastActorIndex; index++)
         {
             if (_objectAddressAt(index) == address)
                 return true;

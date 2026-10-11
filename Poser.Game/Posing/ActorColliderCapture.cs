@@ -11,6 +11,7 @@ using Poser.Domain.Posing;
 using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
 using Poser.Game.Entities;
 using Poser.Game.Services;
 
@@ -131,7 +132,8 @@ public sealed class ActorColliderCapture(
                 frames.TryAdd(bone.BoneName, (boneId, new(frame.Position, frame.Rotation, frame.Scale)));
             }
         }
-        ushort skeletonRace = character->GetModelType() == CharacterBase.ModelType.Human ? ((Human*)character)->RaceSexId : (ushort)0;
+        var human = GPoseObjectTable.AsHuman(character);
+        ushort skeletonRace = human != null ? human->RaceSexId : (ushort)0;
         var deformerPath = replacements.GetValueOrDefault(ActorColliderDeformation.GamePath, ActorColliderDeformation.GamePath);
         return new(models.ToArray(), bones, joints, world, origin, skeletonRace, deformerPath, frames);
     }

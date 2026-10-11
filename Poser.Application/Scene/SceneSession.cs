@@ -6,6 +6,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using TransformMath = Poser.Domain.Transforms.TransformMath;
 
 namespace Poser.Application.Scene;
 
@@ -557,10 +558,10 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                     $"Only Actor gaze mode may carry TargetActor for {gaze.Actor}.",
                     out validationError);
             }
-            if (!IsFinite(gaze.Anchor) ||
-                !IsFinite(gaze.EyesPosition) ||
-                !IsFinite(gaze.HeadPosition) ||
-                !IsFinite(gaze.BodyPosition))
+            if (!TransformMath.IsFinite(gaze.Anchor) ||
+                !TransformMath.IsFinite(gaze.EyesPosition) ||
+                !TransformMath.IsFinite(gaze.HeadPosition) ||
+                !TransformMath.IsFinite(gaze.BodyPosition))
                 return Fail(
                     $"Gaze state for {gaze.Actor} contains a non-finite position.",
                     out validationError);
@@ -650,7 +651,7 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
                 defaultCount++;
                 defaultCamera = camera;
             }
-            if (!IsFinite(camera.TargetOffset))
+            if (!TransformMath.IsFinite(camera.TargetOffset))
                 return Fail(
                     $"Camera {camera.Id} contains a non-finite target offset.",
                     out validationError);
@@ -928,11 +929,6 @@ public sealed class SceneSession : ICurrentSelectionEntityReads
 
     private static bool IsValidOverlayId(OverlayId id) =>
         id.LogicalId != Guid.Empty;
-
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) &&
-        float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z);
 
     private static bool IsValidGazePart(GazeDescriptor gaze, GazePart part) =>
         part switch

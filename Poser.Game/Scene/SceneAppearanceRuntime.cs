@@ -118,7 +118,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             // file the document no longer depends on.
             if (mcdf.IsPortable)
                 continue;
-            var hashed = HashFile(mcdf.Path);
+            var hashed = FileDigest.TryHashFile(mcdf.Path);
             if (hashed is null)
             {
                 // The reference is still worth saving: the load can follow the
@@ -132,20 +132,6 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             mcdf.ContentHash = hashed;
         }
         return notes;
-    }
-
-    private static string? HashFile(string path)
-    {
-        try
-        {
-            using var stream = System.IO.File.OpenRead(path);
-            return Convert.ToHexString(
-                System.Security.Cryptography.SHA256.HashData(stream));
-        }
-        catch (Exception)
-        {
-            return null;
-        }
     }
 
     // ── portable appearance ──────────────────────────────────────────────
@@ -243,7 +229,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 // Hashed by STREAM, and the bytes stay on disk: the writer
                 // copies them straight into the container entry, so a
                 // half-gigabyte package never becomes a half-gigabyte array.
-                string digest = HashFile(source)
+                string digest = FileDigest.TryHashFile(source)
                     ?? throw new System.IO.IOException(
                         "the package could not be checksummed.");
                 total += info.Length;
@@ -557,7 +543,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                     // its bytes cannot be the saved ones — but say WHY rather
                     // than inferring it, since the digest may simply have been
                     // unreadable when the scene was saved.
-                    var hash = HashFile(found);
+                    var hash = FileDigest.TryHashFile(found);
                     changed = hash is null
                         ? $"The character file '{saved.FileName}' could not be " +
                             "read to check it against the scene."

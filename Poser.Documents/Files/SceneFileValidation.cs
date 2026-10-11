@@ -164,7 +164,7 @@ public static class SceneFileValidation
 
         // The relative-load anchor is a world position like any other, so it
         // takes the same finite check every stated position takes.
-        if (scene.Origin is { } origin && !IsFinite(origin))
+        if (scene.Origin is { } origin && !TransformMath.IsFinite(origin))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
                 "The scene origin is not finite.");
 
@@ -362,7 +362,7 @@ public static class SceneFileValidation
             // A load skips a slot naming a group the file does not carry
             // (saves before #439 wrote one for every thin group they left
             // out), so only a write refuses it.
-            if (strict && slot.Kind == "group" && !groupKeys.Contains(slot.Key))
+            if (strict && slot.Kind == SceneStructureKind.Group && !groupKeys.Contains(slot.Key))
                 return Fail(SceneFileValidationFailureKind.Relationship,
                     "The scene's sidebar order names a group the scene does not have.");
         }
@@ -374,18 +374,18 @@ public static class SceneFileValidation
         foreach (var group in groups)
         {
             if (group.InitialFrameRotation is { } frame &&
-                (!IsFinite(frame) ||
+                (!TransformMath.IsFinite(frame) ||
                  frame.LengthSquared() < SceneFileLimits.MinQuaternionLengthSquared))
                 return Fail(SceneFileValidationFailureKind.DegenerateQuaternion,
                     $"Group '{group.Name}' has an invalid initial frame rotation.");
             if (group.Transform is { } transform)
             {
-                if (!IsFinite(transform.FrameOrigin) ||
-                    !IsFinite(transform.Position) ||
-                    !IsFinite(transform.FrameRotation) ||
-                    !IsFinite(transform.Rotation) ||
-                    !IsFinite(transform.SpacingScale) ||
-                    !IsFinite(transform.OwnScale) ||
+                if (!TransformMath.IsFinite(transform.FrameOrigin) ||
+                    !TransformMath.IsFinite(transform.Position) ||
+                    !TransformMath.IsFinite(transform.FrameRotation) ||
+                    !TransformMath.IsFinite(transform.Rotation) ||
+                    !TransformMath.IsFinite(transform.SpacingScale) ||
+                    !TransformMath.IsFinite(transform.OwnScale) ||
                     !TransformMath.IsValidRotation(transform.FrameRotation) ||
                     !TransformMath.IsValidRotation(transform.Rotation))
                     return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
@@ -561,8 +561,8 @@ public static class SceneFileValidation
             (gaze.LockedParts & ~GazeTargetType.All) != 0)
             return Fail(SceneFileValidationFailureKind.Range,
                 $"{label} names an unknown part.");
-        if (!IsFinite(gaze.Position) || !IsFinite(gaze.EyesPosition) ||
-            !IsFinite(gaze.HeadPosition) || !IsFinite(gaze.BodyPosition))
+        if (!TransformMath.IsFinite(gaze.Position) || !TransformMath.IsFinite(gaze.EyesPosition) ||
+            !TransformMath.IsFinite(gaze.HeadPosition) || !TransformMath.IsFinite(gaze.BodyPosition))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
                 $"{label} contains NaN or infinity.");
         if (gaze.TargetActorKey is { } target && !actorKeys.Contains(target))
@@ -614,7 +614,7 @@ public static class SceneFileValidation
                 $"World object {worldObject.Key:N}",
                 out var nameFailure))
             return nameFailure;
-        if (!IsFinite(worldObject.MapPosition))
+        if (!TransformMath.IsFinite(worldObject.MapPosition))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
                 $"World object '{worldObject.Path}' map position is not finite.");
         if (ValidateTransform(
@@ -626,7 +626,7 @@ public static class SceneFileValidation
         if (!float.IsFinite(worldObject.Opacity) || worldObject.Opacity is < 0f or > 1f ||
             !float.IsFinite(worldObject.VfxSpeed) || worldObject.VfxSpeed is < 0f or > MaxVfxScale ||
             !float.IsFinite(worldObject.VfxIntensity) || worldObject.VfxIntensity is < 0f or > MaxVfxScale ||
-            worldObject.Tint is { } tint && !IsFinite(tint))
+            worldObject.Tint is { } tint && !TransformMath.IsFinite(tint))
             return Fail(SceneFileValidationFailureKind.Range,
                 $"World object '{worldObject.Path}' has an invalid opacity, tint, speed or intensity.");
         if (worldObject.FurnitureLights is null ||
@@ -669,12 +669,12 @@ public static class SceneFileValidation
                 $"{label} has no transform.");
         if (ValidateTransform(document.Transform, label) is { } transformFailure)
             return transformFailure;
-        if (!IsFinite(document.Color) ||
+        if (!TransformMath.IsFinite(document.Color) ||
             !AllFinite(document.Intensity, document.Range, document.Falloff,
                 document.SpotAngle, document.FalloffAngle,
                 document.CharacterShadowRange, document.ShadowPlaneNear,
                 document.ShadowPlaneFar) ||
-            !IsFinite(document.AreaAngle))
+            !TransformMath.IsFinite(document.AreaAngle))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
                 $"{label} contains NaN or infinity.");
         if (!ValidateText(document.Gobo, $"{label} gobo path", out var goboFailure))
@@ -732,21 +732,21 @@ public static class SceneFileValidation
         if (!Enum.IsDefined(document.Kind))
             return Fail(SceneFileValidationFailureKind.Range,
                 $"{label} has an unknown camera kind.");
-        if (!IsFinite(document.Angle) || !IsFinite(document.Pan) ||
+        if (!TransformMath.IsFinite(document.Angle) || !TransformMath.IsFinite(document.Pan) ||
             !AllFinite(document.Roll, document.Zoom, document.FoV,
                 document.MovementSpeed, document.MouseSensitivity,
                 document.OrthographicZoom) ||
-            !IsFinite(document.PositionOffset) ||
+            !TransformMath.IsFinite(document.PositionOffset) ||
             // Absent is legal — an unpinned camera has no fixed position at
             // all — but a present one is held to the same finiteness as every
             // other coordinate in the document.
-            (document.FixedPosition is { } pinned && !IsFinite(pinned)) ||
-            !IsFinite(document.Position) ||
-            !IsFinite(document.Rotation))
+            (document.FixedPosition is { } pinned && !TransformMath.IsFinite(pinned)) ||
+            !TransformMath.IsFinite(document.Position) ||
+            !TransformMath.IsFinite(document.Rotation))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
                 $"{label} contains NaN or infinity.");
 
-        if (!IsFinite(camera.TargetOffset))
+        if (!TransformMath.IsFinite(camera.TargetOffset))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
                 $"{label} target offset contains NaN or infinity.");
         if (!ValidateText(camera.TargetActorName, $"{label} target name", out var targetNameFailure))
@@ -846,36 +846,36 @@ public static class SceneFileValidation
         if (environment.Sky is { } sky && !float.IsFinite(sky.SunVisibility))
             return false;
         if (environment.Clouds is { } clouds &&
-            (!IsFinite(clouds.CloudColor1) || !IsFinite(clouds.CloudColor2) ||
+            (!TransformMath.IsFinite(clouds.CloudColor1) || !TransformMath.IsFinite(clouds.CloudColor2) ||
              !AllFinite(clouds.ShadowStop, clouds.CloudHeight)))
             return false;
         if (environment.Lighting is { } lighting &&
-            (!IsFinite(lighting.SunlightColor) ||
-             !IsFinite(lighting.MoonlightColor) ||
-             !IsFinite(lighting.AmbientColor) ||
+            (!TransformMath.IsFinite(lighting.SunlightColor) ||
+             !TransformMath.IsFinite(lighting.MoonlightColor) ||
+             !TransformMath.IsFinite(lighting.AmbientColor) ||
              !AllFinite(lighting.Unknown1, lighting.AmbientSaturation,
                  lighting.AmbientTemperature, lighting.Unknown2,
                  lighting.LightDistance, lighting.Unknown4)))
             return false;
         if (environment.Fog is { } fog &&
-            (!IsFinite(fog.Color) ||
+            (!TransformMath.IsFinite(fog.Color) ||
              !AllFinite(fog.Distance, fog.Thickness, fog.SkySmoothness,
                  fog.SkyOpacity, fog.FogOpacity, fog.SunVisibility)))
             return false;
         if (environment.Rain is { } rain &&
-            (!IsFinite(rain.Color) ||
+            (!TransformMath.IsFinite(rain.Color) ||
              !AllFinite(rain.Raindrops, rain.Intensity, rain.Weight,
                  rain.Scatter, rain.Unknown1, rain.Size, rain.Unknown2,
                  rain.Unknown3)))
             return false;
         if (environment.Particles is { } particles &&
-            (!IsFinite(particles.Color) ||
+            (!TransformMath.IsFinite(particles.Color) ||
              !AllFinite(particles.Unknown1, particles.Intensity,
                  particles.Weight, particles.Spread, particles.Speed,
                  particles.Size, particles.Glow, particles.Spin)))
             return false;
         if (environment.Stars is { } stars &&
-            (!IsFinite(stars.MoonColor) ||
+            (!TransformMath.IsFinite(stars.MoonColor) ||
              !AllFinite(stars.ConstellationIntensity, stars.ConstellationCount,
                  stars.StarCount, stars.GalaxyIntensity, stars.StarIntensity,
                  stars.MoonBrightness)))
@@ -889,8 +889,8 @@ public static class SceneFileValidation
     private static SceneFileValidationOutcome? ValidateTransform(
         LightFile.TransformData transform, string label)
     {
-        if (!IsFinite(transform.Position) || !IsFinite(transform.Scale) ||
-            !IsFinite(transform.Rotation))
+        if (!TransformMath.IsFinite(transform.Position) || !TransformMath.IsFinite(transform.Scale) ||
+            !TransformMath.IsFinite(transform.Rotation))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
                 $"{label} transform contains NaN or infinity.");
         if (transform.Rotation.LengthSquared() <
@@ -939,21 +939,6 @@ public static class SceneFileValidation
         }
         return true;
     }
-
-    private static bool IsFinite(Vector2 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y);
-
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z);
-
-    private static bool IsFinite(Vector4 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) && float.IsFinite(value.W);
-
-    private static bool IsFinite(Quaternion value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) && float.IsFinite(value.W);
 
     private static SceneFileValidationOutcome Fail(
         SceneFileValidationFailureKind kind, string detail) =>

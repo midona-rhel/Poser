@@ -3,6 +3,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
+using Poser.Game.Core;
 
 namespace Poser.Game.Diagnostics;
 
@@ -28,7 +29,7 @@ internal static partial class GPoseTransitionLog
         {
             foreach (var actor in objects)
                 if (actor is Dalamud.Game.ClientState.Objects.Types.ICharacter &&
-                    (actor.ObjectIndex == 0 || actor.ObjectIndex is >= 200 and <= 439 ||
+                    (actor.ObjectIndex == 0 || actor.ObjectIndex is >= GPoseObjectTable.UiCopyIndex and <= GPoseObjectTable.LastActorIndex ||
                      actor.ObjectKind is Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Companion or
                         Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Mount or Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Ornament))
                     Actor(log, phase, actor.Address, $"index={actor.ObjectIndex} kind={actor.ObjectKind} name={actor.Name}");

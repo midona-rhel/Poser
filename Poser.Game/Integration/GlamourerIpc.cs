@@ -10,6 +10,7 @@ using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game.Bindings;
+using Poser.Game.Core;
 using Poser.Documents.Appearance;
 using static Poser.Game.Integration.IntegrationIpc;
 
@@ -474,7 +475,7 @@ public sealed class GlamourerIpc : IGlamourerPort, ISpawnAppearancePort
         return Guarded(Glamourer, "Initialize duplicate appearance", () =>
         {
             if (_actors.AddressPair(sourceAddress, targetAddress) is { } refusal) return refusal;
-            return CopySpawnAppearance(IntegrationActorResolution.IndexOf(sourceAddress), IntegrationActorResolution.IndexOf(targetAddress),
+            return CopySpawnAppearance(GPoseObjectTable.IndexOf(sourceAddress), GPoseObjectTable.IndexOf(targetAddress),
                 _getState.InvokeFunc, () => ResetSpawnAppearance(targetAddress), _applyState.InvokeFunc);
         });
     }
@@ -508,7 +509,7 @@ public sealed class GlamourerIpc : IGlamourerPort, ISpawnAppearancePort
         return Guarded(Glamourer, "Initialize spawn appearance", () =>
         {
             if (_actors.AddressPair(address, address) is { } refusal) return refusal;
-            if (_objects[IntegrationActorResolution.IndexOf(address)] is not Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter target
+            if (_objects[GPoseObjectTable.IndexOf(address)] is not Dalamud.Game.ClientState.Objects.SubKinds.IPlayerCharacter target
                 || target.Address != address)
                 return IntegrationResult.Fail("The owned spawn is no longer a player-kind object.");
             string name = target.Name.TextValue;

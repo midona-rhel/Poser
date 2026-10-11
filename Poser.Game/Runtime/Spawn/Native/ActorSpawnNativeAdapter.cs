@@ -4,6 +4,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Domain.Companions;
+using Poser.Game.Core;
 
 namespace Poser.Game;
 
@@ -136,13 +137,9 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         var to = (Character*)Revalidate(target);
         if (from == null || to == null)
             return false;
-        var drawn = from->GameObject.DrawObject;
-        if (drawn == null
-            || drawn->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase
-            || ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawn)->GetModelType()
-                != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase.ModelType.Human)
+        var human = GPoseObjectTable.AsHuman(from->GameObject.DrawObject);
+        if (human == null)
             return false;
-        var human = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Human*)drawn;
         to->DrawData.CustomizeData = human->Customize;
         var models = human->EquipmentModels;
         var slots = to->DrawData.EquipmentModelIds;
@@ -152,15 +149,11 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         var glasses = from->DrawData.GlassesIds;
         for (int i = 0; i < glasses.Length; i++)
             to->DrawData.SetGlasses(i, glasses[i]);
-        var toDrawn = to->GameObject.DrawObject;
-        if (toDrawn != null
-            && toDrawn->Object.GetObjectType() == FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase
-            && ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)toDrawn)->GetModelType()
-                == FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase.ModelType.Human)
+        var toHuman = GPoseObjectTable.AsHuman(to->GameObject.DrawObject);
+        if (toHuman != null)
         {
             // Already drawn (the once-posable pass): the drawn glasses models
             // straight across, the way the sync plugin set them.
-            var toHuman = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Human*)toDrawn;
             var sourceGlasses = human->GlassesModels;
             for (uint i = 0; i < (uint)sourceGlasses.Length; i++)
             {

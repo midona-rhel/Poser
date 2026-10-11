@@ -9,7 +9,9 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
+using Poser.Game.Core;
 using NativeVector = FFXIVClientStructs.FFXIV.Common.Math.Vector4;
+using TransformMath = Poser.Domain.Transforms.TransformMath;
 
 namespace Poser.Game.Presentation;
 
@@ -34,11 +36,9 @@ public sealed unsafe partial class PresentationRuntimePort
         if (character == null) return default;
         var access = _integration.ProbeGlamourerAccess(actor);
         if (!access.CanEdit) { detail = access.Detail ?? "Appearance editing is unavailable."; return default; }
-        var model = BaseFor(character, PresentationModel.Character);
-        if (character->GameObject.RenderFlags != 0 || model == null
-            || model->GetModelType() != CharacterBase.ModelType.Human)
+        var human = GPoseObjectTable.AsHuman(BaseFor(character, PresentationModel.Character));
+        if (character->GameObject.RenderFlags != 0 || human == null)
         { detail = "The human model is unavailable."; return default; }
-        var human = (Human*)model;
         // DrawObject.NotifyTransformChanged gates UpdateTransforms on LoadState==3
         // (also verified in the installed DLL). This prerequisite alone does not
         // prove shader readiness: require the readable cbuffer too. Allocators may
@@ -101,7 +101,7 @@ public sealed unsafe partial class PresentationRuntimePort
         foreach (var channel in Enum.GetValues<AppearanceColorChannel>())
         {
             var value = ReadColor(ref buffer[0], channel);
-            if (!AppearanceColorSpace.IsFinite(value))
+            if (!TransformMath.IsFinite(value))
                 return IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>>.Fail("The shader colour is not readable.");
             values[channel] = value;
         }
@@ -110,7 +110,7 @@ public sealed unsafe partial class PresentationRuntimePort
 
     public Outcome SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
     {
-        if (!Enum.IsDefined(channel) || !AppearanceColorSpace.IsFinite(AppearanceColorSpace.ToShader(value)))
+        if (!Enum.IsDefined(channel) || !TransformMath.IsFinite(AppearanceColorSpace.ToShader(value)))
             return Outcome.Fail("The colour is invalid.");
         var buffer = ColorBuffer(actor, out var detail);
         if (buffer.IsEmpty) return Outcome.Fail(detail!);
@@ -123,7 +123,7 @@ public sealed unsafe partial class PresentationRuntimePort
 
     public Outcome RestoreColor(ActorId actor, AppearanceColorChannel channel, Vector4 incoming)
     {
-        if (!Enum.IsDefined(channel) || !AppearanceColorSpace.IsFinite(AppearanceColorSpace.ToShader(incoming)))
+        if (!Enum.IsDefined(channel) || !TransformMath.IsFinite(AppearanceColorSpace.ToShader(incoming)))
             return Outcome.Fail("The captured colour is invalid.");
         var buffer = ColorBuffer(actor, out var detail);
         if (buffer.IsEmpty) return Outcome.Fail(detail!);

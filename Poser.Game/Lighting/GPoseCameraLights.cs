@@ -73,14 +73,8 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
         }
     }
 
-    private static GPoseLightController* GetGPoseController()
-    {
-        var framework = EventFramework.Instance();
-        if (framework == null)
-            return null;
-        return (GPoseLightController*)
-            &framework->EventSceneModule.EventGPoseController;
-    }
+    private static GPoseLightController* GetGPoseController() =>
+        (GPoseLightController*)GPoseObjectTable.ControllerAddress();
 
     private bool ToggleGPoseLightDetour(GPoseLightController* state, uint index)
     {

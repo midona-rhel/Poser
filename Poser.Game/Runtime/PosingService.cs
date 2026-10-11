@@ -258,13 +258,7 @@ public unsafe class PosingService : IPosingService
 
     private static bool TrySanitizeTransform(Transform input, out Transform sanitized)
     {
-        static bool Finite(Vector3 value) =>
-            float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
-
-        if (!Finite(input.Position) || !Finite(input.Scale) ||
-            !float.IsFinite(input.Rotation.X) || !float.IsFinite(input.Rotation.Y) ||
-            !float.IsFinite(input.Rotation.Z) || !float.IsFinite(input.Rotation.W) ||
-            input.Rotation.LengthSquared() < 0.000001f)
+        if (!TransformMath.IsFinite(input) || input.Rotation.LengthSquared() < 0.000001f)
         {
             sanitized = default;
             return false;

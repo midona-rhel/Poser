@@ -56,10 +56,6 @@ public class ActorManager : IActorManager
             new($"actor_{gameObjectId}_{objectIndex}");
     }
 
-    // GPose actors are in object table slots 201-439
-    private const int GPoseStart = 201;
-    private const int GPoseEnd = 439;
-
     /// <summary>
     /// Converts Dalamud's ObjectKind to our ActorKind enum.
     /// </summary>
@@ -247,7 +243,7 @@ public class ActorManager : IActorManager
 
     private IEnumerable<IGameObject> GetGPoseCharacters()
     {
-        for (int i = GPoseStart; i <= GPoseEnd; i++)
+        for (int i = GPoseObjectTable.FirstActorIndex; i <= GPoseObjectTable.LastActorIndex; i++)
         {
             var obj = _objectTable[i];
             if (obj != null && IsDiscoverableActor(
@@ -534,7 +530,7 @@ public class ActorManager : IActorManager
             // In that case require the native primary slot AND exact player
             // name; a different slot with the same name is not sufficient.
             return reference is IPlayerCharacter player
-                && _gPoseService.IsGPosing && player.ObjectIndex == GPoseStart
+                && _gPoseService.IsGPosing && player.ObjectIndex == GPoseObjectTable.FirstActorIndex
                 && !string.IsNullOrEmpty(local.Name.TextValue)
                 && string.Equals(player.Name.TextValue, local.Name.TextValue, StringComparison.Ordinal)
                 && ((player.HomeWorld.RowId != 0 && player.HomeWorld.RowId == local.HomeWorld.RowId)

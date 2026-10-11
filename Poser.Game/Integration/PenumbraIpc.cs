@@ -10,6 +10,7 @@ using Poser.Application.Integration;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game.Bindings;
+using Poser.Game.Core;
 using Poser.Documents.Appearance;
 using Poser.Game.Services;
 using static Poser.Game.Integration.IntegrationIpc;
@@ -390,7 +391,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail(refusal.Detail!);
             if (!_ledger.TryGetOwned(actor, out var owned))
                 return IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
-            var index = IntegrationActorResolution.IndexOf(actor);
+            var index = GPoseObjectTable.IndexOf(actor);
             var (valid, _, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
             if (!valid || effective != owned)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail(
@@ -415,7 +416,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
         {
             if (_actors.AddressPair(sourceAddress, cloneAddress) is { } refusal)
                 return refusal;
-            int sourceIndex = IntegrationActorResolution.IndexOf(sourceAddress);
+            int sourceIndex = GPoseObjectTable.IndexOf(sourceAddress);
             var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)sourceIndex });
             if (trees.Length == 0 || trees[0] is not { } tree)
                 return IntegrationResult.Fail("Penumbra reported no resources for the source.");
@@ -446,7 +447,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
         Guarded(Penumbra, "Restore inherited collection", () =>
         {
             if (_actors.AddressPair(cloneAddress, cloneAddress) is { } refusal) return refusal;
-            int cloneIndex = IntegrationActorResolution.IndexOf(cloneAddress);
+            int cloneIndex = GPoseObjectTable.IndexOf(cloneAddress);
             var redirects = new Dictionary<string, string>(snapshot.Paths, StringComparer.OrdinalIgnoreCase);
             var manipulations = snapshot.Manipulations;
             var (createEc, collection) = _createTemporaryCollection.InvokeFunc(
@@ -494,7 +495,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
             if (!valid)
                 return IntegrationResult.Fail("Penumbra cannot identify the player.");
             var (ec, _) = _setCollectionForObject.InvokeFunc(
-                IntegrationActorResolution.IndexOf(cloneAddress), id, /*allowCreateNew*/ true, /*allowDelete*/ false);
+                GPoseObjectTable.IndexOf(cloneAddress), id, /*allowCreateNew*/ true, /*allowDelete*/ false);
             return PenumbraResult(ec, "assigning the player's collection");
         });
 
@@ -507,7 +508,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
             // its assignment too.
             var deleted = DeleteDuplicateCollection(cloneAddress);
             var (ec, _) = _setCollectionForObject.InvokeFunc(
-                IntegrationActorResolution.IndexOf(cloneAddress), null, /*allowCreateNew*/ false, /*allowDelete*/ true);
+                GPoseObjectTable.IndexOf(cloneAddress), null, /*allowCreateNew*/ false, /*allowDelete*/ true);
             return deleted.Success
                 ? PenumbraResult(ec, "releasing the clone's collection assignment")
                 : deleted;

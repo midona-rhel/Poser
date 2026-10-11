@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using TransformMath = Poser.Domain.Transforms.TransformMath;
 
 namespace Poser.Documents.Files;
 
@@ -206,9 +207,9 @@ public static class PoseFileValidation
         // These legacy top-level values are ignored by current planning and
         // are absent in useful Brio files. Their default zero quaternion is
         // therefore permitted, while non-finite payloads are still rejected.
-        if (!IsFinite(pose.Position) ||
-            !IsFinite(pose.Rotation) ||
-            !IsFinite(pose.Scale))
+        if (!TransformMath.IsFinite(pose.Position) ||
+            !TransformMath.IsFinite(pose.Rotation) ||
+            !TransformMath.IsFinite(pose.Scale))
         {
             return PoseFileValidationOutcome.Fail(
                 PoseFileValidationFailureKind.NonFiniteNumeric,
@@ -361,9 +362,9 @@ public static class PoseFileValidation
                 PoseFileValidationFailureKind.Document,
                 $"{name} has no transform.");
         }
-        if (!IsFinite(transform.Position) ||
-            !IsFinite(transform.Rotation) ||
-            !IsFinite(transform.Scale))
+        if (!TransformMath.IsFinite(transform.Position) ||
+            !TransformMath.IsFinite(transform.Rotation) ||
+            !TransformMath.IsFinite(transform.Scale))
         {
             return PoseFileValidationOutcome.Fail(
                 PoseFileValidationFailureKind.NonFiniteNumeric,
@@ -387,15 +388,4 @@ public static class PoseFileValidation
         }
         return PoseFileValidationOutcome.Ok();
     }
-
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) &&
-        float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z);
-
-    private static bool IsFinite(Quaternion value) =>
-        float.IsFinite(value.X) &&
-        float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) &&
-        float.IsFinite(value.W);
 }

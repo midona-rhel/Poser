@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 
 namespace Poser.Documents.Files;
 
@@ -405,8 +404,7 @@ internal static class AtomicFile
         {
             using var stream = fileSystem.OpenRead(path);
             var length = stream.Length;
-            var digest = SHA256.HashData(stream);
-            return new FileStamp(length, Convert.ToHexString(digest));
+            return new FileStamp(length, FileDigest.Sha256Hex(stream));
         }
         catch (Exception)
         {

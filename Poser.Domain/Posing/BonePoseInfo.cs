@@ -107,7 +107,7 @@ public class BonePoseInfo
         var finalTransform = CombineTransforms(existing, delta);
 
         // Never allow a bad native/editor frame into the persistent stack.
-        if (!IsFinite(finalTransform))
+        if (!TransformMath.IsFinite(finalTransform))
             return null;
 
         _stacks[transformIndex] = new BonePoseTransformInfo(prop, finalTransform,
@@ -223,7 +223,7 @@ public class BonePoseInfo
     /// </summary>
     public bool SetStackTransform(Transform absoluteDelta, TransformComponents? propagation = null)
     {
-        if (!IsFinite(absoluteDelta))
+        if (!TransformMath.IsFinite(absoluteDelta))
             return false;
 
         var prop = propagation ?? DefaultPropagation;
@@ -243,7 +243,7 @@ public class BonePoseInfo
         TransformComponents propagation,
         TransformFrame frame = TransformFrame.BoneLocal)
     {
-        if (string.IsNullOrWhiteSpace(layer) || !IsFinite(absoluteDelta))
+        if (string.IsNullOrWhiteSpace(layer) || !TransformMath.IsFinite(absoluteDelta))
             return false;
 
         var transformIndex = GetTransformIndex(propagation, layer);
@@ -275,7 +275,7 @@ public class BonePoseInfo
         var replacement = new List<BonePoseTransformInfo>();
         foreach (var stack in stacks)
         {
-            if (!IsFinite(stack.Transform))
+            if (!TransformMath.IsFinite(stack.Transform))
                 return false;
             replacement.Add(stack);
         }
@@ -373,14 +373,6 @@ public class BonePoseInfo
             Scale = a.Scale + b.Scale
         };
     }
-
-    private static bool IsFinite(Transform t)
-    {
-        return float.IsFinite(t.Position.X) && float.IsFinite(t.Position.Y) && float.IsFinite(t.Position.Z) &&
-               float.IsFinite(t.Rotation.X) && float.IsFinite(t.Rotation.Y) &&
-               float.IsFinite(t.Rotation.Z) && float.IsFinite(t.Rotation.W) &&
-               float.IsFinite(t.Scale.X) && float.IsFinite(t.Scale.Y) && float.IsFinite(t.Scale.Z);
-    }
 }
 
 /// <summary>
@@ -419,7 +411,6 @@ public class SkeletonPoseInfo
     public bool IsOverridden => _poses.Count > 0 && HasAnyStacks();
 
     public IEnumerable<BonePoseInfo> AllPoses => _poses.Values;
-
 
     public void Clear()
     {

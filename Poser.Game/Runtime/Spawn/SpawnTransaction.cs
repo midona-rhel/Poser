@@ -8,6 +8,7 @@ using Poser.Domain.Integration;
 using Poser.Game.Integration;
 using Poser.Domain.Identity;
 using Poser.Application.Lifecycle;
+using Poser.Game.Core;
 using Poser.Game.Entities;
 using Poser.Game.Services;
 
@@ -428,14 +429,8 @@ internal sealed unsafe class SpawnTransaction
 
     public void AddCharacterToGPose(Character* character)
     {
-        if (!_gPoseService.IsGPosing)
-            return;
-
-        var ef = EventFramework.Instance();
-        if (ef == null)
-            return;
-
-        ef->EventSceneModule.EventGPoseController.AddCharacterToGPose(character);
+        if (_gPoseService.IsGPosing)
+            GPoseObjectTable.AddCharacterToGPose(character);
     }
 
     private static void SetName(GameObject* gameObject, string name)

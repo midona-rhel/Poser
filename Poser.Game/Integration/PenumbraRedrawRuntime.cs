@@ -5,6 +5,7 @@ using Poser.Application.Lifecycle;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game.Bindings;
+using Poser.Game.Core;
 using Poser.Game.Posing;
 using Poser.Game.Services;
 using GameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
@@ -23,12 +24,12 @@ internal sealed class PenumbraRedrawRuntime(
     /// tick, and the plugin list and version IPC are not per-tick reads.</summary>
     public bool ProviderAvailable => available();
 
-    public unsafe RedrawActor? Resolve(ActorId id)
+    public RedrawActor? Resolve(ActorId id)
     {
         if (sessions.ActiveSessionGeneration is not { IsValid: true } session
             || bindings.Value.Resolve(id) is not { Success: true, Value: { } actor }
             || actor.Address == 0) return null;
-        return new(id, session, actor.Address, ((GameObject*)actor.Address)->ObjectIndex);
+        return new(id, session, actor.Address, GPoseObjectTable.IndexOf(actor.Address));
     }
 
     public IDisposable Observe(Action<nint, int> redrawn) =>

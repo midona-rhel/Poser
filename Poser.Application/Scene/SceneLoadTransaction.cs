@@ -940,9 +940,9 @@ internal sealed class SceneLoadTransaction(
     {
         // A cancellation or session replacement landing after the last phase
         // rolls back instead of committing.
-        var structureTokens = SceneLoadStructure.Tokens(("actor", _actorTokens), ("prop", _propTokens),
-            ("overlay", _overlayTokens), ("worldObject", _worldObjectTokens),
-            ("light", _lightTokens), ("camera", _cameraTokens));
+        var structureTokens = SceneLoadStructure.Tokens((SceneStructureKind.Actor, _actorTokens), (SceneStructureKind.Prop, _propTokens),
+            (SceneStructureKind.Overlay, _overlayTokens), (SceneStructureKind.WorldObject, _worldObjectTokens),
+            (SceneStructureKind.Light, _lightTokens), (SceneStructureKind.Camera, _cameraTokens));
         // Only a stop (cancel, session replaced) aborts here: members that
         // never bound are the structure restore's named refusals.
         if (await structure.WaitForBindings(operation, _scene, structureTokens,

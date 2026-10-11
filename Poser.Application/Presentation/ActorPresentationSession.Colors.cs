@@ -3,6 +3,7 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
+using TransformMath = Poser.Domain.Transforms.TransformMath;
 
 namespace Poser.Application.Presentation;
 
@@ -12,7 +13,7 @@ public sealed partial class ActorPresentationSession
 
     public Outcome SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
     {
-        if (!Enum.IsDefined(channel) || !AppearanceColorSpace.IsFinite(AppearanceColorSpace.ToShader(value)))
+        if (!Enum.IsDefined(channel) || !TransformMath.IsFinite(AppearanceColorSpace.ToShader(value)))
             return Outcome.Fail("The colour is invalid.");
         var owned = OverridesFor(actor);
         var reading = _port.ReadColors(actor);

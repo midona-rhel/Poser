@@ -113,13 +113,15 @@ public sealed class ActorStateSnapshots(
         if (!model.Success) return IntegrationResult.From(model);
         // MCDF already uses the same barrier, but a restored model id can require
         // a subsequent redraw. Ordinary looks and collections also finish here.
-        if (await runtime.OnFrameworkThread(() => penumbra.Penumbra.Available))
-        {
-            var ready = await penumbra.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation);
-            if (!ready.Success) return ready;
-        }
-        return IntegrationResult.Ok();
+        return await RedrawIfPenumbra(actor, cancellation);
     }
+
+    /// <summary>Redraws through Penumbra and waits for the actor to be ready;
+    /// succeeds at once when Penumbra is unavailable (nothing to redraw).</summary>
+    private async Task<IntegrationResult> RedrawIfPenumbra(ActorId actor, CancellationToken cancellation) =>
+        await runtime.OnFrameworkThread(() => penumbra.Penumbra.Available)
+            ? await penumbra.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation)
+            : IntegrationResult.Ok();
 
     /// <summary>Shared post-readiness restoration. The pose importer remains the sole pose/IK owner.</summary>
     public GestureResult RestoreProperties(ActorId actor, ActorPropertiesSnapshot properties)
@@ -156,11 +158,8 @@ public sealed class ActorStateSnapshots(
                     : GestureResult.Ok();
             });
             if (!check.Success) return check;
-            if (await runtime.OnFrameworkThread(() => penumbra.Penumbra.Available))
-            {
-                var ready = await penumbra.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation);
-                if (!ready.Success) return GestureResult.From(ready.Outcome);
-            }
+            var ready = await RedrawIfPenumbra(actor, cancellation);
+            if (!ready.Success) return GestureResult.From(ready.Outcome);
             return await runtime.OnFrameworkThread(() => !cancellation.IsCancellationRequested && stillCurrent()
                 && session != null && Current(actor, session.Value)
                 ? GestureResult.Ok() : GestureResult.Fail("The actor reset is no longer current."));

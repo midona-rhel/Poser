@@ -10,6 +10,7 @@ using Poser.Documents.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Game.Bindings;
+using Poser.Game.Core;
 using Poser.Game.Posing;
 using Poser.Game.Entities;
 using Poser.Game.Services;
@@ -42,9 +43,10 @@ public sealed class IdleModRuntime(
     private static unsafe int Race(ISkeleton skeleton)
     {
         var model = (CharacterBase*)skeleton.CharacterBaseAddress;
-        if (model == null || model->GetModelType() != CharacterBase.ModelType.Human || model->Skeleton == null)
+        var human = GPoseObjectTable.AsHuman(model);
+        if (human == null || model->Skeleton == null)
             throw new InvalidOperationException("Idle export currently supports humanoid actors only.");
-        return ((Human*)model)->RaceSexId;
+        return human->RaceSexId;
     }
 
     private sealed record Captured(int Race, string Face, IdleHavokEncoder.SkeletonLayout BodyLayout,

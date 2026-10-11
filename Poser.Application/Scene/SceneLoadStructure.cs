@@ -76,14 +76,14 @@ internal sealed class SceneLoadStructure(
         // A reference this load created a token for but that did not bind is
         // a refusal; one it never created (category left out, entity
         // refused) is already named or deliberately absent.
-        bool Loaded(SceneStructureRef reference) => reference.Kind == "companion"
-            ? tokens.ContainsKey(("actor", reference.Key))
+        bool Loaded(SceneStructureRef reference) => reference.Kind == SceneStructureKind.Companion
+            ? tokens.ContainsKey((SceneStructureKind.Actor, reference.Key))
             : tokens.ContainsKey((reference.Kind, reference.Key));
         SelectionId? Resolve(SceneStructureRef reference)
         {
-            if (reference.Kind == "companion")
+            if (reference.Kind == SceneStructureKind.Companion)
             {
-                var owner = Resolve(new() { Kind = "actor", Key = reference.Key });
+                var owner = Resolve(new() { Kind = SceneStructureKind.Actor, Key = reference.Key });
                 return owner?.Actor is { } actor && parenting.ResolveCompanion(actor) is { } companion
                     ? SelectionId.ForActor(companion) : null;
             }
@@ -124,7 +124,7 @@ internal sealed class SceneLoadStructure(
             }
             var order = new List<RootSlot>();
             foreach (var reference in scene.RootOrder ?? [])
-                if (reference.Kind == "group") order.Add(RootSlot.ForGroup(reference.Key));
+                if (reference.Kind == SceneStructureKind.Group) order.Add(RootSlot.ForGroup(reference.Key));
                 else if (Resolve(reference) is { } id) order.Add(RootSlot.For(id));
             try
             {
@@ -173,12 +173,12 @@ internal sealed class SceneLoadStructure(
     /// <summary>The saved name of the entity a structure reference names.</summary>
     private static string EntityName(SceneFile scene, SceneStructureRef reference) => reference.Kind switch
     {
-        "actor" or "companion" => scene.Actors.FirstOrDefault(entry => entry.Key == reference.Key)?.Name,
-        "prop" => scene.Props.FirstOrDefault(entry => entry.Key == reference.Key)?.Name,
-        "light" => scene.Lights.FirstOrDefault(entry => entry.Key == reference.Key)?.Light?.Name,
-        "camera" => scene.Cameras.FirstOrDefault(entry => entry.Key == reference.Key)?.Camera?.Name,
-        "overlay" => scene.Overlays?.FirstOrDefault(entry => entry.Key == reference.Key)?.Node?.Name,
-        "worldObject" => scene.WorldObjects?.FirstOrDefault(entry => entry.Key == reference.Key)?.Name,
+        SceneStructureKind.Actor or SceneStructureKind.Companion => scene.Actors.FirstOrDefault(entry => entry.Key == reference.Key)?.Name,
+        SceneStructureKind.Prop => scene.Props.FirstOrDefault(entry => entry.Key == reference.Key)?.Name,
+        SceneStructureKind.Light => scene.Lights.FirstOrDefault(entry => entry.Key == reference.Key)?.Light?.Name,
+        SceneStructureKind.Camera => scene.Cameras.FirstOrDefault(entry => entry.Key == reference.Key)?.Camera?.Name,
+        SceneStructureKind.Overlay => scene.Overlays?.FirstOrDefault(entry => entry.Key == reference.Key)?.Node?.Name,
+        SceneStructureKind.WorldObject => scene.WorldObjects?.FirstOrDefault(entry => entry.Key == reference.Key)?.Name,
         _ => null,
     } ?? reference.Kind;
 }
