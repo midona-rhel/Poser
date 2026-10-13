@@ -16,6 +16,18 @@ module.exports = async function updateDownloadCount({ github, context, core }) {
   if (entries.length !== 1 || entries[0].InternalName !== 'Poser')
     throw new Error('Expected a single Poser repository entry');
   core.info(`DownloadCount: ${entries[0].DownloadCount} -> ${count}`);
+
+  // An earlier update that never merged is stale by now; replace it rather
+  // than wedging every later run behind it.
+  const pending = await github.paginate(github.rest.pulls.list, { ...repo, state: 'open', base, per_page: 100 });
+  for (const stale of pending.filter(pr => pr.head.ref.startsWith('automation/download-count-') &&
+    pr.user.login === 'github-actions[bot]')) {
+    await github.rest.issues.createComment({ ...repo, issue_number: stale.number,
+      body: 'Superseded by a newer download count update.' });
+    await github.rest.pulls.update({ ...repo, pull_number: stale.number, state: 'closed' });
+    await github.rest.git.deleteRef({ ...repo, ref: `heads/${stale.head.ref}` }).catch(() => {});
+    core.info(`Closed stale ${stale.html_url}`);
+  }
   if (entries[0].DownloadCount === count) return;
 
   // Preserve every other byte, including release versions, links and LastUpdate.
@@ -25,11 +37,6 @@ module.exports = async function updateDownloadCount({ github, context, core }) {
   entries[0].DownloadCount = count;
   if (JSON.stringify(JSON.parse(updated)) !== JSON.stringify(entries))
     throw new Error('Unexpected repository metadata change');
-
-  const pending = await github.paginate(github.rest.pulls.list, { ...repo, state: 'open', base, per_page: 100 });
-  const existing = pending.find(pr => pr.head.ref.startsWith('automation/download-count-') &&
-    pr.user.login === 'github-actions[bot]');
-  if (existing) throw new Error(`Resolve the previous count update first: ${existing.html_url}`);
 
   const branch = `automation/download-count-${context.runId}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
   await github.rest.git.createRef({ ...repo, ref: `refs/heads/${branch}`, sha: main.object.sha });
@@ -42,17 +49,15 @@ module.exports = async function updateDownloadCount({ github, context, core }) {
     body: `Refresh DownloadCount to ${count} from published plugin ZIP downloads, including prereleases. No version, URL, changelog, or release timestamp changes.`,
   });
   core.info(`Created ${pr.html_url}`);
-  // Allow GitHub to compute mergeability, but never bypass repository protections.
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: state } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
-    if (state.mergeable !== null) break;
-    await new Promise(resolve => setTimeout(resolve, 2000));
-  }
-  const { data: merged } = await github.rest.pulls.merge({
-    ...repo, pull_number: pr.number, sha: commit.commit.sha, merge_method: 'squash',
-    commit_title: 'Update download count',
-  });
-  if (!merged.merged) throw new Error(`Count update needs attention: ${pr.html_url}`);
-  await github.rest.git.deleteRef({ ...repo, ref: `heads/${branch}` });
-  await core.summary.addRaw(`Updated DownloadCount to **${count}** via ${pr.html_url}.`).write();
+
+  // main requires the "portable" check, but events from GITHUB_TOKEN do not
+  // start pull_request workflows. A workflow_dispatch is the one event that
+  // does, and its check run lands on the same head commit.
+  await github.rest.actions.createWorkflowDispatch({ ...repo, workflow_id: 'architecture.yml', ref: branch });
+  // Auto-merge waits for the required check; it never bypasses protections.
+  await github.graphql(`mutation($id: ID!, $head: GitObjectID!) {
+    enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH,
+      commitHeadline: "Update download count", expectedHeadOid: $head }) { clientMutationId }
+  }`, { id: pr.node_id, head: commit.commit.sha });
+  await core.summary.addRaw(`Queued DownloadCount **${count}** via ${pr.html_url} (auto-merge after checks).`).write();
 };

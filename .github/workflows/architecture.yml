@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [main, refactor]
+  # The download-count bot dispatches this: its own PRs cannot trigger it.
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
