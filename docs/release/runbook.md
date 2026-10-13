@@ -56,5 +56,9 @@ plugin ZIP assets across published releases, including prereleases, not checksum
 or SBOMs. This measures downloads, not unique users, and includes verification downloads.
 It updates only `repo.json`'s `DownloadCount` through a squash-merged bot PR, leaving
 release identity, URLs and `LastUpdate` untouched. No rebuild or retag is involved.
-Actions must be allowed to create PRs; branch protection remains in force. If a PR
-cannot merge, the job fails with its link and avoids creating duplicate open PRs.
+Actions must be allowed to create PRs and the repository must allow auto-merge;
+branch protection remains in force. Bot PRs cannot trigger `pull_request` workflows,
+so the job dispatches the architecture workflow on its branch to produce the required
+`portable` check, then queues squash auto-merge. A green job therefore means *queued*,
+not merged: an update that fails its check stays open, and the next run closes it as
+superseded and opens a fresh one. An open count PR older than a day needs a look.
