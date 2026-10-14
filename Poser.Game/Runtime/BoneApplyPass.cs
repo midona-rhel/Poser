@@ -41,6 +41,8 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     private readonly IkChainRegistry _ik;
     private readonly TransitiveActionScheduler _transitive;
     private readonly Action<SkeletonKey> _purge;
+    private readonly KineDriverRerun _kineDrivers;
+    private readonly Func<bool> _driversFollowPose;
 
     // Hook for intercepting bone physics updates
     private delegate nint UpdateBonePhysicsDelegate(nint a1);
@@ -82,7 +84,9 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         PoseStackStore stacks,
         IkChainRegistry ik,
         TransitiveActionScheduler transitive,
-        Action<SkeletonKey> purge)
+        Action<SkeletonKey> purge,
+        KineDriverRerun kineDrivers,
+        Func<bool> driversFollowPose)
     {
         _log = log;
         _gPoseService = gPoseService;
@@ -94,6 +98,8 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         _ik = ik;
         _transitive = transitive;
         _purge = purge;
+        _kineDrivers = kineDrivers;
+        _driversFollowPose = driversFollowPose;
     }
 
     /// <summary>Installs and enables the UpdateBonePhysics hook. Called once
@@ -286,6 +292,12 @@ internal sealed unsafe class BoneApplyPass : IDisposable
 
         // STEP 4: Full cache update after reparent (like Brio line 244)
         UpdateAllLastTransforms(skeleton, gameSkeleton);
+
+        // STEP 5: the game's KineDriver ran before this pass (task 23), so
+        // .kdb-driven bones still follow the animation. Run it again on the
+        // posed skeleton, then refresh the caches the driven bones changed.
+        if (_driversFollowPose() && _kineDrivers.Run(gameSkeleton))
+            UpdateAllLastTransforms(skeleton, gameSkeleton);
         if (gazeFrame is { } captured) _gazeFrames.After(captured);
 #if DEBUG
         if (slotKey.Slot == PoseSlot.Character)
