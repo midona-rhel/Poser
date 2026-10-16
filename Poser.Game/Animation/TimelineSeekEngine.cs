@@ -387,7 +387,14 @@ internal sealed unsafe class TimelineSeekEngine
             if (blendFrames > 0)
                 BlendWrap(root, tree, blendFrames);
             else
+            {
+                // The frame-0 activation restarts the C009s: without a blend-in only
+                // when +0x6B8 is set before it.
+                nint wrapControl = _n.GetActorControl(root);
+                if (wrapControl != 0 && _l.IsActorControl(wrapControl))
+                    *(byte*)(wrapControl + 0x6B8) = 1;
                 Wrap(root, tree);
+            }
         }
         float speed = OpenWindow(root);
 
@@ -440,6 +447,7 @@ internal sealed unsafe class TimelineSeekEngine
         }
         SyncHavok(root, tree.Havok.Keys, work.PendingHavok, immediate: true);
         CloseWindow(root, speed);
+        StepPoolUnderPause(character, control);
 
         work.OwnerSpeed = speed;
         foreach (var (clip, start) in tree.Summons)
@@ -450,6 +458,24 @@ internal sealed unsafe class TimelineSeekEngine
             work.FreezeVfx(this);
         _frameTrees.Remove(root);
         return null;
+    }
+
+    /// <summary>
+    /// The holder pool steps by dt × OverallSpeed (§8.3): under a whole-actor pause
+    /// the restart's blend and the replaced holder's fade stand still, and the old
+    /// control keeps the pose. One pool step at speed 1 completes them.
+    /// </summary>
+    private void StepPoolUnderPause(nint character, nint control)
+    {
+        if (_n.UpdatePool == null || control == 0 || !_l.IsActorControl(control))
+            return;
+        ref float overall = ref ((FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)character)->Timeline.OverallSpeed;
+        if (overall != 0f || _n.ActorControlCharacter(control) != character)
+            return;
+        float saved = overall;
+        overall = 1f;
+        try { _n.UpdatePool(control, 1f, 0); }
+        finally { overall = saved; }
     }
 
     /// <summary>

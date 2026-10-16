@@ -64,6 +64,13 @@ internal sealed unsafe class TimelineSeekNatives
     /// speed (wrapper vd+0x1B8). Optional: only the pause of status effects needs it.</summary>
     public readonly delegate* unmanaged<nint, float, void> SetVfxDataSpeed;
 
+    /// <summary>ActorControl.UpdatePool 0x141900EA0(ctl, frames, flag 0): one step of
+    /// the actor's holder pool (blends, fades, releases), by frames × OverallSpeed.
+    /// Optional: only a seek under a whole-actor pause needs it.</summary>
+    public readonly delegate* unmanaged<nint, float, byte, void> UpdatePool;
+    /// <summary>ActorControl.GetCharacter 0x1418FAD60(ctl): the character it animates.</summary>
+    public readonly delegate* unmanaged<nint, nint> ActorControlCharacter;
+
     public readonly bool Ready;
     public readonly string? Missing;
 
@@ -126,6 +133,22 @@ internal sealed unsafe class TimelineSeekNatives
         catch (Exception ex)
         {
             log.Warning($"Animation: VfxData.SetSpeed scan failed ({ex.Message}).");
+        }
+
+        try
+        {
+            if (scanner.TryScanText(NativeSignatures.ActorControl_UpdatePool, out var pool) && pool != 0
+                && scanner.TryScanText(NativeSignatures.ActorControl_GetCharacter, out var owner) && owner != 0)
+            {
+                UpdatePool = (delegate* unmanaged<nint, float, byte, void>)pool;
+                ActorControlCharacter = (delegate* unmanaged<nint, nint>)owner;
+            }
+            else
+                log.Warning("Animation: ActorControl.UpdatePool not found; a seek under a whole-actor pause can leave a blend half-way.");
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Animation: ActorControl.UpdatePool scan failed ({ex.Message}).");
         }
 
         Missing = missing;

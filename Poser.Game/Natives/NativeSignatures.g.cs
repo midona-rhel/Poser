@@ -498,6 +498,22 @@ internal static class NativeSignatures
     public const string hkaSampleBlendJob_Build = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 41 54 41 55 41 56 41 57 48 83 EC 20 49 8B F1 4D 8B F0";
     /// <summary>hkaAnimationControl.InitTrackWeights (0x141F277F0 on the analysed build).</summary>
     public const string hkaAnimationControl_InitTrackWeights = "40 56 48 83 EC 40 48 83 79 38 00";
+    /// <summary>SchedulerTimeline.StepChild (0x141C33750 on the analysed build).</summary>
+    public const string SchedulerTimeline_StepChild = "48 8B C4 53 48 81 EC C0 00 00 00 0F 29 ?? ?? 44 0F 29";
+    /// <summary>SchedulerTimeline.StartChild (0x141C33930 on the analysed build).</summary>
+    public const string SchedulerTimeline_StartChild = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 40 48 8B 01 8B FA";
+    /// <summary>C009.Duration (0x14190C900 on the analysed build).</summary>
+    public const string C009_Duration = "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? A8 01 74 ?? 48 8B 4B 30 48 85 C9 75 ?? 48 8B 43 28 48 85 C0 75 ?? 48 8B 53 08 48 8B C1 48 85 D2 74 ?? 48 8B 42 08 48 89 43 28 48 85 C0 74 ?? 48 8B 48 08 48 89 4B 30 48 8B 01 FF 90";
+    /// <summary>SchedulerClip.CheckWindow (0x141904F60 on the analysed build).</summary>
+    public const string SchedulerClip_CheckWindow = "48 89 5C ?? ?? 48 89 6C ?? ?? 57 48 83 EC 30 48 8B 79 30";
+    /// <summary>ActorControl.UpdatePool (0x141900EA0 on the analysed build).</summary>
+    public const string ActorControl_UpdatePool = "40 53 48 83 EC 40 0F 29 74 ?? ?? 0F 28 F1 48 8B D9";
+    /// <summary>HolderPool.Step (0x1418FBFB0 on the analysed build).</summary>
+    public const string HolderPool_Step = "48 8B C4 41 57 48 83 EC 70 0F 29";
+    /// <summary>ActorControlManager.FindByObjectIndex (0x141884D40 on the analysed build).</summary>
+    public const string ActorControlManager_FindByObjectIndex = "48 89 5C ?? ?? 57 48 83 EC 40 48 8B F9 8B DA 48 8D ?? 24 20";
+    /// <summary>ActorControl.GetCharacter (0x1418FAD60 on the analysed build).</summary>
+    public const string ActorControl_GetCharacter = "80 79 10 00 75 ?? F6 41 08 01 48 8B 49 08 74 ?? 48 83 E1 F8 48 8B 01 48 FF A0 ?? ?? ?? ?? 0F B6 C1 C0 E8 02 A8 01 74 ?? 48 C1 E9 03 81 F9 32 03 00 00";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
@@ -592,6 +608,7 @@ internal static class NativeData
     public static readonly DataPattern GPose_StateByte = new("GPose.StateByte", "80 3D ?? ?? ?? ?? 40 73 ?? 33 D2 48 8B C8 E8 ?? ?? ?? ?? 48 8D ?? 24 40", 2, 7, 0x142A98EB4UL);
     public static readonly DataPattern GPose_FlagsByte = new("GPose.FlagsByte", "F6 05 ?? ?? ?? ?? 04 74 ?? 80 3D ?? ?? ?? ?? 40 73 ?? 33 D2 48 8B C8 E8 ?? ?? ?? ?? 48 8D ?? 24 40", 2, 7, 0x142A98EC3UL);
     public static readonly DataPattern Character_SpeedFactorD7E = new("Character.SpeedFactorD7E", "F3 0F 59 05 ?? ?? ?? ?? 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC 40 53", 4, 8, 0x142ACBD28UL);
+    public static readonly DataPattern ActorControlManager_InstancePtr = new("ActorControlManager.InstancePtr", "48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 8B D3 48 8B CF E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8B 5C ?? ?? 48 83 C4 20 5F C3 CC CC CC CC CC CC 48 89 5C ?? ?? 57 48 83 EC 40", 3, 7, 0x142AF3210UL);
 
     /// <summary>Address the instruction refers to: match + InstructionLength + rel32. A value different from
     /// <see cref="DataPattern.Analysed"/> is normal after a patch.</summary>
