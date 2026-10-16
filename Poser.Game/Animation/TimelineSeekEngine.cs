@@ -540,54 +540,89 @@ internal sealed unsafe class TimelineSeekEngine
         return list;
     }
 
-    /// <summary>Every C009 control of a root.</summary>
-    public List<nint> RootControls(nint root)
+    // hkaDefaultAnimationControl (stock Havok 2014): +0x60 forward wraps, +0x68
+    // MaxCycles (≤ 0 loops forever), +0x9C/+0xA0 crop start/end in seconds. Once
+    // the wraps reach MaxCycles, Havok parks the control at its end with speed 0.
+    private static uint Wraps(nint control) => *(uint*)(control + 0x60);
+    private static int MaxCycles(nint control) => *(int*)(control + 0x68);
+
+    private static bool HeldByHavok(nint control) =>
+        MaxCycles(control) > 0 && Wraps(control) >= (uint)MaxCycles(control);
+
+    /// <summary>The length one cycle plays, in seconds: the animation minus its crops.</summary>
+    private static float CycleLength(nint control)
     {
-        var all = new List<nint>();
-        foreach (var clip in Collect(root).Havok.Keys)
-            all.AddRange(ClipControls(clip));
-        return all;
+        var binding = ((FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl*)control)
+            ->hkaAnimationControl.Binding.ptr;
+        if (binding == null || binding->Animation.ptr == null)
+            return 0f;
+        return binding->Animation.ptr->Duration - *(float*)(control + 0xA0) - *(float*)(control + 0x9C);
     }
 
-    /// <summary>The first moving C009 control of a clamped root: its local time and
-    /// its animation's length, in seconds (the reading a clamped layer scrubs by).
-    /// A control the game holds still is no reading.</summary>
-    public (float Time, float Duration)? ClampedReading(nint root, IReadOnlySet<nint> moving)
+    /// <summary>The first C009 control of a clamped root Havok still plays: its
+    /// time and its span, in seconds (the reading a clamped layer scrubs by). A
+    /// looping control spans one cycle, a finite one all its cycles; with every
+    /// control parked, the end.</summary>
+    public (float Time, float Duration)? ClampedReading(nint root)
     {
         foreach (var clip in Collect(root).Havok.Keys)
             foreach (var control in ClipControls(clip))
             {
-                if (!moving.Contains(control))
+                float length = CycleLength(control);
+                if (!(length > 0f) || HeldByHavok(control))
                     continue;
-                var hk = (FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl*)control;
-                var binding = hk->hkaAnimationControl.Binding.ptr;
-                if (binding == null || binding->Animation.ptr == null || !(binding->Animation.ptr->Duration > 0f))
-                    continue;
-                return (hk->hkaAnimationControl.LocalTime, binding->Animation.ptr->Duration);
+                float local = *(float*)(control + 0x10);
+                int max = MaxCycles(control);
+                return max > 0 ? (Wraps(control) * length + local, max * length) : (local, length);
             }
+        // Only parked finite controls: the layer stands at its end. Havok counts the
+        // last wrap when it parks one (+0x60 = max, LocalTime = its length).
+        foreach (var clip in Collect(root).Havok.Keys)
+            foreach (var control in ClipControls(clip))
+                if (CycleLength(control) is var length && length > 0f && HeldByHavok(control))
+                    return (MaxCycles(control) * length, MaxCycles(control) * length);
         return null;
     }
 
-    /// <summary>Seeks a clamped root by its controls (§15.3): every C009 control to
-    /// <paramref name="seconds"/>, wrapped into its own animation's length.</summary>
-    public int SeekClampedControls(nint root, float seconds, IReadOnlySet<nint> moving)
+    /// <summary>Seeks a clamped root by its controls (§15.3): a looping control to
+    /// <paramref name="seconds"/> wrapped into its cycle; a finite one to that cycle
+    /// and its time in it, or parked at its end where its cycles have run out.</summary>
+    public int SeekClampedControls(nint root, float seconds)
     {
         int moved = 0;
         foreach (var clip in Collect(root).Havok.Keys)
             foreach (var control in ClipControls(clip))
             {
-                // One the game holds on a pose (it never moved while playing) stays.
-                if (!moving.Contains(control))
-                    continue;
-                var hk = (FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl*)control;
-                var binding = hk->hkaAnimationControl.Binding.ptr;
-                if (binding == null || binding->Animation.ptr == null)
-                    continue;
-                float length = binding->Animation.ptr->Duration;
+                float length = CycleLength(control);
                 if (!(length > 0f))
                     continue;
-                float t = seconds % length;
-                hk->hkaAnimationControl.LocalTime = t < 0f ? t + length : t;
+                ref float local = ref *(float*)(control + 0x10);
+                int max = MaxCycles(control);
+                if (max <= 0)
+                {
+                    float t = seconds % length;
+                    local = t < 0f ? t + length : t;
+                }
+                else
+                {
+                    // The wraps are written too, so a later resume counts on from here.
+                    int cycles = (int)MathF.Floor(Math.Max(seconds, 0f) / length);
+                    if (cycles >= max)
+                    {
+                        local = length;
+                        *(uint*)(control + 0x60) = (uint)max;
+                    }
+                    else
+                    {
+                        bool parked = HeldByHavok(control);
+                        local = Math.Max(seconds, 0f) - cycles * length;
+                        *(uint*)(control + 0x60) = (uint)cycles;
+                        // Havok zeroed a parked control's speed. Slot 35 (speed changed)
+                        // gives it the clip's speed back while playing; paused, it does nothing.
+                        if (parked)
+                            ((delegate* unmanaged<nint, void>)(*(nint*)(*(nint*)clip + 35 * 8)))(clip);
+                    }
+                }
                 moved++;
             }
         return moved;

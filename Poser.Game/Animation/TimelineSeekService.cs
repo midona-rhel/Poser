@@ -240,7 +240,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         // Clamped at its end, the clock stands still while the controls loop: the
         // layer's time is its controls'.
         if (TimelineSeekEngine.ClampedAtEnd(root))
-            return _engine.ClampedReading(root, _movingControls) is { } clamped
+            return _engine.ClampedReading(root) is { } clamped
                 ? new(Poser.Domain.Animation.ScrubControlId.Timeline(slot), clamped.Time, clamped.Duration, *(float*)(root + 0x240))
                 : null;
         float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
@@ -279,46 +279,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
 
     // Scrub targets for clamped one-shots (mount idles), in control seconds.
     private readonly Dictionary<(ActorId Actor, int Slot), float> _controlTargets = new();
-    // The C009 controls of clamped one-shots, by their last local time while the
-    // timeline played: a control the game holds on a pose never moves (mount idle
-    // 166 holds one at 46.24). Only moving ones are read and seeked.
-    private readonly Dictionary<nint, (float Time, int Tick, bool Moving)> _clampedControls = new();
-    private readonly HashSet<nint> _movingControls = new();
-
-    private void TrackClampedControls()
-    {
-        foreach (nint character in _managed)
-        {
-            var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
-            for (int slot = 0; slot < 14; slot++)
-            {
-                nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
-                if (root == 0 || !TimelineSeekEngine.IsLoaded(root) || !TimelineSeekEngine.ClampedAtEnd(root))
-                    continue;
-                bool playing = *(float*)(root + 0x240) > 0f;
-                foreach (var control in _engine.RootControls(root))
-                {
-                    float time = *(float*)(control + 0x10);
-                    bool moving = _clampedControls.TryGetValue(control, out var last)
-                        && (last.Moving || (playing && Math.Abs(time - last.Time) > 1e-4f));
-                    _clampedControls[control] = (time, _tick, moving);
-                }
-            }
-        }
-        _movingControls.Clear();
-        List<nint>? stale = null;
-        foreach (var (control, state) in _clampedControls)
-        {
-            if (_tick - state.Tick > 2)
-                (stale ??= new()).Add(control);
-            else if (state.Moving)
-                _movingControls.Add(control);
-        }
-        if (stale != null)
-            foreach (var control in stale)
-                _clampedControls.Remove(control);
-    }
-
     private void RunControlTargets()
     {
         KeyValuePair<(ActorId Actor, int Slot), float>[] targets;
@@ -336,7 +296,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot);
             if (root != 0 && TimelineSeekEngine.ClampedAtEnd(root))
-                _engine.SeekClampedControls(root, seconds, _movingControls);
+                _engine.SeekClampedControls(root, seconds);
         }
     }
 
@@ -424,7 +384,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
             CorrectPropBirths();
             UpdateLayerProps();
             PromotePendingTargets();
-            TrackClampedControls();
             RunControlTargets();
             ReleaseActorSpeeds();
 
