@@ -420,13 +420,15 @@ internal sealed unsafe class TimelineSeekEngine
     /// <summary>C009s re-started by <see cref="SettleHavok"/> (diagnostics).</summary>
     public int LastSettled;
 
-    /// <summary>A one-shot clamped at its end (+0x58 = 1, clock at +0x40, +0x74 = 3,
-    /// not finished) or holding there (+0x7D bit 1): its clock stands still while
-    /// its C009 controls free-run (mount idles). Its clock means nothing to a seek.</summary>
+    /// <summary>A timeline standing at its end (clock at +0x40, not finished) while
+    /// its C009 controls free-run: a one-shot clamped there (+0x58 = 1, +0x74 = 3;
+    /// mount idles) or one holding there (+0x7D bit 1). Its clock means nothing to
+    /// a seek. +0x7D bit 1 alone isn't it: Toast carries it from its start (frame
+    /// 61, +0x74 = 1).</summary>
     public static bool ClampedAtEnd(nint root) =>
-        (*(byte*)(root + 0x7D) & 2) != 0 ||
-        (*(int*)(root + 0x58) == 1 && *(int*)(root + 0x74) == 3 && (*(byte*)(root + 0x7C) & 0x40) == 0
-         && Math.Abs(*(float*)(root + 0x34) - *(float*)(root + 0x40)) < 0.01f);
+        (*(byte*)(root + 0x7C) & 0x40) == 0
+        && Math.Abs(*(float*)(root + 0x34) - *(float*)(root + 0x40)) < 0.01f
+        && ((*(byte*)(root + 0x7D) & 2) != 0 || (*(int*)(root + 0x58) == 1 && *(int*)(root + 0x74) == 3));
 
     /// <summary>The Havok controls a C009 drives: instance → holder +0x20 handle →
     /// its controller set (+0x18, a tree) → each controller's control (+0x38).</summary>
