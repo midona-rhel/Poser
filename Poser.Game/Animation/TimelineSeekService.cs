@@ -556,6 +556,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         long passStart = System.Diagnostics.Stopwatch.GetTimestamp();
         double collectMs = 0, arbitrateMs = 0;
         int refiresBefore = _refires;
+        int gcBefore = GC.CollectionCount(0), gc1Before = GC.CollectionCount(1);
 #endif
         var next = new Dictionary<nint, (ulong, ulong)>();
         var suppressed = new HashSet<nint>();
@@ -657,7 +658,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
 #if DEBUG
         double passMs = System.Diagnostics.Stopwatch.GetElapsedTime(passStart).TotalMilliseconds;
         if (passMs > 1.0)
-            _log.Information($"[TimelineSeek] prop pass {passMs:F1} ms: collect {collectMs:F2}, arbitrate {arbitrateMs:F2} (re-fires {_refires - refiresBefore}), rest {passMs - collectMs - arbitrateMs:F2}");
+            _log.Information($"[TimelineSeek] prop pass {passMs:F1} ms: collect {collectMs:F2}, arbitrate {arbitrateMs:F2} (re-fires {_refires - refiresBefore}), rest {passMs - collectMs - arbitrateMs:F2}; gen0 GCs inside {GC.CollectionCount(0) - gcBefore}, gen1 {GC.CollectionCount(1) - gc1Before}");
 #endif
     }
     private int _refires;
