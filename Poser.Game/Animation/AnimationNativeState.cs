@@ -65,6 +65,13 @@ public sealed unsafe partial class AnimationNativeState
         return (float*)((byte*)handle->Data + SchedulerTimestampOffset);
     }
 
+    /// <summary>The slot's live SchedulerTimeline, or 0.</summary>
+    internal static nint SlotTimeline(ActionTimelineSequencer* sequencer, int slot)
+    {
+        var timestamp = SchedulerTimestamp(sequencer, slot);
+        return timestamp == null ? 0 : (nint)timestamp - SchedulerTimestampOffset;
+    }
+
     /// <summary>Whether a weapon/prop control runs on the same clock as an
     /// actor control: clip lengths and current times both within a second.</summary>
     internal static bool TracksControl(

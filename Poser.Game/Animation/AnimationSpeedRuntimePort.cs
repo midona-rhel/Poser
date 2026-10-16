@@ -48,6 +48,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     // only after the matching hook is enabled.
     private readonly bool _overallSpeedHookEnabled;
     private readonly bool _slotSpeedHookEnabled;
+    private readonly TimelineSeekService? _seek;
 
     public AnimationSpeedRuntimePort(
         IFramework framework,
@@ -55,8 +56,10 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         IGameInteropProvider hooking,
         IPluginLog log,
         StableBindingRegistry bindings,
-        AnimationNativeState native)
+        AnimationNativeState native,
+        TimelineSeekService? seek = null)
     {
+        _seek = seek;
         _framework = framework;
         _log = log;
         _bindings = bindings;
@@ -322,9 +325,11 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             return Outcome.Fail(
                 "Speed is unavailable: the game's speed hook is not active.");
 
-        EnforcementFor(actor).OverallSpeed = speed;
+        var enforcement = EnforcementFor(actor);
+        enforcement.OverallSpeed = speed;
         SyncEnforcementIndex();
         ApplySpeedNow(character, speed);
+        ApplySameTickEdges(character, speed, enforcement);
         return Outcome.Ok();
     }
 
@@ -353,7 +358,47 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         // Havok control, so a Poser pause (controls at 0) is released
         // here or not at all.
         ApplySpeedNow(character, 1f);
+        ApplySameTickEdges(character, 1f, enforcement);
         return Outcome.Ok();
+    }
+
+    private static readonly int[] EdgeSlots = { 0, 1, 2, 3, 6 };
+
+    /// <summary>
+    /// #533: Poser writes the Havok controls now, the game gives the prop
+    /// timelines the speed on the next container update and the slot timelines
+    /// one Advance after that (via seq+0x154 + dirty). Give all of them the edge
+    /// on this tick instead: the value each slot will hold is what this hook's
+    /// detour would let through (the slot override, else the overall), written
+    /// into seq+0x154 through the original and onto the slot timeline directly.
+    /// </summary>
+    private void ApplySameTickEdges(Character* character, float overall, Enforcement enforcement)
+    {
+        if (_seek == null || !_seek.Available)
+            return;
+        // Scheduler writes belong on the framework thread (the UI may call from
+        // its draw callback); RunOnFrameworkThread runs inline there, else in the
+        // next Framework.Update, which is still before the game's next Advance and
+        // container update, so the controls written by ApplySpeedNow and these
+        // timelines still change on the same game tick.
+        var values = new (int Slot, float Value)[EdgeSlots.Length];
+        for (int i = 0; i < EdgeSlots.Length; i++)
+            values[i] = (EdgeSlots[i], enforcement.SlotSpeeds.TryGetValue(EdgeSlots[i], out var held) ? held : overall);
+        var address = (nint)character;
+        _framework.RunOnFrameworkThread(() =>
+        {
+            var live = (Character*)address;
+            if (live == null || live->GameObject.DrawObject == null)
+                return;
+            var sequencer = &live->Timeline.TimelineSequencer;
+            foreach (var (slot, value) in values)
+            {
+                if (_slotSpeedHookEnabled && _slotSpeedHook != null)
+                    _slotSpeedHook.Original(sequencer, (uint)slot, value);
+                _seek.ApplySlotSpeed(sequencer, slot, value);
+            }
+            _seek.ApplyPropSpeed(live, overall);
+        });
     }
 
     /// <summary>Writes the container speed and every Havok control's

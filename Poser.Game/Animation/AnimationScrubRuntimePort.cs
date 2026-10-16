@@ -15,12 +15,14 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
 {
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;
+    private readonly TimelineSeekService? _seek;
     private int _scrubLogCounter;
 
-    public AnimationScrubRuntimePort(IPluginLog log, AnimationNativeState native)
+    public AnimationScrubRuntimePort(IPluginLog log, AnimationNativeState native, TimelineSeekService? seek = null)
     {
         _log = log;
         _native = native;
+        _seek = seek;
     }
 
     private static void PropagateScrubToProps(
@@ -159,6 +161,15 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         // refused rather than landing on whatever now occupies the slot.
         if (token != 0 && token != CurrentToken(skeleton))
             return Outcome.Fail("Skeleton changed; scrub cancelled.");
+
+        // #533: the game's own scheduler seek when available (same frame, both
+        // directions, props and VFX enter as in playback); the clock writes below
+        // remain the fallback for anything it refuses.
+        if (_seek != null && control.Control is 0 or 1 && _seek.Supports(character, control.Control))
+        {
+            _seek.Request(actor, character, (AnimationSlot)control.Control, time, target->hkaAnimationControl.LocalTime);
+            return Outcome.Ok();
+        }
 
         float duration = binding.ptr->Animation.ptr->Duration;
         // Never PLACE a cursor on the last frame: a child timeline set
