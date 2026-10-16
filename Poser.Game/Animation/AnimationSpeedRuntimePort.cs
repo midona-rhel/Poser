@@ -320,6 +320,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         for (int i = 0; i < EdgeSlots.Length; i++)
             values[i] = (EdgeSlots[i], enforcement.SlotSpeeds.TryGetValue(EdgeSlots[i], out var held) ? held * overall : overall);
         var address = (nint)character;
+        var heldSlots = new Dictionary<int, float>(enforcement.SlotSpeeds);
         _framework.RunOnFrameworkThread(() =>
         {
             var live = (Character*)address;
@@ -334,6 +335,10 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             }
             _seek.ApplyPropSpeed(live, overall);
             _seek.ApplyVfxSpeed(live, overall);
+            // A layer with its own speed keeps it on its props and effects (the two
+            // lines above give every prop the plain overall).
+            if (heldSlots.Count > 0)
+                _seek.HoldSlotSpeeds(live, heldSlots, overall);
         });
     }
 

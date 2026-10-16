@@ -666,10 +666,12 @@ public sealed unsafe class TimelineSeekService : IDisposable
                         // No hook: the push resets the prop timeline every frame; hold
                         // what is rendered (its controls) at least.
                         TimelineSeekEngine.SetWeaponControlSpeeds(weapon, effective);
-                    else if (TimelineSeekEngine.PropWeaponSlot(clip) == 3)
-                        // The summoned prop gets no push: its timelines take it directly.
-                        _engine.SetWeaponTimelineSpeeds(weapon, effective);
-                    else
+                    // Directly as well: a speed edge can land after this frame's push,
+                    // which would leave the prop a frame on the old speed (half a frame
+                    // off at x0.5). The summoned prop gets no push at all. Change-
+                    // guarded, so the steady per-frame write costs nothing.
+                    _engine.SetWeaponTimelineSpeeds(weapon, effective);
+                    if (TimelineSeekEngine.PropWeaponSlot(clip) != 3)
                     {
                         // Copy without stale entries, then publish once below.
                         if (propSpeeds == null)
