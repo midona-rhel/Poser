@@ -105,7 +105,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>A scrub on a layer the game ended: it plays again, held, so the
     /// scrub can move it once it is loaded.</summary>
-    public Outcome ReplayEndedForScrub(ActorId actor, AnimationSlot slot)
+    private Outcome ReplayEndedForScrubUntracked(ActorId actor, AnimationSlot slot)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         if (!_store.For(actor).EndedSlots.ContainsKey(slot))
@@ -127,6 +127,241 @@ public sealed class AnimationSession : IAnimationPlayback
         });
 
     public AnimationOverrides OverridesFor(ActorId actor) => _store.For(actor);
+
+    // ── Tracked actions (each a step) ───────────────────────────────────
+
+    public Outcome ReplayEndedForScrub(ActorId actor, AnimationSlot slot) =>
+        Tracked(actor, $"Scrub {AnimationSlots.DisplayName(slot)}", () => ReplayEndedForScrubUntracked(actor, slot));
+
+    public Outcome SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline, bool on) =>
+        Tracked(actor, $"Loop {AnimationSlots.DisplayName(slot)}", () => SetSlotLoopUntracked(actor, slot, timeline, on));
+
+    public Outcome SetSpeed(ActorId actor, float speed) =>
+        Tracked(actor, "Animation speed", () => SetSpeedUntracked(actor, speed));
+
+    public Outcome ClearSpeed(ActorId actor) =>
+        Tracked(actor, "Animation speed", () => ClearSpeedUntracked(actor));
+
+    public Outcome Pause(ActorId actor) =>
+        Tracked(actor, "Pause animation", () => PauseUntracked(actor));
+
+    public Outcome Resume(ActorId actor) =>
+        Tracked(actor, "Play animation", () => ResumeUntracked(actor));
+
+    public Outcome SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed) =>
+        Tracked(actor, $"{AnimationSlots.DisplayName(slot)} speed", () => SetSlotSpeedUntracked(actor, slot, speed));
+
+    public Outcome ClearSlotSpeed(ActorId actor, AnimationSlot slot) =>
+        Tracked(actor, $"{AnimationSlots.DisplayName(slot)} speed", () => ClearSlotSpeedUntracked(actor, slot));
+
+    public Outcome SetSlotWeight(ActorId actor, AnimationSlot slot, float weight) =>
+        Tracked(actor, $"{AnimationSlots.DisplayName(slot)} weight", () => SetSlotWeightUntracked(actor, slot, weight));
+
+    public Outcome PauseSlot(ActorId actor, AnimationSlot slot) =>
+        Tracked(actor, $"Pause {AnimationSlots.DisplayName(slot)}", () => PauseSlotUntracked(actor, slot));
+
+    public Outcome ResumeSlot(ActorId actor, AnimationSlot slot) =>
+        Tracked(actor, $"Play {AnimationSlots.DisplayName(slot)}", () => ResumeSlotUntracked(actor, slot));
+
+    public Outcome ResetSlot(ActorId actor, AnimationSlot slot) =>
+        Tracked(actor, $"Reset {AnimationSlots.DisplayName(slot)}", () => ResetSlotUntracked(actor, slot));
+
+    public Outcome SetLips(ActorId actor, ushort timeline) =>
+        Tracked(actor, "Lips", () => SetLipsUntracked(actor, timeline));
+
+    public Outcome SetStance(ActorId actor, AnimationStance stance, int pose) =>
+        Tracked(actor, "Stance", () => SetStanceUntracked(actor, stance, pose));
+
+    public Outcome SetWeaponDrawn(ActorId actor, bool drawn) =>
+        Tracked(actor, "Weapon", () => SetWeaponDrawnUntracked(actor, drawn));
+
+    public Outcome SetPositionLock(ActorId actor, bool locked) =>
+        Tracked(actor, "Position lock", () => SetPositionLockUntracked(actor, locked));
+
+    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null) =>
+        Tracked(actor, $"Scrub {(slot is { } s ? AnimationSlots.DisplayName(s) : "animation")}", () => BeginScrubUntracked(actor, control, owner, slot));
+
+    public Outcome UpdateScrub(ActorId actor, float time, Guid owner) =>
+        Tracked(actor, ScrubDescription(), () => UpdateScrubUntracked(actor, time, owner));
+
+    public Outcome SeekLayer(ActorId actor, AnimationSlot slot, float seconds) =>
+        Tracked(actor, $"Scrub {AnimationSlots.DisplayName(slot)}", () => SeekLayerUntracked(actor, slot, seconds));
+
+    public Outcome HoldExpression(ActorId actor, ushort timeline) =>
+        Tracked(actor, "Hold expression", () => HoldExpressionUntracked(actor, timeline));
+
+    public Outcome ReleaseExpression(ActorId actor) =>
+        Tracked(actor, "Release expression", () => ReleaseExpressionUntracked(actor));
+
+    public Outcome ResetActor(ActorId actor) =>
+        Tracked(actor, "Reset animation", () => ResetActorUntracked(actor));
+
+    // ── Undo / redo ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Set by the history owner (AnimationSteps): runs one user action and records
+    /// it as one step, the actor's snapshot before and after. Every changing call
+    /// below goes through <see cref="Tracked"/>; only the outermost one records,
+    /// so an action that runs others is still one step.
+    /// </summary>
+    internal Func<ActorId, string, Func<Outcome>, Outcome>? Journal { get; set; }
+    /// <summary>Set by the history owner: runs several actors' actions as one step.</summary>
+    internal Action<Action>? Group { get; set; }
+    private int _trackDepth;
+    private int _untracked;
+
+    /// <summary>One user action, recorded as one step (unless nested or untracked).</summary>
+    public Outcome Tracked(ActorId actor, string description, Func<Outcome> action)
+    {
+        if (Journal is not { } journal || _trackDepth > 0 || _untracked > 0)
+            return action();
+        _trackDepth++;
+        try { return journal(actor, description, action); }
+        finally { _trackDepth--; }
+    }
+
+    /// <summary>Several actors' actions as one step (the scene's play/pause all).</summary>
+    public void Grouped(Action action)
+    {
+        if (Group is { } group && _trackDepth == 0 && _untracked == 0)
+            group(action);
+        else
+            action();
+    }
+
+    /// <summary>While held, nothing records: internal flows (a pose import's own
+    /// pause) and undo/redo themselves.</summary>
+    public IDisposable Untracked()
+    {
+        _untracked++;
+        return new UntrackedScope(this);
+    }
+
+    private sealed class UntrackedScope(AnimationSession owner) : IDisposable
+    {
+        private bool _done;
+        public void Dispose()
+        {
+            if (_done) return;
+            _done = true;
+            owner._untracked--;
+        }
+    }
+
+    /// <summary>The actor's animation state as an undo step stores it.</summary>
+    public AnimationSnapshot Capture(ActorId actor)
+    {
+        var owned = _store.For(actor);
+        var reading = _timeline.Read(actor) ?? ActorAnimationReading.Empty;
+        bool allHeld = owned.OverallSpeed == 0f;
+        LayerSnapshot Layer(AnimationSlot slot)
+        {
+            ushort? applied = slot == AnimationSlot.Base
+                ? owned.BaseTimeline
+                : owned.AppliedSlots.TryGetValue(slot, out var a) ? a : null;
+            float? ended = owned.EndedSlots.TryGetValue(slot, out var e) ? e : null;
+            bool live = applied is { } timeline && ended == null && reading.TimelineFor(slot) == timeline;
+            float? speed = owned.SlotSpeeds.TryGetValue(slot, out var sp) ? sp : null;
+            bool held = live && (allHeld || speed == 0f);
+            float? frame = held ? _scrub.FindSlotControl(actor, slot)?.Time : null;
+            return new LayerSnapshot(applied, live, owned.LoopWantedSlots.Contains(slot), speed,
+                owned.SlotWeights.GetValueOrDefault(slot, 1f), frame, ended);
+        }
+        return new AnimationSnapshot(
+            Layer(AnimationSlot.Base), Layer(AnimationSlot.UpperBody), Layer(AnimationSlot.Facial), Layer(AnimationSlot.Additive),
+            owned.Lips, owned.OverallSpeed, owned.HeldExpression,
+            reading.Stance, reading.Pose, reading.WeaponDrawn, owned.PositionLock, IsAdvanced(actor));
+    }
+
+    /// <summary>
+    /// Puts the actor back into <paramref name="target"/>: each layer plays its
+    /// animation again (from its start when it was running), held layers at their
+    /// exact frame, ended ones ended; then speeds, weights, loops, the whole-actor
+    /// speed, lips, stance, weapon, position lock and the held expression. Nothing
+    /// in here records.
+    /// </summary>
+    public Outcome Restore(ActorId actor, AnimationSnapshot target)
+    {
+        using var untracked = Untracked();
+        if (_store.Suspended() is { } blocked) return blocked;
+        var now = Capture(actor);
+        if (now == target)
+            return Outcome.Ok();
+        var failures = new List<string>();
+        void Note(Outcome result, string what)
+        {
+            if (!result.Success) failures.Add($"{what}: {result.Detail ?? "failed"}");
+        }
+        // Plays below land moving, so a whole-actor pause is lifted first and put
+        // back after.
+        if (now.OverallSpeed is not null)
+            Note(ClearSpeed(actor), "speed");
+        foreach (var slot in AnimationSnapshot.Layers)
+            RestoreLayer(actor, slot, now.For(slot), target.For(slot), Note);
+        if (now.Lips != target.Lips)
+            Note(SetLips(actor, target.Lips ?? 0), "lips");
+        if (now.Stance != target.Stance || now.Pose != target.Pose)
+            Note(SetStance(actor, target.Stance, target.Pose), "stance");
+        if (now.WeaponDrawn != target.WeaponDrawn)
+            Note(SetWeaponDrawn(actor, target.WeaponDrawn), "weapon");
+        if (now.PositionLock != target.PositionLock)
+            Note(SetPositionLock(actor, target.PositionLock), "position lock");
+        if (target.OverallSpeed is { } overall)
+            Note(overall == 0f ? Pause(actor) : SetSpeed(actor, overall), "speed");
+        // Held layers go to their exact frame once everything holds still.
+        foreach (var slot in AnimationSnapshot.Layers)
+            if (target.For(slot) is { HeldSeconds: { } seconds, Live: true })
+                Note(SeekLayer(actor, slot, seconds), $"{AnimationSlots.DisplayName(slot)} frame");
+        if (now.HeldExpression != target.HeldExpression)
+            Note(target.HeldExpression is { } expression ? HoldExpression(actor, expression) : ReleaseExpression(actor),
+                "expression");
+        if (now.Advanced != target.Advanced)
+            SetAdvanced(actor, target.Advanced);
+        return failures.Count == 0 ? Outcome.Ok() : Outcome.Fail(string.Join("; ", failures));
+    }
+
+    private void RestoreLayer(ActorId actor, AnimationSlot slot, LayerSnapshot now, LayerSnapshot target,
+        Action<Outcome, string> note)
+    {
+        string name = AnimationSlots.DisplayName(slot);
+        if (target.Applied is not { } timeline)
+        {
+            if (now.Applied is not null || now.Speed is not null || now.Weight != 1f)
+                note(ResetSlot(actor, slot), $"reset {name}");
+            return;
+        }
+        bool sameAnimation = now.Applied == timeline;
+        if (target.EndedSeconds is { } length)
+        {
+            // Ended: its row names it, nothing plays.
+            note(ChooseSlot(actor, slot, timeline), name);
+            if (now.Live)
+                note(_timeline.ClearSlotTimeline(actor, slot), $"end {name}");
+            _timeline.SetLayerOwned(actor, slot, false);
+            _store.Mutate(actor, o => o with
+            {
+                EndedSlots = new Dictionary<AnimationSlot, float>(o.EndedSlots) { [slot] = length },
+            });
+        }
+        else if (!now.Live || !sameAnimation)
+        {
+            note(ChooseSlot(actor, slot, timeline), name);
+            note(PlaySelectedSlot(actor, slot, null, false), $"play {name}");
+        }
+        else if (target.HeldSeconds == null && now.HeldSeconds != null)
+        {
+            // Back to running: from its start (a running layer stores no frame).
+            note(SeekLayer(actor, slot, 0f), $"restart {name}");
+        }
+        var after = _store.For(actor);
+        if (after.LoopWantedSlots.Contains(slot) != target.Loop)
+            note(_base.SetSlotLoop(actor, slot, timeline, target.Loop), $"{name} loop");
+        if (after.SlotWeights.GetValueOrDefault(slot, 1f) != target.Weight)
+            note(SetSlotWeight(actor, slot, target.Weight), $"{name} weight");
+        float? speed = after.SlotSpeeds.TryGetValue(slot, out var sp) ? sp : null;
+        if (speed != target.Speed)
+            note(target.Speed is { } wanted ? SetSlotSpeed(actor, slot, wanted) : ClearSlotSpeed(actor, slot), $"{name} speed");
+    }
 
     public bool LoopWantedFor(ActorId actor, AnimationSlot slot) =>
         OverridesFor(actor).LoopWantedSlots.Contains(slot);
@@ -190,7 +425,7 @@ public sealed class AnimationSession : IAnimationPlayback
         _base.ChooseSlot(actor, slot, timeline);
 
     /// <summary>Sets repeat intent for one slot.</summary>
-    public Outcome SetSlotLoop(
+    private Outcome SetSlotLoopUntracked(
         ActorId actor, AnimationSlot slot, ushort timeline, bool on) =>
         _base.SetSlotLoop(actor, slot, timeline, on);
 
@@ -203,16 +438,16 @@ public sealed class AnimationSession : IAnimationPlayback
 
     // ── Speed ─────────────────────────────────────────────────────────
 
-    public Outcome SetSpeed(ActorId actor, float speed) => _speed.SetSpeed(actor, speed);
+    private Outcome SetSpeedUntracked(ActorId actor, float speed) => _speed.SetSpeed(actor, speed);
 
-    public Outcome ClearSpeed(ActorId actor) => _speed.ClearSpeed(actor);
+    private Outcome ClearSpeedUntracked(ActorId actor) => _speed.ClearSpeed(actor);
 
     public bool IsPaused(ActorId actor) => _speed.IsPaused(actor);
 
-    public Outcome Pause(ActorId actor) => _speed.Pause(actor);
+    private Outcome PauseUntracked(ActorId actor) => _speed.Pause(actor);
 
     /// <summary>Play-all: releases every hold.</summary>
-    public Outcome Resume(ActorId actor)
+    private Outcome ResumeUntracked(ActorId actor)
     {
         foreach (var slot in _store.For(actor).EndedSlots.Keys.ToList())
             RestartIfEnded(actor, slot);
@@ -228,6 +463,19 @@ public sealed class AnimationSession : IAnimationPlayback
     /// the pause was released.
     /// </summary>
     public Outcome Replay(ActorId actor, ushort timeline, out bool resumed)
+    {
+        bool lifted = false;
+        var result = Tracked(actor, "Play animation", () =>
+        {
+            var played = ReplayUntracked(actor, timeline, out var r);
+            lifted = r;
+            return played;
+        });
+        resumed = lifted;
+        return result;
+    }
+
+    private Outcome ReplayUntracked(ActorId actor, ushort timeline, out bool resumed)
     {
         resumed = false;
         if (_store.Suspended() is { } blocked) return blocked;
@@ -245,10 +493,10 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Rewinds paused animation controls.</summary>
     public Outcome RewindPausedControls(ActorId actor) => _speed.RewindPausedControls(actor);
 
-    public Outcome SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed) =>
+    private Outcome SetSlotSpeedUntracked(ActorId actor, AnimationSlot slot, float speed) =>
         _speed.SetSlotSpeed(actor, slot, speed);
 
-    public Outcome ClearSlotSpeed(ActorId actor, AnimationSlot slot) =>
+    private Outcome ClearSlotSpeedUntracked(ActorId actor, AnimationSlot slot) =>
         _speed.ClearSlotSpeed(actor, slot);
 
     /// <summary>The layer's held blend weight, or 1 when Poser holds none.</summary>
@@ -256,7 +504,7 @@ public sealed class AnimationSession : IAnimationPlayback
         OverridesFor(actor).SlotWeights.GetValueOrDefault(slot, 1f);
 
     /// <summary>Holds a layer's blend weight in [0, 1]; 1 releases it.</summary>
-    public Outcome SetSlotWeight(ActorId actor, AnimationSlot slot, float weight)
+    private Outcome SetSlotWeightUntracked(ActorId actor, AnimationSlot slot, float weight)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         if (!float.IsFinite(weight))
@@ -276,13 +524,13 @@ public sealed class AnimationSession : IAnimationPlayback
         return Outcome.Ok();
     }
 
-    public Outcome PauseSlot(ActorId actor, AnimationSlot slot) =>
+    private Outcome PauseSlotUntracked(ActorId actor, AnimationSlot slot) =>
         _speed.PauseSlot(actor, slot);
 
     /// <summary>The layer's play icon: lifts the whole-actor pause for this layer
     /// only (the others keep holding), then its own hold. Apply is what changes
     /// the animation; this only changes whether it moves.</summary>
-    public Outcome ResumeSlot(ActorId actor, AnimationSlot slot)
+    private Outcome ResumeSlotUntracked(ActorId actor, AnimationSlot slot)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         var restarted = RestartIfEnded(actor, slot);
@@ -308,7 +556,13 @@ public sealed class AnimationSession : IAnimationPlayback
     /// the sidebar's play-all) is what starts it.</summary>
     public Outcome PlaySelectedSlot(
         ActorId actor, AnimationSlot slot, TimelineEntry? entry,
-        bool playFromStart, bool resume = true)
+        bool playFromStart, bool resume = true) =>
+        Tracked(actor, $"Play {AnimationSlots.DisplayName(slot)}",
+            () => PlaySelectedSlotUntracked(actor, slot, entry, playFromStart, resume));
+
+    private Outcome PlaySelectedSlotUntracked(
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry,
+        bool playFromStart, bool resume)
     {
         var before = _timeline.Read(actor)?.TimelineFor(slot);
         // Playing the animation that ran out plays it again from its start.
@@ -420,7 +674,7 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     /// <summary>Restores one selectable layer and clears its selection.</summary>
-    public Outcome ResetSlot(ActorId actor, AnimationSlot slot)
+    private Outcome ResetSlotUntracked(ActorId actor, AnimationSlot slot)
     {
         var reset = ResetSlotCore(actor, slot);
         if (reset.Success)
@@ -493,15 +747,15 @@ public sealed class AnimationSession : IAnimationPlayback
     /// Sets the lip override. Selecting None restores the captured incoming
     /// timeline because zero is a native "no speech timeline" value.
     /// </summary>
-    public Outcome SetLips(ActorId actor, ushort timeline) => _base.SetLips(actor, timeline);
+    private Outcome SetLipsUntracked(ActorId actor, ushort timeline) => _base.SetLips(actor, timeline);
 
-    public Outcome SetStance(ActorId actor, AnimationStance stance, int pose) =>
+    private Outcome SetStanceUntracked(ActorId actor, AnimationStance stance, int pose) =>
         _stance.SetStance(actor, stance, pose);
 
-    public Outcome SetWeaponDrawn(ActorId actor, bool drawn) =>
+    private Outcome SetWeaponDrawnUntracked(ActorId actor, bool drawn) =>
         _stance.SetWeaponDrawn(actor, drawn);
 
-    public Outcome SetPositionLock(ActorId actor, bool locked) =>
+    private Outcome SetPositionLockUntracked(ActorId actor, bool locked) =>
         _stance.SetPositionLock(actor, locked);
 
     // ── Physics (one global patch, held by the scene) ─────────────────
@@ -538,18 +792,25 @@ public sealed class AnimationSession : IAnimationPlayback
         _scrub.FindSlotControl(actor, slot);
 
     /// <summary>Freezes playback and captures the drag's whole mapping.</summary>
-    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null) =>
-        _scrub.BeginScrub(actor, control, owner, slot);
+    private Outcome BeginScrubUntracked(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null)
+    {
+        _scrubSlot = slot;
+        return _scrub.BeginScrub(actor, control, owner, slot);
+    }
+
+    private AnimationSlot? _scrubSlot;
+    private string ScrubDescription() =>
+        $"Scrub {(_scrubSlot is { } s ? AnimationSlots.DisplayName(s) : "animation")}";
 
     /// <summary>Writes a frame clamped to the duration captured at Begin.</summary>
-    public Outcome UpdateScrub(ActorId actor, float time, Guid owner) =>
+    private Outcome UpdateScrubUntracked(ActorId actor, float time, Guid owner) =>
         _scrub.UpdateScrub(actor, time, owner);
 
     /// <summary>Ends the drag, leaving the actor paused on the released frame.</summary>
     public void EndScrub(Guid owner) => _scrub.EndScrub(owner);
 
     /// <summary>Seeks a layer by its own timeline clock (seconds from its begin).</summary>
-    public Outcome SeekLayer(ActorId actor, AnimationSlot slot, float seconds)
+    private Outcome SeekLayerUntracked(ActorId actor, AnimationSlot slot, float seconds)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         return _scrub.SeekLayer(actor, slot, seconds);
@@ -558,11 +819,11 @@ public sealed class AnimationSession : IAnimationPlayback
     // ── Held expression ──────────────────────────────────────────────────
 
     /// <summary>Applies an expression and immediately pins its facial frame.</summary>
-    public Outcome HoldExpression(ActorId actor, ushort timeline) =>
+    private Outcome HoldExpressionUntracked(ActorId actor, ushort timeline) =>
         _expression.HoldExpression(actor, timeline);
 
     /// <summary>Releases a held facial expression.</summary>
-    public Outcome ReleaseExpression(ActorId actor) => _expression.ReleaseExpression(actor);
+    private Outcome ReleaseExpressionUntracked(ActorId actor) => _expression.ReleaseExpression(actor);
 
     /// <summary>Restores the captured facial layer.</summary>
     public Outcome RestoreFacialLayer(ActorId actor) => _expression.RestoreFacialLayer(actor);
@@ -577,7 +838,7 @@ public sealed class AnimationSession : IAnimationPlayback
     /// Safe to call when nothing is owned. Individual failures are
     /// aggregated so one unreachable write cannot strand the rest.
     /// </summary>
-    public Outcome ResetActor(ActorId actor)
+    private Outcome ResetActorUntracked(ActorId actor)
     {
         var reset = ResetActorCore(actor);
         if (reset.Success)

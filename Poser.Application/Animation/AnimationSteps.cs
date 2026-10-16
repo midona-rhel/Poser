@@ -7,10 +7,12 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// The animation choices that are journal steps: playing a timeline into a
-/// slot, resetting a slot, and the loop switch. Transport — pause, resume,
-/// scrub, speed — never journals. The undo of a play plays the timeline
-/// the slot held before, or resets the slot when it held none.
+/// The animation history. Every animation action is one step, scoped to its
+/// actor (Ctrl+Z / Alt+Z): the session runs each through its <c>Journal</c>
+/// hook, which stores the actor's snapshot before and after; undo and redo
+/// restore a snapshot (AnimationSession.Restore). A slider's drag is one step on
+/// release; every play or pause click is its own. A held layer keeps its exact
+/// frame, a running one plays again from its start.
 /// </summary>
 public sealed class AnimationSteps : IAnimationActions
 {
@@ -26,11 +28,46 @@ public sealed class AnimationSteps : IAnimationActions
         _journal = journal;
         _scene = scene;
         _expressions = expressions;
+        _animation.Journal = Record;
+        _animation.Group = Group;
+    }
+
+    private Outcome Record(ActorId actor, string description, Func<Outcome> action)
+    {
+        if (!Alive(actor))
+            return action();
+        var before = _animation.Capture(actor);
+        var result = action();
+        if (!result.Success)
+            return result;
+        var after = _animation.Capture(actor);
+        _journal.Record((actor, "Animation", description), description, before, after,
+            snapshot => _animation.Restore(actor, snapshot), () => Alive(actor));
+        return result;
+    }
+
+    // One step for several actors (each keeps its own before/after).
+    private void Group(Action action)
+    {
+        var token = new object();
+        _journal.BeginEdit(token);
+        try { action(); }
+        finally
+        {
+            _journal.EndEdit();
+            _journal.CommitEdit(token);
+        }
     }
 
     public Outcome SetAdvanced(ActorId actor, bool enabled)
     {
         if (!Alive(actor)) return Outcome.Fail("The actor is no longer available.");
+        return _animation.Tracked(actor, enabled ? "Advanced animation on" : "Advanced animation off",
+            () => SetAdvancedCore(actor, enabled));
+    }
+
+    private Outcome SetAdvancedCore(ActorId actor, bool enabled)
+    {
         if (_animation.IsAdvanced(actor) == enabled) return Outcome.Ok();
         if (!enabled)
         {
@@ -47,48 +84,23 @@ public sealed class AnimationSteps : IAnimationActions
 
     private bool Alive(ActorId actor) => _scene.Snapshot.FindActor(actor) is not null;
 
-    private ushort? Applied(ActorId actor, AnimationSlot slot) =>
-        _animation.OverridesFor(actor).AppliedSlots.TryGetValue(slot, out var timeline) ? timeline : null;
-
     public Outcome Play(
-        ActorId actor, AnimationSlot slot, TimelineEntry? entry, bool playFromStart, bool resume = true)
-    {
-        var before = Applied(actor, slot);
-        var result = _animation.PlaySelectedSlot(actor, slot, entry, playFromStart, resume);
-        if (!result.Success)
-            return result;
-        var after = Applied(actor, slot);
-        _journal.Record(SelectionId.ForActor(actor), $"Play {AnimationSlots.DisplayName(slot)}", before, after,
-            ValueWrites.Unchecked<ushort?>(next => Put(actor, slot, next, playFromStart)), () => Alive(actor));
-        return result;
-    }
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry, bool playFromStart, bool resume = true) =>
+        _animation.PlaySelectedSlot(actor, slot, entry, playFromStart, resume);
 
-    public Outcome ResetSlot(ActorId actor, AnimationSlot slot)
-    {
-        var before = Applied(actor, slot);
-        var result = _animation.ResetSlot(actor, slot);
-        if (!result.Success)
-            return result;
-        _journal.Record(SelectionId.ForActor(actor), $"Reset {AnimationSlots.DisplayName(slot)}", before, (ushort?)null,
-            ValueWrites.Unchecked<ushort?>(next => Put(actor, slot, next, false)), () => Alive(actor));
-        return result;
-    }
+    public Outcome ResetSlot(ActorId actor, AnimationSlot slot) => _animation.ResetSlot(actor, slot);
 
-    public Outcome SetLoop(ActorId actor, AnimationSlot slot, bool on)
-    {
-        return _journal.Set((actor, slot, "Loop"), on ? "Loop on" : "Loop off",
-            () => _animation.LoopWantedFor(actor, slot),
-            x => _animation.SetSlotLoop(actor, slot, 0, x),
-            on, () => Alive(actor));
-    }
+    public Outcome SetLoop(ActorId actor, AnimationSlot slot, bool on) =>
+        _animation.SetSlotLoop(actor, slot, 0, on);
 
-    public Outcome ResetGeneral(ActorId actor, AnimationSlot slot = AnimationSlot.Base)
-    {
-        var reset = ResetSlot(actor, slot);
-        return reset.Success && _animation.LoopWantedFor(actor, AnimationSlot.Base)
-            ? SetLoop(actor, AnimationSlot.Base, false)
-            : reset;
-    }
+    public Outcome ResetGeneral(ActorId actor, AnimationSlot slot = AnimationSlot.Base) =>
+        _animation.Tracked(actor, "Reset animation", () =>
+        {
+            var reset = ResetSlot(actor, slot);
+            return reset.Success && _animation.LoopWantedFor(actor, AnimationSlot.Base)
+                ? SetLoop(actor, AnimationSlot.Base, false)
+                : reset;
+        });
 
     /// <summary>Restores outgoing advanced layers in their existing order.
     /// A failed restore leaves earlier successes intact and keeps the mode unchanged.</summary>
@@ -102,16 +114,5 @@ public sealed class AnimationSteps : IAnimationActions
                 return reset;
         }
         return Outcome.Ok();
-    }
-
-    private void Put(ActorId actor, AnimationSlot slot, ushort? timeline, bool playFromStart)
-    {
-        if (timeline is not { } chosen)
-        {
-            _animation.ResetSlot(actor, slot);
-            return;
-        }
-        if (_animation.ChooseSlot(actor, slot, chosen).Success)
-            _animation.PlaySelectedSlot(actor, slot, null, playFromStart);
     }
 }

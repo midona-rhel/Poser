@@ -145,6 +145,39 @@ public sealed record TimelineEntry(
         EmoteIndex == 0 && EmoteId != 0;
 }
 
+/// <summary>
+/// One layer of an <see cref="AnimationSnapshot"/>. <paramref name="Applied"/> is the
+/// animation Poser played there (a pick waiting in the picker is not state);
+/// <paramref name="Live"/> whether it still plays (not ended, not replaced). A frame
+/// (<paramref name="HeldSeconds"/>) only for a held layer: a running layer has no
+/// position to go back to, and restoring it plays it from its start.
+/// </summary>
+public readonly record struct LayerSnapshot(
+    ushort? Applied, bool Live, bool Loop, float? Speed, float Weight, float? HeldSeconds, float? EndedSeconds);
+
+/// <summary>
+/// An actor's whole animation state, as an undo/redo step stores it: every
+/// layer, the whole-actor speed (0 = paused), the held expression, lips, stance,
+/// weapon, position lock and the advanced mode.
+/// </summary>
+public sealed record AnimationSnapshot(
+    LayerSnapshot Base, LayerSnapshot UpperBody, LayerSnapshot Facial, LayerSnapshot Additive,
+    ushort? Lips, float? OverallSpeed, ushort? HeldExpression,
+    AnimationStance Stance, int Pose, bool WeaponDrawn, bool PositionLock, bool Advanced)
+{
+    public static readonly AnimationSlot[] Layers =
+        [AnimationSlot.Base, AnimationSlot.UpperBody, AnimationSlot.Facial, AnimationSlot.Additive];
+
+    public LayerSnapshot For(AnimationSlot slot) => slot switch
+    {
+        AnimationSlot.Base => Base,
+        AnimationSlot.UpperBody => UpperBody,
+        AnimationSlot.Facial => Facial,
+        AnimationSlot.Additive => Additive,
+        _ => default,
+    };
+}
+
 /// <summary>Native base state captured before Poser's first write.</summary>
 public readonly record struct BaseAnimationCapture(
     byte Mode,
