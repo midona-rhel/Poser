@@ -36,6 +36,10 @@ public sealed unsafe partial class AnimationNativeState
     private delegate bool SetTimelineIdDelegate(
         ActionTimelineSequencer* timeline, ushort id, nint context);
     private readonly SetTimelineIdDelegate? _setTimelineId;
+    // FUN_1408377F0(id): the in-memory ActionTimeline row, or 0. Pending a
+    // patchcheck entry; unique on the analysed build (sig.py, 1 hit).
+    private delegate nint ActionTimelineRowDelegate(uint id);
+    private readonly ActionTimelineRowDelegate? _actionTimelineRow;
     // This native entry point takes four arguments.
     private delegate bool PlayEmoteDelegate(
         EmoteController* controller, nint emoteId, nint option, nint chair);
@@ -178,6 +182,10 @@ public sealed unsafe partial class AnimationNativeState
             "SetTimelineId");
         _playEmote = ScanDelegate<PlayEmoteDelegate>(
             sigScanner, "E8 ?? ?? ?? ?? 88 45 68", "PlayEmote");
+        _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
+            sigScanner,
+            "48 83 EC 28 8D 41 FF 3D E7 FD 00 00 77 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA 64 00 00 00 48 8B 88 40 2B 00 00 E8",
+            "ActionTimelineRow");
     }
 
     private T? ScanDelegate<T>(ISigScanner scanner, string signature, string name)
@@ -330,20 +338,38 @@ public sealed unsafe partial class AnimationNativeState
             character->ModeParam = 0;
             character->Timeline.BaseOverride = 0;
         }
+        // A row with +0x14 bit 2 (the additives measured: add_yes, add_no) makes
+        // the play stop the Upper Body slot first (FUN_140606810). Layers are
+        // independent, so unless the row plays on Upper Body itself the bit is
+        // cleared for this call only and restored: nothing else in the call reads
+        // it (the transition doesn't; StartSlot reads bit 0), and it all runs on
+        // this thread.
+        byte* rowFlags = null;
+        if (_actionTimelineRow != null && TimelineSlot(timeline) != AnimationSlot.UpperBody)
+        {
+            nint row = _actionTimelineRow(timeline);
+            if (row != 0 && (*(byte*)(row + 0x14) & 4) != 0)
+            {
+                rowFlags = (byte*)(row + 0x14);
+                *rowFlags &= unchecked((byte)~4);
+            }
+        }
 #if DEBUG
         _probeOurWrite = true;
+#endif
         try
         {
-#endif
             return _setTimelineId!(
                 &character->Timeline.TimelineSequencer, timeline, nint.Zero);
-#if DEBUG
         }
         finally
         {
+            if (rowFlags != null)
+                *rowFlags |= 4;
+#if DEBUG
             _probeOurWrite = false;
-        }
 #endif
+        }
     }
 
     /// <summary>Plays an emote through the game entry point.</summary>
