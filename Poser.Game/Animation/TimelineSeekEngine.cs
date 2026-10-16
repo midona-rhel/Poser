@@ -71,6 +71,10 @@ internal sealed unsafe class TimelineSeekEngine
         // C009 → root frames per frame of its own timeline (1 on the root; a range
         // C010's child runs 0..1 over the C010's window: 1/scale).
         public readonly Dictionary<nint, float> HavokScale = new();
+        // C009 → its window in its own timeline's frames when that timeline is a
+        // range C010's child (data+0xC bit 0): the range, data+0x14 − data+0x10
+        // (C009 vfunc 0x140), not the clip's +0x54.
+        public readonly Dictionary<nint, float> HavokRange = new();
         public readonly List<nint> Vfx = new();                         // C012/C049
         public readonly List<nint> AsyncVfx = new();                    // C173
         public readonly List<(nint Clip, float Start)> Summons = new(); // C031 + absolute start
@@ -93,7 +97,7 @@ internal sealed unsafe class TimelineSeekEngine
         // A timeline's local frame f is root frame baseStart + span·f. A C010 child's
         // clock is (parent − start)·scale(+0x160) + offset (data+0x10 when data+0xC
         // bit 0), so its frame f is parent frame start + (f − offset)/scale.
-        void Walk(nint t, float baseStart, int depth, float span = 1f)
+        void Walk(nint t, float baseStart, int depth, float span = 1f, float range = -1f)
         {
             if (depth > 4 || !seen.Add(t))
                 return;
@@ -113,12 +117,17 @@ internal sealed unsafe class TimelineSeekEngine
                             scale = 1f;
                         nint c010Data = *(nint*)(clip + 0x48);
                         float offset = c010Data != 0 && (*(uint*)(c010Data + 0xC) & 1) != 0 ? *(float*)(c010Data + 0x10) : 0f;
-                        Walk(child, baseStart + span * (*(float*)(clip + 0x50) - offset / scale), depth + 1, span / scale);
+                        float childRange = c010Data != 0 && (*(uint*)(c010Data + 0xC) & 1) != 0
+                            ? *(float*)(c010Data + 0x14) - *(float*)(c010Data + 0x10)
+                            : -1f;
+                        Walk(child, baseStart + span * (*(float*)(clip + 0x50) - offset / scale), depth + 1, span / scale, childRange);
                         break;
                     case SeekClipKind.HavokAnimation:
                         tree.Havok[clip] = t;
                         tree.HavokStart[clip] = baseStart + span * *(float*)(clip + 0x50);
                         tree.HavokScale[clip] = span;
+                        if (range > 0f)
+                            tree.HavokRange[clip] = range;
                         // A clip without a pose (see Remaining) never plays; the
                         // timeline ends without it.
                         if (NoPose(clip))
@@ -404,8 +413,8 @@ internal sealed unsafe class TimelineSeekEngine
             if ((*(byte*)(clip + 0xCC) & 0x40) != 0)
             {
                 float rate = *(float*)(clip + 0xBC);
-                float window = *(float*)(clip + 0x54);
-                if (rate > 0f)
+                float window = tree.HavokRange.TryGetValue(clip, out var range) ? range : *(float*)(clip + 0x54);
+                if (rate > 0f && !tree.HavokRange.ContainsKey(clip))
                     window = Math.Min(window, *(uint*)(clip + 0xB0) / rate);
                 // In the clip's own timeline's frames: a range C010's child is scaled.
                 window *= tree.HavokScale.GetValueOrDefault(clip, 1f);
