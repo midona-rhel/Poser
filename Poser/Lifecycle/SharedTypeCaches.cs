@@ -8,8 +8,9 @@ namespace Poser.Lifecycle;
 /// <summary>
 /// Releases the references the process-wide libraries keep to Poser's types, so an
 /// unloaded Poser can actually be freed. Newtonsoft.Json is Dalamud's copy, shared by
-/// every plugin, and caches each type it reflects over in statics; TypeDescriptor
-/// (System.ComponentModel) does the same. Any one of those entries keeps the whole old
+/// every plugin, and caches each type it reflects over in statics, Dalamud's own
+/// serializers included; TypeDescriptor (System.ComponentModel) and System.Text.Json's
+/// shared option sets do the same. Any one of those entries keeps the whole old
 /// plugin alive: about 90 MB per reload. Runs once, last, at unload; best effort.
 /// </summary>
 internal static class SharedTypeCaches
@@ -21,6 +22,7 @@ internal static class SharedTypeCaches
     {
         Try(ClearTypeDescriptor);
         Try(ForgetNewtonsoft);
+        Try(ForgetSystemTextJson);
     }
 
     // TypeDescriptor's own hot-reload handler empties its reflection caches; they
@@ -34,19 +36,67 @@ internal static class SharedTypeCaches
     private static void ForgetNewtonsoft()
     {
         var json = typeof(Newtonsoft.Json.JsonConvert).Assembly;
-        // The default resolver every serializer without its own uses (Dalamud's too).
-        var resolver = json.GetType("Newtonsoft.Json.Serialization.DefaultContractResolver")?
-            .GetField("_instance", AnyStatic)?.GetValue(null);
-        Forget(resolver?.GetType().GetField("_contractCache", AnyInstance)?.GetValue(resolver));
-        // The reflector's type stores (metadata types, converter creators).
-        if (json.GetType("Newtonsoft.Json.Serialization.JsonTypeReflector") is { } reflector)
-            foreach (var field in reflector.GetFields(AnyStatic))
-                Forget(field.GetValue(null));
+        // Every static the library keeps, nested caches included (contract resolvers,
+        // the reflector's metadata-type and creator stores).
+        foreach (var type in Types(json))
+            foreach (var field in type.GetFields(AnyStatic))
+                if (!type.ContainsGenericParameters && !field.IsLiteral)
+                    Try(() => ForgetIn(field.GetValue(null)));
         // One attribute cache per attribute type the reflector looks up.
         if (json.GetType("Newtonsoft.Json.Serialization.CachedAttributeGetter`1") is { } getter)
             foreach (var attribute in AttributeTypes(json))
-                Try(() => Forget(getter.MakeGenericType(attribute)
+                Try(() => ForgetIn(getter.MakeGenericType(attribute)
                     .GetField("TypeAttributeCache", AnyStatic)?.GetValue(null)));
+        // Dalamud's own serializers (its default converter serializes with them).
+        var dalamud = typeof(Dalamud.Plugin.IDalamudPluginInterface).Assembly;
+        foreach (var type in Types(dalamud))
+            foreach (var field in type.GetFields(AnyStatic))
+                if (!type.ContainsGenericParameters && !field.IsLiteral
+                    && (typeof(Newtonsoft.Json.JsonSerializer).IsAssignableFrom(field.FieldType)
+                        || typeof(Newtonsoft.Json.JsonSerializerSettings).IsAssignableFrom(field.FieldType)
+                        || typeof(Newtonsoft.Json.Serialization.IContractResolver).IsAssignableFrom(field.FieldType)))
+                    Try(() => ForgetIn(field.GetValue(null)));
+    }
+
+    /// <summary>System.Text.Json's shared option sets cache type metadata per type.</summary>
+    private static void ForgetSystemTextJson()
+    {
+        foreach (var options in new[] { System.Text.Json.JsonSerializerOptions.Default, System.Text.Json.JsonSerializerOptions.Web })
+        {
+            var context = typeof(System.Text.Json.JsonSerializerOptions).GetField("_cachingContext", AnyInstance)?.GetValue(options);
+            if (context?.GetType().GetField("_cache", AnyInstance)?.GetValue(context) is IDictionary cache)
+                RemovePoserKeys(cache);
+        }
+    }
+
+    /// <summary>A Newtonsoft object that caches by type: a ThreadSafeStore, a contract
+    /// resolver, a serializer or its settings.</summary>
+    private static void ForgetIn(object? value)
+    {
+        switch (value)
+        {
+            case null:
+                return;
+            case Newtonsoft.Json.JsonSerializer serializer:
+                ForgetIn(serializer.ContractResolver);
+                return;
+            case Newtonsoft.Json.JsonSerializerSettings settings:
+                ForgetIn(settings.ContractResolver);
+                return;
+            case Newtonsoft.Json.Serialization.DefaultContractResolver resolver:
+                Forget(typeof(Newtonsoft.Json.Serialization.DefaultContractResolver)
+                    .GetField("_contractCache", AnyInstance)?.GetValue(resolver));
+                return;
+            default:
+                Forget(value);
+                return;
+        }
+    }
+
+    private static Type[] Types(Assembly assembly)
+    {
+        try { return assembly.GetTypes(); }
+        catch (ReflectionTypeLoadException e) { return e.Types.Where(t => t != null).ToArray()!; }
     }
 
     private static Type[] AttributeTypes(Assembly json) =>
@@ -68,8 +118,12 @@ internal static class SharedTypeCaches
     /// ConcurrentDictionary); everyone else's entries stay.</summary>
     private static void Forget(object? store)
     {
-        if (store?.GetType().GetField("_concurrentStore", AnyInstance)?.GetValue(store) is not IDictionary entries)
-            return;
+        if (store?.GetType().GetField("_concurrentStore", AnyInstance)?.GetValue(store) is IDictionary entries)
+            RemovePoserKeys(entries);
+    }
+
+    private static void RemovePoserKeys(IDictionary entries)
+    {
         foreach (var key in entries.Keys.Cast<object>().Where(IsPoser).ToList())
             entries.Remove(key);
     }
