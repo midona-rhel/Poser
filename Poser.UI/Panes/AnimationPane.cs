@@ -354,32 +354,21 @@ public sealed class AnimationPane : IDisposable
                         actor, poseFamily, reading.Pose + 1),
                     "Pose")));
 
+        // Same cell switch as "Play emote start" / "Loop", so the rows align.
         form.Pair(
             "Weapon",
-            cell =>
-            {
-                ImGui.SetCursorScreenPos(cell.Center(
-                    ActiveTheme.Controls.SwitchHeight));
-                Switch(
-                    "##anim-weapon-drawn",
-                    reading.WeaponDrawn,
-                    next => Report(
-                        _animation.SetWeaponDrawn(actor, next), "Weapon"),
-                    cell.Constrain());
-            },
+            cell => cell.Switch(
+                "##anim-weapon-drawn",
+                reading.WeaponDrawn,
+                next => Report(
+                    _animation.SetWeaponDrawn(actor, next), "Weapon")),
             "Lock position",
-            cell =>
-            {
-                ImGui.SetCursorScreenPos(cell.Center(
-                    ActiveTheme.Controls.SwitchHeight));
-                Switch(
-                    "##anim-position-lock",
-                    owned.PositionLock,
-                    next => Report(
-                        _animation.SetPositionLock(actor, next),
-                        "Position lock"),
-                    cell.Constrain());
-            });
+            cell => cell.Switch(
+                "##anim-position-lock",
+                owned.PositionLock,
+                next => Report(
+                    _animation.SetPositionLock(actor, next),
+                    "Position lock")));
     }
 
     private static void PoseStepper(
