@@ -1067,7 +1067,7 @@ public sealed partial class DebugBridge : IDisposable
                 if (control == null)
                     return Json(new { ok = false, error = "no live control on that slot" });
                 var scrubOwner = Guid.NewGuid();
-                var begun = _animation.BeginScrub(id, control.Id, scrubOwner);
+                var begun = _animation.BeginScrub(id, control.Id, scrubOwner, Slot());
                 if (!begun.Success)
                     return Json(new { ok = false, step = "begin", begun.Detail });
                 var moved = _animation.UpdateScrub(id, time, scrubOwner);

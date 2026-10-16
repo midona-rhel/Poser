@@ -40,6 +40,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // Armed loops: (actor, slot) → the timeline id the loop belongs to. Written by
     // the UI, read by the tick (under _targetLock).
     private readonly Dictionary<(ActorId Actor, int Slot), ushort> _loops = new();
+    // Last remaining-frames reading per armed loop (its decrease is the loop's margin).
+    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Value)> _remaining = new();
 
     private delegate void DisableDrawFn(nint character);
     private readonly Hook<DisableDrawFn>? _disableDrawHook;
@@ -506,24 +508,36 @@ public sealed unsafe class TimelineSeekService : IDisposable
             float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
             if (!(end > begin))
                 end = begin + TimelineSeekEngine.Length(root);
-            // The sequencer moves the slot on to the next row once its C009s have
-            // no more than +0x26E frames left (the pre-end notify, FUN_141BFF3A0; 12
-            // on the emotes measured) and blends across those frames. The loop
-            // takes the same seam: it wraps just before the notify and blends back
-            // to the begin over the lead. Without a lead nothing ends the timeline
-            // early, so it wraps at its own end (the seek's last valid frame is
-            // end − 1). Not at the pose end: an expression's C009 is a 1-frame clip
-            // whose face animation keeps cycling, which wrapped it every tick.
+            // The sequencer ends a slot timeline (and moves to the next row) once its
+            // C009s have no more than +0x26E frames left: the pre-end notify
+            // (FUN_141BFF3A0), armed while the lead is >= 0 and the play info's
+            // +0x30 isn't -1. That is every layer measured (lead 12 on full-body
+            // emotes, 0 elsewhere: Upper Eat Apple ends at its 360-frame body clip
+            // of a 435-frame timeline). The loop wraps just before that point, by
+            // the game's own remaining time, and blends back over the lead. The
+            // remaining time counts in the clip's units, so its decrease is
+            // measured per tick for the margin. Unarmed, the timeline runs to its
+            // own end (the seek's last valid frame is end - 1).
             short lead = *(short*)(root + 0x26E);
-            float seam = end - 1f;
-            if (lead > 0)
+            nint playInfo = TimelineSeekEngine.PlayInfo(root);
+            bool notifies = lead >= 0 && playInfo != 0 && *(int*)(playInfo + 0x30) != -1;
+            float remaining = notifies ? _engine.Remaining(root) : -1f;
+            bool wrap;
+            if (remaining >= 0f)
             {
-                var tree = _engine.Collect(root);
-                if (tree.PoseEnd > begin && !tree.PoseEndPending)
-                    seam = tree.PoseEnd - lead;
+                float step = _remaining.TryGetValue(key, out var last) && last.Root == root
+                    ? last.Value - remaining
+                    : 0f;
+                _remaining[key] = (root, remaining);
+                // No measured step yet (first tick, or not counting down): wrap only
+                // once the notify point itself is reached.
+                wrap = remaining - LoopLeadSteps * Math.Max(step, 0f) <= lead;
             }
-            if (TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps < seam)
+            else
+                wrap = TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps >= end - 1f;
+            if (!wrap)
                 continue;
+            _remaining.Remove(key);
             var work = new TimelineSeekWork();
             var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: Math.Max((int)lead, 0));
             if (refused != null)

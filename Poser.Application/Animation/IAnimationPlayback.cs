@@ -37,7 +37,8 @@ public interface IAnimationPlayback
     Outcome SetPositionLock(ActorId actor, bool locked);
     ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot);
     bool IsAdvanced(ActorId actor);
-    Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner);
+    /// <summary>Starts a drag; with <paramref name="slot"/> only that layer is held.</summary>
+    Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null);
     Outcome UpdateScrub(ActorId actor, float time, Guid owner);
     void EndScrub(Guid owner);
 }

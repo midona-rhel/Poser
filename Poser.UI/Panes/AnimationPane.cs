@@ -670,7 +670,7 @@ public sealed class AnimationPane : IDisposable
             time,
             0f,
             duration,
-            next => ScrubTo(actor, control, next),
+            next => ScrubTo(actor, slot, control, next),
             format: "0.00",
             disabled: disabled || !available,
             actions: actions => actions.IconButton(
@@ -695,14 +695,14 @@ public sealed class AnimationPane : IDisposable
     private bool _scrubBlocked;
 
     private void ScrubTo(
-        ActorId actor, ScrubControlReading? control, float time, bool finish = false)
+        ActorId actor, AnimationSlot slot, ScrubControlReading? control, float time, bool finish = false)
     {
         if (control == null || _scrubBlocked)
             return;
         if (_scrubActor is not { } scrubActor || !scrubActor.Equals(actor) ||
             _scrubControl != control.Id)
         {
-            var begun = _animation.BeginScrub(actor, control.Id, _scrubOwner);
+            var begun = _animation.BeginScrub(actor, control.Id, _scrubOwner, slot);
             if (!begun.Success)
             {
                 Report(begun, "Animation scrub");

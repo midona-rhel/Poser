@@ -45,10 +45,10 @@ internal sealed class ScrubAnimationSession
     /// the control is not present, so a scrub never starts against
     /// geometry that is already gone.
     /// </summary>
-    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner) =>
-        BeginScrubCore(actor, control, owner);
+    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null) =>
+        BeginScrubCore(actor, control, owner, slot);
 
-    private Outcome BeginScrubCore(ActorId actor, ScrubControlId control, Guid owner)
+    private Outcome BeginScrubCore(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot)
     {
         var controls = _port.EnumerateControls(actor, out var token);
         ScrubControlReading? target = null;
@@ -58,10 +58,15 @@ internal sealed class ScrubAnimationSession
         if (target == null)
             return Outcome.Fail("That animation control is no longer present.");
 
-        bool wasPaused = _speed.IsPaused(actor);
+        // A layer's scrub holds that layer only; the others keep playing. Without a
+        // known layer the whole actor is held, as before.
+        bool wasPaused = _speed.IsPaused(actor) ||
+            (slot is { } held && _speed.IsSlotHeld(actor, held));
         if (!wasPaused)
         {
-            var freeze = _speed.SetSpeed(actor, 0f);
+            var freeze = slot is { } layer
+                ? _speed.PauseSlot(actor, layer)
+                : _speed.SetSpeed(actor, 0f);
             if (!freeze.Success)
                 return freeze;
         }

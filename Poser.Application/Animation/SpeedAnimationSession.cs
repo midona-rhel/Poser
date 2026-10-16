@@ -52,6 +52,10 @@ internal sealed class SpeedAnimationSession
 
     public bool IsPaused(ActorId actor) => _store.For(actor).IsPaused;
 
+    /// <summary>Whether Poser holds this one layer still (its speed is 0).</summary>
+    public bool IsSlotHeld(ActorId actor, AnimationSlot slot) =>
+        _store.For(actor).SlotSpeeds.TryGetValue(slot, out var speed) && speed == 0f;
+
     public Outcome Pause(ActorId actor)
     {
         _store.Trace?.Invoke($"Pause(all) {actor}");

@@ -429,8 +429,8 @@ public sealed class AnimationSession : IAnimationPlayback
         _scrub.FindSlotControl(actor, slot);
 
     /// <summary>Freezes playback and captures the drag's whole mapping.</summary>
-    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner) =>
-        _scrub.BeginScrub(actor, control, owner);
+    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null) =>
+        _scrub.BeginScrub(actor, control, owner, slot);
 
     /// <summary>Writes a frame clamped to the duration captured at Begin.</summary>
     public Outcome UpdateScrub(ActorId actor, float time, Guid owner) =>

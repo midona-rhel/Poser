@@ -393,9 +393,7 @@ internal sealed unsafe class TimelineSeekEngine
             if (holder != 0)
                 holders.Add(holder);
         }
-        // Play info: root vfunc 0x118 (a getter).
-        var playInfoOf = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)root + 0x118));
-        nint playInfo = playInfoOf(root);
+        nint playInfo = PlayInfo(root);
         bool viaPlayInfo = playInfo != 0 && *(int*)(playInfo + 0x38) >= 0;
         LastBlendPath = viaPlayInfo ? "play info +0x38" : "+0x21C";
         int fade = *(int*)(root + 0x220);
@@ -439,6 +437,37 @@ internal sealed unsafe class TimelineSeekEngine
     }
 
     private const int OldHolderFadeFrames = 1000;
+
+    /// <summary>The root's play info (vfunc 0x118: root+0x110 while +0x271 bit 6), or 0.</summary>
+    public static nint PlayInfo(nint root)
+    {
+        var playInfoOf = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)root + 0x118));
+        return playInfoOf(root);
+    }
+
+    /// <summary>
+    /// The frames the root's C009s have left, as the sequencer's pre-end notify
+    /// reads them (FUN_1418FF650, which can't be called: it may send the notify
+    /// itself): the max of each C009's vfunc 0x98 (read-only; it resolves the
+    /// length if needed), skipping clips marked +0x10 bit 7; 0 once the root is
+    /// ended (+0x273 bit 0); −1 without C009s. In the clip's own units: a
+    /// stretched clip (an expression's 1-frame face at 1/150) counts down slower
+    /// than the timeline, so callers measure its rate rather than assume it.
+    /// </summary>
+    public float Remaining(nint root)
+    {
+        if ((*(byte*)(root + 0x273) & 1) != 0)
+            return 0f;
+        float remaining = -1f;
+        foreach (var clip in Collect(root).Havok.Keys)
+        {
+            if ((*(byte*)(clip + 0x10) & 0x80) != 0)
+                continue;
+            var remainingOf = (delegate* unmanaged<nint, float>)(*(nint*)(*(nint*)clip + 0x98));
+            remaining = Math.Max(remaining, Math.Max(0f, remainingOf(clip)));
+        }
+        return remaining;
+    }
 
     /// <summary>Which blend-in source the last crossfade wrap wrote (for the log).</summary>
     public string? LastBlendPath { get; private set; }
