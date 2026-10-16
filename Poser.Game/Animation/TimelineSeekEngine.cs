@@ -822,21 +822,15 @@ internal sealed unsafe class TimelineSeekEngine
         foreach (var (c010, child) in tree.C010s)
         {
             byte state = *(byte*)(c010 + 0x10);
-            bool nested = tree.NestedC010s.Contains(c010);
+            // (Stopping an active nested one with its own Stop(2) and resetting it as
+            // below made its restart end at once: open, see the Mac thread.)
             if ((state & 0x10) != 0)
-            {
-                if (!nested)
-                    continue;
-                var stop = (delegate* unmanaged<nint, int, byte>)(*(nint*)(*(nint*)c010 + 32 * 8));
-                stop(c010, 2);
-                state = *(byte*)(c010 + 0x10);
-            }
-            if ((state & 0xD0) != 0)
+                continue;
+            if ((state & 0xC0) != 0)
             {
                 *(byte*)(c010 + 0x10) = (byte)(state & 1);
                 *(byte*)(c010 + 0x11) &= unchecked((byte)~3);
                 *(uint*)(c010 + 0x8C) = 0;
-                *(byte*)(c010 + 0x7C) = 0;
             }
             if ((*(byte*)(child + 0x7C) & 0x40) == 0)
                 continue;
