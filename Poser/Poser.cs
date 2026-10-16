@@ -227,27 +227,6 @@ public class Poser : IDalamudPlugin
                 FontRegistry.Dispose();
                 _standbyFontAtlas.Dispose();
             });
-        ReleaseTypeDescriptorCaches();
-    }
-
-    /// <summary>
-    /// TypeDescriptor (System.ComponentModel, shared by the whole process) caches every
-    /// type Newtonsoft asks it about in statics, and those references keep this unloaded
-    /// plugin in memory. Its own hot-reload handler empties those caches; they rebuild on
-    /// demand, so other plugins lose nothing but a lookup.
-    /// </summary>
-    private static void ReleaseTypeDescriptorCaches()
-    {
-        try
-        {
-            typeof(System.ComponentModel.TypeDescriptor).Assembly
-                .GetType("System.ComponentModel.ReflectionCachesUpdateHandler")?
-                .GetMethod("ClearCache", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)?
-                .Invoke(null, new object?[] { null });
-        }
-        catch
-        {
-            // Best effort at unload: a runtime without the handler only keeps the old copy.
-        }
+        global::Poser.Lifecycle.SharedTypeCaches.Release();
     }
 }
