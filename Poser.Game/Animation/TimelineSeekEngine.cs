@@ -406,8 +406,9 @@ internal sealed unsafe class TimelineSeekEngine
         // them at once (the body fell to the new control's ~0 weight: a bind-pose
         // frame). A fade far longer than the blend leaves only the crossfade, the
         // sum stays 1 as at the game's own seam, and the node releases them when
-        // the blend completes (measured: removed the frame after it).
-        *(int*)(root + 0x220) = OldHolderFadeFrames;
+        // the blend completes (measured: removed the frame after it). Only C009s:
+        // the VFX clips' stop reads the same field, and 1000 left the old emitters
+        // fading for ~33 s (the stuck bubbles). They stop with 0, as in a scrub.
         if (viaPlayInfo)
             *(int*)(playInfo + 0x38) = frames;
         else
@@ -417,7 +418,8 @@ internal sealed unsafe class TimelineSeekEngine
         }
         try
         {
-            StopAll(root);
+            StopAll(root, clip => *(int*)(root + 0x220) =
+                _l.Classify(clip) == SeekClipKind.HavokAnimation ? OldHolderFadeFrames : 0);
             foreach (var holder in holders)
                 *(uint*)(holder + 0x40) = ~*(uint*)(holder + 0x40);
             Rewind(root, tree);
@@ -441,7 +443,8 @@ internal sealed unsafe class TimelineSeekEngine
     /// <summary>Which blend-in source the last crossfade wrap wrote (for the log).</summary>
     public string? LastBlendPath { get; private set; }
 
-    private void StopAll(nint root)
+    /// <param name="beforeStop">Runs before each clip's event 9 (sets the fade it reads).</param>
+    private void StopAll(nint root, Action<nint>? beforeStop = null)
     {
         var visited = new HashSet<nint>();
         var clips = new List<nint>();
@@ -458,6 +461,7 @@ internal sealed unsafe class TimelineSeekEngine
             {
                 if (_l.Classify(clip) == SeekClipKind.ChildTimeline)
                     continue;
+                beforeStop?.Invoke(clip);
                 var processEvent = (delegate* unmanaged<nint, int, nint, byte>)(*(nint*)(*(nint*)clip + 9 * 8));
                 processEvent(clip, 9, _l.DefaultPayload);
             }
