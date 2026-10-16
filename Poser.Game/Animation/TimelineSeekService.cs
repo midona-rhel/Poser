@@ -416,6 +416,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
 
     // Per-section maxima of the per-frame cost (Debug builds), in µs.
     private readonly double[] _sectionMax = new double[8];
+    private int _gcAt;
+    private long _allocAt;
     private long _sectionAt;
     private int _section = -1;
     [System.Diagnostics.Conditional("DEBUG")]
@@ -442,7 +444,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _costSum += us; _costMax = Math.Max(_costMax, us);
             if (++_costTicks >= 600)
             {
-                _log.Information($"[TimelineSeek] per-frame cost over {_costTicks} frames: avg {_costSum / _costTicks:F1} µs, max {_costMax:F1} µs, {_managed.Count} actors; section max µs restores {_sectionMax[0]:F0} births {_sectionMax[1]:F0} props {_sectionMax[2]:F0} targets {_sectionMax[3]:F0} seeks {_sectionMax[4]:F0} loops {_sectionMax[5]:F0} work {_sectionMax[6]:F0}");
+                _log.Information($"[TimelineSeek] per-frame cost over {_costTicks} frames: avg {_costSum / _costTicks:F1} µs, max {_costMax:F1} µs, {_managed.Count} actors; section max µs restores {_sectionMax[0]:F0} births {_sectionMax[1]:F0} props {_sectionMax[2]:F0} targets {_sectionMax[3]:F0} seeks {_sectionMax[4]:F0} loops {_sectionMax[5]:F0} work {_sectionMax[6]:F0}; gen0 GCs {GC.CollectionCount(0) - _gcAt}, allocated {(GC.GetAllocatedBytesForCurrentThread() - _allocAt) / 1024} KiB on this thread");
+                _gcAt = GC.CollectionCount(0);
+                _allocAt = GC.GetAllocatedBytesForCurrentThread();
                 Array.Clear(_sectionMax);
                 _costSum = _costMax = 0; _costTicks = 0;
             }
