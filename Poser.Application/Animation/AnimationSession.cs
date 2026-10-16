@@ -291,6 +291,39 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     /// <summary>
+    /// <see cref="Capture"/> for a scene file: a paused slot still playing the
+    /// game's own animation becomes a held layer on its frame, so a load plays
+    /// that animation and holds it there. Undo keeps those slots the game's.
+    /// </summary>
+    public AnimationSnapshot CaptureForScene(ActorId actor)
+    {
+        var snapshot = Capture(actor);
+        var owned = _store.For(actor);
+        var reading = _timeline.Read(actor) ?? ActorAnimationReading.Empty;
+        LayerSnapshot Layer(AnimationSlot slot, LayerSnapshot layer)
+        {
+            if (layer.Applied is not null || layer.EndedSeconds is not null)
+                return layer;
+            // A Pose-tab expression is saved as itself.
+            if (slot == AnimationSlot.Facial && owned.HeldExpression is not null)
+                return layer;
+            bool paused = owned.OverallSpeed == 0f || owned.SlotSpeeds.GetValueOrDefault(slot, 1f) == 0f;
+            ushort native = reading.TimelineFor(slot);
+            if (!paused || native == 0 || _scrub.FindSlotControl(actor, slot) is not { } control)
+                return layer;
+            // The game's idles loop.
+            return new LayerSnapshot(native, true, true, layer.Speed, layer.Weight, control.Time, null);
+        }
+        return snapshot with
+        {
+            Base = Layer(AnimationSlot.Base, snapshot.Base),
+            UpperBody = Layer(AnimationSlot.UpperBody, snapshot.UpperBody),
+            Facial = Layer(AnimationSlot.Facial, snapshot.Facial),
+            Additive = Layer(AnimationSlot.Additive, snapshot.Additive),
+        };
+    }
+
+    /// <summary>
     /// Puts the actor back into <paramref name="target"/>: each layer plays its
     /// animation again (from its start when it was running), held layers at their
     /// exact frame, ended ones ended; then speeds, weights, loops, the whole-actor

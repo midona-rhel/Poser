@@ -331,12 +331,12 @@ public sealed class SceneCaptureService
             };
             if (includeAnimation && id is { } animated)
             {
-                entry.Animation = Poser.Application.Scene.SceneAnimationCodec.ToDocument(_animation.Capture(animated));
+                entry.Animation = Poser.Application.Scene.SceneAnimationCodec.ToDocument(_animation.CaptureForScene(animated));
                 entry.PoseEdits = CaptureEdits(slots);
                 if (companion is not null && _spawns.GetCompanionActor(actor) is { } companionActor
                     && _bindings.GetActorId(companionActor) is { } companionId)
                 {
-                    entry.CompanionAnimation = Poser.Application.Scene.SceneAnimationCodec.ToDocument(_animation.Capture(companionId));
+                    entry.CompanionAnimation = Poser.Application.Scene.SceneAnimationCodec.ToDocument(_animation.CaptureForScene(companionId));
                     entry.CompanionPoseEdits = CaptureEdits(_skeletons.GetSkeletons(companionActor));
                 }
             }
