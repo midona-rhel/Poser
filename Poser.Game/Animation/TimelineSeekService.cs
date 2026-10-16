@@ -457,6 +457,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     {
 #endif
         _tick++;
+        _engine.BeginFrameTrees();
         try
         {
             _managed.Clear();
@@ -509,6 +510,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 _targets.Clear();
             _work.Clear();
             _restores.Clear();
+        }
+        finally
+        {
+            _engine.EndFrameTrees();
         }
     }
 

@@ -91,7 +91,38 @@ internal sealed unsafe class TimelineSeekEngine
         public bool PoseEndPending;
     }
 
+    // One frame's trees, while the service's tick runs (BeginFrameTrees..EndFrameTrees):
+    // the props, loops, owned layers and clamped controls each walked the same slot
+    // timelines every frame. A tree holds clip pointers and their static data; only a
+    // seek (or a new timeline, a new root) changes it, and Seek drops its root's entry.
+    // Outside the tick (the speed and weight holds in the game's update, readings
+    // from the UI) every call walks afresh: a replaced timeline can reuse an address.
+    private readonly Dictionary<nint, Tree> _frameTrees = new();
+    private bool _frameTreesOn;
+
+    public void BeginFrameTrees()
+    {
+        _frameTrees.Clear();
+        _frameTreesOn = true;
+    }
+
+    public void EndFrameTrees()
+    {
+        _frameTrees.Clear();
+        _frameTreesOn = false;
+    }
+
     public Tree Collect(nint root)
+    {
+        if (_frameTreesOn && _frameTrees.TryGetValue(root, out var cached))
+            return cached;
+        var built = Build(root);
+        if (_frameTreesOn)
+            _frameTrees[root] = built;
+        return built;
+    }
+
+    private Tree Build(nint root)
     {
         var tree = new Tree();
         var seen = new HashSet<nint>();
@@ -307,6 +338,7 @@ internal sealed unsafe class TimelineSeekEngine
             return "timeline still loading";
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         LastSeekChunks = 0;
+        _frameTrees.Remove(root);
         _phaseAt = started;
         Array.Clear(SeekPhases);
         if (IsIntegerFrame(root))
@@ -403,6 +435,7 @@ internal sealed unsafe class TimelineSeekEngine
         // Re-collect: the step may have created clips' instances (C009s that just
         // started, C031 prop timelines, C012 VFX objects).
         Phase(5);
+        _frameTrees.Remove(root);
         tree = Collect(root);
         Phase(6);
         SettleHavok(tree, target, blendFrames == 0 && control != 0 && _l.IsActorControl(control) ? control : 0);
@@ -428,6 +461,7 @@ internal sealed unsafe class TimelineSeekEngine
         if (speed == 0f)
             work.FreezeVfx(this);
         Phase(9);
+        _frameTrees.Remove(root);
         LastSeekMs = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         return null;
     }
