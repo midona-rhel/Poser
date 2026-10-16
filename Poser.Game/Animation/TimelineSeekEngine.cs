@@ -305,6 +305,8 @@ internal sealed unsafe class TimelineSeekEngine
             return "native seek unavailable";
         if (!IsLoaded(root))
             return "timeline still loading";
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        LastSeekChunks = 0;
         if (IsIntegerFrame(root))
             return "integer-frame timeline";
         if ((*(byte*)(root + 0x7C) & 0x40) != 0)
@@ -388,6 +390,7 @@ internal sealed unsafe class TimelineSeekEngine
             if (blendFrames == 0 && control != 0 && _l.IsActorControl(control))
                 *(byte*)(control + 0x6B8) = 1;
             _n.UpdateBanner(root, step, 1);
+            LastSeekChunks++;
             if ((*(byte*)(root + 0x272) & 0x80) != 0)
                 break;
         }
@@ -415,8 +418,13 @@ internal sealed unsafe class TimelineSeekEngine
         // The window fired 0x1E(1) into the C012s and the restore to 0 was dropped.
         if (speed == 0f)
             work.FreezeVfx(this);
+        LastSeekMs = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         return null;
     }
+
+    /// <summary>The last successful seek's cost and its UpdateBanner chunks (diagnostics).</summary>
+    public double LastSeekMs;
+    public int LastSeekChunks;
 
     /// <summary>
     /// After the step, the C009s the way normal play would leave them at the target

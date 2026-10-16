@@ -968,6 +968,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
             return;
         var work = new TimelineSeekWork();
         var refused = _engine.Seek((nint)character, root, target, work);
+#if DEBUG
+        if (refused == null && _engine.LastSeekMs > 2.0)
+            _log.Information($"[TimelineSeek] scrub seek of slot {key.Slot}: {_engine.LastSeekMs:F1} ms, {_engine.LastSeekChunks} chunks");
+#endif
         if (refused != null)
         {
             LogOnce($"refused:{key}:{refused}", $"[TimelineSeek] {key.Actor} slot {key.Slot}: {refused}");
@@ -1201,6 +1205,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _remaining.Remove(key);
             var work = new TimelineSeekWork();
             var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: Math.Max((int)lead, 0));
+#if DEBUG
+            if (refused == null && _engine.LastSeekMs > 2.0)
+                _log.Information($"[TimelineSeek] loop wrap of slot {key.Slot}: {_engine.LastSeekMs:F1} ms, {_engine.LastSeekChunks} chunks");
+#endif
             if (refused != null)
             {
                 LogOnce($"loop:{key}:{refused}", $"[TimelineSeek] loop of slot {key.Slot}: {refused}");
