@@ -587,6 +587,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     ? last.Value - remaining
                     : 0f;
                 _remaining[key] = (root, remaining, clock);
+                if (remaining < 20f) // DIAG
+                    _log.Information($"[TimelineSeek] DIAG slot {key.Slot} clock {clock:0.00}/{end:0} remaining {remaining:0.00} step {step:0.000} lead {lead}");
                 // No measured step yet (first tick, or not counting down): wrap only
                 // once the notify point itself is reached.
                 wrap = remaining - LoopLeadSteps * Math.Max(step, 0f) <= lead;
