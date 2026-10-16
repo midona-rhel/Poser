@@ -65,7 +65,8 @@ internal sealed unsafe class TimelineSeekEngine
     {
         public readonly List<(nint Clip, nint Child)> C010s = new();
         public readonly Dictionary<nint, nint> Havok = new();          // C009 → owner timeline
-        public readonly List<nint> Vfx = new();                         // C012
+        public readonly List<nint> Vfx = new();                         // C012/C049
+        public readonly List<nint> AsyncVfx = new();                    // C173
         public readonly List<(nint Clip, float Start)> Summons = new(); // C031 + absolute start
     }
 
@@ -97,6 +98,9 @@ internal sealed unsafe class TimelineSeekEngine
                         break;
                     case SeekClipKind.Vfx:
                         tree.Vfx.Add(clip);
+                        break;
+                    case SeekClipKind.AsyncVfx:
+                        tree.AsyncVfx.Add(clip);
                         break;
                     case SeekClipKind.SummonAnimation:
                         tree.Summons.Add((clip, baseStart + *(float*)(clip + 0x50)));
@@ -588,9 +592,10 @@ internal sealed unsafe class TimelineSeekEngine
     // effect still lives, like the bubbles, gets no speed event at all).
 
     /// <summary>A C012's VfxObject: inst=clip+0x98 → *(inst+0x28) → vfunc 0x68.</summary>
-    private static nint VfxOf(nint clip)
+    private static nint VfxOf(nint clip) => VfxOfInstance(*(nint*)(clip + 0x98));
+
+    private static nint VfxOfInstance(nint instance)
     {
-        nint instance = *(nint*)(clip + 0x98);
         nint holder = instance != 0 ? *(nint*)(instance + 0x28) : 0;
         if (holder == 0)
             return 0;
@@ -598,17 +603,45 @@ internal sealed unsafe class TimelineSeekEngine
         return getVfx(holder);
     }
 
+    /// <summary>Every VFX object of a tree: one per C012/C049, up to 8 per C173.</summary>
+    private static List<nint> VfxObjects(Tree tree)
+    {
+        var objects = new List<nint>();
+        foreach (var clip in tree.Vfx)
+            if (VfxOf(clip) is var vfx and not 0)
+                objects.Add(vfx);
+        foreach (var clip in tree.AsyncVfx)
+        {
+            nint array = *(nint*)(clip + 0xD8);
+            nint data = *(nint*)(clip + 0x48);
+            if (array == 0 || data == 0)
+                continue;
+            int count = Math.Clamp(*(int*)(data + 0x18), 1, 8);
+            for (int i = 0; i < count; i++)
+                if (VfxOfInstance(*(nint*)(array + i * 8)) is var vfx and not 0)
+                    objects.Add(vfx);
+        }
+        return objects;
+    }
+
     /// <summary>Sets every live VFX object of a timeline tree to <paramref name="speed"/>.</summary>
     public void SetVfxSpeeds(nint root, float speed)
     {
         if (!Ready || root == 0)
             return;
-        foreach (var clip in Collect(root).Vfx)
-        {
-            nint vfx = VfxOf(clip);
-            if (vfx != 0 && *(float*)(vfx + 0x250) != speed)
+        foreach (var vfx in VfxObjects(Collect(root)))
+            if (*(float*)(vfx + 0x250) != speed)
                 _n.SetVfxSpeed(vfx, speed);
-        }
+    }
+
+    /// <summary>The weapon objects' own model VFX (glows, idle effects).</summary>
+    public void SetWeaponVfxSpeeds(nint character, float speed)
+    {
+        if (!Ready)
+            return;
+        for (int w = 0; w < 4; w++)
+            if (Weapon(character, w) is var weapon and not 0)
+                _n.SetModelVfxSpeed(weapon, speed);
     }
 
     /// <summary>The actor's effects: slot timelines 0/1/2/3/6 and the live prop
@@ -621,6 +654,7 @@ internal sealed unsafe class TimelineSeekEngine
             return;
         foreach (int slot in new[] { 0, 1, 2, 3, 6 })
             SetVfxSpeeds(AnimationNativeState.SlotTimeline(sequencer, slot), speed);
+        SetWeaponVfxSpeeds(character, speed);
         for (int w = 0; w < 4; w++)
         {
             nint group = PropGroup(Weapon(character, w));
@@ -640,10 +674,9 @@ internal sealed unsafe class TimelineSeekEngine
     public HashSet<ulong> VfxHandles(Tree tree)
     {
         var handles = new HashSet<ulong>();
-        foreach (var clip in tree.Vfx)
+        foreach (var vfx in VfxObjects(tree))
         {
-            nint vfx = VfxOf(clip);
-            nint wrapper = vfx != 0 ? *(nint*)(vfx + 0x2A0) : 0;
+            nint wrapper = *(nint*)(vfx + 0x2A0);
             ulong handle = wrapper != 0 ? *(ulong*)(wrapper + 0x60) : 0;
             if (handle != 0)
                 handles.Add(handle);
@@ -658,7 +691,7 @@ internal sealed unsafe class TimelineSeekEngine
         nint js = _l.VfxSlotTable;
         nint table = js != 0 ? *(nint*)(js + 0x1498) : 0;
         if (table == 0)
-            return tree.Vfx.Count > 0;
+            return tree.Vfx.Count + tree.AsyncVfx.Count > 0;
         foreach (var handle in VfxHandles(tree))
         {
             uint index = (uint)(handle >> 32), generation = (uint)handle;

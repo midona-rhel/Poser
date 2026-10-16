@@ -10,6 +10,9 @@ internal enum SeekClipKind
     HavokAnimation,
     /// <summary>C012: spawns a VFX object.</summary>
     Vfx,
+    /// <summary>C173 async VFX: up to 8 instances in an inline array (clip+0x98,
+    /// pointer at +0xD8, count clamp(data+0x18, 1, 8)); ignores timeline pause/speed.</summary>
+    AsyncVfx,
     /// <summary>C031 "Summon Animation": plays an ActionTimeline on a weapon
     /// object's own bucket-3 timeline.</summary>
     SummonAnimation,

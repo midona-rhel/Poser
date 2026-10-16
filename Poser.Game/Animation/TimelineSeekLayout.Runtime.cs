@@ -20,7 +20,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
     // 216 rows × 0x30 — +0x00 u32 id, +0x10 char* tag ("C009").
     private const int TypeRows = 0xD8, TypeRowSize = 0x30;
 
-    private readonly int _c009 = -1, _c010 = -1, _c012 = -1, _c049 = -1, _c031 = -1;
+    private readonly int _c009 = -1, _c010 = -1, _c012 = -1, _c049 = -1, _c031 = -1, _c173 = -1;
     private readonly nint _childTimelineVtbl, _actorControlVtbl, _timelineManagerPtr, _jobSystem, _scheduleManagementPtr;
     private readonly delegate* unmanaged<ulong, byte, void> _release;
 
@@ -70,6 +70,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
             _c012 = Id("C012");
             _c031 = Id("C031");
             _c049 = Id("C049");
+            _c173 = Id("C173");
         }
 
         // The seek's hard-coded field offsets, each against the game's own use.
@@ -116,10 +117,8 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
         int type = *(int*)(clip + 0x84);
         if (type == _c010) return SeekClipKind.ChildTimeline;
         if (type == _c009) return SeekClipKind.HavokAnimation;
-        // C173 (async VFX) is a different class whose instance chain isn't
-        // decoded; the orphan guard reads handles through a vfunc, so only the
-        // C012 class (C012/C049) is classified as VFX.
         if (type == _c012 || type == _c049) return SeekClipKind.Vfx;
+        if (type == _c173) return SeekClipKind.AsyncVfx;
         if (type == _c031) return SeekClipKind.SummonAnimation;
         return SeekClipKind.Other;
     }

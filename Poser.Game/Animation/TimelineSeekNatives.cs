@@ -43,6 +43,15 @@ internal sealed unsafe class TimelineSeekNatives
     /// +0xB0 (and +0xC4/+0xC8, +0xCC |= 0x40); the game runs it in the clip's
     /// first post-step, one frame after its start.</summary>
     public readonly delegate* unmanaged<nint, void> ResolveHavokLength;
+    /// <summary>FUN_140433DD0(characterBase, speed): the model's own VFX list
+    /// (+0xB0, count +0x9C: IMC ve/vw effects such as weapon glows) to a speed. The
+    /// game's GPose speed push covers only the character's own model, never its
+    /// weapon objects.</summary>
+    public readonly delegate* unmanaged<nint, float, void> SetModelVfxSpeed;
+
+    // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x140433DD0).
+    private const string CharacterBase_SetModelVfxSpeed =
+        "40 53 48 83 EC 30 8B 81 9C 00 00 00 48 8B 99 B0 00 00 00 0F 29 74 24 20 0F 28 F1";
 
     public readonly bool Ready;
     public readonly string? Missing;
@@ -89,6 +98,9 @@ internal sealed unsafe class TimelineSeekNatives
 
         ResolveHavokLength = (delegate* unmanaged<nint, void>)Scan(
             NativeSignatures.HavokAnimationClip_ResolveLength, "HavokAnimationClip.ResolveLength");
+
+        SetModelVfxSpeed = (delegate* unmanaged<nint, float, void>)Scan(
+            CharacterBase_SetModelVfxSpeed, "CharacterBase.SetModelVfxSpeed");
 
         Missing = missing;
         Ready = missing == null;
