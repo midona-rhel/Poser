@@ -407,11 +407,9 @@ public sealed unsafe partial class AnimationNativeState
     /// <summary>
     /// The emote's row for the actor's posture, as the game's emote start picks it
     /// (FUN_140617920 over GetPosture): standing [0], ground sit [2], chair [3],
-    /// dozing [5], mounted / swimming / diving [4]. Unlike the game, [4] plays
-    /// even where the emote isn't flagged usable so (Emote +0x28 bits 0-2; the
-    /// game refuses there). 0 where the emote has no row for the posture; null
-    /// when the posture can't be read. The standing height-adjust loop [6] is not
-    /// applied.
+    /// dozing [5]; mounted, swimming or diving [4] only if the emote is usable so.
+    /// 0 where the game refuses the emote in this posture; null when the posture
+    /// can't be read. The standing height-adjust loop [6] is not applied.
     /// </summary>
     internal ushort? EmotePostureRow(Character* character, uint emoteId)
     {
@@ -423,10 +421,14 @@ public sealed unsafe partial class AnimationNativeState
             1 => 2,
             2 => 3,
             4 => 5,
-            3 or 5 or 6 => 4,
+            // Row +0x28 bits 0-2 (EXDSchema UsableWhenMounted/Swimming/Diving;
+            // this Lumina's Unknown1-3, in bit order before DrawsWeapon's bit 6).
+            3 => emote.Unknown1 ? 4 : -1,
+            5 => emote.Unknown2 ? 4 : -1,
+            6 => emote.Unknown3 ? 4 : -1,
             _ => 0,
         };
-        return (ushort)emote.ActionTimeline[index].RowId;
+        return index < 0 ? (ushort)0 : (ushort)emote.ActionTimeline[index].RowId;
     }
 
     /// <summary>
