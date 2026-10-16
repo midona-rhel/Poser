@@ -53,4 +53,36 @@ public sealed class SceneAnimationCaptureTests
 
         Assert.Null(session.CaptureForScene(actor).Base.Applied);
     }
+
+    [Fact]
+    public void A_restored_stance_keeps_the_full_body_layer_put_back_with_it()
+    {
+        const ushort SitLoop = 654;
+        var actor = ActorId.New();
+        var timeline = Substitute.For<IAnimationTimelinePort>();
+        var stance = Substitute.For<IAnimationStancePort>();
+        ushort live = 0;
+        timeline.Read(actor).Returns(_ => ActorAnimationReading.Empty with
+        {
+            Slots = new[] { new AnimationSlotReading(AnimationSlot.Base, live, 1f) },
+        });
+        timeline.TimelineSlot(SitLoop).Returns(AnimationSlot.Base);
+        timeline.PlayBase(actor, SitLoop, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
+            .Returns(_ => { live = SitLoop; return Outcome.Ok(); });
+        timeline.Blend(actor, SitLoop, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
+            .Returns(_ => { live = SitLoop; return Outcome.Ok(); });
+        stance.SetStance(actor, AnimationStance.SitGround, 0).Returns(Outcome.Ok());
+        var session = new AnimationSession(timeline, Substitute.For<IAnimationSpeedPort>(), stance,
+            Substitute.For<IAnimationScrubPort>(), Substitute.For<IWorldRenderingRuntimePort>());
+        var none = new LayerSnapshot(null, false, false, null, 1f, null, null);
+        var target = new AnimationSnapshot(
+            new LayerSnapshot(SitLoop, true, true, null, 1f, null, null), none, none, none,
+            null, null, null, AnimationStance.SitGround, 0, false, false, false);
+
+        session.Restore(actor, target);
+
+        stance.Received().SetStance(actor, AnimationStance.SitGround, 0);
+        // Setting the stance resets the Full body layer: it has to come first.
+        Assert.Equal(SitLoop, session.Capture(actor).Base.Applied);
+    }
 }

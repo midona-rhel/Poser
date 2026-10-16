@@ -346,12 +346,17 @@ public sealed class AnimationSession : IAnimationPlayback
         // back after.
         if (now.OverallSpeed is not null)
             Note(ClearSpeed(actor), "speed");
+        // The stance first: it resets the Full body layer and plays its own
+        // animation, so a layer put back before it would be lost.
+        if (now.Stance != target.Stance || now.Pose != target.Pose)
+        {
+            Note(SetStance(actor, target.Stance, target.Pose), "stance");
+            now = Capture(actor);
+        }
         foreach (var slot in AnimationSnapshot.Layers)
             RestoreLayer(actor, slot, now.For(slot), target.For(slot), Note);
         if (now.Lips != target.Lips)
             Note(SetLips(actor, target.Lips ?? 0), "lips");
-        if (now.Stance != target.Stance || now.Pose != target.Pose)
-            Note(SetStance(actor, target.Stance, target.Pose), "stance");
         if (now.WeaponDrawn != target.WeaponDrawn)
             Note(SetWeaponDrawn(actor, target.WeaponDrawn), "weapon");
         if (now.PositionLock != target.PositionLock)
