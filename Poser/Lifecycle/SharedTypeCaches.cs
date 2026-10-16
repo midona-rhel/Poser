@@ -25,13 +25,23 @@ internal static class SharedTypeCaches
         Try(ForgetSystemTextJson);
     }
 
-    // TypeDescriptor's own hot-reload handler empties its reflection caches; they
-    // rebuild on demand, so other plugins lose nothing but a lookup.
-    private static void ClearTypeDescriptor() =>
-        typeof(System.ComponentModel.TypeDescriptor).Assembly
-            .GetType("System.ComponentModel.ReflectionCachesUpdateHandler")?
+    // TypeDescriptor's own hot-reload handler empties its static reflection caches, and
+    // Refresh drops each Poser type from the provider's per-type data; both rebuild on
+    // demand, so other plugins lose nothing but a lookup.
+    private static void ClearTypeDescriptor()
+    {
+        var model = typeof(System.ComponentModel.TypeDescriptor).Assembly;
+        model.GetType("System.ComponentModel.ReflectionCachesUpdateHandler")?
             .GetMethod("ClearCache", AnyStatic)?
             .Invoke(null, new object?[] { null });
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies().Where(FromPoser))
+            Try(() => System.ComponentModel.TypeDescriptor.Refresh(assembly));
+        // What Refresh leaves: types that only mention Poser (List<PoserType> and alike).
+        var node = System.ComponentModel.TypeDescriptor.GetProvider(typeof(object));
+        var provider = node.GetType().GetField("Provider", AnyInstance)?.GetValue(node);
+        if (provider?.GetType().GetField("_typeData", AnyInstance)?.GetValue(provider) is IDictionary typeData)
+            RemovePoserKeys(typeData);
+    }
 
     private static void ForgetNewtonsoft()
     {
@@ -130,10 +140,16 @@ internal static class SharedTypeCaches
 
     private static bool IsPoser(object key) => key switch
     {
-        Type type => FromPoser(type.Assembly),
+        Type type => Mentions(type),
         MemberInfo member => FromPoser(member.Module.Assembly),
         _ => false,
     };
+
+    /// <summary>A Poser type, or one built from one: List&lt;PoserType&gt;, PoserType[].</summary>
+    private static bool Mentions(Type type) =>
+        FromPoser(type.Assembly)
+        || (type.HasElementType && type.GetElementType() is { } element && Mentions(element))
+        || (type.IsGenericType && !type.IsGenericTypeDefinition && type.GetGenericArguments().Any(Mentions));
 
     private static bool FromPoser(Assembly assembly) =>
         assembly.GetName().Name?.StartsWith("Poser", StringComparison.Ordinal) == true;
