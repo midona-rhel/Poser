@@ -79,10 +79,23 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
     {
         token = 0;
         var character = _native.Resolve(actor, out _);
-        return character == null
-            ? Array.Empty<ScrubControlReading>()
-            : AnimationNativeState.CollectControls(character, out token);
+        if (character == null)
+            return Array.Empty<ScrubControlReading>();
+        var controls = AnimationNativeState.CollectControls(character, out token);
+        if (_seek == null)
+            return controls;
+        // Layers without a fixed Havok control are scrubbed by their timeline clock.
+        var all = new List<ScrubControlReading>(controls);
+        foreach (var slot in TimelineScrubSlots)
+            if (_seek.TimelineReading(character, slot) is { } reading)
+                all.Add(reading);
+        return all;
     }
+
+    /// <summary>The layers the native seek scrubs by their own timeline clock.</summary>
+    private static readonly AnimationSlot[] TimelineScrubSlots =
+        [AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips,
+         AnimationSlot.Parts1, AnimationSlot.Parts2, AnimationSlot.Parts3, AnimationSlot.Parts4, AnimationSlot.Overlay];
 
     /// <summary>Resolves the verified Base and Upper Body slot controls.</summary>
     public ScrubControlReading? FindSlotControl(
@@ -90,8 +103,10 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
     {
         token = 0;
         var character = _native.Resolve(actor, out _);
-        if (character == null || slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
+        if (character == null)
             return null;
+        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
+            return _seek?.TimelineReading(character, slot);
         int index = (int)slot;
         if (character->Timeline.TimelineSequencer.TimelineIds[index] == 0)
             return null;
@@ -133,6 +148,14 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
             return Outcome.Fail(detail!);
         if (!float.IsFinite(time))
             return Outcome.Fail("Scrub time must be a finite number.");
+        if (control.IsTimeline)
+        {
+            var slot = (AnimationSlot)control.Control;
+            if (_seek == null || !_seek.Supports(character, (int)slot))
+                return Outcome.Fail("This layer's animation can no longer be scrubbed.");
+            _seek.RequestTimeline(actor, character, slot, time);
+            return Outcome.Ok();
+        }
 
         var drawObject = character->GameObject.DrawObject;
         if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)

@@ -124,6 +124,33 @@ public sealed unsafe class TimelineSeekService : IDisposable
             && (*(byte*)(root + 0x7C) & 0x40) == 0;
     }
 
+    /// <summary>A layer's scrub reading from its slot timeline clock, in seconds
+    /// from the timeline's begin, or null when the native seek can't move it.</summary>
+    internal Poser.Domain.Animation.ScrubControlReading? TimelineReading(Character* character, AnimationSlot slot)
+    {
+        if (!Supports(character, (int)slot))
+            return null;
+        nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
+        float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
+        if (!(end > begin))
+            end = begin + TimelineSeekEngine.Length(root);
+        if (!(end > begin))
+            return null;
+        return new(Poser.Domain.Animation.ScrubControlId.Timeline(slot),
+            (TimelineSeekEngine.Clock(root) - begin) / 30f, (end - begin) / 30f, *(float*)(root + 0x240));
+    }
+
+    /// <summary>Records the latest scrub target for a layer scrubbed by its
+    /// timeline clock: seconds from the timeline's begin.</summary>
+    internal void RequestTimeline(ActorId actor, Character* character, AnimationSlot slot, float seconds)
+    {
+        nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
+        if (root == 0)
+            return;
+        lock (_targetLock)
+            _targets[(actor, (int)slot)] = TimelineSeekEngine.Begin(root) + seconds * 30f;
+    }
+
     /// <summary>Records the latest scrub target in Havok control seconds.</summary>
     internal void Request(ActorId actor, Character* character, AnimationSlot slot, float seconds, float controlLocalTime)
     {

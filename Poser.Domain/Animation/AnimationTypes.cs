@@ -158,7 +158,12 @@ public readonly record struct BaseAnimationCapture(
 /// invalidated instead of writing through a replaced skeleton.</summary>
 public readonly record struct ScrubControlId(int Partial, int Control)
 {
-    public override string ToString() => $"{Partial}.{Control}";
+    /// <summary>A layer scrubbed by its slot timeline's own clock (no fixed
+    /// Havok control): <see cref="Control"/> is the slot.</summary>
+    public static ScrubControlId Timeline(AnimationSlot slot) => new(TimelinePartial, (int)slot);
+    public const int TimelinePartial = -1;
+    public bool IsTimeline => Partial == TimelinePartial;
+    public override string ToString() => IsTimeline ? $"tl.{Control}" : $"{Partial}.{Control}";
 }
 
 public sealed record ScrubControlReading(

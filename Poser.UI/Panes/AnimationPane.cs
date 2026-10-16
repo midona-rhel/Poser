@@ -518,8 +518,9 @@ public sealed class AnimationPane : IDisposable
             },
             id: $"anim-{slot}-speed");
 
-        if (slot is AnimationSlot.Base or AnimationSlot.UpperBody)
-            DrawScrub(form, actor, slot, actionStyle, disabled);
+        // Base and Upper Body scrub their Havok control; the other layers their
+        // timeline clock (native seek). A layer the seek can't move shows it disabled.
+        DrawScrub(form, actor, slot, actionStyle, disabled);
     }
 
     private void DrawAnimationLayers(
