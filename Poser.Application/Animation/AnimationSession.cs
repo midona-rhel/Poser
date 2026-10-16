@@ -179,7 +179,7 @@ public sealed class AnimationSession : IAnimationPlayback
             return entry;
         if (row == 0)
         {
-            refusal = $"{entry.Name} has no version for how the actor is now (mounted, swimming or diving).";
+            refusal = $"{entry.Name} has no version for how the actor is now (sitting, dozing, mounted, swimming or diving).";
             return null;
         }
         return entry with { TimelineId = row, Slot = _timeline.TimelineSlot(row) ?? AnimationSlot.Base };
