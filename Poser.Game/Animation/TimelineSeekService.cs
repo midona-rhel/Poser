@@ -510,14 +510,18 @@ public sealed unsafe class TimelineSeekService : IDisposable
             // no more than +0x26E frames left (the pre-end notify, FUN_141BFF3A0; 12
             // on the emotes measured) and blends across those frames. The loop
             // takes the same seam: it wraps just before the notify and blends back
-            // to the begin over the lead. Without a lead it cuts where the pose runs
-            // out (+0x40 also counts the TMB's padding); the seek's last valid frame
-            // is end − 1.
+            // to the begin over the lead. Without a lead nothing ends the timeline
+            // early, so it wraps at its own end (the seek's last valid frame is
+            // end − 1). Not at the pose end: an expression's C009 is a 1-frame clip
+            // whose face animation keeps cycling, which wrapped it every tick.
             short lead = *(short*)(root + 0x26E);
-            var tree = _engine.Collect(root);
             float seam = end - 1f;
-            if (tree.PoseEnd > begin && !tree.PoseEndPending)
-                seam = lead > 0 ? tree.PoseEnd - lead : Math.Min(seam, tree.PoseEnd - 1f);
+            if (lead > 0)
+            {
+                var tree = _engine.Collect(root);
+                if (tree.PoseEnd > begin && !tree.PoseEndPending)
+                    seam = tree.PoseEnd - lead;
+            }
             if (TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps < seam)
                 continue;
             var work = new TimelineSeekWork();
