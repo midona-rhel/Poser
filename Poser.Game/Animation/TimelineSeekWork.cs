@@ -86,6 +86,16 @@ internal sealed unsafe class TimelineSeekWork
         }
     }
 
+    /// <summary>Paused owner: the body tree's and the seeked props' effects go
+    /// back to 0 after every speed window (see TimelineSeekEngine.SetVfxSpeeds).</summary>
+    public void FreezeVfx(TimelineSeekEngine engine)
+    {
+        engine.SetVfxSpeeds(Root, 0f);
+        foreach (var prop in Props)
+            if (prop.Timeline != 0)
+                engine.SetVfxSpeeds(prop.Timeline, 0f);
+    }
+
     /// <summary>One deferred frame; false once finished. Stops early if the slot
     /// timeline was replaced (another play, a redraw).</summary>
     public bool Tick(TimelineSeekEngine engine, nint currentRoot)
@@ -97,6 +107,8 @@ internal sealed unsafe class TimelineSeekWork
         if (Frame <= ResyncFrames)
             engine.SyncHavok(Root, tree.Havok.Keys, PendingHavok);
         PumpProps(engine);
+        if (OwnerSpeed == 0f)
+            FreezeVfx(engine);
         if (Frame < ResyncFrames)
             return true;
         if (AllowFire && Frame < PropWaitFrames && Props.Exists(p => !p.Seeked))

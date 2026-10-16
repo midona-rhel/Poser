@@ -380,6 +380,15 @@ public sealed unsafe class TimelineSeekService : IDisposable
         catch (Exception ex) { LogOnce("slotspeed", $"[TimelineSeek] slot speed edge faulted: {ex.Message}"); }
     }
 
+    /// <summary>Pause/resume edge for the actor's effects (the game drops speed 0).</summary>
+    internal void ApplyVfxSpeed(Character* character, float overall)
+    {
+        if (character == null)
+            return;
+        try { _engine.SetActorVfxSpeeds(&character->Timeline.TimelineSequencer, (nint)character, overall); }
+        catch (Exception ex) { LogOnce("vfxspeed", $"[TimelineSeek] VFX speed edge faulted: {ex.Message}"); }
+    }
+
     /// <summary>Same-tick speed edge for the actor's prop timelines.</summary>
     internal void ApplyPropSpeed(Character* character, float overall)
     {

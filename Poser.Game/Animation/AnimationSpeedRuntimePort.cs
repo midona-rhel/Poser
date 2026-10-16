@@ -398,6 +398,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
                 _seek.ApplySlotSpeed(sequencer, slot, value);
             }
             _seek.ApplyPropSpeed(live, overall);
+            _seek.ApplyVfxSpeed(live, overall);
         });
     }
 

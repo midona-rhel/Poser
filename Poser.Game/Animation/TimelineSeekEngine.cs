@@ -178,15 +178,24 @@ internal sealed unsafe class TimelineSeekEngine
         return instance != 0 && (*(uint*)(instance + 0x34) & 0x20) == 0 && *(uint*)(c009 + 0xB0) > 1;
     }
 
+    private static bool CanSyncNow(nint c009)
+    {
+        nint instance = *(nint*)(c009 + 0x98);
+        return instance != 0 && *(nint*)(instance + 0x78) != 0 && *(uint*)(c009 + 0xB0) > 1;
+    }
+
     /// <summary>Syncs every guarded C009 inside a root speed window; returns the
     /// ones that are not ready yet (they activated inside the step).</summary>
-    public int SyncHavok(nint root, IEnumerable<nint> clips, HashSet<nint>? pending)
+    public int SyncHavok(nint root, IEnumerable<nint> clips, HashSet<nint>? pending, bool immediate = false)
     {
         float speed = OpenWindow(root);
         int synced = 0;
         foreach (var clip in clips)
         {
-            if (!CanSync(clip))
+            // On the seek frame a just-started clip still has its speed-pending bit
+            // (inst+0x34 & 0x20); that only defers its PlaybackSpeed restore, not
+            // LocalTime, so the instance and a resolved length are enough.
+            if (immediate ? !CanSyncNow(clip) : !CanSync(clip))
             {
                 pending?.Add(clip);
                 continue;
@@ -244,13 +253,25 @@ internal sealed unsafe class TimelineSeekEngine
         // Re-collect: the step may have created clips' instances (C009s that just
         // started, C031 prop timelines, C012 VFX objects).
         tree = Collect(root);
-        SyncHavok(root, tree.Havok.Keys, work.PendingHavok);
+        // C009s started inside the step have no length (+0xB0) until their first
+        // post-step next frame; resolve it now so the new control is synced on
+        // the seek frame itself.
+        foreach (var clip in tree.Havok.Keys)
+        {
+            nint instance = *(nint*)(clip + 0x98);
+            if (instance != 0 && *(nint*)(instance + 0x78) != 0 && (*(byte*)(clip + 0xCC) & 0x40) == 0)
+                _n.ResolveHavokLength(clip);
+        }
+        SyncHavok(root, tree.Havok.Keys, work.PendingHavok, immediate: true);
         CloseWindow(root, speed);
 
         work.OwnerSpeed = speed;
         foreach (var (clip, start) in tree.Summons)
             work.Props.Add(new TimelineSeekWork.Prop(clip, start));
         work.PumpProps(this);
+        // The window fired 0x1E(1) into the C012s and the restore to 0 was dropped.
+        if (speed == 0f)
+            work.FreezeVfx(this);
         return null;
     }
 
@@ -263,6 +284,19 @@ internal sealed unsafe class TimelineSeekEngine
     /// Do not resync active C010s (slot 31) afterwards: it double-starts C043.
     /// </summary>
     private void Wrap(nint root, Tree tree)
+    {
+        // Event 9 stops a C009 with reason 2, which fades its Havok control out
+        // over root tl+0x220 frames: the OLD pose still renders at weight ~1 on
+        // the seek frame (the one-frame flash). With 0 the holder gets Stop(0) and
+        // the pool update releases it inside the coming tick, before the render.
+        uint fade = *(uint*)(root + 0x220);
+        *(uint*)(root + 0x220) = 0;
+        try { StopAll(root); }
+        finally { *(uint*)(root + 0x220) = fade; }
+        Rewind(root, tree);
+    }
+
+    private void StopAll(nint root)
     {
         var visited = new HashSet<nint>();
         var clips = new List<nint>();
@@ -284,7 +318,10 @@ internal sealed unsafe class TimelineSeekEngine
             }
         }
         Reset(root, 0);
+    }
 
+    private void Rewind(nint root, Tree tree)
+    {
         // An inactive C010 whose child already finished would never restart it;
         // the game has no path for this, so its finish/pass fields are cleared.
         foreach (var (c010, child) in tree.C010s)
@@ -520,6 +557,59 @@ internal sealed unsafe class TimelineSeekEngine
         return true; // not a summon this actor's slots play: nothing to correct
     }
 
+    // ── VFX speed ─────────────────────────────────────────────────────
+    // The C012 speed-changed handler (slot 35) forwards only speeds > 0, so
+    // neither Poser's pause nor a speed window's restore to 0 ever reaches the
+    // effects: they kept simulating next to a frozen actor. Paused effects are
+    // set directly, and set back explicitly on resume (a completed C012 whose
+    // effect still lives, like the bubbles, gets no speed event at all).
+
+    /// <summary>A C012's VfxObject: inst=clip+0x98 → *(inst+0x28) → vfunc 0x68.</summary>
+    private static nint VfxOf(nint clip)
+    {
+        nint instance = *(nint*)(clip + 0x98);
+        nint holder = instance != 0 ? *(nint*)(instance + 0x28) : 0;
+        if (holder == 0)
+            return 0;
+        var getVfx = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)holder + 0x68));
+        return getVfx(holder);
+    }
+
+    /// <summary>Sets every live VFX object of a timeline tree to <paramref name="speed"/>.</summary>
+    public void SetVfxSpeeds(nint root, float speed)
+    {
+        if (!Ready || root == 0)
+            return;
+        foreach (var clip in Collect(root).Vfx)
+        {
+            nint vfx = VfxOf(clip);
+            if (vfx != 0 && *(float*)(vfx + 0x250) != speed)
+                _n.SetVfxSpeed(vfx, speed);
+        }
+    }
+
+    /// <summary>The actor's effects: slot timelines 0/1/2/3/6 and the live prop
+    /// timelines of its four weapon objects.</summary>
+    public void SetActorVfxSpeeds(
+        FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer,
+        nint character, float speed)
+    {
+        if (!Ready)
+            return;
+        foreach (int slot in new[] { 0, 1, 2, 3, 6 })
+            SetVfxSpeeds(AnimationNativeState.SlotTimeline(sequencer, slot), speed);
+        for (int w = 0; w < 4; w++)
+        {
+            nint group = PropGroup(Weapon(character, w));
+            int guard = 0;
+            for (nint timeline = group != 0 ? *(nint*)(group + 0x18) : 0;
+                 timeline != 0 && guard < 64;
+                 timeline = *(nint*)(timeline + 0x88), guard++)
+                if ((*(byte*)(timeline + 0x273) & 1) == 0 && *(sbyte*)(timeline + 0x10) >= 0)
+                    SetVfxSpeeds(timeline, speed);
+        }
+    }
+
     // ── VFX orphan guard ──────────────────────────────────────────────
 
     /// <summary>Handles of this tree's live C012 VFX objects
@@ -529,14 +619,7 @@ internal sealed unsafe class TimelineSeekEngine
         var handles = new HashSet<ulong>();
         foreach (var clip in tree.Vfx)
         {
-            nint instance = *(nint*)(clip + 0x98);
-            if (instance == 0)
-                continue;
-            nint holder = *(nint*)(instance + 0x28);
-            if (holder == 0)
-                continue;
-            var getVfx = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)holder + 0x68));
-            nint vfx = getVfx(holder);
+            nint vfx = VfxOf(clip);
             nint wrapper = vfx != 0 ? *(nint*)(vfx + 0x2A0) : 0;
             ulong handle = wrapper != 0 ? *(ulong*)(wrapper + 0x60) : 0;
             if (handle != 0)

@@ -36,6 +36,17 @@ internal sealed unsafe class TimelineSeekNatives
     /// <summary>SummonAnimationClip.StartPropTimeline(c031): plays the prop's
     /// ActionTimeline in the W|2 bucket-3 group; gives up while W is loading.</summary>
     public readonly delegate* unmanaged<nint, byte> StartPropTimeline;
+    /// <summary>VfxObject.SetSpeed(vfx, speed): +0x250 and the Apricot wrapper.
+    /// Its own entry has no guard; the C012 speed-changed handler drops 0.</summary>
+    public readonly delegate* unmanaged<nint, float, void> SetVfxSpeed;
+    /// <summary>FUN_14190E1E0(c009): resolves the clip's animation length into
+    /// +0xB0 (and +0xC4/+0xC8, +0xCC |= 0x40); the game runs it in the clip's
+    /// first post-step, one frame after its start.</summary>
+    public readonly delegate* unmanaged<nint, void> ResolveHavokLength;
+
+    // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x14190E1E0).
+    private const string HavokAnimationClip_ResolveLength =
+        "48 89 5C 24 10 57 48 83 EC 20 48 8B 59 28 48 8B F9 48 85 DB 75 ?? 48 8B 41 08 48 85 C0 74 ?? 48 8B 58 08 48 89 59 28 48 85 DB 0F 84 ?? ?? ?? ?? 48 8B 5B 38 48 8B 91 A0 00 00 00";
 
     public readonly bool Ready;
     public readonly string? Missing;
@@ -76,6 +87,14 @@ internal sealed unsafe class TimelineSeekNatives
             NativeSignatures.HavokAnimationClip_SyncLocalTime, "HavokAnimationClip.SyncLocalTime");
         StartPropTimeline = (delegate* unmanaged<nint, byte>)Scan(
             NativeSignatures.SummonAnimationClip_StartPropTimeline, "SummonAnimationClip.StartPropTimeline");
+
+        // The VfxObject.Speed field pattern is this function's first instruction
+        // (movss [rcx+0x250], xmm1; mov rcx, [rcx+0x2A0]).
+        SetVfxSpeed = (delegate* unmanaged<nint, float, void>)Scan(
+            NativeOffsets.VfxObject_Speed.Signature, "VfxObject.SetSpeed");
+
+        ResolveHavokLength = (delegate* unmanaged<nint, void>)Scan(
+            HavokAnimationClip_ResolveLength, "HavokAnimationClip.ResolveLength");
 
         Missing = missing;
         Ready = missing == null;
