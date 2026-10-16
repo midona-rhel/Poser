@@ -213,11 +213,21 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>One user action, recorded as one step (unless nested or untracked).</summary>
     public Outcome Tracked(ActorId actor, string description, Func<Outcome> action)
     {
+        if (_trackDepth == 0 && _untracked == 0 && !description.StartsWith("Scrub", StringComparison.Ordinal))
+            ForgetSeekTargets(actor);
         if (Journal is not { } journal || _trackDepth > 0 || _untracked > 0)
             return action();
         _trackDepth++;
         try { return journal(actor, description, action); }
         finally { _trackDepth--; }
+    }
+
+    private void ForgetSeekTargets(ActorId actor)
+    {
+        if (_seekTargets.Count == 0)
+            return;
+        foreach (var key in _seekTargets.Keys.Where(key => key.Actor.Equals(actor)).ToList())
+            _seekTargets.Remove(key);
     }
 
     /// <summary>Several actors' actions as one step (the scene's play/pause all).</summary>
@@ -263,7 +273,14 @@ public sealed class AnimationSession : IAnimationPlayback
             bool live = applied is { } timeline && ended == null && reading.TimelineFor(slot) == timeline;
             float? speed = owned.SlotSpeeds.TryGetValue(slot, out var sp) ? sp : null;
             bool held = live && (allHeld || speed == 0f);
-            float? frame = held ? _scrub.FindSlotControl(actor, slot)?.Time : null;
+            float? frame = null;
+            if (held)
+            {
+                var control = _scrub.FindSlotControl(actor, slot);
+                frame = _seekTargets.TryGetValue((actor, slot), out var target)
+                    ? (control is { Duration: > 0f } c ? Math.Min(target, c.Duration) : target)
+                    : control?.Time;
+            }
             return new LayerSnapshot(applied, live, owned.LoopWantedSlots.Contains(slot), speed,
                 owned.SlotWeights.GetValueOrDefault(slot, 1f), frame, ended);
         }
@@ -803,8 +820,18 @@ public sealed class AnimationSession : IAnimationPlayback
         $"Scrub {(_scrubSlot is { } s ? AnimationSlots.DisplayName(s) : "animation")}";
 
     /// <summary>Writes a frame clamped to the duration captured at Begin.</summary>
-    private Outcome UpdateScrubUntracked(ActorId actor, float time, Guid owner) =>
-        _scrub.UpdateScrub(actor, time, owner);
+    private Outcome UpdateScrubUntracked(ActorId actor, float time, Guid owner)
+    {
+        var result = _scrub.UpdateScrub(actor, time, owner);
+        if (result.Success && _scrubSlot is { } slot)
+            _seekTargets[(actor, slot)] = Math.Max(time, 0f);
+        return result;
+    }
+
+    // The frame a held layer was last asked to seek to, in seconds. The seek lands
+    // on the next tick, so a snapshot taken right after the request reads the
+    // target, not the old frame. Any other action clears the actor's entries.
+    private readonly Dictionary<(ActorId Actor, AnimationSlot Slot), float> _seekTargets = new();
 
     /// <summary>Ends the drag, leaving the actor paused on the released frame.</summary>
     public void EndScrub(Guid owner) => _scrub.EndScrub(owner);
@@ -813,7 +840,10 @@ public sealed class AnimationSession : IAnimationPlayback
     private Outcome SeekLayerUntracked(ActorId actor, AnimationSlot slot, float seconds)
     {
         if (_store.Suspended() is { } blocked) return blocked;
-        return _scrub.SeekLayer(actor, slot, seconds);
+        var result = _scrub.SeekLayer(actor, slot, seconds);
+        if (result.Success)
+            _seekTargets[(actor, slot)] = Math.Max(seconds, 0f);
+        return result;
     }
 
     // ── Held expression ──────────────────────────────────────────────────
