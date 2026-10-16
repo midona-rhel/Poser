@@ -161,12 +161,18 @@ internal sealed unsafe class TimelineSeekEngine
         if (schedule == 0)
         {
             _n.SyncLocalTime(clip);
+            *(byte*)(clip + 0xCC) &= 0xFE;
             return;
         }
         float epsilon = *(float*)(schedule + 0x50);
         *(float*)(schedule + 0x50) = 0f;
         try { _n.SyncLocalTime(clip); }
         finally { *(float*)(schedule + 0x50) = epsilon; }
+        // +0xCC bit 0 = "post-start sync pending", read only by the C009 post-steps
+        // (slots 51/52). A clip restarted inside the seek kept it (its own post-step
+        // failed the speed-pending guard), so the next tick re-synced it at the
+        // paused root speed 0, i.e. to its frame 0: the backward-scrub flash.
+        *(byte*)(clip + 0xCC) &= 0xFE;
     }
 
 
