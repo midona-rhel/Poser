@@ -414,6 +414,21 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private int _costTicks;
 #endif
 
+    // Per-section maxima of the per-frame cost (Debug builds), in µs.
+    private readonly double[] _sectionMax = new double[8];
+    private long _sectionAt;
+    private int _section = -1;
+    [System.Diagnostics.Conditional("DEBUG")]
+    private void Section(int next)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (_section >= 0)
+            _sectionMax[_section] = Math.Max(_sectionMax[_section],
+                System.Diagnostics.Stopwatch.GetElapsedTime(_sectionAt, now).TotalMilliseconds * 1000.0);
+        _section = next < 7 ? next : -1;
+        _sectionAt = now;
+    }
+
     private void OnUpdate(IFramework framework)
     {
         if (!_engine.Ready)
@@ -427,7 +442,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _costSum += us; _costMax = Math.Max(_costMax, us);
             if (++_costTicks >= 600)
             {
-                _log.Information($"[TimelineSeek] per-frame cost over {_costTicks} frames: avg {_costSum / _costTicks:F1} µs, max {_costMax:F1} µs, {_managed.Count} actors");
+                _log.Information($"[TimelineSeek] per-frame cost over {_costTicks} frames: avg {_costSum / _costTicks:F1} µs, max {_costMax:F1} µs, {_managed.Count} actors; section max µs restores {_sectionMax[0]:F0} births {_sectionMax[1]:F0} props {_sectionMax[2]:F0} targets {_sectionMax[3]:F0} seeks {_sectionMax[4]:F0} loops {_sectionMax[5]:F0} work {_sectionMax[6]:F0}");
+                Array.Clear(_sectionMax);
                 _costSum = _costMax = 0; _costTicks = 0;
             }
         }
@@ -444,13 +460,14 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 if (actor.Address != 0 && ((CSGameObject*)actor.Address)->IsCharacter())
                     _managed.Add(actor.Address);
 
-            PumpRestores();
-            CorrectPropBirths();
-            UpdateLayerProps();
-            PromotePendingTargets();
+            Section(0); PumpRestores();
+            Section(1); CorrectPropBirths();
+            Section(2); UpdateLayerProps();
+            Section(3); PromotePendingTargets();
             TrackClampedControls();
             RunControlTargets();
             ReleaseActorSpeeds();
+            Section(4);
 
             KeyValuePair<(ActorId, int), float>[] targets;
             lock (_targetLock)
@@ -461,7 +478,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
             }
             foreach (var (key, target) in targets)
                 RunSeek(key, target);
-            PumpLoops(targets);
+            Section(5); PumpLoops(targets);
+            Section(6);
 
             List<(nint, int)>? done = null;
             foreach (var (key, work) in _work)
@@ -478,6 +496,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (done != null)
                 foreach (var key in done)
                     _work.Remove(key);
+            Section(7);
         }
         catch (Exception ex)
         {
