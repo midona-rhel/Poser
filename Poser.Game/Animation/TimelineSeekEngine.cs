@@ -809,42 +809,41 @@ internal sealed unsafe class TimelineSeekEngine
     private void Rewind(nint root, Tree tree)
     {
         // The C010s go back to never-started so the step starts each again as it
-        // passes (Mac, animation-system.md §15.3). Their child clips were already
-        // reset by the event 9 just before (StopAll reaches every non-C010 clip,
-        // children first): a C010's own Stop is never used, because it finalizes the
-        // child's clips, and a re-armed C010 whose child reads finalized ends on the
+        // passes, by the game's own reset (Mac, animation-system.md §15.3). A
+        // C010's own Stop is never used: it finalizes the child, and a re-armed C010
+        // whose child reads finalized (child +0x10 bit 7, checked first) ends on the
         // spot. Which ones:
         //  - an ENDED one (+0x10 bit 4 clear, bits 6/7 set: 0xE1), anywhere;
         //  - an ACTIVE one nested below the root's own C010 (each face clip's range
         //    C010). Only the root runs the finalization that could end the row, so the
         //    root's own active C010s are left as they are.
-        // A C010: +0x10 = (+0x10 & 1), +0x11 bits 0/1 (the ended latch) and the
-        // pending +0x8C cleared, and +0x7C, the start credit an activation start
-        // pre-pays (left over, it swallows the next start crossing).
-        // Its child: clock 0, +0x74 state 0, +0x5C 0, finished (+0x7C bit 6) cleared.
-        // +0x58 is the loop mode (1 = one-shot) and is left alone.
-        foreach (var (c010, child) in tree.C010s)
+        // For each, deepest first (a parent's event 9 stops a C010 only if started):
+        //  1. a finished child (+0x7C bit 6) is unfinished: its event 9 returns early;
+        //  2. the child gets event 9 (ProcessAll): its own, its actors' and tracks'
+        //     +0x10 &= 3 and +0x11 &= 0xE2, clock 0, +0x7C &= 0xBE, and every clip
+        //     Stopped (2) if started and reset. +0x58 (loop mode) is untouched;
+        //  3. the C010 gets Event10(clip, 0) (slot 47): its start/duration re-derived,
+        //     +0x10 &= 3, +0x11 &= 0xE2, the start credit +0x7C and the pending +0x8C
+        //     cleared with the parent track's and actor's pending counts.
+        for (int i = tree.C010s.Count - 1; i >= 0; i--)
         {
+            var (c010, child) = tree.C010s[i];
             byte state = *(byte*)(c010 + 0x10);
             bool active = (state & 0x10) != 0;
             bool ended = (state & 0xC0) != 0;
             if (active ? !tree.NestedC010s.Contains(c010) : !ended)
             {
-                // An inactive, never-started one only needs a finished child undone.
+                // Never started: only a finished child to undo.
                 if (active || (*(byte*)(child + 0x7C) & 0x40) == 0)
                     continue;
-            }
-            else
-            {
-                *(byte*)(c010 + 0x10) = (byte)(state & 1);
-                *(byte*)(c010 + 0x11) &= unchecked((byte)~3);
-                *(uint*)(c010 + 0x8C) = 0;
-                *(uint*)(c010 + 0x7C) = 0;
+                *(byte*)(child + 0x7C) &= 0xBF;
+                _n.ProcessAll(child, 9, _l.DefaultPayload);
+                continue;
             }
             *(byte*)(child + 0x7C) &= 0xBF;
-            *(uint*)(child + 0x74) = 0;
-            *(uint*)(child + 0x5C) = 0;
-            _n.SetCurrentTime(child, 0f);
+            _n.ProcessAll(child, 9, _l.DefaultPayload);
+            var event10 = (delegate* unmanaged<nint, int, void>)(*(nint*)(*(nint*)c010 + 47 * 8));
+            event10(c010, 0);
         }
 
         _n.SetCurrentTime(root, 0f);
