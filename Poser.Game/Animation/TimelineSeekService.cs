@@ -46,6 +46,21 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private delegate void DisableDrawFn(nint character);
     private readonly Hook<DisableDrawFn>? _disableDrawHook;
 
+    // FUN_1418CAB50(ActionTimelineManager*, Weapon* W, float speed): the container
+    // update's per-frame push of the overall speed into W's prop group (every
+    // drawn character, main thread; also its dirty and init paths). Pending a
+    // patchcheck entry; unique on the analysed build (sig.py, 1 hit).
+    private const string ActionTimelineManager_SetWeaponSpeed =
+        "48 89 5C 24 08 57 48 83 EC 50 48 8B F9 0F 29 74 24 40 48 8D 4C 24 20 0F 28 F2 48 8B DA E8 ?? ?? ?? ?? 48 85 DB 0F 84";
+    private delegate void WeaponSpeedFn(nint manager, nint weapon, float speed);
+    private readonly Hook<WeaponSpeedFn>? _weaponSpeedHook;
+    // Prop weapons whose current prop belongs to a layer with its own speed: the
+    // layer's factor, stamped with the tick that wrote it (a stale entry is ignored).
+    // Never mutated once published: each write builds a new map and swaps the
+    // reference, so the detour can read it from any thread.
+    private volatile Dictionary<nint, (float Speed, int Tick)> _layerPropSpeeds = new();
+    private int _tick;
+
     /// <summary>What a redraw is about to throw away, captured at the entry of
     /// Character::DisableDraw (it tears down the props, then the timeline
     /// container: every slot timeline stops).</summary>
@@ -105,6 +120,20 @@ public sealed unsafe class TimelineSeekService : IDisposable
             catch (Exception ex)
             {
                 log.Warning($"Animation: DisableDraw hook failed ({ex.Message}); a redraw restores the actor stopped.");
+            }
+            try
+            {
+                if (scanner.TryScanText(ActionTimelineManager_SetWeaponSpeed, out var weaponSpeed) && weaponSpeed != 0)
+                {
+                    _weaponSpeedHook = hooking.HookFromAddress<WeaponSpeedFn>(weaponSpeed, WeaponSpeedDetour);
+                    _weaponSpeedHook.Enable();
+                }
+                else
+                    log.Warning("Animation: the prop group speed push was not found; a layer's props follow its speed on their controls only.");
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Animation: prop group speed hook failed ({ex.Message}); a layer's props follow its speed on their controls only.");
             }
         }
         _framework.Update += OnUpdate;
@@ -178,6 +207,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     {
         if (!_engine.Ready)
             return;
+        _tick++;
         try
         {
             _managed.Clear();
@@ -233,6 +263,27 @@ public sealed unsafe class TimelineSeekService : IDisposable
     /// the function then destroys the props and stops every slot. Only drawn
     /// (+0x9A bit 7) Poser actors; never throws into the game.
     /// </summary>
+    /// <summary>
+    /// The per-frame push of the overall speed into a prop weapon's group: a prop
+    /// summoned by a layer with its own speed gets overall × that layer's speed, so
+    /// its timeline (its clips, effects and length) runs on its layer's time.
+    /// Everything else passes through. Never throws into the game.
+    /// </summary>
+    private void WeaponSpeedDetour(nint manager, nint weapon, float speed)
+    {
+        try
+        {
+            var map = _layerPropSpeeds;
+            if (weapon != 0 && map.TryGetValue(weapon, out var held) && held.Tick == _tick)
+                speed *= held.Speed;
+        }
+        catch
+        {
+            // A lookup failure only loses the layer factor for this frame.
+        }
+        _weaponSpeedHook!.Original(manager, weapon, speed);
+    }
+
     private void DisableDrawDetour(nint character)
     {
         try
@@ -543,7 +594,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (!wrap)
                 continue;
             _remaining.Remove(key);
-            _log.Information($"[TimelineSeek] loop slot {key.Slot} wrap at {TimelineSeekEngine.Clock(root):0.0}/{end:0} remaining {remaining:0.00} step {step:0.000} lead {lead}");
             var work = new TimelineSeekWork();
             var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: Math.Max((int)lead, 0));
             if (refused != null)
@@ -599,6 +649,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         try
         {
             var sequencer = &character->Timeline.TimelineSequencer;
+            Dictionary<nint, (float Speed, int Tick)>? propSpeeds = null;
             foreach (var (slot, speed) in speeds)
             {
                 nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
@@ -607,7 +658,30 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 float effective = speed * overall;
                 _engine.SetSlotTimelineSpeed(sequencer, slot, effective);
                 foreach (var (clip, _) in _engine.Collect(root).Summons)
-                    TimelineSeekEngine.SetWeaponControlSpeeds(TimelineSeekEngine.PropWeapon((nint)character, clip), effective);
+                {
+                    nint weapon = TimelineSeekEngine.PropWeapon((nint)character, clip);
+                    if (weapon == 0)
+                        continue;
+                    if (_weaponSpeedHook == null)
+                        // No hook: the push resets the prop timeline every frame; hold
+                        // what is rendered (its controls) at least.
+                        TimelineSeekEngine.SetWeaponControlSpeeds(weapon, effective);
+                    else if (TimelineSeekEngine.PropWeaponSlot(clip) == 3)
+                        // The summoned prop gets no push: its timelines take it directly.
+                        _engine.SetWeaponTimelineSpeeds(weapon, effective);
+                    else
+                    {
+                        // Copy without stale entries, then publish once below.
+                        if (propSpeeds == null)
+                        {
+                            propSpeeds = new Dictionary<nint, (float Speed, int Tick)>();
+                            foreach (var (key, value) in _layerPropSpeeds)
+                                if (value.Tick == _tick)
+                                    propSpeeds[key] = value;
+                        }
+                        propSpeeds[weapon] = (speed, _tick);
+                    }
+                }
                 if (!_heldSpeeds.TryGetValue(root, out var last) || last != effective)
                 {
                     if (effective == 0f)
@@ -617,6 +691,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
             }
             if (_heldSpeeds.Count > 256)
                 _heldSpeeds.Clear();
+            if (propSpeeds != null)
+                _layerPropSpeeds = propSpeeds;
         }
         catch (Exception ex) { LogOnce("slotspeedhold", $"[TimelineSeek] layer speed hold faulted: {ex.Message}"); }
     }
@@ -663,12 +739,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
         _framework.Update -= OnUpdate;
         // Unload is not guaranteed to run on the framework thread: let an
         // in-flight DisableDraw leave the detour before freeing it.
+        _weaponSpeedHook?.Disable();
         if (_disableDrawHook != null)
-        {
             _disableDrawHook.Disable();
+        if (_disableDrawHook != null || _weaponSpeedHook != null)
             System.Threading.Thread.Sleep(100);
-            _disableDrawHook.Dispose();
-        }
+        _disableDrawHook?.Dispose();
+        _weaponSpeedHook?.Dispose();
         lock (_targetLock)
         {
             _targets.Clear();

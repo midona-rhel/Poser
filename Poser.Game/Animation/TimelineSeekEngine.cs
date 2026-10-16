@@ -697,6 +697,24 @@ internal sealed unsafe class TimelineSeekEngine
             }
     }
 
+    /// <summary>Every live timeline in one prop weapon's W|2 group at a speed (the
+    /// summoned prop's group, which the container update never pushes).</summary>
+    public void SetWeaponTimelineSpeeds(nint weapon, float speed)
+    {
+        if (!Ready)
+            return;
+        nint group = PropGroup(weapon);
+        int guard = 0;
+        for (nint timeline = group != 0 ? *(nint*)(group + 0x18) : 0;
+             timeline != 0 && guard < 64;
+             timeline = *(nint*)(timeline + 0x88), guard++)
+            if ((*(byte*)(timeline + 0x273) & 1) == 0 && *(sbyte*)(timeline + 0x10) >= 0)
+                _n.SetSpeed(timeline, speed);
+    }
+
+    /// <summary>The C031's weapon slot (u16 data+0xE): 0–2 DrawData, 3 the summoned prop.</summary>
+    public static int PropWeaponSlot(nint c031) => *(ushort*)(*(nint*)(c031 + 0x48) + 0xE);
+
     /// <summary>Every live timeline in the actor's W|2 prop groups takes the
     /// overall speed, walked like the game's TimelineGroup.SetSpeedAll: +0x18,
     /// next +0x88, skipping ended (+0x273 bit 0) and detached (+0x10 sign).</summary>
