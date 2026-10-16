@@ -522,10 +522,12 @@ public sealed unsafe class TimelineSeekService : IDisposable
             nint playInfo = TimelineSeekEngine.PlayInfo(root);
             bool notifies = lead >= 0 && playInfo != 0 && *(int*)(playInfo + 0x30) != -1;
             float remaining = notifies ? _engine.Remaining(root) : -1f;
-            bool wrap;
-            if (remaining >= 0f)
+            // Nothing runs past its own end: that is the backstop either way.
+            bool wrap = TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps >= end - 1f;
+            float step = 0f;
+            if (!wrap && remaining >= 0f)
             {
-                float step = _remaining.TryGetValue(key, out var last) && last.Root == root
+                step = _remaining.TryGetValue(key, out var last) && last.Root == root
                     ? last.Value - remaining
                     : 0f;
                 _remaining[key] = (root, remaining);
@@ -533,11 +535,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 // once the notify point itself is reached.
                 wrap = remaining - LoopLeadSteps * Math.Max(step, 0f) <= lead;
             }
-            else
-                wrap = TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps >= end - 1f;
             if (!wrap)
                 continue;
             _remaining.Remove(key);
+            _log.Information($"[TimelineSeek] loop slot {key.Slot} wrap at {TimelineSeekEngine.Clock(root):0.0}/{end:0} remaining {remaining:0.00} step {step:0.000} lead {lead}");
             var work = new TimelineSeekWork();
             var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: Math.Max((int)lead, 0));
             if (refused != null)
