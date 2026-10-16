@@ -407,10 +407,35 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _targets[key] = seconds * 30f + mapping.Offset;
     }
 
+#if DEBUG
+    // Per-frame cost of this service (Debug builds only): logged every 600 ticks.
+    private readonly System.Diagnostics.Stopwatch _costWatch = new();
+    private double _costSum, _costMax;
+    private int _costTicks;
+#endif
+
     private void OnUpdate(IFramework framework)
     {
         if (!_engine.Ready)
             return;
+#if DEBUG
+        _costWatch.Restart();
+        try { OnUpdateCore(); }
+        finally
+        {
+            double us = _costWatch.Elapsed.TotalMilliseconds * 1000.0;
+            _costSum += us; _costMax = Math.Max(_costMax, us);
+            if (++_costTicks >= 600)
+            {
+                _log.Information($"[TimelineSeek] per-frame cost over {_costTicks} frames: avg {_costSum / _costTicks:F1} µs, max {_costMax:F1} µs, {_managed.Count} actors");
+                _costSum = _costMax = 0; _costTicks = 0;
+            }
+        }
+    }
+
+    private void OnUpdateCore()
+    {
+#endif
         _tick++;
         try
         {
