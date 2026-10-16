@@ -46,6 +46,13 @@ public sealed unsafe partial class AnimationNativeState
     private readonly PlayEmoteDelegate? _playEmote;
 
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.Emote>? _emoteSheet;
+    // TimelineContainer::PlayActionTimeline 0x1408BED60(container, first, second, params):
+    // queues first (an emote's intro) and second (its loop) and plays first; the
+    // sequencer plays second itself when first ends (the game's own intro → loop).
+    // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit).
+    private delegate void PlayActionTimelineDelegate(TimelineContainer* container, ushort first, ushort second, nint parameters);
+    private readonly PlayActionTimelineDelegate? _playActionTimeline;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
     // HANDLES at sequencer+0x70 (Handle = { Data*, Flags }; Flags==0 means
@@ -167,6 +174,7 @@ public sealed unsafe partial class AnimationNativeState
         _sigScanner = sigScanner;
         _hooking = hooking;
         _timelineSheet = data.GetExcelSheet<Lumina.Excel.Sheets.ActionTimeline>();
+        _emoteSheet = data.GetExcelSheet<Lumina.Excel.Sheets.Emote>();
         _log = log;
         _bindings = bindings;
 
@@ -182,6 +190,10 @@ public sealed unsafe partial class AnimationNativeState
             "SetTimelineId");
         _playEmote = ScanDelegate<PlayEmoteDelegate>(
             sigScanner, "E8 ?? ?? ?? ?? 88 45 68", "PlayEmote");
+        _playActionTimeline = ScanDelegate<PlayActionTimelineDelegate>(
+            sigScanner,
+            "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 49 8B E9 41 0F B7 D8 48 8B F1 E8 ?? ?? ?? ?? 0F B7 D3 48 8B CE 0F B7 F8 E8",
+            "PlayActionTimeline");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
             sigScanner,
             "48 83 EC 28 8D 41 FF 3D E7 FD 00 00 77 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA 64 00 00 00 48 8B 88 40 2B 00 00 E8",
@@ -321,6 +333,13 @@ public sealed unsafe partial class AnimationNativeState
     /// <summary>Applies the timeline mode before native playback.</summary>
     private bool PlayWithMode(Character* character, ushort timeline)
     {
+        PrepareMode(character, timeline);
+        return WithUpperKept(timeline, () => _setTimelineId!(
+            &character->Timeline.TimelineSequencer, timeline, nint.Zero));
+    }
+
+    private void PrepareMode(Character* character, ushort timeline)
+    {
         bool pause = _timelineSheet?.GetRowOrDefault(timeline)?.Pause ?? false;
         if (pause)
         {
@@ -338,12 +357,18 @@ public sealed unsafe partial class AnimationNativeState
             character->ModeParam = 0;
             character->Timeline.BaseOverride = 0;
         }
-        // A row with +0x14 bit 2 (the additives measured: add_yes, add_no) makes
-        // the play stop the Upper Body slot first (FUN_140606810). Layers are
-        // independent, so unless the row plays on Upper Body itself the bit is
-        // cleared for this call only and restored: nothing else in the call reads
-        // it (the transition doesn't; StartSlot reads bit 0), and it all runs on
-        // this thread.
+    }
+
+    /// <summary>
+    /// A row with +0x14 bit 2 (the additives measured: add_yes, add_no) makes
+    /// the play stop the Upper Body slot first (FUN_140606810). Layers are
+    /// independent, so unless the row plays on Upper Body itself the bit is
+    /// cleared for this call only and restored: nothing else in the call reads
+    /// it (the transition doesn't; StartSlot reads bit 0), and it all runs on
+    /// this thread.
+    /// </summary>
+    private bool WithUpperKept(ushort timeline, Func<bool> play)
+    {
         byte* rowFlags = null;
         if (_actionTimelineRow != null && TimelineSlot(timeline) != AnimationSlot.UpperBody)
         {
@@ -359,8 +384,7 @@ public sealed unsafe partial class AnimationNativeState
 #endif
         try
         {
-            return _setTimelineId!(
-                &character->Timeline.TimelineSequencer, timeline, nint.Zero);
+            return play();
         }
         finally
         {
@@ -370,6 +394,36 @@ public sealed unsafe partial class AnimationNativeState
             _probeOurWrite = false;
 #endif
         }
+    }
+
+    /// <summary>
+    /// An emote from its start, the way the game's emote start ends up playing it:
+    /// PlayActionTimeline(intro = Emote.ActionTimeline[1], loop = [0]); the game
+    /// hands over to the loop itself. The emote controller's own start (the old
+    /// path) checks a slot priority that Poser's earlier plays leave set, and for
+    /// any actor but the real local player returns true without playing.
+    /// Expression emotes take another path and are not handled here. True only if
+    /// the base slot actually changed.
+    /// </summary>
+    internal bool PlayEmoteFromStart(Character* character, uint emoteId)
+    {
+        if (_playActionTimeline == null || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
+            || emote.ActionTimeline.Count < 2)
+            return false;
+        ushort loop = (ushort)emote.ActionTimeline[0].RowId;
+        ushort intro = (ushort)emote.ActionTimeline[1].RowId;
+        ushort first = intro != 0 ? intro : loop;
+        if (first == 0)
+            return false;
+        var sequencer = &character->Timeline.TimelineSequencer;
+        nint before = SlotTimeline(sequencer, 0);
+        PrepareMode(character, first);
+        WithUpperKept(first, () =>
+        {
+            _playActionTimeline(&character->Timeline, intro, intro != 0 ? loop : (ushort)0, nint.Zero);
+            return true;
+        });
+        return SlotTimeline(sequencer, 0) != before;
     }
 
     /// <summary>Plays an emote through the game entry point.</summary>
