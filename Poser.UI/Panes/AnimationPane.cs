@@ -279,6 +279,7 @@ public sealed class AnimationPane : IDisposable
             next => Report(_animation.SetSpeed(actor, next), "Animation speed"),
             format: "0.00",
             marks: UnitMarks,
+            actions: actions => actions.IconSpace(),
             id: "anim-attached-speed");
 
         // An attached actor has one layer: its icon is the whole actor's.
@@ -482,6 +483,7 @@ public sealed class AnimationPane : IDisposable
             format: "0.00",
             marks: UnitMarks,
             disabled: disabled || !hasAnimation,
+            actions: actions => actions.IconSpace(),
             id: $"anim-{slot}-speed");
 
         float weight = _animation.WeightFor(actor, slot);
@@ -495,6 +497,7 @@ public sealed class AnimationPane : IDisposable
                 $"{label} weight"),
             format: "0.00",
             disabled: disabled || !hasAnimation,
+            actions: actions => actions.IconSpace(),
             id: $"anim-{slot}-weight");
 
         // Base and Upper Body scrub their Havok control; the other layers their
