@@ -59,6 +59,13 @@ public sealed unsafe partial class AnimationNativeState
     // A pure read, valid on any character.
     private delegate int GetPostureDelegate(EmoteController* controller);
     private readonly GetPostureDelegate? _getPosture;
+    // EmoteController::CanPlayEmote 0x140614FE0 (patchcheck EmoteController.CanPlayEmote):
+    // the game's emote permission. For a GPose copy: the row exists, the mode table
+    // allows it, the posture allows it (mounted/swimming/diving need the row's bits)
+    // and a mount allows emotes. Flags 0: no slot-priority check. A pure read.
+    private delegate byte CanPlayEmoteDelegate(EmoteController* controller, ushort emoteId, uint flags);
+    private readonly CanPlayEmoteDelegate? _canPlayEmote;
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
     // HANDLES at sequencer+0x70 (Handle = { Data*, Flags }; Flags==0 means
@@ -181,6 +188,7 @@ public sealed unsafe partial class AnimationNativeState
         _hooking = hooking;
         _timelineSheet = data.GetExcelSheet<Lumina.Excel.Sheets.ActionTimeline>();
         _emoteSheet = data.GetExcelSheet<Lumina.Excel.Sheets.Emote>();
+        _emoteModeSheet = data.GetExcelSheet<Lumina.Excel.Sheets.EmoteMode>();
         _log = log;
         _bindings = bindings;
 
@@ -202,6 +210,8 @@ public sealed unsafe partial class AnimationNativeState
             "PlayActionTimeline");
         _getPosture = ScanDelegate<GetPostureDelegate>(
             sigScanner, "40 53 48 83 EC 20 48 8B D9 48 8B 49 08 48 85 C9 0F 84", "EmoteController.GetPosture");
+        _canPlayEmote = ScanDelegate<CanPlayEmoteDelegate>(
+            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_CanPlayEmote, "EmoteController.CanPlayEmote");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
             sigScanner,
             "48 83 EC 28 8D 41 FF 3D E7 FD 00 00 77 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA 64 00 00 00 48 8B 88 40 2B 00 00 E8",
@@ -402,6 +412,26 @@ public sealed unsafe partial class AnimationNativeState
             _probeOurWrite = false;
 #endif
         }
+    }
+
+    /// <summary>
+    /// Whether the game would let the actor enter this emote mode (sit on the ground,
+    /// sit, sleep) from how it is now. Only mounted, swimming or diving can refuse:
+    /// there the game's own permission check answers for the mode's start emote (none
+    /// of them is allowed, a mount that forbids emotes refuses too). Any other posture
+    /// is allowed, because the stance change cancels the current one first; the check
+    /// itself would judge it from the stance being left (sit to ground sit refused).
+    /// Null when the check or the row is unavailable.
+    /// </summary>
+    internal bool? CanStartEmoteMode(Character* character, uint emoteMode)
+    {
+        if (_canPlayEmote == null || _getPosture == null
+            || _emoteModeSheet?.GetRowOrDefault(emoteMode) is not { } mode || mode.StartEmote.RowId == 0)
+            return null;
+        int posture = _getPosture(&character->EmoteController);
+        if (posture is not (3 or 5 or 6))
+            return true;
+        return _canPlayEmote(&character->EmoteController, (ushort)mode.StartEmote.RowId, 0) != 0;
     }
 
     /// <summary>

@@ -54,6 +54,12 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
             _ => EmoteModeNormal,
         };
 
+        // SetEmoteMode checks nothing: the game's own answer comes first. A mounted
+        // rider put in a sit kept the mount idle restarting under it every frame.
+        if (emoteMode != EmoteModeNormal && _native.CanStartEmoteMode(character, emoteMode) == false)
+            return Outcome.Fail(
+                $"The game doesn't allow {StanceName(stance)} for how the actor is now (mounted, swimming or diving).");
+
         bool weaponDrawn = character->Timeline.IsWeaponDrawn;
         // The explicit pose table remains available while native GPose pose
         // counts settle.
@@ -108,6 +114,14 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
         }
         return Outcome.Ok();
     }
+
+    private static string StanceName(AnimationStance stance) => stance switch
+    {
+        AnimationStance.SitGround => "sitting on the ground",
+        AnimationStance.SitChair => "sitting",
+        AnimationStance.Sleeping => "sleeping",
+        _ => "this stance",
+    };
 
     /// <summary>Sets the weapon animation state.</summary>
     public Outcome SetWeaponDrawn(ActorId actor, bool drawn)

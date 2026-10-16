@@ -514,6 +514,10 @@ internal static class NativeSignatures
     public const string ActorControlManager_FindByObjectIndex = "48 89 5C ?? ?? 57 48 83 EC 40 48 8B F9 8B DA 48 8D ?? 24 20";
     /// <summary>ActorControl.GetCharacter (0x1418FAD60 on the analysed build).</summary>
     public const string ActorControl_GetCharacter = "80 79 10 00 75 ?? F6 41 08 01 48 8B 49 08 74 ?? 48 83 E1 F8 48 8B 01 48 FF A0 ?? ?? ?? ?? 0F B6 C1 C0 E8 02 A8 01 74 ?? 48 C1 E9 03 81 F9 32 03 00 00";
+    /// <summary>EmoteController.CanPlayEmote (0x140614FE0 on the analysed build).</summary>
+    public const string EmoteController_CanPlayEmote = "44 88 44 ?? ?? 53 55 56 57 41 55";
+    /// <summary>EmoteController.PostureLoopRow (0x1406156A0 on the analysed build).</summary>
+    public const string EmoteController_PostureLoopRow = "48 85 C9 74 ?? 8D 42 FF";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
