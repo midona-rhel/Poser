@@ -531,13 +531,12 @@ public sealed class AnimationSession : IAnimationPlayback
             bool cancelled = true;
             if (cancelNeeded)
             {
-                if (liveRead != null)
-                    foreach (var slotReading in liveRead.Slots)
-                        if (slotReading.Slot != AnimationSlot.Base &&
-                            slotReading.TimelineId != 0 &&
-                            !slots.ContainsKey(slotReading.Slot))
-                            slots[slotReading.Slot] = slotReading.TimelineId;
-                cancelled = Try(_timeline.CancelActiveTimeline(actor));
+                // Only Poser's layers on slots that were empty go: the slot cancel
+                // takes just its own layer. A container cancel took every layer,
+                // and the game's own were then replayed from frame 0.
+                foreach (var (slot, incoming) in owned.SlotCaptures)
+                    if (incoming == 0 && liveRead?.TimelineFor(slot) is > 0)
+                        cancelled &= Try(_timeline.ClearSlotTimeline(actor, slot));
             }
 
             // A failed cancellation processes no slot: replaying would
