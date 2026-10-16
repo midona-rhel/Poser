@@ -73,6 +73,12 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // request group (0 = none). Rebuilt each tick and swapped whole.
     private volatile Dictionary<nint, (ulong Group0, ulong Group1)> _layerProps = new();
     private bool _applierThreadLogged;
+    // Prop timelines a lower layer animates on a weapon a higher layer owns: held
+    // at weight 0 so they can't move the higher layer's prop.
+    private HashSet<nint> _suppressedProps = new();
+    // Per weapon: the lower layer's prop timeline a higher layer's C031 was
+    // re-fired over (once per such birth).
+    private readonly Dictionary<nint, nint> _propRefired = new();
 
     /// <summary>What a redraw is about to throw away, captured at the entry of
     /// Character::DisableDraw (it tears down the props, then the timeline
@@ -324,11 +330,14 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (_applyRequestsHook == null)
             return;
         var next = new Dictionary<nint, (ulong, ulong)>();
+        var suppressed = new HashSet<nint>();
         foreach (nint character in _managed)
         {
             var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
             nint control = 0;
             ulong group0 = 0, group1 = 0;
+            int owner0 = -1, owner1 = -1;
+            var summons = new List<(int Slot, nint Clip, int WeaponSlot)>();
             for (int slot = 0; slot < 14; slot++)
             {
                 nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
@@ -336,7 +345,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     continue;
                 if (control == 0)
                     control = _engine.PropControl(root);
-                foreach (var clip in _engine.Collect(root).WeaponRequests)
+                var tree = _engine.Collect(root);
+                foreach (var clip in tree.WeaponRequests)
                 {
                     // Started (+0x88 bit 4) and still active (+0x10 bit 4).
                     if ((*(byte*)(clip + 0x88) & 0x10) == 0 || (*(byte*)(clip + 0x10) & 0x10) == 0)
@@ -345,14 +355,70 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     int group = *(ushort*)(data + 0x14);
                     ulong model = *(ulong*)(data + 0x18);
                     // Slots ascend, so a later (higher) layer overrides.
-                    if (group == 0) group0 = model;
-                    else if (group == 1) group1 = model;
+                    if (group == 0) { group0 = model; owner0 = slot; }
+                    else if (group == 1) { group1 = model; owner1 = slot; }
                 }
+                foreach (var (clip, _) in tree.Summons)
+                    if ((*(byte*)(clip + 0x10) & 0x10) != 0)
+                        summons.Add((slot, clip, TimelineSeekEngine.PropWeaponSlot(clip)));
             }
             if (control != 0 && (group0 != 0 || group1 != 0))
                 next[control] = (group0, group1);
+            ArbitratePropAnimations(character, summons, owner0, owner1, suppressed);
         }
         _layerProps = next;
+        // A prop no longer held down gets its holders back (the layer weight, if
+        // any, is re-applied on top every tick).
+        foreach (nint prop in _suppressedProps)
+            if (!suppressed.Contains(prop))
+                _engine.SetPropTimelineWeight(prop, 1f);
+        _suppressedProps = suppressed;
+    }
+
+    /// <summary>
+    /// One prop timeline per weapon: the most recent C031 to fire takes it. The
+    /// highest layer's C031 on that weapon owns it; if a lower one fired over it,
+    /// the higher one is fired again (once per such birth; the birth correction
+    /// seeks it to its layer's frame). A lower layer's prop animation on a weapon
+    /// whose model a higher layer requested without animating it (Eat Apple's
+    /// apple under Toast's tankard animation) is held at weight 0.
+    /// </summary>
+    private void ArbitratePropAnimations(
+        nint character, List<(int Slot, nint Clip, int WeaponSlot)> summons, int owner0, int owner1, HashSet<nint> suppressed)
+    {
+        foreach (int weaponSlot in new[] { 2, 3 })
+        {
+            int modelOwner = weaponSlot == 2 ? owner0 : owner1;
+            (int Slot, nint Clip, int WeaponSlot)? highest = null;
+            foreach (var summon in summons)
+                if (summon.WeaponSlot == weaponSlot && (highest == null || summon.Slot > highest.Value.Slot))
+                    highest = summon;
+            if (highest is not { } top)
+                continue;
+            nint weapon = TimelineSeekEngine.PropWeapon(character, top.Clip);
+            nint current = TimelineSeekEngine.CurrentPropTimelineAny(_engine.PropGroup(weapon));
+            if (current == 0 || !TimelineSeekEngine.IsLoaded(current))
+                continue;
+            int currentId = TimelineSeekEngine.PropTimelineIdOf(current);
+            // The model belongs to a higher layer that doesn't animate it.
+            if (modelOwner > top.Slot)
+            {
+                suppressed.Add(current);
+                _engine.SetPropTimelineWeight(current, 0f);
+                continue;
+            }
+            if (currentId == TimelineSeekEngine.PropTimelineId(top.Clip))
+                continue;
+            // A lower layer's C031 replaced the highest one's prop timeline.
+            if (_propRefired.TryGetValue(weapon, out var refiredOver) && refiredOver == current)
+                continue;
+            _propRefired[weapon] = current;
+            if (_engine.ReFireProp(character, top.Clip))
+                LogOnce($"refire:{TimelineSeekEngine.PropTimelineId(top.Clip)}",
+                    $"[TimelineSeek] prop {TimelineSeekEngine.PropTimelineId(top.Clip)} of slot {top.Slot} re-fired over a lower layer's prop {currentId}");
+        }
+        if (_propRefired.Count > 64)
+            _propRefired.Clear();
     }
 
     /// <summary>
@@ -822,8 +888,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
             return;
         try
         {
+            var suppressed = _suppressedProps;
             foreach (var (slot, weight) in weights)
-                _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, slot, weight);
+                _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, slot, weight, suppressed);
         }
         catch (Exception ex) { LogOnce("weight", $"[TimelineSeek] layer weight faulted: {ex.Message}"); }
     }

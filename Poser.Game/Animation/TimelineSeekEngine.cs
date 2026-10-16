@@ -821,7 +821,8 @@ internal sealed unsafe class TimelineSeekEngine
 
     /// <summary>Sets every holder of the slot timeline's tree to <paramref name="weight"/>.</summary>
     public void SetSlotWeight(
-        FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer, nint character, int slot, float weight)
+        FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer, nint character, int slot, float weight,
+        IReadOnlySet<nint>? suppressed = null)
     {
         if (!Ready)
             return;
@@ -832,17 +833,51 @@ internal sealed unsafe class TimelineSeekEngine
         foreach (var clip in tree.Havok.Keys)
             SetHolderWeight(*(nint*)(clip + 0x98), weight);
         // Props the layer summons (C031) run on their own bucket-3 timelines; their
-        // C009 holders hang off the prop's actor control instance list.
+        // C009 holders hang off the prop's actor control instance list. A prop held
+        // invisible because a higher layer owns its weapon stays at 0.
         foreach (var (clip, _) in tree.Summons)
         {
             nint weapon = PropWeapon(character, clip);
             nint prop = CurrentPropTimeline(PropGroup(weapon), PropTimelineId(clip));
-            nint control = prop != 0 ? PropControl(prop) : 0;
-            int guard = 0;
-            for (nint instance = control != 0 ? *(nint*)(control + 0x30) : 0; instance != 0 && guard < 16;
-                 instance = *(nint*)(instance + 0x10), guard++)
-                SetHolderWeight(instance, weight);
+            if (prop != 0 && (suppressed == null || !suppressed.Contains(prop)))
+                SetPropTimelineWeight(prop, weight);
         }
+    }
+
+    /// <summary>Every C009 holder of one prop timeline at a weight.</summary>
+    public void SetPropTimelineWeight(nint prop, float weight)
+    {
+        nint control = prop != 0 ? PropControl(prop) : 0;
+        int guard = 0;
+        for (nint instance = control != 0 ? *(nint*)(control + 0x30) : 0; instance != 0 && guard < 16;
+             instance = *(nint*)(instance + 0x10), guard++)
+            SetHolderWeight(instance, weight);
+    }
+
+    /// <summary>The group's current prop timeline whatever its id, or 0.</summary>
+    public static nint CurrentPropTimelineAny(nint group)
+    {
+        if (group == 0)
+            return 0;
+        nint handle = *(nint*)(group + 0xA48);
+        nint timeline = handle != 0 ? *(nint*)handle : 0;
+        return timeline != 0 && *(nint*)(timeline + 0x180) == handle ? timeline : 0;
+    }
+
+    /// <summary>The ActionTimeline id a prop timeline plays (+0x224 − 0x20000).</summary>
+    public static int PropTimelineIdOf(nint prop) => (int)(*(uint*)(prop + 0x224) - 0x20000);
+
+    /// <summary>Fires a C031 over whatever prop timeline its weapon has (the start
+    /// replaces it, as a natural fire does); needs the weapon loaded.</summary>
+    public bool ReFireProp(nint character, nint c031)
+    {
+        if (!Ready || (*(byte*)(character + 0x1CE8) & 0x10) != 0)
+            return false;
+        nint weapon = PropWeapon(character, c031);
+        if (weapon == 0 || (*(byte*)(weapon + 0x89) & 0xF) != 3)
+            return false;
+        _n.StartPropTimeline(c031);
+        return true;
     }
 
     private static void SetHolderWeight(nint instance, float weight)
