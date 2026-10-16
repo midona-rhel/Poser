@@ -16,6 +16,7 @@ internal sealed unsafe class TimelineSeekWork
     /// re-sync opened a speed window every frame, and a C009's speed restore lands
     /// one update later, so the controls ran a frame at 1.0 and snapped back.</summary>
     public const int ResyncFrames = 20;
+    private const int RestartedResyncFrames = 3;
 
     internal sealed class Prop
     {
@@ -106,7 +107,12 @@ internal sealed unsafe class TimelineSeekWork
         if (currentRoot != Root)
             return false;
         var tree = engine.Collect(Root);
-        if (Frame <= ResyncFrames && PendingHavok.Count > 0)
+        // The first frames re-sync every guarded C009: a clip restarted by the seek
+        // gets the game's own first-post-step sync inside the next tick, and at the
+        // paused root speed 0 that sync writes LocalTime 0 (the frame-0 pose).
+        if (Frame <= RestartedResyncFrames)
+            engine.SyncHavok(Root, tree.Havok.Keys, PendingHavok);
+        else if (Frame <= ResyncFrames && PendingHavok.Count > 0)
         {
             // Only clips still in the live tree: a pending pointer may be gone.
             var live = new List<nint>();
