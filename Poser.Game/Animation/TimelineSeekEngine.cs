@@ -246,7 +246,11 @@ internal sealed unsafe class TimelineSeekEngine
     /// runs on its own clock, frozen under pause), so it falls behind the body. The
     /// wrap re-spawns it at its exact age instead. The redraw restore starts from 0
     /// and doesn't need it.</param>
-    public string? Seek(nint character, nint root, float target, TimelineSeekWork work, bool wrapForward = true)
+    /// <param name="blendFrames">A wrap that crossfades instead of cutting (the loop
+    /// seam): the stopped C009s fade out and the restarted ones blend in over this
+    /// many frames. 0 = the scrub's cut (no fade, no blend-in).</param>
+    public string? Seek(nint character, nint root, float target, TimelineSeekWork work, bool wrapForward = true,
+        int blendFrames = 0)
     {
         if (!Ready)
             return "native seek unavailable";
@@ -297,12 +301,15 @@ internal sealed unsafe class TimelineSeekEngine
                 *(uint*)(prop + 0x220) = 0;
                 _n.StopTimeline(prop, 2, 0);
             }
-            Wrap(root, tree);
+            if (blendFrames > 0)
+                BlendWrap(root, tree, blendFrames);
+            else
+                Wrap(root, tree);
         }
         float speed = OpenWindow(root);
 
         nint control = _n.GetActorControl(root);
-        if (control != 0 && _l.IsActorControl(control))
+        if (blendFrames == 0 && control != 0 && _l.IsActorControl(control))
             *(byte*)(control + 0x6B8) = 1; // start the re-entered clips without a blend-in
         for (int i = 0; i < 400; i++)
         {
@@ -359,6 +366,55 @@ internal sealed unsafe class TimelineSeekEngine
         finally { *(uint*)(root + 0x220) = fade; }
         Rewind(root, tree);
     }
+
+    /// <summary>
+    /// The wrap as a crossfade. Event 9 stops each C009 (child clips too) with fade
+    /// = root +0x220 frames (int32). A restarted holder takes its blend-in from
+    /// FUN_141BFF230(root): the play info's +0x38 when it is ≥ 0, else +0x21C
+    /// (int32) while +0x272 bit 1 is set, else the blend table. The one in effect
+    /// is set to the lead for the wrap and restored after it. The stopped controls
+    /// keep advancing while they fade (into their end, as at the game's own seam
+    /// into the next row).
+    /// </summary>
+    private void BlendWrap(nint root, Tree tree, int frames)
+    {
+        // Play info: root vfunc 0x118 (a getter).
+        var playInfoOf = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)root + 0x118));
+        nint playInfo = playInfoOf(root);
+        bool viaPlayInfo = playInfo != 0 && *(int*)(playInfo + 0x38) >= 0;
+        LastBlendPath = viaPlayInfo ? "play info +0x38" : "+0x21C";
+        int fade = *(int*)(root + 0x220);
+        int blend = viaPlayInfo ? *(int*)(playInfo + 0x38) : *(int*)(root + 0x21C);
+        byte flags = *(byte*)(root + 0x272);
+        *(int*)(root + 0x220) = frames;
+        if (viaPlayInfo)
+            *(int*)(playInfo + 0x38) = frames;
+        else
+        {
+            *(int*)(root + 0x21C) = frames;
+            *(byte*)(root + 0x272) = (byte)(flags | 2);
+        }
+        try
+        {
+            StopAll(root);
+            Rewind(root, tree);
+        }
+        finally
+        {
+            *(int*)(root + 0x220) = fade;
+            if (viaPlayInfo)
+                *(int*)(playInfo + 0x38) = blend;
+            else
+            {
+                *(int*)(root + 0x21C) = blend;
+                // Rewind rewrites bit 7 of +0x272; only bit 1 goes back.
+                *(byte*)(root + 0x272) = (byte)((*(byte*)(root + 0x272) & ~2) | (flags & 2));
+            }
+        }
+    }
+
+    /// <summary>Which blend-in source the last crossfade wrap wrote (for the log).</summary>
+    public string? LastBlendPath { get; private set; }
 
     private void StopAll(nint root)
     {
