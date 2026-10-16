@@ -404,6 +404,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/emote?actor&emote=EMOTE_ROW&timeline=ITS_[0]_ROW&start=1&posture=1 (the General Apply: posture version, from its start)",
                         "/stance?actor&stance=Idle|SitGround|SitChair|Sleeping&pose=0",
                         "/seeklayer?actor&slot=1&time=SECONDS (by the layer's own clock; an ended layer is played again held first)",
+                        "/wear?actor&slot=3&item=ITEM_ID&dye1=0&dye2=0 (the wardrobe's journaled item change; without item: read the slot)",
                         "/poseedit?actor&action=reset|mirror|stash|applystash&region=All|Body|Face|Hair",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
                         "/clone?actor", "/dupepose?actor",
@@ -1080,6 +1081,21 @@ public sealed partial class DebugBridge : IDisposable
                 var moved = _animation.UpdateScrub(id, time, scrubOwner);
                 _animation.EndScrub(scrubOwner);
                 return Json(new { ok = moved.Success, moved.Detail, state = State(id, actor) });
+            }
+            case "/wear":
+            {
+                var wardrobe = (global::Poser.Application.Appearance.IWardrobeControl)_services.GetService(
+                    typeof(global::Poser.Application.Appearance.IWardrobeControl))!;
+                var slot = (global::Poser.Domain.Integration.EquipSlot)byte.Parse(query.GetValueOrDefault("slot", "3"));
+                if (!query.TryGetValue("item", out var it))
+                {
+                    var worn = wardrobe.Read(id);
+                    var piece = worn.Value?.Slot(slot);
+                    return Json(new { ok = worn.Success, worn.Detail, slot = slot.ToString(), item = piece?.ItemId, dye1 = piece?.Dye1, dye2 = piece?.Dye2 });
+                }
+                byte d1 = byte.Parse(query.GetValueOrDefault("dye1", "0")), d2 = byte.Parse(query.GetValueOrDefault("dye2", "0"));
+                var set = wardrobe.SetItem(id, slot, ulong.Parse(it), d1, d2, $"Wear {slot}");
+                return Json(new { ok = set.Success, set.Detail });
             }
             case "/layers":
             {
