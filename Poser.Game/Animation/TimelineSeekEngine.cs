@@ -245,7 +245,10 @@ internal sealed unsafe class TimelineSeekEngine
         work.Begin(character, root, VfxHandles(tree));
 
         float clock = Clock(root);
-        if (target < clock - 0.001f || (wrapForward && clock > 0.001f && Math.Abs(target - clock) > 0.001f))
+        // Forward only needs the wrap while an effect is alive: an in-place step
+        // spawns the effects it crosses at their right age by itself.
+        if (target < clock - 0.001f
+            || (wrapForward && clock > 0.001f && target > clock + 0.001f && HasLiveVfx(tree)))
             Wrap(root, tree);
         float speed = OpenWindow(root);
 
@@ -638,6 +641,26 @@ internal sealed unsafe class TimelineSeekEngine
                 handles.Add(handle);
         }
         return handles;
+    }
+
+    /// <summary>Whether any of the tree's C012 effects still has a live engine
+    /// instance (same generation, not released) in the Apricot slot table.</summary>
+    private bool HasLiveVfx(Tree tree)
+    {
+        nint js = _l.VfxSlotTable;
+        nint table = js != 0 ? *(nint*)(js + 0x1498) : 0;
+        if (table == 0)
+            return tree.Vfx.Count > 0;
+        foreach (var handle in VfxHandles(tree))
+        {
+            uint index = (uint)(handle >> 32), generation = (uint)handle;
+            if (index >= 0x800 || generation == 0)
+                continue;
+            nint entry = table + 0x2000 + (nint)index * 0x88;
+            if (*(uint*)(entry + 0x60) == generation && *(ushort*)(entry + 0x58) != 3 && *(nint*)(entry + 0x30) != 0)
+                return true;
+        }
+        return false;
     }
 
     /// <summary>Releases the handles this actor held before the seek that are
