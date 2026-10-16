@@ -552,12 +552,19 @@ internal sealed class BaseAnimationSession
         if (!cancelled.Success)
             return cancelled;
 
+        // The slot cancel leaves the other layers and the base running on their
+        // own timelines (measured on Upper, Facial and Additive cancels: same
+        // objects, clocks still counting). Replaying them restarted them from
+        // frame 0, so only a layer the cancel actually took is played again.
+        var after = _timeline.Read(actor);
         var failures = new List<string>();
         var retrySlots = new Dictionary<AnimationSlot, ushort>();
         foreach (var survivor in reading.Slots)
         {
             if (survivor.Slot is AnimationSlot.Base || survivor.Slot == slot ||
                 survivor.TimelineId == 0)
+                continue;
+            if (after != null && after.TimelineFor(survivor.Slot) == survivor.TimelineId)
                 continue;
             var replayed = survivor.Slot == AnimationSlot.Lips && reading.LipsOverride != 0
                 ? _timeline.SetLips(actor, reading.LipsOverride)
@@ -568,7 +575,8 @@ internal sealed class BaseAnimationSession
                 retrySlots[survivor.Slot] = survivor.TimelineId;
             }
         }
-        if (immediateBase is { } baseline)
+        if (immediateBase is { } baseline &&
+            (after == null || after.TimelineFor(AnimationSlot.Base) != reading.TimelineFor(AnimationSlot.Base)))
         {
             var baseRestored = _timeline.RestoreBase(actor, baseline);
             if (!baseRestored.Success)
