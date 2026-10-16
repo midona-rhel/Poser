@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
+using Poser.Game.Natives;
+using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace Poser.Game.Animation;
 
@@ -11,7 +14,8 @@ namespace Poser.Game.Animation;
 /// Runs native timeline seeks (#533) on the framework tick. The scrub UI calls
 /// from the ImGui draw callback; it only records the latest target per
 /// actor/slot, and the seek runs once on the next tick (coalesced), followed by
-/// that seek's deferred frames.
+/// that seek's deferred frames. It also corrects newly born prop timelines and
+/// brings a redrawn actor back on the frame it was on.
 /// </summary>
 public sealed unsafe class TimelineSeekService : IDisposable
 {
@@ -19,20 +23,41 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;
     private readonly TimelineSeekEngine _engine;
+    private readonly Poser.Game.Services.IActorManager _actors;
     // Written by the UI (draw callback), drained by the framework tick.
     private readonly object _targetLock = new();
     private readonly Dictionary<(ActorId Actor, int Slot), float> _targets = new();
-    private readonly Dictionary<(ActorId Actor, int Slot), TimelineSeekWork> _work = new();
+    // Deferred work per (character address, slot); an address is only touched
+    // while it is still one of Poser's actors this tick.
+    private readonly Dictionary<(nint Character, int Slot), TimelineSeekWork> _work = new();
     // Havok control seconds → timeline frames, per slot timeline.
     private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Offset)> _offsets = new();
     private readonly HashSet<string> _logged = new();
-    private readonly Poser.Game.Services.IActorManager _actors;
     // Last seen current prop timeline per (character, weapon slot); a change is a birth.
     private readonly Dictionary<(nint Character, int Weapon), nint> _propTimelines = new();
+    private readonly HashSet<nint> _managed = new();
+    private readonly Dictionary<nint, Restore> _restores = new();
+
+    private delegate void DisableDrawFn(nint character);
+    private readonly Hook<DisableDrawFn>? _disableDrawHook;
+
+    /// <summary>What a redraw is about to throw away, captured at the entry of
+    /// Character::DisableDraw (it tears down the props, then the timeline
+    /// container: every slot timeline stops).</summary>
+    private sealed class Restore
+    {
+        public readonly (int Slot, ushort Id, float Clock)[] Slots;
+        public readonly bool[] Done;
+        public bool Replayed;
+        public int Frame;
+        public Restore((int, ushort, float)[] slots) { Slots = slots; Done = new bool[slots.Length]; }
+    }
+
+    private const int RestoreFrames = 600;
 
     public TimelineSeekService(
-        IFramework framework, ISigScanner scanner, IPluginLog log, AnimationNativeState native,
-        Poser.Game.Services.IActorManager actors)
+        IFramework framework, ISigScanner scanner, IGameInteropProvider hooking, IPluginLog log,
+        AnimationNativeState native, Poser.Game.Services.IActorManager actors)
     {
         _actors = actors;
         _framework = framework;
@@ -41,6 +66,23 @@ public sealed unsafe class TimelineSeekService : IDisposable
         var natives = new TimelineSeekNatives(scanner, log);
         var layout = new TimelineSeekLayout(scanner, log);
         _engine = new TimelineSeekEngine(natives, layout);
+        if (_engine.Ready)
+        {
+            try
+            {
+                if (scanner.TryScanText(NativeSignatures.Character_DisableDraw, out var disableDraw) && disableDraw != 0)
+                {
+                    _disableDrawHook = hooking.HookFromAddress<DisableDrawFn>(disableDraw, DisableDrawDetour);
+                    _disableDrawHook.Enable();
+                }
+                else
+                    log.Warning("Animation: Character.DisableDraw not found; a redraw restores the actor stopped.");
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Animation: DisableDraw hook failed ({ex.Message}); a redraw restores the actor stopped.");
+            }
+        }
         _framework.Update += OnUpdate;
     }
 
@@ -83,7 +125,14 @@ public sealed unsafe class TimelineSeekService : IDisposable
             return;
         try
         {
+            _managed.Clear();
+            foreach (var actor in _actors.Actors)
+                if (actor.Address != 0 && ((CSGameObject*)actor.Address)->IsCharacter())
+                    _managed.Add(actor.Address);
+
+            PumpRestores();
             CorrectPropBirths();
+
             KeyValuePair<(ActorId, int), float>[] targets;
             lock (_targetLock)
             {
@@ -94,17 +143,16 @@ public sealed unsafe class TimelineSeekService : IDisposable
             foreach (var (key, target) in targets)
                 RunSeek(key, target);
 
-            List<(ActorId, int)>? done = null;
+            List<(nint, int)>? done = null;
             foreach (var (key, work) in _work)
             {
-                var character = _native.Resolve(key.Actor, out _);
-                nint current = character == null
-                    ? 0
-                    : AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot);
+                nint current = _managed.Contains(key.Character)
+                    ? AnimationNativeState.SlotTimeline(&((Character*)key.Character)->Timeline.TimelineSequencer, key.Slot)
+                    : 0;
                 if (work.Tick(_engine, current))
                     continue;
                 if (work.Log != null)
-                    _log.Information($"[TimelineSeek] {key.Actor} slot {key.Slot}: {work.Log}");
+                    _log.Information($"[TimelineSeek] slot {key.Slot}: {work.Log}");
                 (done ??= new()).Add(key);
             }
             if (done != null)
@@ -117,8 +165,123 @@ public sealed unsafe class TimelineSeekService : IDisposable
             lock (_targetLock)
                 _targets.Clear();
             _work.Clear();
+            _restores.Clear();
         }
     }
+
+    // ── Redraw restore ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Entry of Character::DisableDraw (every redraw path: Penumbra, Glamourer,
+    /// the game's own hide). At entry the slot ids, handles and clocks are intact;
+    /// the function then destroys the props and stops every slot. Only drawn
+    /// (+0x9A bit 7) Poser actors; never throws into the game.
+    /// </summary>
+    private void DisableDrawDetour(nint character)
+    {
+        try
+        {
+            if (character != 0 && _managed.Contains(character) && (*(byte*)(character + 0x9A) & 0x80) != 0)
+                Capture(character);
+        }
+        catch
+        {
+            // A capture failure only loses the restore.
+        }
+        _disableDrawHook!.Original(character);
+    }
+
+    private void Capture(nint character)
+    {
+        // A redraw during a pending restore would capture the transient base
+        // timeline; keep the first capture.
+        if (_restores.ContainsKey(character))
+            return;
+        var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
+        var slots = new List<(int, ushort, float)>(2);
+        foreach (int slot in new[] { 0, 1 })
+        {
+            nint timeline = AnimationNativeState.SlotTimeline(sequencer, slot);
+            ushort id = *(ushort*)((byte*)sequencer + 0xE0 + 2 * slot);
+            if (timeline == 0 || id == 0 || !TimelineSeekEngine.IsLoaded(timeline)
+                || TimelineSeekEngine.IsIntegerFrame(timeline) || (*(byte*)(timeline + 0x7C) & 0x40) != 0)
+                continue;
+            slots.Add((slot, id, TimelineSeekEngine.Clock(timeline)));
+        }
+        if (slots.Count > 0)
+            _restores[character] = new Restore(slots.ToArray());
+    }
+
+    /// <summary>
+    /// After the redraw: wait for the new draw object and the game's base
+    /// timeline, replay each recorded id (no blend), wait until it is loaded,
+    /// then seek it to the recorded clock. The seek's deferred work re-fires a
+    /// C031 whose start gave up while the new weapon object loaded, and seeks it.
+    /// </summary>
+    private void PumpRestores()
+    {
+        if (_restores.Count == 0)
+            return;
+        List<nint>? finished = null;
+        foreach (var (character, restore) in _restores)
+        {
+            if (!_managed.Contains(character) || ++restore.Frame > RestoreFrames)
+            {
+                if (restore.Frame > RestoreFrames)
+                    LogOnce($"restore-timeout:{restore.Slots[0].Id}", "[TimelineSeek] redraw restore timed out; the actor keeps its default timeline.");
+                (finished ??= new()).Add(character);
+                continue;
+            }
+            var go = (CSGameObject*)character;
+            if (go->RenderFlags != 0 || go->DrawObject == null)
+                continue;
+            var chara = (Character*)character;
+            var sequencer = &chara->Timeline.TimelineSequencer;
+            if (!restore.Replayed)
+            {
+                nint baseTimeline = AnimationNativeState.SlotTimeline(sequencer, 0);
+                if (baseTimeline == 0 || !TimelineSeekEngine.IsLoaded(baseTimeline))
+                    continue;
+                _engine.SetNoBlendStart(baseTimeline);
+                foreach (var (_, id, _) in restore.Slots)
+                {
+                    var played = _native.PlayTimeline(chara, id);
+                    if (!played.Success)
+                        LogOnce($"restore-play:{id}", $"[TimelineSeek] redraw restore could not replay {id}: {played.Detail}");
+                }
+                restore.Replayed = true;
+                continue;
+            }
+            bool all = true;
+            for (int i = 0; i < restore.Slots.Length; i++)
+            {
+                if (restore.Done[i])
+                    continue;
+                var (slot, id, clock) = restore.Slots[i];
+                nint timeline = AnimationNativeState.SlotTimeline(sequencer, slot);
+                ushort live = *(ushort*)((byte*)sequencer + 0xE0 + 2 * slot);
+                if (timeline == 0 || live != id || !TimelineSeekEngine.IsLoaded(timeline))
+                {
+                    all = false;
+                    continue;
+                }
+                var work = new TimelineSeekWork { AllowFire = true };
+                var refused = _engine.Seek(character, timeline, clock, work);
+                if (refused != null)
+                    LogOnce($"restore-seek:{id}:{refused}", $"[TimelineSeek] redraw restore of {id}: {refused}");
+                else
+                    _work[(character, slot)] = work;
+                restore.Done[i] = true;
+            }
+            if (all)
+                (finished ??= new()).Add(character);
+        }
+        if (finished != null)
+            foreach (var character in finished)
+                _restores.Remove(character);
+    }
+
+    // ── Prop birth correction ─────────────────────────────────────────
 
     /// <summary>One forward correction for each newly current prop timeline of
     /// Poser's actors; skipped for an actor whose seek is still in flight (the
@@ -126,13 +289,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private void CorrectPropBirths()
     {
         HashSet<nint>? seeking = null;
-        foreach (var work in _work.Values)
-            (seeking ??= new()).Add(work.Character);
-        foreach (var actor in _actors.Actors)
+        foreach (var key in _work.Keys)
+            (seeking ??= new()).Add(key.Character);
+        foreach (nint character in _managed)
         {
-            nint character = actor.Address;
-            if (character == 0 || !((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)character)->IsCharacter())
-                continue;
             for (int w = 0; w < 4; w++)
             {
                 var key = (character, w);
@@ -142,7 +302,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 _propTimelines.TryGetValue(key, out var last);
                 if (current == last)
                     continue;
-                if (current == 0 || seeking?.Contains(character) == true)
+                if (current == 0 || seeking?.Contains(character) == true || _restores.ContainsKey(character))
                 {
                     _propTimelines[key] = current;
                     continue;
@@ -158,6 +318,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (_propTimelines.Count > 64)
             _propTimelines.Clear();
     }
+
+    // ── Scrub ─────────────────────────────────────────────────────────
 
     private void RunSeek((ActorId Actor, int Slot) key, float target)
     {
@@ -177,8 +339,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
             LogOnce($"refused:{key}:{refused}", $"[TimelineSeek] {key.Actor} slot {key.Slot}: {refused}");
             return;
         }
-        _work[key] = work;
+        _work[((nint)character, key.Slot)] = work;
     }
+
+    // ── Speed edges ───────────────────────────────────────────────────
 
     /// <summary>Same-tick speed edge for one slot timeline (see
     /// TimelineSeekEngine.SetSlotTimelineSpeed).</summary>
@@ -207,8 +371,11 @@ public sealed unsafe class TimelineSeekService : IDisposable
     public void Dispose()
     {
         _framework.Update -= OnUpdate;
+        _disableDrawHook?.Disable();
+        _disableDrawHook?.Dispose();
         lock (_targetLock)
             _targets.Clear();
         _work.Clear();
+        _restores.Clear();
     }
 }

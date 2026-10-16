@@ -21,6 +21,7 @@ internal sealed unsafe class TimelineSeekWork
         public readonly float Start;
         public nint Timeline;
         public bool Seeked;
+        public bool Fired;
         public readonly HashSet<nint> Synced = new();
         public Prop(nint clip, float start) { Clip = clip; Start = start; }
     }
@@ -34,6 +35,11 @@ internal sealed unsafe class TimelineSeekWork
     public readonly HashSet<nint> PendingHavok = new();
     public readonly List<Prop> Props = new();
     public HashSet<ulong> VfxBefore { get; private set; } = new();
+    /// <summary>A reload restore: re-fire C031s whose start gave up while the
+    /// new weapon object was loading, and keep pumping until they are seeked.</summary>
+    public bool AllowFire;
+    /// <summary>Upper bound for waiting on a prop's weapon object.</summary>
+    public const int PropWaitFrames = 300;
     public string? Log;
 
     public void Begin(nint character, nint root, HashSet<ulong> vfxBefore)
@@ -68,6 +74,8 @@ internal sealed unsafe class TimelineSeekWork
             nint weapon = TimelineSeekEngine.PropWeapon(Character, prop.Clip);
             nint timeline = TimelineSeekEngine.CurrentPropTimeline(
                 engine.PropGroup(weapon), TimelineSeekEngine.PropTimelineId(prop.Clip));
+            if (timeline == 0 && AllowFire && !prop.Fired && engine.FireProp(Character, prop.Clip))
+                prop.Fired = true;
             if (timeline == 0 || !TimelineSeekEngine.IsLoaded(timeline))
                 continue;
             prop.Timeline = timeline;
@@ -90,6 +98,8 @@ internal sealed unsafe class TimelineSeekWork
             engine.SyncHavok(Root, tree.Havok.Keys, PendingHavok);
         PumpProps(engine);
         if (Frame < ResyncFrames)
+            return true;
+        if (AllowFire && Frame < PropWaitFrames && Props.Exists(p => !p.Seeked))
             return true;
         int released = engine.ReleaseOrphans(VfxBefore, engine.VfxHandles(tree));
         if (released > 0)

@@ -202,6 +202,12 @@ internal static class NativeSignatures
     public const string SchedulerClip_Create = "40 53 55 41 54 41 55 41 56 48 83 EC 50";
     /// <summary>TimelineGroup.SetSpeedAll (0x141994350 on the analysed build).</summary>
     public const string TimelineGroup_SetSpeedAll = "40 53 48 83 EC 30 48 8B 59 18";
+    /// <summary>Character.DisableDraw (0x140906F70 on the analysed build).</summary>
+    public const string Character_DisableDraw = "40 53 48 83 EC 20 80 B9 9A 00 00 00 00 48 8B D9 7D ?? 48 81 C1 80 1B 00 00";
+    /// <summary>TimelineContainer.OnDisableDraw (0x1408C4BF0 on the analysed build).</summary>
+    public const string TimelineContainer_OnDisableDraw = "40 53 48 83 EC 20 48 8B 41 08 48 8B D9 48 8B 0D";
+    /// <summary>Character.EnableDraw (0x140906920 on the analysed build).</summary>
+    public const string Character_EnableDraw = "40 55 53 48 8D ?? 24 B8 48 81 EC 48 01 00 00";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>

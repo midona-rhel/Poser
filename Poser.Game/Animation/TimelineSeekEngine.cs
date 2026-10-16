@@ -369,6 +369,37 @@ internal sealed unsafe class TimelineSeekEngine
         return count;
     }
 
+    /// <summary>
+    /// Re-fires a C031 whose start gave up (after a redraw the C031 activates
+    /// while the new weapon object is still loading, and FUN_141909F80 drops it):
+    /// only once W is ready (+0x89 &amp; 0xF == 3), only when its group has no
+    /// current timeline (never replace a live one), never for scheduler-driven
+    /// actors (+0x1CE8 &amp; 0x10 takes an unchecked path). The new timeline starts
+    /// at 0 for non-portrait actors; the caller seeks it.
+    /// </summary>
+    public bool FireProp(nint character, nint c031)
+    {
+        if (!Ready || (*(byte*)(character + 0x1CE8) & 0x10) != 0)
+            return false;
+        nint weapon = PropWeapon(character, c031);
+        if (weapon == 0 || (*(byte*)(weapon + 0x89) & 0xF) != 3)
+            return false;
+        nint group = PropGroup(weapon);
+        if (group != 0 && *(nint*)(group + 0xA48) is var handle and not 0 && *(nint*)handle != 0)
+            return false;
+        _n.StartPropTimeline(c031);
+        return true;
+    }
+
+    /// <summary>Starts the next clips on this timeline's actor control without a
+    /// blend-in (+0x6B8 = 1; the game clears it after the next start).</summary>
+    public void SetNoBlendStart(nint timeline)
+    {
+        nint control = _n.GetActorControl(timeline);
+        if (control != 0 && _l.IsActorControl(control))
+            *(byte*)(control + 0x6B8) = 1;
+    }
+
     public nint PropControl(nint prop)
     {
         nint control = _n.GetActorControl(prop);
