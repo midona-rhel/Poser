@@ -474,7 +474,9 @@ internal sealed unsafe class TimelineSeekEngine
             return;
         float saved = overall;
         overall = 1f;
-        try { _n.UpdatePool(control, 1f, 0); }
+        // In frames: a crossfade the play started (its blend has a length) needs
+        // more than one; a second covers every blend the game uses.
+        try { _n.UpdatePool(control, 30f, 0); }
         finally { overall = saved; }
     }
 
