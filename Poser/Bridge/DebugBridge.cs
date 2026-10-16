@@ -397,6 +397,13 @@ public sealed partial class DebugBridge : IDisposable
                         "/loop?actor&slot=1&on=1|0",
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/reset?actor&slot=1",
+                        "/layers?actor (every layer: live timeline, clock reading, speed, weight, loop, ended, selection; held expression; paused)",
+                        "/weight?actor&slot=1&value=0.5 (1 releases)",
+                        "/expression?actor&hold=TIMELINE | &release=1",
+                        "/lips?actor&timeline=TIMELINE (0 restores)",
+                        "/emote?actor&emote=EMOTE_ROW&timeline=ITS_[0]_ROW&start=1&posture=1 (the General Apply: posture version, from its start)",
+                        "/stance?actor&stance=Idle|SitGround|SitChair|Sleeping&pose=0",
+                        "/seeklayer?actor&slot=1&time=SECONDS (by the layer's own clock; an ended layer is played again held first)",
                         "/poseedit?actor&action=reset|mirror|stash|applystash&region=All|Body|Face|Hair",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
                         "/clone?actor", "/dupepose?actor",
@@ -1073,6 +1080,110 @@ public sealed partial class DebugBridge : IDisposable
                 var moved = _animation.UpdateScrub(id, time, scrubOwner);
                 _animation.EndScrub(scrubOwner);
                 return Json(new { ok = moved.Success, moved.Detail, state = State(id, actor) });
+            }
+            case "/layers":
+            {
+                var reading = _animation.Read(id);
+                var owned = _animation.OverridesFor(id);
+                var layers = new List<object>();
+                foreach (var slot in new[] { AnimationSlot.Base, AnimationSlot.UpperBody, AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips })
+                {
+                    var control = _animation.FindSlotControl(id, slot);
+                    layers.Add(new
+                    {
+                        slot = slot.ToString(),
+                        live = reading?.TimelineFor(slot),
+                        selected = _animation.SelectedFor(id, slot),
+                        time = control?.Time,
+                        duration = control?.Duration,
+                        nativeSpeed = reading?.SpeedFor(slot),
+                        speed = owned.SlotSpeeds.TryGetValue(slot, out var sp) ? sp : (float?)null,
+                        weight = _animation.WeightFor(id, slot),
+                        loopWanted = owned.LoopWantedSlots.Contains(slot),
+                        ended = _animation.EndedLength(id, slot),
+                    });
+                }
+                return Json(new
+                {
+                    paused = _animation.IsPaused(id),
+                    anyPlaying = _animation.AnyPlaying(id),
+                    overallSpeed = owned.OverallSpeed,
+                    heldExpression = _animation.HeldExpressionFor(id),
+                    advanced = _animation.IsAdvanced(id),
+                    layers,
+                });
+            }
+            case "/weight":
+            {
+                if (!query.TryGetValue("value", out var wv)
+                    || !float.TryParse(wv, NumberStyles.Float, CultureInfo.InvariantCulture, out var weight))
+                    return Json(new { error = "value is required" });
+                var r = _animation.SetSlotWeight(id, Slot(), weight);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/expression":
+            {
+                if (query.GetValueOrDefault("release") == "1")
+                {
+                    var released = _animation.ReleaseExpression(id);
+                    return Json(new { ok = released.Success, released.Detail });
+                }
+                if (!query.TryGetValue("hold", out var ht)
+                    || !ushort.TryParse(ht, NumberStyles.Integer, CultureInfo.InvariantCulture, out var held))
+                    return Json(new { error = "hold=TIMELINE or release=1" });
+                var r = _animation.HoldExpression(id, held);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/lips":
+            {
+                if (!query.TryGetValue("timeline", out var lt)
+                    || !ushort.TryParse(lt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var lips))
+                    return Json(new { error = "timeline is required" });
+                var r = _animation.SetLips(id, lips);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/emote":
+            {
+                // The General section's Apply: the emote's version for the actor's
+                // posture (posture=0 plays the row as given), from its start.
+                if (!query.TryGetValue("emote", out var et) || !uint.TryParse(et, out var emoteRow)
+                    || !query.TryGetValue("timeline", out var tt) || !uint.TryParse(tt, out var standing))
+                    return Json(new { error = "emote and timeline are required" });
+                var pick = new global::Poser.Domain.Animation.TimelineEntry(
+                    standing, "bridge", global::Poser.Domain.Animation.AnimationKind.Emote, AnimationSlot.Base, 0, emoteRow, 0);
+                var entry = query.GetValueOrDefault("posture", "1") == "0"
+                    ? pick
+                    : _animation.PostureEntry(id, pick, out _);
+                if (entry == null)
+                    return Json(new { ok = false, refused = true });
+                var chosen = _animation.ChooseSlot(id, entry.Slot, (ushort)entry.TimelineId);
+                if (!chosen.Success)
+                    return Json(new { ok = false, step = "choose", chosen.Detail });
+                var r = _animation.PlaySelectedSlot(id, entry.Slot, entry, query.GetValueOrDefault("start", "1") != "0");
+                return Json(new { ok = r.Success, r.Detail, played = entry.TimelineId, slot = entry.Slot.ToString() });
+            }
+            case "/stance":
+            {
+                if (!Enum.TryParse<global::Poser.Domain.Animation.AnimationStance>(query.GetValueOrDefault("stance", "Idle"), true, out var stance))
+                    return Json(new { error = "stance must be Idle, SitGround, SitChair or Sleeping" });
+                int pose = int.TryParse(query.GetValueOrDefault("pose", "0"), out var pv) ? pv : 0;
+                var r = _animation.SetStance(id, stance, pose);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/seeklayer":
+            {
+                if (!query.TryGetValue("time", out var st)
+                    || !float.TryParse(st, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
+                    return Json(new { error = "time (seconds) is required" });
+                bool ended = _animation.EndedLength(id, Slot()) != null;
+                if (ended)
+                {
+                    var replayed = _animation.ReplayEndedForScrub(id, Slot());
+                    if (!replayed.Success)
+                        return Json(new { ok = false, step = "replay", replayed.Detail });
+                }
+                var r = _animation.SeekLayer(id, Slot(), seconds);
+                return Json(new { ok = r.Success, r.Detail, replayed = ended });
             }
             case "/loop":
             {
