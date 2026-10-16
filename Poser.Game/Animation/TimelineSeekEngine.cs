@@ -66,6 +66,7 @@ internal sealed unsafe class TimelineSeekEngine
     internal sealed class Tree
     {
         public readonly List<(nint Clip, nint Child)> C010s = new();
+        public readonly List<float> C010Starts = new();                 // absolute
         public readonly Dictionary<nint, nint> Havok = new();          // C009 → owner timeline
         public readonly Dictionary<nint, float> HavokStart = new();    // C009 → absolute start
         // C009 → root frames per frame of its own timeline (1 on the root; a range
@@ -112,6 +113,7 @@ internal sealed unsafe class TimelineSeekEngine
                         if (child == 0)
                             break;
                         tree.C010s.Add((clip, child));
+                        tree.C010Starts.Add(baseStart + span * *(float*)(clip + 0x50));
                         float scale = *(float*)(clip + 0x160);
                         if (!(scale > 0f) || !float.IsFinite(scale))
                             scale = 1f;
@@ -351,9 +353,24 @@ internal sealed unsafe class TimelineSeekEngine
         nint control = _n.GetActorControl(root);
         if (blendFrames == 0 && control != 0 && _l.IsActorControl(control))
             *(byte*)(control + 0x6B8) = 1; // start the re-entered clips without a blend-in
+        // A C010 started inside a step is stepped by the step's whole dt on top
+        // (its post-step runs once per Advance, after the sub-steps): it overshoots
+        // by the time from the step's begin to its start, and a short range child
+        // (each face clip) runs out at once. Steps end half a frame before each
+        // C010 start, so every start lands in its step's first sub-step, as in play.
+        var c010Starts = tree.C010Starts;
+        c010Starts.Sort();
         for (int i = 0; i < 400; i++)
         {
-            float step = Math.Min(target - *(float*)(root + 0x34), Length(root));
+            float now = *(float*)(root + 0x34);
+            float stop = target;
+            foreach (float start in c010Starts)
+                if (start - 0.5f > now + 0.001f && start <= target)
+                {
+                    stop = start - 0.5f;
+                    break;
+                }
+            float step = Math.Min(stop - now, Length(root));
             if (step <= 0.001f)
                 break;
             _n.UpdateBanner(root, step, 1);
@@ -784,9 +801,21 @@ internal sealed unsafe class TimelineSeekEngine
     {
         // An inactive C010 whose child already finished would never restart it;
         // the game has no path for this, so its finish/pass fields are cleared.
+        // An ended one (0xE1: +0x10 bit 4 clear, bits 6/7 set; event 9 never goes to
+        // a C010) is put back to never-started, (+0x10 & 1), with +0x11 bits 0/1 and
+        // the pending +0x8C cleared, so the step starts it again as it passes.
         foreach (var (c010, child) in tree.C010s)
         {
-            if ((*(byte*)(c010 + 0x10) & 0x30) != 0 || (*(byte*)(child + 0x7C) & 0x40) == 0)
+            byte state = *(byte*)(c010 + 0x10);
+            if ((state & 0x10) != 0)
+                continue;
+            if ((state & 0xC0) != 0)
+            {
+                *(byte*)(c010 + 0x10) = (byte)(state & 1);
+                *(byte*)(c010 + 0x11) &= unchecked((byte)~3);
+                *(uint*)(c010 + 0x8C) = 0;
+            }
+            if ((*(byte*)(child + 0x7C) & 0x40) == 0)
                 continue;
             *(byte*)(child + 0x7C) &= 0xBF;
             *(uint*)(child + 0x74) = 0;
