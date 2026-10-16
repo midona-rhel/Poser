@@ -275,16 +275,25 @@ internal sealed unsafe class TimelineSeekEngine
         if (target < clock - 0.001f
             || (wrapForward && clock > 0.001f && target > clock + 0.001f && HasLiveVfx(tree)))
         {
-            // The wrap re-fires each C031, which replaces its prop timeline. The game
-            // stops the replaced one later (its group update), so its holder would
-            // still be bound and render the old prop pose on this frame. Stop it here,
-            // with fade 0: tick N's pool update then releases it before the render.
-            foreach (var (clip, _) in tree.Summons)
+            // A C031 the step re-fires replaces its prop timeline. The game stops the
+            // replaced one later (its group update), so its holder would still be
+            // bound and render the old prop pose on this frame. Stop it here, with
+            // fade 0: tick N's pool update then releases it before the render.
+            // A C031 starting after the target is not re-fired here, and stopping its
+            // prop timeline releases the weapon request (C198 cell) that keeps the
+            // prop weapon loaded: the weapon unloads and the C031 gives up at its
+            // start. Hold that one instead; the C031 replaces it at its start.
+            foreach (var (clip, start) in tree.Summons)
             {
                 nint group = PropGroup(PropWeapon(character, clip));
                 nint prop = CurrentPropTimeline(group, PropTimelineId(clip));
                 if (prop == 0)
                     continue;
+                if (target < start)
+                {
+                    _n.SetSpeed(prop, 0f);
+                    continue;
+                }
                 *(uint*)(prop + 0x220) = 0;
                 _n.StopTimeline(prop, 2, 0);
             }
