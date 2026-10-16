@@ -407,55 +407,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _targets[key] = seconds * 30f + mapping.Offset;
     }
 
-#if DEBUG
-    // Per-frame cost of this service (Debug builds only): logged every 600 ticks.
-    private readonly System.Diagnostics.Stopwatch _costWatch = new();
-    private double _costSum, _costMax;
-    private int _costTicks;
-#endif
-
-    // Per-section maxima of the per-frame cost (Debug builds), in µs.
-    private readonly double[] _sectionMax = new double[8];
-    private int _gcAt;
-    private long _allocAt;
-    private long _sectionAt;
-    private int _section = -1;
-    [System.Diagnostics.Conditional("DEBUG")]
-    private void Section(int next)
-    {
-        long now = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (_section >= 0)
-            _sectionMax[_section] = Math.Max(_sectionMax[_section],
-                System.Diagnostics.Stopwatch.GetElapsedTime(_sectionAt, now).TotalMilliseconds * 1000.0);
-        _section = next < 7 ? next : -1;
-        _sectionAt = now;
-    }
-
     private void OnUpdate(IFramework framework)
     {
         if (!_engine.Ready)
             return;
-#if DEBUG
-        _costWatch.Restart();
-        try { OnUpdateCore(); }
-        finally
-        {
-            double us = _costWatch.Elapsed.TotalMilliseconds * 1000.0;
-            _costSum += us; _costMax = Math.Max(_costMax, us);
-            if (++_costTicks >= 600)
-            {
-                _log.Information($"[TimelineSeek] per-frame cost over {_costTicks} frames: avg {_costSum / _costTicks:F1} µs, max {_costMax:F1} µs, {_managed.Count} actors; section max µs restores {_sectionMax[0]:F0} births {_sectionMax[1]:F0} props {_sectionMax[2]:F0} targets {_sectionMax[3]:F0} seeks {_sectionMax[4]:F0} loops {_sectionMax[5]:F0} work {_sectionMax[6]:F0}; gen0 GCs {GC.CollectionCount(0) - _gcAt}, allocated {(GC.GetAllocatedBytesForCurrentThread() - _allocAt) / 1024} KiB on this thread");
-                _gcAt = GC.CollectionCount(0);
-                _allocAt = GC.GetAllocatedBytesForCurrentThread();
-                Array.Clear(_sectionMax);
-                _costSum = _costMax = 0; _costTicks = 0;
-            }
-        }
-    }
-
-    private void OnUpdateCore()
-    {
-#endif
         _tick++;
         _engine.BeginFrameTrees();
         try
@@ -465,14 +420,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 if (actor.Address != 0 && ((CSGameObject*)actor.Address)->IsCharacter())
                     _managed.Add(actor.Address);
 
-            Section(0); PumpRestores();
-            Section(1); CorrectPropBirths();
-            Section(2); UpdateLayerProps();
-            Section(3); PromotePendingTargets();
+            PumpRestores();
+            CorrectPropBirths();
+            UpdateLayerProps();
+            PromotePendingTargets();
             TrackClampedControls();
             RunControlTargets();
             ReleaseActorSpeeds();
-            Section(4);
 
             KeyValuePair<(ActorId, int), float>[] targets;
             lock (_targetLock)
@@ -483,8 +437,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             }
             foreach (var (key, target) in targets)
                 RunSeek(key, target);
-            Section(5); PumpLoops(targets);
-            Section(6);
+            PumpLoops(targets);
 
             List<(nint, int)>? done = null;
             foreach (var (key, work) in _work)
@@ -501,7 +454,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (done != null)
                 foreach (var key in done)
                     _work.Remove(key);
-            Section(7);
         }
         catch (Exception ex)
         {
@@ -557,12 +509,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
     {
         if (_applyRequestsHook == null)
             return;
-#if DEBUG
-        long passStart = System.Diagnostics.Stopwatch.GetTimestamp();
-        double collectMs = 0, arbitrateMs = 0;
-        int refiresBefore = _refires;
-        int gcBefore = GC.CollectionCount(0), gc1Before = GC.CollectionCount(1);
-#endif
         var next = new Dictionary<nint, (ulong, ulong)>();
         var suppressed = new HashSet<nint>();
         var liveFades = new HashSet<nint>();
@@ -586,13 +532,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     continue;
                 if (control == 0)
                     control = _engine.PropControl(root);
-#if DEBUG
-                long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
-#endif
                 var tree = _engine.Collect(root);
-#if DEBUG
-                collectMs += System.Diagnostics.Stopwatch.GetElapsedTime(c0).TotalMilliseconds;
-#endif
                 foreach (var clip in tree.WeaponRequests)
                 {
                     // Started (+0x88 bit 4) and still active (+0x10 bit 4).
@@ -625,13 +565,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             }
             if (control != 0 && (group0 != 0 || group1 != 0))
                 next[control] = (group0, group1);
-#if DEBUG
-            long a0 = System.Diagnostics.Stopwatch.GetTimestamp();
-#endif
             ArbitratePropAnimations(character, summons, owner0, owner1, suppressed);
-#if DEBUG
-            arbitrateMs += System.Diagnostics.Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
-#endif
             // A lower layer's C198 whose prop a higher layer replaced would see its
             // model leave the actor and stop itself for good (self-stop, §7.7): the
             // prop was gone once the higher layer ended. Re-armed each tick.
@@ -660,13 +594,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (!suppressed.Contains(prop))
                 _engine.SetPropTimelineWeight(prop, 1f);
         _suppressedProps = suppressed;
-#if DEBUG
-        double passMs = System.Diagnostics.Stopwatch.GetElapsedTime(passStart).TotalMilliseconds;
-        if (passMs > 1.0)
-            _log.Information($"[TimelineSeek] prop pass {passMs:F1} ms: collect {collectMs:F2}, arbitrate {arbitrateMs:F2} (re-fires {_refires - refiresBefore}), rest {passMs - collectMs - arbitrateMs:F2}; gen0 GCs inside {GC.CollectionCount(0) - gcBefore}, gen1 {GC.CollectionCount(1) - gc1Before}");
-#endif
     }
-    private int _refires;
 
     // C094s whose DrawData prop-slot bit (bit 3: slot 2, the group-0 prop) Poser
     // cleared, with the bits taken; and the ones still wanted cleared this tick.
@@ -778,7 +706,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (_propRefired.TryGetValue(weapon, out var refiredOver) && refiredOver == current)
                 continue;
             _propRefired[weapon] = current;
-            _refires++;
             if (_engine.ReFireProp(character, top.Clip))
                 LogOnce($"refire:{TimelineSeekEngine.PropTimelineId(top.Clip)}",
                     $"[TimelineSeek] prop {TimelineSeekEngine.PropTimelineId(top.Clip)} of slot {top.Slot} re-fired over a lower layer's prop {currentId}");
@@ -1021,10 +948,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
             return;
         var work = new TimelineSeekWork();
         var refused = _engine.Seek((nint)character, root, target, work);
-#if DEBUG
-        if (refused == null && _engine.LastSeekMs > 2.0)
-            _log.Information($"[TimelineSeek] scrub seek of slot {key.Slot}: {_engine.LastSeekMs:F1} ms, {_engine.LastSeekChunks} chunks");
-#endif
         if (refused != null)
         {
             LogOnce($"refused:{key}:{refused}", $"[TimelineSeek] {key.Actor} slot {key.Slot}: {refused}");
@@ -1258,10 +1181,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _remaining.Remove(key);
             var work = new TimelineSeekWork();
             var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: Math.Max((int)lead, 0));
-#if DEBUG
-            if (refused == null && _engine.LastSeekMs > 0.5)
-                _log.Information($"[TimelineSeek] loop wrap of slot {key.Slot}: {_engine.LastSeekMs:F1} ms, {_engine.LastSeekChunks} chunks; phases ms {string.Join(" ", System.Linq.Enumerable.Select(_engine.SeekPhases, v => v.ToString("F2")))}");
-#endif
             if (refused != null)
             {
                 LogOnce($"loop:{key}:{refused}", $"[TimelineSeek] loop of slot {key.Slot}: {refused}");
