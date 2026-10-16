@@ -221,7 +221,12 @@ internal sealed unsafe class TimelineSeekEngine
     /// <paramref name="target"/> frames and fills <paramref name="work"/> with the
     /// follow-up for the next frames. Returns null on success, else why not.
     /// </summary>
-    public string? Seek(nint character, nint root, float target, TimelineSeekWork work)
+    /// <param name="wrapForward">Wrap for forward targets too. A forward step only
+    /// moves the timeline: an effect already alive is not advanced (the VFX engine
+    /// runs on its own clock, frozen under pause), so it falls behind the body. The
+    /// wrap re-spawns it at its exact age instead. The redraw restore starts from 0
+    /// and doesn't need it.</param>
+    public string? Seek(nint character, nint root, float target, TimelineSeekWork work, bool wrapForward = true)
     {
         if (!Ready)
             return "native seek unavailable";
@@ -239,7 +244,8 @@ internal sealed unsafe class TimelineSeekEngine
         var tree = Collect(root);
         work.Begin(character, root, VfxHandles(tree));
 
-        if (target < Clock(root) - 0.001f)
+        float clock = Clock(root);
+        if (target < clock - 0.001f || (wrapForward && clock > 0.001f && Math.Abs(target - clock) > 0.001f))
             Wrap(root, tree);
         float speed = OpenWindow(root);
 

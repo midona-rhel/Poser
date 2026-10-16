@@ -314,7 +314,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                         $"[TimelineSeek] redraw restore: replayed timeline born at speed {*(float*)(timeline + 0x240)}");
                 }
                 var work = new TimelineSeekWork { AllowFire = true };
-                var refused = _engine.Seek(character, timeline, clock, work);
+                var refused = _engine.Seek(character, timeline, clock, work, wrapForward: false);
                 if (refused != null)
                     LogOnce($"restore-seek:{id}:{refused}", $"[TimelineSeek] redraw restore of {id}: {refused}");
                 else
