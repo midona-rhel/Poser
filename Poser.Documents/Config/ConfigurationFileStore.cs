@@ -15,6 +15,7 @@ public sealed class ConfigurationFileStore(string path)
     {
         TypeNameHandling = TypeNameHandling.None,
         Formatting = Formatting.Indented,
+        ContractResolver = PoserJsonContracts.Resolver,
     };
 
     public ConfigurationLoadResult Load()

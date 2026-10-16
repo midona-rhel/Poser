@@ -247,6 +247,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         {
             NullValueHandling = NullValueHandling.Ignore,
             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+            ContractResolver = global::Poser.Documents.Config.PoserJsonContracts.Resolver,
         }));
     }
 
@@ -297,7 +298,10 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     private void RefreshRedaction()
     {
         RememberActors();
-        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(_config.Config));
+        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(_config.Config, new JsonSerializerSettings
+        {
+            ContractResolver = global::Poser.Documents.Config.PoserJsonContracts.Resolver,
+        }));
     }
 
     private void RememberActors()
