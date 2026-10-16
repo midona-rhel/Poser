@@ -825,6 +825,13 @@ internal sealed unsafe class TimelineSeekEngine
         //  3. the C010 gets Event10(clip, 0) (slot 47): its start/duration re-derived,
         //     +0x10 &= 3, +0x11 &= 0xE2, the start credit +0x7C and the pending +0x8C
         //     cleared with the parent track's and actor's pending counts.
+        // The root's own active C010s are re-started by the frame-0 activation below
+        // (pending-2 path), which pre-pays one more start credit (+0x7C 1 → 2; natural
+        // play keeps 1): theirs goes back afterwards.
+        var credits = new List<(nint Clip, uint Credit)>();
+        foreach (var (c010, _) in tree.C010s)
+            if (!tree.NestedC010s.Contains(c010) && (*(byte*)(c010 + 0x10) & 0x10) != 0)
+                credits.Add((c010, *(uint*)(c010 + 0x7C)));
         for (int i = tree.C010s.Count - 1; i >= 0; i--)
         {
             var (c010, child) = tree.C010s[i];
@@ -852,6 +859,8 @@ internal sealed unsafe class TimelineSeekEngine
         *(byte*)(root + 0x272) = (byte)((handled ? 0 : 0x80) | (*(byte*)(root + 0x272) & 0x7F));
         if (handled)
             _n.ProcessAll(root, 0x12, _l.DefaultPayload);
+        foreach (var (clip, credit) in credits)
+            *(uint*)(clip + 0x7C) = credit;
     }
 
     // ── Props (C031) ──────────────────────────────────────────────────
