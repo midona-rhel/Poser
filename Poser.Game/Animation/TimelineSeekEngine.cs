@@ -262,15 +262,18 @@ internal sealed unsafe class TimelineSeekEngine
         if (target < clock - 0.001f
             || (wrapForward && clock > 0.001f && target > clock + 0.001f && HasLiveVfx(tree)))
         {
-            // The wrap re-fires each C031, which replaces its prop timeline; the
-            // replaced one's C009 would stop with a fade and show its old pose for
-            // a frame. Those timelines are going away: fade 0.
+            // The wrap re-fires each C031, which replaces its prop timeline. The game
+            // stops the replaced one later (its group update), so its holder would
+            // still be bound and render the old prop pose on this frame. Stop it here,
+            // with fade 0: tick N's pool update then releases it before the render.
             foreach (var (clip, _) in tree.Summons)
             {
                 nint group = PropGroup(PropWeapon(character, clip));
                 nint prop = CurrentPropTimeline(group, PropTimelineId(clip));
-                if (prop != 0)
-                    *(uint*)(prop + 0x220) = 0;
+                if (prop == 0)
+                    continue;
+                *(uint*)(prop + 0x220) = 0;
+                _n.StopTimeline(prop, 2, 0);
             }
             Wrap(root, tree);
         }

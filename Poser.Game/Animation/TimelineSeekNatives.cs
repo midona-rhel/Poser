@@ -48,6 +48,13 @@ internal sealed unsafe class TimelineSeekNatives
     /// game's GPose speed push covers only the character's own model, never its
     /// weapon objects.</summary>
     public readonly delegate* unmanaged<nint, float, void> SetModelVfxSpeed;
+    /// <summary>FUN_1418FE4A0(tl, reason, 0): stops a timeline and its clips (the
+    /// call a C010 Stop makes on its child).</summary>
+    public readonly delegate* unmanaged<nint, int, nint, void> StopTimeline;
+
+    // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x1418FE4A0).
+    private const string SchedulerTimeline_Stop =
+        "40 53 55 57 48 83 EC 20 40 32 FF 48 89 74 24 40 4C 89 74 24 48 4D 8B F0 8B EA 48 8B D9 83 FA 09";
 
     // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x140433DD0).
     private const string CharacterBase_SetModelVfxSpeed =
@@ -101,6 +108,9 @@ internal sealed unsafe class TimelineSeekNatives
 
         SetModelVfxSpeed = (delegate* unmanaged<nint, float, void>)Scan(
             CharacterBase_SetModelVfxSpeed, "CharacterBase.SetModelVfxSpeed");
+
+        StopTimeline = (delegate* unmanaged<nint, int, nint, void>)Scan(
+            SchedulerTimeline_Stop, "SchedulerTimeline.Stop");
 
         Missing = missing;
         Ready = missing == null;
