@@ -700,7 +700,10 @@ internal static class ServiceRegistration
 #endif
             return new SceneAutoSaveService(
                 sp.GetRequiredService<ConfigurationService>(),
-                sp.GetRequiredService<SceneCaptureService>().BeginCapture,
+                // Snapshots follow the save dialog's Animation choice.
+                (sceneId, description, onCaptured) => sp.GetRequiredService<SceneCaptureService>().BeginCapture(
+                    sceneId, description, onCaptured,
+                    sp.GetRequiredService<global::Poser.Application.Scene.SceneLoadPreferences>().SaveOptions.IncludeAnimation),
                 () => sp.GetRequiredService<SceneWorkflow>().Busy,
                 new SceneAutoSaveStore(sceneAutoSaveRoot,
                     message => log.Error(message)),

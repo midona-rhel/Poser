@@ -57,6 +57,7 @@ public sealed class SceneCaptureService
     private readonly IObjectTable _objects;
     private readonly IPosingService _posing;
     private readonly AnimationSession _animation;
+    private readonly IBonePosingService _bonePosing;
     private readonly GazeService _gaze;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.IntegrationSelectors _integration;
@@ -88,8 +89,10 @@ public sealed class SceneCaptureService
         IWorldRenderingRuntimePort rendering,
         WorldObjects.WorldService worldObjects,
         PlacementAnchorSource anchors,
-        Poser.Application.Settings.ConfigurationService configuration)
+        Poser.Application.Settings.ConfigurationService configuration,
+        IBonePosingService bonePosing)
     {
+        _bonePosing = bonePosing;
         _configuration = configuration;
         _anchors = anchors;
         _worldObjects = worldObjects;
@@ -138,7 +141,7 @@ public sealed class SceneCaptureService
     /// caller has one path.</para>
     /// </summary>
     public string? BeginCapture(
-        Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured)
+        Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured, bool includeAnimation = false)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return "Scene capture must run on the framework thread.";
@@ -156,7 +159,7 @@ public sealed class SceneCaptureService
 
         if (slots.Count == 0)
         {
-            onCaptured(Capture(sceneId, description));
+            onCaptured(Capture(sceneId, description, includeAnimation));
             return null;
         }
 
@@ -168,7 +171,7 @@ public sealed class SceneCaptureService
             slots,
             _ =>
             {
-                outcome = Capture(sceneId, description);
+                outcome = Capture(sceneId, description, includeAnimation);
                 return outcome.Success;
             },
             _ => onCaptured(outcome ?? SceneCaptureOutcome.Fail(
@@ -181,7 +184,7 @@ public sealed class SceneCaptureService
     /// <summary>The capture itself, run only from inside the armed refresh
     /// above so the caches it reads are current. <paramref name="sceneId"/>
     /// keeps a re-saved scene's identity stable across saves.</summary>
-    private SceneCaptureOutcome Capture(Guid sceneId, string? description)
+    private SceneCaptureOutcome Capture(Guid sceneId, string? description, bool includeAnimation)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return SceneCaptureOutcome.Fail(
@@ -210,7 +213,7 @@ public sealed class SceneCaptureService
             scene.ActorAnchor = _anchors.ActorAnchorNow();
 
             var identities = new Dictionary<Guid, Poser.Domain.Identity.ActorId>();
-            var actorKeys = CaptureActors(scene, notes, identities);
+            var actorKeys = CaptureActors(scene, notes, identities, includeAnimation);
             CaptureProps(scene, notes);
             CaptureOverlays(scene);
             CaptureWorldObjects(scene, notes);
@@ -257,7 +260,8 @@ public sealed class SceneCaptureService
     private Dictionary<IActor, Guid> CaptureActors(
         SceneFile scene,
         List<string> notes,
-        Dictionary<Guid, Poser.Domain.Identity.ActorId> identities)
+        Dictionary<Guid, Poser.Domain.Identity.ActorId> identities,
+        bool includeAnimation)
     {
         var keys = new Dictionary<IActor, Guid>();
         var captured = new List<(IActor Actor, SceneActor Entry)>();
@@ -325,6 +329,17 @@ public sealed class SceneCaptureService
                     $"Actor '{actor.Name}' placement", notes),
                 Mcdf = id is { } mcdfActorId ? CaptureMcdf(mcdfActorId, notes) : null,
             };
+            if (includeAnimation && id is { } animated)
+            {
+                entry.Animation = Poser.Application.Scene.SceneAnimationCodec.ToDocument(_animation.Capture(animated));
+                entry.PoseEdits = CaptureEdits(slots);
+                if (companion is not null && _spawns.GetCompanionActor(actor) is { } companionActor
+                    && _bindings.GetActorId(companionActor) is { } companionId)
+                {
+                    entry.CompanionAnimation = Poser.Application.Scene.SceneAnimationCodec.ToDocument(_animation.Capture(companionId));
+                    entry.CompanionPoseEdits = CaptureEdits(_skeletons.GetSkeletons(companionActor));
+                }
+            }
             captured.Add((actor, entry));
             scene.Actors.Add(entry);
         }
@@ -332,6 +347,30 @@ public sealed class SceneCaptureService
         CaptureGaze(captured, keys, notes);
         return keys;
     }
+
+    /// <summary>Only the user's own bone edits, as the offsets the animation's
+    /// frame is moved by (the authored pose stacks), never the frame itself.</summary>
+    private List<SceneBoneEdit> CaptureEdits(IReadOnlyList<ISkeleton> slots) =>
+        Poser.Game.Posing.AuthoredPoseState.Capture(slots, _bonePosing).Bones
+            .Select(bone => new SceneBoneEdit
+            {
+                Slot = bone.Slot,
+                Partial = bone.Partial,
+                Name = bone.Name,
+                PartialRootScale = bone.PartialRootScale,
+                Offsets = bone.Stacks.Select(stack => new SceneBoneOffset
+                {
+                    Propagate = stack.PropagateComponents,
+                    Position = stack.Transform.Position,
+                    Rotation = stack.Transform.Rotation,
+                    Scale = stack.Transform.Scale,
+                    Frame = stack.Frame,
+                    IkPosition = stack.IkTransform?.Position,
+                    IkRotation = stack.IkTransform?.Rotation,
+                    IkScale = stack.IkTransform?.Scale,
+                }).ToList(),
+            })
+            .ToList();
 
     private Guid? CaptureCollection(Poser.Domain.Identity.ActorId actor)
     {

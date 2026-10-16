@@ -40,6 +40,62 @@ public sealed class SceneFileStoreTests
     }
 
     [Fact]
+    public void A_scene_saved_with_its_animation_round_trips_layers_and_bone_edits()
+    {
+        using var fixture = new SceneFixture();
+        var original = ValidScene();
+        var actor = original.Actors[0];
+        actor.Animation = new SceneAnimationState
+        {
+            Base = new SceneAnimationLayer { Timeline = 6310, Playing = true, Speed = 0f, Weight = 1f, HeldSeconds = 4.03f },
+            UpperBody = new SceneAnimationLayer { Timeline = 8008, Playing = true, Loop = true, Speed = 0.5f, Weight = 0.6f },
+            HeldExpression = 605,
+            Stance = Poser.Domain.Animation.AnimationStance.SitGround,
+            Advanced = true,
+        };
+        actor.PoseEdits = new()
+        {
+            new SceneBoneEdit
+            {
+                Slot = PoseSlot.Character, Partial = 0, Name = "j_kubi",
+                Offsets = { new SceneBoneOffset
+                {
+                    Propagate = Poser.Domain.Posing.TransformComponents.Rotation,
+                    Rotation = Quaternion.CreateFromYawPitchRoll(0.3f, 0f, 0f),
+                    Frame = Poser.Domain.Posing.TransformFrame.BoneLocal,
+                } },
+            },
+        };
+
+        Assert.True(SceneFileStore.Default.Write(original, fixture.Path).Succeeded);
+        var read = SceneFileStore.Default.Read(fixture.Path);
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var back = read.Scene!.Actors[0];
+        Assert.Equal(6310, back.Animation!.Base!.Timeline);
+        Assert.Equal(4.03f, back.Animation.Base.HeldSeconds);
+        Assert.Equal(0.5f, back.Animation.UpperBody!.Speed);
+        Assert.True(back.Animation.UpperBody.Loop);
+        Assert.Equal((ushort)605, back.Animation.HeldExpression);
+        Assert.Equal(Poser.Domain.Animation.AnimationStance.SitGround, back.Animation.Stance);
+        var edit = Assert.Single(back.PoseEdits!);
+        Assert.Equal("j_kubi", edit.Name);
+        Assert.Equal(original.Actors[0].PoseEdits![0].Offsets[0].Rotation, edit.Offsets[0].Rotation);
+        Assert.Equal(SceneFile.CurrentVersion, read.Scene.FileVersion);
+    }
+
+    [Fact]
+    public void A_saved_animation_out_of_range_is_refused_before_anything_changes()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Animation = new SceneAnimationState
+        {
+            UpperBody = new SceneAnimationLayer { Timeline = 8008, Weight = 2f },
+        };
+        Assert.False(SceneFileValidation.Validate(scene).Succeeded);
+    }
+
+    [Fact]
     public void Optional_members_are_omitted_and_unknown_members_are_ignored()
     {
         using var fixture = new SceneFixture();

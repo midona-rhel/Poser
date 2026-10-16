@@ -104,8 +104,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     public string? ArmSceneCapture(
         Guid sceneId,
         string? description,
-        Action<SceneCaptureOutcome> onCaptured) =>
-        _capture.BeginCapture(sceneId, description, onCaptured);
+        Action<SceneCaptureOutcome> onCaptured,
+        bool includeAnimation = false) =>
+        _capture.BeginCapture(sceneId, description, onCaptured, includeAnimation);
 
     public IReadOnlyList<string> StampMcdfHashes(SceneFile scene)
     {

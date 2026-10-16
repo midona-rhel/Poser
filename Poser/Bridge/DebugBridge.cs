@@ -737,6 +737,8 @@ public sealed partial class DebugBridge : IDisposable
                         saveOptions = SceneSaveOptions.Only(
                             SceneCategories.Actors, new[] { targetId.LogicalId });
                     }
+                    if (query.GetValueOrDefault("animation") == "1")
+                        saveOptions = saveOptions with { IncludeAnimation = true };
                     var saved = _scenes.BeginSave(scenePath, options: saveOptions);
                     return Json(new { ok = saved.Success, saved.Detail, progress = _scenes.Progress });
                 }
