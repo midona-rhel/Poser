@@ -261,7 +261,19 @@ internal sealed unsafe class TimelineSeekEngine
         // spawns the effects it crosses at their right age by itself.
         if (target < clock - 0.001f
             || (wrapForward && clock > 0.001f && target > clock + 0.001f && HasLiveVfx(tree)))
+        {
+            // The wrap re-fires each C031, which replaces its prop timeline; the
+            // replaced one's C009 would stop with a fade and show its old pose for
+            // a frame. Those timelines are going away: fade 0.
+            foreach (var (clip, _) in tree.Summons)
+            {
+                nint group = PropGroup(PropWeapon(character, clip));
+                nint prop = CurrentPropTimeline(group, PropTimelineId(clip));
+                if (prop != 0)
+                    *(uint*)(prop + 0x220) = 0;
+            }
             Wrap(root, tree);
+        }
         float speed = OpenWindow(root);
 
         nint control = _n.GetActorControl(root);
@@ -443,7 +455,13 @@ internal sealed unsafe class TimelineSeekEngine
         {
             nint clip = *(nint*)(instance + 0x60);
             if (clip == 0 || synced.Contains(clip) || _l.Classify(clip) != SeekClipKind.HavokAnimation
-                || *(nint*)(clip + 0x98) != instance || !CanSync(clip))
+                || *(nint*)(clip + 0x98) != instance)
+                continue;
+            // A prop clip that just started (the C031 re-fire) has no length yet;
+            // resolve it so it is synced now, not a frame later at frame 0.
+            if (*(nint*)(instance + 0x78) != 0 && (*(byte*)(clip + 0xCC) & 0x40) == 0)
+                _n.ResolveHavokLength(clip);
+            if (!CanSyncNow(clip))
                 continue;
             float speed = OpenWindow(prop);
             SyncNoEpsilon(clip);
