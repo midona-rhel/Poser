@@ -307,6 +307,8 @@ internal sealed unsafe class TimelineSeekEngine
             return "timeline still loading";
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
         LastSeekChunks = 0;
+        _phaseAt = started;
+        Array.Clear(SeekPhases);
         if (IsIntegerFrame(root))
             return "integer-frame timeline";
         if ((*(byte*)(root + 0x7C) & 0x40) != 0)
@@ -325,6 +327,7 @@ internal sealed unsafe class TimelineSeekEngine
         target = Math.Clamp(target, begin, Math.Max(begin, end - 1f));
         var tree = Collect(root);
         work.Begin(character, root, VfxHandles(tree));
+        Phase(0);
 
         float clock = Clock(root);
         // Forward only needs the wrap while an effect is alive: an in-place step
@@ -354,12 +357,14 @@ internal sealed unsafe class TimelineSeekEngine
                 *(uint*)(prop + 0x220) = 0;
                 _n.StopTimeline(prop, 2, 0);
             }
+            Phase(1);
             if (blendFrames > 0)
                 BlendWrap(root, tree, blendFrames);
             else
                 Wrap(root, tree);
         }
         float speed = OpenWindow(root);
+        Phase(4);
 
         nint control = _n.GetActorControl(root);
         if (blendFrames == 0 && control != 0 && _l.IsActorControl(control))
@@ -397,8 +402,11 @@ internal sealed unsafe class TimelineSeekEngine
 
         // Re-collect: the step may have created clips' instances (C009s that just
         // started, C031 prop timelines, C012 VFX objects).
+        Phase(5);
         tree = Collect(root);
+        Phase(6);
         SettleHavok(tree, target, blendFrames == 0 && control != 0 && _l.IsActorControl(control) ? control : 0);
+        Phase(7);
         // C009s started inside the step have no length (+0xB0) until their first
         // post-step next frame; resolve it now so the new control is synced on
         // the seek frame itself.
@@ -410,6 +418,7 @@ internal sealed unsafe class TimelineSeekEngine
         }
         SyncHavok(root, tree.Havok.Keys, work.PendingHavok, immediate: true);
         CloseWindow(root, speed);
+        Phase(8);
 
         work.OwnerSpeed = speed;
         foreach (var (clip, start) in tree.Summons)
@@ -418,8 +427,21 @@ internal sealed unsafe class TimelineSeekEngine
         // The window fired 0x1E(1) into the C012s and the restore to 0 was dropped.
         if (speed == 0f)
             work.FreezeVfx(this);
+        Phase(9);
         LastSeekMs = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         return null;
+    }
+
+    // Seek phase costs in ms (diagnostics): 0 collect+vfx handles, 1 prop stops,
+    // 2 stop clips (event 9), 3 rewind, 4 speed window, 5 step, 6 re-collect,
+    // 7 settle, 8 resolve+sync, 9 props+vfx follow-up.
+    public readonly double[] SeekPhases = new double[10];
+    private long _phaseAt;
+    private void Phase(int index)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        SeekPhases[index] += System.Diagnostics.Stopwatch.GetElapsedTime(_phaseAt, now).TotalMilliseconds;
+        _phaseAt = now;
     }
 
     /// <summary>The last successful seek's cost and its UpdateBanner chunks (diagnostics).</summary>
@@ -610,7 +632,9 @@ internal sealed unsafe class TimelineSeekEngine
         *(uint*)(root + 0x220) = 0;
         try { StopAll(root); }
         finally { *(uint*)(root + 0x220) = fade; }
+        Phase(2);
         Rewind(root, tree);
+        Phase(3);
     }
 
     /// <summary>
@@ -666,7 +690,9 @@ internal sealed unsafe class TimelineSeekEngine
                 _l.Classify(clip) == SeekClipKind.HavokAnimation ? OldHolderFadeFrames : 0);
             foreach (var holder in holders)
                 *(uint*)(holder + 0x40) = ~*(uint*)(holder + 0x40);
+            Phase(2);
             Rewind(root, tree);
+            Phase(3);
         }
         finally
         {

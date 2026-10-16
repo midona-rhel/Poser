@@ -1229,8 +1229,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
             var work = new TimelineSeekWork();
             var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: Math.Max((int)lead, 0));
 #if DEBUG
-            if (refused == null && _engine.LastSeekMs > 2.0)
-                _log.Information($"[TimelineSeek] loop wrap of slot {key.Slot}: {_engine.LastSeekMs:F1} ms, {_engine.LastSeekChunks} chunks");
+            if (refused == null && _engine.LastSeekMs > 0.5)
+                _log.Information($"[TimelineSeek] loop wrap of slot {key.Slot}: {_engine.LastSeekMs:F1} ms, {_engine.LastSeekChunks} chunks; phases ms {string.Join(" ", System.Linq.Enumerable.Select(_engine.SeekPhases, v => v.ToString("F2")))}");
 #endif
             if (refused != null)
             {
