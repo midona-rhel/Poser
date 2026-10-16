@@ -41,7 +41,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // the UI, read by the tick (under _targetLock).
     private readonly Dictionary<(ActorId Actor, int Slot), ushort> _loops = new();
     // Last remaining-frames reading per armed loop (its decrease is the loop's margin).
-    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Value)> _remaining = new();
+    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Value, float Clock)> _remaining = new();
 
     private delegate void DisableDrawFn(nint character);
     private readonly Hook<DisableDrawFn>? _disableDrawHook;
@@ -527,10 +527,15 @@ public sealed unsafe class TimelineSeekService : IDisposable
             float step = 0f;
             if (!wrap && remaining >= 0f)
             {
+                // Only a plain tick counts: a scrub or wrap moves the clock by far
+                // more (or backward), and its jump in remaining is no rate.
+                float clock = TimelineSeekEngine.Clock(root);
+                float expected = frames * speed;
                 step = _remaining.TryGetValue(key, out var last) && last.Root == root
+                    && Math.Abs(clock - last.Clock - expected) <= Math.Max(1f, expected)
                     ? last.Value - remaining
                     : 0f;
-                _remaining[key] = (root, remaining);
+                _remaining[key] = (root, remaining, clock);
                 // No measured step yet (first tick, or not counting down): wrap only
                 // once the notify point itself is reached.
                 wrap = remaining - LoopLeadSteps * Math.Max(step, 0f) <= lead;
