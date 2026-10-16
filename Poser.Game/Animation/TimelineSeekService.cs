@@ -61,6 +61,19 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private volatile Dictionary<nint, (float Speed, int Tick)> _layerPropSpeeds = new();
     private int _tick;
 
+    // FUN_141900F50(actorControl): the single consumer of the actor control's
+    // weapon-request cells (+0x6D0 state, +0x718 count, model per group at
+    // +0xF8), run after the timeline step for every control with +0x6CC set. Pending
+    // a patchcheck entry; unique on the analysed build (sig.py, 1 hit).
+    private const string ActorControl_ApplyWeaponRequests =
+        "48 89 4C 24 08 57 41 55 48 81 EC 88 00 00 00 48 8B F9 E8 ?? ?? ?? ?? 4C 8B E8 48 85 C0 75 ?? 8B 97 CC 06 00 00";
+    private delegate void ApplyWeaponRequestsFn(nint actorControl);
+    private readonly Hook<ApplyWeaponRequestsFn>? _applyRequestsHook;
+    // Per Poser actor control: the prop model the highest layer requests, per
+    // request group (0 = none). Rebuilt each tick and swapped whole.
+    private volatile Dictionary<nint, (ulong Group0, ulong Group1)> _layerProps = new();
+    private bool _applierThreadLogged;
+
     /// <summary>What a redraw is about to throw away, captured at the entry of
     /// Character::DisableDraw (it tears down the props, then the timeline
     /// container: every slot timeline stops).</summary>
@@ -120,6 +133,20 @@ public sealed unsafe class TimelineSeekService : IDisposable
             catch (Exception ex)
             {
                 log.Warning($"Animation: DisableDraw hook failed ({ex.Message}); a redraw restores the actor stopped.");
+            }
+            try
+            {
+                if (scanner.TryScanText(ActorControl_ApplyWeaponRequests, out var applier) && applier != 0)
+                {
+                    _applyRequestsHook = hooking.HookFromAddress<ApplyWeaponRequestsFn>(applier, ApplyWeaponRequestsDetour);
+                    _applyRequestsHook.Enable();
+                }
+                else
+                    log.Warning("Animation: the prop request applier was not found; the most recent layer's prop wins.");
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Animation: prop request applier hook failed ({ex.Message}); the most recent layer's prop wins.");
             }
             try
             {
@@ -217,6 +244,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
 
             PumpRestores();
             CorrectPropBirths();
+            UpdateLayerProps();
 
             KeyValuePair<(ActorId, int), float>[] targets;
             lock (_targetLock)
@@ -282,6 +310,92 @@ public sealed unsafe class TimelineSeekService : IDisposable
             // A lookup failure only loses the layer factor for this frame.
         }
         _weaponSpeedHook!.Original(manager, weapon, speed);
+    }
+
+    // ── Prop priority ─────────────────────────────────────────────────
+    // One prop model per request group: every C198 Start writes its model into
+    // the cell unconditionally, so the most recent request won. The highest
+    // layer's prop wins instead (Upper Body over Full body).
+
+    /// <summary>The model the highest layer with a started, active C198 asks for,
+    /// per actor control and group.</summary>
+    private void UpdateLayerProps()
+    {
+        if (_applyRequestsHook == null)
+            return;
+        var next = new Dictionary<nint, (ulong, ulong)>();
+        foreach (nint character in _managed)
+        {
+            var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
+            nint control = 0;
+            ulong group0 = 0, group1 = 0;
+            for (int slot = 0; slot < 14; slot++)
+            {
+                nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
+                if (root == 0)
+                    continue;
+                if (control == 0)
+                    control = _engine.PropControl(root);
+                foreach (var clip in _engine.Collect(root).WeaponRequests)
+                {
+                    // Started (+0x88 bit 4) and still active (+0x10 bit 4).
+                    if ((*(byte*)(clip + 0x88) & 0x10) == 0 || (*(byte*)(clip + 0x10) & 0x10) == 0)
+                        continue;
+                    nint data = *(nint*)(clip + 0x48);
+                    int group = *(ushort*)(data + 0x14);
+                    ulong model = *(ulong*)(data + 0x18);
+                    // Slots ascend, so a later (higher) layer overrides.
+                    if (group == 0) group0 = model;
+                    else if (group == 1) group1 = model;
+                }
+            }
+            if (control != 0 && (group0 != 0 || group1 != 0))
+                next[control] = (group0, group1);
+        }
+        _layerProps = next;
+    }
+
+    /// <summary>
+    /// Before the applier reads the cells: a lower layer's request put its model
+    /// in; the highest layer's goes back. Only the model is written: the type-8
+    /// handler keeps the loaded model alive while the cell names it, and a cell
+    /// naming another model lets the loaded one lapse and loads the new one (so
+    /// when the higher layer ends, the lower layer's prop comes in by itself).
+    /// Counts and states are never touched, so each Stop stays balanced. Never
+    /// throws into the game.
+    /// </summary>
+    private void ApplyWeaponRequestsDetour(nint control)
+    {
+        try
+        {
+            if (!_applierThreadLogged)
+            {
+                _applierThreadLogged = true;
+                _log.Information($"[TimelineSeek] prop request applier runs on the framework thread: {_framework.IsInFrameworkUpdateThread}");
+            }
+            var map = _layerProps;
+            if (control != 0 && map.TryGetValue(control, out var wanted))
+            {
+                HoldProp(control, 0, wanted.Group0);
+                HoldProp(control, 1, wanted.Group1);
+            }
+        }
+        catch
+        {
+            // Losing the priority for one apply is all a failure costs.
+        }
+        _applyRequestsHook!.Original(control);
+    }
+
+    private void HoldProp(nint control, int group, ulong wanted)
+    {
+        if (wanted == 0)
+            return;
+        if (*(uint*)(control + 0x718 + (8 + group * 9) * 4) == 0)
+            return; // nobody requests this group any more
+        ulong* model = (ulong*)(control + 0xF8 + group * 8);
+        if (*model != wanted)
+            *model = wanted;
     }
 
     private void DisableDrawDetour(nint character)
@@ -744,12 +858,14 @@ public sealed unsafe class TimelineSeekService : IDisposable
         // Unload is not guaranteed to run on the framework thread: let an
         // in-flight DisableDraw leave the detour before freeing it.
         _weaponSpeedHook?.Disable();
+        _applyRequestsHook?.Disable();
         if (_disableDrawHook != null)
             _disableDrawHook.Disable();
-        if (_disableDrawHook != null || _weaponSpeedHook != null)
+        if (_disableDrawHook != null || _weaponSpeedHook != null || _applyRequestsHook != null)
             System.Threading.Thread.Sleep(100);
         _disableDrawHook?.Dispose();
         _weaponSpeedHook?.Dispose();
+        _applyRequestsHook?.Dispose();
         lock (_targetLock)
         {
             _targets.Clear();

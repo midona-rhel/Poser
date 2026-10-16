@@ -20,7 +20,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
     // 216 rows × 0x30 — +0x00 u32 id, +0x10 char* tag ("C009").
     private const int TypeRows = 0xD8, TypeRowSize = 0x30;
 
-    private readonly int _c009 = -1, _c010 = -1, _c012 = -1, _c049 = -1, _c031 = -1, _c173 = -1;
+    private readonly int _c009 = -1, _c010 = -1, _c012 = -1, _c049 = -1, _c031 = -1, _c173 = -1, _c198 = -1;
     private readonly nint _childTimelineVtbl, _actorControlVtbl, _timelineManagerPtr, _jobSystem, _scheduleManagementPtr;
     private readonly delegate* unmanaged<ulong, byte, void> _release;
 
@@ -71,6 +71,8 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
             _c031 = Id("C031");
             _c049 = Id("C049");
             _c173 = Id("C173");
+            // Optional: only the prop-priority rule needs it.
+            _c198 = ids.TryGetValue("C198", out var c198) ? c198 : -1;
         }
 
         // The seek's hard-coded field offsets, each against the game's own use.
@@ -120,6 +122,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
         if (type == _c012 || type == _c049) return SeekClipKind.Vfx;
         if (type == _c173) return SeekClipKind.AsyncVfx;
         if (type == _c031) return SeekClipKind.SummonAnimation;
+        if (type == _c198) return SeekClipKind.WeaponRequest;
         return SeekClipKind.Other;
     }
 

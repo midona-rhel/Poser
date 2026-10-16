@@ -16,6 +16,9 @@ internal enum SeekClipKind
     /// <summary>C031 "Summon Animation": plays an ActionTimeline on a weapon
     /// object's own bucket-3 timeline.</summary>
     SummonAnimation,
+    /// <summary>C198: requests a prop model on the actor control (type 8 cell of
+    /// its group, model id data+0x18, group data+0x14).</summary>
+    WeaponRequest,
 }
 
 /// <summary>

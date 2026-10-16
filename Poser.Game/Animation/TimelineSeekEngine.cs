@@ -70,6 +70,7 @@ internal sealed unsafe class TimelineSeekEngine
         public readonly List<nint> Vfx = new();                         // C012/C049
         public readonly List<nint> AsyncVfx = new();                    // C173
         public readonly List<(nint Clip, float Start)> Summons = new(); // C031 + absolute start
+        public readonly List<nint> WeaponRequests = new();              // C198
         /// <summary>Where the last C009 animation runs out on the root clock (max of
         /// absolute start + resolved length +0xB0), or 0 without C009s.</summary>
         public float PoseEnd;
@@ -117,6 +118,9 @@ internal sealed unsafe class TimelineSeekEngine
                         break;
                     case SeekClipKind.SummonAnimation:
                         tree.Summons.Add((clip, baseStart + *(float*)(clip + 0x50)));
+                        break;
+                    case SeekClipKind.WeaponRequest:
+                        tree.WeaponRequests.Add(clip);
                         break;
                 }
             }
