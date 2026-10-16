@@ -569,20 +569,35 @@ internal sealed unsafe class TimelineSeekEngine
 
     /// <summary>Sets every holder of the slot timeline's tree to <paramref name="weight"/>.</summary>
     public void SetSlotWeight(
-        FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer, int slot, float weight)
+        FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer, nint character, int slot, float weight)
     {
         if (!Ready)
             return;
         nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
         if (root == 0)
             return;
-        foreach (var clip in Collect(root).Havok.Keys)
+        var tree = Collect(root);
+        foreach (var clip in tree.Havok.Keys)
+            SetHolderWeight(*(nint*)(clip + 0x98), weight);
+        // Props the layer summons (C031) run on their own bucket-3 timelines; their
+        // C009 holders hang off the prop's actor control instance list.
+        foreach (var (clip, _) in tree.Summons)
         {
-            nint instance = *(nint*)(clip + 0x98);
-            nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
-            if (holder != 0 && *(float*)(holder + 0x5C) != weight)
-                *(float*)(holder + 0x5C) = weight;
+            nint weapon = PropWeapon(character, clip);
+            nint prop = CurrentPropTimeline(PropGroup(weapon), PropTimelineId(clip));
+            nint control = prop != 0 ? PropControl(prop) : 0;
+            int guard = 0;
+            for (nint instance = control != 0 ? *(nint*)(control + 0x30) : 0; instance != 0 && guard < 16;
+                 instance = *(nint*)(instance + 0x10), guard++)
+                SetHolderWeight(instance, weight);
         }
+    }
+
+    private static void SetHolderWeight(nint instance, float weight)
+    {
+        nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
+        if (holder != 0 && *(float*)(holder + 0x5C) != weight)
+            *(float*)(holder + 0x5C) = weight;
     }
 
     // ── Prop birth correction ─────────────────────────────────────────

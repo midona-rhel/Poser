@@ -445,7 +445,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         try
         {
             foreach (var (slot, weight) in weights)
-                _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, slot, weight);
+                _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, slot, weight);
         }
         catch (Exception ex) { LogOnce("weight", $"[TimelineSeek] layer weight faulted: {ex.Message}"); }
     }
