@@ -382,6 +382,11 @@ internal sealed unsafe class TimelineSeekEngine
             float step = Math.Min(stop - now, Length(root));
             if (step <= 0.001f)
                 break;
+            // UpdateBanner clears +0x6B8 at its end: every chunk needs it again, or
+            // the clips started in later chunks blend in (and a pause freezes the
+            // blend half-way).
+            if (blendFrames == 0 && control != 0 && _l.IsActorControl(control))
+                *(byte*)(control + 0x6B8) = 1;
             _n.UpdateBanner(root, step, 1);
             if ((*(byte*)(root + 0x272) & 0x80) != 0)
                 break;
