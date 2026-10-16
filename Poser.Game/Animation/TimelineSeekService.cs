@@ -428,6 +428,19 @@ public sealed unsafe class TimelineSeekService : IDisposable
 
     // ── Speed edges ───────────────────────────────────────────────────
 
+    /// <summary>Before a new timeline replaces a PAUSED slot (speed 0): the old
+    /// one stops with fade 0 and the new one starts without a blend-in.</summary>
+    internal void PrepareInstantSwap(Character* character, int slot)
+    {
+        if (!Available || character == null)
+            return;
+        nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
+        if (root == 0 || *(float*)(root + 0x240) != 0f)
+            return;
+        *(uint*)(root + 0x220) = 0;
+        _engine.SetNoBlendStart(root);
+    }
+
     /// <summary>Same-tick speed edge for one slot timeline (see
     /// TimelineSeekEngine.SetSlotTimelineSpeed).</summary>
     internal void ApplySlotSpeed(

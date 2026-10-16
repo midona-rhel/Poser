@@ -29,8 +29,10 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         IPluginLog log,
         AnimationNativeState native,
         SceneSession scene,
-        AnimationSpeedRuntimePort? speeds = null)
+        AnimationSpeedRuntimePort? speeds = null,
+        TimelineSeekService? seek = null)
     {
+        _seek = seek;
         _speeds = speeds;
         _framework = framework;
         _log = log;
@@ -112,6 +114,17 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
 
     // ── Base, blend, loop ─────────────────────────────────────────────
 
+    private readonly TimelineSeekService? _seek;
+
+    /// <summary>A swap into a paused slot: its cross-fade would never advance at
+    /// speed 0 and keep showing the old animation (old control at weight 1, new
+    /// at 0). The new animation appears on its frame 0 at full weight instead.</summary>
+    private void PrepareSwap(Character* character, ushort timeline)
+    {
+        if (_seek != null && _native.TimelineSlot(timeline) is { } slot)
+            _seek.PrepareInstantSwap(character, (int)slot);
+    }
+
     /// <summary>Plays a timeline through the native route.</summary>
     public Outcome Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
@@ -124,6 +137,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (existing == null)
             captured = CaptureBase(character);
 
+        PrepareSwap(character, timeline);
         return _native.PlayTimeline(character, timeline);
     }
 
@@ -138,6 +152,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (existing == null)
             captured = CaptureBase(character);
 
+        PrepareSwap(character, timeline);
         var played = _native.PlayTimeline(character, timeline);
         if (played.Success)
             _forcedLoops.Remove(actor);
