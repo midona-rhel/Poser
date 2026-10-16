@@ -248,6 +248,7 @@ internal static class NativeOffsets
     public static readonly OffsetPattern VfxObject_StartFrames = new("VfxObject.StartFrames", "F3 0F 11 91 ?? ?? ?? ?? 48 81 C1 90 00 00 00", 4, 4, 0x254);
     public static readonly OffsetPattern VfxClip_Instance = new("VfxClip.Instance", "48 8B 99 ?? ?? ?? ?? 41 0F B6 E8", 3, 4, 0x98);
     public static readonly OffsetPattern ApricotJobSystem_SlotTable = new("ApricotJobSystem.SlotTable", "48 8B B8 ?? ?? ?? ?? 49 81 C0 00 20 00 00", 3, 4, 0x1498);
+    public static readonly OffsetPattern ScheduleManagement_FrameDelta = new("ScheduleManagement.FrameDelta", "F3 0F 10 78 ?? 0F 2F F7", 4, 1, 0x50);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)
@@ -280,6 +281,7 @@ internal static class NativeData
     public static readonly DataPattern VfxClip_Vtbl = new("VfxClip.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 89 ?? 48 8B F1 75", 3, 7, 0x14231D730UL);
     public static readonly DataPattern ParamClip_Vtbl = new("ParamClip.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 8B F9 48 89 ?? 48 8B 89 A0 00 00 00", 3, 7, 0x14231BF90UL);
     public static readonly DataPattern AsyncVfxClip_Vtbl = new("AsyncVfxClip.Vtbl", "48 8D 05 ?? ?? ?? ?? 45 33 C0 C7 41 6C 00 00 80 BF", 3, 7, 0x142324E50UL);
+    public static readonly DataPattern ScheduleManagement_InstancePtr = new("ScheduleManagement.InstancePtr", "48 8B 05 ?? ?? ?? ?? 0F 29 7C ?? ?? F3 0F 10 78 50", 3, 7, 0x142A95C70UL);
 
     /// <summary>Address the instruction refers to: match + InstructionLength + rel32. A value different from
     /// <see cref="DataPattern.Analysed"/> is normal after a patch.</summary>

@@ -48,9 +48,20 @@ public sealed unsafe class TimelineSeekService : IDisposable
     {
         public readonly (int Slot, ushort Id, float Clock)[] Slots;
         public readonly bool[] Done;
+        // The address alone can be reused by a new object within the restore
+        // window; the object index and entity id must match too.
+        public readonly ushort ObjectIndex;
+        public readonly uint EntityId;
         public bool Replayed;
+        public bool SpeedLogged;
         public int Frame;
-        public Restore((int, ushort, float)[] slots) { Slots = slots; Done = new bool[slots.Length]; }
+        public Restore((int, ushort, float)[] slots, ushort objectIndex, uint entityId)
+        {
+            Slots = slots;
+            Done = new bool[slots.Length];
+            ObjectIndex = objectIndex;
+            EntityId = entityId;
+        }
     }
 
     private const int RestoreFrames = 600;
@@ -199,7 +210,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
             return;
         var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
         var slots = new List<(int, ushort, float)>(2);
-        foreach (int slot in new[] { 0, 1 })
+        // Base, Upper Body and a held facial expression: DisableDraw stops all.
+        foreach (int slot in new[] { 0, 1, 2 })
         {
             nint timeline = AnimationNativeState.SlotTimeline(sequencer, slot);
             ushort id = *(ushort*)((byte*)sequencer + 0xE0 + 2 * slot);
@@ -208,8 +220,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             slots.Add((slot, id, TimelineSeekEngine.Clock(timeline)));
         }
+        var go = (CSGameObject*)character;
         if (slots.Count > 0)
-            _restores[character] = new Restore(slots.ToArray());
+            _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId);
     }
 
     /// <summary>
@@ -233,7 +246,15 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             }
             var go = (CSGameObject*)character;
-            if (go->RenderFlags != 0 || go->DrawObject == null)
+            if (go->ObjectIndex != restore.ObjectIndex || go->EntityId != restore.EntityId)
+            {
+                (finished ??= new()).Add(character); // a different object now lives here
+                continue;
+            }
+            // The replay's C009s start only once the new CharacterBase has its
+            // skeleton (cb+0xA0) and partials.
+            if (go->RenderFlags != 0 || go->DrawObject == null
+                || ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)go->DrawObject)->Skeleton == null)
                 continue;
             var chara = (Character*)character;
             var sequencer = &chara->Timeline.TimelineSequencer;
@@ -264,6 +285,12 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 {
                     all = false;
                     continue;
+                }
+                if (!restore.SpeedLogged)
+                {
+                    restore.SpeedLogged = true;
+                    LogOnce($"restore-speed:{*(float*)(timeline + 0x240)}",
+                        $"[TimelineSeek] redraw restore: replayed timeline born at speed {*(float*)(timeline + 0x240)}");
                 }
                 var work = new TimelineSeekWork { AllowFire = true };
                 var refused = _engine.Seek(character, timeline, clock, work);
@@ -371,8 +398,14 @@ public sealed unsafe class TimelineSeekService : IDisposable
     public void Dispose()
     {
         _framework.Update -= OnUpdate;
-        _disableDrawHook?.Disable();
-        _disableDrawHook?.Dispose();
+        // Unload is not guaranteed to run on the framework thread: let an
+        // in-flight DisableDraw leave the detour before freeing it.
+        if (_disableDrawHook != null)
+        {
+            _disableDrawHook.Disable();
+            System.Threading.Thread.Sleep(100);
+            _disableDrawHook.Dispose();
+        }
         lock (_targetLock)
             _targets.Clear();
         _work.Clear();

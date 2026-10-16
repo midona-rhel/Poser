@@ -36,6 +36,9 @@ internal interface ITimelineSeekLayout
     nint TimelineManager { get; }
     /// <summary>The Apricot job-system slot table base (entries at +0x2000).</summary>
     nint VfxSlotTable { get; }
+    /// <summary>ScheduleManagement instance (frame delta in frames at +0x50, the
+    /// ε the clip sync subtracts), or 0.</summary>
+    nint ScheduleManagement { get; }
     /// <summary>Apricot instance release(handle, clearFlag).</summary>
     unsafe delegate* unmanaged<ulong, byte, void> ReleaseVfx { get; }
 }

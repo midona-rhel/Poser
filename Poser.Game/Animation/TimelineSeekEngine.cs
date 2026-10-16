@@ -148,6 +148,27 @@ internal sealed unsafe class TimelineSeekEngine
     }
 
     // ── Clip sync ─────────────────────────────────────────────────────
+    // FUN_141C30E40 writes frames − ε with ε = ScheduleManagement+0x50, this
+    // frame's dt in frames. Natural playback syncs INSIDE the scheduler step, and
+    // the same frame's Havok step adds dt back; an explicit sync in
+    // Framework.Update (before the tick) would leave the control ε behind for
+    // good. ε is zeroed around each explicit sync only, never around
+    // UpdateBanner (Advance's hold clamp reads it).
+
+    private void SyncNoEpsilon(nint clip)
+    {
+        nint schedule = _l.ScheduleManagement;
+        if (schedule == 0)
+        {
+            _n.SyncLocalTime(clip);
+            return;
+        }
+        float epsilon = *(float*)(schedule + 0x50);
+        *(float*)(schedule + 0x50) = 0f;
+        try { _n.SyncLocalTime(clip); }
+        finally { *(float*)(schedule + 0x50) = epsilon; }
+    }
+
 
     /// <summary>The game's own guard before a C009 sync: an instance, not
     /// finished (+0x34 bit 5), and past its first state.</summary>
@@ -171,7 +192,7 @@ internal sealed unsafe class TimelineSeekEngine
                 continue;
             }
             pending?.Remove(clip);
-            _n.SyncLocalTime(clip);
+            SyncNoEpsilon(clip);
             synced++;
         }
         CloseWindow(root, speed);
@@ -361,7 +382,7 @@ internal sealed unsafe class TimelineSeekEngine
                 || *(nint*)(clip + 0x98) != instance || !CanSync(clip))
                 continue;
             float speed = OpenWindow(prop);
-            _n.SyncLocalTime(clip);
+            SyncNoEpsilon(clip);
             CloseWindow(prop, speed);
             synced.Add(clip);
             count++;

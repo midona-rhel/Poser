@@ -21,7 +21,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
     private const int TypeRows = 0xD8, TypeRowSize = 0x30;
 
     private readonly int _c009 = -1, _c010 = -1, _c012 = -1, _c049 = -1, _c031 = -1;
-    private readonly nint _childTimelineVtbl, _actorControlVtbl, _timelineManagerPtr, _jobSystem;
+    private readonly nint _childTimelineVtbl, _actorControlVtbl, _timelineManagerPtr, _jobSystem, _scheduleManagementPtr;
     private readonly delegate* unmanaged<ulong, byte, void> _release;
 
     public TimelineSeekLayout(ISigScanner scanner, IPluginLog log)
@@ -41,6 +41,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
         _jobSystem = Data(NativeData.ApricotJobSystem_Instance);
         _actorControlVtbl = Data(NativeData.SchedulerActorControl_Vtbl);
         _childTimelineVtbl = Data(NativeData.ChildTimeline_Vtbl);
+        _scheduleManagementPtr = Data(NativeData.ScheduleManagement_InstancePtr);
         if (scanner.TryScanText(NativeSignatures.ApricotJobSystem_ReleaseInstance, out var release) && release != 0)
             _release = (delegate* unmanaged<ulong, byte, void>)release;
         else
@@ -93,6 +94,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
         Offset(NativeOffsets.VfxClip_Instance, 0x98);
         Offset(NativeOffsets.HavokAnimationClip_AnimObject, 0x98);
         Offset(NativeOffsets.ApricotJobSystem_SlotTable, 0x1498);
+        Offset(NativeOffsets.ScheduleManagement_FrameDelta, 0x50);
         // +0x6B8 (no-blend start) has no unique reader; it's the u32 at byte 2 of
         // ActorControl.SetNoBlendStart (88 91 B8 06 00 00).
         if (!scanner.TryScanText(NativeSignatures.ActorControl_SetNoBlendStart, out var noBlend) || noBlend == 0)
@@ -126,5 +128,6 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
     public nint DefaultPayload { get; }
     public nint TimelineManager => _timelineManagerPtr != 0 ? *(nint*)_timelineManagerPtr : 0;
     public nint VfxSlotTable => _jobSystem;
+    public nint ScheduleManagement => _scheduleManagementPtr != 0 ? *(nint*)_scheduleManagementPtr : 0;
     public delegate* unmanaged<ulong, byte, void> ReleaseVfx => _release;
 }
