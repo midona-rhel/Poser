@@ -227,6 +227,5 @@ public class Poser : IDalamudPlugin
                 FontRegistry.Dispose();
                 _standbyFontAtlas.Dispose();
             });
-        global::Poser.Lifecycle.SharedTypeCaches.Release();
     }
 }

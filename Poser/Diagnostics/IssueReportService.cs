@@ -243,23 +243,11 @@ public sealed class IssueReportService : IIssueReports, IDisposable
             Settings = _config.Config,
             Log = LogTail(),
         };
-        return _redactor.ScrubJson(Serialize(report, new JsonSerializerSettings
+        return _redactor.ScrubJson(JsonConvert.SerializeObject(report, Formatting.Indented, new JsonSerializerSettings
         {
-            Formatting = Formatting.Indented,
             NullValueHandling = NullValueHandling.Ignore,
             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-            ContractResolver = global::Poser.Documents.Config.PoserJsonContracts.Resolver,
         }));
-    }
-
-    /// <summary>Serializes with exactly these settings. JsonConvert would also apply the
-    /// process-wide default settings, whose Dalamud converter caches Poser's types in
-    /// Dalamud's own serializer.</summary>
-    private static string Serialize(object value, JsonSerializerSettings settings)
-    {
-        using var writer = new StringWriter(System.Globalization.CultureInfo.InvariantCulture);
-        JsonSerializer.Create(settings).Serialize(writer, value);
-        return writer.ToString();
     }
 
     /// <summary>The plugin's own lines from the Dalamud log, newest last.</summary>
@@ -309,10 +297,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     private void RefreshRedaction()
     {
         RememberActors();
-        _redactor.RegisterPathsJson(Serialize(_config.Config, new JsonSerializerSettings
-        {
-            ContractResolver = global::Poser.Documents.Config.PoserJsonContracts.Resolver,
-        }));
+        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(_config.Config));
     }
 
     private void RememberActors()
