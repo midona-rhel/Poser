@@ -23,8 +23,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private readonly object _targetLock = new();
     private readonly Dictionary<(ActorId Actor, int Slot), float> _targets = new();
     private readonly Dictionary<(ActorId Actor, int Slot), TimelineSeekWork> _work = new();
-    // Havok control seconds → timeline frames, captured while the actor is
-    // settled (no deferred work): a mid-drag LocalTime can lag one sync.
+    // Havok control seconds → timeline frames, per slot timeline.
     private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Offset)> _offsets = new();
     private readonly HashSet<string> _logged = new();
     private readonly Poser.Game.Services.IActorManager _actors;
@@ -68,7 +67,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, index);
         if (root == 0)
             return;
-        if (!_offsets.TryGetValue(key, out var mapping) || mapping.Root != root || !_work.ContainsKey(key))
+        // Measured once per slot timeline, before this service has synced it: the
+        // clip sync leaves LocalTime a fraction (its ε) short of natural, so a
+        // re-measure after a seek would carry that fraction into the next target.
+        if (!_offsets.TryGetValue(key, out var mapping) || mapping.Root != root)
             mapping = (root, TimelineSeekEngine.Clock(root) - controlLocalTime * 30f);
         _offsets[key] = mapping;
         lock (_targetLock)
