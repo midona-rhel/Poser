@@ -401,7 +401,10 @@ internal sealed unsafe class TimelineSeekEngine
         int fade = *(int*)(root + 0x220);
         int blend = viaPlayInfo ? *(int*)(playInfo + 0x38) : *(int*)(root + 0x21C);
         byte flags = *(byte*)(root + 0x272);
-        *(int*)(root + 0x220) = frames;
+        // The old holders get no fade of their own: the blend node crossfades them
+        // against the restarted ones (weights summing to 1). A fade here as well
+        // multiplied in and dipped the sum to ~0.77 mid-seam.
+        *(int*)(root + 0x220) = 0;
         if (viaPlayInfo)
             *(int*)(playInfo + 0x38) = frames;
         else
