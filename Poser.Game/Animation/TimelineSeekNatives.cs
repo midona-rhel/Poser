@@ -60,6 +60,10 @@ internal sealed unsafe class TimelineSeekNatives
     private const string CharacterBase_SetModelVfxSpeed =
         "40 53 48 83 EC 30 8B 81 9C 00 00 00 48 8B 99 B0 00 00 00 0F 29 74 24 20 0F 28 F1";
 
+    /// <summary>VfxData.SetSpeed 0x140390830(vd, speed): a status/aura effect's
+    /// speed (wrapper vd+0x1B8). Optional: only the pause of status effects needs it.</summary>
+    public readonly delegate* unmanaged<nint, float, void> SetVfxDataSpeed;
+
     public readonly bool Ready;
     public readonly string? Missing;
 
@@ -111,6 +115,18 @@ internal sealed unsafe class TimelineSeekNatives
 
         StopTimeline = (delegate* unmanaged<nint, int, nint, void>)Scan(
             SchedulerTimeline_Stop, "SchedulerTimeline.Stop");
+
+        try
+        {
+            if (scanner.TryScanText(NativeSignatures.VfxData_SetSpeed, out var vfxData) && vfxData != 0)
+                SetVfxDataSpeed = (delegate* unmanaged<nint, float, void>)vfxData;
+            else
+                log.Warning("Animation: VfxData.SetSpeed not found; status effects keep moving under a pause.");
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Animation: VfxData.SetSpeed scan failed ({ex.Message}).");
+        }
 
         Missing = missing;
         Ready = missing == null;

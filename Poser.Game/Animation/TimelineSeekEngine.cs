@@ -67,10 +67,13 @@ internal sealed unsafe class TimelineSeekEngine
     {
         public readonly List<(nint Clip, nint Child)> C010s = new();
         public readonly Dictionary<nint, nint> Havok = new();          // C009 → owner timeline
+        public readonly Dictionary<nint, float> HavokStart = new();    // C009 → absolute start
         public readonly List<nint> Vfx = new();                         // C012/C049
         public readonly List<nint> AsyncVfx = new();                    // C173
         public readonly List<(nint Clip, float Start)> Summons = new(); // C031 + absolute start
         public readonly List<nint> WeaponRequests = new();              // C198
+        public readonly List<nint> SummonWeapons = new();               // C043
+        public readonly List<nint> Invisibilities = new();              // C094
         /// <summary>Where the last C009 animation runs out on the root clock (max of
         /// absolute start + resolved length +0xB0), or 0 without C009s.</summary>
         public float PoseEnd;
@@ -104,6 +107,7 @@ internal sealed unsafe class TimelineSeekEngine
                         break;
                     case SeekClipKind.HavokAnimation:
                         tree.Havok[clip] = t;
+                        tree.HavokStart[clip] = baseStart + *(float*)(clip + 0x50);
                         // A clip without a pose (see Remaining) never plays; the
                         // timeline ends without it.
                         if (NoPose(clip))
@@ -125,6 +129,12 @@ internal sealed unsafe class TimelineSeekEngine
                         break;
                     case SeekClipKind.WeaponRequest:
                         tree.WeaponRequests.Add(clip);
+                        break;
+                    case SeekClipKind.SummonWeapon:
+                        tree.SummonWeapons.Add(clip);
+                        break;
+                    case SeekClipKind.Invisibility:
+                        tree.Invisibilities.Add(clip);
                         break;
                 }
             }
@@ -268,6 +278,8 @@ internal sealed unsafe class TimelineSeekEngine
             return "integer-frame timeline";
         if ((*(byte*)(root + 0x7C) & 0x40) != 0)
             return "timeline already finished";
+        if (ClampedAtEnd(root))
+            return "one-shot clamped at its end (seeked by its controls)";
         // Any pause bit besides the game's own bit 2 freezes Advance: no step.
         if ((*(uint*)(root + 0x54) & ~4u) != 0)
             return "timeline is held by a pause bit";
@@ -332,6 +344,7 @@ internal sealed unsafe class TimelineSeekEngine
         // Re-collect: the step may have created clips' instances (C009s that just
         // started, C031 prop timelines, C012 VFX objects).
         tree = Collect(root);
+        SettleHavok(tree, target, blendFrames == 0 && control != 0 && _l.IsActorControl(control) ? control : 0);
         // C009s started inside the step have no length (+0xB0) until their first
         // post-step next frame; resolve it now so the new control is synced on
         // the seek frame itself.
@@ -352,6 +365,168 @@ internal sealed unsafe class TimelineSeekEngine
         if (speed == 0f)
             work.FreezeVfx(this);
         return null;
+    }
+
+    /// <summary>
+    /// After the step, the C009s the way normal play would leave them at the target
+    /// (animation-system.md §15.3): one whose window is over but that is still
+    /// active is stopped with reason 0xE, as the game's catch-up does with finished
+    /// animations; one active at the target without a holder (its creation refused,
+    /// face clips starting in another order than in play) is stopped (2) and started
+    /// again. Conditional variants its owner doesn't play (anim id 0) are left.
+    /// The face otherwise stayed on its idle after a seek.
+    /// </summary>
+    private void SettleHavok(Tree tree, float target, nint noBlendControl)
+    {
+        foreach (var (clip, start) in tree.HavokStart)
+        {
+            // Only clips the scheduler already started (+0x10 bit 4; their 0x30 is
+            // set, so a direct Start skips nothing the pending path would do).
+            if ((*(byte*)(clip + 0x10) & 0x10) == 0 || start > target)
+                continue;
+            nint instance = *(nint*)(clip + 0x98);
+            if (instance == 0)
+                continue;
+            var stop = (delegate* unmanaged<nint, int, byte>)(*(nint*)(*(nint*)clip + 32 * 8));
+            // The window: the TMB duration (+0x54) from the start, or less where the
+            // animation (+0xB0 frames at rate +0xBC) runs out first.
+            if ((*(byte*)(clip + 0xCC) & 0x40) != 0)
+            {
+                float rate = *(float*)(clip + 0xBC);
+                float window = *(float*)(clip + 0x54);
+                if (rate > 0f)
+                    window = Math.Min(window, *(uint*)(clip + 0xB0) / rate);
+                if (window > 0f && start + window <= target)
+                {
+                    stop(clip, 0xE);
+                    continue;
+                }
+            }
+            if (*(nint*)(instance + 0x78) != 0 || *(int*)(instance + 0x40) == 0)
+                continue;
+            // A scrub's restart enters at full weight (the step's +0x6B8 was cleared
+            // by UpdateBanner); a loop wrap's keeps its crossfade.
+            if (noBlendControl != 0)
+                *(byte*)(noBlendControl + 0x6B8) = 1;
+            var startClip = (delegate* unmanaged<nint, int, void>)(*(nint*)(*(nint*)clip + 31 * 8));
+            stop(clip, 2);
+            startClip(clip, 2);
+            if (noBlendControl != 0)
+                *(byte*)(noBlendControl + 0x6B8) = 0;
+            LastSettled++;
+        }
+    }
+
+    /// <summary>C009s re-started by <see cref="SettleHavok"/> (diagnostics).</summary>
+    public int LastSettled;
+
+    /// <summary>A one-shot clamped at its end (+0x58 = 1, clock at +0x40, +0x74 = 3,
+    /// not finished) or holding there (+0x7D bit 1): its clock stands still while
+    /// its C009 controls free-run (mount idles). Its clock means nothing to a seek.</summary>
+    public static bool ClampedAtEnd(nint root) =>
+        (*(byte*)(root + 0x7D) & 2) != 0 ||
+        (*(int*)(root + 0x58) == 1 && *(int*)(root + 0x74) == 3 && (*(byte*)(root + 0x7C) & 0x40) == 0
+         && Math.Abs(*(float*)(root + 0x34) - *(float*)(root + 0x40)) < 0.01f);
+
+    /// <summary>The Havok controls a C009 drives: instance → holder +0x20 handle →
+    /// its controller set (+0x18, a tree) → each controller's control (+0x38).</summary>
+    public static List<nint> ClipControls(nint clip)
+    {
+        var list = new List<nint>();
+        nint instance = *(nint*)(clip + 0x98);
+        nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
+        nint handle = holder != 0 ? *(nint*)(holder + 0x20) : 0;
+        if (handle == 0)
+            return list;
+        nint head = *(nint*)(handle + 0x18);
+        if (head == 0)
+            return list;
+        void Walk(nint node, int depth)
+        {
+            if (node == 0 || node == head || depth > 16 || *(byte*)(node + 0x19) != 0 || list.Count > 32)
+                return;
+            Walk(*(nint*)node, depth + 1);
+            nint controller = *(nint*)(node + 0x20);
+            if (controller != 0 && *(nint*)(controller + 0x38) != 0)
+                list.Add(*(nint*)(controller + 0x38));
+            Walk(*(nint*)(node + 0x10), depth + 1);
+        }
+        Walk(*(nint*)(head + 8), 0);
+        return list;
+    }
+
+    /// <summary>Every C009 control of a root.</summary>
+    public List<nint> RootControls(nint root)
+    {
+        var all = new List<nint>();
+        foreach (var clip in Collect(root).Havok.Keys)
+            all.AddRange(ClipControls(clip));
+        return all;
+    }
+
+    /// <summary>The first moving C009 control of a clamped root: its local time and
+    /// its animation's length, in seconds (the reading a clamped layer scrubs by).
+    /// A control the game holds still is no reading.</summary>
+    public (float Time, float Duration)? ClampedReading(nint root, IReadOnlySet<nint> moving)
+    {
+        foreach (var clip in Collect(root).Havok.Keys)
+            foreach (var control in ClipControls(clip))
+            {
+                if (!moving.Contains(control))
+                    continue;
+                var hk = (FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl*)control;
+                var binding = hk->hkaAnimationControl.Binding.ptr;
+                if (binding == null || binding->Animation.ptr == null || !(binding->Animation.ptr->Duration > 0f))
+                    continue;
+                return (hk->hkaAnimationControl.LocalTime, binding->Animation.ptr->Duration);
+            }
+        return null;
+    }
+
+    /// <summary>Seeks a clamped root by its controls (§15.3): every C009 control to
+    /// <paramref name="seconds"/>, wrapped into its own animation's length.</summary>
+    public int SeekClampedControls(nint root, float seconds, IReadOnlySet<nint> moving)
+    {
+        int moved = 0;
+        foreach (var clip in Collect(root).Havok.Keys)
+            foreach (var control in ClipControls(clip))
+            {
+                // One the game holds on a pose (it never moved while playing) stays.
+                if (!moving.Contains(control))
+                    continue;
+                var hk = (FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl*)control;
+                var binding = hk->hkaAnimationControl.Binding.ptr;
+                if (binding == null || binding->Animation.ptr == null)
+                    continue;
+                float length = binding->Animation.ptr->Duration;
+                if (!(length > 0f))
+                    continue;
+                float t = seconds % length;
+                hk->hkaAnimationControl.LocalTime = t < 0f ? t + length : t;
+                moved++;
+            }
+        return moved;
+    }
+
+    /// <summary>Status/aura effects (VfxContainer chara+0x19A0, 14 entries) and
+    /// tethers (chara+0x1A30, 2 × 0x18) at a speed: the game pushes them only on a
+    /// speed change, and one spawned after a pause starts at 1 (§10.2).</summary>
+    public void SetStatusVfxSpeed(nint character, float speed)
+    {
+        if (_n.SetVfxDataSpeed == null)
+            return;
+        for (int i = 0; i < 14; i++)
+        {
+            nint vd = *(nint*)(character + 0x19A0 + i * 8);
+            if (vd != 0)
+                _n.SetVfxDataSpeed(vd, speed);
+        }
+        for (int j = 0; j < 2; j++)
+        {
+            nint vd = *(nint*)(character + 0x1A30 + j * 0x18);
+            if (vd != 0)
+                _n.SetVfxDataSpeed(vd, speed);
+        }
     }
 
     /// <summary>

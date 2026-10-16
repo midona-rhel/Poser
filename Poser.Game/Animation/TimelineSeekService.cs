@@ -213,6 +213,12 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (!Supports(character, (int)slot))
             return null;
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
+        // Clamped at its end, the clock stands still while the controls loop: the
+        // layer's time is its controls'.
+        if (TimelineSeekEngine.ClampedAtEnd(root))
+            return _engine.ClampedReading(root, _movingControls) is { } clamped
+                ? new(Poser.Domain.Animation.ScrubControlId.Timeline(slot), clamped.Time, clamped.Duration, *(float*)(root + 0x240))
+                : null;
         float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
         if (!(end > begin))
             end = begin + TimelineSeekEngine.Length(root);
@@ -234,10 +240,79 @@ public sealed unsafe class TimelineSeekService : IDisposable
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
         if (root == 0)
             return;
+        if (TimelineSeekEngine.ClampedAtEnd(root))
+        {
+            lock (_targetLock)
+                _controlTargets[(actor, (int)slot)] = seconds;
+            return;
+        }
         lock (_targetLock)
         {
             _pendingTargets.Remove((actor, (int)slot));
             _targets[(actor, (int)slot)] = TimelineSeekEngine.Begin(root) + seconds * 30f;
+        }
+    }
+
+    // Scrub targets for clamped one-shots (mount idles), in control seconds.
+    private readonly Dictionary<(ActorId Actor, int Slot), float> _controlTargets = new();
+    // The C009 controls of clamped one-shots, by their last local time while the
+    // timeline played: a control the game holds on a pose never moves (mount idle
+    // 166 holds one at 46.24). Only moving ones are read and seeked.
+    private readonly Dictionary<nint, (float Time, int Tick, bool Moving)> _clampedControls = new();
+    private readonly HashSet<nint> _movingControls = new();
+
+    private void TrackClampedControls()
+    {
+        foreach (nint character in _managed)
+        {
+            var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
+            for (int slot = 0; slot < 14; slot++)
+            {
+                nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
+                if (root == 0 || !TimelineSeekEngine.IsLoaded(root) || !TimelineSeekEngine.ClampedAtEnd(root))
+                    continue;
+                bool playing = *(float*)(root + 0x240) > 0f;
+                foreach (var control in _engine.RootControls(root))
+                {
+                    float time = *(float*)(control + 0x10);
+                    bool moving = _clampedControls.TryGetValue(control, out var last)
+                        && (last.Moving || (playing && Math.Abs(time - last.Time) > 1e-4f));
+                    _clampedControls[control] = (time, _tick, moving);
+                }
+            }
+        }
+        _movingControls.Clear();
+        List<nint>? stale = null;
+        foreach (var (control, state) in _clampedControls)
+        {
+            if (_tick - state.Tick > 2)
+                (stale ??= new()).Add(control);
+            else if (state.Moving)
+                _movingControls.Add(control);
+        }
+        if (stale != null)
+            foreach (var control in stale)
+                _clampedControls.Remove(control);
+    }
+
+    private void RunControlTargets()
+    {
+        KeyValuePair<(ActorId Actor, int Slot), float>[] targets;
+        lock (_targetLock)
+        {
+            if (_controlTargets.Count == 0)
+                return;
+            targets = _controlTargets.ToArray();
+            _controlTargets.Clear();
+        }
+        foreach (var (key, seconds) in targets)
+        {
+            var character = _native.Resolve(key.Actor, out _);
+            if (character == null)
+                continue;
+            nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot);
+            if (root != 0 && TimelineSeekEngine.ClampedAtEnd(root))
+                _engine.SeekClampedControls(root, seconds, _movingControls);
         }
     }
 
@@ -291,6 +366,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, index);
         if (root == 0)
             return;
+        // Clamped at its end: the control's own seconds are the target.
+        if (TimelineSeekEngine.ClampedAtEnd(root))
+        {
+            lock (_targetLock)
+                _controlTargets[key] = seconds;
+            return;
+        }
         // Measured once per slot timeline, before this service has synced it: the
         // clip sync leaves LocalTime a fraction (its ε) short of natural, so a
         // re-measure after a seek would carry that fraction into the next target.
@@ -317,6 +399,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
             CorrectPropBirths();
             UpdateLayerProps();
             PromotePendingTargets();
+            TrackClampedControls();
+            RunControlTargets();
+            ReleaseActorSpeeds();
 
             KeyValuePair<(ActorId, int), float>[] targets;
             lock (_targetLock)
@@ -397,6 +482,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             return;
         var next = new Dictionary<nint, (ulong, ulong)>();
         var suppressed = new HashSet<nint>();
+        var liveFades = new HashSet<nint>();
         foreach (nint character in _managed)
         {
             var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
@@ -404,6 +490,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
             ulong group0 = 0, group1 = 0;
             int owner0 = -1, owner1 = -1;
             var summons = new List<(int Slot, nint Clip, int WeaponSlot)>();
+            var requests = new List<(int Slot, nint Clip, int Group)>();
+            var fades = new List<(int Slot, nint Clip)>();
             for (int slot = 0; slot < 14; slot++)
             {
                 nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
@@ -423,7 +511,21 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     // Slots ascend, so a later (higher) layer overrides.
                     if (group == 0) { group0 = model; owner0 = slot; }
                     else if (group == 1) { group1 = model; owner1 = slot; }
+                    requests.Add((slot, clip, group));
                 }
+                // A C043 Summon Weapon of type 8 asks for a group-0 prop the same way.
+                foreach (var clip in tree.SummonWeapons)
+                {
+                    if ((*(byte*)(clip + 0x88) & 0x10) == 0 || (*(byte*)(clip + 0x10) & 0x10) == 0)
+                        continue;
+                    nint data = *(nint*)(clip + 0x48);
+                    if (*(int*)(data + 0xC) != 8)
+                        continue;
+                    group0 = *(ulong*)(data + 0x10);
+                    owner0 = slot;
+                }
+                foreach (var clip in tree.Invisibilities)
+                    fades.Add((slot, clip));
                 foreach (var (clip, _) in tree.Summons)
                     if ((*(byte*)(clip + 0x10) & 0x10) != 0)
                         summons.Add((slot, clip, TimelineSeekEngine.PropWeaponSlot(clip)));
@@ -431,14 +533,65 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (control != 0 && (group0 != 0 || group1 != 0))
                 next[control] = (group0, group1);
             ArbitratePropAnimations(character, summons, owner0, owner1, suppressed);
+            // A lower layer's C198 whose prop a higher layer replaced would see its
+            // model leave the actor and stop itself for good (self-stop, §7.7): the
+            // prop was gone once the higher layer ended. Re-armed each tick.
+            foreach (var (slot, clip, group) in requests)
+                if (slot < (group == 0 ? owner0 : owner1))
+                    *(byte*)(clip + 0xA4) = 0;
+            MaskLowerFades(character, fades, owner0, liveFades);
         }
         _layerProps = next;
+        // A lower layer's C094 gets its prop-slot bit back once no higher layer owns
+        // the prop (only clips still in a live tree are touched).
+        foreach (var clip in new List<nint>(_maskedFades.Keys))
+        {
+            if (_maskWanted.Contains(clip))
+                continue;
+            if (liveFades.Contains(clip))
+                *(byte*)(clip + 0xD3) |= _maskedFades[clip];
+            _maskedFades.Remove(clip);
+        }
+        _maskWanted.Clear();
         // A prop no longer held down gets its holders back (the layer weight, if
         // any, is re-applied on top every tick).
         foreach (nint prop in _suppressedProps)
             if (!suppressed.Contains(prop))
                 _engine.SetPropTimelineWeight(prop, 1f);
         _suppressedProps = suppressed;
+    }
+
+    // C094s whose DrawData prop-slot bit (bit 3: slot 2, the group-0 prop) Poser
+    // cleared, with the bits taken; and the ones still wanted cleared this tick.
+    private readonly Dictionary<nint, byte> _maskedFades = new();
+    private readonly HashSet<nint> _maskWanted = new();
+
+    /// <summary>
+    /// A lower layer's C094 fades the prop slot it shares with a higher layer's
+    /// prop (each C094 multiplies into the slot's alpha): Toast's fade-in hid the
+    /// apple. While a higher layer owns the group-0 prop, the lower layers' C094s
+    /// lose their slot-2 bit (clip+0xD3 bit 3) and the slot's alpha goes back to 1
+    /// once (DrawData slot 2 +0x68, §7.8).
+    /// </summary>
+    private void MaskLowerFades(nint character, List<(int Slot, nint Clip)> fades, int owner0, HashSet<nint> live)
+    {
+        const byte PropSlotBit = 1 << 3;
+        foreach (var (slot, clip) in fades)
+        {
+            live.Add(clip);
+            if (owner0 < 0 || slot >= owner0)
+                continue;
+            _maskWanted.Add(clip);
+            if ((*(byte*)(clip + 0xD3) & PropSlotBit) == 0)
+                continue;
+            *(byte*)(clip + 0xD3) &= unchecked((byte)~PropSlotBit);
+            _maskedFades[clip] = PropSlotBit;
+            // FUN_1408B0B00(ddc = chara+0x6F8, slot, alpha): slot 2's alpha at
+            // ddc + 2·0x70 + 0x68. Stored, not multiplied: a higher layer's own
+            // active C094 writes over it the same tick.
+            *(float*)(character + 0x6F8 + 2 * 0x70 + 0x68) = 1f;
+            LogOnce($"fademask:{clip}", $"[TimelineSeek] slot {slot}'s fade no longer reaches slot {owner0}'s prop");
+        }
     }
 
     /// <summary>
@@ -1104,6 +1257,58 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 _layerPropSpeeds = propSpeeds;
         }
         catch (Exception ex) { LogOnce("slotspeedhold", $"[TimelineSeek] layer speed hold faulted: {ex.Message}"); }
+    }
+
+    // Characters whose actor-wide speed Poser holds, with the tick last held, and
+    // whether slot 0 was set for a mounted rider.
+    private readonly Dictionary<nint, (int Tick, bool MountSlot)> _actorHeld = new();
+
+    /// <summary>
+    /// The whole-actor speed (Poser's pause) where the game's push doesn't reach,
+    /// every tick it is held: status/aura effects (pushed only on a speed change,
+    /// spawned at 1), and a mounted rider's slot 0 (its push takes the mount's
+    /// speed, +0x5E8). A slot with its own layer speed is HoldSlotSpeeds'.
+    /// </summary>
+    internal void HoldActorSpeed(Character* character, float overall, IReadOnlyDictionary<int, float> slotSpeeds)
+    {
+        if (!Available || character == null)
+            return;
+        try
+        {
+            nint address = (nint)character;
+            if (overall != 1f)
+                _engine.SetStatusVfxSpeed(address, overall);
+            bool mounted = *(ushort*)(address + 0x688) != 0 && !slotSpeeds.ContainsKey(0);
+            if (mounted)
+                _engine.SetSlotTimelineSpeed(&character->Timeline.TimelineSequencer, 0, overall);
+            _actorHeld[address] = (_tick, mounted);
+        }
+        catch (Exception ex) { LogOnce("actorspeed", $"[TimelineSeek] actor speed hold faulted: {ex.Message}"); }
+    }
+
+    /// <summary>An actor-wide hold Poser let go of: the status effects and a rider's
+    /// slot 0 go back to the game's speed once.</summary>
+    private void ReleaseActorSpeeds()
+    {
+        if (_actorHeld.Count == 0)
+            return;
+        List<nint>? gone = null;
+        foreach (var (address, held) in _actorHeld)
+            if (_tick - held.Tick > 2)
+                (gone ??= new()).Add(address);
+        if (gone == null)
+            return;
+        foreach (var address in gone)
+        {
+            _actorHeld.Remove(address);
+            if (!_managed.Contains(address))
+                continue;
+            // Container Flags3 (+0x34E) bit 2: the next UpdateTimelines re-pushes the
+            // speed natively (FUN_1408BDB50): slot 0 from its right source (the
+            // rider's +0x5E8, or the mount's), the other slots, props, model
+            // effects and every status effect.
+            *((byte*)&((Character*)address)->Timeline + 0x34E) |= 4;
+        }
     }
 
     /// <summary>Holds layer weights (see TimelineSeekEngine.SetSlotWeight).</summary>

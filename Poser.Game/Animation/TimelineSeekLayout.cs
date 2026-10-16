@@ -19,6 +19,12 @@ internal enum SeekClipKind
     /// <summary>C198: requests a prop model on the actor control (type 8 cell of
     /// its group, model id data+0x18, group data+0x14).</summary>
     WeaponRequest,
+    /// <summary>C043 Summon Weapon: a request of type data+0xC on group 0; type 8
+    /// asks for the prop model data+0x10, like a C198.</summary>
+    SummonWeapon,
+    /// <summary>C094 Invisibility: an alpha fade on the body and DrawData weapon
+    /// slots by its mask clip+0xD3 (bit 0 body, bits 1-3 slots 0-2).</summary>
+    Invisibility,
 }
 
 /// <summary>

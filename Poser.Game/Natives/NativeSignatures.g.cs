@@ -214,6 +214,290 @@ internal static class NativeSignatures
     public const string VfxObject_SetSpeed = "F3 0F 11 89 50 02 00 00 48 8B 89 A0 02 00 00";
     /// <summary>AnimationHolder.Release (0x1418FB250 on the analysed build).</summary>
     public const string AnimationHolder_Release = "40 53 48 83 EC 20 48 8B D9 48 8B 49 20 48 85 C9 74 ?? 0F 57 C9 E8 ?? ?? ?? ?? 48 8B 4B 20 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 4B 20 48 8B 01 FF 50 18 48 C7 43 20 00 00 00 00 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 74";
+    /// <summary>CharacterBase.SetModelVfxSpeed (0x140433DD0 on the analysed build).</summary>
+    public const string CharacterBase_SetModelVfxSpeed = "40 53 48 83 EC 30 8B 81 9C 00 00 00";
+    /// <summary>ActorControl.ApplyWeaponRequests (0x141900F50 on the analysed build).</summary>
+    public const string ActorControl_ApplyWeaponRequests = "48 89 4C ?? ?? 57 41 55 48 81 EC 88 00 00 00";
+    /// <summary>PropSummonClip.Start (0x141BFD130 on the analysed build).</summary>
+    public const string PropSummonClip_Start = "40 57 48 83 EC 20 0F B6 81 88 00 00 00";
+    /// <summary>ActorControlManager.ApplyAllWeaponRequests (0x141885480 on the analysed build).</summary>
+    public const string ActorControlManager_ApplyAllWeaponRequests = "48 89 5C ?? ?? 57 48 83 EC 20 48 8D 59 40 48 8B F9 48 8B CB FF 15 ?? ?? ?? ?? 48 8B 7F 08 48 85 FF 74 ?? 83 BF CC 06 00 00 00";
+    /// <summary>EmoteController.StartEmoteLocal (0x140617280 on the analysed build).</summary>
+    public const string EmoteController_StartEmoteLocal = "4C 89 4C ?? ?? 55 53 56 57 41 56 41 57 48 8D ?? 24 D1";
+    /// <summary>EmoteController.PlayEmoteTimelines (0x140617920 on the analysed build).</summary>
+    public const string EmoteController_PlayEmoteTimelines = "48 89 5C ?? ?? 48 89 74 ?? ?? 48 89 7C ?? ?? 55 41 54 41 55 41 56 41 57 48 8D ?? 24 D9 48 81 EC F0 00 00 00 41 0F B6 D9";
+    /// <summary>TimelineContainer.PlayActionTimeline (0x1408BED60 on the analysed build).</summary>
+    public const string TimelineContainer_PlayActionTimeline = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 49 8B E9 41 0F B7 D8";
+    /// <summary>ActionTimelineSequencer.GetCurrentPriority (0x140607490 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_GetCurrentPriority = "48 89 5C ?? ?? 57 48 83 EC 20 8B 79 54 48 8B D9 84 D2";
+    /// <summary>Havok.TaskUpdateHavokAnimation (0x1400D4280 on the analysed build).</summary>
+    public const string Havok_TaskUpdateHavokAnimation = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 30 F3 0F 10 81 B8 17 00 00";
+    /// <summary>AnimationControl.SetWeight (0x1401FFB50 on the analysed build).</summary>
+    public const string AnimationControl_SetWeight = "48 8B 49 18 48 8B 01 48 3B C1 74 ?? 0F 1F 40 00 4C 8B 40 20";
+    /// <summary>Animation.PartialSelection (0x14025A4F0 on the analysed build).</summary>
+    public const string Animation_PartialSelection = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 41 56 41 57 48 83 EC 30 33 FF 49 8B F1";
+    /// <summary>Attach.UpdatePropBones (0x14025CDF0 on the analysed build).</summary>
+    public const string Attach_UpdatePropBones = "48 89 5C ?? ?? 57 48 83 EC 20 33 DB 48 8D 3D ?? ?? ?? ?? 48 8B D1";
+    /// <summary>VfxWrapper.CreateInstancePrewarm (0x14038E630 on the analysed build).</summary>
+    public const string VfxWrapper_CreateInstancePrewarm = "40 53 48 81 EC A0 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 ?? ?? ?? ?? ?? F6 81 C4 00 00 00 01";
+    /// <summary>VfxWrapper.ReleaseHandle (0x14038F2D0 on the analysed build).</summary>
+    public const string VfxWrapper_ReleaseHandle = "40 53 48 83 EC 20 48 8B D9 48 8B 49 08 48 85 C9 74 ?? 33 C0";
+    /// <summary>VfxData.SetSpeed (0x140390830 on the analysed build).</summary>
+    public const string VfxData_SetSpeed = "48 8B 89 B8 01 00 00 48 85 C9 0F 85 ?? ?? ?? ?? C3";
+    /// <summary>Vfx.LoadCharacterVfx (0x1403934B0 on the analysed build).</summary>
+    public const string Vfx_LoadCharacterVfx = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 41 56 41 57 48 83 EC 60 81 3D ?? ?? ?? ?? A0 86 01 00";
+    /// <summary>CharacterBase.PlayAnimation (0x140433130 on the analysed build).</summary>
+    public const string CharacterBase_PlayAnimation = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 83 B9 A0 00 00 00 00";
+    /// <summary>VfxObject.Update (0x14045CA40 on the analysed build).</summary>
+    public const string VfxObject_Update = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 81 EC 90 00 00 00 0F 29 B4 ?? ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 ?? ?? 83 89 48 02 00 00 40";
+    /// <summary>VfxObject.Kill (0x14045CC00 on the analysed build).</summary>
+    public const string VfxObject_Kill = "83 89 48 02 00 00 40 F3 0F 11 89 58 02 00 00";
+    /// <summary>ScheduleManagement.Task (0x14046FB10 on the analysed build).</summary>
+    public const string ScheduleManagement_Task = "F3 0F 10 0A F3 0F 59 0D";
+    /// <summary>ScheduleManagement.Update (0x140471000 on the analysed build).</summary>
+    public const string ScheduleManagement_Update = "48 8B C4 48 89 ?? ?? 48 89 ?? ?? 48 89 ?? ?? 57 48 81 EC 80 00 00 00 0F 29";
+    /// <summary>Blend.TableLookup (0x1405F6F80 on the analysed build).</summary>
+    public const string Blend_TableLookup = "0F AF 0D ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 03 CA 48 63 C9 0F B6 14 01 48 8B 05 ?? ?? ?? ?? 48 8B 0C D0";
+    /// <summary>Blend.InLength (0x1405F7060 on the analysed build).</summary>
+    public const string Blend_InLength = "8B 05 ?? ?? ?? ?? 8D 0C 41";
+    /// <summary>ActionTimelineSequencer.DeferredSlot0Start (0x140606730 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_DeferredSlot0Start = "E8 ?? ?? ?? ?? 48 8B 47 08 80 B8 CD 01 00 00 0A";
+    /// <summary>ActionTimelineSequencer.PlayTimeline (0x1406067B0 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_PlayTimeline = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 0F B7 DA 48 8B F1 8B CB 49 8B F8";
+    /// <summary>ActionTimelineSequencer.SetQueue (0x140606CD0 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_SetQueue = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 30 33 DB 66 89 91 50 01 00 00";
+    /// <summary>ActionTimelineSequencer.ClearSlot (0x140607A50 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_ClearSlot = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 30 0F B7 81 FC 00 00 00";
+    /// <summary>ActionTimelineSequencer.ClearSlotId (0x140607B90 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_ClearSlotId = "48 89 5C ?? ?? 55 56 57 41 54 41 57 48 83 EC 30";
+    /// <summary>ActionTimelineSequencer.PlayQueued (0x140608230 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_PlayQueued = "66 89 54 ?? ?? 55 53 41 54";
+    /// <summary>ActionTimelineSequencer.Transition (0x140608AF0 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_Transition = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 48 89 7C ?? ?? 41 56 48 83 EC 30 8B 5C ?? ?? 49 8B F1";
+    /// <summary>EmoteController.PlayEmote (0x140614A30 on the analysed build).</summary>
+    public const string EmoteController_PlayEmote = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8B D9 49 8B F0 48 8B 49 08 8B FA";
+    /// <summary>EmoteController.SetMode (0x140617EE0 on the analysed build).</summary>
+    public const string EmoteController_SetMode = "48 89 5C ?? ?? 57 48 83 EC 20 8B DA 48 8B F9 85 D2 74 ?? 8B CA E8 ?? ?? ?? ?? 48 85 C0";
+    /// <summary>SchedulerClip.GetRootTimeline (0x1406341B0 on the analysed build).</summary>
+    public const string SchedulerClip_GetRootTimeline = "40 53 48 83 EC 20 48 8B 41 38 48 8B D9 48 85 C0 75";
+    /// <summary>Sheet.GetEmoteRow (0x140837460 on the analysed build).</summary>
+    public const string Sheet_GetEmoteRow = "48 83 EC 28 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA B5 00 00 00";
+    /// <summary>Sheet.GetActionTimelineRow (0x1408377F0 on the analysed build).</summary>
+    public const string Sheet_GetActionTimelineRow = "48 83 EC 28 8D 41 FF 3D E7 FD 00 00";
+    /// <summary>Vfx.SpawnCharacterVfx (0x140857BE0 on the analysed build).</summary>
+    public const string Vfx_SpawnCharacterVfx = "40 53 55 56 57 48 81 EC 08 02 00 00";
+    /// <summary>Vfx.SpawnCommonVfx (0x140857E30 on the analysed build).</summary>
+    public const string Vfx_SpawnCommonVfx = "40 53 55 56 57 48 81 EC 68 01 00 00 0F 29 B4 ?? ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 ?? ?? ?? ?? ?? 48 8B 05";
+    /// <summary>Character.IsGPoseClientObject (0x140898560 on the analysed build).</summary>
+    public const string Character_IsGPoseClientObject = "48 83 EC 28 48 8B D1 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? 48 8D 0D";
+    /// <summary>GameObject.GetFrameDeltaMultiplier (0x14089D6E0 on the analysed build).</summary>
+    public const string GameObject_GetFrameDeltaMultiplier = "48 83 EC 28 48 8B D1 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 84 C0 74 ?? F3 0F 10 05";
+    /// <summary>StatusManager.RefreshLoopVfx (0x1408A6180 on the analysed build).</summary>
+    public const string StatusManager_RefreshLoopVfx = "40 57 41 55 48 83 EC 68";
+    /// <summary>DrawDataContainer.Unload (0x1408AF8F0 on the analysed build).</summary>
+    public const string DrawDataContainer_Unload = "E8 ?? ?? ?? ?? 48 8D 8B 80 0D 00 00 E8 ?? ?? ?? ?? 48 8D 8B 30 0A 00 00";
+    /// <summary>DrawDataContainer.OnWeaponLoaded (0x1408AF920 on the analysed build).</summary>
+    public const string DrawDataContainer_OnWeaponLoaded = "40 53 56 41 56 48 83 EC 30 48 63 F2";
+    /// <summary>DrawDataContainer.PlayWeaponTimeline (0x1408B0B00 on the analysed build).</summary>
+    public const string DrawDataContainer_PlayWeaponTimeline = "48 89 5C ?? ?? 57 48 83 EC 40 48 8B 41 08 48 8B D9 0F 29 74";
+    /// <summary>DrawDataContainer.RequestPropSlot2 (0x1408B1980 on the analysed build).</summary>
+    public const string DrawDataContainer_RequestPropSlot2 = "48 89 5C ?? ?? 56 48 83 EC 40 48 8B 81 F0 00 00 00";
+    /// <summary>DrawDataContainer.RequestSummonedProp (0x1408B2070 on the analysed build).</summary>
+    public const string DrawDataContainer_RequestSummonedProp = "40 53 48 83 EC 40 48 8B 81 60 01 00 00";
+    /// <summary>DrawDataContainer.HideSlot2 (0x1408B23E0 on the analysed build).</summary>
+    public const string DrawDataContainer_HideSlot2 = "40 53 48 83 EC 20 8B C2 48 6B D8 70 48 03 D9";
+    /// <summary>TimelineContainer.UpdateDrawn (0x1408BB360 on the analysed build).</summary>
+    public const string TimelineContainer_UpdateDrawn = "48 8B C4 53 48 81 EC A0 00 00 00 48 89";
+    /// <summary>TimelineContainer.DeferredStart (0x1408BBD50 on the analysed build).</summary>
+    public const string TimelineContainer_DeferredStart = "40 57 48 83 EC 60 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 ?? ?? 48 8B F9 48 83 C1 10";
+    /// <summary>TimelineContainer.PostureSlotSpeeds (0x1408BC6C0 on the analysed build).</summary>
+    public const string TimelineContainer_PostureSlotSpeeds = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 30 48 8B D9 0F 29 74";
+    /// <summary>TimelineContainer.SetModelState (0x1408BDF90 on the analysed build).</summary>
+    public const string TimelineContainer_SetModelState = "40 53 57 48 83 EC 28 48 8B D9 8B FA 0F B6 89 C0 02 00 00";
+    /// <summary>TimelineContainer.SetAnimationState (0x1408BE140 on the analysed build).</summary>
+    public const string TimelineContainer_SetAnimationState = "48 89 5C ?? ?? 57 48 83 EC 20 8B FA 4C 8B D1";
+    /// <summary>TimelineContainer.PlayQueued (0x1408BE980 on the analysed build).</summary>
+    public const string TimelineContainer_PlayQueued = "48 89 5C ?? ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D ?? 24 E1 48 81 EC D0 00 00 00";
+    /// <summary>TimelineContainer.RemapVariant (0x1408C0950 on the analysed build).</summary>
+    public const string TimelineContainer_RemapVariant = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 B8 E9 FD 00 00";
+    /// <summary>TimelineContainer.BaseRowGate (0x1408C0BA0 on the analysed build).</summary>
+    public const string TimelineContainer_BaseRowGate = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B F9 0F B7 DA 48 8B 49 08";
+    /// <summary>TimelineContainer.SetLipsOverrideTimeline (0x1408C1310 on the analysed build).</summary>
+    public const string TimelineContainer_SetLipsOverrideTimeline = "0F B7 C2 4C 8B C9 3D 72 02 00 00";
+    /// <summary>TimelineContainer.ModeBaseRow (0x1408C1590 on the analysed build).</summary>
+    public const string TimelineContainer_ModeBaseRow = "40 53 48 83 EC 20 66 83 B9 DA 02 00 00 00";
+    /// <summary>TimelineContainer.OnSlotChanged (0x1408C3CC0 on the analysed build).</summary>
+    public const string TimelineContainer_OnSlotChanged = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 0F B7 EA 48 8B D9 8B D5";
+    /// <summary>TimelineContainer.OnTimelineEnded (0x1408C3E50 on the analysed build).</summary>
+    public const string TimelineContainer_OnTimelineEnded = "4C 8B DC 55 56 57 41 54 41 55 48 8B EC";
+    /// <summary>TimelineContainer.SetStarted (0x1408C49B0 on the analysed build).</summary>
+    public const string TimelineContainer_SetStarted = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B D9 8B FA 48 83 C1 10 E8 ?? ?? ?? ?? 48 8B 5B 08";
+    /// <summary>TimelineContainer.OnEnableDraw (0x1408C4A80 on the analysed build).</summary>
+    public const string TimelineContainer_OnEnableDraw = "80 89 4E 03 00 00 10";
+    /// <summary>TimelineContainer.ReplayStateTimelines (0x1408C4B60 on the analysed build).</summary>
+    public const string TimelineContainer_ReplayStateTimelines = "48 89 5C ?? ?? 48 89 74 ?? ?? 48 89 7C ?? ?? 41 56 48 83 EC 20 0F B6 81 C0 02 00 00";
+    /// <summary>VfxContainer.SetSlot (0x1408CC8C0 on the analysed build).</summary>
+    public const string VfxContainer_SetSlot = "83 FA 0E 0F 83";
+    /// <summary>RepresentationContainer.FreezeMotion (0x1408D70D0 on the analysed build).</summary>
+    public const string RepresentationContainer_FreezeMotion = "48 89 5C ?? ?? 41 56 48 83 EC 20 44 0F B6 F2";
+    /// <summary>RepresentationContainer.ResumeMotion (0x1408D7400 on the analysed build).</summary>
+    public const string RepresentationContainer_ResumeMotion = "40 53 41 56 48 83 EC 28 44 0F B6 F2";
+    /// <summary>Character.SetMode (0x140909170 on the analysed build).</summary>
+    public const string Character_SetMode = "48 8B C4 48 83 EC 68 48 89 ?? ?? 48 8B D9 48 89 ?? ?? 48 89 ?? ?? 48 89";
+    /// <summary>Character.SetBodyAlpha (0x14090A7E0 on the analysed build).</summary>
+    public const string Character_SetBodyAlpha = "41 83 F8 04 73 ?? 41 8B C0 F3 0F 11 8C 81 E8 22 00 00";
+    /// <summary>Character.GetVfxSpeed (0x14090E360 on the analysed build).</summary>
+    public const string Character_GetVfxSpeed = "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? F6 83 7E 0D 00 00 02 74 ?? F3 0F 59 05 ?? ?? ?? ?? 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC 40 53";
+    /// <summary>Applier.Load (0x140B2C3A0 on the analysed build).</summary>
+    public const string Applier_Load = "48 89 5C ?? ?? 57 48 83 EC 40 41 8B F9";
+    /// <summary>Applier.KeepAlive (0x140B2C520 on the analysed build).</summary>
+    public const string Applier_KeepAlive = "48 85 C9 0F 84 ?? ?? ?? ?? 48 89 5C ?? ?? 57 48 83 EC 20 41 8B F9";
+    /// <summary>Applier.Unload (0x140B2C5C0 on the analysed build).</summary>
+    public const string Applier_Unload = "48 85 C9 0F 84 ?? ?? ?? ?? 48 89 5C ?? ?? 57 48 83 EC 20 44 8B D2";
+    /// <summary>MoveController.IsMoveRow (0x1418236E0 on the analysed build).</summary>
+    public const string MoveController_IsMoveRow = "83 FA 0D 0F 84 ?? ?? ?? ?? 83 FA 29";
+    /// <summary>MoveController.MovementBaseRow (0x141823860 on the analysed build).</summary>
+    public const string MoveController_MovementBaseRow = "48 89 54 ?? ?? 57 48 83 EC 60";
+    /// <summary>ActorControl.UpdateAll (0x141885320 on the analysed build).</summary>
+    public const string ActorControl_UpdateAll = "48 83 EC 38 80 79 28 00";
+    /// <summary>ActionTimelineManager.CreateInstance (0x1418C90F0 on the analysed build).</summary>
+    public const string ActionTimelineManager_CreateInstance = "48 83 EC 38 48 8B 05 ?? ?? ?? ?? 48 85 C0 0F 85";
+    /// <summary>ActionTimelineManager.SetPropSpeed (0x1418CAB50 on the analysed build).</summary>
+    public const string ActionTimelineManager_SetPropSpeed = "48 89 5C ?? ?? 57 48 83 EC 50 48 8B F9 0F 29 74 ?? ?? 48 8D ?? 24 20";
+    /// <summary>ActionTimelineManager.ReleaseActorControl (0x1418CB2C0 on the analysed build).</summary>
+    public const string ActionTimelineManager_ReleaseActorControl = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B F9 8B DA 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 8B D3 48 8B CF E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8B 5C ?? ?? 48 83 C4 20 5F C3 CC CC CC CC CC CC 48 89 5C ?? ?? 57 48 83 EC 40";
+    /// <summary>ActionTimelineManager.UpdateTimelines (0x1418CCE90 on the analysed build).</summary>
+    public const string ActionTimelineManager_UpdateTimelines = "40 53 56 57 41 54 48 83 EC 68";
+    /// <summary>ActionTimelineManager.IsSlotEnded (0x1418CD760 on the analysed build).</summary>
+    public const string ActionTimelineManager_IsSlotEnded = "49 8B 00 48 85 C0 74 ?? 48 8B 00";
+    /// <summary>ActionTimelineManager.TimelineThread (0x1418CDDB0 on the analysed build).</summary>
+    public const string ActionTimelineManager_TimelineThread = "4C 8B DC 53 48 83 EC 70 48 8B 05";
+    /// <summary>ActionTimelineManager.UpdateCutscenes (0x1418D02A0 on the analysed build).</summary>
+    public const string ActionTimelineManager_UpdateCutscenes = "40 53 48 83 EC 30 F6 41 11 02";
+    /// <summary>Holder.Insert (0x1418D6350 on the analysed build).</summary>
+    public const string Holder_Insert = "48 89 5C ?? ?? 4C 89 44 ?? ?? 48 89 4C ?? ?? 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 70 48 8B 7A 18";
+    /// <summary>MotionTimeline.PreEndLead (0x1418D8860 on the analysed build).</summary>
+    public const string MotionTimeline_PreEndLead = "48 89 5C ?? ?? 57 48 83 EC 20 B8 32 03 00 00";
+    /// <summary>Holder.UpdateWeight (0x1418FB860 on the analysed build).</summary>
+    public const string Holder_UpdateWeight = "F3 0F 11 51 58 F3 0F 59 51 5C";
+    /// <summary>Holder.Create (0x1418FC1C0 on the analysed build).</summary>
+    public const string Holder_Create = "48 89 5C ?? ?? 55 56 57 41 54 41 55 41 56 41 57 48 81 EC F0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 ?? ?? ?? ?? ?? 4C 8B E9";
+    /// <summary>SchedulerTimeline.Finalize (0x1418FD950 on the analysed build).</summary>
+    public const string SchedulerTimeline_Finalize = "48 89 5C ?? ?? 57 48 83 EC 20 0F B6 41 10 48 8B F9 84 C0";
+    /// <summary>SchedulerTimeline.AllActorsCompleted (0x1418FDA40 on the analysed build).</summary>
+    public const string SchedulerTimeline_AllActorsCompleted = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B 59 18 48 8B F9 48 85 DB 74 ?? 48 8B 03 48 8B CB FF 50 20";
+    /// <summary>SchedulerTimeline.FinalizationCheck (0x1418FE320 on the analysed build).</summary>
+    public const string SchedulerTimeline_FinalizationCheck = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B 79 18 48 8B D9 48 85 FF 74 ?? 48 8B CF";
+    /// <summary>SchedulerTimeline.StopAllClips (0x1418FE4A0 on the analysed build).</summary>
+    public const string SchedulerTimeline_StopAllClips = "40 53 55 57 48 83 EC 20 40 32 FF";
+    /// <summary>SchedulerTimeline.StepClock (0x1418FEBD0 on the analysed build).</summary>
+    public const string SchedulerTimeline_StepClock = "48 89 5C ?? ?? 48 89 6C ?? ?? 56 48 83 EC 30 0F B6 41 7C";
+    /// <summary>SchedulerTimeline.MaxRemaining (0x1418FF650 on the analysed build).</summary>
+    public const string SchedulerTimeline_MaxRemaining = "40 57 48 81 EC 30 02 00 00";
+    /// <summary>ActorControl.NewAnimInstance (0x1419005C0 on the analysed build).</summary>
+    public const string ActorControl_NewAnimInstance = "40 57 48 83 EC 20 BA 09 00 00 00";
+    /// <summary>SchedulerClip.ProcessEvent (0x141902A40 on the analysed build).</summary>
+    public const string SchedulerClip_ProcessEvent = "40 53 56 57 41 54 41 55 41 56 41 57 48 83 EC 40";
+    /// <summary>SchedulerClip.LayerNibble (0x1419033F0 on the analysed build).</summary>
+    public const string SchedulerClip_LayerNibble = "40 53 48 83 EC 20 8B 81 80 00 00 00 48 8B D9 83 F8 FF";
+    /// <summary>SchedulerClip.AbsoluteStart (0x141903820 on the analysed build).</summary>
+    public const string SchedulerClip_AbsoluteStart = "40 53 48 83 EC 20 48 8B D9 48 8B 49 30 48 85 C9 75 ?? 48 8B 43 28";
+    /// <summary>C010.Start (0x14190BC10 on the analysed build).</summary>
+    public const string C010_Start = "4C 8B 81 38 01 00 00 4D 85 C0 74 ?? 83 B9 84 00 00 00 07";
+    /// <summary>C010.Stop (0x14190BC60 on the analysed build).</summary>
+    public const string C010_Stop = "40 53 48 83 EC 20 48 8B D9 48 8B 89 38 01 00 00 48 85 C9 75";
+    /// <summary>C010.ChildEnableQuery (0x14190C370 on the analysed build).</summary>
+    public const string C010_ChildEnableQuery = "40 53 48 83 EC 20 48 83 B9 38 01 00 00 00";
+    /// <summary>C010.Remaining (0x14190CB30 on the analysed build).</summary>
+    public const string C010_Remaining = "40 53 48 83 EC 50 48 8B 01 48 8B D9 0F 29 74";
+    /// <summary>C009.PostStep (0x14190D080 on the analysed build).</summary>
+    public const string C009_PostStep = "40 53 48 83 EC 20 F6 81 CC 00 00 00 01";
+    /// <summary>C009.Start (0x14190D790 on the analysed build).</summary>
+    public const string C009_Start = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 41 56 41 57 48 83 EC 30 48 8B 41 28";
+    /// <summary>C009.ReleaseInstance (0x14190DD90 on the analysed build).</summary>
+    public const string C009_ReleaseInstance = "40 53 48 83 EC 20 48 8B 51 28 48 8B D9 48 85 D2 75";
+    /// <summary>C009.FacePath (0x14190DFF0 on the analysed build).</summary>
+    public const string C009_FacePath = "40 53 48 83 EC 20 F6 81 88 00 00 00 01";
+    /// <summary>C012.PostStep (0x141915090 on the analysed build).</summary>
+    public const string C012_PostStep = "40 53 56 57 41 54 48 83 EC 78";
+    /// <summary>C094.Start (0x1419197A0 on the analysed build).</summary>
+    public const string C094_Start = "40 53 48 83 EC 30 48 89 7C ?? ?? 48 8B D9 33 FF";
+    /// <summary>C094.Update (0x141919FB0 on the analysed build).</summary>
+    public const string C094_Update = "48 8B C4 53 48 81 EC 90 00 00 00 80 B9 D0 00 00 00 00";
+    /// <summary>C094.ApplyMask (0x14191A260 on the analysed build).</summary>
+    public const string C094_ApplyMask = "40 53 57 41 54 41 55 48 81 EC 88 00 00 00";
+    /// <summary>C043.Start (0x141929B10 on the analysed build).</summary>
+    public const string C043_Start = "48 89 5C ?? ?? 57 48 81 EC 80 00 00 00 48 8B D9 E8";
+    /// <summary>C043.Stop (0x141929D20 on the analysed build).</summary>
+    public const string C043_Stop = "40 53 48 83 EC 20 0F B6 81 88 00 00 00 48 8B D9 C0 E8 04 A8 01 75 ?? 32 C0 48 83 C4 20 5B C3 E8 ?? ?? ?? ?? 48 8B C8";
+    /// <summary>SchedulerClip.GetCharacter (0x14193A770 on the analysed build).</summary>
+    public const string SchedulerClip_GetCharacter = "E8 ?? ?? ?? ?? 48 85 C0 74 ?? 0F B6 80 90 01 00 00";
+    /// <summary>TimelineGroup.PlayAction (0x141992880 on the analysed build).</summary>
+    public const string TimelineGroup_PlayAction = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 50 48 8B 9C";
+    /// <summary>TimelineGroup.StopSlot (0x141993230 on the analysed build).</summary>
+    public const string TimelineGroup_StopSlot = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8B 59 18 41 0F B6 F8";
+    /// <summary>TimelineGroup.HasLiveSlot (0x141994110 on the analysed build).</summary>
+    public const string TimelineGroup_HasLiveSlot = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B 59 18 8B FA 48 85 DB 74 ?? 48 8B CB E8 ?? ?? ?? ?? 3B C7 75 ?? F6 83 73 02 00 00 01";
+    /// <summary>TimelineGroup.SetSpeedEach (0x1419943A0 on the analysed build).</summary>
+    public const string TimelineGroup_SetSpeedEach = "E8 ?? ?? ?? ?? FF C6 48 83 C5 02";
+    /// <summary>Tmb.Parse (0x141BF7DC0 on the analysed build).</summary>
+    public const string Tmb_Parse = "4C 89 44 ?? ?? 48 89 54 ?? ?? 53 55 56 41 54";
+    /// <summary>Tmb.ResolveKeyPath (0x141BFC4D0 on the analysed build).</summary>
+    public const string Tmb_ResolveKeyPath = "48 85 D2 0F 84 ?? ?? ?? ?? 53 55 56 57 41 56";
+    /// <summary>C198.Stop (0x141BFD1E0 on the analysed build).</summary>
+    public const string C198_Stop = "40 53 48 83 EC 20 0F B6 81 88 00 00 00 48 8B D9 C0 E8 04 A8 01 75 ?? 32 C0 48 83 C4 20 5B C3 E8 ?? ?? ?? ?? 48 85 C0";
+    /// <summary>C198.SelfStop (0x141BFD2F0 on the analysed build).</summary>
+    public const string C198_SelfStop = "40 53 48 83 EC 20 0F B6 81 88 00 00 00 48 8B D9 C0 E8 04 A8 01 0F 84 ?? ?? ?? ?? 48 8B 41 48";
+    /// <summary>C198.FindModel (0x141BFD420 on the analysed build).</summary>
+    public const string C198_FindModel = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8B F1 41 0F B7 E8";
+    /// <summary>C198.EarlyEnd (0x141BFD560 on the analysed build).</summary>
+    public const string C198_EarlyEnd = "E8 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? F3 0F 10 4B 50";
+    /// <summary>SchedulerTimeline.TryComplete (0x141BFDAD0 on the analysed build).</summary>
+    public const string SchedulerTimeline_TryComplete = "40 53 48 83 EC 20 F6 41 11 01 48 8B D9 0F 85 ?? ?? ?? ?? 0F B6 41 10";
+    /// <summary>SchedulerTimeline.BlendInLength (0x141BFF230 on the analysed build).</summary>
+    public const string SchedulerTimeline_BlendInLength = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B 01 48 8B FA 48 8B D9 FF 90 ?? ?? ?? ?? 48 85 C0";
+    /// <summary>SchedulerTimeline.PreEndNotify (0x141BFF3A0 on the analysed build).</summary>
+    public const string SchedulerTimeline_PreEndNotify = "40 53 48 83 EC 20 48 8B 01 48 8B D9 FF 90 ?? ?? ?? ?? 48 85 C0 0F 84";
+    /// <summary>SchedulerTimeline.InitPlay (0x141C00130 on the analysed build).</summary>
+    public const string SchedulerTimeline_InitPlay = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 48 89 7C ?? ?? 41 56 48 83 EC 20 44 8B 74";
+    /// <summary>TimelineGroup.Teardown (0x141C005B0 on the analysed build).</summary>
+    public const string TimelineGroup_Teardown = "40 53 48 83 EC 20 0F B6 81 72 02 00 00";
+    /// <summary>AnimInstance.Build (0x141C307B0 on the analysed build).</summary>
+    public const string AnimInstance_Build = "40 55 53 57 41 54 41 57 48 8B EC";
+    /// <summary>Vfx.SpawnTimelineVfx (0x141C328F0 on the analysed build).</summary>
+    public const string Vfx_SpawnTimelineVfx = "40 53 55 56 57 48 81 EC F8 01 00 00";
+    /// <summary>EmoteController.GetPosture (0x140616160 on the analysed build).</summary>
+    public const string EmoteController_GetPosture = "40 53 48 83 EC 20 48 8B D9 48 8B 49 08 48 85 C9 0F 84";
+    /// <summary>Havok.FinishAnimation (0x140259010 on the analysed build).</summary>
+    public const string Havok_FinishAnimation = "48 89 5C ?? ?? 55 48 83 EC 30 48 8B E9 0F 29 74";
+    /// <summary>VfxObject.Spawn (0x14045C800 on the analysed build).</summary>
+    public const string VfxObject_Spawn = "0F B6 44 ?? ?? 49 8B D1 88 81 4C 02 00 00";
+    /// <summary>ActionTimelineSequencer.SetSlotSpeed (0x1406071F0 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_SetSlotSpeed = "83 FA 0E 73 ?? 8B C2 F3 0F 10 84 81 54 01 00 00";
+    /// <summary>ActionTimelineSequencer.Update (0x140607CC0 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_Update = "48 8B C4 53 56 57 41 57 48 81 EC 98 00 00 00";
+    /// <summary>C009.Stop (0x14190DA10 on the analysed build).</summary>
+    public const string C009_Stop = "48 89 5C ?? ?? 56 48 83 EC 20 48 83 B9 98 00 00 00 00";
+    /// <summary>TimelineGroup.SetCurrentHandle (0x141993560 on the analysed build).</summary>
+    public const string TimelineGroup_SetCurrentHandle = "40 55 56 41 54 41 55 41 56 41 57 48 8D ?? 24 F9";
+    /// <summary>TimelineGroup.CreateTimeline (0x1419950E0 on the analysed build).</summary>
+    public const string TimelineGroup_CreateTimeline = "40 56 41 56 48 83 EC 38 41 B8 04 00 00 00";
+    /// <summary>AnimInstance.FramesToControlTime (0x141C30E40 on the analysed build).</summary>
+    public const string AnimInstance_FramesToControlTime = "40 53 48 83 EC 40 48 8B D9 0F 29 74 ?? ?? 48 8B 49 78";
+    /// <summary>PartialSkeleton.RebuildTrackMasks (0x14020B190 on the analysed build).</summary>
+    public const string PartialSkeleton_RebuildTrackMasks = "4C 8B DC 41 55 48 81 EC F0 00 00 00";
+    /// <summary>SkeletonUpdater.ExecuteUpdaterJob (0x14025D6F0 on the analysed build).</summary>
+    public const string SkeletonUpdater_ExecuteUpdaterJob = "48 89 4C ?? ?? 53 55 57 41 56 41 57 48 83 EC 60";
+    /// <summary>PartialSkeleton.SetClaimedGroups (0x14020B4C0 on the analysed build).</summary>
+    public const string PartialSkeleton_SetClaimedGroups = "83 49 08 01 48 89 51 10";
+    /// <summary>PartialSkeleton.StartController (0x140208D90 on the analysed build).</summary>
+    public const string PartialSkeleton_StartController = "4C 89 44 ?? ?? 55 57 41 54 41 57";
+    /// <summary>hkaAnimatedSkeleton.SampleAndCombineInternal (0x141F03590 on the analysed build).</summary>
+    public const string hkaAnimatedSkeleton_SampleAndCombineInternal = "48 89 5C ?? ?? 4C 89 4C ?? ?? 44 89 44 ?? ?? 48 89 4C ?? ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D ?? 24 20 FF FF FF";
+    /// <summary>hkaSampleBlendJob.Build (0x141F08FD0 on the analysed build).</summary>
+    public const string hkaSampleBlendJob_Build = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 41 54 41 55 41 56 41 57 48 83 EC 20 49 8B F1 4D 8B F0";
+    /// <summary>hkaAnimationControl.InitTrackWeights (0x141F277F0 on the analysed build).</summary>
+    public const string hkaAnimationControl_InitTrackWeights = "40 56 48 83 EC 40 48 83 79 38 00";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
@@ -256,6 +540,10 @@ internal static class NativeOffsets
     public static readonly OffsetPattern ApricotJobSystem_SlotTable = new("ApricotJobSystem.SlotTable", "48 8B B8 ?? ?? ?? ?? 49 81 C0 00 20 00 00", 3, 4, 0x1498);
     public static readonly OffsetPattern ScheduleManagement_FrameDelta = new("ScheduleManagement.FrameDelta", "F3 0F 10 78 ?? 0F 2F F7", 4, 1, 0x50);
     public static readonly OffsetPattern SchedulerTimeline_StopFadeFrames = new("SchedulerTimeline.StopFadeFrames", "8B B8 ?? ?? ?? ?? 48 8B B3 98 00 00 00", 2, 4, 0x220);
+    public static readonly OffsetPattern Character_MountId = new("Character.MountId", "66 83 B9 ?? ?? ?? ?? 00 74 ?? B8 03 00 00 00", 3, 4, 0x688);
+    public static readonly OffsetPattern Character_MoveFlags628 = new("Character.MoveFlags628", "F6 81 ?? ?? ?? ?? 20 74 ?? B8 05 00 00 00", 2, 4, 0x628);
+    public static readonly OffsetPattern PartialSkeleton_ControllerSet = new("PartialSkeleton.ControllerSet", "48 8B 91 ?? ?? ?? ?? 49 89 ?? ?? 49 89 ?? ?? 33 ED", 3, 4, 0x198);
+    public static readonly OffsetPattern AnimationController_WorkEntry = new("AnimationController.WorkEntry", "49 8B ?? 48 8B 51 08 8B C2", 2, 1, 0x48);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)
@@ -289,6 +577,21 @@ internal static class NativeData
     public static readonly DataPattern ParamClip_Vtbl = new("ParamClip.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 8B F9 48 89 ?? 48 8B 89 A0 00 00 00", 3, 7, 0x14231BF90UL);
     public static readonly DataPattern AsyncVfxClip_Vtbl = new("AsyncVfxClip.Vtbl", "48 8D 05 ?? ?? ?? ?? 45 33 C0 C7 41 6C 00 00 80 BF", 3, 7, 0x142324E50UL);
     public static readonly DataPattern ScheduleManagement_InstancePtr = new("ScheduleManagement.InstancePtr", "48 8B 05 ?? ?? ?? ?? 0F 29 7C ?? ?? F3 0F 10 78 50", 3, 7, 0x142A95C70UL);
+    public static readonly DataPattern AnimationControllerHandle_Vtbl = new("AnimationControllerHandle.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 89 ?? 48 8B D9 33 C0 C7 41 10 00 00 80 3F", 3, 7, 0x142140F48UL);
+    public static readonly DataPattern AnimationController_Vtbl = new("AnimationController.Vtbl", "48 8D 05 ?? ?? ?? ?? 8B EA 48 89 ?? 4C 8D 71 10", 3, 7, 0x142140F68UL);
+    public static readonly DataPattern TimelineContainer_SpeedFactor2CC = new("TimelineContainer.SpeedFactor2CC", "F3 0F 59 35 ?? ?? ?? ?? 0F 28 D6 48 8D 4F 10", 4, 8, 0x142143DA0UL);
+    public static readonly DataPattern ScheduleManagement_Vtbl = new("ScheduleManagement.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 8B D9 48 89 ?? 8B FA 48 8B 49 60 48 85 C9 74 ?? 48 8B 01 BA 01 00 00 00 FF 50 10", 3, 7, 0x14216E5B8UL);
+    public static readonly DataPattern TimelineContainer_Vtbl = new("TimelineContainer.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 8B D9 48 89 ?? 48 8B 89 F8 02 00 00", 3, 7, 0x142196F38UL);
+    public static readonly DataPattern SoundClip_Vtbl = new("SoundClip.Vtbl", "48 8D 05 ?? ?? ?? ?? 33 F6 48 89 ?? 8B DE", 3, 7, 0x1422E9378UL);
+    public static readonly DataPattern Holder_Vtbl = new("Holder.Vtbl", "48 8D 05 ?? ?? ?? ?? 8B EA 48 89 ?? 48 8B D9 48 8D 05 ?? ?? ?? ?? 48 89 ?? 18 48 8B 41 38", 3, 7, 0x14231A0F0UL);
+    public static readonly DataPattern FootstepClip_Vtbl = new("FootstepClip.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 89 ?? 48 8B C1 66 C7 81 90 00 00 00 01 00 C6 81 98 00 00 00 00 C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC 48 83 EC 28 83 B9 84 00 00 00 6A", 3, 7, 0x142323C98UL);
+    public static readonly DataPattern BlendNode_Vtbl = new("BlendNode.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 8B D9 48 89 ?? 48 8B 49 18 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 4B 20", 3, 7, 0x14232A5D0UL);
+    public static readonly DataPattern C198Clip_Vtbl = new("C198Clip.Vtbl", "48 8D 05 ?? ?? ?? ?? 8B DA 48 89 ?? 48 8B F9 E8 ?? ?? ?? ?? F6 C3 01 74 ?? BA B0 00 00 00 48 8B CF E8 ?? ?? ?? ?? 48 8B 5C ?? ?? 48 8B C7 48 83 C4 20 5F C3 CC CC 48 89 5C", 3, 7, 0x142444460UL);
+    public static readonly DataPattern SchedulerTimeline_Vtbl = new("SchedulerTimeline.Vtbl", "48 8D 05 ?? ?? ?? ?? 48 8B D9 48 89 ?? E8 ?? ?? ?? ?? 48 8B 93 98 00 00 00", 3, 7, 0x1424447E0UL);
+    public static readonly DataPattern Framework_InstancePtr = new("Framework.InstancePtr", "48 89 05 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 45 33 C0", 3, 7, 0x1428F9F00UL);
+    public static readonly DataPattern GPose_StateByte = new("GPose.StateByte", "80 3D ?? ?? ?? ?? 40 73 ?? 33 D2 48 8B C8 E8 ?? ?? ?? ?? 48 8D ?? 24 40", 2, 7, 0x142A98EB4UL);
+    public static readonly DataPattern GPose_FlagsByte = new("GPose.FlagsByte", "F6 05 ?? ?? ?? ?? 04 74 ?? 80 3D ?? ?? ?? ?? 40 73 ?? 33 D2 48 8B C8 E8 ?? ?? ?? ?? 48 8D ?? 24 40", 2, 7, 0x142A98EC3UL);
+    public static readonly DataPattern Character_SpeedFactorD7E = new("Character.SpeedFactorD7E", "F3 0F 59 05 ?? ?? ?? ?? 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC 40 53", 4, 8, 0x142ACBD28UL);
 
     /// <summary>Address the instruction refers to: match + InstructionLength + rel32. A value different from
     /// <see cref="DataPattern.Analysed"/> is normal after a patch.</summary>

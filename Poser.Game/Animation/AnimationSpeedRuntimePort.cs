@@ -170,6 +170,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
                 // whatever the game just decided.
                 container->OverallSpeed = speed;
                 result = true;
+                _seek?.HoldActorSpeed((Character*)owner, speed, enforcement.SlotSpeeds);
             }
             // Layer speeds go onto the slot timelines (and the layer's prop
             // controls) natively each tick; the props of an actor paused as a
