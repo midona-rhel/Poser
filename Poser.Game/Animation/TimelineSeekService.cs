@@ -552,6 +552,11 @@ public sealed unsafe class TimelineSeekService : IDisposable
     {
         if (_applyRequestsHook == null)
             return;
+#if DEBUG
+        long passStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        double collectMs = 0, arbitrateMs = 0;
+        int refiresBefore = _refires;
+#endif
         var next = new Dictionary<nint, (ulong, ulong)>();
         var suppressed = new HashSet<nint>();
         var liveFades = new HashSet<nint>();
@@ -575,7 +580,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     continue;
                 if (control == 0)
                     control = _engine.PropControl(root);
+#if DEBUG
+                long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
                 var tree = _engine.Collect(root);
+#if DEBUG
+                collectMs += System.Diagnostics.Stopwatch.GetElapsedTime(c0).TotalMilliseconds;
+#endif
                 foreach (var clip in tree.WeaponRequests)
                 {
                     // Started (+0x88 bit 4) and still active (+0x10 bit 4).
@@ -608,7 +619,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
             }
             if (control != 0 && (group0 != 0 || group1 != 0))
                 next[control] = (group0, group1);
+#if DEBUG
+            long a0 = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
             ArbitratePropAnimations(character, summons, owner0, owner1, suppressed);
+#if DEBUG
+            arbitrateMs += System.Diagnostics.Stopwatch.GetElapsedTime(a0).TotalMilliseconds;
+#endif
             // A lower layer's C198 whose prop a higher layer replaced would see its
             // model leave the actor and stop itself for good (self-stop, §7.7): the
             // prop was gone once the higher layer ended. Re-armed each tick.
@@ -637,7 +654,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (!suppressed.Contains(prop))
                 _engine.SetPropTimelineWeight(prop, 1f);
         _suppressedProps = suppressed;
+#if DEBUG
+        double passMs = System.Diagnostics.Stopwatch.GetElapsedTime(passStart).TotalMilliseconds;
+        if (passMs > 1.0)
+            _log.Information($"[TimelineSeek] prop pass {passMs:F1} ms: collect {collectMs:F2}, arbitrate {arbitrateMs:F2} (re-fires {_refires - refiresBefore}), rest {passMs - collectMs - arbitrateMs:F2}");
+#endif
     }
+    private int _refires;
 
     // C094s whose DrawData prop-slot bit (bit 3: slot 2, the group-0 prop) Poser
     // cleared, with the bits taken; and the ones still wanted cleared this tick.
@@ -749,6 +772,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (_propRefired.TryGetValue(weapon, out var refiredOver) && refiredOver == current)
                 continue;
             _propRefired[weapon] = current;
+            _refires++;
             if (_engine.ReFireProp(character, top.Clip))
                 LogOnce($"refire:{TimelineSeekEngine.PropTimelineId(top.Clip)}",
                     $"[TimelineSeek] prop {TimelineSeekEngine.PropTimelineId(top.Clip)} of slot {top.Slot} re-fired over a lower layer's prop {currentId}");
