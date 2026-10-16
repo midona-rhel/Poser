@@ -46,8 +46,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // Slots whose owned layer the game ended (under _targetLock): the layer's held
     // speed and weight don't act on what plays there next.
     private readonly HashSet<(nint Character, int Slot)> _endedSlots = new();
-    // An owned layer's length in seconds, read once per slot timeline.
-    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Seconds)> _ownedLengths = new();
+    // An owned layer's length in seconds, as last read while it played.
+    private readonly Dictionary<(ActorId Actor, int Slot), float> _ownedLengths = new();
     // The slot timeline whose pre-end notify lead (+0x26E) is switched off, and its value.
     private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, short Original)> _leads = new();
     // Layers let go of whose lead still needs its value back (under _targetLock).
@@ -824,9 +824,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
         }
         if (live == id)
         {
-            nint root = AnimationNativeState.SlotTimeline(sequencer, key.Slot);
-            if (!_ownedLengths.TryGetValue(key, out var length) || length.Root != root || length.Seconds <= 0f)
-                _ownedLengths[key] = (root, TimelineReading(character, (AnimationSlot)key.Slot)?.Duration ?? 0f);
+            // Read while it plays: until every clip has loaded, the reading is +0x40's
+            // padded length, not the animation's.
+            if (TimelineReading(character, (AnimationSlot)key.Slot) is { Duration: > 0f } reading)
+                _ownedLengths[key] = reading.Duration;
             return true;
         }
         lock (_targetLock)
@@ -836,7 +837,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         }
         _leads.Remove(key);
         _remaining.Remove(key);
-        float seconds = _ownedLengths.Remove(key, out var last) ? last.Seconds : 0f;
+        float seconds = _ownedLengths.Remove(key, out var last) ? last : 0f;
         LayerEnded?.Invoke(key.Actor, (AnimationSlot)key.Slot, seconds);
         return false;
     }
