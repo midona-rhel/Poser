@@ -67,6 +67,7 @@ internal sealed unsafe class TimelineSeekEngine
     {
         public readonly List<(nint Clip, nint Child)> C010s = new();
         public readonly List<float> C010Starts = new();                 // absolute
+        public readonly HashSet<nint> NestedC010s = new();              // not on the root
         public readonly Dictionary<nint, nint> Havok = new();          // C009 → owner timeline
         public readonly Dictionary<nint, float> HavokStart = new();    // C009 → absolute start
         // C009 → root frames per frame of its own timeline (1 on the root; a range
@@ -114,6 +115,8 @@ internal sealed unsafe class TimelineSeekEngine
                             break;
                         tree.C010s.Add((clip, child));
                         tree.C010Starts.Add(baseStart + span * *(float*)(clip + 0x50));
+                        if (depth > 0)
+                            tree.NestedC010s.Add(clip);
                         float scale = *(float*)(clip + 0x160);
                         if (!(scale > 0f) || !float.IsFinite(scale))
                             scale = 1f;
@@ -241,13 +244,19 @@ internal sealed unsafe class TimelineSeekEngine
     private static bool CanSync(nint c009)
     {
         nint instance = *(nint*)(c009 + 0x98);
-        return instance != 0 && (*(uint*)(instance + 0x34) & 0x20) == 0 && *(uint*)(c009 + 0xB0) > 1;
+        return instance != 0 && (*(uint*)(instance + 0x34) & 0x20) == 0 && LengthKnown(c009);
     }
+
+    /// <summary>The game syncs only +0xB0 > 1; a face clip's PAP reports 1 frame and
+    /// free-runs from its Start in play. FUN_14190DE90 never reads +0xB0, so a
+    /// resolved length (+0xCC bit 6) is enough for a seek to place it.</summary>
+    private static bool LengthKnown(nint c009) =>
+        *(uint*)(c009 + 0xB0) > 1 || (*(byte*)(c009 + 0xCC) & 0x40) != 0;
 
     private static bool CanSyncNow(nint c009)
     {
         nint instance = *(nint*)(c009 + 0x98);
-        return instance != 0 && *(nint*)(instance + 0x78) != 0 && *(uint*)(c009 + 0xB0) > 1;
+        return instance != 0 && *(nint*)(instance + 0x78) != 0 && LengthKnown(c009);
     }
 
     /// <summary>Syncs every guarded C009 inside a root speed window; returns the
@@ -804,16 +813,30 @@ internal sealed unsafe class TimelineSeekEngine
         // An ended one (0xE1: +0x10 bit 4 clear, bits 6/7 set; event 9 never goes to
         // a C010) is put back to never-started, (+0x10 & 1), with +0x11 bits 0/1 and
         // the pending +0x8C cleared, so the step starts it again as it passes.
+        // A C010 nested below the root's own (each face clip's range C010) that is
+        // still active is stopped first, with its own Stop (reason 2, the seek's: no
+        // catch-up), the one path that stops its child's clips; only the root runs
+        // the finalization that could end the row, so only the root's own C010s are
+        // never stopped. +0x7C is the start credit an activation start pre-pays:
+        // left over, the next start crossing would be swallowed.
         foreach (var (c010, child) in tree.C010s)
         {
             byte state = *(byte*)(c010 + 0x10);
+            bool nested = tree.NestedC010s.Contains(c010);
             if ((state & 0x10) != 0)
-                continue;
-            if ((state & 0xC0) != 0)
+            {
+                if (!nested)
+                    continue;
+                var stop = (delegate* unmanaged<nint, int, byte>)(*(nint*)(*(nint*)c010 + 32 * 8));
+                stop(c010, 2);
+                state = *(byte*)(c010 + 0x10);
+            }
+            if ((state & 0xD0) != 0)
             {
                 *(byte*)(c010 + 0x10) = (byte)(state & 1);
                 *(byte*)(c010 + 0x11) &= unchecked((byte)~3);
                 *(uint*)(c010 + 0x8C) = 0;
+                *(byte*)(c010 + 0x7C) = 0;
             }
             if ((*(byte*)(child + 0x7C) & 0x40) == 0)
                 continue;
