@@ -40,6 +40,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // Armed loops: (actor, slot) → the timeline id the loop belongs to. Written by
     // the UI, read by the tick (under _targetLock).
     private readonly Dictionary<(ActorId Actor, int Slot), ushort> _loops = new();
+    // The slot timeline whose pre-end lead (+0x26E) a loop suppressed, and its value.
+    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, short Original)> _leads = new();
+    // Loops switched off whose +0x26E still needs its value back (under _targetLock).
+    private readonly List<(ActorId Actor, int Slot)> _leadRestores = new();
 
     private delegate void DisableDrawFn(nint character);
     private readonly Hook<DisableDrawFn>? _disableDrawHook;
@@ -444,7 +448,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
     internal void ClearLoop(ActorId actor, AnimationSlot slot)
     {
         lock (_targetLock)
-            _loops.Remove((actor, (int)slot));
+            if (_loops.Remove((actor, (int)slot)))
+                _leadRestores.Add((actor, (int)slot));
     }
 
     internal void ClearLoops(ActorId actor)
@@ -457,7 +462,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     (gone ??= new()).Add(key);
             if (gone != null)
                 foreach (var key in gone)
+                {
                     _loops.Remove(key);
+                    _leadRestores.Add(key);
+                }
         }
     }
 
@@ -475,6 +483,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     /// </summary>
     private void PumpLoops(KeyValuePair<(ActorId, int), float>[] scrubbed)
     {
+        RestoreLeads();
         if (LoopsSuspended)
             return;
         KeyValuePair<(ActorId Actor, int Slot), ushort>[] loops;
@@ -500,13 +509,19 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (*(ushort*)((byte*)sequencer + 0xE0 + 2 * key.Slot) != timeline || !Supports(character, key.Slot))
                 continue;
             nint root = AnimationNativeState.SlotTimeline(sequencer, key.Slot);
+            SuppressLead(key, root);
             float speed = *(float*)(root + 0x240);
             if (!(speed > 0f))
                 continue;
             float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
             if (!(end > begin))
                 end = begin + TimelineSeekEngine.Length(root);
-            // The seek's last valid frame is end − 1.
+            // The body is done where its last C009 runs out (+0x40 also counts the
+            // TMB's padding); past that the pose only holds. The seek's last valid
+            // frame is end − 1.
+            var tree = _engine.Collect(root);
+            if (tree.PoseEnd > begin && !tree.PoseEndPending)
+                end = Math.Min(end, tree.PoseEnd);
             if (TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps < end - 1f)
                 continue;
             var work = new TimelineSeekWork();
@@ -517,6 +532,47 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             }
             _work[((nint)character, key.Slot)] = work;
+        }
+    }
+
+    /// <summary>
+    /// The sequencer swaps a slot's timeline for the next row once its C009s
+    /// have no more than +0x26E frames left (the pre-end notify, FUN_141BFF3A0;
+    /// 12 on the emotes measured), before the pose has run out. A loop wraps at
+    /// the pose end instead, so the lead is disabled (−1, the ctor's value)
+    /// while armed. Once per slot timeline (a replay is a new one).
+    /// </summary>
+    private void SuppressLead((ActorId Actor, int Slot) key, nint root)
+    {
+        if (_leads.TryGetValue(key, out var held) && held.Root == root)
+            return;
+        short original = *(short*)(root + 0x26E);
+        _leads[key] = (root, original);
+        if (original >= 0)
+            *(short*)(root + 0x26E) = -1;
+    }
+
+    /// <summary>Loop off: the timeline gets its lead back and ends as the game
+    /// would. Skipped once the slot runs another timeline.</summary>
+    private void RestoreLeads()
+    {
+        (ActorId Actor, int Slot)[] keys;
+        lock (_targetLock)
+        {
+            if (_leadRestores.Count == 0)
+                return;
+            keys = _leadRestores.ToArray();
+            _leadRestores.Clear();
+        }
+        foreach (var key in keys)
+        {
+            if (!_leads.Remove(key, out var held))
+                continue;
+            var character = _native.Resolve(key.Actor, out _);
+            if (character == null)
+                continue;
+            if (AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot) == held.Root)
+                *(short*)(held.Root + 0x26E) = held.Original;
         }
     }
 
@@ -595,8 +651,12 @@ public sealed unsafe class TimelineSeekService : IDisposable
         lock (_targetLock)
         {
             _targets.Clear();
+            foreach (var key in _loops.Keys)
+                _leadRestores.Add(key);
             _loops.Clear();
         }
+        // Best effort: unload may not run on the framework thread.
+        try { RestoreLeads(); } catch { }
         _work.Clear();
         _restores.Clear();
     }

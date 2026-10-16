@@ -70,6 +70,12 @@ internal sealed unsafe class TimelineSeekEngine
         public readonly List<nint> Vfx = new();                         // C012/C049
         public readonly List<nint> AsyncVfx = new();                    // C173
         public readonly List<(nint Clip, float Start)> Summons = new(); // C031 + absolute start
+        /// <summary>Where the last C009 animation runs out on the root clock (max of
+        /// absolute start + resolved length +0xB0), or 0 without C009s.</summary>
+        public float PoseEnd;
+        /// <summary>A C009 that hasn't resolved its length yet (not started): the
+        /// pose end can still move out.</summary>
+        public bool PoseEndPending;
     }
 
     public Tree Collect(nint root)
@@ -97,6 +103,11 @@ internal sealed unsafe class TimelineSeekEngine
                         break;
                     case SeekClipKind.HavokAnimation:
                         tree.Havok[clip] = t;
+                        if ((*(byte*)(clip + 0xCC) & 0x40) != 0)
+                            tree.PoseEnd = Math.Max(tree.PoseEnd,
+                                baseStart + *(float*)(clip + 0x50) + *(uint*)(clip + 0xB0));
+                        else
+                            tree.PoseEndPending = true;
                         break;
                     case SeekClipKind.Vfx:
                         tree.Vfx.Add(clip);
