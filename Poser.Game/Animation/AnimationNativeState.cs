@@ -417,10 +417,13 @@ public sealed unsafe partial class AnimationNativeState
             return false;
         var sequencer = &character->Timeline.TimelineSequencer;
         nint before = SlotTimeline(sequencer, 0);
-        PrepareMode(character, first);
+        // The mode the emote settles in comes from its loop row (an emote-loop row
+        // puts the character in EmoteLoop; in Normal mode the intro alone was
+        // replaced by idle at once).
+        PrepareMode(character, loop != 0 ? loop : first);
         WithUpperKept(first, () =>
         {
-            _playActionTimeline(&character->Timeline, intro, intro != 0 ? loop : (ushort)0, nint.Zero);
+            _playActionTimeline(&character->Timeline, first, intro != 0 ? loop : (ushort)0, nint.Zero);
             return true;
         });
         return SlotTimeline(sequencer, 0) != before;
