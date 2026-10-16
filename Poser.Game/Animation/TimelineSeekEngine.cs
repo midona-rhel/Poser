@@ -104,6 +104,10 @@ internal sealed unsafe class TimelineSeekEngine
                         break;
                     case SeekClipKind.HavokAnimation:
                         tree.Havok[clip] = t;
+                        // A clip without a pose (see Remaining) never plays; the
+                        // timeline ends without it.
+                        if (NoPose(clip))
+                            break;
                         if ((*(byte*)(clip + 0xCC) & 0x40) != 0)
                             tree.PoseEnd = Math.Max(tree.PoseEnd,
                                 baseStart + *(float*)(clip + 0x50) + *(uint*)(clip + 0xB0));
@@ -449,6 +453,16 @@ internal sealed unsafe class TimelineSeekEngine
         return playInfoOf(root);
     }
 
+    /// <summary>No pose: a conditional variant its owner doesn't play (started with
+    /// anim id 0, inst+0x40 == 0, whose 0x98 returns its full length for ever), or
+    /// a refused holder. The game's finalization doesn't wait on them.</summary>
+    private static bool NoPose(nint clip)
+    {
+        nint instance = *(nint*)(clip + 0x98);
+        return instance != 0 && (*(int*)(instance + 0x40) == 0 ||
+            (*(nint*)(instance + 0x78) == 0 && *(byte*)(instance + 0x3A) == 1));
+    }
+
     /// <summary>
     /// The frames the root's C009s have left, as the sequencer's pre-end notify
     /// reads them (FUN_1418FF650, which can't be called: it may send the notify
@@ -467,12 +481,7 @@ internal sealed unsafe class TimelineSeekEngine
         {
             if ((*(byte*)(clip + 0x10) & 0x80) != 0)
                 continue;
-            // No pose: a conditional variant its owner doesn't play (started with
-            // anim id 0, inst+0x40 == 0, whose 0x98 returns its full length for
-            // ever), or a refused holder. The game's finalization doesn't wait on them.
-            nint instance = *(nint*)(clip + 0x98);
-            if (instance != 0 && (*(int*)(instance + 0x40) == 0 ||
-                (*(nint*)(instance + 0x78) == 0 && *(byte*)(instance + 0x3A) == 1)))
+            if (NoPose(clip))
                 continue;
             var remainingOf = (delegate* unmanaged<nint, float>)(*(nint*)(*(nint*)clip + 0x98));
             remaining = Math.Max(remaining, Math.Max(0f, remainingOf(clip)));
