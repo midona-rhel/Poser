@@ -652,7 +652,7 @@ internal sealed unsafe class TimelineSeekEngine
     {
         if (!Ready)
             return;
-        foreach (int slot in new[] { 0, 1, 2, 3, 6 })
+        for (int slot = 0; slot < 14; slot++)
             SetVfxSpeeds(AnimationNativeState.SlotTimeline(sequencer, slot), speed);
         SetWeaponVfxSpeeds(character, speed);
         for (int w = 0; w < 4; w++)

@@ -362,7 +362,9 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         return Outcome.Ok();
     }
 
-    private static readonly int[] EdgeSlots = { 0, 1, 2, 3, 6 };
+    // All 14 sequencer slots: GPose's own speed push (FUN_1408BDB50) only sets
+    // 0/1/2/3/6, so Lips (7) and slots 4, 5, 8–13 kept moving under Poser's pause.
+    private static readonly int[] EdgeSlots = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
 
     /// <summary>
     /// #533: Poser writes the Havok controls now, the game gives the prop
