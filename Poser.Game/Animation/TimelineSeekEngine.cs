@@ -125,6 +125,9 @@ internal sealed unsafe class TimelineSeekEngine
     public static bool IsIntegerFrame(nint timeline) => (*(byte*)(timeline + 0x7C) & 0x20) != 0;
     public static bool IsLoaded(nint timeline) => *(int*)(timeline + 0x78) == 5;
     public static float Length(nint timeline) => *(float*)(timeline + 0x48);
+    /// <summary>The clock runs in [begin +0x3C, end +0x40] (end = begin + length).</summary>
+    public static float Begin(nint timeline) => *(float*)(timeline + 0x3C);
+    public static float End(nint timeline) => *(float*)(timeline + 0x40);
 
     // ── Speed window ──────────────────────────────────────────────────
     // Advance multiplies dt by tl+0x240 and the clip sync multiplies the whole
@@ -240,7 +243,12 @@ internal sealed unsafe class TimelineSeekEngine
         if ((*(uint*)(root + 0x54) & ~4u) != 0)
             return "timeline is held by a pause bit";
 
-        target = Math.Clamp(target, 0f, Math.Max(0f, Length(root) - 1f));
+        // One frame short of the end: a C010 child placed exactly on its end fires
+        // its end events but never completes.
+        float begin = Begin(root), end = End(root);
+        if (!(end > begin))
+            end = begin + Length(root);
+        target = Math.Clamp(target, begin, Math.Max(begin, end - 1f));
         var tree = Collect(root);
         work.Begin(character, root, VfxHandles(tree));
 
