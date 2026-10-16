@@ -55,6 +55,14 @@ public sealed unsafe class TimelineSeekService : IDisposable
         public bool Replayed;
         public bool SpeedLogged;
         public int Frame;
+
+        /// <summary>Another redraw arrived: whatever was replayed is gone again.</summary>
+        public void Restart()
+        {
+            Replayed = false;
+            Array.Clear(Done);
+            Frame = 0;
+        }
         public Restore((int, ushort, float)[] slots, ushort objectIndex, uint entityId)
         {
             Slots = slots;
@@ -192,7 +200,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
     {
         try
         {
-            if (character != 0 && _managed.Contains(character) && (*(byte*)(character + 0x9A) & 0x80) != 0)
+            // A character with a pending restore counts even if Poser's list dropped
+            // it for a moment: the game is calling this on a live object.
+            if (character != 0 && (_managed.Contains(character) || _restores.ContainsKey(character))
+                && (*(byte*)(character + 0x9A) & 0x80) != 0)
                 Capture(character);
         }
         catch
@@ -204,10 +215,17 @@ public sealed unsafe class TimelineSeekService : IDisposable
 
     private void Capture(nint character)
     {
-        // A redraw during a pending restore would capture the transient base
-        // timeline; keep the first capture.
-        if (_restores.ContainsKey(character))
+        // A redraw during a pending restore (redraws mashed) would capture the
+        // transient base timeline: keep the first capture, but start its replay
+        // over, since this redraw throws away whatever it already replayed.
+        if (_restores.TryGetValue(character, out var pending))
+        {
+            pending.Restart();
+            _work.Remove((character, 0));
+            _work.Remove((character, 1));
+            _work.Remove((character, 2));
             return;
+        }
         var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
         var slots = new List<(int, ushort, float)>(2);
         // Base, Upper Body and a held facial expression: DisableDraw stops all.
@@ -238,13 +256,16 @@ public sealed unsafe class TimelineSeekService : IDisposable
         List<nint>? finished = null;
         foreach (var (character, restore) in _restores)
         {
-            if (!_managed.Contains(character) || ++restore.Frame > RestoreFrames)
+            if (++restore.Frame > RestoreFrames)
             {
-                if (restore.Frame > RestoreFrames)
-                    LogOnce($"restore-timeout:{restore.Slots[0].Id}", "[TimelineSeek] redraw restore timed out; the actor keeps its default timeline.");
+                LogOnce($"restore-timeout:{restore.Slots[0].Id}", "[TimelineSeek] redraw restore timed out; the actor keeps its default timeline.");
                 (finished ??= new()).Add(character);
                 continue;
             }
+            // Poser's actor list can drop an actor for a few frames while its redraw
+            // settles; wait for it (never touch an address that isn't listed).
+            if (!_managed.Contains(character))
+                continue;
             var go = (CSGameObject*)character;
             if (go->ObjectIndex != restore.ObjectIndex || go->EntityId != restore.EntityId)
             {
