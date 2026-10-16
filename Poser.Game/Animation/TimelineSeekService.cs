@@ -115,6 +115,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
     {
         if (!Available || character == null)
             return false;
+        // Scheduler-driven actors (event/cutscene: +0x1CE8 bit 4) run their
+        // timelines from a scheduler instance; leave them to the clock writes.
+        if ((*(byte*)((nint)character + 0x1CE8) & 0x10) != 0)
+            return false;
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
         return root != 0 && TimelineSeekEngine.IsLoaded(root) && !TimelineSeekEngine.IsIntegerFrame(root)
             && (*(byte*)(root + 0x7C) & 0x40) == 0;
@@ -215,6 +219,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
 
     private void Capture(nint character)
     {
+        if ((*(byte*)(character + 0x1CE8) & 0x10) != 0)
+            return; // scheduler-driven actor: its scheduler replays it
         // A redraw during a pending restore (redraws mashed) would capture the
         // transient base timeline: keep the first capture, but start its replay
         // over, since this redraw throws away whatever it already replayed.
@@ -274,7 +280,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
             }
             // The replay's C009s start only once the new CharacterBase has its
             // skeleton (cb+0xA0) and partials.
-            if (go->RenderFlags != 0 || go->DrawObject == null
+            // The game's own fully-loaded edge (+0x9C bit 4: cleared by Disable/EnableDraw,
+            // set at load state 3 with animations loaded), plus the skeleton the
+            // replay's C009s start on.
+            if (go->RenderFlags != 0 || go->DrawObject == null || (*(byte*)(character + 0x9C) & 0x10) == 0
                 || ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)go->DrawObject)->Skeleton == null)
                 continue;
             var chara = (Character*)character;
