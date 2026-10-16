@@ -35,7 +35,8 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     {
         public float? OverallSpeed;
         public readonly Dictionary<int, float> SlotSpeeds = new();
-        public bool IsEmpty => OverallSpeed == null && SlotSpeeds.Count == 0;
+        public readonly Dictionary<int, float> SlotWeights = new();
+        public bool IsEmpty => OverallSpeed == null && SlotSpeeds.Count == 0 && SlotWeights.Count == 0;
     }
 
     private delegate bool CalculateAndApplyOverallSpeedDelegate(TimelineContainer* container);
@@ -196,6 +197,9 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             // enforced overall speed on its own.
             if (enforcement.OverallSpeed is { } propOverall)
                 ApplyOverallToUntrackedProps((Character*)owner, propOverall);
+            // Layer weights: new holders start at 1, so this runs every tick.
+            if (enforcement.SlotWeights.Count > 0)
+                _seek?.ApplySlotWeights((Character*)owner, enforcement.SlotWeights);
         }
         return result;
     }
@@ -330,6 +334,32 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         SyncEnforcementIndex();
         ApplySpeedNow(character, speed);
         ApplySameTickEdges(character, speed, enforcement);
+        return Outcome.Ok();
+    }
+
+    public Outcome SetSlotWeight(ActorId actor, AnimationSlot slot, float weight)
+    {
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        if (_seek == null || !_seek.Available)
+            return Outcome.Fail("Layer weight is unavailable: the native timeline layout is not resolved.");
+        if (!_overallSpeedHookEnabled)
+            return Outcome.Fail("Layer weight is unavailable: the game's speed hook is not active.");
+        EnforcementFor(actor).SlotWeights[(int)slot] = Math.Clamp(weight, 0f, 1f);
+        SyncEnforcementIndex();
+        _seek.ApplySlotWeights(character, EnforcementFor(actor).SlotWeights);
+        return Outcome.Ok();
+    }
+
+    public Outcome ClearSlotWeight(ActorId actor, AnimationSlot slot)
+    {
+        if (!_enforcement.TryGetValue(actor, out var enforcement) || !enforcement.SlotWeights.Remove((int)slot))
+            return Outcome.Ok();
+        PruneEnforcement(actor);
+        var character = _native.Resolve(actor, out _);
+        if (character != null)
+            _seek?.ApplySlotWeights(character, new Dictionary<int, float> { [(int)slot] = 1f });
         return Outcome.Ok();
     }
 

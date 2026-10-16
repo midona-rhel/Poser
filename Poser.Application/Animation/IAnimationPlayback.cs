@@ -23,6 +23,10 @@ public interface IAnimationPlayback
     bool IsPhysicsFrozen { get; }
     Outcome SetScenePhysicsFrozen(bool frozen);
     Outcome SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
+    /// <summary>The layer's held blend weight, or 1 when Poser holds none.</summary>
+    float WeightFor(ActorId actor, AnimationSlot slot);
+    /// <summary>Holds a layer's blend weight in [0, 1]; 1 releases it.</summary>
+    Outcome SetSlotWeight(ActorId actor, AnimationSlot slot, float weight);
     Outcome Pause(ActorId actor);
     Outcome Resume(ActorId actor);
     Outcome PauseSlot(ActorId actor, AnimationSlot slot);

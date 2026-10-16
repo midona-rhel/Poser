@@ -169,6 +169,31 @@ public sealed class AnimationSession : IAnimationPlayback
     public Outcome ClearSlotSpeed(ActorId actor, AnimationSlot slot) =>
         _speed.ClearSlotSpeed(actor, slot);
 
+    /// <summary>The layer's held blend weight, or 1 when Poser holds none.</summary>
+    public float WeightFor(ActorId actor, AnimationSlot slot) =>
+        OverridesFor(actor).SlotWeights.GetValueOrDefault(slot, 1f);
+
+    /// <summary>Holds a layer's blend weight in [0, 1]; 1 releases it.</summary>
+    public Outcome SetSlotWeight(ActorId actor, AnimationSlot slot, float weight)
+    {
+        if (_store.Suspended() is { } blocked) return blocked;
+        if (!float.IsFinite(weight))
+            return Outcome.Fail("Weight must be a finite number.");
+        weight = Math.Clamp(weight, 0f, 1f);
+        var result = weight >= 1f
+            ? _speedPort.ClearSlotWeight(actor, slot)
+            : _speedPort.SetSlotWeight(actor, slot, weight);
+        if (!result.Success)
+            return result;
+        _store.Mutate(actor, o =>
+        {
+            var weights = new Dictionary<AnimationSlot, float>(o.SlotWeights);
+            if (weight >= 1f) weights.Remove(slot); else weights[slot] = weight;
+            return o with { SlotWeights = weights };
+        });
+        return Outcome.Ok();
+    }
+
     public Outcome PauseSlot(ActorId actor, AnimationSlot slot) =>
         _speed.PauseSlot(actor, slot);
 
@@ -267,6 +292,12 @@ public sealed class AnimationSession : IAnimationPlayback
         // is a pause, and resets never unpause — only the play verbs do
         // (ruled 2026-09-01); the hold stays parked.
         var beforeReset = OverridesFor(actor);
+        if (beforeReset.SlotWeights.ContainsKey(slot))
+        {
+            var weight = SetSlotWeight(actor, slot, 1f);
+            if (!weight.Success)
+                return weight;
+        }
         if (beforeReset.SlotSpeedCaptures.ContainsKey(slot)
             && beforeReset.SlotSpeeds.GetValueOrDefault(slot) != 0f)
         {
@@ -505,6 +536,15 @@ public sealed class AnimationSession : IAnimationPlayback
                 BaseCapture = null,
                 BaseTimeline = null,
             };
+        }
+
+        if (owned.SlotWeights.Count > 0)
+        {
+            var weights = new Dictionary<AnimationSlot, float>(remaining.SlotWeights);
+            foreach (var slot in owned.SlotWeights.Keys)
+                if (Try(_speedPort.ClearSlotWeight(actor, slot)))
+                    weights.Remove(slot);
+            remaining = remaining with { SlotWeights = weights };
         }
 
         if (owned.SlotSpeedCaptures.Count > 0)

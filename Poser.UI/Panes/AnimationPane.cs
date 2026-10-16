@@ -518,6 +518,19 @@ public sealed class AnimationPane : IDisposable
             },
             id: $"anim-{slot}-speed");
 
+        float weight = _animation.WeightFor(actor, slot);
+        form.Slider(
+            "Weight",
+            weight,
+            0f,
+            1f,
+            next => Report(
+                _animation.SetSlotWeight(actor, slot, next),
+                $"{label} weight"),
+            format: "0.00",
+            disabled: disabled || !hasAnimation,
+            id: $"anim-{slot}-weight");
+
         // Base and Upper Body scrub their Havok control; the other layers their
         // timeline clock (native seek). A layer the seek can't move shows it disabled.
         DrawScrub(form, actor, slot, actionStyle, disabled);

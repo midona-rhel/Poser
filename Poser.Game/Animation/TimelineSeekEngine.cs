@@ -538,6 +538,32 @@ internal sealed unsafe class TimelineSeekEngine
         }
     }
 
+    // ── Layer weight ──────────────────────────────────────────────────
+    // The game has no per-slot weight. Each C009's animation holder
+    // (inst = clip+0x98, holder = inst+0x78) multiplies its blend-tree weight by
+    // holder+0x5C every pool update (FUN_1418FB860 → SetWeight, clamped to
+    // [0, 1]); only holder init writes it (1.0). Holding it per slot never fights
+    // the game; new holders (a restart, a new clip) need it again, so it is
+    // re-applied every tick.
+
+    /// <summary>Sets every holder of the slot timeline's tree to <paramref name="weight"/>.</summary>
+    public void SetSlotWeight(
+        FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer, int slot, float weight)
+    {
+        if (!Ready)
+            return;
+        nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
+        if (root == 0)
+            return;
+        foreach (var clip in Collect(root).Havok.Keys)
+        {
+            nint instance = *(nint*)(clip + 0x98);
+            nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
+            if (holder != 0 && *(float*)(holder + 0x5C) != weight)
+                *(float*)(holder + 0x5C) = weight;
+        }
+    }
+
     // ── Prop birth correction ─────────────────────────────────────────
     // A C031 fires in the step where the body crosses its start, so the prop
     // timeline is born at clock 0 while the body is already a fraction past it

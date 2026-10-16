@@ -437,6 +437,19 @@ public sealed unsafe class TimelineSeekService : IDisposable
         catch (Exception ex) { LogOnce("slotspeed", $"[TimelineSeek] slot speed edge faulted: {ex.Message}"); }
     }
 
+    /// <summary>Holds layer weights (see TimelineSeekEngine.SetSlotWeight).</summary>
+    internal void ApplySlotWeights(Character* character, IReadOnlyDictionary<int, float> weights)
+    {
+        if (character == null || weights.Count == 0)
+            return;
+        try
+        {
+            foreach (var (slot, weight) in weights)
+                _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, slot, weight);
+        }
+        catch (Exception ex) { LogOnce("weight", $"[TimelineSeek] layer weight faulted: {ex.Message}"); }
+    }
+
     /// <summary>Pause/resume edge for the actor's effects (the game drops speed 0).</summary>
     internal void ApplyVfxSpeed(Character* character, float overall)
     {

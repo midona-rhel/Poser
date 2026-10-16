@@ -244,6 +244,9 @@ public sealed record AnimationOverrides
     /// <summary>Native speed before Poser's first override per slot.</summary>
     public IReadOnlyDictionary<AnimationSlot, float> SlotSpeedCaptures { get; init; } =
         new Dictionary<AnimationSlot, float>();
+    /// <summary>Per-layer blend weight in [0, 1]; absent means the game's 1.</summary>
+    public IReadOnlyDictionary<AnimationSlot, float> SlotWeights { get; init; } =
+        new Dictionary<AnimationSlot, float>();
     /// <summary>Last nonzero speed restored by the layer Play action.</summary>
     public IReadOnlyDictionary<AnimationSlot, float> SlotResumeSpeeds { get; init; } =
         new Dictionary<AnimationSlot, float>();
@@ -267,7 +270,7 @@ public sealed record AnimationOverrides
     /// <summary>True when Poser owns anything that must be restored.</summary>
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
-        PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
+        PositionLock || SlotSpeeds.Count > 0 || SlotWeights.Count > 0 || HeldExpression != null ||
         SelectedSlots.Count > 0 || AppliedSlots.Count > 0 ||
         SlotSpeedCaptures.Count > 0 || LoopedSlots.Count > 0 ||
         LoopWantedSlots.Count > 0 || SlotCaptures.Count > 0 ||
