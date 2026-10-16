@@ -40,10 +40,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // Armed loops: (actor, slot) → the timeline id the loop belongs to. Written by
     // the UI, read by the tick (under _targetLock).
     private readonly Dictionary<(ActorId Actor, int Slot), ushort> _loops = new();
-    // The slot timeline whose one-shot field (+0x58) a loop zeroed, and its value.
-    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, int Original)> _oneShot = new();
-    // Loops switched off whose +0x58 still needs its value back (under _targetLock).
-    private readonly List<(ActorId Actor, int Slot)> _oneShotRestores = new();
 
     private delegate void DisableDrawFn(nint character);
     private readonly Hook<DisableDrawFn>? _disableDrawHook;
@@ -448,8 +444,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     internal void ClearLoop(ActorId actor, AnimationSlot slot)
     {
         lock (_targetLock)
-            if (_loops.Remove((actor, (int)slot)))
-                _oneShotRestores.Add((actor, (int)slot));
+            _loops.Remove((actor, (int)slot));
     }
 
     internal void ClearLoops(ActorId actor)
@@ -462,10 +457,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     (gone ??= new()).Add(key);
             if (gone != null)
                 foreach (var key in gone)
-                {
                     _loops.Remove(key);
-                    _oneShotRestores.Add(key);
-                }
         }
     }
 
@@ -483,7 +475,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
     /// </summary>
     private void PumpLoops(KeyValuePair<(ActorId, int), float>[] scrubbed)
     {
-        RestoreOneShots();
         if (LoopsSuspended)
             return;
         KeyValuePair<(ActorId Actor, int Slot), ushort>[] loops;
@@ -509,7 +500,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (*(ushort*)((byte*)sequencer + 0xE0 + 2 * key.Slot) != timeline || !Supports(character, key.Slot))
                 continue;
             nint root = AnimationNativeState.SlotTimeline(sequencer, key.Slot);
-            KeepAlive(key, root);
             float speed = *(float*)(root + 0x240);
             if (!(speed > 0f))
                 continue;
@@ -527,46 +517,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             }
             _work[((nint)character, key.Slot)] = work;
-        }
-    }
-
-    /// <summary>
-    /// A one-shot (+0x58 == 1) completes as soon as its last clip does, which is
-    /// short of +0x40 (Blow Bubbles at ~572 of 585), so the wrap never got there.
-    /// Root TryComplete requires +0x58 != 0: zeroed, the timeline stays alive to
-    /// +0x40 and the wrap reaches it. Once per slot timeline (a replay is a new one).
-    /// </summary>
-    private void KeepAlive((ActorId Actor, int Slot) key, nint root)
-    {
-        if (_oneShot.TryGetValue(key, out var held) && held.Root == root)
-            return;
-        int original = *(int*)(root + 0x58);
-        _oneShot[key] = (root, original);
-        if (original != 0)
-            *(int*)(root + 0x58) = 0;
-    }
-
-    /// <summary>Loop off: the timeline gets its own +0x58 back, so a one-shot
-    /// ends again. Skipped once the slot runs another timeline.</summary>
-    private void RestoreOneShots()
-    {
-        (ActorId Actor, int Slot)[] keys;
-        lock (_targetLock)
-        {
-            if (_oneShotRestores.Count == 0)
-                return;
-            keys = _oneShotRestores.ToArray();
-            _oneShotRestores.Clear();
-        }
-        foreach (var key in keys)
-        {
-            if (!_oneShot.Remove(key, out var held))
-                continue;
-            var character = _native.Resolve(key.Actor, out _);
-            if (character == null)
-                continue;
-            if (AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot) == held.Root)
-                *(int*)(held.Root + 0x58) = held.Original;
         }
     }
 
@@ -645,12 +595,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
         lock (_targetLock)
         {
             _targets.Clear();
-            foreach (var key in _loops.Keys)
-                _oneShotRestores.Add(key);
             _loops.Clear();
         }
-        // Best effort: unload may not run on the framework thread.
-        try { RestoreOneShots(); } catch { }
         _work.Clear();
         _restores.Clear();
     }
