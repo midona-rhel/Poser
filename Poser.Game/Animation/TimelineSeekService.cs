@@ -562,6 +562,45 @@ public sealed unsafe class TimelineSeekService : IDisposable
         catch (Exception ex) { LogOnce("slotspeed", $"[TimelineSeek] slot speed edge faulted: {ex.Message}"); }
     }
 
+    // The effective speed last given to a held layer's slot timeline.
+    private readonly Dictionary<nint, float> _heldSpeeds = new();
+
+    /// <summary>
+    /// Holds layer speeds natively, every tick: the slot timeline at layer ×
+    /// overall (its C009s carry it to their controls; change-guarded, so a steady
+    /// hold costs nothing), the controls of the props the layer summons, and its
+    /// effects at 0 when it is paused (the C012 speed handler drops 0). A replayed
+    /// timeline is a new one and takes the speed on its first tick.
+    /// </summary>
+    internal void HoldSlotSpeeds(Character* character, IReadOnlyDictionary<int, float> speeds, float overall)
+    {
+        if (!Available || character == null || speeds.Count == 0)
+            return;
+        try
+        {
+            var sequencer = &character->Timeline.TimelineSequencer;
+            foreach (var (slot, speed) in speeds)
+            {
+                nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
+                if (root == 0)
+                    continue;
+                float effective = speed * overall;
+                _engine.SetSlotTimelineSpeed(sequencer, slot, effective);
+                foreach (var (clip, _) in _engine.Collect(root).Summons)
+                    TimelineSeekEngine.SetWeaponControlSpeeds(TimelineSeekEngine.PropWeapon((nint)character, clip), effective);
+                if (!_heldSpeeds.TryGetValue(root, out var last) || last != effective)
+                {
+                    if (effective == 0f)
+                        _engine.SetVfxSpeeds(root, 0f);
+                    _heldSpeeds[root] = effective;
+                }
+            }
+            if (_heldSpeeds.Count > 256)
+                _heldSpeeds.Clear();
+        }
+        catch (Exception ex) { LogOnce("slotspeedhold", $"[TimelineSeek] layer speed hold faulted: {ex.Message}"); }
+    }
+
     /// <summary>Holds layer weights (see TimelineSeekEngine.SetSlotWeight).</summary>
     internal void ApplySlotWeights(Character* character, IReadOnlyDictionary<int, float> weights)
     {

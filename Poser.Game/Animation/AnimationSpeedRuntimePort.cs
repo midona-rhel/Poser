@@ -171,118 +171,19 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
                 container->OverallSpeed = speed;
                 result = true;
             }
-            // The sampler's verdict (2026-09-01 19:37): writing the
-            // slot-speed FIELD does not reliably reach the slot's havok
-            // control — on the observed click frame the control kept x1
-            // with the field at 0, and replays recreate controls at x1
-            // regardless. A slot speed is therefore enforced on the
-            // CONTROLS, every frame, here after the game's own update.
+            // Layer speeds go onto the slot timelines (and the layer's prop
+            // controls) natively each tick; the props of an actor paused as a
+            // whole follow the game's own per-frame push of the overall speed.
             if (enforcement.SlotSpeeds.Count > 0)
             {
-                // Scaled by the container's overall: the game implements
-                // the whole-actor pause by propagating overall × slot down
-                // to the controls, and writing the raw slot value here
-                // overrode that zero every frame — "pause doesn't do
-                // anything once I've set it on an individual level".
-                ApplySlotSpeedsToControls(
-                    (Character*)owner,
-                    enforcement.SlotSpeeds,
-                    container->OverallSpeed);
+                _seek?.HoldSlotSpeeds((Character*)owner, enforcement.SlotSpeeds, enforcement.OverallSpeed ?? 1f);
                 result = true;
             }
-            // A prop that tracks NO actor control (its clock drifted past
-            // the second the tracking rule allows: a re-applied timeline
-            // left the wand at 16.96 while the layer sat at 10) followed
-            // nothing and kept playing through the pause. It follows the
-            // enforced overall speed on its own.
-            if (enforcement.OverallSpeed is { } propOverall)
-                ApplyOverallToUntrackedProps((Character*)owner, propOverall);
             // Layer weights: new holders start at 1, so this runs every tick.
             if (enforcement.SlotWeights.Count > 0)
                 _seek?.ApplySlotWeights((Character*)owner, enforcement.SlotWeights);
         }
         return result;
-    }
-
-    private static void ApplyOverallToUntrackedProps(Character* character, float overall)
-    {
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null ||
-            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return;
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null || charaBase->Skeleton->PartialSkeletonCount == 0)
-            return;
-        var animated = charaBase->Skeleton->PartialSkeletons[0].GetHavokAnimatedSkeleton(0);
-        if (animated == null)
-            return;
-        var clocks = new List<(float Time, float Duration)>();
-        for (int i = 0; i < animated->AnimationControls.Length; i++)
-        {
-            var control = animated->AnimationControls[i].Value;
-            if (control == null)
-                continue;
-            var binding = control->hkaAnimationControl.Binding;
-            if (binding.ptr == null || binding.ptr->Animation.ptr == null)
-                continue;
-            clocks.Add((control->hkaAnimationControl.LocalTime, binding.ptr->Animation.ptr->Duration));
-        }
-        AnimationNativeState.ForEachPropControl(character, prop =>
-        {
-            foreach (var (time, duration) in clocks)
-                if (AnimationNativeState.TracksControl(prop, time, duration, out _))
-                    return;
-            prop->PlaybackSpeed = overall;
-        });
-    }
-
-    /// <summary>Writes each enforced slot speed onto that slot's live
-    /// havok controls (control index == slot index on every partial).
-    /// The per-frame half the field write cannot provide.</summary>
-    private static void ApplySlotSpeedsToControls(
-        Character* character, Dictionary<int, float> slotSpeeds, float overall)
-    {
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null ||
-            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return;
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return;
-        var skeleton = charaBase->Skeleton;
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
-        {
-            var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
-            if (animated == null)
-                continue;
-            foreach (var (slot, speed) in slotSpeeds)
-            {
-                if (slot >= animated->AnimationControls.Length)
-                    continue;
-                var control = animated->AnimationControls[slot].Value;
-                if (control == null)
-                    continue;
-                control->PlaybackSpeed = speed * overall;
-                // The props that run on this control's clock follow its
-                // effective speed (they ignored slot speed before: the wand
-                // read x1 while the layer ran x2).
-                if (p == 0)
-                {
-                    var binding = control->hkaAnimationControl.Binding;
-                    if (binding.ptr != null && binding.ptr->Animation.ptr != null)
-                    {
-                        float time = control->hkaAnimationControl.LocalTime;
-                        float duration = binding.ptr->Animation.ptr->Duration;
-                        float effective = speed * overall;
-                        AnimationNativeState.ForEachPropControl(character, prop =>
-                        {
-                            if (AnimationNativeState.TracksControl(prop, time, duration, out _))
-                                prop->PlaybackSpeed = effective;
-                        });
-                    }
-                }
-            }
-        }
     }
 
     private void SlotSpeedDetour(ActionTimelineSequencer* sequencer, uint slot, float speed)
@@ -295,7 +196,9 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
                 _byAddress.TryGetValue(owner, out var enforcement) &&
                 enforcement.SlotSpeeds.TryGetValue((int)slot, out var overrideSpeed))
             {
-                finalSpeed = overrideSpeed;
+                // A layer's speed scales with Poser's overall speed (the whole-
+                // actor pause stops a layer that has its own speed too).
+                finalSpeed = overrideSpeed * (enforcement.OverallSpeed ?? 1f);
             }
         }
         catch (Exception ex)
@@ -401,7 +304,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     /// timelines the speed on the next container update and the slot timelines
     /// one Advance after that (via seq+0x154 + dirty). Give all of them the edge
     /// on this tick instead: the value each slot will hold is what this hook's
-    /// detour would let through (the slot override, else the overall), written
+    /// detour would let through (the slot override × the overall, else the overall), written
     /// into seq+0x154 through the original and onto the slot timeline directly.
     /// </summary>
     private void ApplySameTickEdges(Character* character, float overall, Enforcement enforcement)
@@ -415,7 +318,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         // timelines still change on the same game tick.
         var values = new (int Slot, float Value)[EdgeSlots.Length];
         for (int i = 0; i < EdgeSlots.Length; i++)
-            values[i] = (EdgeSlots[i], enforcement.SlotSpeeds.TryGetValue(EdgeSlots[i], out var held) ? held : overall);
+            values[i] = (EdgeSlots[i], enforcement.SlotSpeeds.TryGetValue(EdgeSlots[i], out var held) ? held * overall : overall);
         var address = (nint)character;
         _framework.RunOnFrameworkThread(() =>
         {
@@ -513,9 +416,16 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             return Outcome.Fail(
                 "Layer speed is unavailable: the game's slot-speed hook is not active.");
 
-        EnforcementFor(actor).SlotSpeeds[(int)slot] = speed;
+        var enforcement = EnforcementFor(actor);
+        enforcement.SlotSpeeds[(int)slot] = speed;
         SyncEnforcementIndex();
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, speed);
+        // Same tick: the slot timeline, its props and effects now, not on the
+        // sequencer's next consume.
+        var address = (nint)character;
+        var held = new Dictionary<int, float> { [(int)slot] = speed };
+        float overall = enforcement.OverallSpeed ?? 1f;
+        _framework.RunOnFrameworkThread(() => _seek?.HoldSlotSpeeds((Character*)address, held, overall));
         _log.Information(
             $"[AnimState] native SetSlotSpeed slot={(int)slot} speed={speed:0.##}; "
             + $"field now {character->Timeline.TimelineSequencer.TimelineSpeeds[(int)slot]:0.##}");
@@ -535,39 +445,20 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             !enforcement.SlotSpeeds.Remove((int)slot))
             return Outcome.Ok();
 
+        float overall = enforcement.OverallSpeed ?? 1f;
         PruneEnforcement(actor);
-        character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restoreSpeed);
-        // The props on this slot's clock were held at the override speed by
-        // the per-frame enforcement; with it gone nothing resets them, so
-        // restore them here (the wand lagged at x0.5 after a clear).
-        RestorePropSpeeds(character, (int)slot, restoreSpeed * character->Timeline.OverallSpeed);
-        return Outcome.Ok();
-    }
-
-    private static void RestorePropSpeeds(Character* character, int slot, float effective)
-    {
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return;
-        var skeleton = ((CharacterBase*)drawObject)->Skeleton;
-        if (skeleton == null || skeleton->PartialSkeletonCount == 0)
-            return;
-        var animated = skeleton->PartialSkeletons[0].GetHavokAnimatedSkeleton(0);
-        if (animated == null || slot >= animated->AnimationControls.Length)
-            return;
-        var control = animated->AnimationControls[slot].Value;
-        if (control == null)
-            return;
-        var binding = control->hkaAnimationControl.Binding;
-        if (binding.ptr == null || binding.ptr->Animation.ptr == null)
-            return;
-        float time = control->hkaAnimationControl.LocalTime;
-        float duration = binding.ptr->Animation.ptr->Duration;
-        AnimationNativeState.ForEachPropControl(character, prop =>
+        character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restoreSpeed * overall);
+        // Nothing holds the layer any more: hand its timeline, props and effects
+        // back at the restored speed on this tick (the wand lagged at x0.5 when
+        // only the field was restored).
+        var address = (nint)character;
+        var restored = new Dictionary<int, float> { [(int)slot] = restoreSpeed };
+        _framework.RunOnFrameworkThread(() =>
         {
-            if (AnimationNativeState.TracksControl(prop, time, duration, out _))
-                prop->PlaybackSpeed = effective;
+            _seek?.HoldSlotSpeeds((Character*)address, restored, overall);
+            _seek?.ApplyVfxSpeed((Character*)address, overall);
         });
+        return Outcome.Ok();
     }
 
     public void Dispose()

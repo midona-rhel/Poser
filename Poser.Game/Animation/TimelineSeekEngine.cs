@@ -644,6 +644,30 @@ internal sealed unsafe class TimelineSeekEngine
             _n.SetSpeed(timeline, speed);
     }
 
+    /// <summary>A prop weapon's own Havok controls (W is its CharacterBase) at a
+    /// speed. The game re-pushes the overall speed onto the prop TIMELINES at the end
+    /// of every container update, after Poser's hook, so a layer's prop speed can
+    /// only be held on its controls.</summary>
+    public static void SetWeaponControlSpeeds(nint weapon, float speed)
+    {
+        if (weapon == 0)
+            return;
+        var weaponBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)weapon;
+        var skeleton = weaponBase->Skeleton;
+        if (skeleton == null)
+            return;
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+            for (int k = 0; k < 2; k++)
+            {
+                var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(k);
+                if (animated == null)
+                    continue;
+                for (int c = 0; c < animated->AnimationControls.Length; c++)
+                    if (animated->AnimationControls[c].Value is var control && control != null)
+                        control->PlaybackSpeed = speed;
+            }
+    }
+
     /// <summary>Every live timeline in the actor's W|2 prop groups takes the
     /// overall speed, walked like the game's TimelineGroup.SetSpeedAll: +0x18,
     /// next +0x88, skipping ended (+0x273 bit 0) and detached (+0x10 sign).</summary>
