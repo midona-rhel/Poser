@@ -37,6 +37,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private readonly Dictionary<(nint Character, int Weapon), nint> _propTimelines = new();
     private readonly HashSet<nint> _managed = new();
     private readonly Dictionary<nint, Restore> _restores = new();
+    // Armed loops: (actor, slot) → the timeline id the loop belongs to. Written by
+    // the UI, read by the tick (under _targetLock).
+    private readonly Dictionary<(ActorId Actor, int Slot), ushort> _loops = new();
 
     private delegate void DisableDrawFn(nint character);
     private readonly Hook<DisableDrawFn>? _disableDrawHook;
@@ -192,6 +195,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             }
             foreach (var (key, target) in targets)
                 RunSeek(key, target);
+            PumpLoops(targets);
 
             List<(nint, int)>? done = null;
             foreach (var (key, work) in _work)
@@ -426,6 +430,96 @@ public sealed unsafe class TimelineSeekService : IDisposable
         _work[((nint)character, key.Slot)] = work;
     }
 
+    // ── Loop ──────────────────────────────────────────────────────────
+
+    /// <summary>Arms a loop for one layer: just before the slot timeline would
+    /// run out, it is wrapped back to its begin (the seek's wrap: clips stop and
+    /// re-fire, effects re-spawn), so it never ends and is never replayed.</summary>
+    internal void SetLoop(ActorId actor, AnimationSlot slot, ushort timeline)
+    {
+        lock (_targetLock)
+            _loops[(actor, (int)slot)] = timeline;
+    }
+
+    internal void ClearLoop(ActorId actor, AnimationSlot slot)
+    {
+        lock (_targetLock)
+            _loops.Remove((actor, (int)slot));
+    }
+
+    internal void ClearLoops(ActorId actor)
+    {
+        lock (_targetLock)
+        {
+            List<(ActorId, int)>? gone = null;
+            foreach (var key in _loops.Keys)
+                if (key.Actor.Equals(actor))
+                    (gone ??= new()).Add(key);
+            if (gone != null)
+                foreach (var key in gone)
+                    _loops.Remove(key);
+        }
+    }
+
+    /// <summary>Loops are held while the session's commands are suspended.</summary>
+    internal bool LoopsSuspended { get; set; }
+
+    // The next frame's step is predicted from this frame's; a longer frame could
+    // cross the end before the next check, so wrap one step early.
+    private const float LoopLeadSteps = 2f;
+
+    /// <summary>
+    /// Wraps each armed, playing layer whose next steps would reach its end. A
+    /// layer scrubbed this tick, still restoring or not on its loop's timeline is
+    /// left alone (the timeline port's replay covers an end this missed).
+    /// </summary>
+    private void PumpLoops(KeyValuePair<(ActorId, int), float>[] scrubbed)
+    {
+        if (LoopsSuspended)
+            return;
+        KeyValuePair<(ActorId Actor, int Slot), ushort>[] loops;
+        lock (_targetLock)
+        {
+            if (_loops.Count == 0)
+                return;
+            loops = new KeyValuePair<(ActorId, int), ushort>[_loops.Count];
+            ((ICollection<KeyValuePair<(ActorId, int), ushort>>)_loops).CopyTo(loops, 0);
+        }
+        nint schedule = _engine.ScheduleManagement;
+        float frames = schedule != 0 ? *(float*)(schedule + 0x50) : 1f;
+        if (!(frames > 0f))
+            return;
+        foreach (var (key, timeline) in loops)
+        {
+            if (Array.Exists(scrubbed, t => t.Key.Equals(key)))
+                continue;
+            var character = _native.Resolve(key.Actor, out _);
+            if (character == null || _restores.ContainsKey((nint)character))
+                continue;
+            var sequencer = &character->Timeline.TimelineSequencer;
+            if (*(ushort*)((byte*)sequencer + 0xE0 + 2 * key.Slot) != timeline || !Supports(character, key.Slot))
+                continue;
+            nint root = AnimationNativeState.SlotTimeline(sequencer, key.Slot);
+            float speed = *(float*)(root + 0x240);
+            if (!(speed > 0f))
+                continue;
+            float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
+            if (!(end > begin))
+                end = begin + TimelineSeekEngine.Length(root);
+            // The seek's last valid frame is end − 1.
+            if (TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps < end - 1f)
+                continue;
+            var work = new TimelineSeekWork();
+            var refused = _engine.Seek((nint)character, root, begin, work);
+            if (refused != null)
+            {
+                LogOnce($"loop:{key}:{refused}", $"[TimelineSeek] loop of slot {key.Slot}: {refused}");
+                continue;
+            }
+            _work[((nint)character, key.Slot)] = work;
+        }
+    }
+
     // ── Speed edges ───────────────────────────────────────────────────
 
     /// <summary>Before a new timeline replaces a PAUSED slot (speed 0): the old
@@ -499,7 +593,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _disableDrawHook.Dispose();
         }
         lock (_targetLock)
+        {
             _targets.Clear();
+            _loops.Clear();
+        }
         _work.Clear();
         _restores.Clear();
     }

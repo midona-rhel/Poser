@@ -16,6 +16,8 @@ internal sealed unsafe class TimelineSeekEngine
 {
     private readonly TimelineSeekNatives _n;
     private readonly ITimelineSeekLayout _l;
+    /// <summary>ScheduleManagement (this frame's step in frames at +0x50), or 0.</summary>
+    public nint ScheduleManagement => _l.ScheduleManagement;
 
     public TimelineSeekEngine(TimelineSeekNatives natives, ITimelineSeekLayout layout)
     {

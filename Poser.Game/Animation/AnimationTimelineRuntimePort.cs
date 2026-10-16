@@ -155,7 +155,10 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         PrepareSwap(character, timeline);
         var played = _native.PlayTimeline(character, timeline);
         if (played.Success)
+        {
             _forcedLoops.Remove(actor);
+            _seek?.ClearLoop(actor, AnimationSlot.Base);
+        }
         return played;
     }
 
@@ -263,7 +266,17 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     private const int LoopCooldownTicks = 15;
     private readonly Dictionary<ActorId, Dictionary<int, LoopArm>> _loops = new();
 
-    public bool LoopsSuspended { get; set; }
+    public bool LoopsSuspended
+    {
+        get => _loopsSuspended;
+        set
+        {
+            _loopsSuspended = value;
+            if (_seek != null)
+                _seek.LoopsSuspended = value;
+        }
+    }
+    private bool _loopsSuspended;
 
     public Outcome SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline)
     {
@@ -273,11 +286,15 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (!_loops.TryGetValue(actor, out var slots))
             _loops[actor] = slots = new Dictionary<int, LoopArm>();
         slots[(int)slot] = new LoopArm { Timeline = timeline, Cooldown = LoopCooldownTicks };
+        // The seek wraps the layer before it ends; the replay above only covers an
+        // end the wrap missed (or a layer the seek can't move).
+        _seek?.SetLoop(actor, slot, timeline);
         return Outcome.Ok();
     }
 
     public Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot)
     {
+        _seek?.ClearLoop(actor, slot);
         if (_loops.TryGetValue(actor, out var slots))
         {
             slots.Remove((int)slot);
@@ -291,6 +308,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     {
         _loops.Remove(actor);
         _forcedLoops.Remove(actor);
+        _seek?.ClearLoops(actor);
     }
 
     /// <summary>
@@ -388,9 +406,15 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
             written != timeline)
             return Outcome.Fail("The full-body repeat field rejected the write.");
         if (timeline == 0)
+        {
             _forcedLoops.Remove(actor);
+            _seek?.ClearLoop(actor, AnimationSlot.Base);
+        }
         else
+        {
             _forcedLoops[actor] = timeline;
+            _seek?.SetLoop(actor, AnimationSlot.Base, timeline);
+        }
         _log.Information(
             $"Animation: full-body loop actor={actor} timeline={timeline} field={written}.");
         return Outcome.Ok();

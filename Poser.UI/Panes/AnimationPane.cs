@@ -551,7 +551,7 @@ public sealed class AnimationPane : IDisposable
                 continue;
             }
             DrawLayer(form, actor, reading, owned, slot, label, !advanced);
-            if (slot is AnimationSlot.Base or AnimationSlot.UpperBody)
+            if (slot != AnimationSlot.Lips)
             {
                 // The visible label is shared, so the slot scopes its ImGui identity.
                 ImGui.PushID($"anim-{slot}-loop");
