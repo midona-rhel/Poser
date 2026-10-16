@@ -808,35 +808,41 @@ internal sealed unsafe class TimelineSeekEngine
 
     private void Rewind(nint root, Tree tree)
     {
-        // An inactive C010 whose child already finished would never restart it;
-        // the game has no path for this, so its finish/pass fields are cleared.
-        // An ended one (0xE1: +0x10 bit 4 clear, bits 6/7 set; event 9 never goes to
-        // a C010) is put back to never-started, (+0x10 & 1), with +0x11 bits 0/1 and
-        // the pending +0x8C cleared, so the step starts it again as it passes.
-        // A C010 nested below the root's own (each face clip's range C010) that is
-        // still active is stopped first, with its own Stop (reason 2, the seek's: no
-        // catch-up), the one path that stops its child's clips; only the root runs
-        // the finalization that could end the row, so only the root's own C010s are
-        // never stopped. +0x7C is the start credit an activation start pre-pays:
-        // left over, the next start crossing would be swallowed.
+        // The C010s go back to never-started so the step starts each again as it
+        // passes (Mac, animation-system.md §15.3). Their child clips were already
+        // reset by the event 9 just before (StopAll reaches every non-C010 clip,
+        // children first): a C010's own Stop is never used, because it finalizes the
+        // child's clips, and a re-armed C010 whose child reads finalized ends on the
+        // spot. Which ones:
+        //  - an ENDED one (+0x10 bit 4 clear, bits 6/7 set: 0xE1), anywhere;
+        //  - an ACTIVE one nested below the root's own C010 (each face clip's range
+        //    C010). Only the root runs the finalization that could end the row, so the
+        //    root's own active C010s are left as they are.
+        // A C010: +0x10 = (+0x10 & 1), +0x11 bits 0/1 (the ended latch) and the
+        // pending +0x8C cleared, and +0x7C, the start credit an activation start
+        // pre-pays (left over, it swallows the next start crossing).
+        // Its child: clock 0, +0x74 state 0, +0x5C 0, finished (+0x7C bit 6) cleared.
+        // +0x58 is the loop mode (1 = one-shot) and is left alone.
         foreach (var (c010, child) in tree.C010s)
         {
             byte state = *(byte*)(c010 + 0x10);
-            // (Stopping an active nested one with its own Stop(2) and resetting it as
-            // below made its restart end at once: open, see the Mac thread.)
-            if ((state & 0x10) != 0)
-                continue;
-            if ((state & 0xC0) != 0)
+            bool active = (state & 0x10) != 0;
+            bool ended = (state & 0xC0) != 0;
+            if (active ? !tree.NestedC010s.Contains(c010) : !ended)
+            {
+                // An inactive, never-started one only needs a finished child undone.
+                if (active || (*(byte*)(child + 0x7C) & 0x40) == 0)
+                    continue;
+            }
+            else
             {
                 *(byte*)(c010 + 0x10) = (byte)(state & 1);
                 *(byte*)(c010 + 0x11) &= unchecked((byte)~3);
                 *(uint*)(c010 + 0x8C) = 0;
+                *(uint*)(c010 + 0x7C) = 0;
             }
-            if ((*(byte*)(child + 0x7C) & 0x40) == 0)
-                continue;
             *(byte*)(child + 0x7C) &= 0xBF;
             *(uint*)(child + 0x74) = 0;
-            *(uint*)(child + 0x58) = 0;
             *(uint*)(child + 0x5C) = 0;
             _n.SetCurrentTime(child, 0f);
         }
