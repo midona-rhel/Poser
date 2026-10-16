@@ -208,6 +208,12 @@ internal static class NativeSignatures
     public const string TimelineContainer_OnDisableDraw = "40 53 48 83 EC 20 48 8B 41 08 48 8B D9 48 8B 0D";
     /// <summary>Character.EnableDraw (0x140906920 on the analysed build).</summary>
     public const string Character_EnableDraw = "40 55 53 48 8D ?? 24 B8 48 81 EC 48 01 00 00";
+    /// <summary>HavokAnimationClip.ResolveLength (0x14190E1E0 on the analysed build).</summary>
+    public const string HavokAnimationClip_ResolveLength = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B 59 28 48 8B F9 48 85 DB 75";
+    /// <summary>VfxObject.SetSpeed (0x14045CF30 on the analysed build).</summary>
+    public const string VfxObject_SetSpeed = "F3 0F 11 89 50 02 00 00 48 8B 89 A0 02 00 00";
+    /// <summary>AnimationHolder.Release (0x1418FB250 on the analysed build).</summary>
+    public const string AnimationHolder_Release = "40 53 48 83 EC 20 48 8B D9 48 8B 49 20 48 85 C9 74 ?? 0F 57 C9 E8 ?? ?? ?? ?? 48 8B 4B 20 48 8D 15 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 4B 20 48 8B 01 FF 50 18 48 C7 43 20 00 00 00 00 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 74";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
@@ -249,6 +255,7 @@ internal static class NativeOffsets
     public static readonly OffsetPattern VfxClip_Instance = new("VfxClip.Instance", "48 8B 99 ?? ?? ?? ?? 41 0F B6 E8", 3, 4, 0x98);
     public static readonly OffsetPattern ApricotJobSystem_SlotTable = new("ApricotJobSystem.SlotTable", "48 8B B8 ?? ?? ?? ?? 49 81 C0 00 20 00 00", 3, 4, 0x1498);
     public static readonly OffsetPattern ScheduleManagement_FrameDelta = new("ScheduleManagement.FrameDelta", "F3 0F 10 78 ?? 0F 2F F7", 4, 1, 0x50);
+    public static readonly OffsetPattern SchedulerTimeline_StopFadeFrames = new("SchedulerTimeline.StopFadeFrames", "8B B8 ?? ?? ?? ?? 48 8B B3 98 00 00 00", 2, 4, 0x220);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)

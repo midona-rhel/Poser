@@ -44,10 +44,6 @@ internal sealed unsafe class TimelineSeekNatives
     /// first post-step, one frame after its start.</summary>
     public readonly delegate* unmanaged<nint, void> ResolveHavokLength;
 
-    // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x14190E1E0).
-    private const string HavokAnimationClip_ResolveLength =
-        "48 89 5C 24 10 57 48 83 EC 20 48 8B 59 28 48 8B F9 48 85 DB 75 ?? 48 8B 41 08 48 85 C0 74 ?? 48 8B 58 08 48 89 59 28 48 85 DB 0F 84 ?? ?? ?? ?? 48 8B 5B 38 48 8B 91 A0 00 00 00";
-
     public readonly bool Ready;
     public readonly string? Missing;
 
@@ -88,13 +84,11 @@ internal sealed unsafe class TimelineSeekNatives
         StartPropTimeline = (delegate* unmanaged<nint, byte>)Scan(
             NativeSignatures.SummonAnimationClip_StartPropTimeline, "SummonAnimationClip.StartPropTimeline");
 
-        // The VfxObject.Speed field pattern is this function's first instruction
-        // (movss [rcx+0x250], xmm1; mov rcx, [rcx+0x2A0]).
         SetVfxSpeed = (delegate* unmanaged<nint, float, void>)Scan(
-            NativeOffsets.VfxObject_Speed.Signature, "VfxObject.SetSpeed");
+            NativeSignatures.VfxObject_SetSpeed, "VfxObject.SetSpeed");
 
         ResolveHavokLength = (delegate* unmanaged<nint, void>)Scan(
-            HavokAnimationClip_ResolveLength, "HavokAnimationClip.ResolveLength");
+            NativeSignatures.HavokAnimationClip_ResolveLength, "HavokAnimationClip.ResolveLength");
 
         Missing = missing;
         Ready = missing == null;

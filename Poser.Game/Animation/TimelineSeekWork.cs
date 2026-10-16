@@ -10,9 +10,11 @@ namespace Poser.Game.Animation;
 /// </summary>
 internal sealed unsafe class TimelineSeekWork
 {
-    /// <summary>Re-sync every guarded C009 for this many frames after a seek: a
-    /// control that rebinds after the op (a prop model reloaded by the weapon
-    /// request) still gets the time.</summary>
+    /// <summary>Deferred frames after a seek: clips still pending get their one
+    /// sync as soon as they pass the guard, props are seeked once loaded, then the
+    /// VFX orphan check runs. Only pending clips are touched: a blanket per-frame
+    /// re-sync opened a speed window every frame, and a C009's speed restore lands
+    /// one update later, so the controls ran a frame at 1.0 and snapped back.</summary>
     public const int ResyncFrames = 20;
 
     internal sealed class Prop
@@ -104,8 +106,17 @@ internal sealed unsafe class TimelineSeekWork
         if (currentRoot != Root)
             return false;
         var tree = engine.Collect(Root);
-        if (Frame <= ResyncFrames)
-            engine.SyncHavok(Root, tree.Havok.Keys, PendingHavok);
+        if (Frame <= ResyncFrames && PendingHavok.Count > 0)
+        {
+            // Only clips still in the live tree: a pending pointer may be gone.
+            var live = new List<nint>();
+            foreach (var clip in tree.Havok.Keys)
+                if (PendingHavok.Contains(clip))
+                    live.Add(clip);
+            PendingHavok.IntersectWith(tree.Havok.Keys);
+            if (live.Count > 0)
+                engine.SyncHavok(Root, live, PendingHavok);
+        }
         PumpProps(engine);
         if (OwnerSpeed == 0f)
             FreezeVfx(engine);

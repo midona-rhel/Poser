@@ -95,10 +95,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
         Offset(NativeOffsets.HavokAnimationClip_AnimObject, 0x98);
         Offset(NativeOffsets.ApricotJobSystem_SlotTable, 0x1498);
         Offset(NativeOffsets.ScheduleManagement_FrameDelta, 0x50);
-        // Root tl+0x220 (u32 stop-fade frames C009 Stop uses for reason 2), read in
-        // C009 Stop; pending a patchcheck entry (sig.py: 1 hit at 0x14190DAA6).
-        Offset(new OffsetPattern("SchedulerTimeline.StopFadeFrames",
-            "48 85 C0 74 06 8B B8 ?? ?? ?? ?? 48 8B B3 98 00 00 00 48 8B CB", 7, 4, 0x220), 0x220);
+        Offset(NativeOffsets.SchedulerTimeline_StopFadeFrames, 0x220);
         // +0x6B8 (no-blend start) has no unique reader; it's the u32 at byte 2 of
         // ActorControl.SetNoBlendStart (88 91 B8 06 00 00).
         if (!scanner.TryScanText(NativeSignatures.ActorControl_SetNoBlendStart, out var noBlend) || noBlend == 0)
