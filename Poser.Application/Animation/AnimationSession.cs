@@ -197,6 +197,21 @@ public sealed class AnimationSession : IAnimationPlayback
     public Outcome PauseSlot(ActorId actor, AnimationSlot slot) =>
         _speed.PauseSlot(actor, slot);
 
+    /// <summary>The layer's play icon: lifts the whole-actor pause for this layer
+    /// only (the others keep holding), then its own hold. Apply is what changes
+    /// the animation; this only changes whether it moves.</summary>
+    public Outcome ResumeSlot(ActorId actor, AnimationSlot slot)
+    {
+        if (_store.Suspended() is { } blocked) return blocked;
+        if (IsPaused(actor))
+        {
+            var lifted = _speed.ResumeForLayerPlay(actor, slot);
+            if (!lifted.Success)
+                return lifted;
+        }
+        return _speed.ResumeSlotSpeedCore(actor, slot);
+    }
+
     /// <summary>Applies Selected; only Base may use the emote lifecycle.</summary>
     /// <summary>APPLY stages, PLAY plays (ruled 2026-09-01): with
     /// <paramref name="resume"/> false, a paused actor takes the animation

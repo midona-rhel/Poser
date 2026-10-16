@@ -279,17 +279,12 @@ public sealed class AnimationPane : IDisposable
             next => Report(_animation.SetSpeed(actor, next), "Animation speed"),
             format: "0.00",
             marks: UnitMarks,
-            actions: actions => actions.Button(
-                playing ? "Pause" : "Play",
-                () => Report(
-                    playing
-                        ? _animation.Pause(actor)
-                        : _animation.Resume(actor),
-                    "Animation playback"),
-                style: actionStyle),
             id: "anim-attached-speed");
 
-        DrawScrub(form, actor, slot, actionStyle, disabled: false);
+        // An attached actor has one layer: its icon is the whole actor's.
+        DrawScrub(form, actor, slot, disabled: false, paused: !playing,
+            () => playing ? _animation.Pause(actor) : _animation.Resume(actor),
+            "Animation playback");
     }
 
 
@@ -429,7 +424,6 @@ public sealed class AnimationPane : IDisposable
         bool paused = (owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
             ownedSpeed == 0f) ||
             _animation.IsPaused(actor);
-        bool needsReplay = selected != 0 && live != selected;
         // "None" has no clock: with nothing live, staged, or selected,
         // the speed and play controls have nothing to drive.
         bool hasAnimation = live != 0 || selected != 0
@@ -488,23 +482,6 @@ public sealed class AnimationPane : IDisposable
             format: "0.00",
             marks: UnitMarks,
             disabled: disabled || !hasAnimation,
-            actions: actions =>
-            {
-                bool play = paused || needsReplay;
-                actions.Button(
-                    play ? "Play" : "Pause",
-                    () => Report(
-                        play
-                            ? _steps.Play(
-                                actor,
-                                slot,
-                                choice,
-                                _playEmoteStart)
-                            : _animation.PauseSlot(actor, slot),
-                        $"{label} playback"),
-                    style: actionStyle,
-                    disabled: disabled || !hasAnimation);
-            },
             id: $"anim-{slot}-speed");
 
         float weight = _animation.WeightFor(actor, slot);
@@ -522,7 +499,9 @@ public sealed class AnimationPane : IDisposable
 
         // Base and Upper Body scrub their Havok control; the other layers their
         // timeline clock (native seek). A layer the seek can't move shows it disabled.
-        DrawScrub(form, actor, slot, actionStyle, disabled);
+        DrawScrub(form, actor, slot, disabled, paused,
+            () => paused ? _animation.ResumeSlot(actor, slot) : _animation.PauseSlot(actor, slot),
+            $"{label} playback");
     }
 
     private void DrawAnimationLayers(
@@ -672,12 +651,16 @@ public sealed class AnimationPane : IDisposable
         return style with { Width = UiWidth.Fixed(width) };
     }
 
+    /// <summary>The layer's clock: the slider moves it, the icon holds or plays
+    /// it on from where it is (Apply is what changes the animation).</summary>
     private void DrawScrub(
         FormScope form,
         ActorId actor,
         AnimationSlot slot,
-        ControlStyle actionStyle,
-        bool disabled)
+        bool disabled,
+        bool paused,
+        Func<Outcome> toggle,
+        string what)
     {
         var control = _animation.FindSlotControl(actor, slot);
         bool available = control is { Duration: > 0f };
@@ -691,11 +674,12 @@ public sealed class AnimationPane : IDisposable
             next => ScrubTo(actor, control, next),
             format: "0.00",
             disabled: disabled || !available,
-            actions: actions => actions.Button(
-                "Reset",
-                () => ScrubTo(actor, control, 0f, finish: true),
-                style: actionStyle,
-                disabled: disabled || !available),
+            actions: actions => actions.IconButton(
+                paused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause,
+                () => Report(toggle(), what),
+                disabled: disabled || !available,
+                help: paused ? "Play this layer on from here" : "Hold this layer on this frame",
+                id: $"anim-{slot}-playpause"),
             id: $"anim-{slot}-scrub");
     }
 

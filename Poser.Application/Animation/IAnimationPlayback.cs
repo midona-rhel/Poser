@@ -30,6 +30,8 @@ public interface IAnimationPlayback
     Outcome Pause(ActorId actor);
     Outcome Resume(ActorId actor);
     Outcome PauseSlot(ActorId actor, AnimationSlot slot);
+    /// <summary>Plays one held layer on from where it holds; never applies a pending selection.</summary>
+    Outcome ResumeSlot(ActorId actor, AnimationSlot slot);
     Outcome SetStance(ActorId actor, AnimationStance stance, int pose);
     Outcome SetWeaponDrawn(ActorId actor, bool drawn);
     Outcome SetPositionLock(ActorId actor, bool locked);
