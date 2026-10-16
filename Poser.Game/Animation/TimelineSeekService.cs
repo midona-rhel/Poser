@@ -573,8 +573,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
             nint playInfo = TimelineSeekEngine.PlayInfo(root);
             bool notifies = lead >= 0 && playInfo != 0 && *(int*)(playInfo + 0x30) != -1;
             float remaining = notifies ? _engine.Remaining(root) : -1f;
-            // Nothing runs past its own end: that is the backstop either way.
-            bool wrap = TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps >= end - 1f;
+            // Nothing runs past its own end, and a timeline whose every clip is done
+            // ends on its next Advance (finalization): either one wraps now.
+            bool wrap = TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps >= end - 1f
+                || _engine.Finalized(root);
             float step = 0f;
             if (!wrap && remaining >= 0f)
             {

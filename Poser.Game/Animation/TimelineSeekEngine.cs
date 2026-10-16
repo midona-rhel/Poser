@@ -463,10 +463,80 @@ internal sealed unsafe class TimelineSeekEngine
         {
             if ((*(byte*)(clip + 0x10) & 0x80) != 0)
                 continue;
+            // No pose: a conditional variant its owner doesn't play (started with
+            // anim id 0, inst+0x40 == 0, whose 0x98 returns its full length for
+            // ever), or a refused holder. The game's finalization doesn't wait on them.
+            nint instance = *(nint*)(clip + 0x98);
+            if (instance != 0 && (*(int*)(instance + 0x40) == 0 ||
+                (*(nint*)(instance + 0x78) == 0 && *(byte*)(instance + 0x3A) == 1)))
+                continue;
             var remainingOf = (delegate* unmanaged<nint, float>)(*(nint*)(*(nint*)clip + 0x98));
             remaining = Math.Max(remaining, Math.Max(0f, remainingOf(clip)));
         }
         return remaining;
+    }
+
+    /// <summary>
+    /// Whether the root would finalize on its next Advance: every track done
+    /// (FUN_1418FD950's walk, which sends the end notify itself). Read-only:
+    /// a track is done if +0x10 bit 7, else it needs +0x10 bit 0 and every clip
+    /// done; a C009 by bit 7; a C010 by bit 7, its +0x140 node's +0x84 bit 1, its
+    /// +0x165, or (bit 0 and its child timeline finalized); other clips by bit 7
+    /// or not bit 0.
+    /// </summary>
+    public bool Finalized(nint timeline, int depth = 0)
+    {
+        if (depth > 4)
+            return false;
+        bool any = false;
+        nint actor = *(nint*)(timeline + 0x18);
+        for (int a = 0; actor != 0 && a < 32; a++, actor = *(nint*)(actor + 0x20))
+        {
+            nint tracks = *(nint*)(actor + 0x28);
+            int trackCount = *(ushort*)(actor + 0x32);
+            for (int t = 0; tracks != 0 && t < trackCount && t < 64; t++)
+            {
+                nint track = *(nint*)(tracks + t * 8);
+                if (track == 0)
+                    continue;
+                any = true;
+                byte trackFlags = *(byte*)(track + 0x10);
+                if ((trackFlags & 0x80) != 0)
+                    continue;
+                if ((trackFlags & 1) == 0)
+                    return false;
+                nint clips = *(nint*)(track + 0x18);
+                int clipCount = *(ushort*)(track + 0x22);
+                for (int c = 0; clips != 0 && c < clipCount && c < 256; c++)
+                {
+                    nint clip = *(nint*)(clips + c * 8);
+                    if (clip != 0 && !ClipFinalized(clip, depth))
+                        return false;
+                }
+            }
+        }
+        return any;
+    }
+
+    private bool ClipFinalized(nint clip, int depth)
+    {
+        byte flags = *(byte*)(clip + 0x10);
+        if ((flags & 0x80) != 0)
+            return true;
+        switch (_l.Classify(clip))
+        {
+            case SeekClipKind.HavokAnimation:
+                return false;
+            case SeekClipKind.ChildTimeline:
+                nint node = *(nint*)(clip + 0x140);
+                if (node != 0 && ((*(uint*)(node + 0x84) >> 1) & 1) != 0)
+                    return true;
+                if (*(byte*)(clip + 0x165) != 0)
+                    return true;
+                return (flags & 1) != 0 && ChildOf(clip) is var child and not 0 && Finalized(child, depth + 1);
+            default:
+                return (flags & 1) == 0;
+        }
     }
 
     /// <summary>Which blend-in source the last crossfade wrap wrote (for the log).</summary>
