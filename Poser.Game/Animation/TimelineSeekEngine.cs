@@ -375,9 +375,24 @@ internal sealed unsafe class TimelineSeekEngine
     /// is set to the lead for the wrap and restored after it. The stopped controls
     /// keep advancing while they fade (into their end, as at the game's own seam
     /// into the next row).
+    /// A holder restarted by its own timeline takes the old one's place with no
+    /// blend (FUN_1418D6350's same-timeline branch: old holder +0x40 == the
+    /// owner's instance id +0x70). The game's seam is a new timeline, so it never
+    /// meets that branch; here the stopped holders' +0x40 is inverted between the
+    /// stop and the restart, which sends the insert down the normal branch. They
+    /// are dying holders, so nothing is restored.
     /// </summary>
     private void BlendWrap(nint root, Tree tree, int frames)
     {
+        // The stop clears inst+0x78: collect the holders first.
+        var holders = new List<nint>();
+        foreach (var clip in tree.Havok.Keys)
+        {
+            nint instance = *(nint*)(clip + 0x98);
+            nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
+            if (holder != 0)
+                holders.Add(holder);
+        }
         // Play info: root vfunc 0x118 (a getter).
         var playInfoOf = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)root + 0x118));
         nint playInfo = playInfoOf(root);
@@ -397,6 +412,8 @@ internal sealed unsafe class TimelineSeekEngine
         try
         {
             StopAll(root);
+            foreach (var holder in holders)
+                *(uint*)(holder + 0x40) = ~*(uint*)(holder + 0x40);
             Rewind(root, tree);
         }
         finally
