@@ -526,12 +526,8 @@ public sealed class AnimationPane : IDisposable
             var slot = PrimaryLayers[index];
             string label = AnimationSlots.DisplayName(slot);
             form.Subgroup(label, disabled: !advanced);
-            if (slot == AnimationSlot.Facial)
-            {
-                DrawHeldExpression(
-                    form, actor, poseSurface: false, disabled: !advanced);
-                continue;
-            }
+            // Facial here is a normal (looping) layer; the Pose tab's expression
+            // row is the static hold.
             DrawLayer(form, actor, reading, owned, slot, label, !advanced);
             if (slot != AnimationSlot.Lips)
             {
@@ -757,19 +753,15 @@ public sealed class AnimationPane : IDisposable
         FormScope form,
         ActorId actor)
     {
-        DrawHeldExpression(form, actor, poseSurface: true, disabled: false);
+        DrawHeldExpression(form, actor);
     }
 
-    private void DrawHeldExpression(
-        FormScope form,
-        ActorId actor,
-        bool poseSurface,
-        bool disabled)
+    /// <summary>The Pose tab's static expression: held on its first frame.</summary>
+    private void DrawHeldExpression(FormScope form, ActorId actor)
     {
         ushort held = _animation.HeldExpressionFor(actor) ?? 0;
         ushort selected = _animation.SelectedFor(actor, AnimationSlot.Facial) ?? 0;
         _expressionSelections.TryGetValue(actor, out var choice);
-        var actionStyle = FixedActionStyle();
         bool pending = _expressions.IsPending(actor);
         form.Picker(
             "Expression",
@@ -778,34 +770,26 @@ public sealed class AnimationPane : IDisposable
             actions =>
             {
                 actions.Button(
-                    poseSurface ? "Preview" : "Apply",
+                    "Preview",
                     () => ReportExpression(
                         ApplyExpression(actor, selected),
                         "Expression"),
-                    style: poseSurface ? default : actionStyle,
-                    disabled: disabled || selected == 0 || pending,
+                    disabled: selected == 0 || pending,
                     help: "Preview the expression");
                 actions.Button(
                     "Reset",
                     () => ResetExpression(actor),
-                    style: poseSurface ? default : actionStyle,
-                    disabled: disabled || (held == 0 && selected == 0),
+                    disabled: held == 0 && selected == 0,
                     help: "Reset the face bones");
-                if (poseSurface)
-                {
-                    actions.Button(
-                        "Bake expression",
-                        () => Report(
-                            _expressions.Bake(actor, selected), "Bake expression"),
-                        disabled: disabled || selected == 0 || pending ||
-                            _expressions.IsBaking,
-                        help: "Bake the face into the pose");
-                }
+                actions.Button(
+                    "Bake expression",
+                    () => Report(
+                        _expressions.Bake(actor, selected), "Bake expression"),
+                    disabled: selected == 0 || pending ||
+                        _expressions.IsBaking,
+                    help: "Bake the face into the pose");
             },
-            disabled: disabled,
-            help: poseSurface
-                ? "Choose a facial expression, then Preview to hold it"
-                : "Choose a facial expression, then Apply to hold it");
+            help: "Choose a facial expression, then Preview to hold it");
     }
 
 

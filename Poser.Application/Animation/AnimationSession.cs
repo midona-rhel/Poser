@@ -209,7 +209,11 @@ public sealed class AnimationSession : IAnimationPlayback
             if (!lifted.Success)
                 return lifted;
         }
-        return _speed.ResumeSlotSpeedCore(actor, slot);
+        var resumed = _speed.ResumeSlotSpeedCore(actor, slot);
+        // Playing the Facial layer turns a held expression into that layer.
+        if (resumed.Success && slot == AnimationSlot.Facial)
+            _store.Mutate(actor, o => o with { HeldExpression = null });
+        return resumed;
     }
 
     /// <summary>Applies Selected; only Base may use the emote lifecycle.</summary>
@@ -229,6 +233,37 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     private Outcome PlaySelectedSlotTraced(
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry,
+        bool playFromStart, bool resume)
+    {
+        if (slot == AnimationSlot.Facial)
+            return PlayFacialLayer(actor, entry, playFromStart, resume);
+        return PlaySelectedSlotCore(actor, slot, entry, playFromStart, resume);
+    }
+
+    /// <summary>
+    /// The Animation tab's Facial layer: a normal layer that loops. A held
+    /// expression (the Pose tab's static face) is released into it first, so the
+    /// layer owns the face from here on.
+    /// </summary>
+    private Outcome PlayFacialLayer(
+        ActorId actor, TimelineEntry? entry, bool playFromStart, bool resume)
+    {
+        var current = _store.For(actor);
+        if (current.HeldExpression != null)
+        {
+            var released = _speed.ClearSlotSpeedCore(actor, AnimationSlot.Facial);
+            if (!released.Success)
+                return released;
+            _store.Mutate(actor, o => o with { HeldExpression = null });
+        }
+        var played = PlaySelectedSlotCore(actor, AnimationSlot.Facial, entry, playFromStart, resume);
+        if (!played.Success || _store.For(actor).LoopWantedSlots.Contains(AnimationSlot.Facial))
+            return played;
+        return _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, true);
+    }
+
+    private Outcome PlaySelectedSlotCore(
         ActorId actor, AnimationSlot slot, TimelineEntry? entry,
         bool playFromStart, bool resume)
     {
@@ -298,7 +333,15 @@ public sealed class AnimationSession : IAnimationPlayback
             if (facial.HeldExpression != null ||
                 facial.SelectedSlots.ContainsKey(AnimationSlot.Facial) ||
                 facial.SlotCaptures.ContainsKey(AnimationSlot.Facial))
+            {
+                if (facial.SlotWeights.ContainsKey(AnimationSlot.Facial) &&
+                    SetSlotWeight(actor, AnimationSlot.Facial, 1f) is { Success: false } weight)
+                    return weight;
+                if (facial.LoopWantedSlots.Contains(AnimationSlot.Facial) &&
+                    _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false) is { Success: false } loop)
+                    return loop;
                 return _expression.ReleaseExpressionCore(actor);
+            }
         }
 
         var failures = new List<string>();

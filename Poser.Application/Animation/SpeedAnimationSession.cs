@@ -67,8 +67,13 @@ internal sealed class SpeedAnimationSession
     public Outcome Resume(ActorId actor)
     {
         _store.Trace?.Invoke($"Resume(all) {actor}");
-        foreach (var (slot, speed) in _store.For(actor).SlotSpeeds)
+        var current = _store.For(actor);
+        foreach (var (slot, speed) in current.SlotSpeeds)
         {
+            // A held expression (the Pose tab's static face) is not an animation
+            // the sidebar plays; only the Animation tab's Facial layer converts it.
+            if (slot == AnimationSlot.Facial && current.HeldExpression != null)
+                continue;
             if (speed == 0f)
                 ResumeSlotSpeedCore(actor, slot);
         }

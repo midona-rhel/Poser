@@ -32,6 +32,13 @@ internal sealed class HeldExpressionSession
     public Outcome HoldExpression(ActorId actor, ushort timeline)
     {
         if (_store.Suspended() is { } blocked) return blocked;
+        // A held expression is static: the Facial layer's loop (Animation tab) ends.
+        if (_store.For(actor).LoopWantedSlots.Contains(AnimationSlot.Facial))
+        {
+            var unlooped = _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false);
+            if (!unlooped.Success)
+                return unlooped;
+        }
         var chosen = _base.ChooseSlot(actor, AnimationSlot.Facial, timeline);
         if (!chosen.Success)
             return chosen;
