@@ -441,9 +441,13 @@ public sealed class AnimationPane : IDisposable
         var actionStyle = FixedActionStyle();
         var selectionStyle = FixedSelectionStyle();
         // The row pairs live native state with the shared staged slot selection.
+        // A layer the game ended still names its animation: its row replays it.
+        ushort shown = live != 0 || _animation.EndedLength(actor, slot) == null
+            ? live
+            : _animation.SelectedFor(actor, slot) ?? 0;
         form.ReadOnlyWithActions(
             "Animation",
-            DisplayName(live, slot, choice, "None"),
+            DisplayName(shown, slot, choice, "None"),
             actions =>
             {
                 actions.Button(
@@ -610,7 +614,8 @@ public sealed class AnimationPane : IDisposable
         var selectionStyle = FixedSelectionStyle();
         form.ReadOnlyWithActions(
             "Animation",
-            DisplayName(live, AnimationSlot.Base, command?.Entry, "None"),
+            // The posture's version may play on another layer (Upper Body).
+            DisplayName(live, command?.PlayedSlot ?? AnimationSlot.Base, command?.Played ?? command?.Entry, "None"),
             actions =>
             {
                 actions.Button(
