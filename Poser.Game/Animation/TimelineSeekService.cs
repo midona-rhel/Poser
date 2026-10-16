@@ -84,6 +84,16 @@ public sealed unsafe class TimelineSeekService : IDisposable
         "48 89 4C 24 08 57 41 55 48 81 EC 88 00 00 00 48 8B F9 E8 ?? ?? ?? ?? 4C 8B E8 48 85 C0 75 ?? 8B 97 CC 06 00 00";
     private delegate void ApplyWeaponRequestsFn(nint actorControl);
     private readonly Hook<ApplyWeaponRequestsFn>? _applyRequestsHook;
+    // C094.ApplyMask 0x14191A260(clip, colourArg, float* values): the only writer
+    // of the DrawData weapon-slot alphas (values[1..3]), slot s only while clip+0xD3
+    // bit s+1 is set; also run by C094 Start (the first frame). Main thread, inside
+    // the timeline step.
+    private delegate void ApplyFadeMaskFn(nint clip, ulong colourArg, nint values);
+    private readonly Hook<ApplyFadeMaskFn>? _fadeMaskHook;
+    // Per Poser character: its 14 slot timelines and the slot owning the group-0
+    // prop (-1 none), as of this tick. Main thread only; swapped whole.
+    private Dictionary<nint, (nint[] Roots, int Owner0)> _fadeOwners = new();
+    private bool _fadeThreadLogged;
     // Per Poser actor control: the prop model the highest layer requests, per
     // request group (0 = none). Rebuilt each tick and swapped whole.
     private volatile Dictionary<nint, (ulong Group0, ulong Group1)> _layerProps = new();
@@ -154,6 +164,20 @@ public sealed unsafe class TimelineSeekService : IDisposable
             catch (Exception ex)
             {
                 log.Warning($"Animation: DisableDraw hook failed ({ex.Message}); a redraw restores the actor stopped.");
+            }
+            try
+            {
+                if (scanner.TryScanText(Poser.Game.Natives.NativeSignatures.C094_ApplyMask, out var fadeMask) && fadeMask != 0)
+                {
+                    _fadeMaskHook = hooking.HookFromAddress<ApplyFadeMaskFn>(fadeMask, ApplyFadeMaskDetour);
+                    _fadeMaskHook.Enable();
+                }
+                else
+                    log.Warning("Animation: C094.ApplyMask not found; a lower layer's fade blinks a higher layer's prop for a frame.");
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Animation: C094.ApplyMask hook failed ({ex.Message}).");
             }
             try
             {
@@ -483,9 +507,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
         var next = new Dictionary<nint, (ulong, ulong)>();
         var suppressed = new HashSet<nint>();
         var liveFades = new HashSet<nint>();
+        var fadeOwners = new Dictionary<nint, (nint[] Roots, int Owner0)>();
         foreach (nint character in _managed)
         {
             var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
+            var roots = new nint[14];
+            for (int slot = 0; slot < 14; slot++)
+                roots[slot] = AnimationNativeState.SlotTimeline(sequencer, slot);
             nint control = 0;
             ulong group0 = 0, group1 = 0;
             int owner0 = -1, owner1 = -1;
@@ -540,7 +568,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 if (slot < (group == 0 ? owner0 : owner1))
                     *(byte*)(clip + 0xA4) = 0;
             MaskLowerFades(character, fades, owner0, liveFades);
+            fadeOwners[character] = (roots, owner0);
         }
+        _fadeOwners = fadeOwners;
         _layerProps = next;
         // A lower layer's C094 gets its prop-slot bit back once no higher layer owns
         // the prop (only clips still in a live tree are touched).
@@ -592,6 +622,45 @@ public sealed unsafe class TimelineSeekService : IDisposable
             *(float*)(character + 0x6F8 + 2 * 0x70 + 0x68) = 1f;
             LogOnce($"fademask:{clip}", $"[TimelineSeek] slot {slot}'s fade no longer reaches slot {owner0}'s prop");
         }
+    }
+
+    /// <summary>
+    /// Before a C094 applies its alphas: one of a layer below the group-0 prop's
+    /// owner loses its slot-2 bit first, so it can't fade the higher layer's prop,
+    /// not even on its start frame (Start applies at once, before the tick's
+    /// MaskLowerFades). The clip's root (+0x38) names its slot. Never throws into
+    /// the game.
+    /// </summary>
+    private void ApplyFadeMaskDetour(nint clip, ulong colourArg, nint values)
+    {
+        try
+        {
+            if (!_fadeThreadLogged)
+            {
+                _fadeThreadLogged = true;
+                _log.Information($"[TimelineSeek] C094 mask runs on the framework thread: {_framework.IsInFrameworkUpdateThread}");
+            }
+            nint root = clip != 0 ? *(nint*)(clip + 0x38) : 0;
+            if (root != 0 && (*(byte*)(clip + 0xD3) & (1 << 3)) != 0)
+                foreach (var (roots, owner0) in _fadeOwners.Values)
+                {
+                    int slot = Array.IndexOf(roots, root);
+                    if (slot < 0)
+                        continue;
+                    if (owner0 > slot)
+                    {
+                        *(byte*)(clip + 0xD3) &= unchecked((byte)~(1 << 3));
+                        _maskedFades[clip] = 1 << 3;
+                        _maskWanted.Add(clip);
+                    }
+                    break;
+                }
+        }
+        catch
+        {
+            // Losing the mask for one apply is all a failure costs.
+        }
+        _fadeMaskHook!.Original(clip, colourArg, values);
     }
 
     /// <summary>
@@ -1357,13 +1426,15 @@ public sealed unsafe class TimelineSeekService : IDisposable
         // in-flight DisableDraw leave the detour before freeing it.
         _weaponSpeedHook?.Disable();
         _applyRequestsHook?.Disable();
+        _fadeMaskHook?.Disable();
         if (_disableDrawHook != null)
             _disableDrawHook.Disable();
-        if (_disableDrawHook != null || _weaponSpeedHook != null || _applyRequestsHook != null)
+        if (_disableDrawHook != null || _weaponSpeedHook != null || _applyRequestsHook != null || _fadeMaskHook != null)
             System.Threading.Thread.Sleep(100);
         _disableDrawHook?.Dispose();
         _weaponSpeedHook?.Dispose();
         _applyRequestsHook?.Dispose();
+        _fadeMaskHook?.Dispose();
         lock (_targetLock)
         {
             _targets.Clear();
