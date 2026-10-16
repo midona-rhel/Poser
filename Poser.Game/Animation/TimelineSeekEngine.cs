@@ -401,8 +401,13 @@ internal sealed unsafe class TimelineSeekEngine
         int fade = *(int*)(root + 0x220);
         int blend = viaPlayInfo ? *(int*)(playInfo + 0x38) : *(int*)(root + 0x21C);
         byte flags = *(byte*)(root + 0x272);
-        // TEST: a stop fade far longer than the blend, so only the blend node fades them.
-        *(int*)(root + 0x220) = 1000;
+        // The stopped holders' own fade-to-empty multiplies into the blend node's
+        // crossfade (old weight (1 − x)², the sum dipped to ~0.77 mid-seam); 0 drops
+        // them at once (the body fell to the new control's ~0 weight: a bind-pose
+        // frame). A fade far longer than the blend leaves only the crossfade, the
+        // sum stays 1 as at the game's own seam, and the node releases them when
+        // the blend completes (measured: removed the frame after it).
+        *(int*)(root + 0x220) = OldHolderFadeFrames;
         if (viaPlayInfo)
             *(int*)(playInfo + 0x38) = frames;
         else
@@ -430,6 +435,8 @@ internal sealed unsafe class TimelineSeekEngine
             }
         }
     }
+
+    private const int OldHolderFadeFrames = 1000;
 
     /// <summary>Which blend-in source the last crossfade wrap wrote (for the log).</summary>
     public string? LastBlendPath { get; private set; }
