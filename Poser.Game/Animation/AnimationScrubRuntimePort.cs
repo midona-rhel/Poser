@@ -92,9 +92,12 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         return all;
     }
 
-    /// <summary>The layers the native seek scrubs by their own timeline clock.</summary>
+    /// <summary>The layers the native seek scrubs by their own timeline clock: all of
+    /// them where it can. Base and Upper Body fall back to their Havok control only
+    /// without it (that control is found by index, and a seek's re-created controls
+    /// reorder the array: Upper Body then read Full body's time).</summary>
     private static readonly AnimationSlot[] TimelineScrubSlots =
-        [AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips,
+        [AnimationSlot.Base, AnimationSlot.UpperBody, AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips,
          AnimationSlot.Parts1, AnimationSlot.Parts2, AnimationSlot.Parts3, AnimationSlot.Parts4, AnimationSlot.Overlay];
 
     /// <summary>Resolves the verified Base and Upper Body slot controls.</summary>
@@ -105,8 +108,10 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         var character = _native.Resolve(actor, out _);
         if (character == null)
             return null;
+        if (_seek?.TimelineReading(character, slot) is { } timeline)
+            return timeline;
         if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
-            return _seek?.TimelineReading(character, slot);
+            return null;
         int index = (int)slot;
         if (character->Timeline.TimelineSequencer.TimelineIds[index] == 0)
             return null;
