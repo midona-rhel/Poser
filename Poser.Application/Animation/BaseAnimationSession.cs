@@ -362,8 +362,10 @@ internal sealed class BaseAnimationSession
             ? _timeline.CaptureBase(actor)
             : firstCapture;
         var played = _timeline.PlayEmote(actor, entry.EmoteId);
+        // A refused emote start plays the timeline itself, without its intro, so
+        // Apply never silently does nothing.
         if (!played.Success)
-            return played;
+            return PlayBaseCore(actor, (ushort)entry.TimelineId, before, armRepeat);
         if (armRepeat)
         {
             var armed = _timeline.SetForceLoop(actor, (ushort)entry.TimelineId);

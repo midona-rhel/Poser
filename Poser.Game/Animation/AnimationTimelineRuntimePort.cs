@@ -248,9 +248,10 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (character == null)
             return Outcome.Fail(detail!);
         AnimationNativeState.TrySetForcedTimeline(&character->Timeline, 0);
-        return _native.PlayEmoteNative(character, emoteId)
-            ? Outcome.Ok()
-            : Outcome.Fail("The emote entry point is unavailable.");
+        if (_native.PlayEmoteNative(character, emoteId))
+            return Outcome.Ok();
+        _log.Information($"Animation: the game refused emote {emoteId} for actor={actor}.");
+        return Outcome.Fail("The game refused the emote.");
     }
 
     // ── Loops ───────────────────────────────────────────

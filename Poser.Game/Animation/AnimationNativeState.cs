@@ -377,8 +377,9 @@ public sealed unsafe partial class AnimationNativeState
     {
         if (_playEmote == null)
             return false;
-        _playEmote(&character->EmoteController, (nint)emoteId, nint.Zero, nint.Zero);
-        return true;
+        // The game refuses an emote it can't start now; that answer used to be
+        // dropped, so a refused Apply reported success and played nothing.
+        return _playEmote(&character->EmoteController, (nint)emoteId, nint.Zero, nint.Zero);
     }
 
     // ── Forced timeline layout ────────────────────────────────────────
