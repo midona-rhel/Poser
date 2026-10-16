@@ -44,4 +44,32 @@ public sealed class LayerIsolationTests
         speed.DidNotReceive().SetSlotSpeed(actor, AnimationSlot.UpperBody, 0f);
         Assert.True(session.AnyPlaying(actor));
     }
+
+    [Fact]
+    public void A_layer_that_ran_out_holds_on_its_last_frame_and_play_restarts_it()
+    {
+        var actor = ActorId.New();
+        var timeline = Substitute.For<IAnimationTimelinePort>();
+        var speed = Substitute.For<IAnimationSpeedPort>();
+        var scrub = Substitute.For<IAnimationScrubPort>();
+        timeline.Read(actor).Returns(ActorAnimationReading.Empty with
+        {
+            Slots = new[] { new AnimationSlotReading(AnimationSlot.UpperBody, EatAppleUpper, 1f) },
+        });
+        speed.SetSlotSpeed(actor, Arg.Any<AnimationSlot>(), Arg.Any<float>()).Returns(Outcome.Ok());
+        scrub.SetControlTime(actor, ScrubControlId.Timeline(AnimationSlot.UpperBody), 0f, Arg.Any<ulong>())
+            .Returns(Outcome.Ok());
+        var session = new AnimationSession(timeline, speed, Substitute.For<IAnimationStancePort>(),
+            scrub, Substitute.For<IWorldRenderingRuntimePort>());
+
+        timeline.LayerEnded += Raise.Event<System.Action<ActorId, AnimationSlot>>(actor, AnimationSlot.UpperBody);
+
+        speed.Received(1).SetSlotSpeed(actor, AnimationSlot.UpperBody, 0f);
+        Assert.Contains(AnimationSlot.UpperBody, session.OverridesFor(actor).EndHeldSlots);
+
+        Assert.True(session.ResumeSlot(actor, AnimationSlot.UpperBody).Success);
+
+        scrub.Received(1).SetControlTime(actor, ScrubControlId.Timeline(AnimationSlot.UpperBody), 0f, Arg.Any<ulong>());
+        Assert.DoesNotContain(AnimationSlot.UpperBody, session.OverridesFor(actor).EndHeldSlots);
+    }
 }

@@ -68,7 +68,45 @@ public sealed class AnimationSession : IAnimationPlayback
         _stance = new StanceAnimationSession(_store, timeline, stance, _base);
         _scrub = new ScrubAnimationSession(scrub, _speed);
         _expression = new HeldExpressionSession(_store, timeline, speed, _base, _speed);
+        _timeline.LayerEnded += OnLayerEnded;
     }
+
+    /// <summary>
+    /// A layer Poser applied ran out (not looped): it holds on its last frame
+    /// instead of the game ending it, so its play icon and scrub keep working.
+    /// </summary>
+    private void OnLayerEnded(ActorId actor, AnimationSlot slot)
+    {
+        if (_store.CommandsSuspended)
+            return;
+        if (!_speed.PauseSlot(actor, slot).Success)
+            return;
+        _store.Mutate(actor, o => o with
+        {
+            EndHeldSlots = new HashSet<AnimationSlot>(o.EndHeldSlots) { slot },
+        });
+    }
+
+    /// <summary>A layer held at its end plays again from its start.</summary>
+    private Outcome RestartIfEnded(ActorId actor, AnimationSlot slot)
+    {
+        if (!_store.For(actor).EndHeldSlots.Contains(slot))
+            return Outcome.Ok();
+        var restarted = _scrub.RestartLayer(actor, slot);
+        if (restarted.Success)
+            ForgetEnded(actor, slot);
+        return restarted;
+    }
+
+    private void ForgetEnded(ActorId actor, AnimationSlot slot) =>
+        _store.Mutate(actor, o =>
+        {
+            if (!o.EndHeldSlots.Contains(slot))
+                return o;
+            var ended = new HashSet<AnimationSlot>(o.EndHeldSlots);
+            ended.Remove(slot);
+            return o with { EndHeldSlots = ended };
+        });
 
     public AnimationOverrides OverridesFor(ActorId actor) => _store.For(actor);
 
@@ -135,7 +173,12 @@ public sealed class AnimationSession : IAnimationPlayback
     public Outcome Pause(ActorId actor) => _speed.Pause(actor);
 
     /// <summary>Play-all: releases every hold.</summary>
-    public Outcome Resume(ActorId actor) => _speed.Resume(actor);
+    public Outcome Resume(ActorId actor)
+    {
+        foreach (var slot in _store.For(actor).EndHeldSlots.ToList())
+            RestartIfEnded(actor, slot);
+        return _speed.Resume(actor);
+    }
 
     /// <summary>Whether any live layer is actually moving.</summary>
     public bool AnyPlaying(ActorId actor) => _speed.AnyPlaying(actor);
@@ -203,6 +246,9 @@ public sealed class AnimationSession : IAnimationPlayback
     public Outcome ResumeSlot(ActorId actor, AnimationSlot slot)
     {
         if (_store.Suspended() is { } blocked) return blocked;
+        var restarted = RestartIfEnded(actor, slot);
+        if (!restarted.Success)
+            return restarted;
         if (IsPaused(actor))
         {
             var lifted = _speed.ResumeForLayerPlay(actor, slot);
@@ -225,7 +271,20 @@ public sealed class AnimationSession : IAnimationPlayback
         ActorId actor, AnimationSlot slot, TimelineEntry? entry,
         bool playFromStart, bool resume = true)
     {
+        var before = _timeline.Read(actor)?.TimelineFor(slot);
+        // Playing the animation that ran out plays it again from its start.
+        if (resume && before != null && SelectedFor(actor, slot) == before)
+            RestartIfEnded(actor, slot);
         var outcome = PlaySelectedSlotTraced(actor, slot, entry, playFromStart, resume);
+        if (outcome.Success)
+        {
+            // A Poser layer from here on: it holds on its last frame. A new
+            // animation is no longer the one that ended.
+            if (slot != AnimationSlot.Lips)
+                _timeline.SetLayerOwned(actor, slot, true);
+            if (_timeline.Read(actor)?.TimelineFor(slot) != before)
+                ForgetEnded(actor, slot);
+        }
         Trace?.Invoke(outcome.Success
             ? $"  PlaySelectedSlot {slot} -> ok"
             : $"  PlaySelectedSlot {slot} -> FAIL: {outcome.Detail}");
@@ -323,6 +382,17 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>Restores one selectable layer and clears its selection.</summary>
     public Outcome ResetSlot(ActorId actor, AnimationSlot slot)
+    {
+        var reset = ResetSlotCore(actor, slot);
+        if (reset.Success)
+        {
+            _timeline.SetLayerOwned(actor, slot, false);
+            ForgetEnded(actor, slot);
+        }
+        return reset;
+    }
+
+    private Outcome ResetSlotCore(ActorId actor, AnimationSlot slot)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         if (!AnimationSlots.Selectable.Contains(slot))
@@ -462,6 +532,18 @@ public sealed class AnimationSession : IAnimationPlayback
     /// aggregated so one unreachable write cannot strand the rest.
     /// </summary>
     public Outcome ResetActor(ActorId actor)
+    {
+        var reset = ResetActorCore(actor);
+        if (reset.Success)
+        {
+            foreach (var slot in AnimationSlots.Selectable)
+                _timeline.SetLayerOwned(actor, slot, false);
+            _store.Mutate(actor, o => o with { EndHeldSlots = new HashSet<AnimationSlot>() });
+        }
+        return reset;
+    }
+
+    private Outcome ResetActorCore(ActorId actor)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         if (!_store.TryGet(actor, out var owned))

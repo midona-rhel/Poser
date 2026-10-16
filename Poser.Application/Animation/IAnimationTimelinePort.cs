@@ -56,6 +56,11 @@ public interface IAnimationTimelinePort
     Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot);
     /// <summary>Drops every armed loop for the actor. No native writes.</summary>
     void ClearLoops(ActorId actor);
+    /// <summary>A layer Poser applied: the game never ends it on its own; when not
+    /// looped it holds on its last frame and raises <see cref="LayerEnded"/>.</summary>
+    void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned);
+    /// <summary>An owned, non-looped layer reached its last frame.</summary>
+    event Action<ActorId, AnimationSlot>? LayerEnded;
     /// <summary>Pauses loop enforcement while a multi-phase operation
     /// (facial bake) needs the actor to hold still.</summary>
     bool LoopsSuspended { get; set; }

@@ -36,6 +36,10 @@ internal sealed class ScrubAnimationSession
 
     private ScrubGesture? _scrub;
 
+    /// <summary>Seeks a layer's timeline back to its start (its own timeline clock).</summary>
+    public Outcome RestartLayer(ActorId actor, AnimationSlot slot) =>
+        _port.SetControlTime(actor, ScrubControlId.Timeline(slot), 0f, 0);
+
     /// <summary>Gets the control for a slot.</summary>
     public ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot) =>
         _port.FindSlotControl(actor, slot, out _);

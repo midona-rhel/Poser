@@ -33,6 +33,8 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         TimelineSeekService? seek = null)
     {
         _seek = seek;
+        if (_seek != null)
+            _seek.LayerEnded += (actor, slot) => LayerEnded?.Invoke(actor, slot);
         _speeds = speeds;
         _framework = framework;
         _log = log;
@@ -304,6 +306,11 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         }
         return Outcome.Ok();
     }
+
+    public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned) =>
+        _seek?.SetOwned(actor, slot, owned);
+
+    public event Action<ActorId, AnimationSlot>? LayerEnded;
 
     public void ClearLoops(ActorId actor)
     {
