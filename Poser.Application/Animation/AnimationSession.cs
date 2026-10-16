@@ -72,40 +72,58 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     /// <summary>
-    /// A layer Poser applied ran out (not looped): it holds on its last frame
-    /// instead of the game ending it, so its play icon and scrub keep working.
+    /// A layer Poser applied ran out (not looped) and the game ended it. Its row
+    /// stays (selection, speed, weight); its play or scrub plays it again.
     /// </summary>
-    private void OnLayerEnded(ActorId actor, AnimationSlot slot)
+    private void OnLayerEnded(ActorId actor, AnimationSlot slot, float seconds)
     {
-        if (_store.CommandsSuspended)
-            return;
-        if (!_speed.PauseSlot(actor, slot).Success)
+        if (_store.CommandsSuspended || SelectedFor(actor, slot) == null)
             return;
         _store.Mutate(actor, o => o with
         {
-            EndHeldSlots = new HashSet<AnimationSlot>(o.EndHeldSlots) { slot },
+            EndedSlots = new Dictionary<AnimationSlot, float>(o.EndedSlots) { [slot] = seconds },
         });
     }
 
-    /// <summary>A layer held at its end plays again from its start.</summary>
+    /// <summary>The length in seconds of a layer the game ended, or null while it
+    /// plays (or was never applied).</summary>
+    public float? EndedLength(ActorId actor, AnimationSlot slot) =>
+        _store.For(actor).EndedSlots.TryGetValue(slot, out var seconds) ? seconds : null;
+
+    /// <summary>A layer the game ended plays its animation again from the start.</summary>
     private Outcome RestartIfEnded(ActorId actor, AnimationSlot slot)
     {
-        if (!_store.For(actor).EndHeldSlots.Contains(slot))
+        if (!_store.For(actor).EndedSlots.ContainsKey(slot))
             return Outcome.Ok();
-        var restarted = _scrub.RestartLayer(actor, slot);
-        if (restarted.Success)
-            ForgetEnded(actor, slot);
-        return restarted;
+        var replayed = _base.ApplySelectedSlotCore(actor, slot);
+        if (!replayed.Success)
+            return replayed;
+        _timeline.SetLayerOwned(actor, slot, true);
+        ForgetEnded(actor, slot);
+        return replayed;
+    }
+
+    /// <summary>A scrub on a layer the game ended: it plays again, held, so the
+    /// scrub can move it once it is loaded.</summary>
+    public Outcome ReplayEndedForScrub(ActorId actor, AnimationSlot slot)
+    {
+        if (_store.Suspended() is { } blocked) return blocked;
+        if (!_store.For(actor).EndedSlots.ContainsKey(slot))
+            return Outcome.Fail("This layer is still playing.");
+        var replayed = RestartIfEnded(actor, slot);
+        if (!replayed.Success || IsPaused(actor) || _speed.IsSlotHeld(actor, slot))
+            return replayed;
+        return _speed.PauseSlot(actor, slot);
     }
 
     private void ForgetEnded(ActorId actor, AnimationSlot slot) =>
         _store.Mutate(actor, o =>
         {
-            if (!o.EndHeldSlots.Contains(slot))
+            if (!o.EndedSlots.ContainsKey(slot))
                 return o;
-            var ended = new HashSet<AnimationSlot>(o.EndHeldSlots);
+            var ended = new Dictionary<AnimationSlot, float>(o.EndedSlots);
             ended.Remove(slot);
-            return o with { EndHeldSlots = ended };
+            return o with { EndedSlots = ended };
         });
 
     public AnimationOverrides OverridesFor(ActorId actor) => _store.For(actor);
@@ -146,6 +164,27 @@ public sealed class AnimationSession : IAnimationPlayback
     public ushort? SelectedFor(ActorId actor, AnimationSlot slot) =>
         _base.SelectedFor(actor, slot);
 
+    /// <summary>
+    /// The General Apply's emote for how the actor is now: the emote's version for
+    /// its posture (sitting, dozing, mounted, ...), usually on another layer, as the
+    /// game would play it. Anything but an emote's standing pick plays as picked.
+    /// Null, with the reason, where the game has no version for the posture.
+    /// </summary>
+    public TimelineEntry? PostureEntry(ActorId actor, TimelineEntry entry, out string? refusal)
+    {
+        refusal = null;
+        if (entry.Kind != AnimationKind.Emote || entry.EmoteId == 0 || entry.EmoteIndex != 0)
+            return entry;
+        if (_timeline.EmotePostureRow(actor, entry.EmoteId) is not { } row || row == entry.TimelineId)
+            return entry;
+        if (row == 0)
+        {
+            refusal = $"{entry.Name} has no version for how the actor is now (mounted, swimming or diving).";
+            return null;
+        }
+        return entry with { TimelineId = row, Slot = _timeline.TimelineSlot(row) ?? AnimationSlot.Base };
+    }
+
     /// <summary>Stages a selection without reading or writing native state.</summary>
     public Outcome ChooseSlot(ActorId actor, AnimationSlot slot, ushort timeline) =>
         _base.ChooseSlot(actor, slot, timeline);
@@ -175,7 +214,7 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Play-all: releases every hold.</summary>
     public Outcome Resume(ActorId actor)
     {
-        foreach (var slot in _store.For(actor).EndHeldSlots.ToList())
+        foreach (var slot in _store.For(actor).EndedSlots.Keys.ToList())
             RestartIfEnded(actor, slot);
         return _speed.Resume(actor);
     }
@@ -278,7 +317,7 @@ public sealed class AnimationSession : IAnimationPlayback
         var outcome = PlaySelectedSlotTraced(actor, slot, entry, playFromStart, resume);
         if (outcome.Success)
         {
-            // A Poser layer from here on: it holds on its last frame. A new
+            // A Poser layer from here on: the game ends it only at its end. A new
             // animation is no longer the one that ended.
             if (slot != AnimationSlot.Lips)
                 _timeline.SetLayerOwned(actor, slot, true);
@@ -509,6 +548,13 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Ends the drag, leaving the actor paused on the released frame.</summary>
     public void EndScrub(Guid owner) => _scrub.EndScrub(owner);
 
+    /// <summary>Seeks a layer by its own timeline clock (seconds from its begin).</summary>
+    public Outcome SeekLayer(ActorId actor, AnimationSlot slot, float seconds)
+    {
+        if (_store.Suspended() is { } blocked) return blocked;
+        return _scrub.SeekLayer(actor, slot, seconds);
+    }
+
     // ── Held expression ──────────────────────────────────────────────────
 
     /// <summary>Applies an expression and immediately pins its facial frame.</summary>
@@ -538,7 +584,7 @@ public sealed class AnimationSession : IAnimationPlayback
         {
             foreach (var slot in AnimationSlots.Selectable)
                 _timeline.SetLayerOwned(actor, slot, false);
-            _store.Mutate(actor, o => o with { EndHeldSlots = new HashSet<AnimationSlot>() });
+            _store.Mutate(actor, o => o with { EndedSlots = new Dictionary<AnimationSlot, float>() });
         }
         return reset;
     }

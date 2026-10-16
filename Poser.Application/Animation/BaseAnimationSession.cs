@@ -361,7 +361,7 @@ internal sealed class BaseAnimationSession
         var rollbackCapture = before.BaseCapture != null
             ? _timeline.CaptureBase(actor)
             : firstCapture;
-        var played = _timeline.PlayEmote(actor, entry.EmoteId);
+        var played = _timeline.PlayEmote(actor, entry.EmoteId, (ushort)entry.TimelineId);
         // A refused emote start plays the timeline itself, without its intro, so
         // Apply never silently does nothing.
         if (!played.Success)

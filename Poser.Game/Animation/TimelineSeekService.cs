@@ -40,14 +40,21 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // Armed loops: (actor, slot) → the timeline id the loop belongs to. Written by
     // the UI, read by the tick (under _targetLock).
     private readonly Dictionary<(ActorId Actor, int Slot), ushort> _loops = new();
-    // Layers Poser applied (under _targetLock): they hold on their last frame.
-    private readonly HashSet<(ActorId Actor, int Slot)> _owned = new();
+    // Layers Poser applied (under _targetLock) → the timeline id they play (0 until
+    // the tick sees it live). The game ends them only at their end, never paused.
+    private readonly Dictionary<(ActorId Actor, int Slot), ushort> _owned = new();
+    // Slots whose owned layer the game ended (under _targetLock): the layer's held
+    // speed and weight don't act on what plays there next.
+    private readonly HashSet<(nint Character, int Slot)> _endedSlots = new();
+    // An owned layer's length in seconds, read once per slot timeline.
+    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Seconds)> _ownedLengths = new();
     // The slot timeline whose pre-end notify lead (+0x26E) is switched off, and its value.
     private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, short Original)> _leads = new();
     // Layers let go of whose lead still needs its value back (under _targetLock).
     private readonly List<(ActorId Actor, int Slot)> _leadRestores = new();
-    // The slot timeline whose end was last reported per layer.
-    private readonly Dictionary<(ActorId Actor, int Slot), nint> _ended = new();
+    // Scrub targets for a slot timeline still loading (a replayed layer), in seconds
+    // from its begin, with the tick they were asked on (under _targetLock).
+    private readonly Dictionary<(ActorId Actor, int Slot), (float Seconds, int Tick)> _pendingTargets = new();
     // Last remaining-frames reading per armed loop (its decrease is the loop's margin).
     private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Value, float Clock)> _remaining = new();
 
@@ -228,7 +235,52 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (root == 0)
             return;
         lock (_targetLock)
+        {
+            _pendingTargets.Remove((actor, (int)slot));
             _targets[(actor, (int)slot)] = TimelineSeekEngine.Begin(root) + seconds * 30f;
+        }
+    }
+
+    /// <summary>A scrub target for a slot timeline that is still loading: it runs
+    /// once the timeline can be seeked (dropped after ~5 s). False when the slot
+    /// has no timeline or it is already loaded.</summary>
+    internal bool RequestTimelineWhenLoaded(ActorId actor, Character* character, AnimationSlot slot, float seconds)
+    {
+        nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
+        if (!Available || root == 0 || TimelineSeekEngine.IsLoaded(root))
+            return false;
+        lock (_targetLock)
+            _pendingTargets[(actor, (int)slot)] = (seconds, _tick);
+        return true;
+    }
+
+    private void PromotePendingTargets()
+    {
+        KeyValuePair<(ActorId Actor, int Slot), (float Seconds, int Tick)>[] pending;
+        lock (_targetLock)
+        {
+            if (_pendingTargets.Count == 0)
+                return;
+            pending = _pendingTargets.ToArray();
+        }
+        foreach (var (key, target) in pending)
+        {
+            var character = _native.Resolve(key.Actor, out _);
+            bool ready = character != null && Supports(character, key.Slot);
+            if (!ready && character != null && _tick - target.Tick < 300)
+                continue;
+            lock (_targetLock)
+            {
+                if (!_pendingTargets.TryGetValue(key, out var current) || current != target)
+                    continue;
+                _pendingTargets.Remove(key);
+                if (ready)
+                {
+                    nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot);
+                    _targets[key] = TimelineSeekEngine.Begin(root) + target.Seconds * 30f;
+                }
+            }
+        }
     }
 
     /// <summary>Records the latest scrub target in Havok control seconds.</summary>
@@ -264,6 +316,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             PumpRestores();
             CorrectPropBirths();
             UpdateLayerProps();
+            PromotePendingTargets();
 
             KeyValuePair<(ActorId, int), float>[] targets;
             lock (_targetLock)
@@ -718,22 +771,88 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // cross the end before the next check, so wrap one step early.
     private const float LoopLeadSteps = 2f;
 
-    /// <summary>Layers Poser applied: the game never ends them on its own terms. A
-    /// looped one wraps; any other one-shot holds on its last frame (LayerEnded).</summary>
+    /// <summary>Layers Poser applied. A looped one wraps; any other one-shot is
+    /// ended by the game at its end as it would be, but never while it is held or
+    /// scrubbed (LayerEnded once it is gone). Owning again (a replay) or letting go
+    /// clears an ended slot.</summary>
     internal void SetOwned(ActorId actor, AnimationSlot slot, bool owned)
     {
+        var character = _native.Resolve(actor, out _);
         lock (_targetLock)
         {
             if (owned)
-                _owned.Add((actor, (int)slot));
+                _owned[(actor, (int)slot)] = 0;
             else if (_owned.Remove((actor, (int)slot)))
                 _leadRestores.Add((actor, (int)slot));
+            if (character != null)
+                _endedSlots.Remove(((nint)character, (int)slot));
         }
     }
 
-    /// <summary>An owned, non-looped layer reached the end of its animation and is
-    /// about to end (raised once per play, on the framework thread).</summary>
-    internal event Action<ActorId, AnimationSlot>? LayerEnded;
+    /// <summary>An owned layer's animation is gone from its slot: the game ended
+    /// it (or something outside Poser replaced it). Raised once, on the framework
+    /// thread, with the animation's length in seconds.</summary>
+    internal event Action<ActorId, AnimationSlot, float>? LayerEnded;
+
+    private bool SlotEnded(Character* character, int slot)
+    {
+        lock (_targetLock)
+            return _endedSlots.Count != 0 && _endedSlots.Contains(((nint)character, slot));
+    }
+
+    /// <summary>
+    /// An owned layer's identity: the first live timeline after the play (an
+    /// emote's intro excluded) is its animation; once the slot runs anything else,
+    /// it ended. False while it isn't live (not yet, or no more).
+    /// </summary>
+    private bool TrackOwned(
+        (ActorId Actor, int Slot) key, Character* character,
+        FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer, ushort live)
+    {
+        ushort id;
+        lock (_targetLock)
+            if (!_owned.TryGetValue(key, out id))
+                return false;
+        if (id == 0)
+        {
+            if (live == 0 || (key.Slot == 0 && IntroQueued(sequencer, live)))
+                return false;
+            lock (_targetLock)
+                if (_owned.ContainsKey(key))
+                    _owned[key] = live;
+            id = live;
+        }
+        if (live == id)
+        {
+            nint root = AnimationNativeState.SlotTimeline(sequencer, key.Slot);
+            if (!_ownedLengths.TryGetValue(key, out var length) || length.Root != root || length.Seconds <= 0f)
+                _ownedLengths[key] = (root, TimelineReading(character, (AnimationSlot)key.Slot)?.Duration ?? 0f);
+            return true;
+        }
+        lock (_targetLock)
+        {
+            _owned.Remove(key);
+            _endedSlots.Add(((nint)character, key.Slot));
+        }
+        _leads.Remove(key);
+        _remaining.Remove(key);
+        float seconds = _ownedLengths.Remove(key, out var last) ? last.Seconds : 0f;
+        LayerEnded?.Invoke(key.Actor, (AnimationSlot)key.Slot, seconds);
+        return false;
+    }
+
+    /// <summary>The countdown's per-tick decrease, from a plain tick only: a scrub or
+    /// wrap moves the clock by far more (or backward), and its jump is no rate.</summary>
+    private float MeasureStep((ActorId Actor, int Slot) key, nint root, float remaining, float expected)
+    {
+        float clock = TimelineSeekEngine.Clock(root);
+        float step = _remaining.TryGetValue(key, out var last) && last.Root == root
+            && Math.Abs(clock - last.Clock - expected) <= Math.Max(1f, expected)
+            ? last.Value - remaining
+            : 0f;
+        _remaining[key] = (root, remaining, clock);
+        return step;
+    }
 
     /// <summary>
     /// Every armed loop and owned layer, each tick. The sequencer ends a slot
@@ -745,9 +864,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
     /// completion. For these layers the notify is switched off (+0x26E = -1, the
     /// original kept and restored when Poser lets go) and Poser decides: a loop
     /// wraps just before the seam and blends back over the lead; any other
-    /// one-shot is reported (LayerEnded) just before its last animation runs out
-    /// and holds there. Remaining time counts in the clip's own units, so its
-    /// decrease is measured per tick for the margin.
+    /// one-shot gets its lead back only while it plays into it, so the game ends
+    /// it there as it would, and a held or scrubbed one never ends. Remaining time
+    /// counts in the clip's own units, so its decrease is measured per tick for
+    /// the margin.
     /// </summary>
     private void PumpLoops(KeyValuePair<(ActorId, int), float>[] scrubbed)
     {
@@ -762,7 +882,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             layers = new List<((ActorId, int), ushort)>(_loops.Count + _owned.Count);
             foreach (var (key, timeline) in _loops)
                 layers.Add((key, timeline));
-            foreach (var key in _owned)
+            foreach (var key in _owned.Keys)
                 if (!_loops.ContainsKey(key))
                     layers.Add((key, (ushort)0));
         }
@@ -779,17 +899,37 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             var sequencer = &character->Timeline.TimelineSequencer;
             ushort live = *(ushort*)((byte*)sequencer + 0xE0 + 2 * key.Slot);
+            bool owned;
+            lock (_targetLock)
+                owned = _owned.ContainsKey(key);
+            if (owned && !TrackOwned(key, character, sequencer, live))
+                continue;
             if (live == 0 || (loop != 0 && live != loop) || !Supports(character, key.Slot))
                 continue;
             nint root = AnimationNativeState.SlotTimeline(sequencer, key.Slot);
             short lead = HoldLead(key, root);
             float speed = *(float*)(root + 0x240);
-            if (!(speed > 0f))
+            if (loop == 0)
+            {
+                // A one-shot (+0x58 == 1; a looping row never ends), not an emote's
+                // intro with its loop queued behind it, and only where the game
+                // has a pre-end notify (otherwise it ends at finalization anyway).
+                if (*(int*)(root + 0x58) != 1 || (key.Slot == 0 && IntroQueued(sequencer, live)))
+                    continue;
+                nint info = TimelineSeekEngine.PlayInfo(root);
+                if (lead < 0 || info == 0 || *(int*)(info + 0x30) == -1)
+                    continue;
+                bool release = false;
+                if (speed > 0f)
+                {
+                    float left = _engine.Remaining(root);
+                    float step = left >= 0f ? MeasureStep(key, root, left, frames * speed) : 0f;
+                    release = left >= 0f && left - LoopLeadSteps * Math.Max(step, 0f) <= lead;
+                }
+                *(short*)(root + 0x26E) = release ? lead : (short)-1;
                 continue;
-            bool hold = loop == 0;
-            // A hold is for one-shots only (+0x58 == 1; a looping row never ends),
-            // and not for an emote's intro with its loop queued behind it.
-            if (hold && (*(int*)(root + 0x58) != 1 || (key.Slot == 0 && IntroQueued(sequencer, live))))
+            }
+            if (!(speed > 0f))
                 continue;
             float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
             if (!(end > begin))
@@ -803,34 +943,14 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 || _engine.Finalized(root);
             if (!atEnd && remaining >= 0f)
             {
-                // Only a plain tick counts: a scrub or wrap moves the clock by far
-                // more (or backward), and its jump in remaining is no rate.
-                float clock = TimelineSeekEngine.Clock(root);
-                float expected = frames * speed;
-                float step = _remaining.TryGetValue(key, out var last) && last.Root == root
-                    && Math.Abs(clock - last.Clock - expected) <= Math.Max(1f, expected)
-                    ? last.Value - remaining
-                    : 0f;
-                _remaining[key] = (root, remaining, clock);
-                // A loop wraps at the seam the game would blend out at; a hold at the
-                // animation's own end. No measured step yet: only once it is reached.
-                atEnd = remaining - LoopLeadSteps * Math.Max(step, 0f) <= (hold ? 0 : lead);
+                float step = MeasureStep(key, root, remaining, frames * speed);
+                // A loop wraps at the seam the game would blend out at. No measured
+                // step yet: only once it is reached.
+                atEnd = remaining - LoopLeadSteps * Math.Max(step, 0f) <= lead;
             }
             if (!atEnd)
-            {
-                if (hold)
-                    _ended.Remove(key);
                 continue;
-            }
             _remaining.Remove(key);
-            if (hold)
-            {
-                if (_ended.TryGetValue(key, out var reported) && reported == root)
-                    continue;
-                _ended[key] = root;
-                LayerEnded?.Invoke(key.Actor, (AnimationSlot)key.Slot);
-                continue;
-            }
             var work = new TimelineSeekWork();
             var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: Math.Max((int)lead, 0));
             if (refused != null)
@@ -873,11 +993,10 @@ public sealed unsafe class TimelineSeekService : IDisposable
         foreach (var key in keys)
         {
             lock (_targetLock)
-                if (_loops.ContainsKey(key) || _owned.Contains(key))
+                if (_loops.ContainsKey(key) || _owned.ContainsKey(key))
                     continue;
             if (!_leads.Remove(key, out var held))
                 continue;
-            _ended.Remove(key);
             var character = _native.Resolve(key.Actor, out _);
             if (character == null)
                 continue;
@@ -940,7 +1059,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             foreach (var (slot, speed) in speeds)
             {
                 nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
-                if (root == 0)
+                if (root == 0 || SlotEnded(character, slot))
                     continue;
                 float effective = speed * overall;
                 _engine.SetSlotTimelineSpeed(sequencer, slot, effective);
@@ -995,7 +1114,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
         {
             var suppressed = _suppressedProps;
             foreach (var (slot, weight) in weights)
-                _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, slot, weight, suppressed);
+                if (!SlotEnded(character, slot))
+                    _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, slot, weight, suppressed);
         }
         catch (Exception ex) { LogOnce("weight", $"[TimelineSeek] layer weight faulted: {ex.Message}"); }
     }
@@ -1043,10 +1163,11 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _targets.Clear();
             foreach (var key in _loops.Keys)
                 _leadRestores.Add(key);
-            foreach (var key in _owned)
+            foreach (var key in _owned.Keys)
                 _leadRestores.Add(key);
             _loops.Clear();
             _owned.Clear();
+            _endedSlots.Clear();
         }
         // Best effort: unload may not run on the framework thread.
         try { RestoreLeads(); } catch { }

@@ -82,9 +82,9 @@ public sealed class AnimationSteps : IAnimationActions
             on, () => Alive(actor));
     }
 
-    public Outcome ResetGeneral(ActorId actor)
+    public Outcome ResetGeneral(ActorId actor, AnimationSlot slot = AnimationSlot.Base)
     {
-        var reset = ResetSlot(actor, AnimationSlot.Base);
+        var reset = ResetSlot(actor, slot);
         return reset.Success && _animation.LoopWantedFor(actor, AnimationSlot.Base)
             ? SetLoop(actor, AnimationSlot.Base, false)
             : reset;

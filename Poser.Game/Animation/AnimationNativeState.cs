@@ -53,6 +53,12 @@ public sealed unsafe partial class AnimationNativeState
     // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit).
     private delegate void PlayActionTimelineDelegate(TimelineContainer* container, ushort first, ushort second, nint parameters);
     private readonly PlayActionTimelineDelegate? _playActionTimeline;
+    // EmoteController::GetPosture 0x140616160 (patchcheck EmoteController.GetPosture):
+    // 0 standing, 1 ground sit, 2 chair, 3 mounted, 4 dozing, 5 swimming, 6 diving,
+    // from Character +0x688 (mount), +0x628 bit 5 (swim), diving, Mode/ModeParam.
+    // A pure read, valid on any character.
+    private delegate int GetPostureDelegate(EmoteController* controller);
+    private readonly GetPostureDelegate? _getPosture;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
     // HANDLES at sequencer+0x70 (Handle = { Data*, Flags }; Flags==0 means
@@ -194,6 +200,8 @@ public sealed unsafe partial class AnimationNativeState
             sigScanner,
             "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 49 8B E9 41 0F B7 D8 48 8B F1 E8 ?? ?? ?? ?? 0F B7 D3 48 8B CE 0F B7 F8 E8",
             "PlayActionTimeline");
+        _getPosture = ScanDelegate<GetPostureDelegate>(
+            sigScanner, "40 53 48 83 EC 20 48 8B D9 48 8B 49 08 48 85 C9 0F 84", "EmoteController.GetPosture");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
             sigScanner,
             "48 83 EC 28 8D 41 FF 3D E7 FD 00 00 77 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA 64 00 00 00 48 8B 88 40 2B 00 00 E8",
@@ -397,20 +405,49 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>
+    /// The emote's row for the actor's posture, as the game's emote start picks it
+    /// (FUN_140617920 over GetPosture): standing [0], ground sit [2], chair [3],
+    /// dozing [5]; mounted, swimming or diving [4] only if the emote is usable so.
+    /// 0 where the game refuses the emote in this posture; null when the posture
+    /// can't be read. The standing height-adjust loop [6] is not applied.
+    /// </summary>
+    internal ushort? EmotePostureRow(Character* character, uint emoteId)
+    {
+        if (_getPosture == null || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
+            || emote.ActionTimeline.Count < 6)
+            return null;
+        int index = _getPosture(&character->EmoteController) switch
+        {
+            1 => 2,
+            2 => 3,
+            4 => 5,
+            // Row +0x28 bits 0-2 (EXDSchema UsableWhenMounted/Swimming/Diving;
+            // this Lumina's Unknown1-3, in bit order before DrawsWeapon's bit 6).
+            3 => emote.Unknown1 ? 4 : -1,
+            5 => emote.Unknown2 ? 4 : -1,
+            6 => emote.Unknown3 ? 4 : -1,
+            _ => 0,
+        };
+        return index < 0 ? (ushort)0 : (ushort)emote.ActionTimeline[index].RowId;
+    }
+
+    /// <summary>
     /// An emote from its start, the way the game's emote start ends up playing it:
-    /// PlayActionTimeline(intro = Emote.ActionTimeline[1], loop = [0]); the game
-    /// hands over to the loop itself. The emote controller's own start (the old
+    /// PlayActionTimeline(intro = Emote.ActionTimeline[1], loop); the game hands
+    /// over to the loop itself. The loop is the caller's (the posture's row, or
+    /// [0]): the intro is the same for every posture. The emote controller's own start (the old
     /// path) checks a slot priority that Poser's earlier plays leave set, and for
     /// any actor but the real local player returns true without playing.
     /// Expression emotes take another path and are not handled here. True only if
     /// the base slot actually changed.
     /// </summary>
-    internal bool PlayEmoteFromStart(Character* character, uint emoteId)
+    internal bool PlayEmoteFromStart(Character* character, uint emoteId, ushort loop)
     {
         if (_playActionTimeline == null || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
             || emote.ActionTimeline.Count < 2)
             return false;
-        ushort loop = (ushort)emote.ActionTimeline[0].RowId;
+        if (loop == 0)
+            loop = (ushort)emote.ActionTimeline[0].RowId;
         ushort intro = (ushort)emote.ActionTimeline[1].RowId;
         ushort first = intro != 0 ? intro : loop;
         if (first == 0)

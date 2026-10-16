@@ -56,18 +56,24 @@ public interface IAnimationTimelinePort
     Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot);
     /// <summary>Drops every armed loop for the actor. No native writes.</summary>
     void ClearLoops(ActorId actor);
-    /// <summary>A layer Poser applied: the game never ends it on its own; when not
-    /// looped it holds on its last frame and raises <see cref="LayerEnded"/>.</summary>
+    /// <summary>A layer Poser applied: looped, it never ends; otherwise the game
+    /// ends it at its end as it would (never while it is held or scrubbed), and
+    /// <see cref="LayerEnded"/> is raised.</summary>
     void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned);
-    /// <summary>An owned, non-looped layer reached its last frame.</summary>
-    event Action<ActorId, AnimationSlot>? LayerEnded;
+    /// <summary>An owned layer's animation was ended by the game (or replaced
+    /// outside Poser), with its length in seconds.</summary>
+    event Action<ActorId, AnimationSlot, float>? LayerEnded;
     /// <summary>Pauses loop enforcement while a multi-phase operation
     /// (facial bake) needs the actor to hold still.</summary>
     bool LoopsSuspended { get; set; }
 
     /// <summary>Plays an emote through the game's emote entry point, which
     /// is the only way to get intro-then-loop playback.</summary>
-    Outcome PlayEmote(ActorId actor, uint emoteId);
+    Outcome PlayEmote(ActorId actor, uint emoteId, ushort loop);
+    /// <summary>The emote's row for the actor's current posture (standing, sitting,
+    /// dozing, mounted, swimming, diving) as the game picks it; 0 where the game
+    /// refuses the emote in that posture, null when the posture can't be read.</summary>
+    ushort? EmotePostureRow(ActorId actor, uint emoteId);
 
     /// <summary>Whether full-body repeat is available.</summary>
     bool SupportsForceLoop { get; }

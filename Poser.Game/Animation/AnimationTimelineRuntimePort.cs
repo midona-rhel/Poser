@@ -34,7 +34,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     {
         _seek = seek;
         if (_seek != null)
-            _seek.LayerEnded += (actor, slot) => LayerEnded?.Invoke(actor, slot);
+            _seek.LayerEnded += (actor, slot, duration) => LayerEnded?.Invoke(actor, slot, duration);
         _speeds = speeds;
         _framework = framework;
         _log = log;
@@ -244,13 +244,19 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         return Outcome.Ok();
     }
 
-    public Outcome PlayEmote(ActorId actor, uint emoteId)
+    public ushort? EmotePostureRow(ActorId actor, uint emoteId)
+    {
+        var character = _native.Resolve(actor, out _);
+        return character == null ? null : _native.EmotePostureRow(character, emoteId);
+    }
+
+    public Outcome PlayEmote(ActorId actor, uint emoteId, ushort loop)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
         AnimationNativeState.TrySetForcedTimeline(&character->Timeline, 0);
-        if (_native.PlayEmoteFromStart(character, emoteId))
+        if (_native.PlayEmoteFromStart(character, emoteId, loop))
             return Outcome.Ok();
         _log.Information($"Animation: emote {emoteId} did not start from its intro for actor={actor}.");
         return Outcome.Fail("The emote could not start from its intro.");
@@ -310,7 +316,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned) =>
         _seek?.SetOwned(actor, slot, owned);
 
-    public event Action<ActorId, AnimationSlot>? LayerEnded;
+    public event Action<ActorId, AnimationSlot, float>? LayerEnded;
 
     public void ClearLoops(ActorId actor)
     {

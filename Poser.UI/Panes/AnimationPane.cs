@@ -422,9 +422,11 @@ public sealed class AnimationPane : IDisposable
         // The whole-actor pause pauses EVERY layer, so every row offers
         // Play while it holds — not only Base (the old special case left
         // other rows saying Pause over a frozen layer).
+        // A layer the game ended offers Play too: it plays it again.
         bool paused = (owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
             ownedSpeed == 0f) ||
-            _animation.IsPaused(actor);
+            _animation.IsPaused(actor) ||
+            _animation.EndedLength(actor, slot) != null;
         // "None" has no clock: with nothing live, staged, or selected,
         // the speed and play controls have nothing to drive.
         bool hasAnimation = live != 0 || selected != 0
@@ -590,7 +592,7 @@ public sealed class AnimationPane : IDisposable
 
         _generalSelections.TryGetValue(actor, out var command);
         if (command is { Applied: true } &&
-            _animation.SelectedFor(actor, command.Entry.Slot) == null)
+            _animation.SelectedFor(actor, command.PlayedSlot) == null)
         {
             _generalSelections.Remove(actor);
             command = null;
@@ -603,7 +605,7 @@ public sealed class AnimationPane : IDisposable
         if (liveBase is AnimationTimelines.Idle or AnimationTimelines.BattleIdle)
             liveBase = 0;
         ushort live = command is { } staged
-            ? reading.TimelineFor(staged.Entry.Slot)
+            ? reading.TimelineFor(staged.PlayedSlot)
             : liveBase;
         var selectionStyle = FixedSelectionStyle();
         form.ReadOnlyWithActions(
@@ -661,31 +663,71 @@ public sealed class AnimationPane : IDisposable
         Func<Outcome> toggle,
         string what)
     {
-        var control = _animation.FindSlotControl(actor, slot);
+        // A layer the game ended keeps its range (at its end); a drag plays it
+        // again and seeks it by its own clock until release, while it loads. Its
+        // slot's control is meanwhile whatever plays there (the idle).
+        var drag = _endedDrag is { } held && held.Actor.Equals(actor) && held.Slot == slot ? held : null;
+        float? ended = drag?.Duration ?? _animation.EndedLength(actor, slot);
+        var control = ended == null ? _animation.FindSlotControl(actor, slot) : null;
         bool available = control is { Duration: > 0f };
-        float time = available ? control!.Time : 0f;
-        float duration = available ? control!.Duration : 1f;
+        bool endedScrub = ended is > 0f;
+        float time = available ? control!.Time : drag?.Time ?? ended ?? 0f;
+        float duration = available ? control!.Duration : endedScrub ? ended!.Value : 1f;
         form.Slider(
             "Scrub",
             time,
             0f,
             duration,
-            next => ScrubTo(actor, slot, control, next),
+            next =>
+            {
+                if (available)
+                    ScrubTo(actor, slot, control, next);
+                else if (endedScrub)
+                    ScrubEnded(actor, slot, next, duration);
+            },
             format: "0.00",
-            disabled: disabled || !available,
+            disabled: disabled || !(available || endedScrub),
             actions: actions => actions.IconButton(
                 paused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause,
                 () => Report(toggle(), what),
-                disabled: disabled || !available,
+                disabled: disabled || !(available || ended != null),
                 help: paused ? "Play this layer on from here" : "Hold this layer on this frame",
                 id: $"anim-{slot}-playpause"),
             id: $"anim-{slot}-scrub");
+    }
+
+    private sealed record EndedDrag(ActorId Actor, AnimationSlot Slot, float Duration, float Time);
+    private EndedDrag? _endedDrag;
+
+    private void ScrubEnded(ActorId actor, AnimationSlot slot, float time, float duration)
+    {
+        if (_scrubBlocked)
+            return;
+        if (_endedDrag is not { } drag || !drag.Actor.Equals(actor) || drag.Slot != slot)
+        {
+            var replayed = _animation.ReplayEndedForScrub(actor, slot);
+            if (!replayed.Success)
+            {
+                Report(replayed, "Animation scrub");
+                _scrubBlocked = true;
+                return;
+            }
+        }
+        _endedDrag = new EndedDrag(actor, slot, duration, time);
+        var sought = _animation.SeekLayer(actor, slot, time);
+        if (!sought.Success)
+        {
+            Report(sought, "Animation scrub");
+            _endedDrag = null;
+            _scrubBlocked = true;
+        }
     }
 
     // Called by the host frame pump even when its content is hidden.
     public void PumpInteraction(bool pointerHeld)
     {
         if (pointerHeld) return;
+        _endedDrag = null;
         _animation.EndScrub(_scrubOwner);
         _scrubActor = null;
         _scrubControl = null;
@@ -1034,7 +1076,11 @@ public sealed class AnimationPane : IDisposable
         AnimationPickTarget Target,
         AnimationSlot Slot);
 
-    private sealed record GeneralSelection(TimelineEntry Entry, bool Applied);
+    // Played: the version Apply played for the actor's posture (null = Entry).
+    private sealed record GeneralSelection(TimelineEntry Entry, bool Applied, TimelineEntry? Played = null)
+    {
+        public AnimationSlot PlayedSlot => (Played ?? Entry).Slot;
+    }
     private static string StanceName(AnimationStance stance) => stance switch
     {
         AnimationStance.Idle => "Idle",
@@ -1140,7 +1186,23 @@ public sealed class AnimationPane : IDisposable
     {
         if (!_generalSelections.TryGetValue(actor, out var command))
             return;
-        var entry = command.Entry;
+        // The emote's version for how the actor is now (sitting, mounted, ...), as
+        // the game plays it; the Full body layer plays exactly its pick instead.
+        if (_animation.PostureEntry(actor, command.Entry, out var refusal) is not { } entry)
+        {
+            Report(Outcome.Fail(refusal ?? "This emote can't play now."), "Animation");
+            return;
+        }
+        // One General animation: the last one's layer goes when this one is elsewhere.
+        if (command.Applied && command.PlayedSlot != entry.Slot)
+        {
+            var cleared = _steps.ResetSlot(actor, command.PlayedSlot);
+            if (!cleared.Success)
+            {
+                Report(cleared, "Animation");
+                return;
+            }
+        }
         var chosen = _animation.ChooseSlot(
             actor,
             entry.Slot,
@@ -1150,7 +1212,7 @@ public sealed class AnimationPane : IDisposable
             Report(chosen, "Animation");
             return;
         }
-        _generalSelections[actor] = command with { Applied = true };
+        _generalSelections[actor] = command with { Applied = true, Played = entry };
         Report(
             _steps.Play(
                 actor, entry.Slot, entry, _playEmoteStart),
@@ -1159,7 +1221,10 @@ public sealed class AnimationPane : IDisposable
 
     private void ResetGeneral(ActorId actor)
     {
-        var reset = _steps.ResetGeneral(actor);
+        var slot = _generalSelections.TryGetValue(actor, out var command) && command.Applied
+            ? command.PlayedSlot
+            : AnimationSlot.Base;
+        var reset = _steps.ResetGeneral(actor, slot);
         if (!reset.Success)
         {
             Report(reset, "Animation reset");

@@ -151,8 +151,13 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         if (control.IsTimeline)
         {
             var slot = (AnimationSlot)control.Control;
-            if (_seek == null || !_seek.Supports(character, (int)slot))
+            if (_seek == null)
                 return Outcome.Fail("This layer's animation can no longer be scrubbed.");
+            if (!_seek.Supports(character, (int)slot))
+                // A layer just played again loads first; its target waits for it.
+                return _seek.RequestTimelineWhenLoaded(actor, character, slot, time)
+                    ? Outcome.Ok()
+                    : Outcome.Fail("This layer's animation can no longer be scrubbed.");
             _seek.RequestTimeline(actor, character, slot, time);
             return Outcome.Ok();
         }

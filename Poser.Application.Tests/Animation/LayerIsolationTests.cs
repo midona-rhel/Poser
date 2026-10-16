@@ -46,30 +46,31 @@ public sealed class LayerIsolationTests
     }
 
     [Fact]
-    public void A_layer_that_ran_out_holds_on_its_last_frame_and_play_restarts_it()
+    public void A_layer_the_game_ended_keeps_its_row_and_play_plays_it_again()
     {
         var actor = ActorId.New();
         var timeline = Substitute.For<IAnimationTimelinePort>();
         var speed = Substitute.For<IAnimationSpeedPort>();
-        var scrub = Substitute.For<IAnimationScrubPort>();
-        timeline.Read(actor).Returns(ActorAnimationReading.Empty with
-        {
-            Slots = new[] { new AnimationSlotReading(AnimationSlot.UpperBody, EatAppleUpper, 1f) },
-        });
-        speed.SetSlotSpeed(actor, Arg.Any<AnimationSlot>(), Arg.Any<float>()).Returns(Outcome.Ok());
-        scrub.SetControlTime(actor, ScrubControlId.Timeline(AnimationSlot.UpperBody), 0f, Arg.Any<ulong>())
+        timeline.TimelineSlot(EatAppleUpper).Returns(AnimationSlot.UpperBody);
+        timeline.Read(actor).Returns(ActorAnimationReading.Empty);
+        timeline.Blend(actor, EatAppleUpper, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
             .Returns(Outcome.Ok());
+        speed.SetSlotSpeed(actor, Arg.Any<AnimationSlot>(), Arg.Any<float>()).Returns(Outcome.Ok());
         var session = new AnimationSession(timeline, speed, Substitute.For<IAnimationStancePort>(),
-            scrub, Substitute.For<IWorldRenderingRuntimePort>());
+            Substitute.For<IAnimationScrubPort>(), Substitute.For<IWorldRenderingRuntimePort>());
+        Assert.True(session.ChooseSlot(actor, AnimationSlot.UpperBody, EatAppleUpper).Success);
 
-        timeline.LayerEnded += Raise.Event<System.Action<ActorId, AnimationSlot>>(actor, AnimationSlot.UpperBody);
+        timeline.LayerEnded += Raise.Event<System.Action<ActorId, AnimationSlot, float>>(
+            actor, AnimationSlot.UpperBody, 4.5f);
 
-        speed.Received(1).SetSlotSpeed(actor, AnimationSlot.UpperBody, 0f);
-        Assert.Contains(AnimationSlot.UpperBody, session.OverridesFor(actor).EndHeldSlots);
+        // Nothing holds it: the game unloaded it, the row remembers it.
+        speed.DidNotReceive().SetSlotSpeed(actor, AnimationSlot.UpperBody, 0f);
+        Assert.Equal(4.5f, session.EndedLength(actor, AnimationSlot.UpperBody));
 
         Assert.True(session.ResumeSlot(actor, AnimationSlot.UpperBody).Success);
 
-        scrub.Received(1).SetControlTime(actor, ScrubControlId.Timeline(AnimationSlot.UpperBody), 0f, Arg.Any<ulong>());
-        Assert.DoesNotContain(AnimationSlot.UpperBody, session.OverridesFor(actor).EndHeldSlots);
+        timeline.Received(1).Blend(actor, EatAppleUpper, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>());
+        timeline.Received().SetLayerOwned(actor, AnimationSlot.UpperBody, true);
+        Assert.Null(session.EndedLength(actor, AnimationSlot.UpperBody));
     }
 }

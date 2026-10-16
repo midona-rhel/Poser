@@ -257,9 +257,10 @@ public sealed record AnimationOverrides
     public BaseAnimationCapture? BaseCapture { get; init; }
     /// <summary>The held facial expression.</summary>
     public ushort? HeldExpression { get; init; }
-    /// <summary>Layers held on their last frame after their animation ran out
-    /// (not looped); their play restarts them.</summary>
-    public IReadOnlySet<AnimationSlot> EndHeldSlots { get; init; } = new HashSet<AnimationSlot>();
+    /// <summary>Layers whose animation ran out (not looped) and that the game
+    /// ended, with the animation's length in seconds: the row stays, and its play
+    /// or scrub plays it again.</summary>
+    public IReadOnlyDictionary<AnimationSlot, float> EndedSlots { get; init; } = new Dictionary<AnimationSlot, float>();
     /// <summary>Lips timeline before the first override. Selecting None
     /// restores this value rather than writing native "no speech" zero.</summary>
     public ushort? LipsCapture { get; init; }

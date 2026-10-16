@@ -41,4 +41,14 @@ public interface IAnimationPlayback
     Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null);
     Outcome UpdateScrub(ActorId actor, float time, Guid owner);
     void EndScrub(Guid owner);
+    /// <summary>The length in seconds of a layer the game ended (its row stays),
+    /// or null while it plays.</summary>
+    float? EndedLength(ActorId actor, AnimationSlot slot);
+    /// <summary>The General Apply's emote for the actor's posture (null, with the
+    /// reason, where the game has none).</summary>
+    TimelineEntry? PostureEntry(ActorId actor, TimelineEntry entry, out string? refusal);
+    /// <summary>Plays an ended layer again, held, for a scrub.</summary>
+    Outcome ReplayEndedForScrub(ActorId actor, AnimationSlot slot);
+    /// <summary>Seeks a layer by its own timeline clock (seconds from its begin).</summary>
+    Outcome SeekLayer(ActorId actor, AnimationSlot slot, float seconds);
 }
