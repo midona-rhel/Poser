@@ -1093,6 +1093,8 @@ public sealed class AnimationSession : IAnimationPlayback
     /// disposal, and Stop/Restore All.</summary>
     public Outcome ResetAll()
     {
+        // A session-wide cleanup (leaving GPose), no user step.
+        using var untracked = Untracked();
         var failures = new List<string>();
         foreach (var actor in _store.Actors())
         {
@@ -1122,6 +1124,8 @@ public sealed class AnimationSession : IAnimationPlayback
     /// </summary>
     public void Reconcile(SceneSnapshot snapshot)
     {
+        // Departed actors are released, not undone.
+        using var untracked = Untracked();
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
         _advancedActors.RemoveWhere(actor => !present.Contains(actor));
         _scrub.Forget(present);
