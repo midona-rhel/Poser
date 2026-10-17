@@ -65,56 +65,57 @@ internal sealed unsafe class TimelineSeekEngine
     // ── Clock writes (the scrub fallback) ─────────────────────────────
 
     /// <summary>
-    /// The scrub fallback for a timeline the seek can't move (an integer-frame clock,
-    /// a scheduler-driven actor): the clock of the timeline, its TMB actors and tracks,
-    /// and every C010 child set to the frame, each child on its own clock
-    /// ((parent − start) · scale(+0x160) + offset), the integer clock too where the
-    /// timeline counts in whole frames.
+    /// The scrub fallback for a timeline the seek can't move (an integer-frame clock, a
+    /// scheduler-driven actor): the clock family a natural play keeps in step, set to
+    /// the frame. That is the timeline's own clock (+0x34/+0x38), its first TMB actor
+    /// (+0x18C/+0x190) and that actor's tracks (+0x11C/+0x120), and through the C010s
+    /// on those tracks each child clip's frame (+0xCC/+0xD0) and the child timeline,
+    /// recursively. Only these fields: the same writes on the other actors corrupted
+    /// memory (a crash, 2026-10-17).
     /// </summary>
     public void WriteClocks(nint root, float frames)
     {
-        void Write(nint timeline, float frame, int depth)
+        void Write(nint timeline, int depth)
         {
-            if (timeline == 0 || depth > 4)
+            if (timeline == 0 || depth > 3)
                 return;
-            *(float*)(timeline + TimelineState.ClockOffset) = frame;
-            *(float*)(timeline + TimelineState.ClockOffset + 4) = frame;
-            if (TimelineState.Of(timeline).IntegerFrame)
-                *(uint*)(timeline + TimelineState.FrameOffset) = (uint)MathF.Max(0f, frame);
+            *(float*)(timeline + TimelineState.ClockOffset) = frames;
+            *(float*)(timeline + TimelineState.ClockOffset + 4) = frames;
             nint actor = *(nint*)(timeline + 0x18);
-            for (int a = 0; actor != 0 && a < 32; a++, actor = *(nint*)(actor + 0x20))
+            if (actor == 0)
+                return;
+            if (depth == 0)
             {
-                *(float*)(actor + 0x18C) = frame;
-                *(float*)(actor + 0x190) = frame;
-                nint tracks = *(nint*)(actor + 0x28);
-                int trackCount = *(ushort*)(actor + 0x32);
-                for (int t = 0; tracks != 0 && t < trackCount && t < 64; t++)
+                *(float*)(actor + 0x18C) = frames;
+                *(float*)(actor + 0x190) = frames;
+            }
+            nint tracks = *(nint*)(actor + 0x28);
+            int trackCount = *(ushort*)(actor + 0x32);
+            for (int t = 0; tracks != 0 && t < trackCount && t < 8; t++)
+            {
+                nint track = *(nint*)(tracks + t * 8);
+                if (track == 0)
+                    continue;
+                if (depth == 0)
                 {
-                    nint track = *(nint*)(tracks + t * 8);
-                    if (track == 0)
+                    *(float*)(track + 0x11C) = frames;
+                    *(float*)(track + 0x120) = frames;
+                }
+                nint clips = *(nint*)(track + 0x18);
+                int clipCount = *(ushort*)(track + 0x22);
+                for (int c = 0; clips != 0 && c < clipCount && c < 8; c++)
+                {
+                    nint clip = *(nint*)(clips + c * 8);
+                    if (clip == 0 || _l.Classify(clip) != SeekClipKind.ChildTimeline
+                        || ChildOf(clip) is not (var child and not 0))
                         continue;
-                    *(float*)(track + 0x11C) = frame;
-                    *(float*)(track + 0x120) = frame;
+                    *(float*)(clip + 0xCC) = frames;   // the child frame
+                    *(float*)(clip + 0xD0) = frames;
+                    Write(child, depth + 1);
                 }
             }
-            var clips = new List<nint>();
-            ClipsOf(timeline, clips);
-            foreach (var clip in clips)
-            {
-                if (_l.Classify(clip) != SeekClipKind.ChildTimeline || ChildOf(clip) is not (var child and not 0))
-                    continue;
-                float scale = *(float*)(clip + 0x160);
-                if (!(scale > 0f) || !float.IsFinite(scale))
-                    scale = 1f;
-                nint data = *(nint*)(clip + 0x48);
-                float offset = data != 0 && (*(uint*)(data + 0xC) & 1) != 0 ? *(float*)(data + 0x10) : 0f;
-                float local = (frame - *(float*)(clip + 0x50)) * scale + offset;
-                *(float*)(clip + 0xCC) = local;   // the child frame
-                *(float*)(clip + 0xD0) = local;
-                Write(child, local, depth + 1);
-            }
         }
-        Write(root, frames, 0);
+        Write(root, 0);
     }
 
     /// <summary>The scrub fallback for props: each prop the slot's C031s summon, found
