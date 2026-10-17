@@ -491,6 +491,9 @@ public sealed class AnimationSession : IAnimationPlayback
     /// not found; the stance controls render disabled.</summary>
     public bool SupportsStance => _stance.SupportsStance;
 
+    /// <summary>The stance's pose count from the game's pose table.</summary>
+    public int PoseCount(AnimationStance stance, bool weaponDrawn) => _stancePort.PoseCount(stance, weaponDrawn);
+
     // ── Speed ─────────────────────────────────────────────────────────
 
     private Outcome SetSpeedUntracked(ActorId actor, float speed) => _speed.SetSpeed(actor, speed);

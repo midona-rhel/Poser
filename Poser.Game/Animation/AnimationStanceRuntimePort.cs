@@ -27,30 +27,49 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
         _posing = posing;
     }
 
-    public bool SupportsStance => _native.HasSetEmoteMode && _native.HasCancelTimeline;
+    public bool SupportsStance => _native.HasSetEmoteMode && _native.HasSetPose;
 
-    /// <summary>Changes the actor stance.</summary>
+    /// <summary>
+    /// The game's /changepose kind for a stance: 0 idle, 1 weapon drawn, 2 chair, 3 ground
+    /// sit, 4 doze, 5 umbrella, 6 accessory.
+    /// </summary>
+    private static int PoseKind(AnimationStance stance, bool weaponDrawn) => stance switch
+    {
+        AnimationStance.SitChair => 2,
+        AnimationStance.SitGround => 3,
+        AnimationStance.Sleeping => 4,
+        AnimationStance.Umbrella => 5,
+        AnimationStance.Accessory => 6,
+        _ => weaponDrawn ? 1 : 0,
+    };
+
+    /// <summary>The stance's pose count from the game's own pose table (the base
+    /// pose and each pose emote); 1 where the table can't be read.</summary>
+    public int PoseCount(AnimationStance stance, bool weaponDrawn) =>
+        _native.PoseCount(PoseKind(stance, weaponDrawn)) ?? 1;
+
+    /// <summary>
+    /// Changes the actor stance with the game's own pose step (RE
+    /// notes/poser-animation-model.md §1, stance pose): a sit or sleep enters its
+    /// EmoteMode; a standing pose holds EmoteLoop with no EmoteMode, since in Normal mode
+    /// the base-idle pick replaces a standing pose emote every frame; the base pose is
+    /// Normal mode, where that pick plays the idle. A loop is left through EmoteLoop 0,
+    /// so no stand-up plays and the pending emote cancel stays clear.
+    /// </summary>
     public Outcome SetStance(ActorId actor, AnimationStance stance, int pose)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        if (!_native.HasSetEmoteMode || !_native.HasCancelTimeline)
+        if (!SupportsStance)
             return Outcome.Fail(
                 "Stance changes are unavailable: a required game function was not found.");
-        // The real player (adopted into GPose) is the game's local actor: clearing its
-        // pose sends the pose change to the server. Only GPose copies are posed here.
+        // The real player (adopted into GPose) is the game's local actor: its mode and
+        // pose changes reach the server. Only GPose copies are posed here.
         if (AnimationNativeState.IsRealPlayer(character))
             return Outcome.Fail(
                 "Stances can't be changed on your own world character; use its GPose copy.");
 
-        var poseType = stance switch
-        {
-            AnimationStance.SitChair => EmoteController.PoseType.Sit,
-            AnimationStance.SitGround => EmoteController.PoseType.GroundSit,
-            AnimationStance.Sleeping => EmoteController.PoseType.Doze,
-            _ => EmoteController.PoseType.Idle,
-        };
         uint emoteMode = stance switch
         {
             AnimationStance.SitChair => EmoteModeSitChair,
@@ -66,98 +85,37 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
                 $"The game doesn't allow {StanceName(stance)} for how the actor is now (mounted, swimming or diving).");
 
         bool weaponDrawn = character->Timeline.IsWeaponDrawn;
-        // The explicit pose table remains available while native GPose pose
-        // counts settle.
-        int wrapped = AnimationTimelines.WrapPose(pose, stance, weaponDrawn);
+        int kind = PoseKind(stance, weaponDrawn);
+        int count = PoseCount(stance, weaponDrawn);
+        int wrapped = count <= 0 ? 0 : pose < 0 ? count - 1 : pose % count;
 
         bool preserveOffsets = stance == AnimationStance.SitChair;
         var drawOffset = preserveOffsets ? character->DrawOffset : default;
         var cameraOffset = preserveOffsets ? character->CameraOffset : default;
 
-        // Clear the active animation lock.
-        if (character->Mode == CharacterModes.AnimLock && _native.HasSetPose)
+        if (character->Mode == CharacterModes.AnimLock)
         {
             _native.SetCharacterMode(character, CharacterModes.Normal, 0);
             character->Timeline.BaseOverride = 0;
         }
-
-        if (_native.HasSetPose)
-        {
-            // The game's own pose step: it plays the pose (the base idle at 0) and stores
-            // the pose after, so a pose written before the play would be wiped by it.
-            int kind = stance switch
-            {
-                AnimationStance.SitChair => 2,
-                AnimationStance.SitGround => 3,
-                AnimationStance.Sleeping => 4,
-                _ => weaponDrawn ? 1 : 0,
-            };
-            if (stance != AnimationStance.Idle)
-            {
-                _native.SetEmoteMode(&character->EmoteController, emoteMode);
-            }
-            else if (wrapped != 0)
-            {
-                // In Normal mode the base-idle pick replaces a standing pose emote every
-                // frame (GPose actors aren't local, and pose emotes aren't protected), so
-                // the pose holds EmoteLoop with no EmoteMode, which turns the pick off.
-                // Character::SetMode directly: leaving a loop through the emote mode would
-                // flag the emote for cancel.
-                if (character->Mode != CharacterModes.EmoteLoop || character->ModeParam != 0)
-                    _native.SetCharacterMode(character, CharacterModes.EmoteLoop, 0);
-            }
-            else if (character->Mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop)
-            {
-                _native.SetCharacterMode(character, CharacterModes.Normal, 0);
-            }
-            _native.SetPose(character, kind, (byte)wrapped);
-            AnimationNativeState.ClearEmoteCancelPending(character);
-            if (stance == AnimationStance.Idle && wrapped == 0)
-                character->Timeline.TimelineSequencer.PlayTimeline(
-                    weaponDrawn ? AnimationTimelines.BattleIdle : AnimationTimelines.Idle, null);
-            if (preserveOffsets)
-            {
-                character->DrawOffset = drawOffset;
-                character->CameraOffset = cameraOffset;
-            }
-            return character->EmoteController.CPoseState == wrapped
-                ? Outcome.Ok()
-                : Outcome.Fail($"The game didn't change to pose {wrapped} for how the actor is now "
-                    + "(an Upper body animation playing blocks pose changes, as in game).");
-        }
-        _native.CancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
-        _native.SetEmoteMode(&character->EmoteController, emoteMode);
-        character->EmoteController.CurrentPoseType = poseType;
-        character->EmoteController.CPoseState = (byte)wrapped;
-
+        if (emoteMode != EmoteModeNormal)
+            _native.SetEmoteMode(&character->EmoteController, emoteMode);
+        else if (wrapped != 0)
+            _native.EnterStandingLoop(character);
+        else
+            _native.LeaveLoopMode(character);
+        // It plays the pose (index 0 stops it) and stores the kind and index after.
+        _native.SetPose(character, kind, (byte)wrapped);
+        AnimationNativeState.ClearEmoteCancelPending(character);
         if (preserveOffsets)
         {
             character->DrawOffset = drawOffset;
             character->CameraOffset = cameraOffset;
         }
-
-        // Sit and sleep stances are fully carried by the mode change above.
-        // Idle is the one family the game does not drive on its own, so its
-        // poses are played explicitly — as emotes past index 0, since those
-        // poses only exist as emotes.
-        if (stance != AnimationStance.Idle)
-            return Outcome.Ok();
-
-        if (wrapped == 0)
-        {
-            character->Timeline.TimelineSequencer.PlayTimeline(
-                weaponDrawn ? AnimationTimelines.BattleIdle : AnimationTimelines.Idle, null);
-        }
-        else if (weaponDrawn)
-        {
-            _native.PlayEmoteNative(character, AnimationTimelines.BattlePose);
-        }
-        else if (wrapped < AnimationTimelines.IdlePoses.Count &&
-            AnimationTimelines.IdlePoses[wrapped] is var emote and not 0)
-        {
-            _native.PlayEmoteNative(character, emote);
-        }
-        return Outcome.Ok();
+        return character->EmoteController.CPoseState == wrapped
+            ? Outcome.Ok()
+            : Outcome.Fail($"The game didn't change to pose {wrapped} for how the actor is now "
+                + "(an Upper body animation playing blocks pose changes, as in game).");
     }
 
     private static string StanceName(AnimationStance stance) => stance switch
@@ -168,7 +126,8 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
         _ => "this stance",
     };
 
-    /// <summary>Sets the weapon animation state.</summary>
+    /// <summary>Draws or sheathes the weapon with the game's own call (it plays the
+    /// draw or sheathe row and stops a looped emote).</summary>
     public Outcome SetWeaponDrawn(ActorId actor, bool drawn)
     {
         var character = _native.Resolve(actor, out var detail);
@@ -176,10 +135,11 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
             return Outcome.Fail(detail!);
         if (character->Timeline.IsWeaponDrawn == drawn)
             return Outcome.Ok();
-        character->Timeline.TimelineSequencer.PlayTimeline(
-            drawn ? AnimationTimelines.DrawWeapon : AnimationTimelines.SheatheWeapon, null);
-        character->Timeline.IsWeaponDrawn = drawn;
-        return Outcome.Ok();
+        if (AnimationNativeState.IsRealPlayer(character))
+            return Outcome.Fail("The weapon can't be drawn on your own world character; use its GPose copy.");
+        return _native.SetWeaponDrawn(character, drawn)
+            ? Outcome.Ok()
+            : Outcome.Fail("Drawing the weapon is unavailable: the game function was not found.");
     }
 
     /// <summary>

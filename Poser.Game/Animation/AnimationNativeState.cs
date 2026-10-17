@@ -40,10 +40,6 @@ public sealed unsafe partial class AnimationNativeState
     // patchcheck entry; unique on the analysed build (sig.py, 1 hit).
     private delegate nint ActionTimelineRowDelegate(uint id);
     private readonly ActionTimelineRowDelegate? _actionTimelineRow;
-    // This native entry point takes four arguments.
-    private delegate bool PlayEmoteDelegate(
-        EmoteController* controller, nint emoteId, nint option, nint chair);
-    private readonly PlayEmoteDelegate? _playEmote;
 
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.Emote>? _emoteSheet;
@@ -86,6 +82,15 @@ public sealed unsafe partial class AnimationNativeState
     // mode for client objects; with no emote playing it only clears the pose.
     private delegate void StopLoopedEmoteDelegate(EmoteController* controller, nint flags);
     private readonly StopLoopedEmoteDelegate? _stopLoopedEmote;
+    // TimelineContainer::SetWeaponDrawn 0x1408BFBC0 (patchcheck TimelineContainer.SetWeaponDrawn):
+    // Flags3 bit 6, a looped emote stopped, and the draw (1) or sheathe (2) row through
+    // the queued play; the ornament rider too.
+    private delegate void SetWeaponDrawnDelegate(TimelineContainer* container, byte drawn, byte playAnimation);
+    private readonly SetWeaponDrawnDelegate? _setWeaponDrawn;
+    // EmoteController.CPoseTable (patchcheck DAT): 8 kinds x 0x20 bytes, +0x00 u16* pose
+    // emotes, +0x08 u16 base timeline, +0x10 predicate, +0x18 u8 emote count.
+    private readonly byte* _cposeTable;
+    private const int CPoseKinds = 8, CPoseEntrySize = 0x20, CPoseCountOffset = 0x18;
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
@@ -223,8 +228,6 @@ public sealed unsafe partial class AnimationNativeState
             sigScanner,
             "E8 ?? ?? ?? ?? 4C 8B BC 24 ?? ?? ?? ?? 4C 8D 9C 24 ?? ?? ?? ?? 49 8B 5B 40",
             "SetTimelineId");
-        _playEmote = ScanDelegate<PlayEmoteDelegate>(
-            sigScanner, "E8 ?? ?? ?? ?? 88 45 68", "PlayEmote");
         _playActionTimeline = ScanDelegate<PlayActionTimelineDelegate>(
             sigScanner,
             "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 49 8B E9 41 0F B7 D8 48 8B F1 E8 ?? ?? ?? ?? 0F B7 D3 48 8B CE 0F B7 F8 E8",
@@ -237,6 +240,12 @@ public sealed unsafe partial class AnimationNativeState
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetPose, "EmoteController.SetPose");
         _characterSetMode = ScanDelegate<CharacterSetModeDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.Character_SetMode, "Character.SetMode");
+        _setWeaponDrawn = ScanDelegate<SetWeaponDrawnDelegate>(
+            sigScanner, Poser.Game.Natives.NativeSignatures.TimelineContainer_SetWeaponDrawn, "TimelineContainer.SetWeaponDrawn");
+        if (Poser.Game.Natives.NativeData.TryResolve(sigScanner, Poser.Game.Natives.NativeData.EmoteController_CPoseTable, out var cposeTable))
+            _cposeTable = (byte*)cposeTable;
+        else
+            _log.Warning("Animation: the pose table was not found; stance poses can't be stepped.");
         _stopLoopedEmote = ScanDelegate<StopLoopedEmoteDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_StopLoopedEmote, "EmoteController.StopLoopedEmote");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
@@ -291,6 +300,43 @@ public sealed unsafe partial class AnimationNativeState
     /// <summary>The game's pose step; callers check <see cref="HasSetPose"/>.</summary>
     internal void SetPose(Character* character, int kind, byte index) =>
         _setPose!(&character->EmoteController, kind, index, nint.Zero);
+
+    /// <summary>A pose kind's pose count (the base pose and each pose emote) from the
+    /// game's table, or null when the table isn't available.</summary>
+    internal int? PoseCount(int kind) =>
+        _cposeTable == null || kind is < 0 or >= CPoseKinds
+            ? null
+            : 1 + _cposeTable[kind * CPoseEntrySize + CPoseCountOffset];
+
+    /// <summary>The game's weapon draw or sheathe; false when it wasn't found.</summary>
+    internal bool SetWeaponDrawn(Character* character, bool drawn)
+    {
+        if (_setWeaponDrawn == null)
+            return false;
+        _setWeaponDrawn(&character->Timeline, drawn ? (byte)1 : (byte)0, 1);
+        return true;
+    }
+
+    /// <summary>A standing loop with no EmoteMode (EmoteLoop 0): a loop mode is
+    /// switched loop to loop, which runs no exit hook. Not for the real player.</summary>
+    internal void EnterStandingLoop(Character* character)
+    {
+        if (character->Mode != CharacterModes.EmoteLoop || character->ModeParam != 0)
+            _characterSetMode!(character, (int)CharacterModes.EmoteLoop, 0);
+    }
+
+    /// <summary>Normal mode from a loop mode without its stand-up: through EmoteLoop 0,
+    /// whose exit has no end emote; the pending emote cancel that exit sets is cleared.
+    /// Not for the real player.</summary>
+    internal void LeaveLoopMode(Character* character)
+    {
+        if (character->Mode is not (CharacterModes.EmoteLoop or CharacterModes.InPositionLoop))
+            return;
+        if (character->ModeParam != 0)
+            _characterSetMode!(character, (int)CharacterModes.EmoteLoop, 0);
+        _characterSetMode!(character, (int)CharacterModes.Normal, 0);
+        ClearEmoteCancelPending(character);
+    }
 
     /// <summary>Character::SetMode; available with <see cref="HasSetPose"/>.</summary>
     internal void SetCharacterMode(Character* character, CharacterModes mode, byte param) =>
@@ -607,15 +653,5 @@ public sealed unsafe partial class AnimationNativeState
         if (character->Mode is not (CharacterModes.EmoteLoop or CharacterModes.InPositionLoop))
             HoldAgainstBasePick(sequencer);
         return SlotTimeline(sequencer, 0) != before;
-    }
-
-    /// <summary>Plays an emote through the game entry point.</summary>
-    internal bool PlayEmoteNative(Character* character, uint emoteId)
-    {
-        if (_playEmote == null)
-            return false;
-        // The game refuses an emote it can't start now; that answer used to be
-        // dropped, so a refused Apply reported success and played nothing.
-        return _playEmote(&character->EmoteController, (nint)emoteId, nint.Zero, nint.Zero);
     }
 }

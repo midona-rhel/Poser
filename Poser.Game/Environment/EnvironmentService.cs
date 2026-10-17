@@ -94,8 +94,13 @@ internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactor
 {
     public IEnvHook CreateTimeHook(
         ISigScanner scanner, IGameInteropProvider hooking, UpdateEorzeaTimeDelegate detour) =>
+        // Framework.TaskBeginFn by its lea in Framework::Setup: the body has a
+        // byte-identical dead twin, so a body signature matches twice.
         new DalamudEnvHook<UpdateEorzeaTimeDelegate>(hooking.HookFromAddress(
-            scanner.ScanText("48 89 5C 24 ?? 57 48 83 EC ?? 48 8B F9 48 8B DA 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C"),
+            Poser.Game.Natives.NativeData.TryResolve(scanner, Poser.Game.Natives.NativeData.Framework_TaskBeginFn, out var address)
+                && address != 0
+                ? address
+                : throw new InvalidOperationException("Framework.TaskBeginFn not found"),
             detour));
 
     public IEnvWeatherHook CreateWeatherHook(

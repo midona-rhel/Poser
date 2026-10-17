@@ -11,6 +11,7 @@ public interface IAnimationPlayback
     ActorAnimationReading? Read(ActorId actor);
     AnimationOverrides OverridesFor(ActorId actor);
     bool SupportsStance { get; }
+    int PoseCount(AnimationStance stance, bool weaponDrawn);
     bool OwnsSlot(ActorId actor, AnimationSlot slot);
     ushort? SelectedFor(ActorId actor, AnimationSlot slot);
     bool LoopWantedFor(ActorId actor, AnimationSlot slot);
