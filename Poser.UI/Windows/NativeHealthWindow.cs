@@ -32,7 +32,7 @@ public sealed class NativeHealthWindow : Window
     private const float FootnoteHeight = 30f;
     private const float HeaderRowHeight = 20f;
 
-    private static readonly string[] GroupOrder = ["Hooks", "Patch sites", "Functions", "Data", "Offsets", "Not checkable"];
+    private static readonly string[] GroupOrder = ["Hooks", "Patch sites", "Functions", "Data", "Offsets", "Fields", "Not checkable"];
 
     private readonly ConfigurationService _configuration;
     private readonly INativeHealth _health;

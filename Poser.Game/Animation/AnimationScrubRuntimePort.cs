@@ -7,6 +7,7 @@ using Poser.Application.Animation;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -115,7 +116,7 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
             return null;
         nint control = MainControl(engine.SlotControls(root));
         return control == 0 ? null : new ScrubControlReading(ScrubControlId.Timeline(slot),
-            *(float*)(control + 0x10), TimelineSeekEngine.ControlLength(control), *(float*)(control + 0x5C));
+            *(float*)(control + NativeFields.hkaDefaultAnimationControl_LocalTime), TimelineSeekEngine.ControlLength(control), *(float*)(control + NativeFields.hkaDefaultAnimationControl_PlaybackSpeed));
     }
 
     /// <summary>
@@ -134,9 +135,9 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
             return Outcome.Fail("This layer's animation can no longer be scrubbed.");
         float duration = TimelineSeekEngine.ControlLength(main);
         time = Math.Clamp(time, 0f, Math.Max(0f, duration - 1f / 30f));
-        float before = *(float*)(main + 0x10);
+        float before = *(float*)(main + NativeFields.hkaDefaultAnimationControl_LocalTime);
         foreach (nint control in controls)
-            *(float*)(control + 0x10) = Math.Clamp(time, 0f, Math.Max(0f, TimelineSeekEngine.ControlLength(control)));
+            *(float*)(control + NativeFields.hkaDefaultAnimationControl_LocalTime) = Math.Clamp(time, 0f, Math.Max(0f, TimelineSeekEngine.ControlLength(control)));
         engine.ShiftPropControls((nint)character, root, time - before);
         engine.WriteClocks(root, time * 30f);
         return Outcome.Ok();

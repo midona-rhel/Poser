@@ -17,6 +17,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
 using Poser.Application.Viewport;
+using Poser.Game.Natives;
 
 namespace Poser.Game;
 
@@ -84,21 +85,21 @@ internal struct LookAtSource
 [StructLayout(LayoutKind.Explicit)]
 internal struct LookAtType
 {
-    [FieldOffset(0x30)] public LookAtTarget LookAtTarget;
+    [FieldOffset(NativeFields.LookAtType_LookAtTarget)] public LookAtTarget LookAtTarget;
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 0x28)]
 internal struct LookAtTarget
 {
-    [FieldOffset(0x08)] public LookMode LookMode;
+    [FieldOffset(NativeFields.LookAtTarget_LookMode)] public LookMode LookMode;
     // Position and the actor-target id are a union at 0x10 — corroborated by
     // Brio ActorLookAtService.LookAtTarget and Ktisis ActorGaze.Gaze.
-    [FieldOffset(0x10)] public Vector3 Position;
-    [FieldOffset(0x10)] public ulong ActorTargetId;
+    [FieldOffset(NativeFields.LookAtTarget_Position)] public Vector3 Position;
+    [FieldOffset(NativeFields.LookAtTarget_ActorTargetId)] public ulong ActorTargetId;
     // Trailing field of the native 0x28 CharacterLookAtTargetParam (Ktisis
     // Gaze.Unk5). The explicit size keeps captures and native reads
     // byte-complete instead of over-reading adjacent managed memory.
-    [FieldOffset(0x20)] public uint Unknown20;
+    [FieldOffset(NativeFields.LookAtTarget_Unknown20)] public uint Unknown20;
 }
 
 internal enum LookMode

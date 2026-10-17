@@ -197,7 +197,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
             return false;
         // Scheduler-driven actors (event/cutscene: +0x1CE8 bit 4) run their
         // timelines from a scheduler instance; leave them to the clock writes.
-        if ((*(byte*)((nint)character + 0x1CE8) & 0x10) != 0)
+        if ((*(byte*)((nint)character + NativeFields.Character_TimelineFlags1CE8) & 0x10) != 0)
             return false;
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
         var state = TimelineState.Of(root);

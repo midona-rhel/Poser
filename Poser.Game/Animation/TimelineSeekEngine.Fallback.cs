@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -27,15 +28,15 @@ internal sealed unsafe partial class TimelineSeekEngine
             ClipsOf(timeline, clips);
             foreach (var clip in clips)
             {
-                if (_l.Classify(clip) != SeekClipKind.ChildTimeline || (*(byte*)(clip + 0x10) & 0x10) == 0
+                if (_l.Classify(clip) != SeekClipKind.ChildTimeline || (*(byte*)(clip + NativeFields.SchedulerClip_State) & 0x10) == 0
                     || ChildOf(clip) is not (var child and not 0))
                     continue;
-                float scale = *(float*)(clip + 0x160);
+                float scale = *(float*)(clip + NativeFields.TimelineClip_Scale);
                 if (!(scale > 0f) || !float.IsFinite(scale))
                     scale = 1f;
-                nint data = *(nint*)(clip + 0x48);
-                float offset = data != 0 && (*(uint*)(data + 0xC) & 1) != 0 ? *(float*)(data + 0x10) : 0f;
-                Write(child, (frame - *(float*)(clip + 0x50)) * scale + offset, depth + 1);
+                nint data = *(nint*)(clip + NativeFields.SchedulerClip_Data);
+                float offset = data != 0 && (*(uint*)(data + NativeFields.C010Data_Flags) & 1) != 0 ? *(float*)(data + NativeFields.C010Data_Offset) : 0f;
+                Write(child, (frame - *(float*)(clip + NativeFields.SchedulerClip_StartFrame)) * scale + offset, depth + 1);
             }
         }
         Write(root, frames, 0);
@@ -72,7 +73,7 @@ internal sealed unsafe partial class TimelineSeekEngine
                     if (HeldByHavok(control))
                         continue;
                     float length = CycleLength(control);
-                    float* time = (float*)(control + 0x10);   // hkaDefaultAnimationControl.LocalTime
+                    float* time = (float*)(control + NativeFields.hkaDefaultAnimationControl_LocalTime);   // hkaDefaultAnimationControl.LocalTime
                     *time = Math.Clamp(*time + delta, 0f, MathF.Max(0f, length - 1f / 30f));
                 }
         }

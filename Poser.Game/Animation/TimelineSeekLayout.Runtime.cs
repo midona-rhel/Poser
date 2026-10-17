@@ -54,7 +54,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
             for (int row = 0; row < TypeRows; row++)
             {
                 byte* entry = (byte*)typeTable + row * TypeRowSize;
-                var tag = *(nint*)(entry + 0x10);
+                var tag = *(nint*)(entry + NativeFields.SchedulerClipTypeRow_Tag);
                 if (tag == 0)
                     continue;
                 ids.TryAdd(new string((sbyte*)tag, 0, 4), *(int*)entry);
@@ -119,7 +119,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
 
     public SeekClipKind Classify(nint clip)
     {
-        int type = *(int*)(clip + 0x84);
+        int type = *(int*)(clip + NativeFields.SchedulerClip_TypeId);
         if (type == _c010) return SeekClipKind.ChildTimeline;
         if (type == _c009) return SeekClipKind.HavokAnimation;
         if (type == _c012 || type == _c049) return SeekClipKind.Vfx;

@@ -12,8 +12,8 @@ namespace Poser.Game.Natives;
 /// Checks every entry of the generated native registry (patchcheck's
 /// poser-registry.tsv) against the running game: each function signature and patch
 /// site found (a patch site's bytes as expected), each global found, each field offset
-/// read from the game's own code and compared with the value Poser uses, and each hook
-/// Poser created, live from the <see cref="HookLedger"/>. The scan runs once off the
+/// read from the game's own code and compared with the value Poser uses, each
+/// NativeFields constant against the offset it is derived from, and each hook Poser created, live from the <see cref="HookLedger"/>. The scan runs once off the
 /// framework thread; the summary and every problem go to the log.
 /// </summary>
 public sealed partial class NativeHealthCheck : INativeHealth
@@ -83,6 +83,7 @@ public sealed partial class NativeHealthCheck : INativeHealth
     {
         var rows = new List<NativeHealthRow>(NativeRegistry.All.Length);
         var functions = new Dictionary<nint, string>();
+        var offsets = new Dictionary<string, int?>(StringComparer.Ordinal);
         foreach (var entry in NativeRegistry.All)
         {
             switch (entry.Kind)
@@ -91,7 +92,7 @@ public sealed partial class NativeHealthCheck : INativeHealth
                     rows.Add(CheckFunction(entry, functions));
                     break;
                 case NativeKind.Offset:
-                    rows.Add(CheckOffset(entry));
+                    rows.Add(CheckOffset(entry, offsets));
                     break;
                 case NativeKind.Data:
                     if (entry.TryResolve(_scanner, out var data) && data != 0)
@@ -112,6 +113,8 @@ public sealed partial class NativeHealthCheck : INativeHealth
                     break;
             }
         }
+        foreach (var field in NativeFieldChecks.All)
+            rows.Add(CheckField(field, offsets));
         lock (_lock)
         {
             _static = rows;
@@ -139,16 +142,37 @@ public sealed partial class NativeHealthCheck : INativeHealth
         return Row("Functions", entry, NativeHealthState.Ok, Relative(address), entry.Note);
     }
 
-    private NativeHealthRow CheckOffset(NativeEntry entry)
+    private NativeHealthRow CheckOffset(NativeEntry entry, Dictionary<string, int?> offsets)
     {
         if (!NativeRegistry.Offsets.TryGetValue(entry.Name, out var pattern))
             return Row("Offsets", entry, NativeHealthState.Unchecked, "", "no pattern in the registry");
-        if (!NativeOffsets.TryResolve(_scanner, pattern, out var offset))
+        bool found = NativeOffsets.TryResolve(_scanner, pattern, out var offset);
+        offsets[entry.Name] = found ? offset : null;
+        if (!found)
             return Row("Offsets", entry, NativeHealthState.Missing, "", "the game code that reads it wasn't found");
         return offset == pattern.Analysed
             ? Row("Offsets", entry, NativeHealthState.Ok, $"0x{offset:X}", entry.Note)
             : Row("Offsets", entry, NativeHealthState.Moved, $"0x{offset:X}",
                 $"the game now uses 0x{offset:X}; Poser uses 0x{pattern.Analysed:X}");
+    }
+
+    /// <summary>A NativeFields constant against the game: the offset its entry reads
+    /// now, less the constant's delta from it, must be the constant.</summary>
+    private static NativeHealthRow CheckField(FieldCheck field, Dictionary<string, int?> offsets)
+    {
+        string name = "NativeFields." + field.Constant;
+        if (!offsets.TryGetValue(field.Entry, out var offset))
+            return new NativeHealthRow("Fields", name, NativeHealthState.Unchecked, "",
+                $"{field.Entry} isn't an offset the registry checks", "");
+        if (offset is not { } read)
+            return new NativeHealthRow("Fields", name, NativeHealthState.Missing, "",
+                $"{field.Entry} wasn't found in the game code", "");
+        int now = read - field.Delta;
+        string from = field.Delta == 0 ? field.Entry : $"{field.Entry} {(field.Delta < 0 ? "+" : "-")} 0x{Math.Abs(field.Delta):X}";
+        return now == field.Value
+            ? new NativeHealthRow("Fields", name, NativeHealthState.Ok, $"0x{now:X}", $"= {from}", "")
+            : new NativeHealthRow("Fields", name, NativeHealthState.Moved, $"0x{now:X}",
+                $"{from} now gives 0x{now:X}; Poser uses 0x{field.Value:X}", "");
     }
 
     private static NativeHealthRow Row(string group, NativeEntry entry, NativeHealthState state, string value, string detail) =>

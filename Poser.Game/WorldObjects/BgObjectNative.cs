@@ -12,6 +12,7 @@ using Poser.Domain.Scene;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSVfx = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.VfxObject;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
+using Poser.Game.Natives;
 
 namespace Poser.Game.WorldObjects;
 
@@ -149,7 +150,7 @@ internal sealed unsafe class BgObjectNative
             || into.Length < 0x20)
             return false;
         for (int i = 0; i < 0x20; i++)
-            into[i] = *((byte*)node + 0xC0 + i);
+            into[i] = *((byte*)node + NativeFields.BgObject_Tail + i);
         return true;
     }
 

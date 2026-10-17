@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -12,14 +13,14 @@ internal sealed unsafe partial class TimelineSeekEngine
     /// DrawData weapons (chara+0x710 + slot×0x70), 3 the summoned prop (+0x860).</summary>
     public static nint PropWeapon(nint character, nint c031)
     {
-        nint data = *(nint*)(c031 + 0x48);
-        int slot = *(ushort*)(data + 0xE);
+        nint data = *(nint*)(c031 + NativeFields.SchedulerClip_Data);
+        int slot = *(ushort*)(data + NativeFields.C031Data_PropSlot);
         if (slot > 3)
             return 0;
-        return slot < 3 ? *(nint*)(character + 0x710 + slot * 0x70) : *(nint*)(character + 0x860);
+        return slot < 3 ? *(nint*)(character + NativeFields.Character_WeaponSlots + slot * 0x70) : *(nint*)(character + NativeFields.Character_SummonedPropWeapon);
     }
 
-    public static int PropTimelineId(nint c031) => *(ushort*)(*(nint*)(c031 + 0x48) + 0xC);
+    public static int PropTimelineId(nint c031) => *(ushort*)(*(nint*)(c031 + NativeFields.SchedulerClip_Data) + NativeFields.C031Data_PropTimelineId);
 
     /// <summary>The bucket-3 group keyed <c>W|2</c>, or 0.</summary>
     public nint PropGroup(nint weapon)
@@ -28,8 +29,9 @@ internal sealed unsafe partial class TimelineSeekEngine
         if (weapon == 0 || manager == 0)
             return 0;
         int guard = 0;
-        for (nint group = *(nint*)(manager + 0x30); group != 0 && guard < 256; group = *(nint*)(group + 0x10), guard++)
-            if (*(ulong*)(group + 0x30) == ((ulong)weapon | 2))
+        for (nint group = *(nint*)(manager + NativeFields.ActionTimelineManager_Bucket3); group != 0 && guard < 256; group = *(nint*)(group + NativeFields.TimelineGroup_Next), guard++)
+            // The group key struct sits at TimelineGroup.Key; the W|2 word is its second u64.
+            if (*(ulong*)(group + NativeFields.TimelineGroup_KeyTagged) == ((ulong)weapon | 2))
                 return group;
         return 0;
     }
@@ -40,10 +42,10 @@ internal sealed unsafe partial class TimelineSeekEngine
     {
         if (group == 0)
             return 0;
-        nint handle = *(nint*)(group + 0xA48);
+        nint handle = *(nint*)(group + NativeFields.TimelineGroup_CurrentHandle);
         nint timeline = handle != 0 ? *(nint*)handle : 0;
-        return timeline != 0 && *(uint*)(timeline + 0x224) == (uint)(timelineId + 0x20000)
-            && *(nint*)(timeline + 0x180) == handle ? timeline : 0;
+        return timeline != 0 && *(uint*)(timeline + NativeFields.SchedulerTimeline_ActionKey) == (uint)(timelineId + NativeFields.SchedulerTimeline_ActionKeyBias)
+            && *(nint*)(timeline + NativeFields.SchedulerTimeline_SelfHandle) == handle ? timeline : 0;
     }
 
     /// <summary>Steps a prop timeline forward to <paramref name="target"/> in its
@@ -55,14 +57,14 @@ internal sealed unsafe partial class TimelineSeekEngine
         nint control = _n.GetActorControl(prop);
         bool validControl = control != 0 && _l.IsActorControl(control);
         if (validControl)
-            *(byte*)(control + 0x6B8) = 1;
+            *(byte*)(control + NativeFields.ActorControl_NoBlendStart) = 1;
         for (int i = 0; i < 32; i++)
         {
-            float step = Math.Min(target - *(float*)(prop + 0x34), TimelineState.Of(prop).Length);
+            float step = Math.Min(target - *(float*)(prop + NativeFields.TimelineController_CurrentTimestamp), TimelineState.Of(prop).Length);
             if (step <= 0.001f)
                 break;
             _n.UpdateBanner(prop, step, 1);
-            if ((*(byte*)(prop + 0x272) & 0x80) != 0)
+            if ((*(byte*)(prop + NativeFields.SchedulerTimeline_Flags272) & 0x80) != 0)
                 break;
         }
         if (validControl)
@@ -75,15 +77,15 @@ internal sealed unsafe partial class TimelineSeekEngine
     public int SyncPropControls(nint prop, nint control, HashSet<nint> synced)
     {
         int count = 0, guard = 0;
-        for (nint instance = *(nint*)(control + 0x30); instance != 0 && guard < 16; instance = *(nint*)(instance + 0x10), guard++)
+        for (nint instance = *(nint*)(control + NativeFields.ActorControl_Instances); instance != 0 && guard < 16; instance = *(nint*)(instance + NativeFields.ClipAnimation_Next), guard++)
         {
-            nint clip = *(nint*)(instance + 0x60);
+            nint clip = *(nint*)(instance + NativeFields.ClipAnimation_Clip);
             if (clip == 0 || synced.Contains(clip) || _l.Classify(clip) != SeekClipKind.HavokAnimation
-                || *(nint*)(clip + 0x98) != instance)
+                || *(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject) != instance)
                 continue;
             // A prop clip that just started (the C031 re-fire) has no length yet;
             // resolve it so it is synced now, not a frame later at frame 0.
-            if (*(nint*)(instance + 0x78) != 0 && (*(byte*)(clip + 0xCC) & 0x40) == 0)
+            if (*(nint*)(instance + NativeFields.ClipAnimation_Holder) != 0 && (*(byte*)(clip + NativeFields.HavokAnimationClip_Flags) & 0x40) == 0)
                 _n.ResolveHavokLength(clip);
             if (!CanSyncNow(clip))
                 continue;
@@ -106,13 +108,13 @@ internal sealed unsafe partial class TimelineSeekEngine
     /// </summary>
     public bool FireProp(nint character, nint c031)
     {
-        if (!Ready || (*(byte*)(character + 0x1CE8) & 0x10) != 0)
+        if (!Ready || (*(byte*)(character + NativeFields.Character_TimelineFlags1CE8) & 0x10) != 0)
             return false;
         nint weapon = PropWeapon(character, c031);
-        if (weapon == 0 || (*(byte*)(weapon + 0x89) & 0xF) != 3)
+        if (weapon == 0 || (*(byte*)(weapon + NativeFields.DrawObject_LoadState) & 0xF) != 3)
             return false;
         nint group = PropGroup(weapon);
-        if (group != 0 && *(nint*)(group + 0xA48) is var handle and not 0 && *(nint*)handle != 0)
+        if (group != 0 && *(nint*)(group + NativeFields.TimelineGroup_CurrentHandle) is var handle and not 0 && *(nint*)handle != 0)
             return false;
         _n.StartPropTimeline(c031);
         return true;
@@ -124,7 +126,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     {
         nint control = _n.GetActorControl(timeline);
         if (control != 0 && _l.IsActorControl(control))
-            *(byte*)(control + 0x6B8) = 1;
+            *(byte*)(control + NativeFields.ActorControl_NoBlendStart) = 1;
     }
 
     public nint PropControl(nint prop)
@@ -154,7 +156,7 @@ internal sealed unsafe partial class TimelineSeekEngine
         log = null;
         if (!TimelineState.Of(prop).Loaded)
             return false;
-        int timelineId = (int)(*(uint*)(prop + 0x224) - 0x20000);
+        int timelineId = (int)(*(uint*)(prop + NativeFields.SchedulerTimeline_ActionKey) - 0x20000);
         foreach (int slot in new[] { 0, 1 })
         {
             nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
@@ -164,7 +166,7 @@ internal sealed unsafe partial class TimelineSeekEngine
             {
                 if (PropWeapon(character, clip) != weapon || PropTimelineId(clip) != timelineId)
                     continue;
-                float err = (TimelineState.Of(root).Clock - start) - *(float*)(prop + 0x34);
+                float err = (TimelineState.Of(root).Clock - start) - *(float*)(prop + NativeFields.TimelineController_CurrentTimestamp);
                 if (err <= 0.001f)
                     return true;
                 if (err >= 2f)
@@ -172,7 +174,7 @@ internal sealed unsafe partial class TimelineSeekEngine
                     log = $"prop {timelineId} is {err:0.###} frames behind its body; left alone";
                     return true;
                 }
-                SeekProp(prop, TimelineState.Of(root).Clock - start, *(float*)(prop + 0x240), new HashSet<nint>());
+                SeekProp(prop, TimelineState.Of(root).Clock - start, *(float*)(prop + NativeFields.SchedulerTimeline_Speed), new HashSet<nint>());
                 return true;
             }
         }

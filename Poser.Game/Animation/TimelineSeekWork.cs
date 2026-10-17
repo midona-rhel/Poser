@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -87,7 +88,7 @@ internal sealed unsafe class TimelineSeekWork
                 continue;
             prop.Timeline = timeline;
             prop.Seeked = true;
-            if (*(float*)(timeline + 0x34) > target + 0.5f)
+            if (*(float*)(timeline + NativeFields.TimelineController_CurrentTimestamp) > target + 0.5f)
                 continue; // ahead: never step a prop backward
             engine.SeekProp(timeline, target, OwnerSpeed, prop.Synced);
         }

@@ -13,6 +13,7 @@ using Poser.Domain.Transforms;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSVfx = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.VfxObject;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
+using Poser.Game.Natives;
 
 namespace Poser.Game.WorldObjects;
 
@@ -249,7 +250,7 @@ internal sealed unsafe class VfxObjectNative
             return false;
         intensity =
             *(System.Numerics.Vector3*)(instance + VfxIntensityOffset);
-        speed = *(float*)(instance + 0x70);
+        speed = *(float*)(instance + NativeFields.VfxResourceInstance_Speed);
         return true;
     }
 
@@ -360,8 +361,8 @@ internal sealed unsafe class VfxObjectNative
         var instance = (nint)vfx->VfxResourceInstance;
         if (instance == nint.Zero)
             return false;
-        return (*(uint*)(instance + 0xC4) & 1) != 0
-            || *(ulong*)(instance + 0x60) != 0;
+        return (*(uint*)(instance + NativeFields.VfxResourceInstance_Flags) & 1) != 0
+            || *(ulong*)(instance + NativeFields.VfxResourceInstance_Handle) != 0;
     }
 
     public void SetVfxSpeed(nint address, float speed)

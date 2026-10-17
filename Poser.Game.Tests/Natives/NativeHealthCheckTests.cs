@@ -49,11 +49,18 @@ public sealed unsafe class NativeHealthCheckTests : IDisposable
         // Another 4-byte reader at the same displacement index now reads Speed's value.
         var other = NativeRegistry.Offsets.First(o => o.Key != "SchedulerTimeline.Speed"
             && o.Value.DisplacementIndex == speed.DisplacementIndex && o.Value.Size == 4
-            && o.Value.Analysed != speed.Analysed);
+            && o.Value.Analysed != speed.Analysed
+            && NativeFieldChecks.All.Any(f => f.Entry == o.Key && f.Delta == 0));
         var moved = Row(report, other.Key);
         Assert.Equal(NativeHealthState.Moved, moved.State);
         Assert.Contains($"0x{speed.Analysed:X}", moved.Detail);
         Assert.Contains($"0x{other.Value.Analysed:X}", moved.Detail);
+
+        // The constants derived from each follow their entry.
+        var speedField = NativeFieldChecks.All.First(f => f.Entry == "SchedulerTimeline.Speed");
+        Assert.Equal(NativeHealthState.Ok, Row(report, "NativeFields." + speedField.Constant).State);
+        var movedField = NativeFieldChecks.All.First(f => f.Entry == other.Key && f.Delta == 0);
+        Assert.Equal(NativeHealthState.Moved, Row(report, "NativeFields." + movedField.Constant).State);
     }
 
     [Fact]
@@ -69,10 +76,10 @@ public sealed unsafe class NativeHealthCheckTests : IDisposable
     public void Nothing_found_reports_every_signed_entry_missing()
     {
         var report = Run(found: false);
-        var signed = report.Rows.Where(r => r.Group is "Functions" or "Offsets" or "Data").ToList();
+        var signed = report.Rows.Where(r => r.Group is "Functions" or "Offsets" or "Data" or "Fields").ToList();
         Assert.NotEmpty(signed);
         Assert.All(signed, r => Assert.Equal(NativeHealthState.Missing, r.State));
-        Assert.Equal(NativeRegistry.All.Length,
+        Assert.Equal(NativeRegistry.All.Length + NativeFieldChecks.All.Length,
             report.Rows.Count(r => r.Group != "Hooks") + NativeRegistry.All.Count(e => e.Kind == NativeKind.Hook));
     }
 

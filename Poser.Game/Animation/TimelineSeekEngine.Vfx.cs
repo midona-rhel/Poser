@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -14,14 +15,14 @@ internal sealed unsafe partial class TimelineSeekEngine
     // effect still lives, like the bubbles, gets no speed event at all).
 
     /// <summary>A C012's VfxObject: inst=clip+0x98 → *(inst+0x28) → vfunc 0x68.</summary>
-    private static nint VfxOf(nint clip) => VfxOfInstance(*(nint*)(clip + 0x98));
+    private static nint VfxOf(nint clip) => VfxOfInstance(*(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject));
 
     private static nint VfxOfInstance(nint instance)
     {
-        nint holder = instance != 0 ? *(nint*)(instance + 0x28) : 0;
+        nint holder = instance != 0 ? *(nint*)(instance + NativeFields.C012Instance_Holder) : 0;
         if (holder == 0)
             return 0;
-        var getVfx = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)holder + 0x68));
+        var getVfx = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)holder + NativeFields.C012Holder_VfGetVfx));
         return getVfx(holder);
     }
 
@@ -34,11 +35,11 @@ internal sealed unsafe partial class TimelineSeekEngine
                 objects.Add(vfx);
         foreach (var clip in tree.AsyncVfx)
         {
-            nint array = *(nint*)(clip + 0xD8);
-            nint data = *(nint*)(clip + 0x48);
+            nint array = *(nint*)(clip + NativeFields.C173_Instances);
+            nint data = *(nint*)(clip + NativeFields.SchedulerClip_Data);
             if (array == 0 || data == 0)
                 continue;
-            int count = Math.Clamp(*(int*)(data + 0x18), 1, 8);
+            int count = Math.Clamp(*(int*)(data + NativeFields.C173Data_InstanceCount), 1, 8);
             for (int i = 0; i < count; i++)
                 if (VfxOfInstance(*(nint*)(array + i * 8)) is var vfx and not 0)
                     objects.Add(vfx);
@@ -52,7 +53,7 @@ internal sealed unsafe partial class TimelineSeekEngine
         if (!Ready || root == 0)
             return;
         foreach (var vfx in VfxObjects(Collect(root)))
-            if (*(float*)(vfx + 0x250) != speed)
+            if (*(float*)(vfx + NativeFields.VfxObject_Speed) != speed)
                 _n.SetVfxSpeed(vfx, speed);
     }
 
@@ -81,10 +82,10 @@ internal sealed unsafe partial class TimelineSeekEngine
         {
             nint group = PropGroup(Weapon(character, w));
             int guard = 0;
-            for (nint timeline = group != 0 ? *(nint*)(group + 0x18) : 0;
+            for (nint timeline = group != 0 ? *(nint*)(group + NativeFields.TimelineGroup_Timelines) : 0;
                  timeline != 0 && guard < 64;
-                 timeline = *(nint*)(timeline + 0x88), guard++)
-                if (!TimelineState.Of(timeline).Dead && *(sbyte*)(timeline + 0x10) >= 0)
+                 timeline = *(nint*)(timeline + NativeFields.SchedulerTimeline_GroupNext), guard++)
+                if (!TimelineState.Of(timeline).Dead && *(sbyte*)(timeline + NativeFields.SchedulerTimeline_State) >= 0)
                     SetVfxSpeeds(timeline, speed);
         }
     }
@@ -98,8 +99,8 @@ internal sealed unsafe partial class TimelineSeekEngine
         var handles = new HashSet<ulong>();
         foreach (var vfx in VfxObjects(tree))
         {
-            nint wrapper = *(nint*)(vfx + 0x2A0);
-            ulong handle = wrapper != 0 ? *(ulong*)(wrapper + 0x60) : 0;
+            nint wrapper = *(nint*)(vfx + NativeFields.VfxObject_Wrapper);
+            ulong handle = wrapper != 0 ? *(ulong*)(wrapper + NativeFields.VfxResourceInstance_Handle) : 0;
             if (handle != 0)
                 handles.Add(handle);
         }
@@ -111,7 +112,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     private bool HasLiveVfx(Tree tree)
     {
         nint js = _l.VfxSlotTable;
-        nint table = js != 0 ? *(nint*)(js + 0x1498) : 0;
+        nint table = js != 0 ? *(nint*)(js + NativeFields.ApricotJobSystem_SlotTable) : 0;
         if (table == 0)
             return tree.Vfx.Count + tree.AsyncVfx.Count > 0;
         foreach (var handle in VfxHandles(tree))
@@ -119,8 +120,8 @@ internal sealed unsafe partial class TimelineSeekEngine
             uint index = (uint)(handle >> 32), generation = (uint)handle;
             if (index >= 0x800 || generation == 0)
                 continue;
-            nint entry = table + 0x2000 + (nint)index * 0x88;
-            if (*(uint*)(entry + 0x60) == generation && *(ushort*)(entry + 0x58) != 3 && *(nint*)(entry + 0x30) != 0)
+            nint entry = table + NativeFields.ApricotJobSystem_SlotArray + (nint)index * 0x88;
+            if (*(uint*)(entry + NativeFields.ApricotJobSlot_Generation) == generation && *(ushort*)(entry + NativeFields.ApricotJobSlot_State) != 3 && *(nint*)(entry + NativeFields.ApricotJobSlot_Instance) != 0)
                 return true;
         }
         return false;
@@ -133,7 +134,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     public int ReleaseOrphans(HashSet<ulong> before, HashSet<ulong> now)
     {
         nint js = _l.VfxSlotTable;
-        nint table = js != 0 ? *(nint*)(js + 0x1498) : 0;
+        nint table = js != 0 ? *(nint*)(js + NativeFields.ApricotJobSystem_SlotTable) : 0;
         if (table == 0)
             return 0;
         int released = 0;
@@ -144,8 +145,8 @@ internal sealed unsafe partial class TimelineSeekEngine
             uint index = (uint)(handle >> 32), generation = (uint)handle;
             if (index >= 0x800 || generation == 0)
                 continue;
-            nint entry = table + 0x2000 + (nint)index * 0x88;
-            if (*(uint*)(entry + 0x60) != generation || *(ushort*)(entry + 0x58) == 3 || *(nint*)(entry + 0x30) == 0)
+            nint entry = table + NativeFields.ApricotJobSystem_SlotArray + (nint)index * 0x88;
+            if (*(uint*)(entry + NativeFields.ApricotJobSlot_Generation) != generation || *(ushort*)(entry + NativeFields.ApricotJobSlot_State) == 3 || *(nint*)(entry + NativeFields.ApricotJobSlot_Instance) == 0)
                 continue;
             _l.ReleaseVfx(handle, 1);
             released++;

@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Poser.Game.Natives;
 
 namespace Poser.Game.WorldObjects;
 
@@ -13,17 +14,17 @@ namespace Poser.Game.WorldObjects;
 [StructLayout(LayoutKind.Explicit, Size = 0xD0)]
 public unsafe struct VfxResourceInstance
 {
-    [FieldOffset(0x60)] public ulong JobHandle;
+    [FieldOffset(NativeFields.VfxResourceInstance_JobHandle)] public ulong JobHandle;
 
-    [FieldOffset(0x70)] public float Speed;
+    [FieldOffset(NativeFields.VfxResourceInstance_Speed)] public float Speed;
 
     // The per-axis scale the world matrix rows are multiplied by (patchcheck
     // VfxResourceInstance.Scale; native setter 0x14038FCF0).
-    [FieldOffset(0x90)] public Vector3 Scale;
+    [FieldOffset(NativeFields.VfxResourceInstance_Scale)] public Vector3 Scale;
 
-    [FieldOffset(0xA0)] public Vector4 Color;
+    [FieldOffset(NativeFields.VfxResourceInstance_Color)] public Vector4 Color;
 
     /// <summary>Bit 0 set while playing or pending stop; with the job
     /// handle it answers "is this effect still alive".</summary>
-    [FieldOffset(0xC4)] public uint ActiveFlag;
+    [FieldOffset(NativeFields.VfxResourceInstance_ActiveFlag)] public uint ActiveFlag;
 }

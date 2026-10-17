@@ -180,7 +180,7 @@ public sealed unsafe partial class TimelineSeekService
                     layers.Add((key, (ushort)0));
         }
         nint schedule = _engine.ScheduleManagement;
-        float frames = schedule != 0 ? *(float*)(schedule + 0x50) : 1f;
+        float frames = schedule != 0 ? *(float*)(schedule + NativeFields.ScheduleManagement_FrameDelta) : 1f;
         if (!(frames > 0f))
             return;
         foreach (var (key, loop) in layers)
@@ -210,7 +210,7 @@ public sealed unsafe partial class TimelineSeekService
                 if (!TimelineState.Of(root).OneShot || (key.Slot == 0 && IntroQueued(sequencer, live)))
                     continue;
                 nint info = TimelineSeekEngine.PlayInfo(root);
-                if (lead < 0 || info == 0 || *(int*)(info + 0x30) == -1)
+                if (lead < 0 || info == 0 || *(int*)(info + NativeFields.TimelinePlayInfo_NotifyEnable) == -1)
                     continue;
                 bool release = false;
                 if (speed > 0f)
@@ -219,7 +219,7 @@ public sealed unsafe partial class TimelineSeekService
                     float step = left >= 0f ? MeasureStep(key, root, left, frames * speed) : 0f;
                     release = left >= 0f && left - LoopLeadSteps * Math.Max(step, 0f) <= lead;
                 }
-                *(short*)(root + 0x26E) = release ? lead : (short)-1;
+                *(short*)(root + NativeFields.SchedulerTimeline_PreEndLead) = release ? lead : (short)-1;
                 continue;
             }
             if (!(speed > 0f))
@@ -236,7 +236,7 @@ public sealed unsafe partial class TimelineSeekService
             // A lead of 0 (the switch at the very end) is no seam either: the lead only
             // says when the game switches, not how long it blends.
             bool hasLead = lead > 0;
-            bool armed = hasLead && playInfo != 0 && *(int*)(playInfo + 0x30) != -1;
+            bool armed = hasLead && playInfo != 0 && *(int*)(playInfo + NativeFields.TimelinePlayInfo_NotifyEnable) != -1;
             float remaining = armed ? _engine.Remaining(root) : -1f;
             int blend = hasLead ? lead : NoLeadLoopBlendFrames;
             // Nothing runs past its own end, and a timeline whose every clip is done
@@ -274,10 +274,10 @@ public sealed unsafe partial class TimelineSeekService
     {
         if (_leads.TryGetValue(key, out var held) && held.Root == root)
             return held.Original;
-        short original = *(short*)(root + 0x26E);
+        short original = *(short*)(root + NativeFields.SchedulerTimeline_PreEndLead);
         _leads[key] = (root, TimelineState.Of(root).Identity, original);
         if (original >= 0)
-            *(short*)(root + 0x26E) = -1;
+            *(short*)(root + NativeFields.SchedulerTimeline_PreEndLead) = -1;
         return original;
     }
 
@@ -305,7 +305,7 @@ public sealed unsafe partial class TimelineSeekService
                 continue;
             if (AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot) == held.Root
                 && TimelineState.Of(held.Root).Identity == held.Identity)
-                *(short*)(held.Root + 0x26E) = held.Original;
+                *(short*)(held.Root + NativeFields.SchedulerTimeline_PreEndLead) = held.Original;
         }
     }
 

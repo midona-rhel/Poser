@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -17,7 +18,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     /// <summary>The prop weapon objects: DrawData weapons 0–2 and the summoned
     /// prop (which gets no per-frame push at all).</summary>
     private static nint Weapon(nint character, int index) =>
-        index < 3 ? *(nint*)(character + 0x710 + index * 0x70) : *(nint*)(character + 0x860);
+        index < 3 ? *(nint*)(character + NativeFields.Character_WeaponSlots + index * 0x70) : *(nint*)(character + NativeFields.Character_SummonedPropWeapon);
 
     /// <summary>The slot timeline takes exactly what the sequencer's consumer
     /// would push from seq+0x154 one Advance later.</summary>
@@ -63,15 +64,15 @@ internal sealed unsafe partial class TimelineSeekEngine
             return;
         nint group = PropGroup(weapon);
         int guard = 0;
-        for (nint timeline = group != 0 ? *(nint*)(group + 0x18) : 0;
+        for (nint timeline = group != 0 ? *(nint*)(group + NativeFields.TimelineGroup_Timelines) : 0;
              timeline != 0 && guard < 64;
-             timeline = *(nint*)(timeline + 0x88), guard++)
-            if (!TimelineState.Of(timeline).Dead && *(sbyte*)(timeline + 0x10) >= 0)
+             timeline = *(nint*)(timeline + NativeFields.SchedulerTimeline_GroupNext), guard++)
+            if (!TimelineState.Of(timeline).Dead && *(sbyte*)(timeline + NativeFields.SchedulerTimeline_State) >= 0)
                 _n.SetSpeed(timeline, speed);
     }
 
     /// <summary>The C031's weapon slot (u16 data+0xE): 0–2 DrawData, 3 the summoned prop.</summary>
-    public static int PropWeaponSlot(nint c031) => *(ushort*)(*(nint*)(c031 + 0x48) + 0xE);
+    public static int PropWeaponSlot(nint c031) => *(ushort*)(*(nint*)(c031 + NativeFields.SchedulerClip_Data) + NativeFields.C031Data_PropSlot);
 
     /// <summary>Every live timeline in the actor's W|2 prop groups takes the
     /// overall speed, walked like the game's TimelineGroup.SetSpeedAll: +0x18,
@@ -84,11 +85,11 @@ internal sealed unsafe partial class TimelineSeekEngine
         {
             nint group = PropGroup(Weapon(character, w));
             int guard = 0;
-            for (nint timeline = group != 0 ? *(nint*)(group + 0x18) : 0;
+            for (nint timeline = group != 0 ? *(nint*)(group + NativeFields.TimelineGroup_Timelines) : 0;
                  timeline != 0 && guard < 64;
-                 timeline = *(nint*)(timeline + 0x88), guard++)
+                 timeline = *(nint*)(timeline + NativeFields.SchedulerTimeline_GroupNext), guard++)
             {
-                if (TimelineState.Of(timeline).Dead || *(sbyte*)(timeline + 0x10) < 0)
+                if (TimelineState.Of(timeline).Dead || *(sbyte*)(timeline + NativeFields.SchedulerTimeline_State) < 0)
                     continue;
                 _n.SetSpeed(timeline, overall);
             }
@@ -115,7 +116,7 @@ internal sealed unsafe partial class TimelineSeekEngine
             return;
         var tree = Collect(root);
         foreach (var clip in tree.Havok.Keys)
-            SetHolderWeight(*(nint*)(clip + 0x98), weight);
+            SetHolderWeight(*(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject), weight);
         // Props the layer summons (C031) run on their own bucket-3 timelines; their
         // C009 holders hang off the prop's actor control instance list. A prop held
         // invisible because a higher layer owns its weapon stays at 0.
@@ -133,8 +134,8 @@ internal sealed unsafe partial class TimelineSeekEngine
     {
         nint control = prop != 0 ? PropControl(prop) : 0;
         int guard = 0;
-        for (nint instance = control != 0 ? *(nint*)(control + 0x30) : 0; instance != 0 && guard < 16;
-             instance = *(nint*)(instance + 0x10), guard++)
+        for (nint instance = control != 0 ? *(nint*)(control + NativeFields.ActorControl_Instances) : 0; instance != 0 && guard < 16;
+             instance = *(nint*)(instance + NativeFields.ClipAnimation_Next), guard++)
             SetHolderWeight(instance, weight);
     }
 
@@ -143,22 +144,22 @@ internal sealed unsafe partial class TimelineSeekEngine
     {
         if (group == 0)
             return 0;
-        nint handle = *(nint*)(group + 0xA48);
+        nint handle = *(nint*)(group + NativeFields.TimelineGroup_CurrentHandle);
         nint timeline = handle != 0 ? *(nint*)handle : 0;
-        return timeline != 0 && *(nint*)(timeline + 0x180) == handle ? timeline : 0;
+        return timeline != 0 && *(nint*)(timeline + NativeFields.SchedulerTimeline_SelfHandle) == handle ? timeline : 0;
     }
 
     /// <summary>The ActionTimeline id a prop timeline plays (+0x224 − 0x20000).</summary>
-    public static int PropTimelineIdOf(nint prop) => (int)(*(uint*)(prop + 0x224) - 0x20000);
+    public static int PropTimelineIdOf(nint prop) => (int)(*(uint*)(prop + NativeFields.SchedulerTimeline_ActionKey) - 0x20000);
 
     /// <summary>Fires a C031 over whatever prop timeline its weapon has (the start
     /// replaces it, as a natural fire does); needs the weapon loaded.</summary>
     public bool ReFireProp(nint character, nint c031)
     {
-        if (!Ready || (*(byte*)(character + 0x1CE8) & 0x10) != 0)
+        if (!Ready || (*(byte*)(character + NativeFields.Character_TimelineFlags1CE8) & 0x10) != 0)
             return false;
         nint weapon = PropWeapon(character, c031);
-        if (weapon == 0 || (*(byte*)(weapon + 0x89) & 0xF) != 3)
+        if (weapon == 0 || (*(byte*)(weapon + NativeFields.DrawObject_LoadState) & 0xF) != 3)
             return false;
         _n.StartPropTimeline(c031);
         return true;
@@ -166,8 +167,8 @@ internal sealed unsafe partial class TimelineSeekEngine
 
     private static void SetHolderWeight(nint instance, float weight)
     {
-        nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
-        if (holder != 0 && *(float*)(holder + 0x5C) != weight)
-            *(float*)(holder + 0x5C) = weight;
+        nint holder = instance != 0 ? *(nint*)(instance + NativeFields.ClipAnimation_Holder) : 0;
+        if (holder != 0 && *(float*)(holder + NativeFields.AnimationHolder_WeightMultiplier) != weight)
+            *(float*)(holder + NativeFields.AnimationHolder_WeightMultiplier) = weight;
     }
 }

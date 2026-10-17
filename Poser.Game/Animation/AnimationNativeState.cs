@@ -12,6 +12,7 @@ using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
 using Poser.Game.Entities;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -128,11 +129,11 @@ public sealed unsafe partial class AnimationNativeState
 
     /// <summary>The row StartSlot last started on the slot (seq+0xFC).</summary>
     internal static ushort StartedId(ActionTimelineSequencer* sequencer, int slot) =>
-        *(ushort*)((byte*)sequencer + 0xFC + 2 * slot);
+        *(ushort*)((byte*)sequencer + NativeFields.ActionTimelineSequencer_SlotStartedIds + 2 * slot);
 
     /// <summary>Slot 0's queued second row (seq+0x152; an emote's loop after its intro).</summary>
     internal static ushort QueuedId(ActionTimelineSequencer* sequencer) =>
-        *(ushort*)((byte*)sequencer + 0x152);
+        *(ushort*)((byte*)sequencer + NativeFields.ActionTimelineSequencer_QueuedLoop);
 
     /// <summary>
     /// Slot 0 caught on an intro with its loop queued behind it (ActionTimelineSequencer
@@ -142,8 +143,8 @@ public sealed unsafe partial class AnimationNativeState
     internal static ushort QueuedLoopBehindIntro(ActionTimelineSequencer* sequencer)
     {
         byte* seq = (byte*)sequencer;
-        ushort first = *(ushort*)(seq + 0x150), second = *(ushort*)(seq + 0x152);
-        return *(int*)(seq + 0x1DC) == 0 && second != 0 && RequestedId(sequencer, 0) == first ? second : (ushort)0;
+        ushort first = *(ushort*)(seq + NativeFields.ActionTimelineSequencer_QueuedFirst), second = *(ushort*)(seq + NativeFields.ActionTimelineSequencer_QueuedLoop);
+        return *(int*)(seq + NativeFields.ActionTimelineSequencer_QueueIndex) == 0 && second != 0 && RequestedId(sequencer, 0) == first ? second : (ushort)0;
     }
 
     /// <summary>The slot's live SchedulerTimeline, or 0.</summary>
@@ -569,9 +570,9 @@ public sealed unsafe partial class AnimationNativeState
         if (_actionTimelineRow != null && TimelineSlot(timeline) != AnimationSlot.UpperBody)
         {
             nint row = _actionTimelineRow(timeline);
-            if (row != 0 && (*(byte*)(row + 0x14) & 4) != 0)
+            if (row != 0 && (*(byte*)(row + NativeFields.ActionTimelineRow_Flags) & 4) != 0)
             {
-                rowFlags = (byte*)(row + 0x14);
+                rowFlags = (byte*)(row + NativeFields.ActionTimelineRow_Flags);
                 *rowFlags &= unchecked((byte)~4);
             }
         }

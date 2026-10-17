@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -33,22 +34,22 @@ internal sealed unsafe partial class TimelineSeekEngine
 
     private static void ClipsOf(nint timeline, List<nint> into)
     {
-        nint actor = *(nint*)(timeline + 0x18);
-        for (int a = 0; actor != 0 && a < 32; a++, actor = *(nint*)(actor + 0x20))
+        nint actor = *(nint*)(timeline + NativeFields.SchedulerTimeline_Actors);
+        for (int a = 0; actor != 0 && a < 32; a++, actor = *(nint*)(actor + NativeFields.TmbActor_Next))
         {
-            nint tracks = *(nint*)(actor + 0x28);
-            int trackCount = *(ushort*)(actor + 0x32);
+            nint tracks = *(nint*)(actor + NativeFields.TmbActor_Tracks);
+            int trackCount = *(ushort*)(actor + NativeFields.TmbActor_TrackCount);
             for (int t = 0; tracks != 0 && t < trackCount && t < 64; t++)
             {
                 nint track = *(nint*)(tracks + t * 8);
                 if (track == 0)
                     continue;
-                nint clips = *(nint*)(track + 0x18);
-                int clipCount = *(ushort*)(track + 0x22);
+                nint clips = *(nint*)(track + NativeFields.TmbTrack_Clips);
+                int clipCount = *(ushort*)(track + NativeFields.TmbTrack_ClipCount);
                 for (int c = 0; clips != 0 && c < clipCount && c < 256; c++)
                 {
                     nint clip = *(nint*)(clips + c * 8);
-                    if (clip != 0 && *(nint*)(clip + 0x48) != 0)
+                    if (clip != 0 && *(nint*)(clip + NativeFields.SchedulerClip_Data) != 0)
                         into.Add(clip);
                 }
             }
@@ -58,7 +59,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     /// <summary>A C010's child timeline, or 0.</summary>
     private nint ChildOf(nint c010)
     {
-        nint child = *(nint*)(c010 + 0x138);
+        nint child = *(nint*)(c010 + NativeFields.TimelineClip_Child);
         return child != 0 && _l.IsChildTimeline(child) ? child : 0;
     }
 
@@ -145,22 +146,22 @@ internal sealed unsafe partial class TimelineSeekEngine
                         if (child == 0)
                             break;
                         tree.C010s.Add((clip, child));
-                        tree.C010Starts.Add(baseStart + span * *(float*)(clip + 0x50));
+                        tree.C010Starts.Add(baseStart + span * *(float*)(clip + NativeFields.SchedulerClip_StartFrame));
                         if (depth > 0)
                             tree.NestedC010s.Add(clip);
-                        float scale = *(float*)(clip + 0x160);
+                        float scale = *(float*)(clip + NativeFields.TimelineClip_Scale);
                         if (!(scale > 0f) || !float.IsFinite(scale))
                             scale = 1f;
-                        nint c010Data = *(nint*)(clip + 0x48);
-                        float offset = c010Data != 0 && (*(uint*)(c010Data + 0xC) & 1) != 0 ? *(float*)(c010Data + 0x10) : 0f;
-                        float childRange = c010Data != 0 && (*(uint*)(c010Data + 0xC) & 1) != 0
-                            ? *(float*)(c010Data + 0x14) - *(float*)(c010Data + 0x10)
+                        nint c010Data = *(nint*)(clip + NativeFields.SchedulerClip_Data);
+                        float offset = c010Data != 0 && (*(uint*)(c010Data + NativeFields.C010Data_Flags) & 1) != 0 ? *(float*)(c010Data + NativeFields.C010Data_Offset) : 0f;
+                        float childRange = c010Data != 0 && (*(uint*)(c010Data + NativeFields.C010Data_Flags) & 1) != 0
+                            ? *(float*)(c010Data + NativeFields.C010Data_RangeEnd) - *(float*)(c010Data + NativeFields.C010Data_Offset)
                             : -1f;
-                        Walk(child, baseStart + span * (*(float*)(clip + 0x50) - offset / scale), depth + 1, span / scale, childRange);
+                        Walk(child, baseStart + span * (*(float*)(clip + NativeFields.SchedulerClip_StartFrame) - offset / scale), depth + 1, span / scale, childRange);
                         break;
                     case SeekClipKind.HavokAnimation:
                         tree.Havok[clip] = t;
-                        tree.HavokStart[clip] = baseStart + span * *(float*)(clip + 0x50);
+                        tree.HavokStart[clip] = baseStart + span * *(float*)(clip + NativeFields.SchedulerClip_StartFrame);
                         tree.HavokScale[clip] = span;
                         if (range > 0f)
                             tree.HavokRange[clip] = range;
@@ -168,9 +169,9 @@ internal sealed unsafe partial class TimelineSeekEngine
                         // timeline ends without it.
                         if (NoPose(clip))
                             break;
-                        if ((*(byte*)(clip + 0xCC) & 0x40) != 0)
+                        if ((*(byte*)(clip + NativeFields.HavokAnimationClip_Flags) & 0x40) != 0)
                             tree.PoseEnd = Math.Max(tree.PoseEnd,
-                                baseStart + span * (*(float*)(clip + 0x50) + *(uint*)(clip + 0xB0)));
+                                baseStart + span * (*(float*)(clip + NativeFields.SchedulerClip_StartFrame) + *(uint*)(clip + NativeFields.HavokAnimationClip_LengthFrames)));
                         else
                             tree.PoseEndPending = true;
                         break;
@@ -181,7 +182,7 @@ internal sealed unsafe partial class TimelineSeekEngine
                         tree.AsyncVfx.Add(clip);
                         break;
                     case SeekClipKind.SummonAnimation:
-                        tree.Summons.Add((clip, baseStart + span * *(float*)(clip + 0x50)));
+                        tree.Summons.Add((clip, baseStart + span * *(float*)(clip + NativeFields.SchedulerClip_StartFrame)));
                         break;
                     case SeekClipKind.WeaponRequest:
                         tree.WeaponRequests.Add(clip);
@@ -237,18 +238,18 @@ internal sealed unsafe partial class TimelineSeekEngine
         if (schedule == 0)
         {
             _n.SyncLocalTime(clip);
-            *(byte*)(clip + 0xCC) &= 0xFE;
+            *(byte*)(clip + NativeFields.HavokAnimationClip_Flags) &= 0xFE;
             return;
         }
-        float epsilon = *(float*)(schedule + 0x50);
-        *(float*)(schedule + 0x50) = 0f;
+        float epsilon = *(float*)(schedule + NativeFields.ScheduleManagement_FrameDelta);
+        *(float*)(schedule + NativeFields.ScheduleManagement_FrameDelta) = 0f;
         try { _n.SyncLocalTime(clip); }
-        finally { *(float*)(schedule + 0x50) = epsilon; }
+        finally { *(float*)(schedule + NativeFields.ScheduleManagement_FrameDelta) = epsilon; }
         // +0xCC bit 0 = "post-start sync pending", read only by the C009 post-steps
         // (slots 51/52). A clip restarted inside the seek kept it (its own post-step
         // failed the speed-pending guard), so the next tick re-synced it at the
         // paused root speed 0, i.e. to its frame 0: the backward-scrub flash.
-        *(byte*)(clip + 0xCC) &= 0xFE;
+        *(byte*)(clip + NativeFields.HavokAnimationClip_Flags) &= 0xFE;
     }
 
 
@@ -256,20 +257,20 @@ internal sealed unsafe partial class TimelineSeekEngine
     /// finished (+0x34 bit 5), and past its first state.</summary>
     private static bool CanSync(nint c009)
     {
-        nint instance = *(nint*)(c009 + 0x98);
-        return instance != 0 && (*(uint*)(instance + 0x34) & 0x20) == 0 && LengthKnown(c009);
+        nint instance = *(nint*)(c009 + NativeFields.HavokAnimationClip_AnimObject);
+        return instance != 0 && (*(uint*)(instance + NativeFields.ClipAnimation_Bits) & 0x20) == 0 && LengthKnown(c009);
     }
 
     /// <summary>The game syncs only +0xB0 > 1; a face clip's PAP reports 1 frame and
     /// free-runs from its Start in play. FUN_14190DE90 never reads +0xB0, so a
     /// resolved length (+0xCC bit 6) is enough for a seek to place it.</summary>
     private static bool LengthKnown(nint c009) =>
-        *(uint*)(c009 + 0xB0) > 1 || (*(byte*)(c009 + 0xCC) & 0x40) != 0;
+        *(uint*)(c009 + NativeFields.HavokAnimationClip_LengthFrames) > 1 || (*(byte*)(c009 + NativeFields.HavokAnimationClip_Flags) & 0x40) != 0;
 
     private static bool CanSyncNow(nint c009)
     {
-        nint instance = *(nint*)(c009 + 0x98);
-        return instance != 0 && *(nint*)(instance + 0x78) != 0 && LengthKnown(c009);
+        nint instance = *(nint*)(c009 + NativeFields.HavokAnimationClip_AnimObject);
+        return instance != 0 && *(nint*)(instance + NativeFields.ClipAnimation_Holder) != 0 && LengthKnown(c009);
     }
 
     /// <summary>Syncs every guarded C009 inside a root speed window; returns the
@@ -363,7 +364,7 @@ internal sealed unsafe partial class TimelineSeekEngine
                     _n.SetSpeed(prop, 0f);
                     continue;
                 }
-                *(uint*)(prop + 0x220) = 0;
+                *(uint*)(prop + NativeFields.SchedulerTimeline_StopFadeFrames) = 0;
                 _n.StopTimeline(prop, 2, 0);
             }
             if (blendFrames > 0)
@@ -374,7 +375,7 @@ internal sealed unsafe partial class TimelineSeekEngine
                 // when +0x6B8 is set before it.
                 nint wrapControl = _n.GetActorControl(root);
                 if (wrapControl != 0 && _l.IsActorControl(wrapControl))
-                    *(byte*)(wrapControl + 0x6B8) = 1;
+                    *(byte*)(wrapControl + NativeFields.ActorControl_NoBlendStart) = 1;
                 Wrap(root, tree);
             }
         }
@@ -382,7 +383,7 @@ internal sealed unsafe partial class TimelineSeekEngine
 
         nint control = _n.GetActorControl(root);
         if (blendFrames == 0 && control != 0 && _l.IsActorControl(control))
-            *(byte*)(control + 0x6B8) = 1; // start the re-entered clips without a blend-in
+            *(byte*)(control + NativeFields.ActorControl_NoBlendStart) = 1; // start the re-entered clips without a blend-in
         // A C010 started inside a step is stepped by the step's whole dt on top
         // (its post-step runs once per Advance, after the sub-steps): it overshoots
         // by the time from the step's begin to its start, and a short range child
@@ -392,7 +393,7 @@ internal sealed unsafe partial class TimelineSeekEngine
         c010Starts.Sort();
         for (int i = 0; i < 400; i++)
         {
-            float now = *(float*)(root + 0x34);
+            float now = *(float*)(root + NativeFields.TimelineController_CurrentTimestamp);
             float stop = target;
             foreach (float start in c010Starts)
                 if (start - 0.5f > now + 0.001f && start <= target)
@@ -407,9 +408,9 @@ internal sealed unsafe partial class TimelineSeekEngine
             // the clips started in later chunks blend in (and a pause freezes the
             // blend half-way).
             if (blendFrames == 0 && control != 0 && _l.IsActorControl(control))
-                *(byte*)(control + 0x6B8) = 1;
+                *(byte*)(control + NativeFields.ActorControl_NoBlendStart) = 1;
             _n.UpdateBanner(root, step, 1);
-            if ((*(byte*)(root + 0x272) & 0x80) != 0)
+            if ((*(byte*)(root + NativeFields.SchedulerTimeline_Flags272) & 0x80) != 0)
                 break;
         }
 
@@ -423,8 +424,8 @@ internal sealed unsafe partial class TimelineSeekEngine
         // the seek frame itself.
         foreach (var clip in tree.Havok.Keys)
         {
-            nint instance = *(nint*)(clip + 0x98);
-            if (instance != 0 && *(nint*)(instance + 0x78) != 0 && (*(byte*)(clip + 0xCC) & 0x40) == 0)
+            nint instance = *(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject);
+            if (instance != 0 && *(nint*)(instance + NativeFields.ClipAnimation_Holder) != 0 && (*(byte*)(clip + NativeFields.HavokAnimationClip_Flags) & 0x40) == 0)
                 _n.ResolveHavokLength(clip);
         }
         SyncHavok(root, tree.Havok.Keys, work.PendingHavok, immediate: true);
@@ -477,20 +478,20 @@ internal sealed unsafe partial class TimelineSeekEngine
         {
             // Only clips the scheduler already started (+0x10 bit 4; their 0x30 is
             // set, so a direct Start skips nothing the pending path would do).
-            if ((*(byte*)(clip + 0x10) & 0x10) == 0 || start > target)
+            if ((*(byte*)(clip + NativeFields.SchedulerClip_State) & 0x10) == 0 || start > target)
                 continue;
-            nint instance = *(nint*)(clip + 0x98);
+            nint instance = *(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject);
             if (instance == 0)
                 continue;
             var stop = (delegate* unmanaged<nint, int, byte>)(*(nint*)(*(nint*)clip + 32 * 8));
             // The window: the TMB duration (+0x54) from the start, or less where the
             // animation (+0xB0 frames at rate +0xBC) runs out first.
-            if ((*(byte*)(clip + 0xCC) & 0x40) != 0)
+            if ((*(byte*)(clip + NativeFields.HavokAnimationClip_Flags) & 0x40) != 0)
             {
-                float rate = *(float*)(clip + 0xBC);
-                float window = tree.HavokRange.TryGetValue(clip, out var range) ? range : *(float*)(clip + 0x54);
+                float rate = *(float*)(clip + NativeFields.HavokAnimationClip_Rate);
+                float window = tree.HavokRange.TryGetValue(clip, out var range) ? range : *(float*)(clip + NativeFields.SchedulerClip_Duration);
                 if (rate > 0f && !tree.HavokRange.ContainsKey(clip))
-                    window = Math.Min(window, *(uint*)(clip + 0xB0) / rate);
+                    window = Math.Min(window, *(uint*)(clip + NativeFields.HavokAnimationClip_LengthFrames) / rate);
                 // In the clip's own timeline's frames: a range C010's child is scaled.
                 window *= tree.HavokScale.GetValueOrDefault(clip, 1f);
                 if (window > 0f && start + window <= target)
@@ -499,17 +500,17 @@ internal sealed unsafe partial class TimelineSeekEngine
                     continue;
                 }
             }
-            if (*(nint*)(instance + 0x78) != 0 || *(int*)(instance + 0x40) == 0)
+            if (*(nint*)(instance + NativeFields.ClipAnimation_Holder) != 0 || *(int*)(instance + NativeFields.ClipAnimation_AnimId) == 0)
                 continue;
             // A scrub's restart enters at full weight (the step's +0x6B8 was cleared
             // by UpdateBanner); a loop wrap's keeps its crossfade.
             if (noBlendControl != 0)
-                *(byte*)(noBlendControl + 0x6B8) = 1;
+                *(byte*)(noBlendControl + NativeFields.ActorControl_NoBlendStart) = 1;
             var startClip = (delegate* unmanaged<nint, int, void>)(*(nint*)(*(nint*)clip + 31 * 8));
             stop(clip, 2);
             startClip(clip, 2);
             if (noBlendControl != 0)
-                *(byte*)(noBlendControl + 0x6B8) = 0;
+                *(byte*)(noBlendControl + NativeFields.ActorControl_NoBlendStart) = 0;
         }
     }
 
@@ -519,23 +520,23 @@ internal sealed unsafe partial class TimelineSeekEngine
     public static List<nint> ClipControls(nint clip)
     {
         var list = new List<nint>();
-        nint instance = *(nint*)(clip + 0x98);
-        nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
-        nint handle = holder != 0 ? *(nint*)(holder + 0x20) : 0;
+        nint instance = *(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject);
+        nint holder = instance != 0 ? *(nint*)(instance + NativeFields.ClipAnimation_Holder) : 0;
+        nint handle = holder != 0 ? *(nint*)(holder + NativeFields.AnimationHolder_Handle) : 0;
         if (handle == 0)
             return list;
-        nint head = *(nint*)(handle + 0x18);
+        nint head = *(nint*)(handle + NativeFields.AnimationControllerHandle_Controllers);
         if (head == 0)
             return list;
         void Walk(nint node, int depth)
         {
-            if (node == 0 || node == head || depth > 16 || *(byte*)(node + 0x19) != 0 || list.Count > 32)
+            if (node == 0 || node == head || depth > 16 || *(byte*)(node + NativeFields.StdTreeNode_IsNil) != 0 || list.Count > 32)
                 return;
             Walk(*(nint*)node, depth + 1);
-            nint controller = *(nint*)(node + 0x20);
-            if (controller != 0 && *(nint*)(controller + 0x38) != 0)
-                list.Add(*(nint*)(controller + 0x38));
-            Walk(*(nint*)(node + 0x10), depth + 1);
+            nint controller = *(nint*)(node + NativeFields.StdTreeNode_Value);
+            if (controller != 0 && *(nint*)(controller + NativeFields.AnimationController_Control) != 0)
+                list.Add(*(nint*)(controller + NativeFields.AnimationController_Control));
+            Walk(*(nint*)(node + NativeFields.StdTreeNode_Right), depth + 1);
         }
         Walk(*(nint*)(head + 8), 0);
         return list;
@@ -544,8 +545,8 @@ internal sealed unsafe partial class TimelineSeekEngine
     // hkaDefaultAnimationControl (stock Havok 2014): +0x60 forward wraps, +0x68
     // MaxCycles (≤ 0 loops forever), +0x9C/+0xA0 crop start/end in seconds. Once
     // the wraps reach MaxCycles, Havok parks the control at its end with speed 0.
-    private static uint Wraps(nint control) => *(uint*)(control + 0x60);
-    private static int MaxCycles(nint control) => *(int*)(control + 0x68);
+    private static uint Wraps(nint control) => *(uint*)(control + NativeFields.hkaDefaultAnimationControl_OverflowCount);
+    private static int MaxCycles(nint control) => *(int*)(control + NativeFields.hkaDefaultAnimationControl_MaxCycles);
 
     private static bool HeldByHavok(nint control) =>
         MaxCycles(control) > 0 && Wraps(control) >= (uint)MaxCycles(control);
@@ -557,7 +558,7 @@ internal sealed unsafe partial class TimelineSeekEngine
             ->hkaAnimationControl.Binding.ptr;
         if (binding == null || binding->Animation.ptr == null)
             return 0f;
-        return binding->Animation.ptr->Duration - *(float*)(control + 0xA0) - *(float*)(control + 0x9C);
+        return binding->Animation.ptr->Duration - *(float*)(control + NativeFields.hkaDefaultAnimationControl_CropEnd) - *(float*)(control + NativeFields.hkaDefaultAnimationControl_CropStart);
     }
 
     /// <summary>The first C009 control of a clamped root Havok still plays: its
@@ -572,7 +573,7 @@ internal sealed unsafe partial class TimelineSeekEngine
                 float length = CycleLength(control);
                 if (!(length > 0f) || HeldByHavok(control))
                     continue;
-                float local = *(float*)(control + 0x10);
+                float local = *(float*)(control + NativeFields.hkaDefaultAnimationControl_LocalTime);
                 int max = MaxCycles(control);
                 return max > 0 ? (Wraps(control) * length + local, max * length) : (local, length);
             }
@@ -597,7 +598,7 @@ internal sealed unsafe partial class TimelineSeekEngine
                 float length = CycleLength(control);
                 if (!(length > 0f))
                     continue;
-                ref float local = ref *(float*)(control + 0x10);
+                ref float local = ref *(float*)(control + NativeFields.hkaDefaultAnimationControl_LocalTime);
                 int max = MaxCycles(control);
                 if (max <= 0)
                 {
@@ -611,13 +612,13 @@ internal sealed unsafe partial class TimelineSeekEngine
                     if (cycles >= max)
                     {
                         local = length;
-                        *(uint*)(control + 0x60) = (uint)max;
+                        *(uint*)(control + NativeFields.hkaDefaultAnimationControl_OverflowCount) = (uint)max;
                     }
                     else
                     {
                         bool parked = HeldByHavok(control);
                         local = Math.Max(seconds, 0f) - cycles * length;
-                        *(uint*)(control + 0x60) = (uint)cycles;
+                        *(uint*)(control + NativeFields.hkaDefaultAnimationControl_OverflowCount) = (uint)cycles;
                         // Havok zeroed a parked control's speed. Slot 35 (speed changed)
                         // gives it the clip's speed back while playing; paused, it does nothing.
                         if (parked)
@@ -638,13 +639,13 @@ internal sealed unsafe partial class TimelineSeekEngine
             return;
         for (int i = 0; i < 14; i++)
         {
-            nint vd = *(nint*)(character + 0x19A0 + i * 8);
+            nint vd = *(nint*)(character + NativeFields.Character_StatusVfx + i * 8);
             if (vd != 0)
                 _n.SetVfxDataSpeed(vd, speed);
         }
         for (int j = 0; j < 2; j++)
         {
-            nint vd = *(nint*)(character + 0x1A30 + j * 0x18);
+            nint vd = *(nint*)(character + NativeFields.Character_Tethers + j * 0x18);
             if (vd != 0)
                 _n.SetVfxDataSpeed(vd, speed);
         }
@@ -664,10 +665,10 @@ internal sealed unsafe partial class TimelineSeekEngine
         // over root tl+0x220 frames: the OLD pose still renders at weight ~1 on
         // the seek frame (the one-frame flash). With 0 the holder gets Stop(0) and
         // the pool update releases it inside the coming tick, before the render.
-        uint fade = *(uint*)(root + 0x220);
-        *(uint*)(root + 0x220) = 0;
+        uint fade = *(uint*)(root + NativeFields.SchedulerTimeline_StopFadeFrames);
+        *(uint*)(root + NativeFields.SchedulerTimeline_StopFadeFrames) = 0;
         try { StopAll(root); }
-        finally { *(uint*)(root + 0x220) = fade; }
+        finally { *(uint*)(root + NativeFields.SchedulerTimeline_StopFadeFrames) = fade; }
         Rewind(root, tree);
     }
 
@@ -692,17 +693,17 @@ internal sealed unsafe partial class TimelineSeekEngine
         var holders = new List<nint>();
         foreach (var clip in tree.Havok.Keys)
         {
-            nint instance = *(nint*)(clip + 0x98);
-            nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
+            nint instance = *(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject);
+            nint holder = instance != 0 ? *(nint*)(instance + NativeFields.ClipAnimation_Holder) : 0;
             if (holder != 0)
                 holders.Add(holder);
         }
         nint playInfo = PlayInfo(root);
-        bool viaPlayInfo = playInfo != 0 && *(int*)(playInfo + 0x38) >= 0;
+        bool viaPlayInfo = playInfo != 0 && *(int*)(playInfo + NativeFields.TimelinePlayInfo_BlendIn) >= 0;
         LastBlendPath = viaPlayInfo ? "play info +0x38" : "+0x21C";
-        int fade = *(int*)(root + 0x220);
-        int blend = viaPlayInfo ? *(int*)(playInfo + 0x38) : *(int*)(root + 0x21C);
-        byte flags = *(byte*)(root + 0x272);
+        int fade = *(int*)(root + NativeFields.SchedulerTimeline_StopFadeFrames);
+        int blend = viaPlayInfo ? *(int*)(playInfo + NativeFields.TimelinePlayInfo_BlendIn) : *(int*)(root + NativeFields.SchedulerTimeline_BlendOverride);
+        byte flags = *(byte*)(root + NativeFields.SchedulerTimeline_Flags272);
         // The stopped holders' own fade-to-empty multiplies into the blend node's
         // crossfade (old weight (1 − x)², the sum dipped to ~0.77 mid-seam); 0 drops
         // them at once (the body fell to the new control's ~0 weight: a bind-pose
@@ -712,31 +713,31 @@ internal sealed unsafe partial class TimelineSeekEngine
         // the VFX clips' stop reads the same field, and 1000 left the old emitters
         // fading for ~33 s (the stuck bubbles). They stop with 0, as in a scrub.
         if (viaPlayInfo)
-            *(int*)(playInfo + 0x38) = frames;
+            *(int*)(playInfo + NativeFields.TimelinePlayInfo_BlendIn) = frames;
         else
         {
-            *(int*)(root + 0x21C) = frames;
-            *(byte*)(root + 0x272) = (byte)(flags | 2);
+            *(int*)(root + NativeFields.SchedulerTimeline_BlendOverride) = frames;
+            *(byte*)(root + NativeFields.SchedulerTimeline_Flags272) = (byte)(flags | 2);
         }
         // A NoBlendStart left set (a seek's banner chunk sets it, UpdateBanner clears it
         // only at a chunk's end) makes the holder insert take a blend of 0: no
         // crossfade, and for a pose-fade animation no fade either.
         nint actorControl = _n.GetActorControl(root);
-        bool noBlendWasSet = actorControl != 0 && _l.IsActorControl(actorControl) && *(byte*)(actorControl + 0x6B8) != 0;
+        bool noBlendWasSet = actorControl != 0 && _l.IsActorControl(actorControl) && *(byte*)(actorControl + NativeFields.ActorControl_NoBlendStart) != 0;
         if (noBlendWasSet)
-            *(byte*)(actorControl + 0x6B8) = 0;
+            *(byte*)(actorControl + NativeFields.ActorControl_NoBlendStart) = 0;
         try
         {
-            StopAll(root, clip => *(int*)(root + 0x220) =
+            StopAll(root, clip => *(int*)(root + NativeFields.SchedulerTimeline_StopFadeFrames) =
                 _l.Classify(clip) == SeekClipKind.HavokAnimation ? OldHolderFadeFrames : 0);
             foreach (var holder in holders)
-                *(uint*)(holder + 0x40) = ~*(uint*)(holder + 0x40);
+                *(uint*)(holder + NativeFields.AnimationHolder_CreatorInstanceId) = ~*(uint*)(holder + NativeFields.AnimationHolder_CreatorInstanceId);
             Rewind(root, tree);
             int created = 0;
             foreach (var clip in tree.Havok.Keys)
             {
-                nint instance = *(nint*)(clip + 0x98);
-                nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
+                nint instance = *(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject);
+                nint holder = instance != 0 ? *(nint*)(instance + NativeFields.ClipAnimation_Holder) : 0;
                 if (holder != 0 && !holders.Contains(holder))
                     created++;
             }
@@ -744,14 +745,14 @@ internal sealed unsafe partial class TimelineSeekEngine
         }
         finally
         {
-            *(int*)(root + 0x220) = fade;
+            *(int*)(root + NativeFields.SchedulerTimeline_StopFadeFrames) = fade;
             if (viaPlayInfo)
-                *(int*)(playInfo + 0x38) = blend;
+                *(int*)(playInfo + NativeFields.TimelinePlayInfo_BlendIn) = blend;
             else
             {
-                *(int*)(root + 0x21C) = blend;
+                *(int*)(root + NativeFields.SchedulerTimeline_BlendOverride) = blend;
                 // Rewind rewrites bit 7 of +0x272; only bit 1 goes back.
-                *(byte*)(root + 0x272) = (byte)((*(byte*)(root + 0x272) & ~2) | (flags & 2));
+                *(byte*)(root + NativeFields.SchedulerTimeline_Flags272) = (byte)((*(byte*)(root + NativeFields.SchedulerTimeline_Flags272) & ~2) | (flags & 2));
             }
         }
     }
@@ -761,7 +762,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     /// <summary>The root's play info (vfunc 0x118: root+0x110 while +0x271 bit 6), or 0.</summary>
     public static nint PlayInfo(nint root)
     {
-        var playInfoOf = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)root + 0x118));
+        var playInfoOf = (delegate* unmanaged<nint, nint>)(*(nint*)(*(nint*)root + NativeFields.SchedulerTimeline_VfPlayInfo));
         return playInfoOf(root);
     }
 
@@ -770,9 +771,9 @@ internal sealed unsafe partial class TimelineSeekEngine
     /// a refused holder. The game's finalization doesn't wait on them.</summary>
     private static bool NoPose(nint clip)
     {
-        nint instance = *(nint*)(clip + 0x98);
-        return instance != 0 && (*(int*)(instance + 0x40) == 0 ||
-            (*(nint*)(instance + 0x78) == 0 && *(byte*)(instance + 0x3A) == 1));
+        nint instance = *(nint*)(clip + NativeFields.HavokAnimationClip_AnimObject);
+        return instance != 0 && (*(int*)(instance + NativeFields.ClipAnimation_AnimId) == 0 ||
+            (*(nint*)(instance + NativeFields.ClipAnimation_Holder) == 0 && *(byte*)(instance + NativeFields.ClipAnimation_CreateState) == 1));
     }
 
     /// <summary>
@@ -791,11 +792,11 @@ internal sealed unsafe partial class TimelineSeekEngine
         float remaining = -1f;
         foreach (var clip in Collect(root).Havok.Keys)
         {
-            if ((*(byte*)(clip + 0x10) & 0x80) != 0)
+            if ((*(byte*)(clip + NativeFields.SchedulerClip_State) & 0x80) != 0)
                 continue;
             if (NoPose(clip))
                 continue;
-            var remainingOf = (delegate* unmanaged<nint, float>)(*(nint*)(*(nint*)clip + 0x98));
+            var remainingOf = (delegate* unmanaged<nint, float>)(*(nint*)(*(nint*)clip + NativeFields.HavokAnimationClip_AnimObject));
             remaining = Math.Max(remaining, Math.Max(0f, remainingOf(clip)));
         }
         return remaining;
@@ -814,24 +815,24 @@ internal sealed unsafe partial class TimelineSeekEngine
         if (depth > 4)
             return false;
         bool any = false;
-        nint actor = *(nint*)(timeline + 0x18);
-        for (int a = 0; actor != 0 && a < 32; a++, actor = *(nint*)(actor + 0x20))
+        nint actor = *(nint*)(timeline + NativeFields.SchedulerTimeline_Actors);
+        for (int a = 0; actor != 0 && a < 32; a++, actor = *(nint*)(actor + NativeFields.TmbActor_Next))
         {
-            nint tracks = *(nint*)(actor + 0x28);
-            int trackCount = *(ushort*)(actor + 0x32);
+            nint tracks = *(nint*)(actor + NativeFields.TmbActor_Tracks);
+            int trackCount = *(ushort*)(actor + NativeFields.TmbActor_TrackCount);
             for (int t = 0; tracks != 0 && t < trackCount && t < 64; t++)
             {
                 nint track = *(nint*)(tracks + t * 8);
                 if (track == 0)
                     continue;
                 any = true;
-                byte trackFlags = *(byte*)(track + 0x10);
+                byte trackFlags = *(byte*)(track + NativeFields.TmbTrack_Flags);
                 if ((trackFlags & 0x80) != 0)
                     continue;
                 if ((trackFlags & 1) == 0)
                     return false;
-                nint clips = *(nint*)(track + 0x18);
-                int clipCount = *(ushort*)(track + 0x22);
+                nint clips = *(nint*)(track + NativeFields.TmbTrack_Clips);
+                int clipCount = *(ushort*)(track + NativeFields.TmbTrack_ClipCount);
                 for (int c = 0; clips != 0 && c < clipCount && c < 256; c++)
                 {
                     nint clip = *(nint*)(clips + c * 8);
@@ -845,7 +846,7 @@ internal sealed unsafe partial class TimelineSeekEngine
 
     private bool ClipFinalized(nint clip, int depth)
     {
-        byte flags = *(byte*)(clip + 0x10);
+        byte flags = *(byte*)(clip + NativeFields.SchedulerClip_State);
         if ((flags & 0x80) != 0)
             return true;
         switch (_l.Classify(clip))
@@ -853,10 +854,10 @@ internal sealed unsafe partial class TimelineSeekEngine
             case SeekClipKind.HavokAnimation:
                 return false;
             case SeekClipKind.ChildTimeline:
-                nint node = *(nint*)(clip + 0x140);
-                if (node != 0 && ((*(uint*)(node + 0x84) >> 1) & 1) != 0)
+                nint node = *(nint*)(clip + NativeFields.TimelineClip_SkipNode);
+                if (node != 0 && ((*(uint*)(node + NativeFields.TimelineClipSkipNode_Flags84) >> 1) & 1) != 0)
                     return true;
-                if (*(byte*)(clip + 0x165) != 0)
+                if (*(byte*)(clip + NativeFields.TimelineClip_Skip) != 0)
                     return true;
                 return (flags & 1) != 0 && ChildOf(clip) is var child and not 0 && Finalized(child, depth + 1);
             default:
@@ -917,24 +918,24 @@ internal sealed unsafe partial class TimelineSeekEngine
         // play keeps 1): theirs goes back afterwards.
         var credits = new List<(nint Clip, uint Credit)>();
         foreach (var (c010, _) in tree.C010s)
-            if (!tree.NestedC010s.Contains(c010) && (*(byte*)(c010 + 0x10) & 0x10) != 0)
-                credits.Add((c010, *(uint*)(c010 + 0x7C)));
+            if (!tree.NestedC010s.Contains(c010) && (*(byte*)(c010 + NativeFields.SchedulerClip_State) & 0x10) != 0)
+                credits.Add((c010, *(uint*)(c010 + NativeFields.SchedulerClip_StartCredit)));
         for (int i = tree.C010s.Count - 1; i >= 0; i--)
         {
             var (c010, child) = tree.C010s[i];
-            byte state = *(byte*)(c010 + 0x10);
+            byte state = *(byte*)(c010 + NativeFields.SchedulerClip_State);
             bool active = (state & 0x10) != 0;
             bool ended = (state & 0xC0) != 0;
             if (active ? !tree.NestedC010s.Contains(c010) : !ended)
             {
                 // Never started: only a finished child to undo.
-                if (active || (*(byte*)(child + 0x7C) & 0x40) == 0)
+                if (active || (*(byte*)(child + NativeFields.SchedulerTimeline_ClockFlags) & 0x40) == 0)
                     continue;
-                *(byte*)(child + 0x7C) &= 0xBF;
+                *(byte*)(child + NativeFields.SchedulerTimeline_ClockFlags) &= 0xBF;
                 _n.ProcessAll(child, 9, _l.DefaultPayload);
                 continue;
             }
-            *(byte*)(child + 0x7C) &= 0xBF;
+            *(byte*)(child + NativeFields.SchedulerTimeline_ClockFlags) &= 0xBF;
             _n.ProcessAll(child, 9, _l.DefaultPayload);
             var event10 = (delegate* unmanaged<nint, int, void>)(*(nint*)(*(nint*)c010 + 47 * 8));
             event10(c010, 0);
@@ -943,11 +944,11 @@ internal sealed unsafe partial class TimelineSeekEngine
         _n.SetCurrentTime(root, 0f);
         _n.ActivateClips(root, 4);
         bool handled = _n.ProcessPending(root, 0x11) != 0;
-        *(byte*)(root + 0x272) = (byte)((handled ? 0 : 0x80) | (*(byte*)(root + 0x272) & 0x7F));
+        *(byte*)(root + NativeFields.SchedulerTimeline_Flags272) = (byte)((handled ? 0 : 0x80) | (*(byte*)(root + NativeFields.SchedulerTimeline_Flags272) & 0x7F));
         if (handled)
             _n.ProcessAll(root, 0x12, _l.DefaultPayload);
         foreach (var (clip, credit) in credits)
-            *(uint*)(clip + 0x7C) = credit;
+            *(uint*)(clip + NativeFields.SchedulerClip_StartCredit) = credit;
     }
 
 }

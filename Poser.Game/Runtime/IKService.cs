@@ -12,6 +12,7 @@ using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
 using Poser.Domain.Posing;
 using Poser.Game.Core;
 using Poser.Game.Entities;
+using Poser.Game.Natives;
 
 namespace Poser.Game;
 
@@ -466,39 +467,39 @@ public unsafe class IKService : IDisposable
     [StructLayout(LayoutKind.Explicit, Size = 0x18)]
     private struct hkaCCDSolver
     {
-        [FieldOffset(0x0)] public nint vtbl;
-        [FieldOffset(0x10)] public uint Iterations;
-        [FieldOffset(0x14)] public float Gain;
+        [FieldOffset(NativeFields.HkaCcdSolver_Vtbl)] public nint vtbl;
+        [FieldOffset(NativeFields.HkaCcdSolver_Iterations)] public uint Iterations;
+        [FieldOffset(NativeFields.hkaCCDSolver_Gain)] public float Gain;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 0x20)]
     private struct CCDIKConstraint
     {
-        [FieldOffset(0x0)] public short StartBone;
-        [FieldOffset(0x2)] public short EndBone;
-        [FieldOffset(0x10)] public hkVector4f Target;
+        [FieldOffset(NativeFields.HkaCcdConstraint_StartBone)] public short StartBone;
+        [FieldOffset(NativeFields.CCDIKConstraint_EndBone)] public short EndBone;
+        [FieldOffset(NativeFields.CCDIKConstraint_Target)] public hkVector4f Target;
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 0x82)]
     private struct TwoJointIKSetup
     {
-        [FieldOffset(0x00)] public short FirstJointIdx;
-        [FieldOffset(0x02)] public short SecondJointIdx;
-        [FieldOffset(0x04)] public short EndBoneIdx;
-        [FieldOffset(0x06)] public short FirstJointTwistIdx;
-        [FieldOffset(0x08)] public short SecondJointTwistIdx;
-        [FieldOffset(0x10)] public Vector4 HingeAxisLS;
-        [FieldOffset(0x20)] public float CosineMaxHingeAngle;
-        [FieldOffset(0x24)] public float CosineMinHingeAngle;
-        [FieldOffset(0x28)] public float FirstJointIkGain;
-        [FieldOffset(0x2C)] public float SecondJointIkGain;
-        [FieldOffset(0x30)] public float EndJointIkGain;
-        [FieldOffset(0x40)] public Vector4 EndTargetMS;
-        [FieldOffset(0x50)] public Quaternion EndTargetRotationMS;
-        [FieldOffset(0x60)] public Vector4 EndBoneOffsetLS;
-        [FieldOffset(0x70)] public Quaternion EndBoneRotationOffsetLS;
-        [FieldOffset(0x80)] public bool EnforceEndPosition;
-        [FieldOffset(0x81)] public bool EnforceEndRotation;
+        [FieldOffset(NativeFields.HkaTwoJointsSetup_FirstJointIdx)] public short FirstJointIdx;
+        [FieldOffset(NativeFields.TwoJointIKSetup_SecondJointIdx)] public short SecondJointIdx;
+        [FieldOffset(NativeFields.TwoJointIKSetup_EndBoneIdx)] public short EndBoneIdx;
+        [FieldOffset(NativeFields.TwoJointIKSetup_FirstJointTwistIdx)] public short FirstJointTwistIdx;
+        [FieldOffset(NativeFields.TwoJointIKSetup_SecondJointTwistIdx)] public short SecondJointTwistIdx;
+        [FieldOffset(NativeFields.TwoJointIKSetup_HingeAxisLS)] public Vector4 HingeAxisLS;
+        [FieldOffset(NativeFields.TwoJointIKSetup_CosineMaxHingeAngle)] public float CosineMaxHingeAngle;
+        [FieldOffset(NativeFields.TwoJointIKSetup_CosineMinHingeAngle)] public float CosineMinHingeAngle;
+        [FieldOffset(NativeFields.TwoJointIKSetup_FirstJointIkGain)] public float FirstJointIkGain;
+        [FieldOffset(NativeFields.TwoJointIKSetup_SecondJointIkGain)] public float SecondJointIkGain;
+        [FieldOffset(NativeFields.TwoJointIKSetup_EndJointIkGain)] public float EndJointIkGain;
+        [FieldOffset(NativeFields.TwoJointIKSetup_EndTargetMS)] public Vector4 EndTargetMS;
+        [FieldOffset(NativeFields.TwoJointIKSetup_EndTargetRotationMS)] public Quaternion EndTargetRotationMS;
+        [FieldOffset(NativeFields.TwoJointIKSetup_EndBoneOffsetLS)] public Vector4 EndBoneOffsetLS;
+        [FieldOffset(NativeFields.TwoJointIKSetup_EndBoneRotationOffsetLS)] public Quaternion EndBoneRotationOffsetLS;
+        [FieldOffset(NativeFields.TwoJointIKSetup_EnforceEndPosition)] public bool EnforceEndPosition;
+        [FieldOffset(NativeFields.TwoJointIKSetup_EnforceEndRotation)] public bool EnforceEndRotation;
 
         public TwoJointIKSetup()
         {

@@ -62,7 +62,7 @@ public sealed unsafe partial class TimelineSeekService
             // A character with a pending restore counts even if Poser's list dropped
             // it for a moment: the game is calling this on a live object.
             if (character != 0 && (_managed.Contains(character) || _restores.ContainsKey(character))
-                && (*(byte*)(character + 0x9A) & 0x80) != 0)
+                && (*(byte*)(character + NativeFields.Character_DrawFlags9A) & 0x80) != 0)
                 Capture(character);
         }
         catch
@@ -74,7 +74,7 @@ public sealed unsafe partial class TimelineSeekService
 
     private void Capture(nint character)
     {
-        if ((*(byte*)(character + 0x1CE8) & 0x10) != 0)
+        if ((*(byte*)(character + NativeFields.Character_TimelineFlags1CE8) & 0x10) != 0)
             return; // scheduler-driven actor: its scheduler replays it
         // A redraw during a pending restore (redraws mashed) would capture the
         // transient base timeline: keep the first capture, but start its replay

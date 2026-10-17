@@ -624,6 +624,12 @@ internal static class NativeSignatures
     public const string EventGPoseController_RecordNeedsReplay = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 41 54 41 55 41 56 41 57 48 83 EC 20 4C 8B F1 48 8B DA";
     /// <summary>EventGPoseController.ReplayRecordEmote (0x140B12120 on the analysed build).</summary>
     public const string EventGPoseController_ReplayRecordEmote = "66 45 85 C0 0F 84 ?? ?? ?? ?? 48 89 6C ?? ?? 56";
+    /// <summary>SchedulerHandle.Free (0x1418C8FE0 on the analysed build).</summary>
+    public const string SchedulerHandle_Free = "48 89 74 ?? ?? 57 48 83 EC 20 48 8B 05 ?? ?? ?? ?? 48 8B F2 48 8B B8 B0 00 00 00";
+    /// <summary>TimelineGroup.TeardownTimeline (0x141C005B0 on the analysed build).</summary>
+    public const string TimelineGroup_TeardownTimeline = "40 53 48 83 EC 20 0F B6 81 72 02 00 00";
+    /// <summary>SchedulerTimeline.Destroy (0x141C01280 on the analysed build).</summary>
+    public const string SchedulerTimeline_Destroy = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 8B F2 48 89 ?? 48 8B D9 E8";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
@@ -892,6 +898,10 @@ internal static class NativeOffsets
     public static readonly OffsetPattern GPoseActorRecord_Id = new("GPoseActorRecord.Id", "8B 47 ?? 8B C8 89 44", 2, 1, 0x14);
     public static readonly OffsetPattern EventGPoseController_ReplayFlags = new("EventGPoseController.ReplayFlags", "F6 87 ?? ?? ?? ?? 01 74 ?? 48 8D 9F 40 32 00 00", 2, 4, 0x3589);
     public static readonly OffsetPattern EventGPoseController_ActorListRecordIndex = new("EventGPoseController.ActorListRecordIndex", "48 8D 9F ?? ?? ?? ?? 0F 1F 84 00 00 00 00 00 48 8B 6B F8", 3, 4, 0x3240);
+    public static readonly OffsetPattern AnimationHolder_BlendGroup = new("AnimationHolder.BlendGroup", "0F BE 4F ?? E8 ?? ?? ?? ?? 66 0F 6E F0", 3, 1, 0x4C);
+    public static readonly OffsetPattern ActionTimelineSequencer_QueuedFirst = new("ActionTimelineSequencer.QueuedFirst", "66 89 91 ?? ?? ?? ?? 8B C3", 3, 4, 0x150);
+    public static readonly OffsetPattern ActionTimelineSequencer_QueueIndex = new("ActionTimelineSequencer.QueueIndex", "89 87 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 75 ?? 48 8B 5C", 2, 4, 0x1DC);
+    public static readonly OffsetPattern hkaDefaultAnimationControl_PlaybackSpeed = new("hkaDefaultAnimationControl.PlaybackSpeed", "F3 0F 59 5B ?? 8B EF", 4, 1, 0x5C);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)
@@ -950,6 +960,9 @@ internal static class NativeData
     public static readonly DataPattern EmoteController_CPoseTable = new("EmoteController.CPoseTable", "4C 8D 05 ?? ?? ?? ?? 48 C1 E2 05 42 3A 74", 3, 7, 0x142179C70UL);
     public static readonly DataPattern EmoteController_PlayEmoteOptionVtbl = new("EmoteController.PlayEmoteOptionVtbl", "48 8D 05 ?? ?? ?? ?? 33 FF 44 0F B6 C2", 3, 7, 0x142179E00UL);
     public static readonly DataPattern TimelinePlayParams_Vtbl = new("TimelinePlayParams.Vtbl", "48 8D 05 ?? ?? ?? ?? F3 0F 10 05 ?? ?? ?? ?? 4D 8B F0", 3, 7, 0x142179D98UL);
+    public static readonly DataPattern BlendTable_Rows = new("BlendTable.Rows", "48 8B 05 ?? ?? ?? ?? 48 8B 0C D0 48 85 C9 74 ?? 41 83 F8 04", 3, 7, 0x142A97950UL);
+    public static readonly DataPattern BlendTable_Index = new("BlendTable.Index", "48 8B 05 ?? ?? ?? ?? 03 CA 48 63 C9 0F B6 14 01 48 8B 05 ?? ?? ?? ?? 48 8B 0C D0", 3, 7, 0x142A97958UL);
+    public static readonly DataPattern BlendTable_GroupCount = new("BlendTable.GroupCount", "0F AF 0D ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 03 CA 48 63 C9 0F B6 14 01 48 8B 05 ?? ?? ?? ?? 48 8B 0C D0", 3, 7, 0x142A97960UL);
 
     /// <summary>Address the instruction refers to: match + InstructionLength + rel32. A value different from
     /// <see cref="DataPattern.Analysed"/> is normal after a patch.</summary>

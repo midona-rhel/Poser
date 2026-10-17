@@ -25,7 +25,7 @@ public sealed unsafe partial class TimelineSeekService
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
         if (root == 0 || TimelineState.Of(root).Speed != 0f)
             return;
-        *(uint*)(root + 0x220) = 0;
+        *(uint*)(root + NativeFields.SchedulerTimeline_StopFadeFrames) = 0;
         _engine.SetNoBlendStart(root);
     }
 
@@ -124,7 +124,7 @@ public sealed unsafe partial class TimelineSeekService
             nint address = (nint)character;
             if (overall != 1f)
                 _engine.SetStatusVfxSpeed(address, overall);
-            bool mounted = *(ushort*)(address + 0x688) != 0 && !slotSpeeds.ContainsKey(0);
+            bool mounted = *(ushort*)(address + NativeFields.Character_MountId) != 0 && !slotSpeeds.ContainsKey(0);
             if (mounted)
                 _engine.SetSlotTimelineSpeed(&character->Timeline.TimelineSequencer, 0, overall);
             _actorHeld[address] = (_tick, mounted);
@@ -153,7 +153,7 @@ public sealed unsafe partial class TimelineSeekService
             // speed natively (FUN_1408BDB50): slot 0 from its right source (the
             // rider's +0x5E8, or the mount's), the other slots, props, model
             // effects and every status effect.
-            *((byte*)&((Character*)address)->Timeline + 0x34E) |= 4;
+            *((byte*)&((Character*)address)->Timeline + NativeFields.TimelineContainer_Flags3) |= 4;
         }
     }
 

@@ -73,11 +73,11 @@ public sealed unsafe partial class TimelineSeekService
                 foreach (var clip in tree.WeaponRequests)
                 {
                     // Started (+0x88 bit 4) and still active (+0x10 bit 4).
-                    if ((*(byte*)(clip + 0x88) & 0x10) == 0 || (*(byte*)(clip + 0x10) & 0x10) == 0)
+                    if ((*(byte*)(clip + NativeFields.SchedulerClip_Flags88) & 0x10) == 0 || (*(byte*)(clip + NativeFields.SchedulerClip_State) & 0x10) == 0)
                         continue;
-                    nint data = *(nint*)(clip + 0x48);
-                    int group = *(ushort*)(data + 0x14);
-                    ulong model = *(ulong*)(data + 0x18);
+                    nint data = *(nint*)(clip + NativeFields.SchedulerClip_Data);
+                    int group = *(ushort*)(data + NativeFields.C198Data_Group);
+                    ulong model = *(ulong*)(data + NativeFields.C198Data_Model);
                     // Slots ascend, so a later (higher) layer overrides.
                     if (group == 0) { group0 = model; owner0 = slot; }
                     else if (group == 1) { group1 = model; owner1 = slot; }
@@ -86,18 +86,18 @@ public sealed unsafe partial class TimelineSeekService
                 // A C043 Summon Weapon of type 8 asks for a group-0 prop the same way.
                 foreach (var clip in tree.SummonWeapons)
                 {
-                    if ((*(byte*)(clip + 0x88) & 0x10) == 0 || (*(byte*)(clip + 0x10) & 0x10) == 0)
+                    if ((*(byte*)(clip + NativeFields.SchedulerClip_Flags88) & 0x10) == 0 || (*(byte*)(clip + NativeFields.SchedulerClip_State) & 0x10) == 0)
                         continue;
-                    nint data = *(nint*)(clip + 0x48);
-                    if (*(int*)(data + 0xC) != 8)
+                    nint data = *(nint*)(clip + NativeFields.SchedulerClip_Data);
+                    if (*(int*)(data + NativeFields.C043Data_RequestType) != 8)
                         continue;
-                    group0 = *(ulong*)(data + 0x10);
+                    group0 = *(ulong*)(data + NativeFields.C043Data_Model);
                     owner0 = slot;
                 }
                 foreach (var clip in tree.Invisibilities)
                     fades.Add((slot, clip));
                 foreach (var (clip, _) in tree.Summons)
-                    if ((*(byte*)(clip + 0x10) & 0x10) != 0)
+                    if ((*(byte*)(clip + NativeFields.SchedulerClip_State) & 0x10) != 0)
                         summons.Add((slot, clip, TimelineSeekEngine.PropWeaponSlot(clip)));
             }
             if (control != 0 && (group0 != 0 || group1 != 0))
@@ -108,7 +108,7 @@ public sealed unsafe partial class TimelineSeekService
             // prop was gone once the higher layer ended. Re-armed each tick.
             foreach (var (slot, clip, group) in requests)
                 if (slot < (group == 0 ? owner0 : owner1))
-                    *(byte*)(clip + 0xA4) = 0;
+                    *(byte*)(clip + NativeFields.C198_ModelSeen) = 0;
             MaskLowerFades(character, fades, owner0, liveFades);
             fadeOwners[character] = (roots, owner0);
         }
@@ -121,7 +121,7 @@ public sealed unsafe partial class TimelineSeekService
             if (_maskWanted.Contains(clip))
                 continue;
             if (liveFades.Contains(clip))
-                *(byte*)(clip + 0xD3) |= _maskedFades[clip];
+                *(byte*)(clip + NativeFields.C094_SlotMask) |= _maskedFades[clip];
             _maskedFades.Remove(clip);
         }
         _maskWanted.Clear();
@@ -174,14 +174,14 @@ public sealed unsafe partial class TimelineSeekService
             if (owner0 < 0 || slot >= owner0)
                 continue;
             _maskWanted.Add(clip);
-            if ((*(byte*)(clip + 0xD3) & PropSlotBit) == 0)
+            if ((*(byte*)(clip + NativeFields.C094_SlotMask) & PropSlotBit) == 0)
                 continue;
-            *(byte*)(clip + 0xD3) &= unchecked((byte)~PropSlotBit);
+            *(byte*)(clip + NativeFields.C094_SlotMask) &= unchecked((byte)~PropSlotBit);
             _maskedFades[clip] = PropSlotBit;
-            // FUN_1408B0B00(ddc = chara+0x6F8, slot, alpha): slot 2's alpha at
+            // FUN_1408B0B00(ddc = &chara->DrawData, slot, alpha): slot 2's alpha at
             // ddc + 2·0x70 + 0x68. Stored, not multiplied: a higher layer's own
             // active C094 writes over it the same tick.
-            *(float*)(character + 0x6F8 + 2 * 0x70 + 0x68) = 1f;
+            *(float*)((byte*)&((Character*)character)->DrawData + 2 * 0x70 + NativeFields.DrawDataContainer_SlotAlpha) = 1f;
             LogOnce($"fademask:{clip}", $"[TimelineSeek] slot {slot}'s fade no longer reaches slot {owner0}'s prop");
         }
     }
@@ -202,8 +202,8 @@ public sealed unsafe partial class TimelineSeekService
                 _fadeThreadLogged = true;
                 _log.Information($"[TimelineSeek] C094 mask runs on the framework thread: {_framework.IsInFrameworkUpdateThread}");
             }
-            nint root = clip != 0 ? *(nint*)(clip + 0x38) : 0;
-            if (root != 0 && (*(byte*)(clip + 0xD3) & (1 << 3)) != 0)
+            nint root = clip != 0 ? *(nint*)(clip + NativeFields.SchedulerClip_RootTimeline) : 0;
+            if (root != 0 && (*(byte*)(clip + NativeFields.C094_SlotMask) & (1 << 3)) != 0)
                 foreach (var (roots, owner0) in _fadeOwners.Values)
                 {
                     int slot = Array.IndexOf(roots, root);
@@ -211,7 +211,7 @@ public sealed unsafe partial class TimelineSeekService
                         continue;
                     if (owner0 > slot)
                     {
-                        *(byte*)(clip + 0xD3) &= unchecked((byte)~(1 << 3));
+                        *(byte*)(clip + NativeFields.C094_SlotMask) &= unchecked((byte)~(1 << 3));
                         _maskedFades[clip] = 1 << 3;
                         _maskWanted.Add(clip);
                     }
@@ -307,9 +307,9 @@ public sealed unsafe partial class TimelineSeekService
     {
         if (wanted == 0)
             return;
-        if (*(uint*)(control + 0x718 + (8 + group * 9) * 4) == 0)
+        if (*(uint*)(control + NativeFields.ActorControl_WeaponRequestCount + (8 + group * 9) * 4) == 0)
             return; // nobody requests this group any more
-        ulong* model = (ulong*)(control + 0xF8 + group * 8);
+        ulong* model = (ulong*)(control + NativeFields.ActorControl_RequestedModel + group * 8);
         if (*model != wanted)
             *model = wanted;
     }
@@ -331,7 +331,7 @@ public sealed unsafe partial class TimelineSeekService
                 var key = (character, w);
                 nint weapon = TimelineSeekEngine.WeaponAt(character, w);
                 nint group = _engine.PropGroup(weapon);
-                nint current = group == 0 ? 0 : *(nint*)(group + 0xA48) is var h and not 0 ? *(nint*)h : 0;
+                nint current = group == 0 ? 0 : *(nint*)(group + NativeFields.TimelineGroup_CurrentHandle) is var h and not 0 ? *(nint*)h : 0;
                 _propTimelines.TryGetValue(key, out var last);
                 if (current == last)
                     continue;
