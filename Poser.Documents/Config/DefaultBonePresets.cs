@@ -17,7 +17,7 @@ public static class DefaultBonePresets
 {
     /// <summary>Bumped when a stock list changes; the seed then replaces
     /// the stock presets by name.</summary>
-    public const int Version = 5;
+    public const int Version = 7;
 
     public static IReadOnlyList<BoneVisibilityPreset> Build() =>
     [
@@ -28,6 +28,8 @@ public static class DefaultBonePresets
         Preset("Hands", Own("LeftHand"), Own("LeftHandIvcs"), Own("RightHand"), Own("RightHandIvcs")),
         Preset("Legs", Own("LeftLeg"), Own("RightLeg"), Own("CustomLegs")),
         Preset("Feet", Own("LeftFoot"), Own("LeftFootIvcs"), Own("RightFoot"), Own("RightFootIvcs")),
+        // The playable races' tail chain (Miqo'te, Au Ra, Hrothgar); not the creature j_tail.
+        Preset("Tail", ["n_sippo_a", "n_sippo_b", "n_sippo_c", "n_sippo_d", "n_sippo_e"]),
         Preset("Breasts", Own("Breasts"), Own("BreastsIvcs")),
         Preset("Privates", Own("GenitalsIvcs"), Own("PenisIvcs"), Own("VaginaIvcs"), Own("BottomIvcs")),
     ];

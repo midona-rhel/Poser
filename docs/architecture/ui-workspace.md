@@ -63,6 +63,10 @@ Default remains immutable. Map/list context actions share the same draft;
 removing a subtree changes only layout entries, never the actor's skeleton.
 Background selection is saved with the preset but replaces only illustration
 pixels; it never changes coordinates or imports another race's bone list.
+Auto keeps the map's own art (the Body page's five pictures, the Face page's
+race head); any single pose picture (Body, Armor, Hands, Tail, Toes or one of the
+four heads) can back either kind of map, drawn once across the map area with its
+own proportions kept and centred; None draws no art.
 Built-in Body and race/ear-specific Face templates have stable reserved IDs.
 Copies retain their base template (coordinate space and reset baseline).
 Automatic map selection resolves a separate Body/Face assignment for race and
