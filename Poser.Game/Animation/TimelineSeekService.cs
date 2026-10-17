@@ -1000,7 +1000,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // cross the end before the next check, so wrap one step early.
     private const float LoopLeadSteps = 2f;
 
-    // A loop whose row has no pre-end lead (a one-shot never made to loop) wraps this
+    // A loop whose row has no pre-end lead, or a lead of 0 (a one-shot never made to loop), wraps this
     // many frames before its end with a crossfade of the same length, the game's seam
     // between emote rows: at the end itself its controls are already parked on the
     // last frame, and a cut snaps to the first. (The game's own length for a row pair
@@ -1172,13 +1172,16 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (!(end > begin))
                 end = begin + TimelineState.Of(root).Length;
             nint playInfo = TimelineSeekEngine.PlayInfo(root);
-            bool armed = lead >= 0 && playInfo != 0 && *(int*)(playInfo + 0x30) != -1;
+            // A lead of 0 (the switch at the very end) is no seam either: the lead only
+            // says when the game switches, not how long it blends.
+            bool hasLead = lead > 0;
+            bool armed = hasLead && playInfo != 0 && *(int*)(playInfo + 0x30) != -1;
             float remaining = armed ? _engine.Remaining(root) : -1f;
-            int blend = lead >= 0 ? lead : NoLeadLoopBlendFrames;
+            int blend = hasLead ? lead : NoLeadLoopBlendFrames;
             // Nothing runs past its own end, and a timeline whose every clip is done
             // ends on its next Advance (finalization). Without a lead the seam is the
             // blend's length before the end.
-            bool atEnd = TimelineState.Of(root).Clock + frames * speed * LoopLeadSteps >= end - Math.Max(1f, lead >= 0 ? 1f : blend)
+            bool atEnd = TimelineState.Of(root).Clock + frames * speed * LoopLeadSteps >= end - (hasLead ? 1f : blend)
                 || _engine.Finalized(root);
             if (!atEnd && remaining >= 0f)
             {
