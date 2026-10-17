@@ -23,10 +23,19 @@ internal interface IPhysicsPatchNative
 
 internal sealed class DalamudPhysicsPatchNative : IPhysicsPatchNative
 {
-    public bool TryScanFreezeSite(ISigScanner scanner, out nint address) =>
-        Poser.Game.Natives.NativeCode.TryFindSite(scanner,
-            Poser.Game.Natives.NativeSignatures.PartialSkeleton_SetBoneModelSpace,
-            PhysicsFreezePatcher.FreezeSiteOffset, PhysicsFreezePatcher.FreezeSiteBytes, out address);
+    public bool TryScanFreezeSite(ISigScanner scanner, out nint address)
+    {
+        // The site bytes start at region 2, so both regions are checked; the
+        // address handed back is region 1's.
+        address = 0;
+        if (!Poser.Game.Natives.NativeCode.TryFindSite(scanner,
+                Poser.Game.Natives.NativeSignatures.PartialSkeleton_SetBoneModelSpace,
+                PhysicsFreezePatcher.FreezeSiteOffset - PhysicsFreezePatcher.Region2Offset,
+                PhysicsFreezePatcher.FreezeSiteBytes, out var site))
+            return false;
+        address = site + PhysicsFreezePatcher.Region2Offset;
+        return true;
+    }
 
     public byte[] ReadRaw(nint address, int length) => MemoryHelper.ReadRaw(address, length);
 
@@ -55,19 +64,19 @@ internal sealed class DalamudPhysicsPatchNative : IPhysicsPatchNative
 /// </summary>
 internal sealed class PhysicsFreezePatcher : IDisposable
 {
-    // The physics write in PartialSkeleton.SetBoneModelSpace (patchcheck
-    // PartialSkeleton.SetBoneModelSpace+0x34F; Anamnesis' SkeletonFreezePhysics
-    // site, used by Brio). Its first four bytes ARE region 1's instruction:
+    // Region 1, the physics write in PartialSkeleton.SetBoneModelSpace
+    // (function+0x34F; Anamnesis' SkeletonFreezePhysics site, used by Brio):
     // movups [rax+0x10], xmm1.
     internal const int FreezeSiteOffset = NativeFields.PartialSkeleton_SetBoneModelSpace_FreezeSite;
-    internal const string FreezeSiteBytes = "0F 11 48 10 41 0F 10 44 24 ?? 0F 11 40 20 48 8B 46 28";
 
-    // Region 2 sits 0x9 bytes before the match: a 3-byte movups store in the
-    // same physics write sequence (Brio/SimpleTweaks provenance). Its opcode
-    // (0F 11) is pinned; the third byte is the ModRM operand byte, which is
-    // not proven by the signature, so it is captured at startup rather than
-    // hard-coded.
-    private const int Region2Offset = NativeFields.PartialSkeleton_SetBoneModelSpace_FreezeRegion2;
+    // Region 2 sits 0x9 bytes before region 1: a 3-byte movups store in the
+    // same physics write sequence (Brio/SimpleTweaks provenance). Its ModRM
+    // byte is captured at startup rather than pinned.
+    internal const int Region2Offset = NativeFields.PartialSkeleton_SetBoneModelSpace_FreezeRegion2;
+
+    // From region 2 (function+0x346): movups [rax],xmm0; movups xmm1,[r12+..];
+    // region 1; and the rest of the write sequence.
+    internal const string FreezeSiteBytes = "0F 11 ?? 41 0F 10 4C 24 ?? 0F 11 48 10 41 0F 10 44 24 ?? 0F 11 40 20 48 8B 46 28";
 
     private static readonly byte[] ExpectedRegion1 = [0x0F, 0x11, 0x48, 0x10];
     private static readonly byte[] NopRegion1 = [0x90, 0x90, 0x90, 0x90];
