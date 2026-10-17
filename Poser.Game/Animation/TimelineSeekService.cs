@@ -116,6 +116,11 @@ public sealed unsafe class TimelineSeekService : IDisposable
         // window; the object index and entity id must match too.
         public readonly ushort ObjectIndex;
         public readonly uint EntityId;
+        // The mode the actor had: replaying a row with the Pause flag (the idle
+        // has it) switches the actor to an emote loop with no emote, and the next
+        // redraw then never starts a base timeline or shows the actor.
+        public readonly CharacterModes Mode;
+        public readonly uint ModeParam;
         public bool Replayed;
         public bool SpeedLogged;
         public int Frame;
@@ -127,12 +132,15 @@ public sealed unsafe class TimelineSeekService : IDisposable
             Array.Clear(Done);
             Frame = 0;
         }
-        public Restore((int, ushort, float)[] slots, ushort objectIndex, uint entityId)
+        public Restore((int, ushort, float)[] slots, ushort objectIndex, uint entityId,
+            CharacterModes mode, uint modeParam)
         {
             Slots = slots;
             Done = new bool[slots.Length];
             ObjectIndex = objectIndex;
             EntityId = entityId;
+            Mode = mode;
+            ModeParam = modeParam;
         }
     }
 
@@ -762,7 +770,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
         }
         var go = (CSGameObject*)character;
         if (slots.Count > 0)
-            _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId);
+            _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId,
+                ((Character*)character)->Mode, AnimationNativeState.ReadModeParam((Character*)character));
     }
 
     /// <summary>
@@ -816,6 +825,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     if (!played.Success)
                         LogOnce($"restore-play:{id}", $"[TimelineSeek] redraw restore could not replay {id}: {played.Detail}");
                 }
+                // The actor leaves the redraw in the mode it entered it with.
+                chara->Mode = restore.Mode;
+                AnimationNativeState.WriteModeParam(chara, restore.ModeParam);
                 restore.Replayed = true;
                 continue;
             }
