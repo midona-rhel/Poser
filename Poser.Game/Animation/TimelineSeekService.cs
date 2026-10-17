@@ -112,6 +112,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private sealed class Restore
     {
         public readonly (int Slot, ushort Id, float Clock)[] Slots;
+        // Slot 0's loop queued behind the intro it was caught on, or 0.
+        public ushort QueuedLoop;
         public readonly bool[] Done;
         // The address alone can be reused by a new object within the restore
         // window; the object index and entity id must match too.
@@ -789,11 +791,15 @@ public sealed unsafe class TimelineSeekService : IDisposable
             // starts its Base again, and its draw never finishes without one.
             slots.Add((slot, id, state.Loaded ? state.Clock : TimelineState.Of(timeline).Exists ? state.Begin : 0f));
         }
+        ushort queuedLoop = AnimationNativeState.QueuedLoopBehindIntro(sequencer);
         var go = (CSGameObject*)character;
-        _log.Debug($"[TimelineSeek] redraw capture mode {((Character*)character)->Mode}/{((Character*)character)->ModeParam}: "
+        _log.Debug($"[TimelineSeek] redraw capture mode {((Character*)character)->Mode}/{((Character*)character)->ModeParam} queued {AnimationNativeState.QueuedLoopBehindIntro(sequencer)}: "
             + string.Join(", ", slots.Select(x => $"slot {x.Item1} row {x.Item2} at {x.Item3:0.#}")));
         if (slots.Count > 0)
-            _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId);
+            _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId)
+            {
+                QueuedLoop = queuedLoop,
+            };
     }
 
     // TimelineContainer +0x2C3 bit 0 (patchcheck TimelineContainer.DrawnFlags): cleared by
@@ -841,7 +847,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 nint noBlend = 0;
                 foreach (var (slot, id, _) in restore.Slots)
                 {
-                    var played = _native.ReplayTimeline(chara, id);
+                    var played = slot == 0 && restore.QueuedLoop != 0
+                        ? _native.ReplayIntro(chara, id, restore.QueuedLoop)
+                        : _native.ReplayTimeline(chara, id);
                     if (!played.Success)
                         LogOnce($"restore-play:{id}", $"[TimelineSeek] redraw restore could not replay {id}: {played.Detail}");
                     else if (noBlend == 0)

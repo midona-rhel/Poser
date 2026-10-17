@@ -134,6 +134,18 @@ public sealed unsafe partial class AnimationNativeState
     internal static ushort QueuedId(ActionTimelineSequencer* sequencer) =>
         *(ushort*)((byte*)sequencer + 0x152);
 
+    /// <summary>
+    /// Slot 0 caught on an intro with its loop queued behind it (ActionTimelineSequencer
+    /// queue: +0x150 first, +0x152 second, +0x1DC the entry playing, 0 the first): the
+    /// loop row, or 0.
+    /// </summary>
+    internal static ushort QueuedLoopBehindIntro(ActionTimelineSequencer* sequencer)
+    {
+        byte* seq = (byte*)sequencer;
+        ushort first = *(ushort*)(seq + 0x150), second = *(ushort*)(seq + 0x152);
+        return *(int*)(seq + 0x1DC) == 0 && second != 0 && RequestedId(sequencer, 0) == first ? second : (ushort)0;
+    }
+
     /// <summary>The slot's live SchedulerTimeline, or 0.</summary>
     internal static nint SlotTimeline(ActionTimelineSequencer* sequencer, int slot)
     {
@@ -412,6 +424,21 @@ public sealed unsafe partial class AnimationNativeState
     /// <summary>A row played again as it was (a redraw's replay): the mode stays.</summary>
     internal Outcome ReplayTimeline(Character* character, ushort timeline) =>
         Play(character, timeline, leaveLoop: false);
+
+    /// <summary>An intro played again with its loop queued behind it, as the game queues
+    /// an emote (TimelineContainer::PlayActionTimeline): a redraw clears the queue, and
+    /// the intro alone left nothing to play after it.</summary>
+    internal Outcome ReplayIntro(Character* character, ushort intro, ushort loop)
+    {
+        if (_playActionTimeline == null)
+            return Outcome.Fail("Timeline playback is unavailable.");
+        WithUpperKept(intro, () =>
+        {
+            _playActionTimeline(&character->Timeline, intro, loop, nint.Zero);
+            return true;
+        });
+        return Outcome.Ok();
+    }
 
     private Outcome Play(Character* character, ushort timeline, bool leaveLoop)
     {
