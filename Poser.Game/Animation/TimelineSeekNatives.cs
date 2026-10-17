@@ -54,11 +54,11 @@ internal sealed unsafe class TimelineSeekNatives
 
     // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x1418FE4A0).
     private const string SchedulerTimeline_Stop =
-        "40 53 55 57 48 83 EC 20 40 32 FF 48 89 74 24 40 4C 89 74 24 48 4D 8B F0 8B EA 48 8B D9 83 FA 09";
+        Poser.Game.Natives.NativeSignatures.SchedulerTimeline_StopAllClips;
 
     // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x140433DD0).
     private const string CharacterBase_SetModelVfxSpeed =
-        "40 53 48 83 EC 30 8B 81 9C 00 00 00 48 8B 99 B0 00 00 00 0F 29 74 24 20 0F 28 F1";
+        Poser.Game.Natives.NativeSignatures.CharacterBase_SetModelVfxSpeed;
 
     /// <summary>VfxData.SetSpeed 0x140390830(vd, speed): a status/aura effect's
     /// speed (wrapper vd+0x1B8). Optional: only the pause of status effects needs it.</summary>

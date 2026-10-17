@@ -77,7 +77,11 @@ internal static class ServiceRegistration
         services.AddSingleton(framework);
         services.AddSingleton(objectTable);
         services.AddSingleton(sigScanner);
-        services.AddSingleton(gameInterop);
+        // Every hook Poser makes goes through the ledger, which the native check reads.
+        var hookLedger = new Game.Natives.HookLedger(gameInterop);
+        services.AddSingleton(hookLedger);
+        services.AddSingleton<IGameInteropProvider>(hookLedger);
+        services.AddSingleton<Application.Diagnostics.INativeHealth, Game.Natives.NativeHealthCheck>();
         services.AddSingleton(commandManager);
         services.AddSingleton(dataManager);
         services.AddSingleton(keyState);

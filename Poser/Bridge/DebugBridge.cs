@@ -887,6 +887,29 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/history":
                 return Json(History());
+            case "/natives":
+            {
+                // The native check: ?recheck=1 runs it again; ?all=1 lists every row,
+                // otherwise only the ones that aren't ok (plus the counts).
+                var health = (global::Poser.Application.Diagnostics.INativeHealth?)_services.GetService(
+                    typeof(global::Poser.Application.Diagnostics.INativeHealth));
+                if (health == null)
+                    return Json(new { error = "no native check" });
+                if (query.GetValueOrDefault("recheck") == "1")
+                    health.Recheck();
+                var report = health.Report;
+                bool all = query.GetValueOrDefault("all") == "1";
+                return Json(new
+                {
+                    checkedAt = report.CheckedAt.ToString("HH:mm:ss"),
+                    report.Complete,
+                    counts = report.Rows.GroupBy(r => r.State.ToString()).ToDictionary(g => g.Key, g => g.Count()),
+                    groups = report.Rows.GroupBy(r => r.Group).ToDictionary(g => g.Key,
+                        g => g.GroupBy(r => r.State.ToString()).ToDictionary(x => x.Key, x => x.Count())),
+                    rows = report.Rows.Where(r => all || r.State is not (global::Poser.Application.Diagnostics.NativeHealthState.Ok
+                        or global::Poser.Application.Diagnostics.NativeHealthState.Unchecked)),
+                });
+            }
             case "/testlight":
             {
                 if (query.GetValueOrDefault("spawn") == "1")

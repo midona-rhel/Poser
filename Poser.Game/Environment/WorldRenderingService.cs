@@ -41,7 +41,7 @@ public sealed class WorldRenderingService : IWorldRenderingRuntimePort, IDisposa
 
         try
         {
-            var address = sigScanner.ScanText("48 8B C4 48 89 58 ?? 57 48 81 EC ?? ?? ?? ?? 0F B6 B9");
+            var address = sigScanner.ScanText(Poser.Game.Natives.NativeSignatures.WaterRenderer_Update);
             _waterHook = hooking.HookFromAddress<UpdateWaterRendererDelegate>(
                 address, UpdateWaterRendererDetour);
         }

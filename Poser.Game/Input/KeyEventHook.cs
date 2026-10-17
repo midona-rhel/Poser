@@ -16,7 +16,7 @@ namespace Poser.Game.Input;
 public sealed unsafe class KeyEventHook : IKeyEvents, IDisposable
 {
     private const string InputNotificationSignature =
-        "48 89 5C 24 ?? 55 56 57 41 56 41 57 48 8D 6C 24 ?? 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 40 4D 8B F9";
+        Poser.Game.Natives.NativeSignatures.KeyboardDevice_ProcessKeyboardInputMessage;
     private const uint WmKeyDown = 0x100;
     private const uint WmKeyUp = 0x101;
     private const uint WmSysKeyDown = 0x104;

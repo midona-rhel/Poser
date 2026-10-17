@@ -79,7 +79,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         try
         {
             var speedAddress = sigScanner.ScanText(
-                "E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? 48 8B 01 FF 50 ?? 48 8D 8B ?? ?? ?? ?? 48 8B 01 FF 50 ?? F6 83");
+                Poser.Game.Natives.NativeSignatures.TimelineContainer_CalculateOverallSpeedLive);
             _speedHook = hooking.HookFromAddress<CalculateAndApplyOverallSpeedDelegate>(
                 speedAddress, OverallSpeedDetour);
             _speedHook.Enable();

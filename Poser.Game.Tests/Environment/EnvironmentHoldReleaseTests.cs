@@ -240,10 +240,6 @@ public sealed class EnvironmentHoldReleaseTests
         public IEnvStateCopyHook CreateEnvStateCopyHook(
             ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>
             EnvCopyHook;
-
-        public IEnvStateCopyHook CreateEnvStateCopyCallSiteHook(
-            ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>
-            EnvCopyHook;
     }
 
     private sealed class TestEventBus : IEventBus

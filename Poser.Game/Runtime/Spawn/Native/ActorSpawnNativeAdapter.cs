@@ -16,7 +16,7 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
     // external deletion, and resolves the dying object's COM index inside
     // the callback exactly as we do.
     private const string CharacterFinalizeSig =
-        "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8D 05 ?? ?? ?? ?? 48 8B D9 48 89 01 48 8D 05 ?? ?? ?? ?? 48 89 81 ?? ?? ?? ?? 48 81 C1";
+        Poser.Game.Natives.NativeSignatures.Character_Finalizer;
 
     private delegate nint CharacterFinalizeDelegate(Character* chara);
 

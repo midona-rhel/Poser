@@ -45,9 +45,9 @@ internal sealed unsafe class FurnitureLayoutDriver
         _data = data;
         try
         {
-            _create = (delegate* unmanaged<short, uint, LayoutTransform*, byte*, byte*, byte, uint, int, nint, nint, SharedGroupLayoutInstance*>)scanner.ScanText("E8 ?? ?? ?? ?? 48 89 04 ?? C6 44");
-            _destroy = (delegate* unmanaged<SharedGroupLayoutInstance**, nint, void>)scanner.ScanText("48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 20 48 8B 19 48 8B F9 48 8B F2");
-            _setupStain = (delegate* unmanaged<SharedGroupLayoutInstance*, byte, void>)scanner.ScanText("E8 ?? ?? ?? ?? 48 8B 8F ?? ?? ?? ?? 0F B6 47");
+            _create = (delegate* unmanaged<short, uint, LayoutTransform*, byte*, byte*, byte, uint, int, nint, nint, SharedGroupLayoutInstance*>)scanner.ScanText(Poser.Game.Natives.NativeSignatures.LayoutWorld_CreateSharedGroupInstance);
+            _destroy = (delegate* unmanaged<SharedGroupLayoutInstance**, nint, void>)scanner.ScanText(Poser.Game.Natives.NativeSignatures.LayoutWorld_DestroySharedGroupInstance);
+            _setupStain = (delegate* unmanaged<SharedGroupLayoutInstance*, byte, void>)scanner.ScanText(Poser.Game.Natives.NativeSignatures.SharedGroup_SetHousingState);
         }
         catch (Exception ex)
         {

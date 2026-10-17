@@ -23,7 +23,9 @@ internal interface IPhysicsPatchNative
 internal sealed class DalamudPhysicsPatchNative : IPhysicsPatchNative
 {
     public bool TryScanFreezeSite(ISigScanner scanner, out nint address) =>
-        scanner.TryScanText(PhysicsFreezePatcher.FreezeSiteSignature, out address);
+        Poser.Game.Natives.NativeCode.TryFindSite(scanner,
+            Poser.Game.Natives.NativeSignatures.PartialSkeleton_SetBoneModelSpace,
+            PhysicsFreezePatcher.FreezeSiteOffset, PhysicsFreezePatcher.FreezeSiteBytes, out address);
 
     public byte[] ReadRaw(nint address, int length) => MemoryHelper.ReadRaw(address, length);
 
@@ -52,10 +54,12 @@ internal sealed class DalamudPhysicsPatchNative : IPhysicsPatchNative
 /// </summary>
 internal sealed class PhysicsFreezePatcher : IDisposable
 {
-    // Anamnesis AddressService's SkeletonFreezePhysics signature (used verbatim
-    // by Brio). The first four bytes of the signature ARE region 1's
-    // instruction: movups [rax+0x10], xmm1.
-    internal const string FreezeSiteSignature =
+    // The physics write in PartialSkeleton.SetBoneModelSpace (patchcheck
+    // PartialSkeleton.SetBoneModelSpace+0x34F; Anamnesis' SkeletonFreezePhysics
+    // site, used by Brio). Its first four bytes ARE region 1's instruction:
+    // movups [rax+0x10], xmm1.
+    internal const int FreezeSiteOffset = 0x34F;
+    internal const string FreezeSiteBytes =
         "0F 11 48 10 41 0F 10 44 24 ?? 0F 11 40 20 48 8B 46 28";
 
     // Region 2 sits 0x9 bytes before the match: a 3-byte movups store in the

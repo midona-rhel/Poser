@@ -51,10 +51,10 @@ internal sealed class GazeNativeFactory : IGazeNativeFactory
         ((Character*)characterAddress)->SetTargetId(targetId);
 
     public nint ScanUpdateLookAt(ISigScanner scanner) => scanner.ScanText(
-        "E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F");
+        Poser.Game.Natives.NativeSignatures.LookAtController_SetTarget);
 
     public nint ScanActorLookAtLoop(ISigScanner scanner) => scanner.ScanText(
-        "E8 ?? ?? ?? ?? 48 83 C3 08 48 83 EF 01 75 CF 48 ?? ?? ?? ?? 48");
+        Poser.Game.Natives.NativeSignatures.LookAtContainer_UpdateLookAt);
 
     public IGazeHook CreateActorLookAtHook(
         IGameInteropProvider hooks,

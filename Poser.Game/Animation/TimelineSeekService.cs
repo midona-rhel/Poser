@@ -66,7 +66,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // drawn character, main thread; also its dirty and init paths). Pending a
     // patchcheck entry; unique on the analysed build (sig.py, 1 hit).
     private const string ActionTimelineManager_SetWeaponSpeed =
-        "48 89 5C 24 08 57 48 83 EC 50 48 8B F9 0F 29 74 24 40 48 8D 4C 24 20 0F 28 F2 48 8B DA E8 ?? ?? ?? ?? 48 85 DB 0F 84";
+        Poser.Game.Natives.NativeSignatures.ActionTimelineManager_SetPropSpeed;
     private delegate void WeaponSpeedFn(nint manager, nint weapon, float speed);
     private readonly Hook<WeaponSpeedFn>? _weaponSpeedHook;
     // Prop weapons whose current prop belongs to a layer with its own speed: the
@@ -81,7 +81,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // +0xF8), run after the timeline step for every control with +0x6CC set. Pending
     // a patchcheck entry; unique on the analysed build (sig.py, 1 hit).
     private const string ActorControl_ApplyWeaponRequests =
-        "48 89 4C 24 08 57 41 55 48 81 EC 88 00 00 00 48 8B F9 E8 ?? ?? ?? ?? 4C 8B E8 48 85 C0 75 ?? 8B 97 CC 06 00 00";
+        Poser.Game.Natives.NativeSignatures.ActorControl_ApplyWeaponRequests;
     private delegate void ApplyWeaponRequestsFn(nint actorControl);
     private readonly Hook<ApplyWeaponRequestsFn>? _applyRequestsHook;
     // C094.ApplyMask 0x14191A260(clip, colourArg, float* values): the only writer

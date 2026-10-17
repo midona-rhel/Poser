@@ -221,19 +221,19 @@ public sealed unsafe partial class AnimationNativeState
         // A missing stance native degrades that one operation to an explicit
         // failure; it never silently half-applies a transition.
         _setEmoteMode = ScanDelegate<SetEmoteModeDelegate>(
-            sigScanner, "E8 ?? ?? ?? ?? F6 46 10 01", "SetEmoteMode");
+            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetMode, "SetEmoteMode");
         _cancelTimeline = ScanDelegate<CancelTimelineDelegate>(
-            sigScanner, "E8 ?? ?? ?? ?? 80 7B 17 01", "CancelTimeline");
+            sigScanner, Poser.Game.Natives.NativeSignatures.TimelineContainer_CancelTimeline, "CancelTimeline");
         _setTimelineId = ScanDelegate<SetTimelineIdDelegate>(
             sigScanner,
-            "E8 ?? ?? ?? ?? 4C 8B BC 24 ?? ?? ?? ?? 4C 8D 9C 24 ?? ?? ?? ?? 49 8B 5B 40",
+            Poser.Game.Natives.NativeSignatures.ActionTimelineSequencer_PlayTimeline,
             "SetTimelineId");
         _playActionTimeline = ScanDelegate<PlayActionTimelineDelegate>(
             sigScanner,
-            "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 49 8B E9 41 0F B7 D8 48 8B F1 E8 ?? ?? ?? ?? 0F B7 D3 48 8B CE 0F B7 F8 E8",
+            Poser.Game.Natives.NativeSignatures.TimelineContainer_PlayActionTimeline,
             "PlayActionTimeline");
         _getPosture = ScanDelegate<GetPostureDelegate>(
-            sigScanner, "40 53 48 83 EC 20 48 8B D9 48 8B 49 08 48 85 C9 0F 84", "EmoteController.GetPosture");
+            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_GetPosture, "EmoteController.GetPosture");
         _canPlayEmote = ScanDelegate<CanPlayEmoteDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_CanPlayEmote, "EmoteController.CanPlayEmote");
         _setPose = ScanDelegate<SetPoseDelegate>(
@@ -250,7 +250,7 @@ public sealed unsafe partial class AnimationNativeState
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_StopLoopedEmote, "EmoteController.StopLoopedEmote");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
             sigScanner,
-            "48 83 EC 28 8D 41 FF 3D E7 FD 00 00 77 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA 64 00 00 00 48 8B 88 40 2B 00 00 E8",
+            Poser.Game.Natives.NativeSignatures.Sheet_GetActionTimelineRow,
             "ActionTimelineRow");
     }
 

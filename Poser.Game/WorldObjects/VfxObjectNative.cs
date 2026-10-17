@@ -72,21 +72,18 @@ internal sealed unsafe class VfxObjectNative
         try
         {
             _vfxPlayStatic = (delegate* unmanaged<nint, float, uint, nint>)
-                sigScanner.ScanText("E8 ?? ?? ?? ?? B0 02 EB 02");
+                sigScanner.ScanText(Poser.Game.Natives.NativeSignatures.VfxObject_Update);
             _vfxPause = (delegate* unmanaged<nint, void>)sigScanner.ScanText(
-                "E8 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 0F 2E C7 7A ?? 74 ?? "
-                + "0F 28 CF 48 8B CB E8");
+                Poser.Game.Natives.NativeSignatures.VfxResourceInstance_TogglePause);
             _vfxSetSpeed = (delegate* unmanaged<nint, float, void>)
                 sigScanner.ScanText(
-                    "48 89 5C 24 08 57 48 83 EC 30 48 8B 59 60");
+                    Poser.Game.Natives.NativeSignatures.VfxResourceInstance_SetSpeed);
             _vfxIsActive = (delegate* unmanaged<nint, bool>)
-                sigScanner.ScanText(
-                    "E8 ?? ?? ?? ?? 84 C0 75 ?? 48 8B 4B 28 48 8B 01 FF "
-                    + "50 68 48 8B C8 0F 57 C9 E8");
+                sigScanner.ScanText(Poser.Game.Natives.NativeSignatures.VfxObject_IsActive);
             _vfxResourceLoad = gameInterop.HookFromAddress<
                 VfxResourceLoadDelegate>(
                 sigScanner.ScanText(
-                    "E8 ?? ?? ?? ?? 48 8B 5C 24 ?? 48 85 C0 48 8B 6C 24"),
+                    Poser.Game.Natives.NativeSignatures.ApricotCore_CreateAvfxResource),
                 VfxResourceLoadDetour);
             _vfxResourceLoad.Enable();
             _vfxReady = true;

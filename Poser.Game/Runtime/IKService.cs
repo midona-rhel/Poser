@@ -53,11 +53,11 @@ public unsafe class IKService : IDisposable
             // Brio's verbatim (Brio/Game/Posing/IKService.cs:26-28): the CCD
             // solver constructor, its solve entry, and the two-joint solve.
             _ccdSolverCtr = (delegate* unmanaged<hkaCCDSolver*, int, float, void>)
-                scanner.ScanText("E8 ?? ?? ?? ?? 48 8D 43 ?? 48 C7 43");
+                scanner.ScanText(Poser.Game.Natives.NativeSignatures.hkaCcdIkSolver_ctor);
             _ccdSolverSolve = (delegate* unmanaged<hkaCCDSolver*, byte*, hkArray<CCDIKConstraint>*, hkaPose*, byte*>)
-                scanner.ScanText("E8 ?? ?? ?? ?? 8B 44 24 ?? 48 8B 5C 24 ?? 48 3B 5C 24");
+                scanner.ScanText(Poser.Game.Natives.NativeSignatures.hkaCcdIkSolver_solve);
             _twoJointSolverSolve = (delegate* unmanaged<byte*, TwoJointIKSetup*, hkaPose*, byte*>)
-                scanner.ScanText("E8 ?? ?? ?? ?? 0F 28 55 ?? 41 0F 28 D8");
+                scanner.ScanText(Poser.Game.Natives.NativeSignatures.hkaTwoJointsIkSolver_solve);
 
             // Allocate aligned memory for solver structs (16-byte aligned for SIMD)
             _solverAddr = NativeHelpers.AllocateAlignedMemory(sizeof(hkaCCDSolver), 16);
