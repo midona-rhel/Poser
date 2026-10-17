@@ -40,7 +40,7 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
                 "Stance changes are unavailable: a required game function was not found.");
         // The real player (adopted into GPose) is the game's local actor: clearing its
         // pose sends the pose change to the server. Only GPose copies are posed here.
-        if ((nint)character == (nint)Control.Instance()->LocalPlayer)
+        if (AnimationNativeState.IsRealPlayer(character))
             return Outcome.Fail(
                 "Stances can't be changed on your own world character; use its GPose copy.");
 

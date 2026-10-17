@@ -386,7 +386,7 @@ public sealed unsafe partial class AnimationNativeState
         var sequencer = &character->Timeline.TimelineSequencer;
         if (!WithUpperKept(timeline, () => _setTimelineId(sequencer, timeline, nint.Zero)))
             return Outcome.Fail("Timeline playback failed.");
-        if (fullBody && character->Timeline.BaseOverride != timeline)
+        if (fullBody && character->Timeline.BaseOverride != timeline && RequestedId(sequencer, 0) == timeline)
             HoldAgainstBasePick(sequencer);
         return Outcome.Ok();
     }
@@ -414,15 +414,13 @@ public sealed unsafe partial class AnimationNativeState
     /// </summary>
     private void LeaveForFullBody(Character* character)
     {
+        if (IsRealPlayer(character))
+            return;
         if (character->Mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop)
         {
             if (character->ModeParam != 0)
                 _characterSetMode!(character, (int)CharacterModes.EmoteLoop, 0);
-            if (_stopLoopedEmote != null)
-            {
-                GuardLocalPoseClear(character);
-                _stopLoopedEmote(&character->EmoteController, nint.Zero);
-            }
+            _stopLoopedEmote?.Invoke(&character->EmoteController, nint.Zero);
             if (character->Mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop)
                 _characterSetMode!(character, (int)CharacterModes.Normal, 0);
             ClearEmoteCancelPending(character);
@@ -435,15 +433,13 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>
-    /// The real player (adopted into GPose) is the game's local actor: ClearPose sends
-    /// the pose change to the server when a pose index is set. With the index at 0 it
-    /// only writes locally.
+    /// The real player (it can be adopted into GPose) is the game's local actor: its
+    /// mode and emote exits are the player's own input, and they reach the server
+    /// (StopLoopedEmote stands it up with 0x1F7/0x1F8, ClearPose sends 0x1FB). Poser
+    /// changes no mode and stops no emote on it, only plays rows.
     /// </summary>
-    private static void GuardLocalPoseClear(Character* character)
-    {
-        if ((nint)character == (nint)Control.Instance()->LocalPlayer)
-            character->EmoteController.CPoseState = 0;
-    }
+    internal static bool IsRealPlayer(Character* character) =>
+        (nint)character == (nint)Control.Instance()->LocalPlayer;
 
     /// <summary>
     /// The Full body back to the game's own (§2): BaseOverride, then the slot cleared,
@@ -460,7 +456,7 @@ public sealed unsafe partial class AnimationNativeState
         LeaveForFullBody(character);
         character->Timeline.BaseOverride = loop ? (ushort)0 : baseOverride;
         _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
-        if (!loop)
+        if (!loop || IsRealPlayer(character))
             return Outcome.Ok();
         // The chair's enter hook sets the sit height into DrawOffset/CameraOffset; the
         // placement Poser gave the actor stays.
@@ -585,9 +581,10 @@ public sealed unsafe partial class AnimationNativeState
         // else EmoteLoop 0 for a looping row (no base-idle pick there), else Normal at
         // priority 1 or more, so the pick leaves it until it ends.
         LeaveForFullBody(character);
-        if (emote.EmoteMode.RowId != 0 && _setEmoteMode != null)
+        bool poserMode = !IsRealPlayer(character);
+        if (poserMode && emote.EmoteMode.RowId != 0 && _setEmoteMode != null)
             _setEmoteMode(&character->EmoteController, emote.EmoteMode.RowId);
-        else if (_timelineSheet?.GetRowOrDefault(loop != 0 ? loop : first)?.Pause == true)
+        else if (poserMode && _timelineSheet?.GetRowOrDefault(loop != 0 ? loop : first)?.Pause == true)
             _characterSetMode!(character, (int)CharacterModes.EmoteLoop, 0);
         WithUpperKept(first, () =>
         {
