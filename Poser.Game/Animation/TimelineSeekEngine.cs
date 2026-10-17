@@ -66,61 +66,41 @@ internal sealed unsafe class TimelineSeekEngine
 
     /// <summary>
     /// The scrub fallback for a timeline the seek can't move (an integer-frame clock, a
-    /// scheduler-driven actor): the clock family a natural play keeps in step, set to
-    /// the frame. That is the timeline's own clock (+0x34/+0x38), its first TMB actor
-    /// (+0x18C/+0x190) and that actor's tracks (+0x11C/+0x120), and through the C010s
-    /// on those tracks each child clip's frame (+0xCC/+0xD0) and the child timeline,
-    /// recursively. Only these fields: the same writes on the other actors corrupted
-    /// memory (a crash, 2026-10-17).
+    /// scheduler-driven actor), the way the game sets a clock (RE: SchedulerTimeline
+    /// StartChild): TimelineController::SetCurrentTime on the timeline, then on each
+    /// active C010's child at ((parent − start) · scale + offset), recursively. Nothing
+    /// else: the TMB actor, track and C010 offsets the old version wrote are not
+    /// fields (they landed in whatever the timeline's arena packed next).
     /// </summary>
     public void WriteClocks(nint root, float frames)
     {
-        void Write(nint timeline, int depth)
+        void Write(nint timeline, float frame, int depth)
         {
-            if (timeline == 0 || depth > 3)
+            if (timeline == 0 || depth > 4)
                 return;
-            *(float*)(timeline + TimelineState.ClockOffset) = frames;
-            *(float*)(timeline + TimelineState.ClockOffset + 4) = frames;
-            nint actor = *(nint*)(timeline + 0x18);
-            if (actor == 0)
-                return;
-            if (depth == 0)
+            _n.SetCurrentTime(timeline, frame);
+            var clips = new List<nint>();
+            ClipsOf(timeline, clips);
+            foreach (var clip in clips)
             {
-                *(float*)(actor + 0x18C) = frames;
-                *(float*)(actor + 0x190) = frames;
-            }
-            nint tracks = *(nint*)(actor + 0x28);
-            int trackCount = *(ushort*)(actor + 0x32);
-            for (int t = 0; tracks != 0 && t < trackCount && t < 8; t++)
-            {
-                nint track = *(nint*)(tracks + t * 8);
-                if (track == 0)
+                if (_l.Classify(clip) != SeekClipKind.ChildTimeline || (*(byte*)(clip + 0x10) & 0x10) == 0
+                    || ChildOf(clip) is not (var child and not 0))
                     continue;
-                if (depth == 0)
-                {
-                    *(float*)(track + 0x11C) = frames;
-                    *(float*)(track + 0x120) = frames;
-                }
-                nint clips = *(nint*)(track + 0x18);
-                int clipCount = *(ushort*)(track + 0x22);
-                for (int c = 0; clips != 0 && c < clipCount && c < 8; c++)
-                {
-                    nint clip = *(nint*)(clips + c * 8);
-                    if (clip == 0 || _l.Classify(clip) != SeekClipKind.ChildTimeline
-                        || ChildOf(clip) is not (var child and not 0))
-                        continue;
-                    *(float*)(clip + 0xCC) = frames;   // the child frame
-                    *(float*)(clip + 0xD0) = frames;
-                    Write(child, depth + 1);
-                }
+                float scale = *(float*)(clip + 0x160);
+                if (!(scale > 0f) || !float.IsFinite(scale))
+                    scale = 1f;
+                nint data = *(nint*)(clip + 0x48);
+                float offset = data != 0 && (*(uint*)(data + 0xC) & 1) != 0 ? *(float*)(data + 0x10) : 0f;
+                Write(child, (frame - *(float*)(clip + 0x50)) * scale + offset, depth + 1);
             }
         }
-        Write(root, 0);
+        Write(root, frames, 0);
     }
 
     /// <summary>The scrub fallback for props: each prop the slot's C031s summon, found
     /// in the game's prop group (never matched by length), has its Havok controls
-    /// moved by the same delta, clamped short of their end.</summary>
+    /// moved by the same delta, clamped short of their cycle's end; a control Havok
+    /// parked at its last cycle is left.</summary>
     public void ShiftPropControls(nint character, nint root, float delta)
     {
         foreach (var (c031, _) in Collect(root).Summons)
@@ -131,6 +111,9 @@ internal sealed unsafe class TimelineSeekEngine
             foreach (var clip in Collect(prop).Havok.Keys)
                 foreach (var control in ClipControls(clip))
                 {
+                    // Parked by Havok at its last cycle: a time alone is parked again.
+                    if (HeldByHavok(control))
+                        continue;
                     float length = CycleLength(control);
                     float* time = (float*)(control + 0x10);   // hkaDefaultAnimationControl.LocalTime
                     *time = Math.Clamp(*time + delta, 0f, MathF.Max(0f, length - 1f / 30f));
