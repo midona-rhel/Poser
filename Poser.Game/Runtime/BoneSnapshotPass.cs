@@ -86,7 +86,7 @@ internal sealed unsafe class BoneSnapshotPass : IDisposable
         // Hook FinalizeSkeletons - called before rendering, takes final snapshot
         try
         {
-            var finalizeSkeletonsAddress = scanner.ScanText("40 53 57 41 54 41 55 48 83 EC ?? ?? 48 ?? ?? ?? ?? ?? ?? ?? 4C") /* Brio 0.8 sig; JMP in Framework.TaskRenderGraphicsRender */;
+            var finalizeSkeletonsAddress = scanner.ScanText(Poser.Game.Natives.NativeSignatures.RenderManager_Render) /* Brio 0.8 sig; JMP in Framework.TaskRenderGraphicsRender */;
             _finalizeSkeletonsHook = hooking.HookFromAddress<FinalizeSkeletonsDelegate>(finalizeSkeletonsAddress, FinalizeSkeletonsDetour);
             _finalizeSkeletonsHook.Enable();
             _log.Debug("BonePosingService: FinalizeSkeletons hook initialized");

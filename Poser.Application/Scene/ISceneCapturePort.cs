@@ -22,7 +22,8 @@ public interface ISceneCapturePort
     /// screen, which is why this is armed rather than called. Framework thread.
     /// </summary>
     string? ArmSceneCapture(
-        Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured);
+        Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured,
+        bool includeAnimation = false);
 
     /// <summary>
     /// Stamps every stated character-file reference with its package's content

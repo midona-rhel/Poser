@@ -8,6 +8,7 @@ using Poser.Domain.Animation;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
+using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 using Poser.Domain.Scene;
 
@@ -39,7 +40,7 @@ public class SceneFile
     /// change an older reader would lose or misread; readers accept
     /// <see cref="MinimumVersion"/> through this and refuse anything newer as
     /// a typed Future outcome.</summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     /// <summary>The oldest scene format this build still reads.</summary>
     public const int MinimumVersion = 2;
@@ -389,6 +390,27 @@ public class SceneActor
     /// case.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneActorMcdf? Mcdf { get; set; }
+
+    /// <summary>
+    /// Saved with the save dialog's Animation option (format 4): what the actor
+    /// was playing, layer by layer. With it, a load restores this animation and
+    /// <see cref="PoseEdits"/> on top instead of importing the baked
+    /// <see cref="Pose"/>, so the actor can play on. <see cref="Pose"/> is still
+    /// written: it is the picture an animation that can't be restored falls back
+    /// to. Absent: the scene is the baked picture, as before.
+    /// </summary>
+    public SceneAnimationState? Animation { get; set; }
+
+    /// <summary>The user's own bone edits as offsets over the animation (the
+    /// authored pose stacks, not the frame underneath), with <see cref="Animation"/>.</summary>
+    public List<SceneBoneEdit>? PoseEdits { get; set; }
+
+    /// <summary>The attached companion's (mount, minion, ornament) animation, with
+    /// <see cref="Animation"/>.</summary>
+    public SceneAnimationState? CompanionAnimation { get; set; }
+
+    /// <summary>The attached companion's bone edits, with <see cref="CompanionAnimation"/>.</summary>
+    public List<SceneBoneEdit>? CompanionPoseEdits { get; set; }
 }
 
 /// <summary>
@@ -417,6 +439,65 @@ public class SceneActor
 /// is Poser's own and neither reference has anything like it.</para>
 /// </summary>
 [Serializable]
+/// <summary>An actor's animation as a scene saves it: the same state an undo
+/// step restores. A held layer keeps its frame; a running one plays from its
+/// start. Timeline ids resolve against the loading client's game and mods.</summary>
+public class SceneAnimationState
+{
+    public SceneAnimationLayer? Base { get; set; }
+    public SceneAnimationLayer? UpperBody { get; set; }
+    public SceneAnimationLayer? Facial { get; set; }
+    public SceneAnimationLayer? Additive { get; set; }
+    public ushort? Lips { get; set; }
+    /// <summary>The whole-actor speed Poser holds (0 = paused), or none.</summary>
+    public float? OverallSpeed { get; set; }
+    public ushort? HeldExpression { get; set; }
+    public AnimationStance Stance { get; set; }
+    public int Pose { get; set; }
+    public bool WeaponDrawn { get; set; }
+    public bool PositionLock { get; set; }
+    public bool Advanced { get; set; }
+}
+
+/// <summary>One layer of a <see cref="SceneAnimationState"/>.</summary>
+public class SceneAnimationLayer
+{
+    /// <summary>The ActionTimeline row Poser played on the layer.</summary>
+    public ushort Timeline { get; set; }
+    public bool Playing { get; set; }
+    public bool Loop { get; set; }
+    public float? Speed { get; set; }
+    public float Weight { get; set; } = 1f;
+    /// <summary>The held frame, in seconds from the animation's start; absent
+    /// while it runs.</summary>
+    public float? HeldSeconds { get; set; }
+    /// <summary>It ran out (its row stays): the animation's length.</summary>
+    public float? EndedSeconds { get; set; }
+}
+
+/// <summary>One bone's own edits: offsets the animation's frame is moved by.</summary>
+public class SceneBoneEdit
+{
+    public PoseSlot Slot { get; set; }
+    public int Partial { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public List<SceneBoneOffset> Offsets { get; set; } = new();
+    public Vector3? PartialRootScale { get; set; }
+}
+
+/// <summary>One offset of a <see cref="SceneBoneEdit"/>.</summary>
+public class SceneBoneOffset
+{
+    public TransformComponents Propagate { get; set; }
+    public Vector3 Position { get; set; }
+    public Quaternion Rotation { get; set; } = Quaternion.Identity;
+    public Vector3 Scale { get; set; }
+    public TransformFrame Frame { get; set; }
+    public Vector3? IkPosition { get; set; }
+    public Quaternion? IkRotation { get; set; }
+    public Vector3? IkScale { get; set; }
+}
+
 public class SceneActorMcdf
 {
     /// <summary>The package's full path AT SAVE. Required in reference mode;

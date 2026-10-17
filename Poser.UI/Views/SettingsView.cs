@@ -65,6 +65,9 @@ public sealed class SettingsViewModel
     /// </summary>
     public bool ShowFrameProfiler;
 
+    /// <summary>Whether the game function check window shows.</summary>
+    public bool ShowNativeCheck;
+
     public bool AutoSaveEnabled = true;
     public float AutoSaveIntervalSeconds = 180f;
     public string AutoSaveMaxKept = "10";
@@ -677,6 +680,11 @@ public static partial class SettingsView
                 vm.ShowFrameProfiler,
                 next => vm.ShowFrameProfiler = next,
                 "A window listing what each part of Poser costs per frame, slowest first");
+            form.Switch(
+                "Show game function check",
+                vm.ShowNativeCheck,
+                next => vm.ShowNativeCheck = next,
+                "A window listing every game function, hook and memory offset Poser relies on, and whether this game version still has each one");
         });
         page.Section("Reset", form =>
         {

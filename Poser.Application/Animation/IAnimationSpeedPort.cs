@@ -28,4 +28,12 @@ public interface IAnimationSpeedPort
     /// <summary>Releases enforcement after restoring the captured speed.</summary>
     Outcome ClearSlotSpeed(
         ActorId actor, AnimationSlot slot, float restoreSpeed = 1f);
+
+    /// <summary>Holds a layer's blend weight in [0, 1], re-applied to every
+    /// animation the layer starts.</summary>
+    Outcome SetSlotWeight(ActorId actor, AnimationSlot slot, float weight) =>
+        Outcome.Fail("Layer weight is unavailable.");
+
+    /// <summary>Releases a held layer weight (back to the game's 1).</summary>
+    Outcome ClearSlotWeight(ActorId actor, AnimationSlot slot) => Outcome.Ok();
 }

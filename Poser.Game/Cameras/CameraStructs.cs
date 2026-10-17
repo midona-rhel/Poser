@@ -4,6 +4,7 @@ using Dalamud.Game.ClientState.Keys;
 
 using GameCamera = FFXIVClientStructs.FFXIV.Client.Game.Camera;
 using RenderCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Camera;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Cameras;
 
@@ -15,36 +16,37 @@ namespace Poser.Game.Cameras;
 [StructLayout(LayoutKind.Explicit, Size = 0x2B0)]
 public struct NativeCamera
 {
-    [FieldOffset(0x000)] public GameCamera Camera;
-    [FieldOffset(0x060)] public Vector3 Position;
+    [FieldOffset(NativeFields.NativeCamera_Camera)] public GameCamera Camera;
+    [FieldOffset(NativeFields.NativeCamera_Position)] public Vector3 Position;
 
-    [FieldOffset(0x124)] public float Distance;     // default 2.5 in GPose
-    [FieldOffset(0x128)] public float MinDistance;  // 1.5
-    [FieldOffset(0x12C)] public float MaxDistance;  // 20
+    [FieldOffset(NativeFields.NativeCamera_Distance)] public float Distance;     // default 2.5 in GPose
+    [FieldOffset(NativeFields.NativeCamera_MinDistance)] public float MinDistance;  // 1.5
+    [FieldOffset(NativeFields.NativeCamera_MaxDistance)] public float MaxDistance;  // 20
 
-    [FieldOffset(0x130)] public float FoV;          // default 0.78
-    [FieldOffset(0x134)] public float MinFoV;       // 0.69
-    [FieldOffset(0x138)] public float MaxFoV;       // 0.78
-    [FieldOffset(0x13C)] public float Zoom;         // FoV offset, -0.5..0.5
+    [FieldOffset(NativeFields.NativeCamera_FoV)] public float FoV;          // default 0.78
+    [FieldOffset(NativeFields.NativeCamera_MinFoV)] public float MinFoV;       // 0.69
+    [FieldOffset(NativeFields.NativeCamera_MaxFoV)] public float MaxFoV;       // 0.78
+    [FieldOffset(NativeFields.NativeCamera_Zoom)] public float Zoom;         // FoV offset, -0.5..0.5
 
-    [FieldOffset(0x140)] public Vector2 Angle;
+    [FieldOffset(NativeFields.NativeCamera_Angle)] public Vector2 Angle;
 
-    // Ktisis: the vertical orbit clamp, loosened while delimited.
-    [FieldOffset(0x158)] public float YMax;         // -1.4 stock
-    [FieldOffset(0x15C)] public float YMin;         // 1.25 stock
+    // The vertical orbit clamp, loosened while delimited: UpdateRotation clamps
+    // the pitch to [+0x158, +0x15C] (patchcheck Camera.DirVMin / DirVMax).
+    [FieldOffset(NativeFields.NativeCamera_PitchMin)] public float PitchMin;     // -1.4 stock
+    [FieldOffset(NativeFields.NativeCamera_PitchMax)] public float PitchMax;     // 1.25 stock
 
-    [FieldOffset(0x160)] public Vector2 Pan;        // pan, tilt
-    [FieldOffset(0x170)] public float Roll;
+    [FieldOffset(NativeFields.NativeCamera_Pan)] public Vector2 Pan;        // pan, tilt
+    [FieldOffset(NativeFields.NativeCamera_Roll)] public float Roll;
 
-    [FieldOffset(0x180)] public int Mode;           // 0 first person, 1 third
+    [FieldOffset(NativeFields.NativeCamera_Mode)] public int Mode;           // 0 first person, 1 third
 
-    [FieldOffset(0x218)] public Vector2 Collide;
+    [FieldOffset(NativeFields.NativeCamera_Collide)] public Vector2 Collide;
 
     // The native orbit-position builder compares yaw with the previous orbit
     // position (0x270) and clamps its correction to +/-4.5 degrees. It checks
     // 0x245 to bypass that correction for a discontinuous write, then clears
     // the byte at the end of the same update. Verified in the 2026-09 client.
-    [FieldOffset(0x245)] private byte _skipOrbitCorrection;
+    [FieldOffset(NativeFields.NativeCamera__skipOrbitCorrection)] private byte _skipOrbitCorrection;
 
     internal void SetOrbitAngle(Vector2 value)
     {
@@ -106,13 +108,15 @@ public struct NativeCamera
 [StructLayout(LayoutKind.Explicit)]
 public struct RenderCameraEx
 {
-    [FieldOffset(0x000)] public RenderCamera RenderCamera;
+    [FieldOffset(NativeFields.RenderCameraEx_RenderCamera)] public RenderCamera RenderCamera;
 
-    [FieldOffset(0x1EC)] public float FoV;
-    [FieldOffset(0x1F0)] public float AspectRatio;
+    // The field of view SetMatrices reads is +0x1E8 (ClientStructs FoV); +0x1EC
+    // is only ever written by the game.
+    [FieldOffset(NativeFields.RenderCameraEx_FoV)] public float FoV;
+    [FieldOffset(NativeFields.RenderCameraEx_AspectRatio)] public float AspectRatio;
 
-    [FieldOffset(0x1FC)] public float OrthographicZoom;
-    [FieldOffset(0x200)] public bool OrthographicEnabled;
+    [FieldOffset(NativeFields.RenderCameraEx_OrthographicZoom)] public float OrthographicZoom;
+    [FieldOffset(NativeFields.RenderCameraEx_OrthographicEnabled)] public bool OrthographicEnabled;
 }
 
 /// <summary>One frame of mouse state as the game's input handler sees it.

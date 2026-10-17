@@ -47,6 +47,11 @@ public class UIConfiguration
     /// and the ledger only records while somebody is asking.</summary>
     public bool ShowFrameProfiler { get; set; }
 
+    /// <summary>The game function check window (Settings, General, DIAGNOSTICS):
+    /// every game function, hook and offset Poser depends on, checked against the
+    /// running game.</summary>
+    public bool ShowNativeCheck { get; set; }
+
     /// <summary>Which panel the inspector shows: 0 the selected target,
     /// 1 the environment, 2 the scene. Selecting any entity snaps back
     /// to the target panel.</summary>

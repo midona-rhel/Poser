@@ -14,6 +14,32 @@ namespace Poser.Application.Tests.Animation;
 public sealed class AnimationInteractionOwnershipTests
 {
     [Fact]
+    public void Layer_weight_is_held_released_at_one_and_cleared_by_the_layer_reset()
+    {
+        var actor = ActorId.New();
+        var speed = Substitute.For<IAnimationSpeedPort>();
+        speed.SetSlotWeight(actor, AnimationSlot.Additive, Arg.Any<float>()).Returns(Outcome.Ok());
+        speed.ClearSlotWeight(actor, AnimationSlot.Additive).Returns(Outcome.Ok());
+        var session = new AnimationSession(Substitute.For<IAnimationTimelinePort>(), speed,
+            Substitute.For<IAnimationStancePort>(), Substitute.For<IAnimationScrubPort>(),
+            Substitute.For<IWorldRenderingRuntimePort>());
+
+        Assert.True(session.SetSlotWeight(actor, AnimationSlot.Additive, 0.4f).Success);
+        Assert.Equal(0.4f, session.WeightFor(actor, AnimationSlot.Additive));
+        speed.Received(1).SetSlotWeight(actor, AnimationSlot.Additive, 0.4f);
+
+        // Above 1 clamps to 1, which releases the hold.
+        Assert.True(session.SetSlotWeight(actor, AnimationSlot.Additive, 2f).Success);
+        Assert.Equal(1f, session.WeightFor(actor, AnimationSlot.Additive));
+        speed.Received(1).ClearSlotWeight(actor, AnimationSlot.Additive);
+
+        Assert.True(session.SetSlotWeight(actor, AnimationSlot.Additive, 0.5f).Success);
+        _ = session.ResetSlot(actor, AnimationSlot.Additive);
+        Assert.Equal(1f, session.WeightFor(actor, AnimationSlot.Additive));
+        speed.Received(2).ClearSlotWeight(actor, AnimationSlot.Additive);
+    }
+
+    [Fact]
     public void Old_scrub_owner_cannot_write_or_end_the_new_owners_drag()
     {
         var actor = ActorId.New();

@@ -13,6 +13,7 @@ using Poser.Domain.Transforms;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSVfx = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.VfxObject;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
+using Poser.Game.Natives;
 
 namespace Poser.Game.WorldObjects;
 
@@ -72,21 +73,18 @@ internal sealed unsafe class VfxObjectNative
         try
         {
             _vfxPlayStatic = (delegate* unmanaged<nint, float, uint, nint>)
-                sigScanner.ScanText("E8 ?? ?? ?? ?? B0 02 EB 02");
+                sigScanner.ScanText(Poser.Game.Natives.NativeSignatures.VfxObject_Update);
             _vfxPause = (delegate* unmanaged<nint, void>)sigScanner.ScanText(
-                "E8 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 0F 2E C7 7A ?? 74 ?? "
-                + "0F 28 CF 48 8B CB E8");
+                Poser.Game.Natives.NativeSignatures.VfxResourceInstance_TogglePause);
             _vfxSetSpeed = (delegate* unmanaged<nint, float, void>)
                 sigScanner.ScanText(
-                    "48 89 5C 24 08 57 48 83 EC 30 48 8B 59 60");
+                    Poser.Game.Natives.NativeSignatures.VfxResourceInstance_SetSpeed);
             _vfxIsActive = (delegate* unmanaged<nint, bool>)
-                sigScanner.ScanText(
-                    "E8 ?? ?? ?? ?? 84 C0 75 ?? 48 8B 4B 28 48 8B 01 FF "
-                    + "50 68 48 8B C8 0F 57 C9 E8");
+                sigScanner.ScanText(Poser.Game.Natives.NativeSignatures.VfxObject_IsActive);
             _vfxResourceLoad = gameInterop.HookFromAddress<
                 VfxResourceLoadDelegate>(
                 sigScanner.ScanText(
-                    "E8 ?? ?? ?? ?? 48 8B 5C 24 ?? 48 85 C0 48 8B 6C 24"),
+                    Poser.Game.Natives.NativeSignatures.ApricotCore_CreateAvfxResource),
                 VfxResourceLoadDetour);
             _vfxResourceLoad.Enable();
             _vfxReady = true;
@@ -130,7 +128,7 @@ internal sealed unsafe class VfxObjectNative
 
     /// <summary>A vfx's drawn state is its ALPHA (Brio's rule); the draw
     /// flag says nothing for an effect.</summary>
-    internal const int VfxAlphaOffset = 0x26C;
+    internal const int VfxAlphaOffset = NativeFields.VfxObject_ColorAlpha;
 
     public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
     {
@@ -147,7 +145,7 @@ internal sealed unsafe class VfxObjectNative
     /// instance (Brio's SetIntensity): one uniform value drives all three
     /// components, then the transform/culling nudge makes it take.
     /// </summary>
-    private const int VfxIntensityOffset = 0x90;
+    private const int VfxIntensityOffset = NativeFields.VfxResourceInstance_Scale;
 
     public void SetVfxIntensity(nint address, float intensity)
     {
@@ -252,7 +250,7 @@ internal sealed unsafe class VfxObjectNative
             return false;
         intensity =
             *(System.Numerics.Vector3*)(instance + VfxIntensityOffset);
-        speed = *(float*)(instance + 0x70);
+        speed = *(float*)(instance + NativeFields.VfxResourceInstance_Speed);
         return true;
     }
 
@@ -363,8 +361,8 @@ internal sealed unsafe class VfxObjectNative
         var instance = (nint)vfx->VfxResourceInstance;
         if (instance == nint.Zero)
             return false;
-        return (*(uint*)(instance + 0xC4) & 1) != 0
-            || *(ulong*)(instance + 0x60) != 0;
+        return (*(uint*)(instance + NativeFields.VfxResourceInstance_Flags) & 1) != 0
+            || *(ulong*)(instance + NativeFields.VfxResourceInstance_Handle) != 0;
     }
 
     public void SetVfxSpeed(nint address, float speed)

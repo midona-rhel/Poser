@@ -83,6 +83,10 @@ internal sealed class SceneLoadTransaction(
     private SceneEnvironment? _environment;
 
     private readonly Dictionary<Guid, SceneEntityHandle> _actorTokens = new();
+    // Saved with their animation, which wouldn't play here: these actors and
+    // companions get the baked pose the file carries for that case instead.
+    private readonly HashSet<Guid> _animationRefused = new();
+    private readonly HashSet<Guid> _companionAnimationRefused = new();
     // Per-kind key→token maps feed the structure restore: groups
     // and the root order reference entities by these keys.
     private readonly Dictionary<Guid, SceneEntityHandle> _propTokens = new();
@@ -631,10 +635,35 @@ internal sealed class SceneLoadTransaction(
                 var nameDetail = actorRestore.RestoreActorName(_actorTokens[actor.Key], actor);
                 if (nameDetail != null)
                     _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.ActorName, actor.Name, false, nameDetail));
-                var detail = actorRestore.FreezeActor(_actorTokens[actor.Key]);
+                // Saved with its animation: it plays that state again instead of
+                // stopping; its bone edits go on top in the pose phase. An animation
+                // that won't play falls back to the frozen baked pose.
+                var token = _actorTokens[actor.Key];
+                string? detail = null;
+                if (actor.Animation is not null)
+                {
+                    detail = actorRestore.RestoreAnimation(token, actor, companion: false);
+                    if (detail != null && actor.Pose is not null)
+                    {
+                        _animationRefused.Add(actor.Key);
+                        detail = $"{detail} The saved pose was used instead.";
+                        if (actorRestore.FreezeActor(token) is { } frozen)
+                            detail = $"{detail} {frozen}";
+                    }
+                }
+                else
+                    detail = actorRestore.FreezeActor(token);
                 if (detail != null)
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Animation, actor.Name, false, detail));
+                if (actor.CompanionAnimation is not null
+                    && actorRestore.RestoreAnimation(token, actor, companion: true) is { } companionDetail)
+                {
+                    if (actor.CompanionPose is not null)
+                        _companionAnimationRefused.Add(actor.Key);
+                    _entities.Add(new SceneEntityOutcome(
+                        SceneOutcomeKind.Animation, actor.Name, false, companionDetail));
+                }
                 if (actor.Gaze?.Mode == GazeTargetMode.Detached)
                 {
                     // Import deltas use the live animated basis. Detaching
@@ -667,22 +696,49 @@ internal sealed class SceneLoadTransaction(
                 return Stop.Abort(stop);
 
             var token = _actorTokens[actor.Key];
-            var poseResult = await Barriers.ImportPose(
-                receipt => actorRestore.ArmPoseImport(
-                    token, actor, $"Scene pose: {actor.Name}", receipt));
-            var placement = poseResult == null
-                ? await sceneState.OnFramework(() =>
-                    Guard() ?? actorRestore.PlaceActor(token, actor))
-                : poseResult;
+            string? placement;
+            if (actor.Animation is not null && !_animationRefused.Contains(actor.Key))
+            {
+                // Saved with its animation: only the user's own edits, as offsets
+                // over the animation, never the baked pose. An edit this skeleton
+                // lacks is named, and the actor is still placed.
+                var edits = await sceneState.OnFramework(() =>
+                    Guard() ?? actorRestore.RestorePoseEdits(token, actor, companion: false));
+                var placed = await sceneState.OnFramework(() =>
+                    Guard() ?? actorRestore.PlaceActor(token, actor));
+                placement = edits == null ? placed : placed == null ? edits : $"{edits} {placed}";
+            }
+            else
+            {
+                var poseResult = await Barriers.ImportPose(
+                    receipt => actorRestore.ArmPoseImport(
+                        token, actor, $"Scene pose: {actor.Name}", receipt));
+                placement = poseResult == null
+                    ? await sceneState.OnFramework(() =>
+                        Guard() ?? actorRestore.PlaceActor(token, actor))
+                    : poseResult;
+            }
             _entities.Add(placement == null
                 ? new SceneEntityOutcome(SceneOutcomeKind.Actor, actor.Name, true)
                 : new SceneEntityOutcome(SceneOutcomeKind.Actor, actor.Name, false, placement));
 
+            if (actor.CompanionAnimation is not null && !_companionAnimationRefused.Contains(actor.Key))
+            {
+                // The companion's edits over its animation, then its placement.
+                var edits = await sceneState.OnFramework(() =>
+                    Guard() ?? actorRestore.RestorePoseEdits(token, actor, companion: true));
+                var placed = await sceneState.OnFramework(() =>
+                    Guard() ?? actorRestore.PlaceCompanion(token, actor));
+                var companion = edits == null ? placed : placed == null ? edits : $"{edits} {placed}";
+                if (companion != null)
+                    _entities.Add(new SceneEntityOutcome(
+                        SceneOutcomeKind.Companion, actor.Name, false, companion));
+            }
             // The companion's OWN pose, after its owner's: the same
             // single-flight engine takes one import at a time, and a
             // companion that could not be posed is a named refusal beside
             // a restored actor, never a failed scene.
-            if (actor.CompanionPose is not null)
+            else if (actor.CompanionPose is not null)
             {
                 var companion = await Barriers.ImportPose(
                     receipt => actorRestore.ArmCompanionPoseImport(

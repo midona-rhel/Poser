@@ -220,9 +220,9 @@ internal sealed class BaseAnimationSession
         ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
         if (_store.Suspended() is { } blocked) return blocked;
-        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
-            return Outcome.Fail(
-                "Repeat is unavailable for this layer: exact replay is unverified.");
+        // Lips plays through the lips override, not through Apply's slot targets.
+        if (slot == AnimationSlot.Lips)
+            return Outcome.Fail("Repeat is unavailable for lips.");
         var current = _store.For(actor);
         if (!on && current.LoopedSlots.ContainsKey(slot))
         {
@@ -252,22 +252,22 @@ internal sealed class BaseAnimationSession
         if (!on)
             return Outcome.Ok();
 
-        if (slot == AnimationSlot.UpperBody)
+        if (slot != AnimationSlot.Base)
         {
             // The switch may resume ownership only when Apply's last target
-            // is still live; it never starts or retargets Upper playback.
-            ushort upperTarget = current.AppliedSlots.GetValueOrDefault(slot);
-            ushort liveUpper = _timeline.Read(actor)?.TimelineFor(slot) ?? 0;
-            if (upperTarget == 0 || liveUpper != upperTarget)
+            // is still live; it never starts or retargets the layer's playback.
+            ushort layerTarget = current.AppliedSlots.GetValueOrDefault(slot);
+            ushort layerLive = _timeline.Read(actor)?.TimelineFor(slot) ?? 0;
+            if (layerTarget == 0 || layerLive != layerTarget)
                 return Outcome.Ok();
-            var armedUpper = _timeline.SetSlotLoop(actor, slot, upperTarget);
-            if (!armedUpper.Success)
-                return armedUpper;
+            var layerArmed = _timeline.SetSlotLoop(actor, slot, layerTarget);
+            if (!layerArmed.Success)
+                return layerArmed;
             _store.Mutate(actor, o => o with
             {
                 LoopedSlots = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
                 {
-                    [slot] = upperTarget,
+                    [slot] = layerTarget,
                 },
             });
             return Outcome.Ok();
@@ -333,8 +333,7 @@ internal sealed class BaseAnimationSession
             };
             return o with { AppliedSlots = applied };
         });
-        if (slot != AnimationSlot.UpperBody ||
-            !_store.For(actor).LoopWantedSlots.Contains(slot))
+        if (!_store.For(actor).LoopWantedSlots.Contains(slot))
             return Outcome.Ok();
 
         var armed = _timeline.SetSlotLoop(actor, slot, selected);
@@ -362,9 +361,11 @@ internal sealed class BaseAnimationSession
         var rollbackCapture = before.BaseCapture != null
             ? _timeline.CaptureBase(actor)
             : firstCapture;
-        var played = _timeline.PlayEmote(actor, entry.EmoteId);
+        var played = _timeline.PlayEmote(actor, entry.EmoteId, (ushort)entry.TimelineId);
+        // A refused emote start plays the timeline itself, without its intro, so
+        // Apply never silently does nothing.
         if (!played.Success)
-            return played;
+            return PlayBaseCore(actor, (ushort)entry.TimelineId, before, armRepeat);
         if (armRepeat)
         {
             var armed = _timeline.SetForceLoop(actor, (ushort)entry.TimelineId);
@@ -553,12 +554,19 @@ internal sealed class BaseAnimationSession
         if (!cancelled.Success)
             return cancelled;
 
+        // The slot cancel leaves the other layers and the base running on their
+        // own timelines (measured on Upper, Facial and Additive cancels: same
+        // objects, clocks still counting). Replaying them restarted them from
+        // frame 0, so only a layer the cancel actually took is played again.
+        var after = _timeline.Read(actor);
         var failures = new List<string>();
         var retrySlots = new Dictionary<AnimationSlot, ushort>();
         foreach (var survivor in reading.Slots)
         {
             if (survivor.Slot is AnimationSlot.Base || survivor.Slot == slot ||
                 survivor.TimelineId == 0)
+                continue;
+            if (after != null && after.TimelineFor(survivor.Slot) == survivor.TimelineId)
                 continue;
             var replayed = survivor.Slot == AnimationSlot.Lips && reading.LipsOverride != 0
                 ? _timeline.SetLips(actor, reading.LipsOverride)
@@ -569,7 +577,8 @@ internal sealed class BaseAnimationSession
                 retrySlots[survivor.Slot] = survivor.TimelineId;
             }
         }
-        if (immediateBase is { } baseline)
+        if (immediateBase is { } baseline &&
+            (after == null || after.TimelineFor(AnimationSlot.Base) != reading.TimelineFor(AnimationSlot.Base)))
         {
             var baseRestored = _timeline.RestoreBase(actor, baseline);
             if (!baseRestored.Success)

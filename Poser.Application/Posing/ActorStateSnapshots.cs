@@ -37,6 +37,12 @@ public sealed class ActorStateSnapshots(
     ActorModelIdSession models, GazeSession gaze, IExpressionRuntimePort expressions,
     IIntegrationResolutionPort runtime, IPenumbraPort penumbra) : IActorStateSnapshots
 {
+    // The last pose/IK each actor was captured with, per GPose session. While a
+    // redraw is still settling (redraws mashed every few frames) the skeleton is
+    // not posable, so the capture comes back empty; nothing can have posed the
+    // actor since its last successful capture, so that one is still its state.
+    private readonly Dictionary<ActorId, (SessionGeneration Session, ActorSnapshot Pose)> _lastPose = new();
+
     public IntegrationValue<ActorPropertiesSnapshot> CaptureProperties(ActorId actor, bool captureCollection = true,
         bool omitUnreadableLook = false)
     {
@@ -69,7 +75,12 @@ public sealed class ActorStateSnapshots(
             return IntegrationValue<ActorStateSnapshot>.Fail(properties.Detail ?? "Actor state could not be captured.");
         try
         {
-            if (poses.Value.CaptureAuthored(actor.LogicalId) is not { } pose)
+            var pose = poses.Value.CaptureAuthored(actor.LogicalId);
+            if (pose != null)
+                _lastPose[actor] = (session, pose);
+            else if (_lastPose.TryGetValue(actor, out var last) && last.Session == session)
+                pose = last.Pose;
+            else
                 return IntegrationValue<ActorStateSnapshot>.Fail("The actor's pose and IK could not be captured.");
             return IntegrationValue<ActorStateSnapshot>.Ok(new(actor, session, pose, properties.Value));
         }

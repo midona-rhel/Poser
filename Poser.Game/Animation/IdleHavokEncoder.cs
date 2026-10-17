@@ -22,6 +22,8 @@ namespace Poser.Game.Animation;
 // animation control or binding. Native allocations exist only during Save.
 internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner scanner)
 {
+    private const string VtableStoreSiteBytes = "48 89 07 48 8B CD 48 89 77 38";
+
     internal sealed record SkeletonLayout(string Name, string[] Bones, short[] Parents, PoseTransform[] ReferencePose);
 
     private static byte[] SkeletonData(byte[] bytes)
@@ -190,10 +192,15 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
             binding.BoneIndices.IsDefaultOrEmpty || clip.Frames.Any(f => f.Length != binding.BoneIndices.Length))
             throw new InvalidDataException("Invalid sampled animation.");
 
-        // VFXEditor's interleaved-animation constructor reference: the RIP-relative
-        // LEA immediately before this instruction loads the virtual table. Validate
-        // that instruction before using its displacement; fail closed on game changes.
-        var next = scanner.ScanText("48 89 07 48 8B CD 48 89 77 38");
+        // The vtable store in hkaInterleavedUncompressedAnimation's constructor
+        // (patchcheck hkaInterleavedUncompressedAnimation.ctor+0x3A, VFXEditor's
+        // reference): the RIP-relative LEA immediately before this instruction loads
+        // the virtual table. Validate that instruction before using its displacement;
+        // fail closed on game changes.
+        if (!Poser.Game.Natives.NativeCode.TryFindSite(scanner,
+                Poser.Game.Natives.NativeSignatures.hkaInterleavedUncompressedAnimation_ctor,
+                0x3A, VtableStoreSiteBytes, out var next))
+            throw new InvalidOperationException("Unsupported Havok interleaved constructor.");
         if (Marshal.ReadByte(next - 7) != 0x48 || Marshal.ReadByte(next - 6) != 0x8D || Marshal.ReadByte(next - 5) != 0x05)
             throw new InvalidOperationException("Unsupported Havok interleaved constructor.");
         nint vtable = next + Marshal.ReadInt32(next - 4);

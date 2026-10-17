@@ -88,9 +88,15 @@ public sealed class AnimationSceneActions
         return new SceneActionReport(attempted, succeeded, failures, skipped);
     }
 
-    public SceneActionReport FreezeAll() =>
-        Run(Capture(), id => _animation.Pause(id));
+    // One click, one step for every actor it holds or plays.
+    public SceneActionReport FreezeAll() => Grouped(() => Run(Capture(), id => _animation.Pause(id)));
 
-    public SceneActionReport ResumeAll() =>
-        Run(Capture(), id => _animation.Resume(id));
+    public SceneActionReport ResumeAll() => Grouped(() => Run(Capture(), id => _animation.Resume(id)));
+
+    private SceneActionReport Grouped(Func<SceneActionReport> run)
+    {
+        SceneActionReport? report = null;
+        _animation.Grouped(() => report = run());
+        return report!.Value;
+    }
 }

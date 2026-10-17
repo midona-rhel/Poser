@@ -47,8 +47,6 @@ internal unsafe interface IEnvironmentNativeFactory
         ISigScanner scanner, IGameInteropProvider hooking, UpdateEnvironmentDelegate detour);
     IEnvStateCopyHook CreateEnvStateCopyHook(
         ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour);
-    IEnvStateCopyHook CreateEnvStateCopyCallSiteHook(
-        ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour);
 }
 
 internal readonly record struct HousingBrightnessState(float Current, float Target, float Saved);
@@ -94,29 +92,25 @@ internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactor
 {
     public IEnvHook CreateTimeHook(
         ISigScanner scanner, IGameInteropProvider hooking, UpdateEorzeaTimeDelegate detour) =>
+        // Framework.TaskBeginFn by its lea in Framework::Setup: the body has a
+        // byte-identical dead twin, so a body signature matches twice.
         new DalamudEnvHook<UpdateEorzeaTimeDelegate>(hooking.HookFromAddress(
-            scanner.ScanText("48 89 5C 24 ?? 57 48 83 EC ?? 48 8B F9 48 8B DA 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C"),
+            Poser.Game.Natives.NativeData.TryResolve(scanner, Poser.Game.Natives.NativeData.Framework_TaskBeginFn, out var address)
+                && address != 0
+                ? address
+                : throw new InvalidOperationException("Framework.TaskBeginFn not found"),
             detour));
 
     public IEnvWeatherHook CreateWeatherHook(
         ISigScanner scanner, IGameInteropProvider hooking, UpdateEnvironmentDelegate detour) =>
         new DalamudEnvWeatherHook(hooking.HookFromAddress(
-            scanner.ScanText("40 53 48 83 EC 30 48 8B 05 ?? ?? ?? ?? 48 8B D9 0F 29 74 24 ??"),
+            scanner.ScanText(Poser.Game.Natives.NativeSignatures.EnvManager_Update),
             detour));
 
-    // Brio scans the copy routine directly; Ktisis scans a call site to the
-    // same routine. Both are kept: a broken direct pattern still leaves the
-    // section holds working through the call site.
     public IEnvStateCopyHook CreateEnvStateCopyHook(
         ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>
         new DalamudEnvCopyHook(hooking.HookFromAddress(
-            scanner.ScanText("0F 10 42 08 0F 11 41 08 F2 0F 10 4A 18"),
-            detour));
-
-    public IEnvStateCopyHook CreateEnvStateCopyCallSiteHook(
-        ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>
-        new DalamudEnvCopyHook(hooking.HookFromAddress(
-            scanner.ScanText("E8 ?? ?? ?? ?? 49 3B F5 75 0D"),
+            scanner.ScanText(Poser.Game.Natives.NativeSignatures.EnvState_CopyFrom),
             detour));
 
     private class DalamudEnvHook<T>(Hook<T> hook) : IEnvHook where T : Delegate
@@ -264,10 +258,7 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
 
         _envStateHook = TryCreate(
             () => nativeFactory.CreateEnvStateCopyHook(sigScanner, hooking, EnvStateCopyDetour),
-            "environment section hold")
-            ?? TryCreate(
-                () => nativeFactory.CreateEnvStateCopyCallSiteHook(sigScanner, hooking, EnvStateCopyDetour),
-                "environment section hold (call site)");
+            "environment section hold");
 
         // Unlike the other two, this hook stays enabled: the detour is what
         // reads the hold flags, and it is a plain pass-through while none are

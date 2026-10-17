@@ -6,6 +6,7 @@ using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using NativeAABounds = FFXIVClientStructs.FFXIV.Common.Math.AxisAlignedBounds;
 using NativeTransform = FFXIVClientStructs.FFXIV.Client.Graphics.Transform;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Lighting;
 
@@ -20,33 +21,40 @@ public unsafe struct GameLight
     [StructLayout(LayoutKind.Explicit)]
     public struct GameLightVirtualTable
     {
-        [FieldOffset(0x00)]
+        [FieldOffset(NativeFields.GameLightVtbl_Destructor)]
         public delegate* unmanaged<GameLight*, bool, nint> Destructor;
 
-        [FieldOffset(0x08)]
+        [FieldOffset(NativeFields.GameLightVtbl_Cleanup)]
         public delegate* unmanaged<GameLight*, void> Cleanup;
     }
 
-    [FieldOffset(0x00)] public GameLightVirtualTable* VirtualTable;
+    [FieldOffset(NativeFields.GameLight_VirtualTable)] public GameLightVirtualTable* VirtualTable;
 
-    [FieldOffset(0x00)] public DrawObject DrawObject;
+    [FieldOffset(NativeFields.GameLight_DrawObject)] public DrawObject DrawObject;
 
-    [FieldOffset(0x50)] public NativeTransform Transform;
+    [FieldOffset(NativeFields.GameLight_Transform)] public NativeTransform Transform;
 
-    /// <summary>0 = off; 79 is the value the game's own GPose light toggle
-    /// writes when turning a light on.</summary>
-    [FieldOffset(0x88)] public byte VisibilityFlags;
+    /// <summary>DrawObject flags (patchcheck GameLight.VisibilityFlags): the game
+    /// draws and culls an object only with bits 0 (shown) and 6 both set; bit 2 is
+    /// the render-state dirty bit. A fresh light has 0x4B.</summary>
+    [FieldOffset(NativeFields.GameLight_VisibilityFlags)] public byte VisibilityFlags;
 
-    [FieldOffset(0x90)] public LightRenderObject* LightRenderObject;
+    private const byte DrawnBits = 0x41, ShownBit = 0x01;
+
+    [FieldOffset(NativeFields.GameLight_LightRenderObject)] public LightRenderObject* LightRenderObject;
 
     /// <summary>Gobo texture handle. Written by the game's set-light-texture
     /// call; released with <c>DecRef</c> when the gobo is cleared.</summary>
-    [FieldOffset(0x98)] public TextureResourceHandle* ProjectedCubemapTexture;
+    [FieldOffset(NativeFields.GameLight_ProjectedCubemapTexture)] public TextureResourceHandle* ProjectedCubemapTexture;
 
+    /// <summary>Drawn as the game tests it, (+0x88 &amp; 0x41) == 0x41; hidden as
+    /// ILayoutInstance::SetActive hides it, by its shown bit.</summary>
     public bool IsVisible
     {
-        get => DrawObject.IsVisible;
-        set => DrawObject.IsVisible = value;
+        readonly get => (VisibilityFlags & DrawnBits) == DrawnBits;
+        set => VisibilityFlags = value
+            ? (byte)(VisibilityFlags | DrawnBits)
+            : (byte)(VisibilityFlags & ~ShownBit);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -100,37 +108,38 @@ public unsafe struct GPoseLightController
 {
     public const int LightCount = 3;
 
-    [FieldOffset(0x0E0)] public fixed ulong Lights[LightCount];
+    [FieldOffset(NativeFields.GPoseLightController_Lights)] public fixed ulong Lights[LightCount];
 
     public GameLight* GetLight(uint index) =>
         index < LightCount ? (GameLight*)Lights[index] : null;
 }
 
-/// <summary>Render-side properties of a <see cref="GameLight"/>.</summary>
-[StructLayout(LayoutKind.Explicit, Size = 0x160)]
+/// <summary>Render-side properties of a <see cref="GameLight"/>; CreateLight
+/// allocates 0x130 bytes for it.</summary>
+[StructLayout(LayoutKind.Explicit, Size = 0x130)]
 public unsafe struct LightRenderObject
 {
-    [FieldOffset(0x18)] public LightFlags LightFlags;
-    [FieldOffset(0x1C)] public LightType EmissionType;
-    [FieldOffset(0x20)] public NativeTransform* Transform;
-    [FieldOffset(0x28)] public Vector4 ColorIntensity;
-    [FieldOffset(0x40)] public NativeAABounds MaxRange;
-    [FieldOffset(0x60)] public float ShadowPlaneNear;
-    [FieldOffset(0x64)] public float ShadowPlaneFar;
-    [FieldOffset(0x68)] public FalloffType FalloffType;
-    [FieldOffset(0x70)] public Vector2 AreaAngle;
-    [FieldOffset(0x80)] public float Falloff;
-    [FieldOffset(0x84)] public float LightAngle;
-    [FieldOffset(0x88)] public float FalloffAngle;
-    [FieldOffset(0x8C)] public float Range;
-    [FieldOffset(0x90)] public float CharacterShadowRange;
+    [FieldOffset(NativeFields.LightRenderObject_LightFlags)] public LightFlags LightFlags;
+    [FieldOffset(NativeFields.LightRenderObject_EmissionType)] public LightType EmissionType;
+    [FieldOffset(NativeFields.LightRenderObject_Transform)] public NativeTransform* Transform;
+    [FieldOffset(NativeFields.LightRenderObject_ColorIntensity)] public Vector4 ColorIntensity;
+    [FieldOffset(NativeFields.LightRenderObject_MaxRange)] public NativeAABounds MaxRange;
+    [FieldOffset(NativeFields.LightRenderObject_ShadowPlaneNear)] public float ShadowPlaneNear;
+    [FieldOffset(NativeFields.LightRenderObject_ShadowPlaneFar)] public float ShadowPlaneFar;
+    [FieldOffset(NativeFields.LightRenderObject_FalloffType)] public FalloffType FalloffType;
+    [FieldOffset(NativeFields.LightRenderObject_AreaAngle)] public Vector2 AreaAngle;
+    [FieldOffset(NativeFields.LightRenderObject_Falloff)] public float Falloff;
+    [FieldOffset(NativeFields.LightRenderObject_LightAngle)] public float LightAngle;
+    [FieldOffset(NativeFields.LightRenderObject_FalloffAngle)] public float FalloffAngle;
+    [FieldOffset(NativeFields.LightRenderObject_Range)] public float Range;
+    [FieldOffset(NativeFields.LightRenderObject_CharacterShadowRange)] public float CharacterShadowRange;
 
-    [FieldOffset(0xA0)] public NativeAABounds CullingBounds;
-    [FieldOffset(0xC0)] public NativeAABounds RangeBounds;
+    [FieldOffset(NativeFields.LightRenderObject_CullingBounds)] public NativeAABounds CullingBounds;
+    [FieldOffset(NativeFields.LightRenderObject_RangeBounds)] public NativeAABounds RangeBounds;
 
     /// <summary>Render-side copy of the gobo texture handle. Cleared to null
     /// alongside the scene light's own handle.</summary>
-    [FieldOffset(0x120)] public void* Texture;
+    [FieldOffset(NativeFields.LightRenderObject_Texture)] public void* Texture;
 
     public Vector3 Color
     {

@@ -191,7 +191,8 @@ public sealed class PoseCommandTests
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
         {
             "Reset" => Outcome.Ok(),
-            "ClearLoops" or "SuspendColors" or "ClearOwned" => null,
+            "ClearLoops" or "SuspendColors" or "ClearOwned" or "SetLayerOwned"
+                or "add_LayerEnded" or "remove_LayerEnded" => null,
             _ => throw new InvalidOperationException($"Unexpected reset mechanism: {method.Name}"),
         };
     }

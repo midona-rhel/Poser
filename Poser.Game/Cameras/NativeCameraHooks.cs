@@ -25,18 +25,18 @@ internal sealed unsafe class NativeCameraHooks
 {
     // Brio signatures, verbatim from main (2026-08).
     private const string CameraUpdateSignature =
-        "40 55 53 57 48 8D 6C 24 A0 48 81 EC ?? ?? ?? ?? 48 8B 1D";
+        Poser.Game.Natives.NativeSignatures.Camera_Update;
     private const string CameraCollisionSignature =
-        "E8 ?? ?? ?? ?? 4C 8D 44 24 40 89 83 14 ?? ?? ??";
+        Poser.Game.Natives.NativeSignatures.Camera_ResolveCollision;
     private const string CameraMatrixLoadSignature =
-        "E8 ?? ?? ?? ?? 48 8B 93 90 02 ?? ?? 48 8D 4C 24 40";
+        Poser.Game.Natives.NativeSignatures.RenderCamera_SetMatrices;
     private const string HandleInputSignature =
-        "E8 ?? ?? ?? ?? ?? 8B ?? ?? ?? ?? 8B 87 ?? ?? ?? ?? 89 45";
+        Poser.Game.Natives.NativeSignatures.InputDeviceManager_Update;
 
     // Ktisis signature, verbatim from main (2026-08): the function that
     // derives the orbit look-at, hooked for bone tracking.
     private const string CalculateLookPositionSignature =
-        "E8 ?? ?? ?? ?? F3 0F 10 64 24 ?? F3 0F 10 0D ?? ?? ?? ??";
+        Poser.Game.Natives.NativeSignatures.Camera_SmoothLookAt;
 
     private readonly VirtualCameraService _owner;
     private readonly IPluginLog _log;

@@ -112,6 +112,8 @@ public sealed class PoseImportCoordinatorTests
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             if (method!.Name == "IsSupported") return true;
+            // The session subscribes to the timeline port's layer-end event.
+            if (method.Name is "add_LayerEnded" or "remove_LayerEnded") return null;
             if (method.Name == "RewindPausedControls") Events.Add("rewind");
             if (method.Name is "SetOverallSpeed" or "ClearOverallSpeed" or "RewindPausedControls")
                 return Outcome.Ok();

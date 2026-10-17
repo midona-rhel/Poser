@@ -13,8 +13,6 @@ public sealed unsafe class SceneFramePhaseService : IDisposable
 {
     // Brio's scene-update seam. Anchors must run after native animation and
     // before the free-camera matrix replacement, or either can flicker.
-    private const string Signature =
-        "48 ?? ?? ?? ?? ?? 48 81 EC ?? ?? ?? ?? F6 81 F0 ?? ?? ?? ?? 48 8B ??";
     private delegate nint SceneUpdate(SceneCamera* camera);
     internal delegate void CameraPhase(SceneCamera* camera);
     internal event CameraPhase? CameraUpdate;
@@ -38,7 +36,8 @@ public sealed unsafe class SceneFramePhaseService : IDisposable
         {
             using var activation = new StartupCleanup(error =>
                 log.Error(error, "Scene hook cleanup failed"));
-            var hook = hooks.HookFromAddress<SceneUpdate>(scanner.ScanText(Signature), Detour);
+            var hook = hooks.HookFromAddress<SceneUpdate>(
+                scanner.ScanText(Poser.Game.Natives.NativeSignatures.SceneCamera_Update), Detour);
             activation.OnFailure(hook.Dispose);
             // Publish before enabling: the native callback can run immediately.
             _hook = hook;

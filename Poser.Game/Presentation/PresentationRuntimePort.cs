@@ -12,6 +12,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Game.Bindings;
 using CSCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Presentation;
 
@@ -95,7 +96,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
             // tint update, hooked so owned instances keep Poser's value.
             // No CS symbol exists for this slot; the address is read from
             // the CS-named static vtable at runtime, never a raw scan.
-            var address = Marshal.ReadInt64((nint)CharacterBase.StaticVirtualTablePointer + 0xC0);
+            var address = Marshal.ReadInt64((nint)CharacterBase.StaticVirtualTablePointer + NativeFields.CharacterBase_VfSetTint);
             _updateTintHook = hooking.HookFromAddress<UpdateTintDelegate>((nint)address, UpdateTintDetour);
             _updateTintHook.Enable();
             _tintHookEnabled = true;

@@ -17,22 +17,6 @@ namespace Poser.Game.Lighting;
 /// </summary>
 internal sealed unsafe class LightGoboController
 {
-    // Gobo pair, Ktisis pattern first then Brio's. The two projects signature
-    // the same two functions off different anchors and neither is guaranteed
-    // to survive a patch, so each is tried in turn before the feature is
-    // declared unavailable.
-    private const string SetLightTextureSignatureKtisis =
-        "40 53 48 83 EC ?? 48 8B D9 C7 44 24 ?? ?? ?? ?? ?? 33 C9";
-
-    private const string SetLightTextureSignatureBrio =
-        "40 53 48 83 ?? ?? 48 ?? ?? ?? 44 24 58 ?? ?? ?? ?? 33 ?? 48";
-
-    private const string ClassifyPathSignatureKtisis =
-        "40 53 48 83 EC ?? ?? ?? ?? ?? 4C 8B CA 0F BE 42";
-
-    private const string ClassifyPathSignatureBrio =
-        "40 53 48 83 ?? ?? 44 0F BE 02 ?? ?? ?? ??";
-
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
 
@@ -53,14 +37,12 @@ internal sealed unsafe class LightGoboController
             sigScanner,
             log,
             "light set-texture",
-            SetLightTextureSignatureKtisis,
-            SetLightTextureSignatureBrio);
+            Poser.Game.Natives.NativeSignatures.Light_LoadProjectedTexture);
         var classifyAddress = LightingService.TryScan(
             sigScanner,
             log,
             "resource-path classify",
-            ClassifyPathSignatureKtisis,
-            ClassifyPathSignatureBrio);
+            Poser.Game.Natives.NativeSignatures.ResourceCategory_FromPath);
         if (textureAddress is { } texture && classifyAddress is { } classify)
         {
             _setLightTexture =

@@ -67,17 +67,23 @@ internal static class ServiceRegistration
         ITargetManager targetManager,
         IChatGui chatGui,
         INotificationManager notificationManager,
-        ISeStringEvaluator seStringEvaluator)
+        ISeStringEvaluator seStringEvaluator,
+        IGameGui gameGui)
     {
         services.AddSingleton(notificationManager);
         services.AddSingleton(seStringEvaluator);
+        services.AddSingleton(gameGui);
         services.AddSingleton(pluginInterface);
         services.AddSingleton(log);
         services.AddSingleton(clientState);
         services.AddSingleton(framework);
         services.AddSingleton(objectTable);
         services.AddSingleton(sigScanner);
-        services.AddSingleton(gameInterop);
+        // Every hook Poser makes goes through the ledger, which the native check reads.
+        var hookLedger = new Game.Natives.HookLedger(gameInterop);
+        services.AddSingleton(hookLedger);
+        services.AddSingleton<IGameInteropProvider>(hookLedger);
+        services.AddSingleton<Application.Diagnostics.INativeHealth, Game.Natives.NativeHealthCheck>();
         services.AddSingleton(commandManager);
         services.AddSingleton(dataManager);
         services.AddSingleton(keyState);
@@ -339,7 +345,11 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.AnimationSpeedRuntimePort>();
         services.AddSingleton<IAnimationSpeedPort>(sp => sp.GetRequiredService<Game.Animation.AnimationSpeedRuntimePort>());
         services.AddSingleton<IAnimationStancePort, Game.Animation.AnimationStanceRuntimePort>();
-        services.AddSingleton<IAnimationScrubPort, Game.Animation.AnimationScrubRuntimePort>();
+        services.AddSingleton<Game.Animation.TimelineSeekService>();
+        services.AddSingleton<IAnimationScrubPort>(sp => new Game.Animation.AnimationScrubRuntimePort(
+            sp.GetRequiredService<IPluginLog>(),
+            sp.GetRequiredService<Game.Animation.AnimationNativeState>(),
+            sp.GetRequiredService<Game.Animation.TimelineSeekService>()));
         services.AddSingleton<AnimationSession>(sp =>
         {
             var log = sp.GetRequiredService<IPluginLog>();
@@ -696,7 +706,10 @@ internal static class ServiceRegistration
 #endif
             return new SceneAutoSaveService(
                 sp.GetRequiredService<ConfigurationService>(),
-                sp.GetRequiredService<SceneCaptureService>().BeginCapture,
+                // Snapshots follow the save dialog's Animation choice.
+                (sceneId, description, onCaptured) => sp.GetRequiredService<SceneCaptureService>().BeginCapture(
+                    sceneId, description, onCaptured,
+                    sp.GetRequiredService<global::Poser.Application.Scene.SceneLoadPreferences>().SaveOptions.IncludeAnimation),
                 () => sp.GetRequiredService<SceneWorkflow>().Busy,
                 new SceneAutoSaveStore(sceneAutoSaveRoot,
                     message => log.Error(message)),

@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Environment;
 
@@ -16,78 +17,82 @@ namespace Poser.Game.Environment;
 [StructLayout(LayoutKind.Explicit, Size = 0x2F8)]
 internal struct EnvStateNative
 {
-    [FieldOffset(0x008)] public uint SkyTextureId;
-    [FieldOffset(0x020)] public EnvLightingNative Lighting;
-    [FieldOffset(0x098)] public EnvStarsNative Stars;
-    [FieldOffset(0x0C0)] public EnvFogNative Fog;
-    [FieldOffset(0x148)] public EnvCloudsNative Clouds;
-    [FieldOffset(0x170)] public EnvRainNative Rain;
-    [FieldOffset(0x1A4)] public EnvParticlesNative Particles;
-    [FieldOffset(0x1D8)] public EnvWindNative Wind;
+    [FieldOffset(NativeFields.EnvStateNative_SkyTextureId)] public uint SkyTextureId;
+    [FieldOffset(NativeFields.EnvStateNative_Lighting)] public EnvLightingNative Lighting;
+    [FieldOffset(NativeFields.EnvStateNative_Stars)] public EnvStarsNative Stars;
+    [FieldOffset(NativeFields.EnvStateNative_Fog)] public EnvFogNative Fog;
+    [FieldOffset(NativeFields.EnvStateNative_Clouds)] public EnvCloudsNative Clouds;
+    [FieldOffset(NativeFields.EnvStateNative_Rain)] public EnvRainNative Rain;
+    [FieldOffset(NativeFields.EnvStateNative_Particles)] public EnvParticlesNative Particles;
+    [FieldOffset(NativeFields.EnvStateNative_Wind)] public EnvWindNative Wind;
 }
 
-[StructLayout(LayoutKind.Explicit, Size = 0x40)]
+// The game's section is 0x44 bytes (patchcheck EnvState.Lighting); a held section
+// is copied whole, so the size is the game's.
+[StructLayout(LayoutKind.Explicit, Size = 0x44)]
 internal struct EnvLightingNative
 {
-    [FieldOffset(0x00)] public Vector3 SunlightColor;
-    [FieldOffset(0x0C)] public Vector3 MoonlightColor;
-    [FieldOffset(0x18)] public Vector3 AmbientColor;
-    [FieldOffset(0x24)] public float Unknown1;
-    [FieldOffset(0x28)] public float AmbientSaturation;
-    [FieldOffset(0x2C)] public float AmbientTemperature;
-    [FieldOffset(0x30)] public float Unknown2;      // shadow colour, unconfirmed
-    [FieldOffset(0x34)] public float LightDistance; // world vignette off the camera
-    [FieldOffset(0x38)] public float Unknown4;
+    [FieldOffset(NativeFields.EnvLightingNative_SunlightColor)] public Vector3 SunlightColor;
+    [FieldOffset(NativeFields.EnvLightingNative_MoonlightColor)] public Vector3 MoonlightColor;
+    [FieldOffset(NativeFields.EnvLightingNative_AmbientColor)] public Vector3 AmbientColor;
+    [FieldOffset(NativeFields.EnvLightingNative_Unknown1)] public float Unknown1;
+    [FieldOffset(NativeFields.EnvLightingNative_AmbientSaturation)] public float AmbientSaturation;
+    [FieldOffset(NativeFields.EnvLightingNative_AmbientTemperature)] public float AmbientTemperature;
+    [FieldOffset(NativeFields.EnvLightingNative_Unknown2)] public float Unknown2;      // shadow colour, unconfirmed
+    [FieldOffset(NativeFields.EnvLightingNative_LightDistance)] public float LightDistance; // world vignette off the camera
+    [FieldOffset(NativeFields.EnvLightingNative_Unknown4)] public float Unknown4;
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 0x28)]
 internal struct EnvStarsNative
 {
-    [FieldOffset(0x00)] public float ConstellationIntensity;
-    [FieldOffset(0x04)] public float ConstellationCount;
-    [FieldOffset(0x08)] public float StarCount;
-    [FieldOffset(0x0C)] public float GalaxyIntensity;
-    [FieldOffset(0x10)] public float StarIntensity;
-    [FieldOffset(0x14)] public Vector4 MoonColor;
-    [FieldOffset(0x24)] public float MoonBrightness;
+    [FieldOffset(NativeFields.EnvStarsNative_ConstellationIntensity)] public float ConstellationIntensity;
+    [FieldOffset(NativeFields.EnvStarsNative_ConstellationCount)] public float ConstellationCount;
+    [FieldOffset(NativeFields.EnvStarsNative_StarCount)] public float StarCount;
+    [FieldOffset(NativeFields.EnvStarsNative_GalaxyIntensity)] public float GalaxyIntensity;
+    [FieldOffset(NativeFields.EnvStarsNative_StarIntensity)] public float StarIntensity;
+    [FieldOffset(NativeFields.EnvStarsNative_MoonColor)] public Vector4 MoonColor;
+    [FieldOffset(NativeFields.EnvStarsNative_MoonBrightness)] public float MoonBrightness;
 }
 
-[StructLayout(LayoutKind.Explicit, Size = 0x28)]
+// The game's section is 0x68 bytes (patchcheck EnvState.Fog); the unmapped tail is
+// held with it.
+[StructLayout(LayoutKind.Explicit, Size = 0x68)]
 internal struct EnvFogNative
 {
-    [FieldOffset(0x00)] public Vector4 Color;
-    [FieldOffset(0x10)] public float Distance;
-    [FieldOffset(0x14)] public float Thickness;
-    [FieldOffset(0x18)] public float SkySmoothness;
-    [FieldOffset(0x1C)] public float SkyOpacity;
-    [FieldOffset(0x20)] public float FogOpacity;
-    [FieldOffset(0x24)] public float SunVisibility;
+    [FieldOffset(NativeFields.EnvFogNative_Color)] public Vector4 Color;
+    [FieldOffset(NativeFields.EnvFogNative_Distance)] public float Distance;
+    [FieldOffset(NativeFields.EnvFogNative_Thickness)] public float Thickness;
+    [FieldOffset(NativeFields.EnvFogNative_SkySmoothness)] public float SkySmoothness;
+    [FieldOffset(NativeFields.EnvFogNative_SkyOpacity)] public float SkyOpacity;
+    [FieldOffset(NativeFields.EnvFogNative_FogOpacity)] public float FogOpacity;
+    [FieldOffset(NativeFields.EnvFogNative_SunVisibility)] public float SunVisibility;
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 0x28)]
 internal struct EnvCloudsNative
 {
-    [FieldOffset(0x00)] public Vector3 CloudColor1;
-    [FieldOffset(0x0C)] public Vector3 CloudColor2;
-    [FieldOffset(0x18)] public float ShadowStop;
-    [FieldOffset(0x1C)] public float CloudHeight;
-    [FieldOffset(0x20)] public uint CloudTexture;
-    [FieldOffset(0x24)] public uint CloudSideTexture;
+    [FieldOffset(NativeFields.EnvCloudsNative_CloudColor1)] public Vector3 CloudColor1;
+    [FieldOffset(NativeFields.EnvCloudsNative_CloudColor2)] public Vector3 CloudColor2;
+    [FieldOffset(NativeFields.EnvCloudsNative_ShadowStop)] public float ShadowStop;
+    [FieldOffset(NativeFields.EnvCloudsNative_CloudHeight)] public float CloudHeight;
+    [FieldOffset(NativeFields.EnvCloudsNative_CloudTexture)] public uint CloudTexture;
+    [FieldOffset(NativeFields.EnvCloudsNative_CloudSideTexture)] public uint CloudSideTexture;
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 0x34)]
 internal struct EnvRainNative
 {
-    [FieldOffset(0x00)] public float Raindrops;
-    [FieldOffset(0x04)] public float Intensity;
-    [FieldOffset(0x08)] public float Weight;
-    [FieldOffset(0x0C)] public float Scatter;
-    [FieldOffset(0x10)] public float Unknown1;
-    [FieldOffset(0x14)] public float Size;
-    [FieldOffset(0x18)] public Vector4 Color;
-    [FieldOffset(0x28)] public float Unknown2;
-    [FieldOffset(0x2C)] public float Unknown3;
-    [FieldOffset(0x30)] public uint Unknown4;
+    [FieldOffset(NativeFields.EnvRainNative_Raindrops)] public float Raindrops;
+    [FieldOffset(NativeFields.EnvRainNative_Intensity)] public float Intensity;
+    [FieldOffset(NativeFields.EnvRainNative_Weight)] public float Weight;
+    [FieldOffset(NativeFields.EnvRainNative_Scatter)] public float Scatter;
+    [FieldOffset(NativeFields.EnvRainNative_Unknown1)] public float Unknown1;
+    [FieldOffset(NativeFields.EnvRainNative_Size)] public float Size;
+    [FieldOffset(NativeFields.EnvRainNative_Color)] public Vector4 Color;
+    [FieldOffset(NativeFields.EnvRainNative_Unknown2)] public float Unknown2;
+    [FieldOffset(NativeFields.EnvRainNative_Unknown3)] public float Unknown3;
+    [FieldOffset(NativeFields.EnvRainNative_Unknown4)] public uint Unknown4;
 }
 
 // Snow and leaves run through this block as well; Ktisis calls it Dust after
@@ -95,22 +100,22 @@ internal struct EnvRainNative
 [StructLayout(LayoutKind.Explicit, Size = 0x34)]
 internal struct EnvParticlesNative
 {
-    [FieldOffset(0x00)] public float Unknown1;
-    [FieldOffset(0x04)] public float Intensity;
-    [FieldOffset(0x08)] public float Weight;
-    [FieldOffset(0x0C)] public float Spread;
-    [FieldOffset(0x10)] public float Speed;
-    [FieldOffset(0x14)] public float Size;
-    [FieldOffset(0x18)] public Vector4 Color;
-    [FieldOffset(0x28)] public float Glow;
-    [FieldOffset(0x2C)] public float Spin;
-    [FieldOffset(0x30)] public uint TextureId;
+    [FieldOffset(NativeFields.EnvParticlesNative_Unknown1)] public float Unknown1;
+    [FieldOffset(NativeFields.EnvParticlesNative_Intensity)] public float Intensity;
+    [FieldOffset(NativeFields.EnvParticlesNative_Weight)] public float Weight;
+    [FieldOffset(NativeFields.EnvParticlesNative_Spread)] public float Spread;
+    [FieldOffset(NativeFields.EnvParticlesNative_Speed)] public float Speed;
+    [FieldOffset(NativeFields.EnvParticlesNative_Size)] public float Size;
+    [FieldOffset(NativeFields.EnvParticlesNative_Color)] public Vector4 Color;
+    [FieldOffset(NativeFields.EnvParticlesNative_Glow)] public float Glow;
+    [FieldOffset(NativeFields.EnvParticlesNative_Spin)] public float Spin;
+    [FieldOffset(NativeFields.EnvParticlesNative_TextureId)] public uint TextureId;
 }
 
 [StructLayout(LayoutKind.Explicit, Size = 0x0C)]
 internal struct EnvWindNative
 {
-    [FieldOffset(0x00)] public float Direction;
-    [FieldOffset(0x04)] public float Angle;
-    [FieldOffset(0x08)] public float Speed;
+    [FieldOffset(NativeFields.EnvWindNative_Direction)] public float Direction;
+    [FieldOffset(NativeFields.EnvWindNative_Angle)] public float Angle;
+    [FieldOffset(NativeFields.EnvWindNative_Speed)] public float Speed;
 }

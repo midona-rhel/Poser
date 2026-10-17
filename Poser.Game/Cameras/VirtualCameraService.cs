@@ -80,7 +80,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     /// <summary>The game's own limits before a delimit lifted them; one set,
     /// because there is one native camera.</summary>
-    private (Vector2 Distance, float YMin, float YMax)? _originalLimits;
+    private (Vector2 Distance, float PitchMin, float PitchMax)? _originalLimits;
 
     public bool SuppressFlightKeys { get => FreeCamera.SuppressFlightKeys; set => FreeCamera.SuppressFlightKeys = value; }
     public bool FlightActive => FreeCamera.FlightActive;
@@ -378,12 +378,12 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         {
             _originalLimits ??= (
                 new Vector2(native->MinDistance, native->MaxDistance),
-                native->YMin,
-                native->YMax);
+                native->PitchMin,
+                native->PitchMax);
             native->MinDistance = 0f;
             native->MaxDistance = 500f;
-            native->YMin = 1.5f;
-            native->YMax = -1.5f;
+            native->PitchMin = -1.5f;
+            native->PitchMax = 1.5f;
             return;
         }
 
@@ -391,8 +391,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             return;
         native->MinDistance = original.Distance.X;
         native->MaxDistance = original.Distance.Y;
-        native->YMin = original.YMin;
-        native->YMax = original.YMax;
+        native->PitchMin = original.PitchMin;
+        native->PitchMax = original.PitchMax;
         if (native->Distance < native->MinDistance)
             native->Distance = native->MinDistance;
         _originalLimits = null;

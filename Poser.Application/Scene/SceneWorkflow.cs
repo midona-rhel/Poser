@@ -328,7 +328,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                     operation.Guard(_sceneState, cancellation)
                         ?? _capture.ArmSceneCapture(
                             operation.SceneScopeId, description,
-                            outcome =>
+                            includeAnimation: options.IncludeAnimation,
+                            onCaptured: outcome =>
                             {
                                 try
                                 {

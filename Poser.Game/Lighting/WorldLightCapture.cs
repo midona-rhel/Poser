@@ -23,7 +23,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     // Light.ctor — every scene light in the process passes through here,
     // which is how overworld lights become capture candidates.
     private const string LightCtorSignature =
-        "E8 ?? ?? ?? ?? 48 89 84 ?? ?? ?? ?? ?? 48 85 C0 0F ?? ?? ?? ?? ?? 48 8B C8";
+        Poser.Game.Natives.NativeSignatures.Light_ctor;
 
     private delegate GameLight* LightCtorDelegate(GameLight* light);
     private delegate nint LightDtorDelegate(GameLight* light, bool free);

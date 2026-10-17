@@ -5,6 +5,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Domain.Companions;
 using Poser.Game.Core;
+using Poser.Game.Natives;
 
 namespace Poser.Game;
 
@@ -16,7 +17,7 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
     // external deletion, and resolves the dying object's COM index inside
     // the callback exactly as we do.
     private const string CharacterFinalizeSig =
-        "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC ?? 48 8D 05 ?? ?? ?? ?? 48 8B D9 48 89 01 48 8D 05 ?? ?? ?? ?? 48 89 81 ?? ?? ?? ?? 48 81 C1";
+        Poser.Game.Natives.NativeSignatures.Character_Finalizer;
 
     private delegate nint CharacterFinalizeDelegate(Character* chara);
 
@@ -174,10 +175,10 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         to->DrawData.HideHeadgear(0, from->DrawData.IsHatHidden);
         to->DrawData.SetVisor(from->DrawData.IsVisorToggled);
         to->DrawData.HideVieraEars(from->DrawData.VieraEarsHidden);
-        // The two flag bytes wholesale (+0x23E/+0x23F: the toggles above and
+        // The two flag bytes wholesale (Flags1/Flags2: the toggles above and
         // the rest — facewear visibility among them).
-        *((byte*)&to->DrawData + 0x23E) = *((byte*)&from->DrawData + 0x23E);
-        *((byte*)&to->DrawData + 0x23F) = *((byte*)&from->DrawData + 0x23F);
+        to->DrawData.Flags1 = from->DrawData.Flags1;
+        to->DrawData.Flags2 = from->DrawData.Flags2;
         return true;
     }
 
