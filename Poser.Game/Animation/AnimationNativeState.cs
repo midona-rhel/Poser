@@ -442,10 +442,12 @@ public sealed unsafe partial class AnimationNativeState
         (nint)character == (nint)Control.Instance()->LocalPlayer;
 
     /// <summary>
-    /// The Full body back to the game's own (§2): BaseOverride, then the slot cleared,
-    /// so the base-idle pick (Normal-family modes) or the EmoteMode upkeep (loop modes)
-    /// plays what the game would. An actor that was in a loop mode returns to it;
-    /// EmoteLoop 0 has no upkeep, so its row is played again.
+    /// The Full body back to a captured state the game's way (§2): BaseOverride, then
+    /// the slot cleared, so the base-idle pick (Normal-family modes) or the EmoteMode
+    /// upkeep (loop modes) plays what the game would. A mode Poser changed is left
+    /// first; the captured one is entered again. EmoteLoop 0 has no upkeep, so its row
+    /// is played again. A capture in the mode the actor is still in (a layer reset's
+    /// own snapshot) keeps the emote and pose it runs.
     /// </summary>
     internal Outcome RestoreFullBody(Character* character, CharacterModes mode, byte param,
         ushort baseOverride, ushort slotTimeline)
@@ -453,19 +455,24 @@ public sealed unsafe partial class AnimationNativeState
         if (_cancelTimeline == null || _characterSetMode == null)
             return Outcome.Fail("Full body reset is unavailable: a required game function was not found.");
         bool loop = mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop;
-        LeaveForFullBody(character);
+        bool sameMode = character->Mode == mode && character->ModeParam == param;
+        if (!sameMode)
+            LeaveForFullBody(character);
         character->Timeline.BaseOverride = loop ? (ushort)0 : baseOverride;
         _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
         if (!loop || IsRealPlayer(character))
             return Outcome.Ok();
-        // The chair's enter hook sets the sit height into DrawOffset/CameraOffset; the
-        // placement Poser gave the actor stays.
-        var drawOffset = character->DrawOffset;
-        var cameraOffset = character->CameraOffset;
-        _characterSetMode(character, (int)mode, param);
-        character->DrawOffset = drawOffset;
-        character->CameraOffset = cameraOffset;
-        ClearEmoteCancelPending(character);
+        if (!sameMode)
+        {
+            // The chair's enter hook sets the sit height into DrawOffset/CameraOffset;
+            // the placement Poser gave the actor stays.
+            var drawOffset = character->DrawOffset;
+            var cameraOffset = character->CameraOffset;
+            _characterSetMode(character, (int)mode, param);
+            character->DrawOffset = drawOffset;
+            character->CameraOffset = cameraOffset;
+            ClearEmoteCancelPending(character);
+        }
         return param == 0 && slotTimeline != 0 ? ReplayTimeline(character, slotTimeline) : Outcome.Ok();
     }
 
