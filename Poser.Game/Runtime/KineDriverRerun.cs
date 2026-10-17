@@ -4,6 +4,7 @@ using System.Threading;
 using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.Havok.Animation.Rig;
+using Poser.Domain.Posing;
 using Poser.Game.Natives;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
@@ -21,12 +22,16 @@ namespace Poser.Game;
 /// </summary>
 internal sealed unsafe class KineDriverRerun
 {
-    // Node types that write their bone (ApplyDriver): 6 TargetTranslate,
-    // 7 TargetScale (and its child list), 8 TargetRotate, 9 BendRoll,
-    // 10 BendSTRoll, 11 Expmap, 12 PosConstraint, 13 OrientationConstraint,
-    // 14 DirectionConstraint. RBF, Expr and the link nodes write none.
-    private const byte FirstWriter = 6, TargetScale = 7, LastWriter = 14;
+    // Node types that write their bone (ApplyDriver), each one channel of its
+    // local transform: 6 TargetTranslate (its rescale branch also writes scale),
+    // 12 PosConstraint: position; 8 TargetRotate, 9 BendRoll, 10 BendSTRoll,
+    // 11 Expmap, 13 OrientationConstraint, 14 DirectionConstraint: rotation;
+    // 7 TargetScale and its child list: scale. RBF, Expr and the link nodes
+    // write none.
+    private const byte FirstWriter = 6, TargetTranslate = 6, TargetScale = 7, PosConstraint = 12, LastWriter = 14;
     private const int PartialSlots = 5;
+    // BindKdb holds at most four drivers inline in the 0x48-byte instance.
+    private const int MaxDrivers = 4;
 
     private delegate void SyncAllModelSpaceFn(GameSkeleton* skeleton);
     private delegate void ConnectPartialsFromFn(GameSkeleton* skeleton, int partial);
@@ -35,8 +40,7 @@ internal sealed unsafe class KineDriverRerun
     private readonly SyncAllModelSpaceFn? _syncAllModelSpace;
     private readonly ConnectPartialsFromFn? _connectPartialsFrom;
     private readonly UpdateModuleFn? _updateModule;
-    private readonly List<(int Partial, int Bone)> _driven = new();
-    private readonly HashSet<(int, int)> _seen = new();
+    private readonly Dictionary<(int Partial, int Bone), TransformComponents> _driven = new();
 
     public KineDriverRerun(IPluginLog log, ISigScanner scanner)
     {
@@ -57,12 +61,13 @@ internal sealed unsafe class KineDriverRerun
     public bool IsAvailable => _updateModule != null;
 
     /// <summary>Runs the skeleton's drivers once against the current pose, and
-    /// lists the bones they wrote this frame as (partial, bone index). False
-    /// when they didn't run: no module, a module for another skeleton, or a busy
-    /// lock skip this frame rather than wait.</summary>
-    public bool Run(GameSkeleton* skeleton, out IReadOnlyList<(int Partial, int Bone)> driven)
+    /// lists the bones they wrote this frame, (partial, bone index), with the
+    /// channels written. False when they didn't run: no module, a module for
+    /// another skeleton, or a busy lock skip this frame rather than wait.</summary>
+    public bool Run(GameSkeleton* skeleton, out IReadOnlyDictionary<(int Partial, int Bone), TransformComponents> driven)
     {
-        driven = Array.Empty<(int, int)>();
+        _driven.Clear();
+        driven = _driven;
         if (_updateModule == null || skeleton == null)
             return false;
         var owner = skeleton->Owner;
@@ -87,7 +92,6 @@ internal sealed unsafe class KineDriverRerun
         {
             Volatile.Write(ref spinLock, 0);
         }
-        driven = _driven;
         return true;
     }
 
@@ -99,7 +103,7 @@ internal sealed unsafe class KineDriverRerun
     private void CollectDriven(GameSkeleton* skeleton, nint module)
     {
         _driven.Clear();
-        _seen.Clear();
+        nint mergedSkeleton = *(nint*)(module + NativeFields.BoneKineDriverModule_MergedSkeleton);
         for (int p = 0; p < PartialSlots; p++)
         {
             nint slot = module + NativeFields.BoneKineDriverModule_Slots + p * NativeFields.KineDriverSlot_Size;
@@ -108,15 +112,17 @@ internal sealed unsafe class KineDriverRerun
                 || *(byte*)(instance + NativeFields.KineDriverInstance_Ready) == 0
                 || *(byte*)(instance + NativeFields.KineDriverInstance_Enabled) == 0)
                 continue;
-            bool merged = *(byte*)(slot + NativeFields.KineDriverSlot_Merged) != 0;
+            // The merged view only with a merged skeleton; its pose must be that
+            // skeleton's, or the game skips the whole slot (nothing written).
+            bool merged = *(byte*)(slot + NativeFields.KineDriverSlot_Merged) != 0 && mergedSkeleton != 0;
             var mergedPose = merged ? *(hkaPose**)(module + NativeFields.BoneKineDriverModule_MergedPose) : null;
-            if (merged && mergedPose == null)
+            if (merged && (mergedPose == null || (nint)mergedPose->Skeleton != mergedSkeleton))
                 continue;
-            uint drivers = *(uint*)(instance + NativeFields.KineDriverInstance_DriverCount);
-            nint array = *(nint*)(instance + NativeFields.KineDriverInstance_Drivers);
-            for (uint d = 0; d < drivers && array != 0 && d < 1024; d++)
+            uint drivers = Math.Min(*(uint*)(instance + NativeFields.KineDriverInstance_DriverCount), MaxDrivers);
+            for (uint d = 0; d < drivers; d++)
             {
-                nint driver = *(nint*)(array + 8 * (nint)d);
+                // Inline: the instance holds the driver pointers themselves.
+                nint driver = *(nint*)(instance + NativeFields.KineDriverInstance_Drivers + 8 * (nint)d);
                 if (driver == 0 || *(byte*)(driver + NativeFields.KineDriverRuntime_Enabled) == 0)
                     continue;
                 nint data = *(nint*)driver;
@@ -136,28 +142,34 @@ internal sealed unsafe class KineDriverRerun
                         || *(float*)(weights + 4 * (nint)k) <= 0f
                         || type < FirstWriter || type > LastWriter)
                         continue;
-                    Add(skeleton, p, mergedPose, *(short*)(node + NativeFields.KineDriverNode_Bone));
+                    var channels = type switch
+                    {
+                        TargetTranslate => TransformComponents.Position | TransformComponents.Scale,
+                        PosConstraint => TransformComponents.Position,
+                        TargetScale => TransformComponents.Scale,
+                        _ => TransformComponents.Rotation,
+                    };
+                    Add(skeleton, p, mergedPose, *(short*)(node + NativeFields.KineDriverNode_Bone), channels);
                     if (type == TargetScale)
                     {
                         nint children = node + NativeFields.KineDriverTargetScale_Children;
                         children += *(int*)children;
                         uint count = *(uint*)(node + NativeFields.KineDriverTargetScale_ChildCount);
                         for (uint c = 0; c < count && c < 256; c++)
-                            Add(skeleton, p, mergedPose, *(short*)(children + 2 * (nint)c));
+                            Add(skeleton, p, mergedPose, *(short*)(children + 2 * (nint)c), TransformComponents.Scale);
                     }
                 }
             }
         }
     }
 
-    private void Add(GameSkeleton* skeleton, int partial, hkaPose* mergedPose, short bone)
+    private void Add(GameSkeleton* skeleton, int partial, hkaPose* mergedPose, short bone, TransformComponents channels)
     {
         if (bone < 0)
             return;
         if (mergedPose == null)
         {
-            if (_seen.Add((partial, bone)))
-                _driven.Add((partial, bone));
+            Mark((partial, bone), channels);
             return;
         }
         // A merged slot's index is into the whole-skeleton view: the bone by name.
@@ -172,10 +184,12 @@ internal sealed unsafe class KineDriverRerun
             for (int b = 0; b < pose->Skeleton->Bones.Length; b++)
                 if (pose->Skeleton->Bones[b].Name.String == name)
                 {
-                    if (_seen.Add((p, b)))
-                        _driven.Add((p, b));
+                    Mark((p, b), channels);
                     return;
                 }
         }
     }
+
+    private void Mark((int Partial, int Bone) key, TransformComponents channels) =>
+        _driven[key] = _driven.GetValueOrDefault(key) | channels;
 }

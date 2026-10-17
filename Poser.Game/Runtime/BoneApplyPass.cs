@@ -312,14 +312,15 @@ internal sealed unsafe class BoneApplyPass : IDisposable
 
     /// <summary>
     /// The user's edits on the bones KineDriver writes, applied once more on top
-    /// of the driver's result: the edits are deltas, and the driver replaced the
-    /// bone, so each lands exactly once. Bones the drivers don't write keep the
-    /// single application of step 1. No IK: a driven bone is no chain's handle.
+    /// of the driver's result, in the channels it wrote: a driver replaces one
+    /// channel of the bone (position, rotation or scale), and the edits are
+    /// deltas, so each lands exactly once. The channels a driver leaves keep the
+    /// edit of step 1. No IK: a driven bone is no chain's handle.
     /// </summary>
     private void ReapplyDrivenEdits(Skeleton skeleton, GameSkeleton* gameSkeleton, SkeletonPoseInfo poseInfo,
-        IReadOnlyList<(int Partial, int Bone)> driven)
+        IReadOnlyDictionary<(int Partial, int Bone), TransformComponents> driven)
     {
-        foreach (var (partialIdx, boneIdx) in driven)
+        foreach (var ((partialIdx, boneIdx), channels) in driven)
         {
             if (partialIdx < 0 || partialIdx >= gameSkeleton->PartialSkeletonCount)
                 continue;
@@ -333,7 +334,14 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             if (!info.HasStacks)
                 continue;
             foreach (var stack in info.Stacks)
-                ApplyBoneTransform(pose, boneIdx, stack, bone, null);
+            {
+                // The channels the driver didn't write stay neutral (no-op deltas).
+                var delta = stack.Transform;
+                if (!channels.HasFlag(TransformComponents.Position)) delta.Position = Vector3.Zero;
+                if (!channels.HasFlag(TransformComponents.Rotation)) delta.Rotation = Quaternion.Identity;
+                if (!channels.HasFlag(TransformComponents.Scale)) delta.Scale = Vector3.Zero;
+                ApplyBoneTransform(pose, boneIdx, stack with { Transform = delta, IkTransform = null }, bone, null);
+            }
         }
     }
 
