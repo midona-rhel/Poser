@@ -82,6 +82,32 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
 
         _native.CancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
         _native.SetEmoteMode(&character->EmoteController, emoteMode);
+        if (_native.HasSetPose)
+        {
+            // The game's own pose step, in the stance's mode: it plays the pose (the
+            // base idle at 0) and stores the pose after, so a pose written before
+            // the play would be wiped by it.
+            int kind = stance switch
+            {
+                AnimationStance.SitChair => 2,
+                AnimationStance.SitGround => 3,
+                AnimationStance.Sleeping => 4,
+                _ => weaponDrawn ? 1 : 0,
+            };
+            _native.SetPose(character, kind, (byte)wrapped);
+            if (stance == AnimationStance.Idle && wrapped == 0)
+                character->Timeline.TimelineSequencer.PlayTimeline(
+                    weaponDrawn ? AnimationTimelines.BattleIdle : AnimationTimelines.Idle, null);
+            if (preserveOffsets)
+            {
+                character->DrawOffset = drawOffset;
+                character->CameraOffset = cameraOffset;
+            }
+            return character->EmoteController.CPoseState == wrapped
+                ? Outcome.Ok()
+                : Outcome.Fail($"The game didn't change to pose {wrapped} for how the actor is now "
+                    + "(an Upper body animation playing blocks pose changes, as in game).");
+        }
         character->EmoteController.CurrentPoseType = poseType;
         character->EmoteController.CPoseState = (byte)wrapped;
 

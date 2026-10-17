@@ -518,6 +518,20 @@ internal static class NativeSignatures
     public const string EmoteController_CanPlayEmote = "44 88 44 ?? ?? 53 55 56 57 41 55";
     /// <summary>EmoteController.PostureLoopRow (0x1406156A0 on the analysed build).</summary>
     public const string EmoteController_PostureLoopRow = "48 85 C9 74 ?? 8D 42 FF";
+    /// <summary>Dlss.SelectQualityMode (0x140374300 on the analysed build).</summary>
+    public const string Dlss_SelectQualityMode = "40 57 41 56 48 83 EC 38 F6 81 81 01 00 00 01";
+    /// <summary>RenderTargetManager.UpdateRenderHeight (0x1402DA290 on the analysed build).</summary>
+    public const string RenderTargetManager_UpdateRenderHeight = "4C 8B DC 57 48 81 EC D0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44";
+    /// <summary>RenderTargetManager.SetupRenderHeightRange (0x1402DB390 on the analysed build).</summary>
+    public const string RenderTargetManager_SetupRenderHeightRange = "48 89 5C ?? ?? 55 56 57 41 56 41 57 48 83 EC 20 8B 42 04";
+    /// <summary>EmoteController.SetPose (0x140614950 on the analysed build).</summary>
+    public const string EmoteController_SetPose = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 63 FA 4D 8B D1";
+    /// <summary>EmoteController.GetPoseKind (0x140618090 on the analysed build).</summary>
+    public const string EmoteController_GetPoseKind = "40 55 48 83 EC 40 48 8B E9 E8";
+    /// <summary>EmoteController.ClearPose (0x140616940 on the analysed build).</summary>
+    public const string EmoteController_ClearPose = "40 53 48 83 EC 30 48 8B D9 45 33 C0 48 8B 49 08 B2 01";
+    /// <summary>EmoteController.GetAvailablePoses (0x1406140C0 on the analysed build).</summary>
+    public const string EmoteController_GetAvailablePoses = "48 63 C1 48 8D 0D ?? ?? ?? ?? 48 C1 E0 05 0F B6 04";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
@@ -564,6 +578,9 @@ internal static class NativeOffsets
     public static readonly OffsetPattern Character_MoveFlags628 = new("Character.MoveFlags628", "F6 81 ?? ?? ?? ?? 20 74 ?? B8 05 00 00 00", 2, 4, 0x628);
     public static readonly OffsetPattern PartialSkeleton_ControllerSet = new("PartialSkeleton.ControllerSet", "48 8B 91 ?? ?? ?? ?? 49 89 ?? ?? 49 89 ?? ?? 33 ED", 3, 4, 0x198);
     public static readonly OffsetPattern AnimationController_WorkEntry = new("AnimationController.WorkEntry", "49 8B ?? 48 8B 51 08 8B C2", 2, 1, 0x48);
+    public static readonly OffsetPattern GraphicsConfig_DlssQualityMode = new("GraphicsConfig.DlssQualityMode", "41 0F B6 40 ?? 83 F8 06", 4, 1, 0x55);
+    public static readonly OffsetPattern RenderTargetManager_RenderHeightMax = new("RenderTargetManager.RenderHeightMax", "0F B7 83 ?? ?? ?? ?? 3B C6 0F 85", 3, 4, 0x704);
+    public static readonly OffsetPattern PostEffectManager_Dlss = new("PostEffectManager.Dlss", "48 8B 98 ?? ?? ?? ?? 48 85 DB 74 ?? 48 8B 05", 3, 4, 0x4220);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)
@@ -613,6 +630,11 @@ internal static class NativeData
     public static readonly DataPattern GPose_FlagsByte = new("GPose.FlagsByte", "F6 05 ?? ?? ?? ?? 04 74 ?? 80 3D ?? ?? ?? ?? 40 73 ?? 33 D2 48 8B C8 E8 ?? ?? ?? ?? 48 8D ?? 24 40", 2, 7, 0x142A98EC3UL);
     public static readonly DataPattern Character_SpeedFactorD7E = new("Character.SpeedFactorD7E", "F3 0F 59 05 ?? ?? ?? ?? 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC 40 53", 4, 8, 0x142ACBD28UL);
     public static readonly DataPattern ActorControlManager_InstancePtr = new("ActorControlManager.InstancePtr", "48 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 8B D3 48 8B CF E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 8B C8 E8 ?? ?? ?? ?? 48 8B 5C ?? ?? 48 83 C4 20 5F C3 CC CC CC CC CC CC 48 89 5C ?? ?? 57 48 83 EC 40", 3, 7, 0x142AF3210UL);
+    public static readonly DataPattern RenderTargetManager_InstancePtr = new("RenderTargetManager.InstancePtr", "4C 8B 3D ?? ?? ?? ?? 85 C9", 3, 7, 0x1428F9490UL);
+    public static readonly DataPattern PostEffectManager_InstancePtr = new("PostEffectManager.InstancePtr", "48 8B 05 ?? ?? ?? ?? 49 8B F9 49 8B F0", 3, 7, 0x1428F9498UL);
+    public static readonly DataPattern KernelDevice_InstancePtr = new("KernelDevice.InstancePtr", "48 8B 1D ?? ?? ?? ?? 48 8B F1 48 89 6C", 3, 7, 0x1428F2D00UL);
+    public static readonly DataPattern GraphicsConfig_InstancePtr = new("GraphicsConfig.InstancePtr", "48 8B 05 ?? ?? ?? ?? 80 78 54 02 75", 3, 7, 0x1428F9470UL);
+    public static readonly DataPattern EmoteController_CPoseTableCount = new("EmoteController.CPoseTableCount", "48 8D 0D ?? ?? ?? ?? 48 C1 E0 05 0F B6 04", 3, 7, 0x142179C88UL);
 
     /// <summary>Address the instruction refers to: match + InstructionLength + rel32. A value different from
     /// <see cref="DataPattern.Analysed"/> is normal after a patch.</summary>

@@ -65,6 +65,13 @@ public sealed unsafe partial class AnimationNativeState
     // and a mount allows emotes. Flags 0: no slot-priority check. A pure read.
     private delegate byte CanPlayEmoteDelegate(EmoteController* controller, ushort emoteId, uint flags);
     private readonly CanPlayEmoteDelegate? _canPlayEmote;
+    // EmoteController::SetPose 0x140614950 (patchcheck EmoteController.SetPose): the
+    // game's /changepose step without its server commands. Index 1..n plays the kind's
+    // pose emote (StartEmoteLocal: the emote row's own mode), 0 stops it back to the base
+    // idle; it stores the kind (+0x20) and index (+0x21, CPoseState) after playing.
+    // No network in GPose. Kinds: 0 idle, 1 weapon drawn, 2 chair, 3 ground sit, 4 doze.
+    private delegate void SetPoseDelegate(EmoteController* controller, int kind, byte index, nint options);
+    private readonly SetPoseDelegate? _setPose;
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
@@ -212,6 +219,8 @@ public sealed unsafe partial class AnimationNativeState
             sigScanner, "40 53 48 83 EC 20 48 8B D9 48 8B 49 08 48 85 C9 0F 84", "EmoteController.GetPosture");
         _canPlayEmote = ScanDelegate<CanPlayEmoteDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_CanPlayEmote, "EmoteController.CanPlayEmote");
+        _setPose = ScanDelegate<SetPoseDelegate>(
+            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetPose, "EmoteController.SetPose");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
             sigScanner,
             "48 83 EC 28 8D 41 FF 3D E7 FD 00 00 77 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA 64 00 00 00 48 8B 88 40 2B 00 00 E8",
@@ -259,6 +268,11 @@ public sealed unsafe partial class AnimationNativeState
 
     internal bool HasCancelTimeline => _cancelTimeline != null;
     internal bool HasSetEmoteMode => _setEmoteMode != null;
+    internal bool HasSetPose => _setPose != null;
+
+    /// <summary>The game's pose step; callers check <see cref="HasSetPose"/>.</summary>
+    internal void SetPose(Character* character, int kind, byte index) =>
+        _setPose!(&character->EmoteController, kind, index, nint.Zero);
 
     /// <summary>Calls CancelTimeline; callers check <see cref="HasCancelTimeline"/>.</summary>
     internal void CancelTimeline(TimelineContainer* container, nint a2, nint a3) =>
