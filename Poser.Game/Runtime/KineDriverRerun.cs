@@ -23,7 +23,7 @@ namespace Poser.Game;
 internal sealed unsafe class KineDriverRerun
 {
     // Node types that write their bone (ApplyDriver), each one channel of its
-    // local transform: 6 TargetTranslate (its rescale branch also writes scale),
+    // local transform: 6 TargetTranslate (scale too in its rescale branch),
     // 12 PosConstraint: position; 8 TargetRotate, 9 BendRoll, 10 BendSTRoll,
     // 11 Expmap, 13 OrientationConstraint, 14 DirectionConstraint: rotation;
     // 7 TargetScale and its child list: scale. RBF, Expr and the link nodes
@@ -144,7 +144,11 @@ internal sealed unsafe class KineDriverRerun
                         continue;
                     var channels = type switch
                     {
-                        TargetTranslate => TransformComponents.Position | TransformComponents.Scale,
+                        // Its rescale branch (segment scale with a source) also writes scale.
+                        TargetTranslate => *(byte*)(node + NativeFields.KineDriverTargetTranslate_SegmentScale) != 0
+                            && *(long*)(node + NativeFields.KineDriverTargetTranslate_SegmentScaleSource) != 0
+                                ? TransformComponents.Position | TransformComponents.Scale
+                                : TransformComponents.Position,
                         PosConstraint => TransformComponents.Position,
                         TargetScale => TransformComponents.Scale,
                         _ => TransformComponents.Rotation,

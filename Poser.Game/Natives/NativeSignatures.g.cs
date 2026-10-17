@@ -928,6 +928,8 @@ internal static class NativeOffsets
     public static readonly OffsetPattern KineDriverTargetScale_ChildCount = new("KineDriverTargetScale.ChildCount", "44 39 43 ?? 76 ?? 0F 1F 40 00 0F 1F 84 00 00 00 00 00", 3, 1, 0x4C);
     public static readonly OffsetPattern KineDriverInstance_DriverCount = new("KineDriverInstance.DriverCount", "8B 47 ?? 48 89 5C C7 10 FF 47 08", 2, 1, 0x8);
     public static readonly OffsetPattern KineDriverInstance_Drivers = new("KineDriverInstance.Drivers", "48 89 5C C7 ?? FF 47 08", 4, 1, 0x10);
+    public static readonly OffsetPattern KineDriverTargetTranslate_SegmentScale = new("KineDriverTargetTranslate.SegmentScale", "80 7B ?? 00 0F 84 ?? ?? ?? ?? 48 83 7B 28 00", 2, 1, 0x30);
+    public static readonly OffsetPattern KineDriverTargetTranslate_SegmentScaleSource = new("KineDriverTargetTranslate.SegmentScaleSource", "48 83 7B ?? 00 0F 84 ?? ?? ?? ?? 0F 10 83 A0 00 00 00", 3, 1, 0x28);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)
