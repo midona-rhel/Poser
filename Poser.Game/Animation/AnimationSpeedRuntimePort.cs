@@ -349,27 +349,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     private static void ApplySpeedNow(Character* character, float speed)
     {
         character->Timeline.OverallSpeed = speed;
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return;
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return;
-        var skeleton = charaBase->Skeleton;
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
-        {
-            var partial = &skeleton->PartialSkeletons[p];
-            var animated = partial->GetHavokAnimatedSkeleton(0);
-            if (animated == null)
-                continue;
-            for (int c = 0; c < animated->AnimationControls.Length; c++)
-            {
-                var control = animated->AnimationControls[c].Value;
-                if (control == null)
-                    continue;
-                control->PlaybackSpeed = speed;
-            }
-        }
+        AnimationNativeState.ForEachControl(character, (_, _, control) => control->PlaybackSpeed = speed);
     }
 
     /// <summary>Rewinds paused controls.</summary>
@@ -378,36 +358,12 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null ||
-            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return Outcome.Ok();
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return Outcome.Ok();
-        var skeleton = charaBase->Skeleton;
-
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        AnimationNativeState.ForEachControl(character, (_, _, control) =>
         {
-            var partial = &skeleton->PartialSkeletons[p];
-            var animated = partial->GetHavokAnimatedSkeleton(0);
-            if (animated == null)
-                continue;
-            for (int c = 0; c < animated->AnimationControls.Length; c++)
-            {
-                var control = animated->AnimationControls[c].Value;
-                if (control == null)
-                    continue;
-                var binding = control->hkaAnimationControl.Binding;
-                if (binding.ptr == null)
-                    continue;
-                if (binding.ptr->Animation.ptr == null)
-                    continue;
-                if (control->PlaybackSpeed == 0)
-                    control->hkaAnimationControl.LocalTime = 0;
-            }
-        }
+            var binding = control->hkaAnimationControl.Binding;
+            if (binding.ptr != null && binding.ptr->Animation.ptr != null && control->PlaybackSpeed == 0)
+                control->hkaAnimationControl.LocalTime = 0;
+        });
         return Outcome.Ok();
     }
 

@@ -57,7 +57,12 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         [AnimationSlot.Base, AnimationSlot.UpperBody, AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips,
          AnimationSlot.Parts1, AnimationSlot.Parts2, AnimationSlot.Parts3, AnimationSlot.Parts4, AnimationSlot.Overlay];
 
-    /// <summary>Resolves the verified Base and Upper Body slot controls.</summary>
+    /// <summary>
+    /// A slot's scrub reading: its timeline clock where the native seek can move it;
+    /// otherwise (an integer-frame clock, a scheduler-driven actor) its own C009
+    /// controls, found through the slot timeline's tree, whatever their array order.
+    /// Only without the seek's layout are Base and Upper Body read by control index.
+    /// </summary>
     public ScrubControlReading? FindSlotControl(
         ActorId actor, AnimationSlot slot, out ulong token)
     {
@@ -67,39 +72,66 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
             return null;
         if (SeekAllowed && _seek?.TimelineReading(character, slot) is { } timeline)
             return timeline;
+        if (Engine is { } engine)
+            return SlotControlReading(engine, character, slot);
         if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
             return null;
         int index = (int)slot;
         if (character->Timeline.TimelineSequencer.TimelineIds[index] == 0)
             return null;
-
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return null;
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return null;
-        var skeleton = charaBase->Skeleton;
-        token = CurrentToken(skeleton);
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        token = AnimationNativeState.ControlToken(character);
+        ScrubControlReading? found = null;
+        AnimationNativeState.ForEachControl(character, (p, c, control) =>
         {
-            var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
-            if (animated == null || index >= animated->AnimationControls.Length)
-                continue;
-            var control = animated->AnimationControls[index].Value;
-            if (control == null)
-                continue;
             var binding = control->hkaAnimationControl.Binding;
-            if (binding.ptr == null || binding.ptr->Animation.ptr == null ||
-                binding.ptr->Animation.ptr->Duration <= 0f)
-                continue;
-            return new ScrubControlReading(
-                new ScrubControlId(p, index),
-                control->hkaAnimationControl.LocalTime,
-                binding.ptr->Animation.ptr->Duration,
-                control->PlaybackSpeed);
+            if (found == null && c == index && binding.ptr != null && binding.ptr->Animation.ptr != null
+                && binding.ptr->Animation.ptr->Duration > 0f)
+                found = new ScrubControlReading(new ScrubControlId(p, index),
+                    control->hkaAnimationControl.LocalTime, binding.ptr->Animation.ptr->Duration,
+                    control->PlaybackSpeed);
+        });
+        return found;
+    }
+
+    private TimelineSeekEngine? Engine => _seek is { Available: true } seek ? seek.Engine : null;
+
+    /// <summary>The slot's first C009 control, as a reading of the slot.</summary>
+    private static ScrubControlReading? SlotControlReading(TimelineSeekEngine engine, Character* character, AnimationSlot slot)
+    {
+        nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
+        if (root == 0 || !TimelineState.Of(root).Loaded)
+            return null;
+        foreach (nint control in engine.SlotControls(root))
+        {
+            float length = TimelineSeekEngine.ControlLength(control);
+            if (length > 0f)
+                return new ScrubControlReading(ScrubControlId.Timeline(slot),
+                    *(float*)(control + 0x10), length, *(float*)(control + 0x5C));
         }
         return null;
+    }
+
+    /// <summary>
+    /// The scrub fallback for a slot the native seek can't move: each of the slot's
+    /// own controls set to the time (one frame short of its end), its props moved by
+    /// the same delta, and its timeline clocks set the game's way
+    /// (TimelineSeekEngine.WriteClocks). Never a cursor ON the last frame: a child
+    /// timeline set exactly at its end fires its end events but never completes.
+    /// </summary>
+    private static Outcome ScrubSlotFallback(TimelineSeekEngine engine, Character* character, AnimationSlot slot, float time)
+    {
+        nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
+        var controls = root != 0 ? engine.SlotControls(root) : new List<nint>();
+        if (controls.Count == 0)
+            return Outcome.Fail("This layer's animation can no longer be scrubbed.");
+        float duration = TimelineSeekEngine.ControlLength(controls[0]);
+        time = Math.Clamp(time, 0f, Math.Max(0f, duration - 1f / 30f));
+        float before = *(float*)(controls[0] + 0x10);
+        foreach (nint control in controls)
+            *(float*)(control + 0x10) = Math.Clamp(time, 0f, Math.Max(0f, TimelineSeekEngine.ControlLength(control)));
+        engine.ShiftPropControls((nint)character, root, time - before);
+        engine.WriteClocks(root, time * 30f);
+        return Outcome.Ok();
     }
 
     public Outcome SetControlTime(
@@ -115,131 +147,67 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
             var slot = (AnimationSlot)control.Control;
             if (_seek == null)
                 return Outcome.Fail("This layer's animation can no longer be scrubbed.");
-            if (!_seek.Supports(character, (int)slot))
-                // A layer just played again loads first; its target waits for it.
-                return _seek.RequestTimelineWhenLoaded(actor, character, slot, time)
-                    ? Outcome.Ok()
-                    : Outcome.Fail("This layer's animation can no longer be scrubbed.");
-            _seek.RequestTimeline(actor, character, slot, time);
-            return Outcome.Ok();
+            if (SeekAllowed && _seek.Supports(character, (int)slot))
+            {
+                _seek.RequestTimeline(actor, character, slot, time);
+                return Outcome.Ok();
+            }
+            // A layer just played again loads first; its target waits for it.
+            if (_seek.RequestTimelineWhenLoaded(actor, character, slot, time))
+                return Outcome.Ok();
+            return Engine is { } engine
+                ? ScrubSlotFallback(engine, character, slot, time)
+                : Outcome.Fail("This layer's animation can no longer be scrubbed.");
         }
 
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return Outcome.Fail("Actor has no character skeleton.");
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return Outcome.Fail("Actor has no character skeleton.");
-        var skeleton = charaBase->Skeleton;
-
-        if (control.Partial < 0 || control.Partial >= skeleton->PartialSkeletonCount)
-            return Outcome.Fail("Scrub target no longer exists.");
-        var partial = &skeleton->PartialSkeletons[control.Partial];
-        var animated = partial->GetHavokAnimatedSkeleton(0);
-        if (animated == null ||
-            control.Control < 0 || control.Control >= animated->AnimationControls.Length)
-            return Outcome.Fail("Scrub target no longer exists.");
-        var target = animated->AnimationControls[control.Control].Value;
-        if (target == null)
-            return Outcome.Fail("Scrub target no longer exists.");
-        var binding = target->hkaAnimationControl.Binding;
-        if (binding.ptr == null || binding.ptr->Animation.ptr == null)
-            return Outcome.Fail("Scrub target no longer exists.");
-
-        // Re-derive the token from the live skeleton: a replacement moves
-        // the skeleton or changes the control count, and the write is
-        // refused rather than landing on whatever now occupies the slot.
-        if (token != 0 && token != CurrentToken(skeleton))
+        // A control by its index. Without the seek's layout: the Base or Upper Body
+        // control, the same index on every partial (body, face, hair each run their
+        // own), and the slot timeline's own clock.
+        if (token != 0 && token != AnimationNativeState.ControlToken(character))
             return Outcome.Fail("Skeleton changed; scrub cancelled.");
-
-        // #533: the game's own scheduler seek when available (same frame, both
-        // directions, props and VFX enter as in playback); the clock writes below
-        // remain the fallback for anything it refuses.
-        if (SeekAllowed && _seek != null && control.Control is 0 or 1 && _seek.Supports(character, control.Control))
+        float duration = -1f;
+        AnimationNativeState.ForEachControl(character, (p, c, target) =>
         {
-            _seek.Request(actor, character, (AnimationSlot)control.Control, time, target->hkaAnimationControl.LocalTime);
-            return Outcome.Ok();
+            var binding = target->hkaAnimationControl.Binding;
+            if (p == control.Partial && c == control.Control && binding.ptr != null && binding.ptr->Animation.ptr != null)
+                duration = binding.ptr->Animation.ptr->Duration;
+        });
+        if (!(duration >= 0f))
+            return Outcome.Fail("Scrub target no longer exists.");
+        // A Base or Upper Body control picked from the control list: the native seek
+        // moves its slot where it can, the slot fallback where it can't.
+        if (control.Control is 0 or 1 && _seek != null)
+        {
+            if (SeekAllowed && _seek.Supports(character, control.Control))
+            {
+                float from = 0f;
+                AnimationNativeState.ForEachControl(character, (p, c, target) =>
+                {
+                    if (p == control.Partial && c == control.Control)
+                        from = target->hkaAnimationControl.LocalTime;
+                });
+                _seek.Request(actor, character, (AnimationSlot)control.Control, time, from);
+                return Outcome.Ok();
+            }
+            if (Engine is { } engine)
+                return ScrubSlotFallback(engine, character, (AnimationSlot)control.Control, time);
         }
-
-        float duration = binding.ptr->Animation.ptr->Duration;
-        // Never PLACE a cursor on the last frame: a child timeline set
-        // exactly at its end fires its end events during the drag (prop
-        // released before Play) but never completes — completion needs the
-        // child to CROSS the end during an update — so the parent runs its
-        // own tail and freezes (c0 stuck at 665 with the child pinned at
-        // 585, 2026-09-01 22:03). One frame short, Play crosses it properly.
-        float lastFrame = Math.Max(0f, duration - 1f / 30f);
-        time = Math.Clamp(time, 0f, lastFrame);
-        float before = target->hkaAnimationControl.LocalTime;
-        target->hkaAnimationControl.LocalTime = time;
-        // The slot's props move by the same delta: the props its C031s summon, found
-        // in the game's prop group (TimelineSeekEngine.ShiftPropControls).
-        nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, control.Control);
-        var engine = _seek is { Available: true } seek ? seek.Engine : null;
-        if (engine != null && root != 0)
-            engine.ShiftPropControls((nint)character, root, time - before);
-        // EVERY partial runs its own control for the same slot (body,
-        // face, hair). Scrubbing only one left the others on the old
-        // schedule — one of them reaches its clip's end at the old time
-        // and the timeline layer resets the whole animation (the
-        // pause→scrub→play reset, 2026-09-01). Same index, same time,
-        // all partials, each clamped to its own clip.
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        time = Math.Clamp(time, 0f, Math.Max(0f, duration - 1f / 30f));
+        AnimationNativeState.ForEachControl(character, (_, c, each) =>
         {
-            if (p == control.Partial)
-                continue;
-            var sibling = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
-            if (sibling == null || control.Control >= sibling->AnimationControls.Length)
-                continue;
-            var siblingControl = sibling->AnimationControls[control.Control].Value;
-            if (siblingControl == null)
-                continue;
-            var siblingBinding = siblingControl->hkaAnimationControl.Binding;
-            float siblingClip =
-                siblingBinding.ptr != null && siblingBinding.ptr->Animation.ptr != null
-                    ? siblingBinding.ptr->Animation.ptr->Duration
-                    : duration;
-            siblingControl->hkaAnimationControl.LocalTime =
-                Math.Clamp(time, 0f, siblingClip);
-        }
-        // The timeline clocks move with the scrub, in 30 fps frames: left behind, the
-        // timeline keeps counting from the old position and resets the animation on
-        // the old schedule. The engine writes the timeline, its TMB actors and tracks,
-        // and every child timeline on its own clock; without the seek's layout only the
-        // slot timeline's own clock is moved.
-        float frames = Math.Clamp(time, 0f, duration) * 30f;
-        if (root != 0 && engine != null)
-            engine.WriteClocks(root, frames);
-        else if (AnimationNativeState.SchedulerTimestamp(&character->Timeline.TimelineSequencer, control.Control)
-                 is var timestamp && timestamp != null)
+            if (c != control.Control)
+                return;
+            var binding = each->hkaAnimationControl.Binding;
+            float clip = binding.ptr != null && binding.ptr->Animation.ptr != null ? binding.ptr->Animation.ptr->Duration : duration;
+            each->hkaAnimationControl.LocalTime = Math.Clamp(time, 0f, clip);
+        });
+        if (AnimationNativeState.SchedulerTimestamp(&character->Timeline.TimelineSequencer, control.Control)
+            is var timestamp && timestamp != null)
         {
-            *timestamp = frames;
-            *(timestamp + 1) = frames;
+            *timestamp = time * 30f;
+            *(timestamp + 1) = time * 30f;
         }
         return Outcome.Ok();
     }
 
-    private static ulong CurrentToken(
-        FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton* skeleton)
-    {
-        int count = 0;
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
-        {
-            var partial = &skeleton->PartialSkeletons[p];
-            var animated = partial->GetHavokAnimatedSkeleton(0);
-            if (animated == null)
-                continue;
-            for (int c = 0; c < animated->AnimationControls.Length; c++)
-            {
-                var control = animated->AnimationControls[c].Value;
-                if (control == null)
-                    continue;
-                var binding = control->hkaAnimationControl.Binding;
-                if (binding.ptr == null || binding.ptr->Animation.ptr == null)
-                    continue;
-                count++;
-            }
-        }
-        return unchecked(((ulong)(nint)skeleton * 397) ^ (ulong)count);
-    }
 }

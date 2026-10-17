@@ -153,38 +153,6 @@ public sealed unsafe partial class AnimationNativeState
         return timestamp == null ? 0 : (nint)timestamp - SchedulerTimestampOffset;
     }
 
-    internal delegate void PropControlVisitor(
-        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* control);
-
-    /// <summary>Visits every animation control on every attached weapon/prop
-    /// draw object.</summary>
-    internal static void ForEachPropControl(Character* character, PropControlVisitor visit)
-    {
-        for (int slotIndex = 0; slotIndex < 3; slotIndex++)
-        {
-            ref var weapon = ref character->DrawData.Weapon(
-                (DrawDataContainer.WeaponSlot)slotIndex);
-            var draw = weapon.DrawData.DrawObject;
-            if (draw == null || draw->Object.GetObjectType() != ObjectType.CharacterBase)
-                continue;
-            var skeleton = ((CharacterBase*)draw)->Skeleton;
-            if (skeleton == null)
-                continue;
-            for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
-            {
-                var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
-                if (animated == null)
-                    continue;
-                for (int c = 0; c < animated->AnimationControls.Length; c++)
-                {
-                    var control = animated->AnimationControls[c].Value;
-                    if (control != null)
-                        visit(control);
-                }
-            }
-        }
-    }
-
     [DllImport("kernel32.dll", SetLastError = false)]
     private static extern bool ReadProcessMemory(
         nint process, nint address, void* buffer, nint size, out nint read);
@@ -369,47 +337,80 @@ public sealed unsafe partial class AnimationNativeState
             : null;
     }
 
-    /// <summary>Collects live animation controls.</summary>
-    internal static List<ScrubControlReading> CollectControls(Character* character, out ulong token)
+    internal delegate void ControlVisitor(int partial, int index,
+        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* control);
+
+    /// <summary>The actor's body skeleton, or null without a drawn character base.</summary>
+    internal static FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton* BodySkeleton(Character* character)
     {
-        token = 0;
-        var result = new List<ScrubControlReading>();
         var drawObject = character->GameObject.DrawObject;
         if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return result;
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return result;
-        var skeleton = charaBase->Skeleton;
+            return null;
+        return ((CharacterBase*)drawObject)->Skeleton;
+    }
 
+    /// <summary>Every Havok animation control on the actor's body skeleton (each
+    /// partial's animated skeleton 0) with its partial and array index; false without
+    /// a skeleton.</summary>
+    internal static bool ForEachControl(Character* character, ControlVisitor visit)
+    {
+        var skeleton = BodySkeleton(character);
+        if (skeleton == null)
+            return false;
         for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
         {
-            var partial = &skeleton->PartialSkeletons[p];
-            var animated = partial->GetHavokAnimatedSkeleton(0);
+            var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
             if (animated == null)
                 continue;
             for (int c = 0; c < animated->AnimationControls.Length; c++)
             {
                 var control = animated->AnimationControls[c].Value;
-                if (control == null)
-                    continue;
-                var binding = control->hkaAnimationControl.Binding;
-                if (binding.ptr == null || binding.ptr->Animation.ptr == null)
-                    continue;
-                result.Add(new ScrubControlReading(
-                    new ScrubControlId(p, c),
-                    control->hkaAnimationControl.LocalTime,
-                    binding.ptr->Animation.ptr->Duration,
-                    control->PlaybackSpeed));
+                if (control != null)
+                    visit(p, c, control);
             }
         }
+        return true;
+    }
 
-        // The token identifies this skeleton and control layout. A redraw
-        // moves the skeleton and changes the count, so a scrub captured
-        // under the old token is refused rather than written blind.
-        token = unchecked(((ulong)(nint)skeleton * 397) ^ (ulong)result.Count);
+    private static bool Bound(
+        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* control)
+    {
+        var binding = control->hkaAnimationControl.Binding;
+        return binding.ptr != null && binding.ptr->Animation.ptr != null;
+    }
+
+    /// <summary>The live animation controls with a bound animation, and the token of
+    /// this skeleton and layout: a redraw moves the skeleton or changes the count, so
+    /// a scrub captured under the old token is refused rather than written blind.</summary>
+    internal static List<ScrubControlReading> CollectControls(Character* character, out ulong token)
+    {
+        var result = new List<ScrubControlReading>();
+        ForEachControl(character, (p, c, control) =>
+        {
+            if (Bound(control))
+                result.Add(new ScrubControlReading(new ScrubControlId(p, c),
+                    control->hkaAnimationControl.LocalTime,
+                    control->hkaAnimationControl.Binding.ptr->Animation.ptr->Duration,
+                    control->PlaybackSpeed));
+        });
+        token = Token(BodySkeleton(character), result.Count);
         return result;
     }
+
+    /// <summary>The token <see cref="CollectControls"/> gives, without the readings.</summary>
+    internal static ulong ControlToken(Character* character)
+    {
+        int count = 0;
+        ForEachControl(character, (_, _, control) =>
+        {
+            if (Bound(control))
+                count++;
+        });
+        return Token(BodySkeleton(character), count);
+    }
+
+    private static ulong Token(FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton* skeleton, int count) =>
+        skeleton == null ? 0 : unchecked(((ulong)(nint)skeleton * 397) ^ (ulong)count);
 
     /// <summary>
     /// Plays a row through ActionTimelineSequencer::PlayTimeline the way the game would
