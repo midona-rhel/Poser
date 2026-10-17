@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.20-beta — Driven bones, box select and map pictures
+
+### Posing
+
+- Made bones the game moves along with other bones, such as eyelids and body or gear helpers, follow your pose instead of the animation.
+- Kept your own edits on those bones on top, so an edited eyelid still follows the eye.
+- Added Driven bones follow the pose to the Skeleton settings to turn this off.
+- Added Tail to the default bone presets.
+
+### Bone maps
+
+- Brought back box selection on the Body and Face maps, with the box kept inside the map.
+- Added a choice of any pose picture as a map's background.
+
 ## 0.9.19-beta — Animation layers, exact scrubbing and smooth loops
 
 ### Animation
