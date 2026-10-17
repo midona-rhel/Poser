@@ -80,13 +80,10 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
         // session.
         AnimationNativeState.TrySetForcedTimeline(&character->Timeline, 0);
 
-        _native.CancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
-        _native.SetEmoteMode(&character->EmoteController, emoteMode);
         if (_native.HasSetPose)
         {
-            // The game's own pose step, in the stance's mode: it plays the pose (the
-            // base idle at 0) and stores the pose after, so a pose written before
-            // the play would be wiped by it.
+            // The game's own pose step: it plays the pose (the base idle at 0) and stores
+            // the pose after, so a pose written before the play would be wiped by it.
             int kind = stance switch
             {
                 AnimationStance.SitChair => 2,
@@ -94,7 +91,26 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
                 AnimationStance.Sleeping => 4,
                 _ => weaponDrawn ? 1 : 0,
             };
+            if (stance != AnimationStance.Idle)
+            {
+                _native.SetEmoteMode(&character->EmoteController, emoteMode);
+            }
+            else if (wrapped != 0)
+            {
+                // In Normal mode the base-idle pick replaces a standing pose emote every
+                // frame (GPose actors aren't local, and pose emotes aren't protected), so
+                // the pose holds EmoteLoop with no EmoteMode, which turns the pick off.
+                // Character::SetMode directly: leaving a loop through the emote mode would
+                // flag the emote for cancel.
+                if (character->Mode != CharacterModes.EmoteLoop || character->ModeParam != 0)
+                    _native.SetCharacterMode(character, CharacterModes.EmoteLoop, 0);
+            }
+            else if (character->Mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop)
+            {
+                _native.SetCharacterMode(character, CharacterModes.Normal, 0);
+            }
             _native.SetPose(character, kind, (byte)wrapped);
+            AnimationNativeState.ClearEmoteCancelPending(character);
             if (stance == AnimationStance.Idle && wrapped == 0)
                 character->Timeline.TimelineSequencer.PlayTimeline(
                     weaponDrawn ? AnimationTimelines.BattleIdle : AnimationTimelines.Idle, null);
@@ -108,6 +124,8 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
                 : Outcome.Fail($"The game didn't change to pose {wrapped} for how the actor is now "
                     + "(an Upper body animation playing blocks pose changes, as in game).");
         }
+        _native.CancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
+        _native.SetEmoteMode(&character->EmoteController, emoteMode);
         character->EmoteController.CurrentPoseType = poseType;
         character->EmoteController.CPoseState = (byte)wrapped;
 

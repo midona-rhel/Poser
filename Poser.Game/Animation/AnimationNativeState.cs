@@ -72,6 +72,15 @@ public sealed unsafe partial class AnimationNativeState
     // No network in GPose. Kinds: 0 idle, 1 weapon drawn, 2 chair, 3 ground sit, 4 doze.
     private delegate void SetPoseDelegate(EmoteController* controller, int kind, byte index, nint options);
     private readonly SetPoseDelegate? _setPose;
+    // Character::SetMode 0x140909170 (patchcheck Character.SetMode): writes Mode and
+    // ModeParam with no gate and no emote side effects (EmoteController::SetMode's exit
+    // path is what plays end emotes).
+    private delegate void CharacterSetModeDelegate(Character* character, int mode, int param);
+    private readonly CharacterSetModeDelegate? _characterSetMode;
+    // EmoteController +0x35: set when a non-local actor leaves a loop mode with no end
+    // emote; in Normal mode the next base-idle pick then cancels the emote and clears the
+    // pose. Only PlayEmote clears it, StartEmoteLocal and SetPose don't.
+    private const int EmoteCancelPendingOffset = 0x35;
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
@@ -221,6 +230,8 @@ public sealed unsafe partial class AnimationNativeState
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_CanPlayEmote, "EmoteController.CanPlayEmote");
         _setPose = ScanDelegate<SetPoseDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetPose, "EmoteController.SetPose");
+        _characterSetMode = ScanDelegate<CharacterSetModeDelegate>(
+            sigScanner, Poser.Game.Natives.NativeSignatures.Character_SetMode, "Character.SetMode");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
             sigScanner,
             "48 83 EC 28 8D 41 FF 3D E7 FD 00 00 77 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA 64 00 00 00 48 8B 88 40 2B 00 00 E8",
@@ -268,11 +279,19 @@ public sealed unsafe partial class AnimationNativeState
 
     internal bool HasCancelTimeline => _cancelTimeline != null;
     internal bool HasSetEmoteMode => _setEmoteMode != null;
-    internal bool HasSetPose => _setPose != null;
+    internal bool HasSetPose => _setPose != null && _characterSetMode != null;
 
     /// <summary>The game's pose step; callers check <see cref="HasSetPose"/>.</summary>
     internal void SetPose(Character* character, int kind, byte index) =>
         _setPose!(&character->EmoteController, kind, index, nint.Zero);
+
+    /// <summary>Character::SetMode; available with <see cref="HasSetPose"/>.</summary>
+    internal void SetCharacterMode(Character* character, CharacterModes mode, byte param) =>
+        _characterSetMode!(character, (int)mode, param);
+
+    /// <summary>Clears the controller's pending emote cancel, as PlayEmote does.</summary>
+    internal static void ClearEmoteCancelPending(Character* character) =>
+        *((byte*)&character->EmoteController + EmoteCancelPendingOffset) = 0;
 
     /// <summary>Calls CancelTimeline; callers check <see cref="HasCancelTimeline"/>.</summary>
     internal void CancelTimeline(TimelineContainer* container, nint a2, nint a3) =>
@@ -378,8 +397,12 @@ public sealed unsafe partial class AnimationNativeState
             character->Mode = CharacterModes.EmoteLoop;
             character->ModeParam = 0;
         }
-        else if (character->Mode == CharacterModes.EmoteLoop && character->ModeParam == 0)
+        else if (character->Mode == CharacterModes.EmoteLoop && character->ModeParam == 0
+            && TimelineSlot(timeline) is AnimationSlot.Base or null)
         {
+            // Only a Full body play leaves the loop: a standing pose holds EmoteLoop 0
+            // (the base-idle pick runs in Normal mode only), and an expression or Upper
+            // body layer on it must not end it.
             character->Mode = CharacterModes.Normal;
         }
         else if (character->Mode == CharacterModes.AnimLock)
