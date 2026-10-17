@@ -49,7 +49,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // An owned layer's length in seconds, as last read while it played.
     private readonly Dictionary<(ActorId Actor, int Slot), float> _ownedLengths = new();
     // The slot timeline whose pre-end notify lead (+0x26E) is switched off, and its value.
-    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, short Original)> _leads = new();
+    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, (nint Node, uint Id) Identity, short Original)> _leads = new();
     // Layers let go of whose lead still needs its value back (under _targetLock).
     private readonly List<(ActorId Actor, int Slot)> _leadRestores = new();
     // Scrub targets for a slot timeline still loading (a replayed layer), in seconds
@@ -551,11 +551,31 @@ public sealed unsafe class TimelineSeekService : IDisposable
         }
         _maskWanted.Clear();
         // A prop no longer held down gets its holders back (the layer weight, if
-        // any, is re-applied on top every tick).
-        foreach (nint prop in _suppressedProps)
-            if (!suppressed.Contains(prop))
-                _engine.SetPropTimelineWeight(prop, 1f);
+        // any, is re-applied on top every tick). Last tick's prop may be gone: only
+        // one still current in a managed actor's prop group is touched.
+        if (_suppressedProps.Count > 0)
+        {
+            var live = LivePropTimelines();
+            foreach (nint prop in _suppressedProps)
+                if (!suppressed.Contains(prop) && live.Contains(prop))
+                    _engine.SetPropTimelineWeight(prop, 1f);
+        }
         _suppressedProps = suppressed;
+    }
+
+    /// <summary>Every managed actor's current, live prop timelines this tick.</summary>
+    private HashSet<nint> LivePropTimelines()
+    {
+        var live = new HashSet<nint>();
+        foreach (nint character in _managed)
+            for (int w = 0; w < 4; w++)
+            {
+                nint prop = TimelineSeekEngine.CurrentPropTimelineAny(
+                    _engine.PropGroup(TimelineSeekEngine.WeaponAt(character, w)));
+                if (prop != 0 && !TimelineState.Of(prop).TornDown)
+                    live.Add(prop);
+            }
+        return live;
     }
 
     // C094s whose DrawData prop-slot bit (bit 3: slot 2, the group-0 prop) Poser
@@ -1166,7 +1186,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (_leads.TryGetValue(key, out var held) && held.Root == root)
             return held.Original;
         short original = *(short*)(root + 0x26E);
-        _leads[key] = (root, original);
+        _leads[key] = (root, TimelineState.Of(root).Identity, original);
         if (original >= 0)
             *(short*)(root + 0x26E) = -1;
         return original;
@@ -1194,7 +1214,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
             var character = _native.Resolve(key.Actor, out _);
             if (character == null)
                 continue;
-            if (AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot) == held.Root)
+            if (AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot) == held.Root
+                && TimelineState.Of(held.Root).Identity == held.Identity)
                 *(short*)(held.Root + 0x26E) = held.Original;
         }
     }

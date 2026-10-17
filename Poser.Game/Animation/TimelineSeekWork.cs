@@ -33,6 +33,7 @@ internal sealed unsafe class TimelineSeekWork
 
     public nint Character { get; private set; }
     public nint Root { get; private set; }
+    private (nint Node, uint Id) _rootIdentity;
     public int Frame { get; private set; }
     /// <summary>The body's speed before the seek's window: what Poser's pause
     /// (0) or the game left it at, and what a re-born prop must run at.</summary>
@@ -51,6 +52,7 @@ internal sealed unsafe class TimelineSeekWork
     {
         Character = character;
         Root = root;
+        _rootIdentity = TimelineState.Of(root).Identity;
         VfxBefore = vfxBefore;
         Frame = 0;
         PendingHavok.Clear();
@@ -103,7 +105,7 @@ internal sealed unsafe class TimelineSeekWork
         nint current = TimelineSeekEngine.CurrentPropTimeline(
             engine.PropGroup(TimelineSeekEngine.PropWeapon(Character, prop.Clip)),
             TimelineSeekEngine.PropTimelineId(prop.Clip));
-        if (current != prop.Timeline)
+        if (current != prop.Timeline || TimelineState.Of(current).TornDown)
             prop.Timeline = 0;
         return prop.Timeline;
     }
@@ -123,7 +125,8 @@ internal sealed unsafe class TimelineSeekWork
     public bool Tick(TimelineSeekEngine engine, nint currentRoot)
     {
         Frame++;
-        if (currentRoot != Root)
+        // The address alone can be a new timeline's: its clips are not this tree's.
+        if (currentRoot != Root || TimelineState.Of(Root).Identity != _rootIdentity)
             return false;
         var tree = engine.Collect(Root);
         if (Frame <= RestartedResyncFrames)

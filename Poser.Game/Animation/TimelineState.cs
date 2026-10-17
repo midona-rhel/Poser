@@ -23,7 +23,10 @@ internal readonly unsafe struct TimelineState
     internal const int Flags7C = 0x7C;          // bit 5 integer frame, bit 6 finished (clock frozen at +0x48)
     internal const int Flags7D = 0x7D;          // bit 1 holds at its end, bit 2 releases the hold
     internal const int SpeedOffset = 0x240;     // the effective speed
+    internal const int Flags272 = 0x272;        // bit 2 set by TimelineGroup.Teardown
     internal const int Flags273 = 0x273;        // bit 0 teardown marked, bit 5 ENDED (Notify(0))
+    internal const int IdOffset = 0x224;        // the action key (row id + 0x20000)
+    internal const int SelfHandleOffset = 0x180;
 
     private readonly byte* _tl;
 
@@ -33,6 +36,16 @@ internal readonly unsafe struct TimelineState
 
     internal bool Exists => _tl != null;
     internal bool Dead => Exists && (_tl[Flags273] & 0x01) != 0;
+
+    /// <summary>Torn down by its group (TimelineGroup.Teardown: +0x10 bit 7, +0x272
+    /// bit 2): its memory is still valid but it is no longer a live timeline.</summary>
+    internal bool TornDown => Exists && ((_tl[Flags10] & 0x80) != 0 || (_tl[Flags272] & 0x04) != 0);
+
+    /// <summary>What identifies this timeline beyond its address, which a new
+    /// timeline can reuse: its self handle node and its action key.</summary>
+    internal (nint Node, uint Id) Identity => Exists
+        ? (*(nint*)(_tl + SelfHandleOffset), *(uint*)(_tl + IdOffset))
+        : default;
     internal bool Loaded => Exists && *(int*)(_tl + LoadStateOffset) == 5;
     internal bool Started => Exists && (_tl[Flags10] & 0x20) != 0;
     internal bool Ended => Exists && (_tl[Flags273] & 0x20) != 0;
