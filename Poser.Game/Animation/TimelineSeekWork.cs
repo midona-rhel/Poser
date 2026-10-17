@@ -66,8 +66,8 @@ internal sealed unsafe class TimelineSeekWork
         {
             if (prop.Seeked)
             {
-                if (prop.Timeline != 0 && engine.PropControl(prop.Timeline) is var control and not 0)
-                    engine.SyncPropControls(prop.Timeline, control, prop.Synced);
+                if (Live(engine, prop) is var live and not 0 && engine.PropControl(live) is var control and not 0)
+                    engine.SyncPropControls(live, control, prop.Synced);
                 continue;
             }
             float target = body - prop.Start;
@@ -91,14 +91,31 @@ internal sealed unsafe class TimelineSeekWork
         }
     }
 
+    /// <summary>
+    /// A seeked prop's timeline while it is still its group's current one; 0 once the
+    /// game replaced or released it (an actor reset stops props while the body's
+    /// timeline stays), which leaves the stored pointer dangling.
+    /// </summary>
+    private nint Live(TimelineSeekEngine engine, Prop prop)
+    {
+        if (prop.Timeline == 0)
+            return 0;
+        nint current = TimelineSeekEngine.CurrentPropTimeline(
+            engine.PropGroup(TimelineSeekEngine.PropWeapon(Character, prop.Clip)),
+            TimelineSeekEngine.PropTimelineId(prop.Clip));
+        if (current != prop.Timeline)
+            prop.Timeline = 0;
+        return prop.Timeline;
+    }
+
     /// <summary>Paused owner: the body tree's and the seeked props' effects go
     /// back to 0 after every speed window (see TimelineSeekEngine.SetVfxSpeeds).</summary>
     public void FreezeVfx(TimelineSeekEngine engine)
     {
         engine.SetVfxSpeeds(Root, 0f);
         foreach (var prop in Props)
-            if (prop.Timeline != 0)
-                engine.SetVfxSpeeds(prop.Timeline, 0f);
+            if (Live(engine, prop) is var live and not 0)
+                engine.SetVfxSpeeds(live, 0f);
     }
 
     /// <summary>One deferred frame; false once finished. Stops early if the slot
