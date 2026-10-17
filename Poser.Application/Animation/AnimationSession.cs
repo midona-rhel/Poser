@@ -515,6 +515,39 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Whether any live layer is actually moving.</summary>
     public bool AnyPlaying(ActorId actor) => _speed.AnyPlaying(actor);
 
+    /// <summary>
+    /// Replays from the start after releasing a Poser-owned pause (the debug bridge's play). A nonzero
+    /// owned speed remains active. <paramref name="resumed"/> reports whether
+    /// the pause was released.
+    /// </summary>
+    public Outcome Replay(ActorId actor, ushort timeline, out bool resumed)
+    {
+        bool lifted = false;
+        var result = Tracked(actor, "Play animation", () =>
+        {
+            var played = ReplayUntracked(actor, timeline, out var r);
+            lifted = r;
+            return played;
+        });
+        resumed = lifted;
+        return result;
+    }
+
+    private Outcome ReplayUntracked(ActorId actor, ushort timeline, out bool resumed)
+    {
+        resumed = false;
+        if (_store.Suspended() is { } blocked) return blocked;
+        if (IsPaused(actor))
+        {
+            var released = _speed.ResumeForLayerPlay(
+                actor, _timeline.TimelineSlot(timeline) ?? AnimationSlot.Base);
+            if (!released.Success)
+                return released;
+            resumed = true;
+        }
+        return _base.BlendCore(actor, timeline, _timeline.TimelineSlot(timeline));
+    }
+
     /// <summary>Rewinds paused animation controls.</summary>
     public Outcome RewindPausedControls(ActorId actor) => _speed.RewindPausedControls(actor);
 
