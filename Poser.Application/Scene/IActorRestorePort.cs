@@ -104,11 +104,22 @@ public interface IActorRestorePort
     /// <summary>Restores the display name after binding, independently of pose/placement success.</summary>
     string? RestoreActorName(SceneEntityHandle actor, SceneActor data);
 
-    /// <summary>Stops the actor so its pose lands on a held frame. Scenes
-    /// carry no animation — a timeline id means something different on every
-    /// client — so a restored actor is always frozen and the picture is always
-    /// the same one. Null on success, else the refusal detail.</summary>
+    /// <summary>Stops the actor so its pose lands on a held frame. A scene saved
+    /// without its animation carries none — a timeline id means something
+    /// different on every client — so such an actor is frozen and the picture is
+    /// always the same one. Null on success, else the refusal detail.</summary>
     string? FreezeActor(SceneEntityHandle actor);
+
+    /// <summary>A scene saved with its animation: the actor (and its attached
+    /// companion) play the saved state again, in place of the freeze. Held
+    /// layers land on their frame, running ones from their start. Null on
+    /// success, else the refusal detail.</summary>
+    string? RestoreAnimation(SceneEntityHandle actor, SceneActor data);
+
+    /// <summary>A scene saved with its animation: the user's own bone edits go
+    /// back on top of it (in place of the baked pose import), the actor's and
+    /// its companion's. Null on success, else the refusal detail.</summary>
+    string? RestorePoseEdits(SceneEntityHandle actor, SceneActor data);
 
     /// <summary>Restores the actor's saved gaze. <paramref name="target"/> is
     /// the restored actor the saved Entity key resolved to, or null when the

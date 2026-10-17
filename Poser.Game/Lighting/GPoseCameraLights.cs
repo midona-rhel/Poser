@@ -20,7 +20,7 @@ namespace Poser.Game.Lighting;
 internal sealed unsafe class GPoseCameraLights : IDisposable
 {
     private const string ToggleGPoseLightSignature =
-        "48 83 EC 28 4C 8B C1 83 FA 03";
+        Poser.Game.Natives.NativeSignatures.EventGPoseController_ToggleCameraLight;
 
     private static readonly TimeSpan GPosePollInterval = TimeSpan.FromSeconds(1);
 

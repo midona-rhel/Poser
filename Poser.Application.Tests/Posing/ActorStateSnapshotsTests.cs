@@ -70,6 +70,32 @@ public sealed class ActorStateSnapshotsTests
         Assert.DoesNotContain("pose", f.Events);
     }
 
+    [Fact]
+    public void Capture_mid_redraw_reuses_the_last_pose_of_the_same_session()
+    {
+        var f = new Fixture();
+        var ready = f.States.Capture(f.Actor);
+        Assert.True(ready.Success, ready.Detail);
+        f.PoseUnready = true;
+        f.Look = "next look";
+        var settling = f.States.Capture(f.Actor);
+        Assert.True(settling.Success, settling.Detail);
+        Assert.Same(ready.Value!.Pose, settling.Value!.Pose);
+        Assert.NotEqual(ready.Value.Properties.Appearance, settling.Value.Properties.Appearance);
+    }
+
+    [Fact]
+    public void Capture_mid_redraw_without_an_earlier_pose_or_across_sessions_fails()
+    {
+        var f = new Fixture { PoseUnready = true };
+        Assert.False(f.States.Capture(f.Actor).Success);
+        f.PoseUnready = false;
+        Assert.True(f.States.Capture(f.Actor).Success);
+        f.ActiveSessionGeneration = SessionGeneration.New();
+        f.PoseUnready = true;
+        Assert.False(f.States.Capture(f.Actor).Success);
+    }
+
     private sealed class Fixture : ISessionGenerationSource, IPoseSnapshotPort
     {
         public SessionGeneration? ActiveSessionGeneration { get; set; } = SessionGeneration.New();
@@ -87,6 +113,7 @@ public sealed class ActorStateSnapshotsTests
         public Vector4 Tint = Vector4.One;
         public bool CannotReadLook;
         public bool ThrowPoseCapture;
+        public bool PoseUnready;
         private readonly Guid _profile = Guid.NewGuid();
 
         public Fixture()
@@ -172,7 +199,8 @@ public sealed class ActorStateSnapshotsTests
         }
 
         public ActorSnapshot? Capture(Guid lineage) => ThrowPoseCapture
-            ? throw new InvalidOperationException("Pose unavailable") : new(lineage, new object(), []);
+            ? throw new InvalidOperationException("Pose unavailable")
+            : PoseUnready ? null : new(lineage, new object(), []);
         public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
         {
             Events.Add("pose");

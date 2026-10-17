@@ -103,7 +103,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         // Hook UpdateBonePhysics - this is called during skeleton updates
         try
         {
-            var updateBonePhysicsAddress = scanner.ScanText("48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 57 41 54 41 56 48 83 EC ?? 48 8B 59 ?? 45 33 E4");
+            var updateBonePhysicsAddress = scanner.ScanText(Poser.Game.Natives.NativeSignatures.BonePhysicsUpdater_Update);
             _updateBonePhysicsHook = hooking.HookFromAddress<UpdateBonePhysicsDelegate>(updateBonePhysicsAddress, UpdateBonePhysicsDetour);
             _updateBonePhysicsHook.Enable();
             _log.Debug("BonePosingService: UpdateBonePhysics hook initialized");

@@ -93,36 +93,9 @@ public static class AnimationTimelines
     public const ushort SheatheWeapon = 2;
     /// <summary>Battle idle, used when the weapon is drawn.</summary>
     public const ushort BattleIdle = 34;
-    /// <summary>Emote id for the battle pose.</summary>
-    public const uint BattlePose = 93;
     /// <summary>First and last speech timeline offered as a lip override.</summary>
     public const ushort FirstLips = 0x272;
     public const ushort LastLips = 0x272 + 8;
-
-    /// <summary>Emote ids backing each idle pose index; 0 means "play the
-    /// idle timeline instead of an emote".</summary>
-    public static IReadOnlyList<uint> IdlePoses { get; } =
-        new uint[] { 0, 91, 92, 107, 108, 218, 219 };
-
-    /// <summary>Valid pose count per stance, used for wrapping.</summary>
-    public static int PoseCount(AnimationStance stance, bool weaponDrawn) => stance switch
-    {
-        AnimationStance.Idle => weaponDrawn ? 2 : IdlePoses.Count,
-        AnimationStance.SitGround => 4,
-        AnimationStance.SitChair => 5,
-        AnimationStance.Sleeping => 3,
-        _ => 1,
-    };
-
-    /// <summary>Wraps a pose index into the stance's valid range in both
-    /// directions, so stepping past either end lands on a real pose.</summary>
-    public static int WrapPose(int pose, AnimationStance stance, bool weaponDrawn)
-    {
-        int count = PoseCount(stance, weaponDrawn);
-        if (count <= 0)
-            return 0;
-        return pose < 0 ? count - 1 : pose % count;
-    }
 }
 
 /// <summary>
@@ -145,20 +118,57 @@ public sealed record TimelineEntry(
         EmoteIndex == 0 && EmoteId != 0;
 }
 
+/// <summary>
+/// One layer of an <see cref="AnimationSnapshot"/>. <paramref name="Applied"/> is the
+/// animation Poser played there (a pick waiting in the picker is not state);
+/// <paramref name="Live"/> whether it still plays (not ended, not replaced). A frame
+/// (<paramref name="HeldSeconds"/>) only for a held layer: a running layer has no
+/// position to go back to, and restoring it plays it from its start.
+/// </summary>
+public readonly record struct LayerSnapshot(
+    ushort? Applied, bool Live, bool Loop, float? Speed, float Weight, float? HeldSeconds, float? EndedSeconds);
+
+/// <summary>
+/// An actor's whole animation state, as an undo/redo step stores it: every
+/// layer, the whole-actor speed (0 = paused), the held expression, lips, stance,
+/// weapon, position lock and the advanced mode.
+/// </summary>
+public sealed record AnimationSnapshot(
+    LayerSnapshot Base, LayerSnapshot UpperBody, LayerSnapshot Facial, LayerSnapshot Additive,
+    ushort? Lips, float? OverallSpeed, ushort? HeldExpression,
+    AnimationStance Stance, int Pose, bool WeaponDrawn, bool PositionLock, bool Advanced)
+{
+    public static readonly AnimationSlot[] Layers =
+        [AnimationSlot.Base, AnimationSlot.UpperBody, AnimationSlot.Facial, AnimationSlot.Additive];
+
+    public LayerSnapshot For(AnimationSlot slot) => slot switch
+    {
+        AnimationSlot.Base => Base,
+        AnimationSlot.UpperBody => UpperBody,
+        AnimationSlot.Facial => Facial,
+        AnimationSlot.Additive => Additive,
+        _ => default,
+    };
+}
+
 /// <summary>Native base state captured before Poser's first write.</summary>
 public readonly record struct BaseAnimationCapture(
     byte Mode,
-    uint ModeParam,
+    byte ModeParam,
     ushort BaseTimeline,
-    ushort BaseSlotTimeline = 0,
-    ushort ForcedTimeline = 0);
+    ushort BaseSlotTimeline = 0);
 
 /// <summary>Identity of one Havok animation control, by position. Paired
 /// with the skeleton generation it was enumerated under so a scrub can be
 /// invalidated instead of writing through a replaced skeleton.</summary>
 public readonly record struct ScrubControlId(int Partial, int Control)
 {
-    public override string ToString() => $"{Partial}.{Control}";
+    /// <summary>A layer scrubbed by its slot timeline's own clock (no fixed
+    /// Havok control): <see cref="Control"/> is the slot.</summary>
+    public static ScrubControlId Timeline(AnimationSlot slot) => new(TimelinePartial, (int)slot);
+    public const int TimelinePartial = -1;
+    public bool IsTimeline => Partial == TimelinePartial;
+    public override string ToString() => IsTimeline ? $"tl.{Control}" : $"{Partial}.{Control}";
 }
 
 public sealed record ScrubControlReading(
@@ -239,6 +249,9 @@ public sealed record AnimationOverrides
     /// <summary>Native speed before Poser's first override per slot.</summary>
     public IReadOnlyDictionary<AnimationSlot, float> SlotSpeedCaptures { get; init; } =
         new Dictionary<AnimationSlot, float>();
+    /// <summary>Per-layer blend weight in [0, 1]; absent means the game's 1.</summary>
+    public IReadOnlyDictionary<AnimationSlot, float> SlotWeights { get; init; } =
+        new Dictionary<AnimationSlot, float>();
     /// <summary>Last nonzero speed restored by the layer Play action.</summary>
     public IReadOnlyDictionary<AnimationSlot, float> SlotResumeSpeeds { get; init; } =
         new Dictionary<AnimationSlot, float>();
@@ -249,6 +262,10 @@ public sealed record AnimationOverrides
     public BaseAnimationCapture? BaseCapture { get; init; }
     /// <summary>The held facial expression.</summary>
     public ushort? HeldExpression { get; init; }
+    /// <summary>Layers whose animation ran out (not looped) and that the game
+    /// ended, with the animation's length in seconds: the row stays, and its play
+    /// or scrub plays it again.</summary>
+    public IReadOnlyDictionary<AnimationSlot, float> EndedSlots { get; init; } = new Dictionary<AnimationSlot, float>();
     /// <summary>Lips timeline before the first override. Selecting None
     /// restores this value rather than writing native "no speech" zero.</summary>
     public ushort? LipsCapture { get; init; }
@@ -262,7 +279,7 @@ public sealed record AnimationOverrides
     /// <summary>True when Poser owns anything that must be restored.</summary>
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
-        PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
+        PositionLock || SlotSpeeds.Count > 0 || SlotWeights.Count > 0 || HeldExpression != null ||
         SelectedSlots.Count > 0 || AppliedSlots.Count > 0 ||
         SlotSpeedCaptures.Count > 0 || LoopedSlots.Count > 0 ||
         LoopWantedSlots.Count > 0 || SlotCaptures.Count > 0 ||

@@ -29,9 +29,10 @@ public struct NativeCamera
 
     [FieldOffset(0x140)] public Vector2 Angle;
 
-    // Ktisis: the vertical orbit clamp, loosened while delimited.
-    [FieldOffset(0x158)] public float YMax;         // -1.4 stock
-    [FieldOffset(0x15C)] public float YMin;         // 1.25 stock
+    // The vertical orbit clamp, loosened while delimited: UpdateRotation clamps
+    // the pitch to [+0x158, +0x15C] (patchcheck Camera.DirVMin / DirVMax).
+    [FieldOffset(0x158)] public float PitchMin;     // -1.4 stock
+    [FieldOffset(0x15C)] public float PitchMax;     // 1.25 stock
 
     [FieldOffset(0x160)] public Vector2 Pan;        // pan, tilt
     [FieldOffset(0x170)] public float Roll;
@@ -108,7 +109,9 @@ public struct RenderCameraEx
 {
     [FieldOffset(0x000)] public RenderCamera RenderCamera;
 
-    [FieldOffset(0x1EC)] public float FoV;
+    // The field of view SetMatrices reads is +0x1E8 (ClientStructs FoV); +0x1EC
+    // is only ever written by the game.
+    [FieldOffset(0x1E8)] public float FoV;
     [FieldOffset(0x1F0)] public float AspectRatio;
 
     [FieldOffset(0x1FC)] public float OrthographicZoom;

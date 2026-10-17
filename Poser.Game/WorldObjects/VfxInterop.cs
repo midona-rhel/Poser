@@ -17,7 +17,9 @@ public unsafe struct VfxResourceInstance
 
     [FieldOffset(0x70)] public float Speed;
 
-    [FieldOffset(0x90)] public Vector3 Intensity;
+    // The per-axis scale the world matrix rows are multiplied by (patchcheck
+    // VfxResourceInstance.Scale; native setter 0x14038FCF0).
+    [FieldOffset(0x90)] public Vector3 Scale;
 
     [FieldOffset(0xA0)] public Vector4 Color;
 

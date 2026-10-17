@@ -170,6 +170,8 @@ public sealed class ScenePane
     /// docs/features/scenes.md, not in a tooltip.
     /// </summary>
     private const string AppearanceHelp = "Embeds appearance files";
+    private const string AnimationHelp =
+        "Saves what each actor (and its mount or minion) is playing and only your bone edits, so a load plays on from there instead of a baked pose";
 
     /// <summary>The operation that has already been notified, so a finished
     /// result is announced ONCE rather than every frame the page draws it.
@@ -289,7 +291,7 @@ public sealed class ScenePane
             _librarySaveOpen,
             next => _librarySaveOpen = next,
             "Save scene to library",
-            height: 196f,
+            height: 236f,
             body: () =>
         {
             TextInput(
@@ -328,6 +330,29 @@ public sealed class ScenePane
                     IncludeModdedAppearance = next,
                 },
                 help: AppearanceHelp);
+            ImGui.SetCursorScreenPos(rowStart + new Vector2(0f, switchHeight + 8f * rowScale));
+            ImGui.Dummy(new Vector2(0f, 0f));
+            var animationRow = ImGui.GetCursorScreenPos();
+            TextAt(
+                animationRow + new Vector2(0f, (switchHeight -
+                    ActiveTheme.Typography.LabelSize * rowScale)
+                    * 0.5f),
+                "Include animation",
+                new TextStyle
+                {
+                    Size = ActiveTheme.Typography.LabelSize,
+                    Color = ActiveTheme.Text,
+                });
+            ImGui.SetCursorScreenPos(
+                animationRow + new Vector2(rowWidth - switchWidth, 0f));
+            Switch(
+                "##scene-library-save-animation",
+                SaveOptions.IncludeAnimation,
+                next => SaveOptions = SaveOptions with
+                {
+                    IncludeAnimation = next,
+                },
+                help: AnimationHelp);
         },
             footer: () =>
         {
@@ -427,6 +452,15 @@ public sealed class ScenePane
                         IncludeModdedAppearance = next,
                     },
                     help: AppearanceHelp,
+                    disabled: busy);
+                form.Switch(
+                    "Include animation",
+                    SaveOptions.IncludeAnimation,
+                    next => SaveOptions = SaveOptions with
+                    {
+                        IncludeAnimation = next,
+                    },
+                    help: AnimationHelp,
                     disabled: busy);
                 form.ReadOnly("Size", SaveSizeText());
                 form.Actions("Library", actions =>
@@ -858,7 +892,15 @@ public sealed class ScenePane
                     {
                         IncludeModdedAppearance = next,
                     },
-                    AppearanceHelp)));
+                    AppearanceHelp),
+                new CheckItem(
+                    "Animation",
+                    SaveOptions.IncludeAnimation,
+                    next => SaveOptions = SaveOptions with
+                    {
+                        IncludeAnimation = next,
+                    },
+                    AnimationHelp)));
     }
 
     /// <summary>One headerless dense option section, the band's only shape.

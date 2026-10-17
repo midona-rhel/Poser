@@ -24,12 +24,47 @@ namespace Poser.Game.Animation;
 /// </summary>
 public sealed unsafe partial class AnimationNativeState
 {
+    internal delegate void PropControlVisitor(
+        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* control);
+
+    /// <summary>Visits every animation control on every attached weapon/prop
+    /// draw object.</summary>
+    internal static void ForEachPropControl(Character* character, PropControlVisitor visit)
+    {
+        for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+        {
+            ref var weapon = ref character->DrawData.Weapon(
+                (DrawDataContainer.WeaponSlot)slotIndex);
+            var draw = weapon.DrawData.DrawObject;
+            if (draw == null || draw->Object.GetObjectType() != ObjectType.CharacterBase)
+                continue;
+            var skeleton = ((CharacterBase*)draw)->Skeleton;
+            if (skeleton == null)
+                continue;
+            for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+            {
+                var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+                if (animated == null)
+                    continue;
+                for (int c = 0; c < animated->AnimationControls.Length; c++)
+                {
+                    var control = animated->AnimationControls[c].Value;
+                    if (control != null)
+                        visit(control);
+                }
+            }
+        }
+    }
+
+    private static readonly int TimelineSequencerOffset = (int)System.Runtime.InteropServices.Marshal.OffsetOf<TimelineContainer>(
+        nameof(TimelineContainer.TimelineSequencer));
+    private static readonly int TimelineContainerSize = sizeof(TimelineContainer);
     /// <summary>Everything the sequencer and its havok controls say about
     /// one actor at one instant, raw enough to write back verbatim.</summary>
     public sealed class RawTimelineCapture
     {
         public byte Mode;
-        public uint ModeParam;
+        public byte ModeParam;
         // Run two: a looping game emote (/hum) lives in the
         // EmoteController; the sequencer slots only flicker derived ids.
         // Cloning the slots clones the flicker — the emote id is the
@@ -278,11 +313,11 @@ public sealed unsafe partial class AnimationNativeState
         var capture = new RawTimelineCapture
         {
             Mode = (byte)character->Mode,
-            ModeParam = ReadModeParam(character),
+            ModeParam = character->ModeParam,
             EmoteId = character->EmoteController.EmoteId,
             BaseOverride = character->Timeline.BaseOverride,
-            Forced = TryReadForcedTimeline(&character->Timeline, out var forced)
-                ? forced : (ushort)0,
+            // container+0x2E0: the TMB C131 cancel-on-movement registration.
+            Forced = *(ushort*)((byte*)&character->Timeline + 0x2E0),
             LipsOverride = character->Timeline.LipsOverride,
             OverallSpeed = character->Timeline.OverallSpeed,
         };

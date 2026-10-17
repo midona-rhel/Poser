@@ -136,7 +136,8 @@ public static class PageForm
         string? Help, bool Disabled,
         ButtonVariant Variant = ButtonVariant.Secondary,
         TablerIcon? Icon = null,
-        string? Id = null);
+        string? Id = null,
+        bool Spacer = false);
 
     /// <summary>One checkbox item in an inline group.</summary>
     public readonly record struct CheckItem(
@@ -166,6 +167,12 @@ public static class PageForm
             _items.Add(new(
                 id ?? Tabler.NameFor(icon), onClick, default, help,
                 disabled, Icon: icon));
+
+        /// <summary>An empty icon-sized slot, so a row without an icon keeps its
+        /// control aligned with neighbouring rows that have one.</summary>
+        public void IconSpace() =>
+            _items.Add(new($"space{_items.Count}", () => { }, default, null,
+                true, Icon: TablerIcon.PlayerPlay, Spacer: true));
 
         internal IReadOnlyList<ActionItem> Items => _items;
     }
@@ -2539,6 +2546,11 @@ public static class PageForm
             var style = Workspace(action.Style);
             float height = ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.WorkspaceHeight);
+            if (action.Spacer)
+            {
+                x += height * scale + gap;
+                continue;
+            }
             if (action.Icon is { } glyph)
             {
                 ImGui.SetCursorScreenPos(new(

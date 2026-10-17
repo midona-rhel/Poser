@@ -52,6 +52,10 @@ internal sealed class SpeedAnimationSession
 
     public bool IsPaused(ActorId actor) => _store.For(actor).IsPaused;
 
+    /// <summary>Whether Poser holds this one layer still (its speed is 0).</summary>
+    public bool IsSlotHeld(ActorId actor, AnimationSlot slot) =>
+        _store.For(actor).SlotSpeeds.TryGetValue(slot, out var speed) && speed == 0f;
+
     public Outcome Pause(ActorId actor)
     {
         _store.Trace?.Invoke($"Pause(all) {actor}");
@@ -67,8 +71,13 @@ internal sealed class SpeedAnimationSession
     public Outcome Resume(ActorId actor)
     {
         _store.Trace?.Invoke($"Resume(all) {actor}");
-        foreach (var (slot, speed) in _store.For(actor).SlotSpeeds)
+        var current = _store.For(actor);
+        foreach (var (slot, speed) in current.SlotSpeeds)
         {
+            // A held expression (the Pose tab's static face) is not an animation
+            // the sidebar plays; only the Animation tab's Facial layer converts it.
+            if (slot == AnimationSlot.Facial && current.HeldExpression != null)
+                continue;
             if (speed == 0f)
                 ResumeSlotSpeedCore(actor, slot);
         }
@@ -132,22 +141,7 @@ internal sealed class SpeedAnimationSession
     public Outcome SetSlotSpeed(
         ActorId actor, AnimationSlot slot, float speed)
     {
-        var set = SetSlotSpeedCore(actor, slot, speed);
-        if (set.Success && speed == 0f)
-            CollapseWhenNothingPlays(actor);
-        return set;
-    }
-
-    /// <summary>A slot reaching speed zero IS a pause, however it got
-    /// there — slider or button — and when the last moving layer stops,
-    /// the actor collapses into the one canonical "truly paused" shape:
-    /// overall zero (ruled 2026-09-01).</summary>
-    private void CollapseWhenNothingPlays(ActorId actor)
-    {
-        if (IsPaused(actor) || AnyPlaying(actor))
-            return;
-        _store.Trace?.Invoke($"collapse: every layer held on {actor}");
-        SetSpeed(actor, 0f);
+        return SetSlotSpeedCore(actor, slot, speed);
     }
 
     public Outcome SetSlotSpeedCore(
@@ -224,11 +218,11 @@ internal sealed class SpeedAnimationSession
 
     public Outcome PauseSlot(ActorId actor, AnimationSlot slot)
     {
-        var held = SetSlotSpeedCore(actor, slot, 0f);
-        if (!held.Success)
-            return held;
-        CollapseWhenNothingPlays(actor);
-        return held;
+        // A layer's pause stays that layer's: layers are independent, so holding
+        // the last moving one no longer turns into a whole-actor pause (which
+        // froze the next layer applied at its frame 0). The sidebar reads
+        // "any layer playing" (AnyPlaying) either way.
+        return SetSlotSpeedCore(actor, slot, 0f);
     }
 
     public Outcome ResumeSlotSpeedCore(ActorId actor, AnimationSlot slot)

@@ -26,7 +26,9 @@ internal struct EnvStateNative
     [FieldOffset(0x1D8)] public EnvWindNative Wind;
 }
 
-[StructLayout(LayoutKind.Explicit, Size = 0x40)]
+// The game's section is 0x44 bytes (patchcheck EnvState.Lighting); a held section
+// is copied whole, so the size is the game's.
+[StructLayout(LayoutKind.Explicit, Size = 0x44)]
 internal struct EnvLightingNative
 {
     [FieldOffset(0x00)] public Vector3 SunlightColor;
@@ -52,7 +54,9 @@ internal struct EnvStarsNative
     [FieldOffset(0x24)] public float MoonBrightness;
 }
 
-[StructLayout(LayoutKind.Explicit, Size = 0x28)]
+// The game's section is 0x68 bytes (patchcheck EnvState.Fog); the unmapped tail is
+// held with it.
+[StructLayout(LayoutKind.Explicit, Size = 0x68)]
 internal struct EnvFogNative
 {
     [FieldOffset(0x00)] public Vector4 Color;

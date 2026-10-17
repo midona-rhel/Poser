@@ -226,6 +226,7 @@ public class SettingsWindow : Window
             BlockGPoseMouseTargeting = c.BlockGPoseMouseTargeting,
             UndoDepth = c.UndoDepth,
             ShowFrameProfiler = c.UI.ShowFrameProfiler,
+            ShowNativeCheck = c.UI.ShowNativeCheck,
 
             AutoSaveEnabled = c.AutoSave.Enabled,
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
@@ -571,6 +572,7 @@ public class SettingsWindow : Window
         c.UI.ShowWhenGameUiHidden = _vm.ShowWhenGameUiHidden;
         c.UI.SwapRotationXY = _vm.SwapRotationXY;
         c.UI.ShowFrameProfiler = _vm.ShowFrameProfiler;
+        c.UI.ShowNativeCheck = _vm.ShowNativeCheck;
 
         if (preview)
             return;

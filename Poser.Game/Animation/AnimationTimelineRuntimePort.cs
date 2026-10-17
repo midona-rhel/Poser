@@ -20,17 +20,18 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     private readonly AnimationNativeState _native;
     private readonly SceneSession _scene;
     private readonly AnimationSpeedRuntimePort? _speeds;
-    // Poser-owned forced timelines are reasserted if a native animation
-    // update clears the field while repeat remains armed.
-    private readonly Dictionary<ActorId, ushort> _forcedLoops = new();
 
     public AnimationTimelineRuntimePort(
         IFramework framework,
         IPluginLog log,
         AnimationNativeState native,
         SceneSession scene,
-        AnimationSpeedRuntimePort? speeds = null)
+        AnimationSpeedRuntimePort? speeds = null,
+        TimelineSeekService? seek = null)
     {
+        _seek = seek;
+        if (_seek != null)
+            _seek.LayerEnded += (actor, slot, duration) => LayerEnded?.Invoke(actor, slot, duration);
         _speeds = speeds;
         _framework = framework;
         _log = log;
@@ -76,17 +77,20 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         }
 
         var controls = AnimationNativeState.CollectControls(character, out var token);
-        // Preserve the native pose family so each stance stays selectable.
-        var poseType = character->EmoteController.CurrentPoseType;
-        var stance = poseType switch
+        // Sitting and sleeping are the game's posture (from the mode); the pose kind
+        // (+0x20) is cleared with the pose, so it only tells the standing families apart.
+        var stance = _native.Posture(character) switch
         {
-            EmoteController.PoseType.WeaponDrawn => AnimationStance.WeaponDrawn,
-            EmoteController.PoseType.Sit => AnimationStance.SitChair,
-            EmoteController.PoseType.GroundSit => AnimationStance.SitGround,
-            EmoteController.PoseType.Doze => AnimationStance.Sleeping,
-            EmoteController.PoseType.Umbrella => AnimationStance.Umbrella,
-            EmoteController.PoseType.Accessory => AnimationStance.Accessory,
-            _ => AnimationStance.Idle,
+            1 => AnimationStance.SitGround,
+            2 => AnimationStance.SitChair,
+            4 => AnimationStance.Sleeping,
+            _ => character->EmoteController.CurrentPoseType switch
+            {
+                EmoteController.PoseType.WeaponDrawn => AnimationStance.WeaponDrawn,
+                EmoteController.PoseType.Umbrella => AnimationStance.Umbrella,
+                EmoteController.PoseType.Accessory => AnimationStance.Accessory,
+                _ => AnimationStance.Idle,
+            },
         };
 
         return new ActorAnimationReading(
@@ -103,7 +107,6 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        EnforceForcedLoops();
         EnforceLoops(framework);
 #if DEBUG
         _native.ProbeTick();
@@ -111,6 +114,17 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     }
 
     // ── Base, blend, loop ─────────────────────────────────────────────
+
+    private readonly TimelineSeekService? _seek;
+
+    /// <summary>A swap into a paused slot: its cross-fade would never advance at
+    /// speed 0 and keep showing the old animation (old control at weight 1, new
+    /// at 0). The new animation appears on its frame 0 at full weight instead.</summary>
+    private void PrepareSwap(Character* character, ushort timeline)
+    {
+        if (_seek != null && _native.TimelineSlot(timeline) is { } slot)
+            _seek.PrepareInstantSwap(character, (int)slot);
+    }
 
     /// <summary>Plays a timeline through the native route.</summary>
     public Outcome Blend(ActorId actor, ushort timeline,
@@ -124,6 +138,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (existing == null)
             captured = CaptureBase(character);
 
+        PrepareSwap(character, timeline);
         return _native.PlayTimeline(character, timeline);
     }
 
@@ -138,9 +153,10 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (existing == null)
             captured = CaptureBase(character);
 
+        PrepareSwap(character, timeline);
         var played = _native.PlayTimeline(character, timeline);
         if (played.Success)
-            _forcedLoops.Remove(actor);
+            _seek?.ClearLoop(actor, AnimationSlot.Base);
         return played;
     }
 
@@ -171,19 +187,6 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         return Outcome.Ok();
     }
 
-    /// <summary>Cancels the active container timeline.</summary>
-    public Outcome CancelActiveTimeline(ActorId actor)
-    {
-        var character = _native.Resolve(actor, out var detail);
-        if (character == null)
-            return Outcome.Fail(detail!);
-        if (!_native.HasCancelTimeline)
-            return Outcome.Fail(
-                "Timeline cancellation is unavailable: the game function was not found.");
-        _native.CancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
-        return Outcome.Ok();
-    }
-
     /// <summary>Captures the current base state.</summary>
     public BaseAnimationCapture? CaptureBase(ActorId actor)
     {
@@ -195,44 +198,36 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
 
     private static BaseAnimationCapture CaptureBase(Character* character) => new(
         (byte)character->Mode,
-        AnimationNativeState.ReadModeParam(character),
+        character->ModeParam,
         character->Timeline.BaseOverride,
-        character->Timeline.TimelineSequencer.TimelineIds[0],
-        AnimationNativeState.TryReadForcedTimeline(&character->Timeline, out var forced)
-            ? forced : (ushort)0);
+        character->Timeline.TimelineSequencer.TimelineIds[0]);
 
+    /// <summary>The Full body back to what the game played before Poser's first write:
+    /// its mode and BaseOverride, the slot cleared for the game's own pick.</summary>
     public Outcome RestoreBase(ActorId actor, BaseAnimationCapture capture)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-
-        character->Timeline.BaseOverride = capture.BaseTimeline;
-        character->Mode = (CharacterModes)capture.Mode;
-        AnimationNativeState.WriteModeParam(character, capture.ModeParam);
-        var played = _native.PlayTimeline(
-            character,
-            capture.BaseSlotTimeline != 0
-                ? capture.BaseSlotTimeline
-                : AnimationTimelines.Idle);
-        if (!played.Success)
-            return played;
-        character->Timeline.BaseOverride = capture.BaseTimeline;
-        character->Mode = (CharacterModes)capture.Mode;
-        AnimationNativeState.WriteModeParam(character, capture.ModeParam);
-        AnimationNativeState.TrySetForcedTimeline(&character->Timeline, capture.ForcedTimeline);
-        return Outcome.Ok();
+        return _native.RestoreFullBody(character, (CharacterModes)capture.Mode, capture.ModeParam,
+            capture.BaseTimeline, capture.BaseSlotTimeline);
     }
 
-    public Outcome PlayEmote(ActorId actor, uint emoteId)
+    public ushort? EmotePostureRow(ActorId actor, uint emoteId)
+    {
+        var character = _native.Resolve(actor, out _);
+        return character == null ? null : _native.EmotePostureRow(character, emoteId);
+    }
+
+    public Outcome PlayEmote(ActorId actor, uint emoteId, ushort loop)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        AnimationNativeState.TrySetForcedTimeline(&character->Timeline, 0);
-        return _native.PlayEmoteNative(character, emoteId)
-            ? Outcome.Ok()
-            : Outcome.Fail("The emote entry point is unavailable.");
+        if (_native.PlayEmoteFromStart(character, emoteId, loop))
+            return Outcome.Ok();
+        _log.Information($"Animation: emote {emoteId} did not start from its intro for actor={actor}.");
+        return Outcome.Fail("The emote could not start from its intro.");
     }
 
     // ── Loops ───────────────────────────────────────────
@@ -248,7 +243,17 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     private const int LoopCooldownTicks = 15;
     private readonly Dictionary<ActorId, Dictionary<int, LoopArm>> _loops = new();
 
-    public bool LoopsSuspended { get; set; }
+    public bool LoopsSuspended
+    {
+        get => _loopsSuspended;
+        set
+        {
+            _loopsSuspended = value;
+            if (_seek != null)
+                _seek.LoopsSuspended = value;
+        }
+    }
+    private bool _loopsSuspended;
 
     public Outcome SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline)
     {
@@ -258,11 +263,15 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (!_loops.TryGetValue(actor, out var slots))
             _loops[actor] = slots = new Dictionary<int, LoopArm>();
         slots[(int)slot] = new LoopArm { Timeline = timeline, Cooldown = LoopCooldownTicks };
+        // The seek wraps the layer before it ends; the replay above only covers an
+        // end the wrap missed (or a layer the seek can't move).
+        _seek?.SetLoop(actor, slot, timeline);
         return Outcome.Ok();
     }
 
     public Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot)
     {
+        _seek?.ClearLoop(actor, slot);
         if (_loops.TryGetValue(actor, out var slots))
         {
             slots.Remove((int)slot);
@@ -272,57 +281,16 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         return Outcome.Ok();
     }
 
+    public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned) =>
+        _seek?.SetOwned(actor, slot, owned);
+
+    public event Action<ActorId, AnimationSlot, float>? LayerEnded;
+
     public void ClearLoops(ActorId actor)
     {
         _loops.Remove(actor);
-        _forcedLoops.Remove(actor);
+        _seek?.ClearLoops(actor);
     }
-
-    /// <summary>
-    /// Replays an owned Base timeline when the native forced field clears.
-    /// The clear is the sequencer's lifecycle signal; rewriting the field
-    /// alone after that point does not restart an animation that has ended.
-    /// SetTimelineId routes the Base-tagged row without replacing other slots.
-    /// </summary>
-    private void EnforceForcedLoops()
-    {
-        if (LoopsSuspended || _forcedLoops.Count == 0)
-            return;
-        foreach (var (actor, timeline) in _forcedLoops)
-        {
-            var character = _native.Resolve(actor, out _);
-            if (character == null ||
-                !AnimationNativeState.TryReadForcedTimeline(&character->Timeline, out var current))
-                continue;
-            var action = ForcedLoopAction(current == timeline, _speeds?.IsHeld(actor) == true);
-            if (action == ForcedLoop.Keep)
-                continue;
-            if (action == ForcedLoop.Rearm)
-            {
-                // Held still (paused or scrubbed): the clip has not run out.
-                // Re-arm the field so the loop stays owned, but never replay
-                // from the start underneath the held frame (#485).
-                AnimationNativeState.TrySetForcedTimeline(&character->Timeline, timeline);
-                continue;
-            }
-            var replayed = _native.PlayTimeline(character, timeline);
-            if (replayed.Success && AnimationNativeState.TrySetForcedTimeline(&character->Timeline, timeline))
-                _log.Information(
-                    $"Animation: replayed full-body loop actor={actor} timeline={timeline} field={timeline}.");
-            else
-                _log.Warning(
-                    $"Animation: full-body loop replay failed actor={actor} timeline={timeline}: " +
-                    (replayed.Detail ?? "forced field write failed."));
-        }
-    }
-
-    internal enum ForcedLoop { Keep, Rearm, Replay }
-
-    /// <summary>What an owned full-body loop needs this tick: nothing while
-    /// its field still names the loop; a re-armed field while the animation
-    /// is held; a replay only when a playing animation's field cleared.</summary>
-    internal static ForcedLoop ForcedLoopAction(bool fieldOwned, bool held) =>
-        fieldOwned ? ForcedLoop.Keep : held ? ForcedLoop.Rearm : ForcedLoop.Replay;
 
     /// <summary>Replays an owned slot after its native timeline drifts.</summary>
     private void EnforceLoops(IFramework framework)
@@ -344,44 +312,37 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
                 if (character->Timeline.TimelineSequencer.TimelineIds[slot] != arm.Timeline)
                 {
                     var replayed = _native.PlayTimeline(character, arm.Timeline);
-                    bool baseRearmed = !_forcedLoops.TryGetValue(actor, out var baseTimeline) ||
-                        AnimationNativeState.TrySetForcedTimeline(&character->Timeline, baseTimeline);
-                    if (!replayed.Success || !baseRearmed)
-                    {
+                    if (!replayed.Success)
                         _log.Warning(
                             $"Animation: slot loop replay failed actor={actor} slot={slot} " +
-                            $"timeline={arm.Timeline}: " +
-                            (replayed.Detail ?? "full-body repeat rearm failed."));
-                    }
+                            $"timeline={arm.Timeline}: {replayed.Detail}");
                     arm.Cooldown = LoopCooldownTicks;
                 }
             }
         }
     }
 
+    /// <summary>
+    /// Full body repeat is the game's own: BaseOverride names the row, so the base-idle
+    /// pick plays it again when it ends, plays it after a redraw and leaves it alone
+    /// while it is held. 0 lets the slot go back to the game's base.
+    /// </summary>
     public Outcome SetForceLoop(ActorId actor, ushort timeline)
     {
-        if (!SupportsForceLoop)
-            return Outcome.Fail("Full-body repeat is unavailable for this client layout.");
         if (timeline != 0 && TimelineSlot(timeline) != AnimationSlot.Base)
             return Outcome.Fail("Only full-body timelines can use repeat.");
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        if (!AnimationNativeState.TrySetForcedTimeline(&character->Timeline, timeline) ||
-            !AnimationNativeState.TryReadForcedTimeline(&character->Timeline, out var written) ||
-            written != timeline)
-            return Outcome.Fail("The full-body repeat field rejected the write.");
+        character->Timeline.BaseOverride = timeline;
         if (timeline == 0)
-            _forcedLoops.Remove(actor);
+            _seek?.ClearLoop(actor, AnimationSlot.Base);
         else
-            _forcedLoops[actor] = timeline;
-        _log.Information(
-            $"Animation: full-body loop actor={actor} timeline={timeline} field={written}.");
+            _seek?.SetLoop(actor, AnimationSlot.Base, timeline);
         return Outcome.Ok();
     }
 
-    public bool SupportsForceLoop => AnimationNativeState.HasForcedTimelineLayout;
+    public bool SupportsForceLoop => true;
 
     // ── Lips ──────────────────────────────────────────────────────────
 
@@ -400,7 +361,6 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     {
         _framework.Update -= OnFrameworkUpdate;
         _loops.Clear();
-        _forcedLoops.Clear();
 #if DEBUG
         _native.DisposeProbeHooks();
 #endif

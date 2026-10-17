@@ -323,8 +323,10 @@ public sealed class SceneWorkflowTests
         public string? ArmSceneCapture(
             Guid sceneId,
             string? description,
-            Action<SceneCaptureOutcome> onCaptured)
+            Action<SceneCaptureOutcome> onCaptured,
+            bool includeAnimation = false)
         {
+            LastCaptureIncludedAnimation = includeAnimation;
             Record("ArmSceneCapture");
             var captured = CapturedScene?.Invoke()
                 ?? new SceneFile { SceneId = sceneId, Description = description };
@@ -511,6 +513,20 @@ public sealed class SceneWorkflowTests
         public string? FreezeActor(SceneEntityHandle actor)
         {
             Record($"FreezeActor:{TokenName(actor)["actor:".Length..]}");
+            return null;
+        }
+
+        public bool LastCaptureIncludedAnimation;
+
+        public string? RestoreAnimation(SceneEntityHandle actor, SceneActor data)
+        {
+            Record($"RestoreAnimation:{data.Name}");
+            return null;
+        }
+
+        public string? RestorePoseEdits(SceneEntityHandle actor, SceneActor data)
+        {
+            Record($"RestorePoseEdits:{data.Name}");
             return null;
         }
 
@@ -956,6 +972,46 @@ public sealed class SceneWorkflowTests
     /// different — or nothing — on someone else's machine. So every restored
     /// actor is stopped first and the pose lands on a held frame.
     /// </summary>
+    [Fact]
+    public async Task A_scene_saved_with_its_animation_plays_it_again_and_puts_only_the_edits_back()
+    {
+        var actor = Actor("Lead", out _);
+        actor.Animation = new SceneAnimationState
+        {
+            Base = new SceneAnimationLayer { Timeline = 6310, Playing = true, Speed = 0f, HeldSeconds = 4f },
+        };
+        actor.PoseEdits = new();
+        var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        AssertApplied(load);
+        // Its animation instead of the freeze, its edits instead of the baked pose.
+        int animated = runtime.Calls.IndexOf("RestoreAnimation:Lead");
+        int edited = runtime.Calls.IndexOf("RestorePoseEdits:Lead");
+        Assert.True(animated >= 0 && edited > animated, string.Join(", ", runtime.Calls));
+        Assert.DoesNotContain("FreezeActor:Lead", runtime.Calls);
+        Assert.DoesNotContain("ArmPoseImport:Lead", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task The_save_dialogs_animation_choice_reaches_the_capture()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
+        using var workflow = Workflow(runtime);
+        Assert.True(workflow.BeginLoad("shot.xivs").Success);
+        await workflow.Drain;
+
+        Assert.True(workflow.BeginSave("with.xivs", null, new SceneSaveOptions { IncludeAnimation = true }).Success);
+        await workflow.Drain;
+        Assert.True(runtime.LastCaptureIncludedAnimation);
+
+        Assert.True(workflow.BeginSave("without.xivs").Success);
+        await workflow.Drain;
+        Assert.False(runtime.LastCaptureIncludedAnimation);
+    }
+
     [Fact]
     public async Task Every_restored_actor_is_frozen_before_its_pose()
     {

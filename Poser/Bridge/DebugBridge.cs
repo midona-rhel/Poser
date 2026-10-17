@@ -397,6 +397,14 @@ public sealed partial class DebugBridge : IDisposable
                         "/loop?actor&slot=1&on=1|0",
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/reset?actor&slot=1",
+                        "/layers?actor (every layer: live timeline, clock reading, speed, weight, loop, ended, selection; held expression; paused)",
+                        "/weight?actor&slot=1&value=0.5 (1 releases)",
+                        "/expression?actor&hold=TIMELINE | &release=1",
+                        "/lips?actor&timeline=TIMELINE (0 restores)",
+                        "/emote?actor&emote=EMOTE_ROW&timeline=ITS_[0]_ROW&start=1&posture=1 (the General Apply: posture version, from its start)",
+                        "/stance?actor&stance=Idle|SitGround|SitChair|Sleeping&pose=0",
+                        "/seeklayer?actor&slot=1&time=SECONDS (by the layer's own clock; an ended layer is played again held first)",
+                        "/wear?actor&slot=3&item=ITEM_ID&dye1=0&dye2=0 (the wardrobe's journaled item change; without item: read the slot)",
                         "/poseedit?actor&action=reset|mirror|stash|applystash&region=All|Body|Face|Hair",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
                         "/clone?actor", "/dupepose?actor",
@@ -729,6 +737,8 @@ public sealed partial class DebugBridge : IDisposable
                         saveOptions = SceneSaveOptions.Only(
                             SceneCategories.Actors, new[] { targetId.LogicalId });
                     }
+                    if (query.GetValueOrDefault("animation") == "1")
+                        saveOptions = saveOptions with { IncludeAnimation = true };
                     var saved = _scenes.BeginSave(scenePath, options: saveOptions);
                     return Json(new { ok = saved.Success, saved.Detail, progress = _scenes.Progress });
                 }
@@ -877,6 +887,130 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/history":
                 return Json(History());
+            case "/lighton":
+            {
+                // Debug: a Poser light's on/off (?index=N&on=1|0, read without on) and its
+                // DrawObject flags byte (+0x88).
+                var lights = (global::Poser.Game.Services.ILightingService)_services.GetService(
+                    typeof(global::Poser.Game.Services.ILightingService))!;
+                int index = int.TryParse(query.GetValueOrDefault("index", "0"), out var li) ? li : 0;
+                if (index < 0 || index >= lights.Lights.Count)
+                    return Json(new { error = "no such light", count = lights.Lights.Count });
+                var light = lights.Lights[index];
+                if (query.TryGetValue("on", out var onText))
+                    light.IsOn = onText == "1";
+                var native = light.GetType().GetProperty("NativePtr",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(light);
+                byte flags = 0;
+                if (native is System.Reflection.Pointer pointer)
+                    unsafe { flags = *((byte*)System.Reflection.Pointer.Unbox(pointer) + 0x88); }
+                return Json(new { light.Name, light.IsOn, flags = $"0x{flags:X2}" });
+            }
+            case "/envhold":
+            {
+                // Debug: ?section=Fog&on=1|0 holds a section; ?tail=VALUE writes the float at
+                // EnvState Fog +0x60 (past the 0x28 Poser mapped before); returns that float.
+                var env = (Game.Environment.EnvironmentService)_environment;
+                if (query.TryGetValue("section", out var sectionText)
+                    && Enum.TryParse<global::Poser.Domain.Scene.EnvSection>(sectionText, true, out var section)
+                    && query.TryGetValue("on", out var onText))
+                    env.SetSectionHeld(section, onText == "1");
+                float tail;
+                unsafe
+                {
+                    var manager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager.Instance();
+                    float* at = (float*)((byte*)manager + 0x58 + 0xC0 + 0x60);
+                    if (query.TryGetValue("tail", out var tailText) && float.TryParse(tailText,
+                            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value))
+                        *at = value;
+                    tail = *at;
+                }
+                return Json(new { fogHeld = env.IsSectionHeld(global::Poser.Domain.Scene.EnvSection.Fog), tail, weather = _environment.CurrentWeatherId });
+            }
+            case "/sigscan":
+            {
+                // Debug: every match of ?sig= in .text, module-relative (up to 8).
+                var scanner = (Dalamud.Plugin.Services.ISigScanner)_services.GetService(typeof(Dalamud.Plugin.Services.ISigScanner))!;
+                var sig = query.GetValueOrDefault("sig", "");
+                var hits = new List<string>();
+                try
+                {
+                    foreach (var hit in scanner.ScanAllText(sig).Take(8))
+                        hits.Add($"ffxiv+0x{hit - scanner.Module.BaseAddress:X}");
+                }
+                catch (Exception ex) { hits.Add(ex.Message); }
+                string? first = null;
+                try { first = $"ffxiv+0x{scanner.ScanText(sig) - scanner.Module.BaseAddress:X}"; } catch (Exception ex) { first = ex.Message; }
+                return Json(new { first, hits });
+            }
+            case "/movediag":
+            {
+                // Debug: why an actor move doesn't land. ?dx= moves actor 0's override.
+                var actorManager = (global::Poser.Game.Services.IActorManager)_services.GetService(typeof(global::Poser.Game.Services.IActorManager))!;
+                var gpose = _gpose;
+                var target = actorManager.Actors.FirstOrDefault();
+                if (target == null) return Json(new { error = "no actors" });
+                var before = _posing.GetTransformOverride(target);
+                var original = _posing.GetOriginalTransform(target);
+                if (query.TryGetValue("dx", out var dxText))
+                {
+                    var t = before ?? original;
+                    t.Position = t.Position + new System.Numerics.Vector3(float.Parse(dxText, CultureInfo.InvariantCulture), 0, 0);
+                    _posing.SetTransformOverride(target, t);
+                }
+                var after = _posing.GetTransformOverride(target);
+                return Json(new
+                {
+                    target.Name, gposing = gpose.IsGPosing, available = actorManager.IsAvailable(target),
+                    before = before?.Position.ToString(), after = after?.Position.ToString(), original = original.Position.ToString(),
+                });
+            }
+            case "/gameui":
+            {
+                // Debug: the game's own UI hide (RaptureAtkModule.SetUiVisibility), ?visible=0|1.
+                unsafe
+                {
+                    var atk = FFXIVClientStructs.FFXIV.Client.UI.RaptureAtkModule.Instance();
+                    if (atk == null) return Json(new { error = "no RaptureAtkModule" });
+                    if (query.TryGetValue("visible", out var v))
+                        atk->SetUiVisibility(v == "1");
+                }
+                var gameGui = (Dalamud.Plugin.Services.IGameGui)_services.GetService(typeof(Dalamud.Plugin.Services.IGameGui))!;
+                return Json(new { hidden = gameGui.GameUiHidden });
+            }
+            case "/scrubfallback":
+                // Debug: scrubs go through the clock-writing fallback (on=1) or the seek (on=0).
+                global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
+                return Json(new { fallback = global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback });
+            case "/physicsfreeze":
+                // The scene physics freeze (the patch at PartialSkeleton.SetBoneModelSpace+0x34F).
+            {
+                var result = _animation.SetScenePhysicsFrozen(query.GetValueOrDefault("on") == "1");
+                return Json(new { result.Success, result.Detail, frozen = _animation.IsPhysicsFrozen });
+            }
+            case "/natives":
+            {
+                // The native check: ?recheck=1 runs it again; ?all=1 lists every row,
+                // otherwise only the ones that aren't ok (plus the counts).
+                var health = (global::Poser.Application.Diagnostics.INativeHealth?)_services.GetService(
+                    typeof(global::Poser.Application.Diagnostics.INativeHealth));
+                if (health == null)
+                    return Json(new { error = "no native check" });
+                if (query.GetValueOrDefault("recheck") == "1")
+                    health.Recheck();
+                var report = health.Report;
+                bool all = query.GetValueOrDefault("all") == "1";
+                return Json(new
+                {
+                    checkedAt = report.CheckedAt.ToString("HH:mm:ss"),
+                    report.Complete,
+                    counts = report.Rows.GroupBy(r => r.State.ToString()).ToDictionary(g => g.Key, g => g.Count()),
+                    groups = report.Rows.GroupBy(r => r.Group).ToDictionary(g => g.Key,
+                        g => g.GroupBy(r => r.State.ToString()).ToDictionary(x => x.Key, x => x.Count())),
+                    rows = report.Rows.Where(r => all || r.State is not (global::Poser.Application.Diagnostics.NativeHealthState.Ok
+                        or global::Poser.Application.Diagnostics.NativeHealthState.Unchecked)),
+                });
+            }
             case "/testlight":
             {
                 if (query.GetValueOrDefault("spawn") == "1")
@@ -1067,12 +1201,131 @@ public sealed partial class DebugBridge : IDisposable
                 if (control == null)
                     return Json(new { ok = false, error = "no live control on that slot" });
                 var scrubOwner = Guid.NewGuid();
-                var begun = _animation.BeginScrub(id, control.Id, scrubOwner);
+                var begun = _animation.BeginScrub(id, control.Id, scrubOwner, Slot());
                 if (!begun.Success)
                     return Json(new { ok = false, step = "begin", begun.Detail });
                 var moved = _animation.UpdateScrub(id, time, scrubOwner);
                 _animation.EndScrub(scrubOwner);
                 return Json(new { ok = moved.Success, moved.Detail, state = State(id, actor) });
+            }
+            case "/wear":
+            {
+                var wardrobe = (global::Poser.Application.Appearance.IWardrobeControl)_services.GetService(
+                    typeof(global::Poser.Application.Appearance.IWardrobeControl))!;
+                var slot = (global::Poser.Domain.Integration.EquipSlot)byte.Parse(query.GetValueOrDefault("slot", "3"));
+                if (!query.TryGetValue("item", out var it))
+                {
+                    var worn = wardrobe.Read(id);
+                    var piece = worn.Value?.Slot(slot);
+                    return Json(new { ok = worn.Success, worn.Detail, slot = slot.ToString(), item = piece?.ItemId, dye1 = piece?.Dye1, dye2 = piece?.Dye2 });
+                }
+                byte d1 = byte.Parse(query.GetValueOrDefault("dye1", "0")), d2 = byte.Parse(query.GetValueOrDefault("dye2", "0"));
+                var set = wardrobe.SetItem(id, slot, ulong.Parse(it), d1, d2, $"Wear {slot}");
+                return Json(new { ok = set.Success, set.Detail });
+            }
+            case "/layers":
+            {
+                var reading = _animation.Read(id);
+                var owned = _animation.OverridesFor(id);
+                var layers = new List<object>();
+                foreach (var slot in new[] { AnimationSlot.Base, AnimationSlot.UpperBody, AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips })
+                {
+                    var control = _animation.FindSlotControl(id, slot);
+                    layers.Add(new
+                    {
+                        slot = slot.ToString(),
+                        live = reading?.TimelineFor(slot),
+                        selected = _animation.SelectedFor(id, slot),
+                        time = control?.Time,
+                        duration = control?.Duration,
+                        nativeSpeed = reading?.SpeedFor(slot),
+                        speed = owned.SlotSpeeds.TryGetValue(slot, out var sp) ? sp : (float?)null,
+                        weight = _animation.WeightFor(id, slot),
+                        loopWanted = owned.LoopWantedSlots.Contains(slot),
+                        ended = _animation.EndedLength(id, slot),
+                    });
+                }
+                return Json(new
+                {
+                    paused = _animation.IsPaused(id),
+                    anyPlaying = _animation.AnyPlaying(id),
+                    overallSpeed = owned.OverallSpeed,
+                    heldExpression = _animation.HeldExpressionFor(id),
+                    advanced = _animation.IsAdvanced(id),
+                    layers,
+                });
+            }
+            case "/weight":
+            {
+                if (!query.TryGetValue("value", out var wv)
+                    || !float.TryParse(wv, NumberStyles.Float, CultureInfo.InvariantCulture, out var weight))
+                    return Json(new { error = "value is required" });
+                var r = _animation.SetSlotWeight(id, Slot(), weight);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/expression":
+            {
+                if (query.GetValueOrDefault("release") == "1")
+                {
+                    var released = _animation.ReleaseExpression(id);
+                    return Json(new { ok = released.Success, released.Detail });
+                }
+                if (!query.TryGetValue("hold", out var ht)
+                    || !ushort.TryParse(ht, NumberStyles.Integer, CultureInfo.InvariantCulture, out var held))
+                    return Json(new { error = "hold=TIMELINE or release=1" });
+                var r = _animation.HoldExpression(id, held);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/lips":
+            {
+                if (!query.TryGetValue("timeline", out var lt)
+                    || !ushort.TryParse(lt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var lips))
+                    return Json(new { error = "timeline is required" });
+                var r = _animation.SetLips(id, lips);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/emote":
+            {
+                // The General section's Apply: the emote's version for the actor's
+                // posture (posture=0 plays the row as given), from its start.
+                if (!query.TryGetValue("emote", out var et) || !uint.TryParse(et, out var emoteRow)
+                    || !query.TryGetValue("timeline", out var tt) || !uint.TryParse(tt, out var standing))
+                    return Json(new { error = "emote and timeline are required" });
+                var pick = new global::Poser.Domain.Animation.TimelineEntry(
+                    standing, "bridge", global::Poser.Domain.Animation.AnimationKind.Emote, AnimationSlot.Base, 0, emoteRow, 0);
+                var entry = query.GetValueOrDefault("posture", "1") == "0"
+                    ? pick
+                    : _animation.PostureEntry(id, pick, out _);
+                if (entry == null)
+                    return Json(new { ok = false, refused = true });
+                var chosen = _animation.ChooseSlot(id, entry.Slot, (ushort)entry.TimelineId);
+                if (!chosen.Success)
+                    return Json(new { ok = false, step = "choose", chosen.Detail });
+                var r = _animation.PlaySelectedSlot(id, entry.Slot, entry, query.GetValueOrDefault("start", "1") != "0");
+                return Json(new { ok = r.Success, r.Detail, played = entry.TimelineId, slot = entry.Slot.ToString() });
+            }
+            case "/stance":
+            {
+                if (!Enum.TryParse<global::Poser.Domain.Animation.AnimationStance>(query.GetValueOrDefault("stance", "Idle"), true, out var stance))
+                    return Json(new { error = "stance must be Idle, SitGround, SitChair or Sleeping" });
+                int pose = int.TryParse(query.GetValueOrDefault("pose", "0"), out var pv) ? pv : 0;
+                var r = _animation.SetStance(id, stance, pose);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/seeklayer":
+            {
+                if (!query.TryGetValue("time", out var st)
+                    || !float.TryParse(st, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
+                    return Json(new { error = "time (seconds) is required" });
+                bool ended = _animation.EndedLength(id, Slot()) != null;
+                if (ended)
+                {
+                    var replayed = _animation.ReplayEndedForScrub(id, Slot());
+                    if (!replayed.Success)
+                        return Json(new { ok = false, step = "replay", replayed.Detail });
+                }
+                var r = _animation.SeekLayer(id, Slot(), seconds);
+                return Json(new { ok = r.Success, r.Detail, replayed = ended });
             }
             case "/loop":
             {

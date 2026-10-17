@@ -411,6 +411,13 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.Relationship,
                 $"Actor '{actor.Name}' carries a companion pose without a companion attachment.");
 
+        if (actor.CompanionAnimation is not null && actor.CompanionKind is null)
+            return Fail(SceneFileValidationFailureKind.Relationship,
+                $"Actor '{actor.Name}' carries a companion animation without a companion attachment.");
+        if ((AnimationProblem(actor.Animation) ?? AnimationProblem(actor.CompanionAnimation)
+            ?? EditsProblem(actor.PoseEdits) ?? EditsProblem(actor.CompanionPoseEdits)) is { } animation)
+            return Fail(SceneFileValidationFailureKind.Range, $"Actor '{actor.Name}' animation: {animation}");
+
         if (actor.Pose is null)
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,
                 $"Actor '{actor.Name}' has no embedded pose document.");
@@ -905,6 +912,56 @@ public static class SceneFileValidation
         }
         failure = null;
         return true;
+    }
+
+    private static string? AnimationProblem(SceneAnimationState? state)
+    {
+        if (state is null)
+            return null;
+        if (!Enum.IsDefined(state.Stance))
+            return "unknown stance";
+        if (state.OverallSpeed is { } overall && !(float.IsFinite(overall) && overall >= 0f))
+            return "speed out of range";
+        foreach (var layer in new[] { state.Base, state.UpperBody, state.Facial, state.Additive })
+        {
+            if (layer is null)
+                continue;
+            if (layer.Speed is { } speed && !(float.IsFinite(speed) && speed >= 0f))
+                return "layer speed out of range";
+            if (!(float.IsFinite(layer.Weight) && layer.Weight >= 0f && layer.Weight <= 1f))
+                return "layer weight out of range";
+            if (layer.HeldSeconds is { } held && !(float.IsFinite(held) && held >= 0f))
+                return "layer frame out of range";
+            if (layer.EndedSeconds is { } ended && !(float.IsFinite(ended) && ended >= 0f))
+                return "layer length out of range";
+        }
+        return null;
+    }
+
+    private static string? EditsProblem(List<SceneBoneEdit>? edits)
+    {
+        if (edits is null)
+            return null;
+        if (edits.Count > 4096)
+            return "too many bone edits";
+        foreach (var edit in edits)
+        {
+            if (edit is null || string.IsNullOrWhiteSpace(edit.Name) || edit.Name.Length > 128 || !Enum.IsDefined(edit.Slot))
+                return "a bone edit names no valid bone";
+            if (edit.Offsets is null || edit.Offsets.Count > 64)
+                return $"bone '{edit.Name}' has an invalid offset list";
+            if (edit.PartialRootScale is { } rootScale && !TransformMath.IsFinite(rootScale))
+                return $"bone '{edit.Name}' has a non-finite scale";
+            foreach (var offset in edit.Offsets)
+                if (offset is null || !Enum.IsDefined(offset.Frame)
+                    || !TransformMath.IsFinite(offset.Position) || !TransformMath.IsFinite(offset.Rotation)
+                    || !TransformMath.IsFinite(offset.Scale)
+                    || offset.IkPosition is { } ip && !TransformMath.IsFinite(ip)
+                    || offset.IkRotation is { } ir && !TransformMath.IsFinite(ir)
+                    || offset.IkScale is { } isc && !TransformMath.IsFinite(isc))
+                    return $"bone '{edit.Name}' has a non-finite offset";
+        }
+        return null;
     }
 
     private static bool AllFinite(params float[] values)

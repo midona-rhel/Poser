@@ -42,6 +42,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     private readonly IPosingService _posing;
     private readonly Poser.Application.Settings.ConfigurationService _configuration;
     private readonly AnimationSession _animation;
+    private readonly IBonePosingService _bonePosing;
     private readonly GazeService _gaze;
 
     /// <summary>Breadcrumbs for the scene pose leg.</summary>
@@ -59,8 +60,10 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         Poser.Application.Settings.ConfigurationService configuration,
         AnimationSession animation,
         GazeService gaze,
-        IPluginLog log)
+        IPluginLog log,
+        IBonePosingService bonePosing)
     {
+        _bonePosing = bonePosing;
         _handles = handles;
         _appearance = appearance;
         _bindings = bindings;
@@ -341,6 +344,65 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     /// picture every time, on every client. Expressions come back as part of
     /// the pose, on the frozen face.</para>
     /// </summary>
+    public string? RestoreAnimation(SceneEntityHandle actor, SceneActor data)
+    {
+        var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
+        var failures = new List<string>();
+        if (data.Animation is { } state)
+        {
+            if (_bindings.GetActorId(target) is not { } id)
+                return "The actor has no stable identity to animate.";
+            var restored = _animation.Restore(id, Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(state));
+            if (!restored.Success)
+                failures.Add(restored.Detail ?? "its animation could not be restored");
+        }
+        if (data.CompanionAnimation is { } companionState)
+        {
+            if (_spawns.GetCompanionActor(target) is not { } companion || _bindings.GetActorId(companion) is not { } companionId)
+                failures.Add("the companion's body could not be resolved, so its animation was not restored");
+            else if (_animation.Restore(companionId, Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(companionState)) is { Success: false } refused)
+                failures.Add($"companion: {refused.Detail ?? "its animation could not be restored"}");
+        }
+        return failures.Count == 0 ? null : string.Join("; ", failures);
+    }
+
+    public string? RestorePoseEdits(SceneEntityHandle actor, SceneActor data)
+    {
+        var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
+        var failures = new List<string>();
+        if (!RestoreEdits(target, data.PoseEdits))
+            failures.Add("its bone edits did not match its skeleton");
+        if (data.CompanionAnimation is not null)
+        {
+            if (_spawns.GetCompanionActor(target) is not { } companion)
+                failures.Add("the companion's body could not be resolved, so its bone edits were not restored");
+            else if (!RestoreEdits(companion, data.CompanionPoseEdits))
+                failures.Add("the companion's bone edits did not match its skeleton");
+        }
+        return failures.Count == 0 ? null : string.Join("; ", failures);
+    }
+
+    /// <summary>The saved offsets back on their bones; every other bone has none
+    /// (the animation alone). False when a saved bone is missing on this skeleton.</summary>
+    private bool RestoreEdits(IActor actor, List<SceneBoneEdit>? edits)
+    {
+        var skeletons = _skeletons.GetSkeletons(actor);
+        var state = new Poser.Game.Posing.AuthoredPoseState((edits ?? []).Select(edit =>
+            new Poser.Game.Posing.AuthoredBoneState(edit.Slot, edit.Partial, edit.Name,
+                edit.Offsets.Select(offset => new Poser.Domain.Posing.BonePoseTransformInfo(
+                    offset.Propagate,
+                    new Poser.Domain.Transforms.Transform(offset.Position, offset.Rotation, offset.Scale),
+                    null,
+                    offset.Frame,
+                    offset.IkPosition is { } ikPosition
+                        ? new Poser.Domain.Transforms.Transform(ikPosition, offset.IkRotation ?? System.Numerics.Quaternion.Identity, offset.IkScale ?? System.Numerics.Vector3.Zero)
+                        : null)).ToList(),
+                edit.PartialRootScale)).ToList());
+        bool complete = state.CanRestore(skeletons);
+        state.Restore(skeletons, _bonePosing);
+        return complete;
+    }
+
     public string? FreezeActor(SceneEntityHandle actor)
     {
         if (_bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is not { } id)

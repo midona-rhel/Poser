@@ -24,7 +24,7 @@ public sealed class GPoseMouseTargetHook : IDisposable
         // Brio's GPose mouse-target handler: returning zero prevents the
         // native hit from becoming a target, without consuming camera input.
         const string signature =
-            "40 57 48 83 EC ?? 48 89 5C 24 ?? 48 8B F9 48 89 6C 24 ?? 48 89 74 24 ?? 49 8B F0";
+            Poser.Game.Natives.NativeSignatures.TargetSystem_ProcessMouseState;
         _hook = interop.HookFromAddress<MouseTargetDelegate>(
             scanner.ScanText(signature), Detour);
         _hook.Enable();

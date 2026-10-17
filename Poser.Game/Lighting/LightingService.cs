@@ -36,7 +36,7 @@ public sealed unsafe class LightingService : ILightingService
     // strict prologue stopped matching after a game patch, and the loosened
     // form is what still finds the factory.
     private const string CreateLightSignature =
-        "48 ?? ?? ?? ?? 57 48 83 EC 20 49 8B D8 8B F9 ??";
+        Poser.Game.Natives.NativeSignatures.Light_Create;
 
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
@@ -380,8 +380,8 @@ public sealed unsafe class LightingService : ILightingService
             render->ShadowPlaneFar = 17f;
         }
 
-        if (native->VisibilityFlags == 0)
-            native->VisibilityFlags = 79;
+        if (!native->IsVisible)
+            native->IsVisible = true;
 
         var light = new Light(native, name, ownership);
         _lights.Add(light);

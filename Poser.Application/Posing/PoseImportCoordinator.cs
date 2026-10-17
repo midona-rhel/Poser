@@ -117,8 +117,10 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
         if (_animation.IsSupported(actor))
         {
             priorSpeed = _animation.OverridesFor(actor).OverallSpeed;
+            // The import's own hold is no user step.
             if (priorSpeed is not 0f)
-                pausedForImport = _animation.Pause(actor).Success;
+                using (_animation.Untracked())
+                    pausedForImport = _animation.Pause(actor).Success;
         }
 
         var restored = false;
@@ -133,6 +135,7 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
                 return;
             if (!_animation.IsPaused(actor))
                 return;
+            using var untracked = _animation.Untracked();
             if (priorSpeed is { } speed)
                 _animation.SetSpeed(actor, speed);
             else

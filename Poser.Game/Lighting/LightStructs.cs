@@ -33,9 +33,12 @@ public unsafe struct GameLight
 
     [FieldOffset(0x50)] public NativeTransform Transform;
 
-    /// <summary>0 = off; 79 is the value the game's own GPose light toggle
-    /// writes when turning a light on.</summary>
+    /// <summary>DrawObject flags (patchcheck GameLight.VisibilityFlags): the game
+    /// draws and culls an object only with bits 0 (shown) and 6 both set; bit 2 is
+    /// the render-state dirty bit. A fresh light has 0x4B.</summary>
     [FieldOffset(0x88)] public byte VisibilityFlags;
+
+    private const byte DrawnBits = 0x41, ShownBit = 0x01;
 
     [FieldOffset(0x90)] public LightRenderObject* LightRenderObject;
 
@@ -43,10 +46,14 @@ public unsafe struct GameLight
     /// call; released with <c>DecRef</c> when the gobo is cleared.</summary>
     [FieldOffset(0x98)] public TextureResourceHandle* ProjectedCubemapTexture;
 
+    /// <summary>Drawn as the game tests it, (+0x88 &amp; 0x41) == 0x41; hidden as
+    /// ILayoutInstance::SetActive hides it, by its shown bit.</summary>
     public bool IsVisible
     {
-        get => DrawObject.IsVisible;
-        set => DrawObject.IsVisible = value;
+        readonly get => (VisibilityFlags & DrawnBits) == DrawnBits;
+        set => VisibilityFlags = value
+            ? (byte)(VisibilityFlags | DrawnBits)
+            : (byte)(VisibilityFlags & ~ShownBit);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -106,8 +113,9 @@ public unsafe struct GPoseLightController
         index < LightCount ? (GameLight*)Lights[index] : null;
 }
 
-/// <summary>Render-side properties of a <see cref="GameLight"/>.</summary>
-[StructLayout(LayoutKind.Explicit, Size = 0x160)]
+/// <summary>Render-side properties of a <see cref="GameLight"/>; CreateLight
+/// allocates 0x130 bytes for it.</summary>
+[StructLayout(LayoutKind.Explicit, Size = 0x130)]
 public unsafe struct LightRenderObject
 {
     [FieldOffset(0x18)] public LightFlags LightFlags;

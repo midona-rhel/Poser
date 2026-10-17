@@ -76,8 +76,10 @@ public sealed class UIManager : IUIManager
         SceneSession scene,
         AnimationSceneActions sceneActions,
         AnimationSession animation,
-        Dalamud.Plugin.Services.IPluginLog log)
+        Dalamud.Plugin.Services.IPluginLog log,
+        Dalamud.Plugin.Services.IGameGui gameGui)
     {
+        _gameGui = gameGui;
         _ui = ui;
         _profiler = profiler;
         _manipulation = manipulation;
@@ -149,11 +151,20 @@ public sealed class UIManager : IUIManager
         }
     }
 
+    private readonly Dalamud.Plugin.Services.IGameGui _gameGui;
+
+    /// <summary>Poser's windows are down: its own hide, or the game's UI hidden while
+    /// Poser isn't set to show then. Dalamud still calls the draw (DisableUserUiHide),
+    /// so shortcuts queued by the key hook (undo, redo) run while hidden.</summary>
+    private bool WindowsHidden =>
+        _uiHidden || (_gameGui.GameUiHidden && !_configService.Config.UI.ShowWhenGameUiHidden);
+
     private void DrawUI()
     {
+        bool hidden = WindowsHidden;
         _capturingShortcutThisFrame = _windows.Settings.IsRebindingShortcut;
         _cameraInput.PointerDragHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-        _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !_uiHidden);
+        _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !hidden);
         if (!AdvanceTheme())
             return;
 
@@ -177,7 +188,7 @@ public sealed class UIManager : IUIManager
             Interactive.BeginFrame();
             try
             {
-                if (!_uiHidden)
+                if (!hidden)
                     _windows.System.Draw();
             }
             catch (Exception ex)
@@ -187,7 +198,7 @@ public sealed class UIManager : IUIManager
                 _recorder.Exception(ex);
                 throw;
             }
-            if (!_uiHidden)
+            if (!hidden)
             {
                 using (_profiler.Scope("Shell · reference images"))
                     _windows.PumpReferenceImages();
@@ -198,7 +209,7 @@ public sealed class UIManager : IUIManager
             using (_profiler.Scope("Shell · floating menus"))
                 FloatingMenu.EndFrame();
             using (_profiler.Scope("Shell · hover help"))
-                if (!_uiHidden)
+                if (!hidden)
                     HoverHelp.Render();
             using (_profiler.Scope("Shell · interactive end"))
                 Interactive.EndFrame();
@@ -604,7 +615,9 @@ public sealed class UIManager : IUIManager
         builder.DisableGposeUiHide = ui.ShowInGPose;
         builder.DisableCutsceneUiHide = ui.ShowInCutscene;
         builder.DisableAutomaticUiHide = ui.ShowWhenGameUiHidden;
-        builder.DisableUserUiHide = ui.ShowWhenGameUiHidden;
+        // Poser hides its own windows for the game's UI hide (WindowsHidden): the
+        // draw has to keep running for the shortcuts the key hook queues there.
+        builder.DisableUserUiHide = true;
     }
 
     public void Dispose()

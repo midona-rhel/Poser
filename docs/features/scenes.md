@@ -196,7 +196,8 @@ lacks, and refuse a newer version as a typed Future outcome ("saved by a newer
 Poser … update Poser to open it") before anything changes the game. Version 3
 covers groups, parent links, overlays, world-object extras and anchors that
 shipped under 2. Older readers report a version-3 file as Future rather than
-dropping those members. Pose files follow Brio's `FileVersion` the same way:
+dropping those members. Version 4 adds the optional saved animation and bone
+edits (below). Pose files follow Brio's `FileVersion` the same way:
 only a format version above `PoseFile.CurrentFileVersion` is Future. The
 `Version` string is the author's free-text pose version and never decides
 support.
@@ -516,19 +517,35 @@ the framework thread before the original body is destroyed; rejecting only
 the later history callback is not sufficient. Failed replay still completes
 its journal callback so subsequent undo/redo is not left waiting.
 
-## A scene is a picture, not a performance
+## A scene is a picture, unless it is saved with its animation
 
-Scenes record no animation: no timeline id, no playback position, no speed, no
-paused/playing distinction. A timeline id resolves against the LOADING client's
-own game and mod list, so the same file would play something different on
-another machine, or nothing. Pose data is self-contained and is what a scene
-carries instead.
+By default a scene records no animation: no timeline id, no playback position,
+no speed, no paused/playing distinction. A timeline id resolves against the
+LOADING client's own game and mod list, so the same file would play something
+different on another machine, or nothing. Pose data is self-contained and is
+what a scene carries instead.
 
 Every restored actor is therefore stopped at speed 0 before its pose is
 applied, and the pose lands on a held frame. Expressions come back as part of
 the pose, on the frozen face. The same file produces the same picture on every
-client, which is the definition of a successful load. Nothing about animation
-is attempted, so nothing about animation is refused.
+client, which is the definition of a successful load.
+
+The save dialog's **Animation** option (also in the library save and the Scene
+page; scene snapshots follow it) saves more, per actor and per attached mount,
+minion or ornament:
+- `Animation`: the animation state an undo step restores. Each layer Poser
+  played (timeline, playing or ended, loop, speed, weight, and the frame of a
+  held layer), plus the whole-actor speed, the held expression, lips, stance,
+  weapon, position lock and the advanced mode.
+- `PoseEdits`: only the user's own bone edits, as the offsets the animation's
+  frame is moved by (the authored pose stacks), never the frame underneath.
+
+Such an actor loads by playing that state again in place of the freeze (held
+layers land on their frame, running ones play from their start), then its edits
+go back on top in place of the baked pose import, so it can keep playing and
+the edits ride the animation. The baked `Pose` is still written, as the picture
+for an actor whose animation can't be restored. The timeline-id caveat above
+applies: another client's mods change what those timelines look like.
 
 A saved Detached gaze is restored before pose import samples its native basis;
 detaching afterward changes the chest/neck baseline beneath the imported deltas

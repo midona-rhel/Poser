@@ -1,4 +1,4 @@
-﻿# Animation
+# Animation
 
 Basic mode owns one General Full Body selection. Choose only stages a catalog
 row; Apply captures the actor's current Base state and then plays that exact
@@ -46,6 +46,15 @@ Scrub writes and release belong to the initiating host. A stale host cannot
 write or end another host's drag, even for the same actor. Mouse release and
 hidden UI release the claim independently of whether the scrub row is drawn;
 closing the host or losing the actor releases it too. Release leaves playback paused.
+
+A scrub moves the live slot timeline through the game's own scheduler, on the
+next framework tick (latest target wins). It is the same frame in both directions:
+clips re-enter as in playback, props with their own animation follow the body, and
+effects alive at the target re-spawn at their elapsed age. Poser's pause and resume
+reach the slot timelines, props, Havok controls and the actor's effects on one
+tick; paused effects freeze. A redraw from any source brings Base, Upper Body and a
+held Facial timeline back on their frame, props included. Integer-frame timelines,
+and builds where the layout check fails, keep the direct clock-write scrub.
 
 ## Static idle export (in development, #304)
 
