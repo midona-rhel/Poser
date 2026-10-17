@@ -42,10 +42,6 @@ public interface IAnimationTimelinePort
     /// that go through the emote entry point rather than Blend.</summary>
     BaseAnimationCapture? CaptureBase(ActorId actor);
 
-    /// <summary>Cancels the container's running timeline. The available
-    /// native operation is container-wide rather than slot-specific.</summary>
-    Outcome CancelActiveTimeline(ActorId actor);
-
     /// <summary>Clears one layered slot: its sequencer id entries and the
     /// active timeline, so a following base write cannot re-schedule it.</summary>
     Outcome ClearSlotTimeline(ActorId actor, AnimationSlot slot);

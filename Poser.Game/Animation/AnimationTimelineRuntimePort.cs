@@ -187,19 +187,6 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         return Outcome.Ok();
     }
 
-    /// <summary>Cancels the active container timeline.</summary>
-    public Outcome CancelActiveTimeline(ActorId actor)
-    {
-        var character = _native.Resolve(actor, out var detail);
-        if (character == null)
-            return Outcome.Fail(detail!);
-        if (!_native.HasCancelTimeline)
-            return Outcome.Fail(
-                "Timeline cancellation is unavailable: the game function was not found.");
-        _native.CancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
-        return Outcome.Ok();
-    }
-
     /// <summary>Captures the current base state.</summary>
     public BaseAnimationCapture? CaptureBase(ActorId actor)
     {
