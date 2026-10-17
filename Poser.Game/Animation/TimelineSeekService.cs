@@ -1171,6 +1171,11 @@ public sealed unsafe class TimelineSeekService : IDisposable
             float begin = TimelineState.Of(root).Begin, end = TimelineState.Of(root).End;
             if (!(end > begin))
                 end = begin + TimelineState.Of(root).Length;
+            // +0x40 counts the TMB's padding: the timeline finishes when its last
+            // animation does, so the seam is that animation's end (as the scrub reads it).
+            var poseTree = _engine.Collect(root);
+            if (poseTree.PoseEnd > begin + 1f && !poseTree.PoseEndPending)
+                end = Math.Min(end, poseTree.PoseEnd);
             nint playInfo = TimelineSeekEngine.PlayInfo(root);
             // A lead of 0 (the switch at the very end) is no seam either: the lead only
             // says when the game switches, not how long it blends.
