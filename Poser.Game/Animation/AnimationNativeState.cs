@@ -513,6 +513,11 @@ public sealed unsafe partial class AnimationNativeState
         }
     }
 
+    /// <summary>The game's posture (EmoteController::GetPosture): 0 standing, 1 ground
+    /// sit, 2 chair, 3 mounted, 4 dozing, 5 swimming, 6 diving; null when unavailable.</summary>
+    internal int? Posture(Character* character) =>
+        _getPosture == null ? null : _getPosture(&character->EmoteController);
+
     /// <summary>
     /// Whether the game would let the actor enter this emote mode (sit on the ground,
     /// sit, sleep) from how it is now. Only mounted, swimming or diving can refuse:

@@ -77,17 +77,20 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         }
 
         var controls = AnimationNativeState.CollectControls(character, out var token);
-        // Preserve the native pose family so each stance stays selectable.
-        var poseType = character->EmoteController.CurrentPoseType;
-        var stance = poseType switch
+        // Sitting and sleeping are the game's posture (from the mode); the pose kind
+        // (+0x20) is cleared with the pose, so it only tells the standing families apart.
+        var stance = _native.Posture(character) switch
         {
-            EmoteController.PoseType.WeaponDrawn => AnimationStance.WeaponDrawn,
-            EmoteController.PoseType.Sit => AnimationStance.SitChair,
-            EmoteController.PoseType.GroundSit => AnimationStance.SitGround,
-            EmoteController.PoseType.Doze => AnimationStance.Sleeping,
-            EmoteController.PoseType.Umbrella => AnimationStance.Umbrella,
-            EmoteController.PoseType.Accessory => AnimationStance.Accessory,
-            _ => AnimationStance.Idle,
+            1 => AnimationStance.SitGround,
+            2 => AnimationStance.SitChair,
+            4 => AnimationStance.Sleeping,
+            _ => character->EmoteController.CurrentPoseType switch
+            {
+                EmoteController.PoseType.WeaponDrawn => AnimationStance.WeaponDrawn,
+                EmoteController.PoseType.Umbrella => AnimationStance.Umbrella,
+                EmoteController.PoseType.Accessory => AnimationStance.Accessory,
+                _ => AnimationStance.Idle,
+            },
         };
 
         return new ActorAnimationReading(
