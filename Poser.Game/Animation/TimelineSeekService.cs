@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
@@ -778,12 +779,19 @@ public sealed unsafe class TimelineSeekService : IDisposable
         {
             nint timeline = AnimationNativeState.SlotTimeline(sequencer, slot);
             ushort id = AnimationNativeState.RequestedId(sequencer, slot);
-            if (timeline == 0 || id == 0 || !TimelineState.Of(timeline).Loaded
-                || TimelineState.Of(timeline).IntegerFrame || TimelineState.Of(timeline).Finished)
+            if (id == 0)
                 continue;
-            slots.Add((slot, id, TimelineState.Of(timeline).Clock));
+            var state = TimelineState.Of(timeline);
+            if (state.IntegerFrame || state.Finished)
+                continue;
+            // A row still loading (a redraw right after a play) is replayed from its
+            // start: an actor in EmoteLoop with no EmoteMode has nothing else that
+            // starts its Base again, and its draw never finishes without one.
+            slots.Add((slot, id, state.Loaded ? state.Clock : TimelineState.Of(timeline).Exists ? state.Begin : 0f));
         }
         var go = (CSGameObject*)character;
+        _log.Debug($"[TimelineSeek] redraw capture mode {((Character*)character)->Mode}/{((Character*)character)->ModeParam}: "
+            + string.Join(", ", slots.Select(x => $"slot {x.Item1} row {x.Item2} at {x.Item3:0.#}")));
         if (slots.Count > 0)
             _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId);
     }
