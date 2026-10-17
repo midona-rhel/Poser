@@ -266,6 +266,7 @@ public class SettingsWindow : Window
             ActiveActorSource = (int)c.Skeleton.ActiveActorSource,
             ShowFriendlyBoneNames = c.Skeleton.ShowFriendlyBoneNames,
             ShowAllVieraEars = c.Skeleton.ShowAllVieraEars,
+            DriversFollowPose = c.Skeleton.DriversFollowPose,
 
             GizmoScale = c.Gizmo.GizmoScale,
             AllowHoldSnap = c.Gizmo.AllowHoldSnap,
@@ -519,6 +520,7 @@ public class SettingsWindow : Window
             (ActiveActorSource)Math.Clamp(_vm.ActiveActorSource, 0, 2);
         c.Skeleton.ShowFriendlyBoneNames = _vm.ShowFriendlyBoneNames;
         c.Skeleton.ShowAllVieraEars = _vm.ShowAllVieraEars;
+        c.Skeleton.DriversFollowPose = _vm.DriversFollowPose;
 
         c.Gizmo.GizmoScale = Math.Clamp(_vm.GizmoScale, 0.5f, 2f);
         c.Gizmo.AllowHoldSnap = _vm.AllowHoldSnap;

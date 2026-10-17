@@ -131,6 +131,11 @@ public class SkeletonConfiguration
     /// character wears — so it ships on and the switch is the escape.
     /// </summary>
     public bool ShowAllVieraEars { get; set; } = false;
+
+    /// <summary>Bones the game drives from other bones (.kdb KineDriver: face
+    /// and gear helpers, body-mod helpers such as a hip helper) follow the
+    /// pose. Off, they follow the animation underneath it (#529).</summary>
+    public bool DriversFollowPose { get; set; } = true;
 }
 
 /// <summary>

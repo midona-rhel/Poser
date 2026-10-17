@@ -73,7 +73,9 @@ public unsafe class BonePosingService : IBonePosingService
 
         _apply = new BoneApplyPass(
             log, gPoseService, skeletonService, actorManager, ikService, gazeFrames,
-            _stacks, _ik, _transitive, PurgeSkeletonState);
+            _stacks, _ik, _transitive, PurgeSkeletonState,
+            new KineDriverRerun(log, scanner),
+            () => _configuration.Config.Skeleton.DriversFollowPose);
         _snapshot = new BoneSnapshotPass(
             log, gPoseService, skeletonService, actorManager, _apply, _transitive);
 

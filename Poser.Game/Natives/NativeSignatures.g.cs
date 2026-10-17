@@ -908,6 +908,28 @@ internal static class NativeOffsets
     public static readonly OffsetPattern CharacterBase_ScaleFactor2 = new("CharacterBase.ScaleFactor2", "F3 0F 10 81 ?? ?? ?? ?? F3 0F 59 41 74", 4, 4, 0x2A4);
     public static readonly OffsetPattern BgObject_NightState = new("BgObject.NightState", "0F B6 83 ?? ?? ?? ?? 88 44 ?? ?? 0F B6 83 CE 00 00 00", 3, 4, 0xCD);
     public static readonly OffsetPattern VfxObject_ColorAlpha = new("VfxObject.ColorAlpha", "F3 0F 11 81 ?? ?? ?? ?? F3 0F 11 89 60 02 00 00", 4, 4, 0x26C);
+    public static readonly OffsetPattern CharacterBase_KineDriverModule = new("CharacterBase.KineDriverModule", "48 83 BB ?? ?? ?? ?? 00 75 ?? 48 8B 05 ?? ?? ?? ?? BA A0 00 00 00", 3, 4, 0x160);
+    public static readonly OffsetPattern Skeleton_PoseLock = new("Skeleton.PoseLock", "87 81 ?? ?? ?? ?? 48 89 6C", 2, 4, 0xEC);
+    public static readonly OffsetPattern BoneKineDriverModule_Skeleton = new("BoneKineDriverModule.Skeleton", "49 8B 4D ?? 0F B7 D3 E8 ?? ?? ?? ?? 4C 8B F8", 3, 1, 0x8);
+    public static readonly OffsetPattern BoneKineDriverModule_MergedSkeleton = new("BoneKineDriverModule.MergedSkeleton", "49 8B 4D ?? 48 85 C9 74 ?? 41 80 7C 24 08 00", 3, 1, 0x10);
+    public static readonly OffsetPattern BoneKineDriverModule_MergedPose = new("BoneKineDriverModule.MergedPose", "4D 8B 7D ?? EB", 3, 1, 0x18);
+    public static readonly OffsetPattern BoneKineDriverModule_Slots = new("BoneKineDriverModule.Slots", "4C 8D 61 ?? 0F 28 F1", 3, 1, 0x28);
+    public static readonly OffsetPattern KineDriverSlot_Merged = new("KineDriverSlot.Merged", "41 80 7C 24 ?? 00 74 ?? 49 8B 55 18", 4, 1, 0x8);
+    public static readonly OffsetPattern KineDriverInstance_Ready = new("KineDriverInstance.Ready", "80 7D ?? 00 0F 84 ?? ?? ?? ?? 80 7D 04 00", 2, 1, 0x40);
+    public static readonly OffsetPattern KineDriverInstance_Enabled = new("KineDriverInstance.Enabled", "80 7D ?? 00 0F 84 ?? ?? ?? ?? 33 F6", 2, 1, 0x4);
+    public static readonly OffsetPattern KineDriverRuntime_Enabled = new("KineDriverRuntime.Enabled", "80 7F ?? 00 0F 84 ?? ?? ?? ?? 48 8D 55 30 C6 84 ?? ?? ?? ?? ?? 00", 2, 1, 0x50);
+    public static readonly OffsetPattern KineDriverData_NodeCount = new("KineDriverData.NodeCount", "8B 48 ?? 85 C9 0F 84 ?? ?? ?? ?? 48 89 B4", 2, 1, 0x20);
+    public static readonly OffsetPattern KineDriverData_Nodes = new("KineDriverData.Nodes", "4C 8D 78 ?? 0F 29 BC", 3, 1, 0x24);
+    public static readonly OffsetPattern KineDriverRuntime_NodeWeights = new("KineDriverRuntime.NodeWeights", "49 63 46 ?? 48 03 C7", 3, 1, 0x3C);
+    public static readonly OffsetPattern KineDriverNode_Enabled = new("KineDriverNode.Enabled", "80 7B ?? 00 F3 42 0F 10 74 30 3C", 2, 1, 0xA);
+    public static readonly OffsetPattern KineDriverNode_Type = new("KineDriverNode.Type", "0F B6 43 ?? FF C8 83 F8 15", 3, 1, 0xB);
+    public static readonly OffsetPattern KineDriverNode_Bone = new("KineDriverNode.Bone", "48 0F BF 43 ?? 48 8D 93 B0 00 00 00 0F 28 D6 4C 8D 04 40 48 8B ?? ?? 49 C1 E0 04 48 8B 08 48 83 C1 10 49 03 C8 E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 48 8D ?? A7 48 8B CB E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 48 0F BF 43 40", 4, 1, 0x40);
+    public static readonly OffsetPattern KineDriverTargetScale_Children = new("KineDriverTargetScale.Children", "48 63 4B ?? 0F 28 C5", 3, 1, 0x48);
+    public static readonly OffsetPattern KineDriverTargetScale_ChildCount = new("KineDriverTargetScale.ChildCount", "44 39 43 ?? 76 ?? 0F 1F 40 00 0F 1F 84 00 00 00 00 00", 3, 1, 0x4C);
+    public static readonly OffsetPattern KineDriverInstance_DriverCount = new("KineDriverInstance.DriverCount", "8B 47 ?? 48 89 5C C7 10 FF 47 08", 2, 1, 0x8);
+    public static readonly OffsetPattern KineDriverInstance_Drivers = new("KineDriverInstance.Drivers", "48 89 5C C7 ?? FF 47 08", 4, 1, 0x10);
+    public static readonly OffsetPattern KineDriverTargetTranslate_SegmentScale = new("KineDriverTargetTranslate.SegmentScale", "80 7B ?? 00 0F 84 ?? ?? ?? ?? 48 83 7B 28 00", 2, 1, 0x30);
+    public static readonly OffsetPattern KineDriverTargetTranslate_SegmentScaleSource = new("KineDriverTargetTranslate.SegmentScaleSource", "48 83 7B ?? 00 0F 84 ?? ?? ?? ?? 0F 10 83 A0 00 00 00", 3, 1, 0x28);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)
