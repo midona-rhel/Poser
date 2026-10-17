@@ -41,6 +41,9 @@ public sealed partial class GraphicalBonePane : IDisposable
 
     private readonly List<(SelectionId Id, Vector2 Pos, string Name, bool Matches)>
         _dotCandidates = new();
+    // Box select: a press on empty map, dragged, selects the dots inside the box.
+    // The box stays inside the map area and draws in the map's own window.
+    private Vector2? _marqueeStart;
     private readonly ITextureProvider _textureProvider;
     private readonly ICustomizeReadRuntimePort _customizeRead;
     private readonly IReferenceSkeletonReadPort _referenceSkeleton;
@@ -246,8 +249,8 @@ public sealed partial class GraphicalBonePane : IDisposable
             _mapOrigin = origin;
             _mapSize = mapArea;
             ImGui.SetCursorScreenPos(origin);
-            // The canvas owns presses so an empty-space drag does not move
-            // the host window. Selection is click-only; editor points can drag.
+            // The canvas owns presses so an empty-space drag box-selects
+            // instead of moving the host window; editor points drag instead.
             ImGui.InvisibleButton("##bone-map-canvas", mapArea);
             ImGui.SetItemAllowOverlap();
             ImGui.SetCursorScreenPos(origin);
@@ -283,9 +286,52 @@ public sealed partial class GraphicalBonePane : IDisposable
                 else
                     _selection.Select(hoveredId);
             }
+            BoxSelect(origin, mapArea, hovered);
 
             return true;
         }
+    }
+
+    /// <summary>Box select on the map: a press on empty map starts it, the box
+    /// follows the mouse clamped to the map area, and the release selects the
+    /// dots inside (Ctrl or Shift adds to the selection). A box that catches
+    /// nothing leaves the selection as it was; a dot the filter greys is not
+    /// caught.</summary>
+    private void BoxSelect(Vector2 origin, Vector2 mapArea, bool hovered)
+    {
+        if (_hoveredBone == null && hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _marqueeStart = ImGui.GetMousePos();
+        if (_marqueeStart is not { } start)
+            return;
+        var mouse = Vector2.Clamp(ImGui.GetMousePos(), origin, origin + mapArea);
+        var min = Vector2.Min(start, mouse);
+        var max = Vector2.Max(start, mouse);
+        bool dragged = (max - min).LengthSquared() > 16f;
+        if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            if (!dragged)
+                return;
+            var drawList = ImGui.GetWindowDrawList();
+            drawList.PushClipRect(origin, origin + mapArea, true);
+            drawList.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(ActiveTheme.Chrome.AccentFill));
+            drawList.AddRect(min, max, ImGui.ColorConvertFloat4ToU32(ActiveTheme.AccentHover));
+            drawList.PopClipRect();
+            return;
+        }
+        _marqueeStart = null;
+        if (!dragged)
+            return;
+        var caught = new List<SelectionId>();
+        foreach (var (id, pos, _, matches) in _dotCandidates)
+            if (matches && pos.X >= min.X && pos.X <= max.X && pos.Y >= min.Y && pos.Y <= max.Y)
+                caught.Add(id);
+        if (caught.Count == 0)
+            return;
+        var io = ImGui.GetIO();
+        if (!io.KeyCtrl && !io.KeyShift)
+            _selection.Clear();
+        foreach (var id in caught)
+            _selection.Add(id);
     }
 
     private void DrawBodyPage(SkeletonDescriptor skeleton, Vector2 contentArea)
