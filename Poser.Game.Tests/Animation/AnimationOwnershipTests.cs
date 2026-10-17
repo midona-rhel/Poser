@@ -134,7 +134,7 @@ public sealed class AnimationOwnershipTests
         public List<string> Calls { get; } = new();
         public ActorAnimationReading? ReadValue { get; set; }
         public BaseAnimationCapture BaseCapture { get; } =
-            new(4, 0xD4, 18, 27, 36);
+            new(4, 0xD4, 18, 27);
         public BaseAnimationCapture? RestoredBaseCapture { get; private set; }
 
         public static FakePort Create() => new();

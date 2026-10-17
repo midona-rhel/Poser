@@ -75,15 +75,11 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
         var cameraOffset = preserveOffsets ? character->CameraOffset : default;
 
         // Clear the active animation lock.
-        if (character->Mode == CharacterModes.AnimLock)
+        if (character->Mode == CharacterModes.AnimLock && _native.HasSetPose)
         {
-            character->Mode = CharacterModes.Normal;
-            character->ModeParam = 0;
+            _native.SetCharacterMode(character, CharacterModes.Normal, 0);
             character->Timeline.BaseOverride = 0;
         }
-        // Stance playback clears a native Base latch that may predate this
-        // session.
-        AnimationNativeState.TrySetForcedTimeline(&character->Timeline, 0);
 
         if (_native.HasSetPose)
         {

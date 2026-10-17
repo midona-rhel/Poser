@@ -24,6 +24,9 @@ namespace Poser.Game.Animation;
 /// </summary>
 public sealed unsafe partial class AnimationNativeState
 {
+    private static readonly int TimelineSequencerOffset = (int)System.Runtime.InteropServices.Marshal.OffsetOf<TimelineContainer>(
+        nameof(TimelineContainer.TimelineSequencer));
+    private static readonly int TimelineContainerSize = sizeof(TimelineContainer);
     /// <summary>Everything the sequencer and its havok controls say about
     /// one actor at one instant, raw enough to write back verbatim.</summary>
     public sealed class RawTimelineCapture
@@ -281,8 +284,8 @@ public sealed unsafe partial class AnimationNativeState
             ModeParam = character->ModeParam,
             EmoteId = character->EmoteController.EmoteId,
             BaseOverride = character->Timeline.BaseOverride,
-            Forced = TryReadForcedTimeline(&character->Timeline, out var forced)
-                ? forced : (ushort)0,
+            // container+0x2E0: the TMB C131 cancel-on-movement registration.
+            Forced = *(ushort*)((byte*)&character->Timeline + 0x2E0),
             LipsOverride = character->Timeline.LipsOverride,
             OverallSpeed = character->Timeline.OverallSpeed,
         };

@@ -836,7 +836,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 _engine.SetNoBlendStart(baseTimeline);
                 foreach (var (_, id, _) in restore.Slots)
                 {
-                    var played = _native.PlayTimeline(chara, id);
+                    var played = _native.ReplayTimeline(chara, id);
                     if (!played.Success)
                         LogOnce($"restore-play:{id}", $"[TimelineSeek] redraw restore could not replay {id}: {played.Detail}");
                 }

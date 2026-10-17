@@ -183,8 +183,7 @@ public readonly record struct BaseAnimationCapture(
     byte Mode,
     byte ModeParam,
     ushort BaseTimeline,
-    ushort BaseSlotTimeline = 0,
-    ushort ForcedTimeline = 0);
+    ushort BaseSlotTimeline = 0);
 
 /// <summary>Identity of one Havok animation control, by position. Paired
 /// with the skeleton generation it was enumerated under so a scrub can be

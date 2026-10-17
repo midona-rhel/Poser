@@ -81,6 +81,11 @@ public sealed unsafe partial class AnimationNativeState
     // emote; in Normal mode the next base-idle pick then cancels the emote and clears the
     // pose. Only PlayEmote clears it, StartEmoteLocal and SetPose don't.
     private const int EmoteCancelPendingOffset = 0x35;
+    // EmoteController::StopLoopedEmote 0x1406145A0 (patchcheck EmoteController.StopLoopedEmote):
+    // in a loop mode, CancelEmote (the emote's slot stopped, ClearPose) and then Normal
+    // mode for client objects; with no emote playing it only clears the pose.
+    private delegate void StopLoopedEmoteDelegate(EmoteController* controller, nint flags);
+    private readonly StopLoopedEmoteDelegate? _stopLoopedEmote;
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
@@ -193,18 +198,6 @@ public sealed unsafe partial class AnimationNativeState
         public uint Flags;
     }
 
-    // Verified client layout: the forced id is container+0x2E0, which is
-    // sequencer+0x2D0. SetTimelineId clears it, so layer writes clear first
-    // and Base replay rearms it only after that native call returns.
-    private const int ForcedTimelineOffset = 0x2E0;
-    private const int SequencerForcedTimelineOffset = 0x2D0;
-    private const int ForcedTimelineSize = sizeof(ushort);
-    private static readonly int TimelineSequencerOffset = (int)Marshal.OffsetOf<TimelineContainer>(
-        nameof(TimelineContainer.TimelineSequencer));
-    private static readonly int TimelineContainerSize = sizeof(TimelineContainer);
-    internal static readonly bool HasForcedTimelineLayout =
-        HasForcedTimelineLayoutFor(TimelineSequencerOffset, TimelineContainerSize);
-
     public AnimationNativeState(
         ISigScanner sigScanner,
         IGameInteropProvider hooking,
@@ -244,6 +237,8 @@ public sealed unsafe partial class AnimationNativeState
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetPose, "EmoteController.SetPose");
         _characterSetMode = ScanDelegate<CharacterSetModeDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.Character_SetMode, "Character.SetMode");
+        _stopLoopedEmote = ScanDelegate<StopLoopedEmoteDelegate>(
+            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_StopLoopedEmote, "EmoteController.StopLoopedEmote");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
             sigScanner,
             "48 83 EC 28 8D 41 FF 3D E7 FD 00 00 77 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 BA 64 00 00 00 48 8B 88 40 2B 00 00 E8",
@@ -365,58 +360,117 @@ public sealed unsafe partial class AnimationNativeState
         return result;
     }
 
-    internal Outcome PlayTimeline(Character* character, ushort timeline)
+    /// <summary>
+    /// Plays a row through ActionTimelineSequencer::PlayTimeline the way the game would
+    /// (RE notes/poser-animation-model.md §1). A layer plays as it is. A Full body row
+    /// plays in a Normal-family mode, a loop mode left without its stand-up and its pose
+    /// cleared. Unless BaseOverride already repeats it, it also plays at priority 1 or
+    /// more, so the base-idle pick leaves it until it ends, as the game does with actions.
+    /// </summary>
+    internal Outcome PlayTimeline(Character* character, ushort timeline) =>
+        Play(character, timeline, leaveLoop: true);
+
+    /// <summary>A row played again as it was (a redraw's replay): the mode stays.</summary>
+    internal Outcome ReplayTimeline(Character* character, ushort timeline) =>
+        Play(character, timeline, leaveLoop: false);
+
+    private Outcome Play(Character* character, ushort timeline, bool leaveLoop)
     {
-        if (_setTimelineId == null)
+        if (_setTimelineId == null || _characterSetMode == null)
             return Outcome.Fail("Timeline playback is unavailable.");
-
-        var mode = character->Mode;
-        byte modeParam = character->ModeParam;
-        ushort baseOverride = character->Timeline.BaseOverride;
-        bool hadForced = TryReadForcedTimeline(&character->Timeline, out var forced);
-        TrySetForcedTimeline(&character->Timeline, 0);
-        if (PlayWithMode(character, timeline))
-            return Outcome.Ok();
-
-        character->Mode = mode;
-        character->ModeParam = modeParam;
-        character->Timeline.BaseOverride = baseOverride;
-        if (hadForced)
-            TrySetForcedTimeline(&character->Timeline, forced);
-        return Outcome.Fail("Timeline playback failed.");
+        if (_timelineSheet?.GetRowOrDefault(timeline) == null)
+            return Outcome.Fail("Timeline playback failed: the game has no such animation.");
+        bool fullBody = TimelineSlot(timeline) is AnimationSlot.Base or null;
+        if (fullBody && leaveLoop)
+            LeaveForFullBody(character);
+        var sequencer = &character->Timeline.TimelineSequencer;
+        if (!WithUpperKept(timeline, () => _setTimelineId(sequencer, timeline, nint.Zero)))
+            return Outcome.Fail("Timeline playback failed.");
+        if (fullBody && character->Timeline.BaseOverride != timeline)
+            HoldAgainstBasePick(sequencer);
+        return Outcome.Ok();
     }
 
-    /// <summary>Applies the timeline mode before native playback.</summary>
-    private bool PlayWithMode(Character* character, ushort timeline)
+    // seq+0x54 (i32): slot 0's current priority. The immediate play writes the row's;
+    // the queued plays (the base-idle pick, emotes) are refused above theirs. ClearSlot
+    // sets it to -1 when the row ends.
+    private const int Slot0PriorityOffset = 0x54;
+
+    /// <summary>A priority-0 row (loops, idles, most Pause rows) would be replaced by
+    /// the base-idle pick on the next frame: priority 1 keeps it, as a play-params
+    /// priority override would.</summary>
+    private static void HoldAgainstBasePick(ActionTimelineSequencer* sequencer)
     {
-        PrepareMode(character, timeline);
-        return WithUpperKept(timeline, () => _setTimelineId!(
-            &character->Timeline.TimelineSequencer, timeline, nint.Zero));
+        int* priority = (int*)((byte*)sequencer + Slot0PriorityOffset);
+        if (*priority < 1)
+            *priority = 1;
     }
 
-    private void PrepareMode(Character* character, ushort timeline)
+    /// <summary>
+    /// What a Full body play needs from the mode: a loop mode (sitting, an emote loop, a
+    /// standing pose) is left through EmoteLoop 0, so its exit hook plays no stand-up,
+    /// and the game's stop for a looped emote clears the pose. An animation lock goes
+    /// to Normal. Mounted and the other Normal-family modes stay.
+    /// </summary>
+    private void LeaveForFullBody(Character* character)
     {
-        bool pause = _timelineSheet?.GetRowOrDefault(timeline)?.Pause ?? false;
-        if (pause)
+        if (character->Mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop)
         {
-            character->Mode = CharacterModes.EmoteLoop;
-            character->ModeParam = 0;
-        }
-        else if (character->Mode == CharacterModes.EmoteLoop && character->ModeParam == 0
-            && TimelineSlot(timeline) is AnimationSlot.Base or null)
-        {
-            // Only a Full body play leaves the loop: a standing pose holds EmoteLoop 0
-            // (the base-idle pick runs in Normal mode only), and an expression or Upper
-            // body layer on it must not end it.
-            character->Mode = CharacterModes.Normal;
+            if (character->ModeParam != 0)
+                _characterSetMode!(character, (int)CharacterModes.EmoteLoop, 0);
+            if (_stopLoopedEmote != null)
+            {
+                GuardLocalPoseClear(character);
+                _stopLoopedEmote(&character->EmoteController, nint.Zero);
+            }
+            if (character->Mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop)
+                _characterSetMode!(character, (int)CharacterModes.Normal, 0);
+            ClearEmoteCancelPending(character);
         }
         else if (character->Mode == CharacterModes.AnimLock)
         {
-            // Clear the active animation lock.
-            character->Mode = CharacterModes.Normal;
-            character->ModeParam = 0;
+            _characterSetMode!(character, (int)CharacterModes.Normal, 0);
             character->Timeline.BaseOverride = 0;
         }
+    }
+
+    /// <summary>
+    /// The real player (adopted into GPose) is the game's local actor: ClearPose sends
+    /// the pose change to the server when a pose index is set. With the index at 0 it
+    /// only writes locally.
+    /// </summary>
+    private static void GuardLocalPoseClear(Character* character)
+    {
+        if ((nint)character == (nint)Control.Instance()->LocalPlayer)
+            character->EmoteController.CPoseState = 0;
+    }
+
+    /// <summary>
+    /// The Full body back to the game's own (§2): BaseOverride, then the slot cleared,
+    /// so the base-idle pick (Normal-family modes) or the EmoteMode upkeep (loop modes)
+    /// plays what the game would. An actor that was in a loop mode returns to it;
+    /// EmoteLoop 0 has no upkeep, so its row is played again.
+    /// </summary>
+    internal Outcome RestoreFullBody(Character* character, CharacterModes mode, byte param,
+        ushort baseOverride, ushort slotTimeline)
+    {
+        if (_cancelTimeline == null || _characterSetMode == null)
+            return Outcome.Fail("Full body reset is unavailable: a required game function was not found.");
+        bool loop = mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop;
+        LeaveForFullBody(character);
+        character->Timeline.BaseOverride = loop ? (ushort)0 : baseOverride;
+        _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
+        if (!loop)
+            return Outcome.Ok();
+        // The chair's enter hook sets the sit height into DrawOffset/CameraOffset; the
+        // placement Poser gave the actor stays.
+        var drawOffset = character->DrawOffset;
+        var cameraOffset = character->CameraOffset;
+        _characterSetMode(character, (int)mode, param);
+        character->DrawOffset = drawOffset;
+        character->CameraOffset = cameraOffset;
+        ClearEmoteCancelPending(character);
+        return param == 0 && slotTimeline != 0 ? ReplayTimeline(character, slotTimeline) : Outcome.Ok();
     }
 
     /// <summary>
@@ -515,7 +569,8 @@ public sealed unsafe partial class AnimationNativeState
     /// </summary>
     internal bool PlayEmoteFromStart(Character* character, uint emoteId, ushort loop)
     {
-        if (_playActionTimeline == null || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
+        if (_playActionTimeline == null || _characterSetMode == null
+            || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
             || emote.ActionTimeline.Count < 2)
             return false;
         if (loop == 0)
@@ -526,15 +581,22 @@ public sealed unsafe partial class AnimationNativeState
             return false;
         var sequencer = &character->Timeline.TimelineSequencer;
         nint before = SlotTimeline(sequencer, 0);
-        // The mode the emote settles in comes from its loop row (an emote-loop row
-        // puts the character in EmoteLoop; in Normal mode the intro alone was
-        // replaced by idle at once).
-        PrepareMode(character, loop != 0 ? loop : first);
+        // The mode the emote settles in: the emote's own EmoteMode (a sit, a dance loop),
+        // else EmoteLoop 0 for a looping row (no base-idle pick there), else Normal at
+        // priority 1 or more, so the pick leaves it until it ends.
+        LeaveForFullBody(character);
+        if (emote.EmoteMode.RowId != 0 && _setEmoteMode != null)
+            _setEmoteMode(&character->EmoteController, emote.EmoteMode.RowId);
+        else if (_timelineSheet?.GetRowOrDefault(loop != 0 ? loop : first)?.Pause == true)
+            _characterSetMode!(character, (int)CharacterModes.EmoteLoop, 0);
         WithUpperKept(first, () =>
         {
             _playActionTimeline(&character->Timeline, first, intro != 0 ? loop : (ushort)0, nint.Zero);
             return true;
         });
+        ClearEmoteCancelPending(character);
+        if (character->Mode is not (CharacterModes.EmoteLoop or CharacterModes.InPositionLoop))
+            HoldAgainstBasePick(sequencer);
         return SlotTimeline(sequencer, 0) != before;
     }
 
@@ -546,46 +608,5 @@ public sealed unsafe partial class AnimationNativeState
         // The game refuses an emote it can't start now; that answer used to be
         // dropped, so a refused Apply reported success and played nothing.
         return _playEmote(&character->EmoteController, (nint)emoteId, nint.Zero, nint.Zero);
-    }
-
-    // ── Forced timeline layout ────────────────────────────────────────
-
-    private static bool HasForcedTimelineLayoutFor(
-        int timelineSequencerOffset, int timelineContainerSize) =>
-        timelineSequencerOffset == 0x10 &&
-        ForcedTimelineOffset == timelineSequencerOffset + SequencerForcedTimelineOffset &&
-        timelineContainerSize >= timelineSequencerOffset +
-            SequencerForcedTimelineOffset + ForcedTimelineSize;
-
-    internal static bool TryReadForcedTimeline(TimelineContainer* container, out ushort timeline)
-    {
-        if (!HasForcedTimelineLayout)
-        {
-            timeline = 0;
-            return false;
-        }
-        timeline = *(ushort*)((byte*)container + ForcedTimelineOffset);
-        return true;
-    }
-
-    internal static bool TrySetForcedTimeline(TimelineContainer* container, ushort timeline)
-    {
-        return TrySetForcedTimelineForLayout(
-            (nint)container,
-            timeline,
-            TimelineSequencerOffset,
-            TimelineContainerSize);
-    }
-
-    private static bool TrySetForcedTimelineForLayout(
-        nint container,
-        ushort timeline,
-        int timelineSequencerOffset,
-        int timelineContainerSize)
-    {
-        if (!HasForcedTimelineLayoutFor(timelineSequencerOffset, timelineContainerSize))
-            return false;
-        *(ushort*)((byte*)container + ForcedTimelineOffset) = timeline;
-        return true;
     }
 }
