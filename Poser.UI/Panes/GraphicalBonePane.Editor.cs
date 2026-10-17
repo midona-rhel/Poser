@@ -227,10 +227,12 @@ public sealed partial class GraphicalBonePane
             }
         });
         ImGui.SetCursorScreenPos(body.Min + new Vector2(12f * s));
-        string[] backgrounds = draft.Kind == BoneMapKind.Face
-            ? ["Auto", "Human", "Miqo’te", "Viera", "Hrothgar", "None"] : ["Illustrations", "None"];
-        string?[] values = draft.Kind == BoneMapKind.Face
-            ? [null, "PoseHeadWithEars", "PoseHeadMiqote", "PoseHeadVieraFloppy", "PoseHeadHroth", "none"] : [null, "none"];
+        // Auto keeps the map's own art (the body page's five pictures, the face
+        // page's head for the actor's race); any one picture can back either map.
+        string[] backgrounds = [draft.Kind == BoneMapKind.Face ? "Auto" : "Illustrations",
+            "Body", "Armor", "Hands", "Tail", "Toes", "Human head", "Miqo’te head", "Viera head", "Hrothgar head", "None"];
+        string?[] values = [null, "PoseBody", "PoseArmor", "PoseHand", "PoseTail", "PoseToes",
+            "PoseHeadWithEars", "PoseHeadMiqote", "PoseHeadVieraFloppy", "PoseHeadHroth", "none"];
         Dropdown("Background", backgrounds, Math.Max(0, Array.IndexOf(values, draft.Background)),
             index => draft.Background = values[index],
             ControlStyle.Workspace with { Width = UiWidth.Fixed(180f) }, disabled: _editDefault);
