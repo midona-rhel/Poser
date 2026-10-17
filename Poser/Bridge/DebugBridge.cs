@@ -943,6 +943,28 @@ public sealed partial class DebugBridge : IDisposable
                 try { first = $"ffxiv+0x{scanner.ScanText(sig) - scanner.Module.BaseAddress:X}"; } catch (Exception ex) { first = ex.Message; }
                 return Json(new { first, hits });
             }
+            case "/movediag":
+            {
+                // Debug: why an actor move doesn't land. ?dx= moves actor 0's override.
+                var actorManager = (global::Poser.Game.Services.IActorManager)_services.GetService(typeof(global::Poser.Game.Services.IActorManager))!;
+                var gpose = _gpose;
+                var target = actorManager.Actors.FirstOrDefault();
+                if (target == null) return Json(new { error = "no actors" });
+                var before = _posing.GetTransformOverride(target);
+                var original = _posing.GetOriginalTransform(target);
+                if (query.TryGetValue("dx", out var dxText))
+                {
+                    var t = before ?? original;
+                    t.Position = t.Position + new System.Numerics.Vector3(float.Parse(dxText, CultureInfo.InvariantCulture), 0, 0);
+                    _posing.SetTransformOverride(target, t);
+                }
+                var after = _posing.GetTransformOverride(target);
+                return Json(new
+                {
+                    target.Name, gposing = gpose.IsGPosing, available = actorManager.IsAvailable(target),
+                    before = before?.Position.ToString(), after = after?.Position.ToString(), original = original.Position.ToString(),
+                });
+            }
             case "/scrubfallback":
                 // Debug: scrubs go through the clock-writing fallback (on=1) or the seek (on=0).
                 global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
