@@ -754,6 +754,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _work.Remove((character, 0));
             _work.Remove((character, 1));
             _work.Remove((character, 2));
+            LeaveEmptyLoop((Character*)character);
             return;
         }
         var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
@@ -770,8 +771,22 @@ public sealed unsafe class TimelineSeekService : IDisposable
         }
         var go = (CSGameObject*)character;
         if (slots.Count > 0)
+        {
             _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId,
                 ((Character*)character)->Mode, AnimationNativeState.ReadModeParam((Character*)character));
+            LeaveEmptyLoop((Character*)character);
+        }
+    }
+
+    /// <summary>
+    /// EmoteLoop with no EmoteMode (a standing pose, a Pause row) has nothing that
+    /// starts a Base timeline after the redraw, and the redraw never finishes without
+    /// one. Normal mode's base-idle pick starts it; the replay puts the mode back.
+    /// </summary>
+    private static void LeaveEmptyLoop(Character* character)
+    {
+        if (character->Mode == CharacterModes.EmoteLoop && AnimationNativeState.ReadModeParam(character) == 0)
+            character->Mode = CharacterModes.Normal;
     }
 
     /// <summary>
