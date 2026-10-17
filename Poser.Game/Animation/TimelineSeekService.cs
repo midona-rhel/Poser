@@ -32,7 +32,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     // while it is still one of Poser's actors this tick.
     private readonly Dictionary<(nint Character, int Slot), TimelineSeekWork> _work = new();
     // Havok control seconds → timeline frames, per slot timeline.
-    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Offset)> _offsets = new();
+    private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, (nint Node, uint Id) Identity, float Offset)> _offsets = new();
     private readonly HashSet<string> _logged = new();
     // Last seen current prop timeline per (character, weapon slot); a change is a birth.
     private readonly Dictionary<(nint Character, int Weapon), nint> _propTimelines = new();
@@ -201,7 +201,9 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
             return false;
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
         var state = TimelineState.Of(root);
-        return state.Seekable && !state.IntegerFrame;
+        // Any pause bit besides the game's own bit 2 freezes Advance; the seek
+        // refuses it, so the caller takes its fallback instead.
+        return state.Seekable && !state.IntegerFrame && (state.PauseMask & ~4u) == 0;
     }
 
     /// <summary>A layer's scrub reading from its slot timeline clock, in seconds
@@ -334,8 +336,9 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
         // Measured once per slot timeline, before this service has synced it: the
         // clip sync leaves LocalTime a fraction (its ε) short of natural, so a
         // re-measure after a seek would carry that fraction into the next target.
-        if (!_offsets.TryGetValue(key, out var mapping) || mapping.Root != root)
-            mapping = (root, TimelineState.Of(root).Clock - controlLocalTime * 30f);
+        if (!_offsets.TryGetValue(key, out var mapping) || mapping.Root != root
+            || mapping.Identity != TimelineState.Of(root).Identity)
+            mapping = (root, TimelineState.Of(root).Identity, TimelineState.Of(root).Clock - controlLocalTime * 30f);
         _offsets[key] = mapping;
         lock (_targetLock)
             _targets[key] = seconds * 30f + mapping.Offset;

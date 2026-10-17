@@ -388,7 +388,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         var held = new Dictionary<int, float> { [(int)slot] = speed };
         float overall = enforcement.OverallSpeed ?? 1f;
         _framework.RunOnFrameworkThread(() => _seek?.HoldSlotSpeeds((Character*)address, held, overall));
-        _log.Information(
+        _log.Debug(
             $"[AnimState] native SetSlotSpeed slot={(int)slot} speed={speed:0.##}; "
             + $"field now {character->Timeline.TimelineSequencer.TimelineSpeeds[(int)slot]:0.##}");
         return Outcome.Ok();

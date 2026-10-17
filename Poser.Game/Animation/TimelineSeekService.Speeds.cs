@@ -38,8 +38,9 @@ public sealed unsafe partial class TimelineSeekService
         catch (Exception ex) { LogOnce("slotspeed", $"[TimelineSeek] slot speed edge faulted: {ex.Message}"); }
     }
 
-    // The effective speed last given to a held layer's slot timeline.
-    private readonly Dictionary<nint, float> _heldSpeeds = new();
+    // The effective speed last given to a held layer's slot timeline (by its
+    // identity: a replay can reuse the address).
+    private readonly Dictionary<nint, ((nint Node, uint Id) Identity, float Speed)> _heldSpeeds = new();
 
     /// <summary>
     /// Holds layer speeds natively, every tick: the slot timeline at layer ×
@@ -68,6 +69,11 @@ public sealed unsafe partial class TimelineSeekService
                     nint weapon = TimelineSeekEngine.PropWeapon((nint)character, clip);
                     if (weapon == 0)
                         continue;
+                    // Only a prop this clip is running: the weapon's current prop
+                    // timeline is its row. Before it fires, or once another layer's
+                    // prop replaced it, the weapon is someone else's.
+                    if (TimelineSeekEngine.CurrentPropTimeline(_engine.PropGroup(weapon), TimelineSeekEngine.PropTimelineId(clip)) == 0)
+                        continue;
                     if (_weaponSpeedHook == null)
                         // No hook: the push resets the prop timeline every frame; hold
                         // what is rendered (its controls) at least.
@@ -90,11 +96,12 @@ public sealed unsafe partial class TimelineSeekService
                         propSpeeds[weapon] = (speed, _tick);
                     }
                 }
-                if (!_heldSpeeds.TryGetValue(root, out var last) || last != effective)
+                var identity = TimelineState.Of(root).Identity;
+                if (!_heldSpeeds.TryGetValue(root, out var last) || last.Identity != identity || last.Speed != effective)
                 {
                     if (effective == 0f)
                         _engine.SetVfxSpeeds(root, 0f);
-                    _heldSpeeds[root] = effective;
+                    _heldSpeeds[root] = (identity, effective);
                 }
             }
             if (_heldSpeeds.Count > 256)

@@ -518,15 +518,17 @@ public sealed class SceneWorkflowTests
 
         public bool LastCaptureIncludedAnimation;
 
-        public string? RestoreAnimation(SceneEntityHandle actor, SceneActor data)
+        public string? AnimationRefusal;
+
+        public string? RestoreAnimation(SceneEntityHandle actor, SceneActor data, bool companion)
         {
-            Record($"RestoreAnimation:{data.Name}");
-            return null;
+            Record($"RestoreAnimation:{data.Name}{(companion ? ":companion" : "")}");
+            return companion ? null : AnimationRefusal;
         }
 
-        public string? RestorePoseEdits(SceneEntityHandle actor, SceneActor data)
+        public string? RestorePoseEdits(SceneEntityHandle actor, SceneActor data, bool companion)
         {
-            Record($"RestorePoseEdits:{data.Name}");
+            Record($"RestorePoseEdits:{data.Name}{(companion ? ":companion" : "")}");
             return null;
         }
 
@@ -993,6 +995,27 @@ public sealed class SceneWorkflowTests
         Assert.True(animated >= 0 && edited > animated, string.Join(", ", runtime.Calls));
         Assert.DoesNotContain("FreezeActor:Lead", runtime.Calls);
         Assert.DoesNotContain("ArmPoseImport:Lead", runtime.Calls);
+        Assert.Contains("PlaceActor:Lead", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task An_animation_that_wont_play_falls_back_to_the_saved_pose()
+    {
+        var actor = Actor("Lead", out _);
+        actor.Animation = new SceneAnimationState
+        {
+            Base = new SceneAnimationLayer { Timeline = 6310, Playing = true, Speed = 0f, HeldSeconds = 4f },
+        };
+        actor.PoseEdits = new();
+        var runtime = new FakeRuntime { ReadResult = SceneWith(actor), AnimationRefusal = "Unknown animation." };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        // Frozen, and the baked pose the file carries for this case, not the edits.
+        Assert.Contains("FreezeActor:Lead", runtime.Calls);
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.DoesNotContain("RestorePoseEdits:Lead", runtime.Calls);
     }
 
     [Fact]

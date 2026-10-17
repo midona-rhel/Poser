@@ -272,7 +272,8 @@ public sealed unsafe partial class TimelineSeekService
     /// on its timeline (once per slot timeline: a replay is a new one).</summary>
     private short HoldLead((ActorId Actor, int Slot) key, nint root)
     {
-        if (_leads.TryGetValue(key, out var held) && held.Root == root)
+        if (_leads.TryGetValue(key, out var held) && held.Root == root
+            && held.Identity == TimelineState.Of(root).Identity)
             return held.Original;
         short original = *(short*)(root + NativeFields.SchedulerTimeline_PreEndLead);
         _leads[key] = (root, TimelineState.Of(root).Identity, original);

@@ -58,13 +58,13 @@ internal sealed unsafe class GPoseMotionRecords
         return record != null && *(Character**)(record + ActorOffset) == character ? record : null;
     }
 
-    /// <summary>Stops GPose replaying the actor's recorded motion, once, before Poser's
-    /// first write to its Full body.</summary>
+    /// <summary>Stops GPose replaying the actor's recorded motion before Poser's
+    /// first write to its Full body. The live record decides: a kind set means GPose
+    /// recorded a motion since (a new session reuses actor addresses and ids), so it
+    /// is taken again and its snapshot replaces any older one.</summary>
     internal void TakeOver(Character* character)
     {
         if (AnimationNativeState.IsRealPlayer(character))
-            return;
-        if (_taken.TryGetValue((nint)character, out var held) && held.EntityId == character->GameObject.EntityId)
             return;
         byte* record = Record(character);
         if (record == null || record[KindOffset] == 0)
@@ -89,8 +89,20 @@ internal sealed unsafe class GPoseMotionRecords
         if (taken.Mode != mode || taken.Param != param || taken.BaseOverride != baseOverride || taken.SlotRow != slotRow)
             return;
         _taken.Remove((nint)character);
+        // Only over the record exactly as Poser left it (its snapshot with the kind
+        // cleared): a newer recording, or another GPose session's record at a reused
+        // address, must not be overwritten by an old snapshot.
         byte* record = Record(character);
-        if (record != null)
+        if (record != null && LeftAsTaken(record, taken.Record))
             taken.Record.CopyTo(new Span<byte>(record, RecordSize));
+    }
+
+    private static bool LeftAsTaken(byte* record, byte[] snapshot)
+    {
+        var live = new ReadOnlySpan<byte>(record, RecordSize);
+        for (int i = 0; i < RecordSize; i++)
+            if (live[i] != (i == KindOffset ? (byte)0 : snapshot[i]))
+                return false;
+        return true;
     }
 }
