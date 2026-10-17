@@ -9,7 +9,8 @@ Never rebuild an existing release from a later main commit. Beta tags are
 
 1. The user accepts the work and authorizes the release. Merge the feature PRs
    into main (squash), close the issues they fix and move leftovers to new issues.
-2. `git switch -c release/<version> origin/main` and record that main SHA.
+2. Record the accepted main SHA and cut from it, never from the moving
+   `origin/main`: `git switch -c release/<version> <accepted main SHA>`.
 
 ## 2. Release notes
 
@@ -81,7 +82,11 @@ package from main, a dirty checkout, mismatched versions/links, or an existing t
 
   ```bash
   sbom-tool generate -b <unzipped archive> -bc . -pn Poser -pv <version> -ps Midona -nsb https://github.com/midona-rhel/Poser
+  sbom-tool validate -b <unzipped archive> -o sbom-validation.json -mi SPDX:2.2
   ```
+
+  The tool writes `<unzipped archive>/_manifest/spdx_2.2/manifest.spdx.json`;
+  copy it out as `Poser.spdx.json` next to the archive for upload.
 
 - Write `release-manifest.json`: tag, version, branch, accepted main, release
   commit, accepted runtime commit, each file's path/size/SHA-256, the archive and
