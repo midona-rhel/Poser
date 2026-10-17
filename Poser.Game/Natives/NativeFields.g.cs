@@ -572,6 +572,48 @@ internal static class NativeFields
     public const int EmoteControllerCPoseTable_Count = 0x18;
     /// <summary>checked against NativeOffsets.GPoseActorRecord_Id</summary>
     public const int GPoseActorRecord_Id = 0x14;
+    /// <summary>local: stride of BoneKineDriverModule.Slots (5 slots, one per partial; add r12, 0x18 in UpdateModule 0x141865DD0): an index scale, not a displacement</summary>
+    public const int KineDriverSlot_Size = 0x18;
+    /// <summary>checked against NativeOffsets.CharacterBase_KineDriverModule</summary>
+    public const int CharacterBase_KineDriverModule = 0x160;
+    /// <summary>checked against NativeOffsets.Skeleton_PoseLock</summary>
+    public const int Skeleton_PoseLock = 0xEC;
+    /// <summary>checked against NativeOffsets.BoneKineDriverModule_Skeleton</summary>
+    public const int BoneKineDriverModule_Skeleton = 0x8;
+    /// <summary>checked against NativeOffsets.BoneKineDriverModule_MergedSkeleton</summary>
+    public const int BoneKineDriverModule_MergedSkeleton = 0x10;
+    /// <summary>checked against NativeOffsets.BoneKineDriverModule_MergedPose</summary>
+    public const int BoneKineDriverModule_MergedPose = 0x18;
+    /// <summary>checked against NativeOffsets.BoneKineDriverModule_Slots</summary>
+    public const int BoneKineDriverModule_Slots = 0x28;
+    /// <summary>checked against NativeOffsets.KineDriverSlot_Merged</summary>
+    public const int KineDriverSlot_Merged = 0x8;
+    /// <summary>checked against NativeOffsets.KineDriverInstance_Ready</summary>
+    public const int KineDriverInstance_Ready = 0x40;
+    /// <summary>checked against NativeOffsets.KineDriverInstance_Enabled</summary>
+    public const int KineDriverInstance_Enabled = 0x4;
+    /// <summary>checked against NativeOffsets.KineDriverInstance_DriverCount</summary>
+    public const int KineDriverInstance_DriverCount = 0x8;
+    /// <summary>checked against NativeOffsets.KineDriverInstance_Drivers</summary>
+    public const int KineDriverInstance_Drivers = 0x10;
+    /// <summary>checked against NativeOffsets.KineDriverRuntime_Enabled</summary>
+    public const int KineDriverRuntime_Enabled = 0x50;
+    /// <summary>checked against NativeOffsets.KineDriverRuntime_NodeWeights</summary>
+    public const int KineDriverRuntime_NodeWeights = 0x3C;
+    /// <summary>checked against NativeOffsets.KineDriverData_NodeCount</summary>
+    public const int KineDriverData_NodeCount = 0x20;
+    /// <summary>checked against NativeOffsets.KineDriverData_Nodes</summary>
+    public const int KineDriverData_Nodes = 0x24;
+    /// <summary>checked against NativeOffsets.KineDriverNode_Enabled</summary>
+    public const int KineDriverNode_Enabled = 0xA;
+    /// <summary>checked against NativeOffsets.KineDriverNode_Type</summary>
+    public const int KineDriverNode_Type = 0xB;
+    /// <summary>checked against NativeOffsets.KineDriverNode_Bone</summary>
+    public const int KineDriverNode_Bone = 0x40;
+    /// <summary>checked against NativeOffsets.KineDriverTargetScale_Children</summary>
+    public const int KineDriverTargetScale_Children = 0x48;
+    /// <summary>checked against NativeOffsets.KineDriverTargetScale_ChildCount</summary>
+    public const int KineDriverTargetScale_ChildCount = 0x4C;
 }
 
 /// <summary>A constant and the signed entry it is checked against: resolved − Delta must equal Value.</summary>
@@ -829,5 +871,25 @@ internal static class NativeFieldChecks
         new("BgObject_NightState", 0xCD, "BgObject.NightState", 0),
         new("VfxObject_ColorAlpha", 0x26C, "VfxObject.ColorAlpha", 0),
         new("GPoseActorRecord_Id", 0x14, "GPoseActorRecord.Id", 0),
+        new("CharacterBase_KineDriverModule", 0x160, "CharacterBase.KineDriverModule", 0),
+        new("Skeleton_PoseLock", 0xEC, "Skeleton.PoseLock", 0),
+        new("BoneKineDriverModule_Skeleton", 0x8, "BoneKineDriverModule.Skeleton", 0),
+        new("BoneKineDriverModule_MergedSkeleton", 0x10, "BoneKineDriverModule.MergedSkeleton", 0),
+        new("BoneKineDriverModule_MergedPose", 0x18, "BoneKineDriverModule.MergedPose", 0),
+        new("BoneKineDriverModule_Slots", 0x28, "BoneKineDriverModule.Slots", 0),
+        new("KineDriverSlot_Merged", 0x8, "KineDriverSlot.Merged", 0),
+        new("KineDriverInstance_Ready", 0x40, "KineDriverInstance.Ready", 0),
+        new("KineDriverInstance_Enabled", 0x4, "KineDriverInstance.Enabled", 0),
+        new("KineDriverInstance_DriverCount", 0x8, "KineDriverInstance.DriverCount", 0),
+        new("KineDriverInstance_Drivers", 0x10, "KineDriverInstance.Drivers", 0),
+        new("KineDriverRuntime_Enabled", 0x50, "KineDriverRuntime.Enabled", 0),
+        new("KineDriverRuntime_NodeWeights", 0x3C, "KineDriverRuntime.NodeWeights", 0),
+        new("KineDriverData_NodeCount", 0x20, "KineDriverData.NodeCount", 0),
+        new("KineDriverData_Nodes", 0x24, "KineDriverData.Nodes", 0),
+        new("KineDriverNode_Enabled", 0xA, "KineDriverNode.Enabled", 0),
+        new("KineDriverNode_Type", 0xB, "KineDriverNode.Type", 0),
+        new("KineDriverNode_Bone", 0x40, "KineDriverNode.Bone", 0),
+        new("KineDriverTargetScale_Children", 0x48, "KineDriverTargetScale.Children", 0),
+        new("KineDriverTargetScale_ChildCount", 0x4C, "KineDriverTargetScale.ChildCount", 0),
     };
 }

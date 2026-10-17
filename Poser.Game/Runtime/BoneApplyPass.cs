@@ -295,14 +295,46 @@ internal sealed unsafe class BoneApplyPass : IDisposable
 
         // STEP 5: the game's KineDriver ran before this pass (task 23), so
         // .kdb-driven bones still follow the animation. Run it again on the
-        // posed skeleton, then refresh the caches the driven bones changed.
-        if (_driversFollowPose() && _kineDrivers.Run(gameSkeleton))
+        // posed skeleton: the driven bones follow the posed sources, and the
+        // user's own edits on them go back on top as offsets (the driver
+        // overwrote them). Then refresh the caches the driven bones changed.
+        if (_driversFollowPose() && _kineDrivers.Run(gameSkeleton, out var driven))
+        {
+            ReapplyDrivenEdits(skeleton, gameSkeleton, poseInfo, driven);
             UpdateAllLastTransforms(skeleton, gameSkeleton);
+        }
         if (gazeFrame is { } captured) _gazeFrames.After(captured);
 #if DEBUG
         if (slotKey.Slot == PoseSlot.Character)
             Diagnostics.GazeEvaluationProbe.Capture(skeleton.Actor.Address, "pose-after");
 #endif
+    }
+
+    /// <summary>
+    /// The user's edits on the bones KineDriver writes, applied once more on top
+    /// of the driver's result: the edits are deltas, and the driver replaced the
+    /// bone, so each lands exactly once. Bones the drivers don't write keep the
+    /// single application of step 1. No IK: a driven bone is no chain's handle.
+    /// </summary>
+    private void ReapplyDrivenEdits(Skeleton skeleton, GameSkeleton* gameSkeleton, SkeletonPoseInfo poseInfo,
+        IReadOnlyList<(int Partial, int Bone)> driven)
+    {
+        foreach (var (partialIdx, boneIdx) in driven)
+        {
+            if (partialIdx < 0 || partialIdx >= gameSkeleton->PartialSkeletonCount)
+                continue;
+            var pose = gameSkeleton->PartialSkeletons[partialIdx].GetHavokPose(0);
+            if (pose == null || boneIdx < 0 || boneIdx >= pose->Skeleton->Bones.Length)
+                continue;
+            var bone = ResolveNativeBone(skeleton, skeleton.GetNativeBoneMap(partialIdx, pose), pose, partialIdx, boneIdx);
+            if (bone == null)
+                continue;
+            var info = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
+            if (!info.HasStacks)
+                continue;
+            foreach (var stack in info.Stacks)
+                ApplyBoneTransform(pose, boneIdx, stack, bone, null);
+        }
     }
 
     /// <summary>
