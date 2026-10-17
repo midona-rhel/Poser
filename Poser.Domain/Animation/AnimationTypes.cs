@@ -181,7 +181,7 @@ public sealed record AnimationSnapshot(
 /// <summary>Native base state captured before Poser's first write.</summary>
 public readonly record struct BaseAnimationCapture(
     byte Mode,
-    uint ModeParam,
+    byte ModeParam,
     ushort BaseTimeline,
     ushort BaseSlotTimeline = 0,
     ushort ForcedTimeline = 0);

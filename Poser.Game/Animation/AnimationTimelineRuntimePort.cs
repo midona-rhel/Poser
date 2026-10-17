@@ -215,7 +215,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
 
     private static BaseAnimationCapture CaptureBase(Character* character) => new(
         (byte)character->Mode,
-        AnimationNativeState.ReadModeParam(character),
+        character->ModeParam,
         character->Timeline.BaseOverride,
         character->Timeline.TimelineSequencer.TimelineIds[0],
         AnimationNativeState.TryReadForcedTimeline(&character->Timeline, out var forced)
@@ -229,7 +229,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
 
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
-        AnimationNativeState.WriteModeParam(character, capture.ModeParam);
+        character->ModeParam = capture.ModeParam;
         var played = _native.PlayTimeline(
             character,
             capture.BaseSlotTimeline != 0
@@ -239,7 +239,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
             return played;
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
-        AnimationNativeState.WriteModeParam(character, capture.ModeParam);
+        character->ModeParam = capture.ModeParam;
         AnimationNativeState.TrySetForcedTimeline(&character->Timeline, capture.ForcedTimeline);
         return Outcome.Ok();
     }

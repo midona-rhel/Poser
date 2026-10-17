@@ -29,7 +29,7 @@ public sealed unsafe partial class AnimationNativeState
     public sealed class RawTimelineCapture
     {
         public byte Mode;
-        public uint ModeParam;
+        public byte ModeParam;
         // Run two: a looping game emote (/hum) lives in the
         // EmoteController; the sequencer slots only flicker derived ids.
         // Cloning the slots clones the flicker — the emote id is the
@@ -278,7 +278,7 @@ public sealed unsafe partial class AnimationNativeState
         var capture = new RawTimelineCapture
         {
             Mode = (byte)character->Mode,
-            ModeParam = ReadModeParam(character),
+            ModeParam = character->ModeParam,
             EmoteId = character->EmoteController.EmoteId,
             BaseOverride = character->Timeline.BaseOverride,
             Forced = TryReadForcedTimeline(&character->Timeline, out var forced)

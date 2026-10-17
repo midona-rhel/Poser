@@ -32,7 +32,7 @@ public sealed class AnimationOwnershipTests
 
         Assert.True(session.ResetSlot(Actor, AnimationSlot.Base).Success);
         Assert.Equal(port.BaseCapture, port.RestoredBaseCapture);
-        Assert.Equal(0xA1B2C3D4u, port.RestoredBaseCapture?.ModeParam);
+        Assert.Equal((byte)0xD4, port.RestoredBaseCapture?.ModeParam);
         Assert.False(session.OverridesFor(Actor).HasAny);
     }
 
@@ -134,7 +134,7 @@ public sealed class AnimationOwnershipTests
         public List<string> Calls { get; } = new();
         public ActorAnimationReading? ReadValue { get; set; }
         public BaseAnimationCapture BaseCapture { get; } =
-            new(4, 0xA1B2C3D4u, 18, 27, 36);
+            new(4, 0xD4, 18, 27, 36);
         public BaseAnimationCapture? RestoredBaseCapture { get; private set; }
 
         public static FakePort Create() => new();

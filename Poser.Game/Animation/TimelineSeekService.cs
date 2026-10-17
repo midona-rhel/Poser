@@ -120,7 +120,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         // has it) switches the actor to an emote loop with no emote, and the next
         // redraw then never starts a base timeline or shows the actor.
         public readonly CharacterModes Mode;
-        public readonly uint ModeParam;
+        public readonly byte ModeParam;
         public bool Replayed;
         public bool SpeedLogged;
         public int Frame;
@@ -133,7 +133,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             Frame = 0;
         }
         public Restore((int, ushort, float)[] slots, ushort objectIndex, uint entityId,
-            CharacterModes mode, uint modeParam)
+            CharacterModes mode, byte modeParam)
         {
             Slots = slots;
             Done = new bool[slots.Length];
@@ -773,7 +773,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (slots.Count > 0)
         {
             _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId,
-                ((Character*)character)->Mode, AnimationNativeState.ReadModeParam((Character*)character));
+                ((Character*)character)->Mode, ((Character*)character)->ModeParam);
             LeaveEmptyLoop((Character*)character);
         }
     }
@@ -785,7 +785,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     /// </summary>
     private static void LeaveEmptyLoop(Character* character)
     {
-        if (character->Mode == CharacterModes.EmoteLoop && AnimationNativeState.ReadModeParam(character) == 0)
+        if (character->Mode == CharacterModes.EmoteLoop && character->ModeParam == 0)
             character->Mode = CharacterModes.Normal;
     }
 
@@ -842,7 +842,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 }
                 // The actor leaves the redraw in the mode it entered it with.
                 chara->Mode = restore.Mode;
-                AnimationNativeState.WriteModeParam(chara, restore.ModeParam);
+                chara->ModeParam = restore.ModeParam;
                 restore.Replayed = true;
                 continue;
             }

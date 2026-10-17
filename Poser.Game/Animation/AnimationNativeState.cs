@@ -185,8 +185,6 @@ public sealed unsafe partial class AnimationNativeState
     private const int ForcedTimelineOffset = 0x2E0;
     private const int SequencerForcedTimelineOffset = 0x2D0;
     private const int ForcedTimelineSize = sizeof(ushort);
-    private static readonly int ModeParamOffset = (int)Marshal.OffsetOf<Character>(
-        nameof(Character.ModeParam));
     private static readonly int TimelineSequencerOffset = (int)Marshal.OffsetOf<TimelineContainer>(
         nameof(TimelineContainer.TimelineSequencer));
     private static readonly int TimelineContainerSize = sizeof(TimelineContainer);
@@ -353,20 +351,13 @@ public sealed unsafe partial class AnimationNativeState
         return result;
     }
 
-    // ModeParam is a four-byte native field.
-    internal static uint ReadModeParam(Character* character) =>
-        *(uint*)((byte*)character + ModeParamOffset);
-
-    internal static void WriteModeParam(Character* character, uint value) =>
-        *(uint*)((byte*)character + ModeParamOffset) = value;
-
     internal Outcome PlayTimeline(Character* character, ushort timeline)
     {
         if (_setTimelineId == null)
             return Outcome.Fail("Timeline playback is unavailable.");
 
         var mode = character->Mode;
-        uint modeParam = ReadModeParam(character);
+        byte modeParam = character->ModeParam;
         ushort baseOverride = character->Timeline.BaseOverride;
         bool hadForced = TryReadForcedTimeline(&character->Timeline, out var forced);
         TrySetForcedTimeline(&character->Timeline, 0);
@@ -374,7 +365,7 @@ public sealed unsafe partial class AnimationNativeState
             return Outcome.Ok();
 
         character->Mode = mode;
-        WriteModeParam(character, modeParam);
+        character->ModeParam = modeParam;
         character->Timeline.BaseOverride = baseOverride;
         if (hadForced)
             TrySetForcedTimeline(&character->Timeline, forced);
