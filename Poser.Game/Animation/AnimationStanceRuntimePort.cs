@@ -93,6 +93,7 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
         var drawOffset = preserveOffsets ? character->DrawOffset : default;
         var cameraOffset = preserveOffsets ? character->CameraOffset : default;
 
+        _native.TakeOverGPoseMotion(character);
         if (character->Mode == CharacterModes.AnimLock)
         {
             _native.SetCharacterMode(character, CharacterModes.Normal, 0);

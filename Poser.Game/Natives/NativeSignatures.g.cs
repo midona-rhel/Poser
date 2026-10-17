@@ -614,6 +614,16 @@ internal static class NativeSignatures
     public const string PartialSkeleton_SetBoneModelSpace = "48 8B C4 48 89 ?? ?? 55 56 57 41 54 41 55 41 56 41 57 48 81 EC D0 00 00 00 0F 29 ?? ?? 0F 29 ?? ?? 44 0F 29 ?? ?? 44 0F 29 ?? ?? 48 8B 05";
     /// <summary>CharacterBase.SetTint (0x140432360 on the analysed build).</summary>
     public const string CharacterBase_SetTint = "0F 10 02 0F 11 81 90 02 00 00";
+    /// <summary>EventGPoseController.FindActorRecord (0x140B14570 on the analysed build).</summary>
+    public const string EventGPoseController_FindActorRecord = "E8 ?? ?? ?? ?? 48 8B D8 48 85 C0 0F 84 ?? ?? ?? ?? F6 83 B1 00 00 00 01";
+    /// <summary>EventGPoseController.ClearActorRecord (0x140B148F0 on the analysed build).</summary>
+    public const string EventGPoseController_ClearActorRecord = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8B FA 48 8B F1 E8 ?? ?? ?? ?? 48 8B D8 48 85 C0 0F 84 ?? ?? ?? ?? 48 39 B8 90 00 00 00";
+    /// <summary>EventGPoseController.StopRecordMotion (0x140B10730 on the analysed build).</summary>
+    public const string EventGPoseController_StopRecordMotion = "40 56 57 41 54 41 55 48 83 EC 28";
+    /// <summary>EventGPoseController.RecordNeedsReplay (0x140B110A0 on the analysed build).</summary>
+    public const string EventGPoseController_RecordNeedsReplay = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 41 54 41 55 41 56 41 57 48 83 EC 20 4C 8B F1 48 8B DA";
+    /// <summary>EventGPoseController.ReplayRecordEmote (0x140B12120 on the analysed build).</summary>
+    public const string EventGPoseController_ReplayRecordEmote = "66 45 85 C0 0F 84 ?? ?? ?? ?? 48 89 6C ?? ?? 56";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
@@ -875,6 +885,13 @@ internal static class NativeOffsets
     public static readonly OffsetPattern CharacterLookAtTargetParam_Type = new("CharacterLookAtTargetParam.Type", "83 7A ?? 01 75 ?? B8 00 00 00 E0", 2, 1, 0x8);
     public static readonly OffsetPattern CharacterLookAtTargetParam_Target = new("CharacterLookAtTargetParam.Target", "48 39 42 ?? 75 ?? 41 0F 28 D1", 3, 1, 0x10);
     public static readonly OffsetPattern CharacterLookAtTargetParam_Unk20 = new("CharacterLookAtTargetParam.Unk20", "89 42 ?? 83 7A 08 01", 2, 1, 0x20);
+    public static readonly OffsetPattern EventGPoseController_ActorRecords = new("EventGPoseController.ActorRecords", "48 8D 99 ?? ?? ?? ?? 4C 8D 04 40 49 C1 E0 06 49 03 D8 EB ?? 33 DB E8 ?? ?? ?? ?? 48 85 C0 74 ?? 48 39 B8 90 00 00 00 74 ?? 48 85 DB 74 ?? 48 39 BB 90 00 00 00 75 ?? 48 8B C3 48 8B 5C ?? ?? 48 83 C4 20 5F C3 33 C0 48 8B 5C ?? ?? 48 83 C4 20 5F C3 CC CC CC CC CC CC CC CC 48 89 5C", 3, 4, 0x230);
+    public static readonly OffsetPattern EventGPoseController_ActorRecordsActor = new("EventGPoseController.ActorRecordsActor", "49 8D 96 ?? ?? ?? ?? 8B C5", 3, 4, 0x2C0);
+    public static readonly OffsetPattern GPoseActorRecord_Actor = new("GPoseActorRecord.Actor", "48 8B B2 ?? ?? ?? ?? 45 0F B6 E8", 3, 4, 0x90);
+    public static readonly OffsetPattern GPoseActorRecord_Kind = new("GPoseActorRecord.Kind", "0F BE 4E ?? 85 C0", 3, 1, 0x10);
+    public static readonly OffsetPattern GPoseActorRecord_Id = new("GPoseActorRecord.Id", "8B 47 ?? 8B C8 89 44", 2, 1, 0x14);
+    public static readonly OffsetPattern EventGPoseController_ReplayFlags = new("EventGPoseController.ReplayFlags", "F6 87 ?? ?? ?? ?? 01 74 ?? 48 8D 9F 40 32 00 00", 2, 4, 0x3589);
+    public static readonly OffsetPattern EventGPoseController_ActorListRecordIndex = new("EventGPoseController.ActorListRecordIndex", "48 8D 9F ?? ?? ?? ?? 0F 1F 84 00 00 00 00 00 48 8B 6B F8", 3, 4, 0x3240);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)

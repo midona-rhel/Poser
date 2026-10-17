@@ -83,6 +83,7 @@ public sealed unsafe partial class AnimationNativeState
     // mode for client objects; with no emote playing it only clears the pose.
     private delegate void StopLoopedEmoteDelegate(EmoteController* controller, nint flags);
     private readonly StopLoopedEmoteDelegate? _stopLoopedEmote;
+    private readonly GPoseMotionRecords _gposeMotion;
     // TimelineContainer::SetWeaponDrawn 0x1408BFBC0 (patchcheck TimelineContainer.SetWeaponDrawn):
     // Flags3 bit 6, a looped emote stopped, and the draw (1) or sheathe (2) row through
     // the queued play; the ornament rider too.
@@ -252,6 +253,7 @@ public sealed unsafe partial class AnimationNativeState
             _cposeTable = (byte*)cposeTable;
         else
             _log.Warning("Animation: the pose table was not found; stance poses can't be stepped.");
+        _gposeMotion = new GPoseMotionRecords(sigScanner, log);
         _stopLoopedEmote = ScanDelegate<StopLoopedEmoteDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_StopLoopedEmote, "EmoteController.StopLoopedEmote");
         _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
@@ -434,7 +436,10 @@ public sealed unsafe partial class AnimationNativeState
             return Outcome.Fail("Timeline playback failed: the game has no such animation.");
         bool fullBody = TimelineSlot(timeline) is AnimationSlot.Base or null;
         if (fullBody && leaveLoop)
+        {
+            _gposeMotion.TakeOver(character);
             LeaveForFullBody(character);
+        }
         var sequencer = &character->Timeline.TimelineSequencer;
         if (!WithUpperKept(timeline, () => _setTimelineId(sequencer, timeline, nint.Zero)))
             return Outcome.Fail("Timeline playback failed.");
@@ -513,7 +518,10 @@ public sealed unsafe partial class AnimationNativeState
         character->Timeline.BaseOverride = loop ? (ushort)0 : baseOverride;
         _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
         if (!loop || IsRealPlayer(character))
+        {
+            _gposeMotion.GiveBack(character, mode, param, baseOverride, slotTimeline);
             return Outcome.Ok();
+        }
         if (!sameMode)
         {
             // The chair's enter hook sets the sit height into DrawOffset/CameraOffset;
@@ -525,8 +533,14 @@ public sealed unsafe partial class AnimationNativeState
             character->CameraOffset = cameraOffset;
             ClearEmoteCancelPending(character);
         }
-        return param == 0 && slotTimeline != 0 ? ReplayTimeline(character, slotTimeline) : Outcome.Ok();
+        var replayed = param == 0 && slotTimeline != 0 ? ReplayTimeline(character, slotTimeline) : Outcome.Ok();
+        _gposeMotion.GiveBack(character, mode, param, baseOverride, slotTimeline);
+        return replayed;
     }
+
+    /// <summary>Stops GPose replaying the actor's recorded motion before a stance
+    /// takes the Full body.</summary>
+    internal void TakeOverGPoseMotion(Character* character) => _gposeMotion.TakeOver(character);
 
     /// <summary>
     /// A row with +0x14 bit 2 (the additives measured: add_yes, add_no) makes
@@ -642,6 +656,7 @@ public sealed unsafe partial class AnimationNativeState
         if (first == 0)
             return false;
         var sequencer = &character->Timeline.TimelineSequencer;
+        _gposeMotion.TakeOver(character);
         LeaveForFullBody(character);
         if (emote.EmoteMode.RowId == 0
             && (IsPoseEmote(emoteId) || _timelineSheet?.GetRowOrDefault(standingLoop)?.Pause == true))
