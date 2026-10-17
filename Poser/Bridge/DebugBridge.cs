@@ -927,6 +927,22 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 return Json(new { fogHeld = env.IsSectionHeld(global::Poser.Domain.Scene.EnvSection.Fog), tail, weather = _environment.CurrentWeatherId });
             }
+            case "/sigscan":
+            {
+                // Debug: every match of ?sig= in .text, module-relative (up to 8).
+                var scanner = (Dalamud.Plugin.Services.ISigScanner)_services.GetService(typeof(Dalamud.Plugin.Services.ISigScanner))!;
+                var sig = query.GetValueOrDefault("sig", "");
+                var hits = new List<string>();
+                try
+                {
+                    foreach (var hit in scanner.ScanAllText(sig).Take(8))
+                        hits.Add($"ffxiv+0x{hit - scanner.Module.BaseAddress:X}");
+                }
+                catch (Exception ex) { hits.Add(ex.Message); }
+                string? first = null;
+                try { first = $"ffxiv+0x{scanner.ScanText(sig) - scanner.Module.BaseAddress:X}"; } catch (Exception ex) { first = ex.Message; }
+                return Json(new { first, hits });
+            }
             case "/scrubfallback":
                 // Debug: scrubs go through the clock-writing fallback (on=1) or the seek (on=0).
                 global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
