@@ -301,8 +301,7 @@ public sealed class AnimationPane : IDisposable
             : AnimationStance.Idle;
         var owned = _animation.OverridesFor(actor);
         bool poseDisabled = !supported
-            || AnimationTimelines.PoseCount(
-                poseFamily, reading.WeaponDrawn) <= 1
+            || _animation.PoseCount(poseFamily, reading.WeaponDrawn) <= 1
             || owned.LoopedSlots.ContainsKey(AnimationSlot.Base)
             || (owned.BaseTimeline is { } basePick
                 && reading.TimelineFor(AnimationSlot.Base) == basePick);
