@@ -1304,6 +1304,16 @@ public sealed partial class DebugBridge : IDisposable
                 var r = _animation.PlaySelectedSlot(id, entry.Slot, entry, query.GetValueOrDefault("start", "1") != "0");
                 return Json(new { ok = r.Success, r.Detail, played = entry.TimelineId, slot = entry.Slot.ToString() });
             }
+            case "/expressionbake":
+            {
+                // Debug: the Animation tab's Bake expression (?timeline=ROW) for actor 0's id.
+                var preview = (global::Poser.Application.Animation.IExpressionPreview)_services.GetService(
+                    typeof(global::Poser.Application.Animation.IExpressionPreview))!;
+                ushort row = ushort.Parse(query.GetValueOrDefault("timeline", "605"));
+                var chose = _animation.ChooseSlot(id, AnimationSlot.Facial, row);
+                var baked = preview.Bake(id, row);
+                return Json(new { chose = chose.Success, ok = baked.Success, baked.Detail, baking = preview.IsBaking });
+            }
             case "/stance":
             {
                 if (!Enum.TryParse<global::Poser.Domain.Animation.AnimationStance>(query.GetValueOrDefault("stance", "Idle"), true, out var stance))
