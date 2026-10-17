@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.9.19-beta — Animation layers, exact scrubbing and smooth loops
+
+### Animation
+
+- Made scrubbing land on the exact frame in both directions, with props and effects in sync.
+- Made pause stop the body, props, weapon glows and effects on the same frame.
+- Added scrubbing, speed and weight to every animation layer, including Additive and Lips.
+- Made animation layers play, pause and loop independently of each other.
+- Made props follow their own layer's speed, with the highest layer's prop taking priority.
+- Added smooth crossfades when looping animations that don't loop on their own.
+- Fixed scrubbed looping animations restarting instead of holding their frame.
+- Made layers that run out end as they do in the game; Play starts them again.
+- Kept the animation on the same frame when an actor is redrawn.
+- Fixed Play emote start not playing the emote's intro on group pose actors.
+- Fixed Full body Apply doing nothing when the game refused the emote.
+- Made General Apply play the version that fits the actor's posture and name the postures an emote can't be used in.
+- Added undo and redo for every animation change, keeping held layers on their frame.
+- Added an option to save actors' animations with a scene.
+
+### Stances and poses
+
+- Fixed standing idle poses reverting to the default idle.
+- Made pose stepping use the game's own pose list, so every sit, chair and doze pose plays.
+- Refused sitting, chair sitting and sleeping while mounted, swimming or diving, as the game does.
+- Stopped changing your own character's stance or emotes, since the game sends those changes to the server.
+- Fixed restored chair sits coming back standing or on their first frame.
+
+### Fixes
+
+- Fixed actors that couldn't be moved after Poser was reloaded inside group pose.
+- Made shortcuts, including undo, work while the game's UI is hidden.
+- Added a game function check under Settings → General → Diagnostics that shows whether everything Poser uses in the game still matches.
+
 ## 0.9.18-beta — Scene reliability and more lights
 
 ### Scenes and files

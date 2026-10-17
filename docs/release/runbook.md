@@ -2,51 +2,105 @@
 
 `main` is development/integration. Cut `release/<version>` from the accepted
 main SHA; record that base and build only the clean release-branch head.
-Never rebuild an existing release from a later main commit.
+Never rebuild an existing release from a later main commit. Beta tags are
+`v<version>-beta` (0.9.19: tag `v0.9.19-beta`, assembly version `0.9.19.0`).
 
-## Identity and gates
+## 1. Accept and cut
 
-1. Set numeric versions in `Poser/Poser.csproj`, `Poser/Poser.json` and
-   root `repo.json` on the release branch. Update the changelog and all three
-   download URLs to the exact new tag. Beta tags use `v<version>-beta`;
-   for 0.9.6 this is `v0.9.6-beta`, assembly version `0.9.6.0`.
-   Add an entry to `ReleaseNotesHistory` with short, user-focused bullets,
-   at most one sentence each; retain previous entries. The host assembly
-   caps which releases are visible. On upgrade, the non-blocking window shows
-   every entry newer than the persisted last-presented version, newest first.
-   Snapshot that range before presentation advances the marker; hidden UI must
-   not consume it. Settings → About → Release notes opens the complete bundled
-   history through the installed version without lowering a newer seen marker.
-2. Commit and push the release head. Refuse packaging from main, a dirty
-   checkout, mismatched versions/URLs, or an existing mismatched tag.
-3. Build and test that head with `dotnet build Poser.slnx -c Release` and
-   `dotnet test Poser.slnx -c Release --no-build`. Debug is live deployment
-   and is never a release validation substitute.
-4. Review tracked files and release history for credentials, diagnostics,
-   local paths and excluded data using [exclusions](exclusions.md).
-5. Inspect the produced ZIP independently: canonical unique relative paths,
-   no traversal/symlinks, valid CRCs, exact expected files, no debug output,
-   correct assembly/manifest version and build SHA, and matching file hashes.
-6. Run the online vulnerability audit against the resolved assets graph.
-   Reconcile shipped dependencies against [notices](../../THIRD-PARTY-LICENSES.md).
-   Carry required license texts in the archive.
-7. Generate an SPDX SBOM with pinned Microsoft SBOM Tool 4.1.5 from the staged
-   archive contents and the release checkout. Validate it against those files.
-   Keep it outside the archive. Record the tag, branch, accepted main base,
-   release SHA, per-file hashes, archive checksum and SBOM checksum in the
-   release manifest.
+1. The user accepts the work and authorizes the release. Merge the feature PRs
+   into main (squash), close the issues they fix and move leftovers to new issues.
+2. `git switch -c release/<version> origin/main` and record that main SHA.
 
-## Publication
+## 2. Release notes
 
-Tag the exact verified release head and create the GitHub prerelease targeting
-its release branch. Upload the verified ZIP, checksum, SBOM and release
-manifest. Verify the published asset digests and download.
-Squash-merge the release pull request into main using the repository's configured
-policy so `repo.json` advertises the published asset. Main's squash commit is
-expected to differ from the release commit; it does not need to preserve that
-commit's ancestry. The tag, release branch, build and published artifacts retain
-their original release identity. Do not rebuild or retag them from main.
-Record the release URL and checks. Never claim unreported visual tests passed.
+The notes are written for the people who use Poser. Each bullet says what they
+can now do, or what no longer goes wrong, in the words of the interface:
+
+- One sentence, past tense, starting with what happened: Added, Fixed, Made,
+  Improved, Removed, Kept. "Fixed actors that couldn't be moved after …", not
+  "PosingService seeds its actor map".
+- No issue numbers, class or function names, offsets, or how it was built.
+  Leave out internal work that changes nothing a user sees.
+- Group the bullets under `###` headings by area (Animation, Scenes and files,
+  Actors and posing, Interface, Fixes …) and give the release a short theme.
+- Follow the previous release's wording and order; read its notes first.
+
+`docs/release/CHANGELOG.md` holds the source section, newest on top:
+
+```markdown
+## <version>-beta — <theme>
+
+### <area>
+
+- <bullet>
+```
+
+Every other place carries the same text:
+
+| Copy | Form |
+|---|---|
+| `ReleaseNotesHistory` (in-app, newest first; keep older entries) | the theme and the bullets, without groups |
+| `Changelog` in `Poser/Poser.json` and `repo.json` | the bullets as `- ` lines, without groups |
+| GitHub release body | `## Poser <version> — <theme>`, then the groups and bullets |
+
+## 3. Identity
+
+On the release branch set the numeric version in `Poser/Poser.csproj`,
+`Poser/Poser.json` and `repo.json`, the three `repo.json` download links to the
+new tag, and `repo.json` `LastUpdate` (Unix seconds). Add
+`docs/release/<version>-acceptance.md`: the authorization, the accepted main
+base and live runtime, the issues closed, and every check that was skipped or
+not passed (never claim an unreported test).
+
+`ReleaseIdentityTests` fails when the versions, links, in-app notes, manifests
+and changelog disagree. Commit and push the release head.
+
+## 4. Gates (on the clean release head)
+
+```bash
+dotnet build Poser.slnx -c Release
+dotnet test Poser.slnx -c Release --no-build
+dotnet list Poser.slnx package --vulnerable --include-transitive
+```
+
+Debug deploys to the live game and is never a release validation. Refuse to
+package from main, a dirty checkout, mismatched versions/links, or an existing tag.
+
+- Scan the diff since the previous tag for credentials and local paths, and the
+  tree against [exclusions](exclusions.md).
+- The build writes `Poser/bin/Release/Poser/latest.zip`. Inspect it against the
+  previous release's manifest: the same file set (explain any change), unique
+  relative paths without traversal or symlinks, valid CRCs, no debug output, no
+  Debug bridge or probe types in the assemblies, `Poser.json` at the new version,
+  and the release head's short SHA embedded in `Poser.dll`.
+- Reconcile shipped dependencies with [notices](../../THIRD-PARTY-LICENSES.md);
+  the archive carries the license texts.
+- Generate the SPDX SBOM with pinned Microsoft SBOM Tool 4.1.5 from the unzipped
+  archive and the release checkout, validate it against those files, and keep it
+  outside the archive:
+
+  ```bash
+  sbom-tool generate -b <unzipped archive> -bc . -pn Poser -pv <version> -ps Midona -nsb https://github.com/midona-rhel/Poser
+  ```
+
+- Write `release-manifest.json`: tag, version, branch, accepted main, release
+  commit, accepted runtime commit, each file's path/size/SHA-256, the archive and
+  SBOM SHA-256, and the validation results above. `SHA256SUMS.txt` lists the
+  archive, SBOM and manifest.
+
+## 5. Publish
+
+```bash
+git tag v<version>-beta <release head>
+git push origin v<version>-beta
+gh release create v<version>-beta --prerelease --target release/<version> --title "Poser <version> beta" --notes-file <body.md> latest.zip Poser.spdx.json release-manifest.json SHA256SUMS.txt
+```
+
+Download the published assets and check their SHA-256 against `SHA256SUMS.txt`.
+Then open a PR from `release/<version>` into main and squash-merge it, so
+`repo.json` advertises the published asset. Main's squash commit differs from
+the release commit; the tag, branch and artifacts keep the release identity.
+Do not rebuild or retag from main. Record the release URL and checks.
 
 ## Download count
 
