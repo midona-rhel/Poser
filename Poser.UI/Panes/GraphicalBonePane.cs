@@ -355,6 +355,7 @@ public sealed partial class GraphicalBonePane : IDisposable
             viewportOrigin + (contentArea - canvasSize) * 0.5f;
         _mapOrigin = canvasOrigin;
         _mapSize = Vector2.Max(Vector2.One, canvasSize);
+        DrawPictureBackground(canvasOrigin, canvasSize);
 
         Vector4 Slot(float x, float y, float width, float height) =>
             new(
@@ -480,6 +481,7 @@ public sealed partial class GraphicalBonePane : IDisposable
             DrawPendingFill(imageOrigin, imageSize);
         }
         _faceSourceSize = sourceSize;
+        DrawPictureBackground(imageOrigin, imageSize);
         DrawBoneSectionAt(
             headSection,
             new Vector4(
@@ -532,13 +534,11 @@ public sealed partial class GraphicalBonePane : IDisposable
         Vector2 sourceSize;
         if (texture != null)
         {
-            // Preview art never changes the coordinate system or the actor's available bones.
-            bool face = sectionName.EndsWith("head", StringComparison.Ordinal)
-                || sectionName.StartsWith("viera_head", StringComparison.Ordinal);
-            var preview = face && _mapBackground is "PoseHeadWithEars" or "PoseHeadMiqote"
-                or "PoseHeadVieraFloppy" or "PoseHeadHroth" ? GetTexture(_mapBackground) : texture;
-            if (_mapBackground != "none" && preview != null)
-                ImGui.GetWindowDrawList().AddImage(preview.Handle, min, min + size,
+            // Preview art never changes the coordinate system or the actor's
+            // available bones. Under a chosen picture (or None) the section's
+            // own art steps aside; DrawPictureBackground drew the picture.
+            if (_mapBackground == null)
+                ImGui.GetWindowDrawList().AddImage(texture.Handle, min, min + size,
                     Vector2.Zero, Vector2.One, ColorEx.ApplyAlpha(0xFFFFFFFFu));
             sourceSize = new Vector2(texture.Width, texture.Height);
         }
@@ -584,6 +584,20 @@ public sealed partial class GraphicalBonePane : IDisposable
                 DrawBoneAt(mirrorBone, mirrorPosition);
             }
         }
+    }
+
+    /// <summary>The preset's chosen picture across the map's area, its own
+    /// proportions kept and centred; nothing under Auto or None.</summary>
+    private void DrawPictureBackground(Vector2 origin, Vector2 size)
+    {
+        if (_mapBackground is null or "none" || GetTexture(_mapBackground) is not { } picture)
+            return;
+        var source = new Vector2(picture.Width, picture.Height);
+        float fit = MathF.Min(size.X / source.X, size.Y / source.Y);
+        var drawn = source * fit;
+        var min = origin + (size - drawn) * 0.5f;
+        ImGui.GetWindowDrawList().AddImage(picture.Handle, min, min + drawn,
+            Vector2.Zero, Vector2.One, ColorEx.ApplyAlpha(0xFFFFFFFFu));
     }
 
     private void DrawBoneAt(BoneDescriptor bone, Vector2 screenPos)

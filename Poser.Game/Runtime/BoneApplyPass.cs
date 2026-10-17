@@ -41,6 +41,8 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     private readonly IkChainRegistry _ik;
     private readonly TransitiveActionScheduler _transitive;
     private readonly Action<SkeletonKey> _purge;
+    private readonly KineDriverRerun _kineDrivers;
+    private readonly Func<bool> _driversFollowPose;
 
     // Hook for intercepting bone physics updates
     private delegate nint UpdateBonePhysicsDelegate(nint a1);
@@ -82,7 +84,9 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         PoseStackStore stacks,
         IkChainRegistry ik,
         TransitiveActionScheduler transitive,
-        Action<SkeletonKey> purge)
+        Action<SkeletonKey> purge,
+        KineDriverRerun kineDrivers,
+        Func<bool> driversFollowPose)
     {
         _log = log;
         _gPoseService = gPoseService;
@@ -94,6 +98,8 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         _ik = ik;
         _transitive = transitive;
         _purge = purge;
+        _kineDrivers = kineDrivers;
+        _driversFollowPose = driversFollowPose;
     }
 
     /// <summary>Installs and enables the UpdateBonePhysics hook. Called once
@@ -286,11 +292,57 @@ internal sealed unsafe class BoneApplyPass : IDisposable
 
         // STEP 4: Full cache update after reparent (like Brio line 244)
         UpdateAllLastTransforms(skeleton, gameSkeleton);
+
+        // STEP 5: the game's KineDriver ran before this pass (task 23), so
+        // .kdb-driven bones still follow the animation. Run it again on the
+        // posed skeleton: the driven bones follow the posed sources, and the
+        // user's own edits on them go back on top as offsets (the driver
+        // overwrote them). Then refresh the caches the driven bones changed.
+        if (_driversFollowPose() && _kineDrivers.Run(gameSkeleton, out var driven))
+        {
+            ReapplyDrivenEdits(skeleton, gameSkeleton, poseInfo, driven);
+            UpdateAllLastTransforms(skeleton, gameSkeleton);
+        }
         if (gazeFrame is { } captured) _gazeFrames.After(captured);
 #if DEBUG
         if (slotKey.Slot == PoseSlot.Character)
             Diagnostics.GazeEvaluationProbe.Capture(skeleton.Actor.Address, "pose-after");
 #endif
+    }
+
+    /// <summary>
+    /// The user's edits on the bones KineDriver writes, applied once more on top
+    /// of the driver's result, in the channels it wrote: a driver replaces one
+    /// channel of the bone (position, rotation or scale), and the edits are
+    /// deltas, so each lands exactly once. The channels a driver leaves keep the
+    /// edit of step 1. No IK: a driven bone is no chain's handle.
+    /// </summary>
+    private void ReapplyDrivenEdits(Skeleton skeleton, GameSkeleton* gameSkeleton, SkeletonPoseInfo poseInfo,
+        IReadOnlyDictionary<(int Partial, int Bone), TransformComponents> driven)
+    {
+        foreach (var ((partialIdx, boneIdx), channels) in driven)
+        {
+            if (partialIdx < 0 || partialIdx >= gameSkeleton->PartialSkeletonCount)
+                continue;
+            var pose = gameSkeleton->PartialSkeletons[partialIdx].GetHavokPose(0);
+            if (pose == null || boneIdx < 0 || boneIdx >= pose->Skeleton->Bones.Length)
+                continue;
+            var bone = ResolveNativeBone(skeleton, skeleton.GetNativeBoneMap(partialIdx, pose), pose, partialIdx, boneIdx);
+            if (bone == null)
+                continue;
+            var info = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
+            if (!info.HasStacks)
+                continue;
+            foreach (var stack in info.Stacks)
+            {
+                // The channels the driver didn't write stay neutral (no-op deltas).
+                var delta = stack.Transform;
+                if (!channels.HasFlag(TransformComponents.Position)) delta.Position = Vector3.Zero;
+                if (!channels.HasFlag(TransformComponents.Rotation)) delta.Rotation = Quaternion.Identity;
+                if (!channels.HasFlag(TransformComponents.Scale)) delta.Scale = Vector3.Zero;
+                ApplyBoneTransform(pose, boneIdx, stack with { Transform = delta, IkTransform = null }, bone, null);
+            }
+        }
     }
 
     /// <summary>

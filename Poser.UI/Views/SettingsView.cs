@@ -102,6 +102,7 @@ public sealed class SettingsViewModel
 
     public bool ShowFriendlyBoneNames = true;
     public bool ShowAllVieraEars;
+    public bool DriversFollowPose = true;
 
     public float GizmoScale = 1.0f;
     public bool AllowHoldSnap;
@@ -849,6 +850,11 @@ public static partial class SettingsView
                 vm.ShowAllVieraEars,
                 next => vm.ShowAllVieraEars = next,
                 "Every Viera ear set is listed, not only the one the character wears");
+            form.Switch(
+                "Driven bones follow the pose",
+                vm.DriversFollowPose,
+                next => vm.DriversFollowPose = next,
+                "Bones a mod or the game drives from other bones (hip and gear helpers) follow your pose instead of the animation");
         }, divider: false);
         page.Section("Default bone presets", form =>
         {
