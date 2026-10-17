@@ -992,6 +992,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
     // cross the end before the next check, so wrap one step early.
     private const float LoopLeadSteps = 2f;
 
+    // A loop whose row has no pre-end lead (a one-shot never made to loop) wraps this
+    // many frames before its end with a crossfade of the same length, the game's seam
+    // between emote rows: at the end itself its controls are already parked on the
+    // last frame, and a cut snaps to the first. (The game's own length for a row pair
+    // is its blend table, MotionTimelineBlendTable.)
+    private const int NoLeadLoopBlendFrames = 12;
+
     /// <summary>Layers Poser applied. A looped one wraps; any other one-shot is
     /// ended by the game at its end as it would be, but never while it is held or
     /// scrubbed (LayerEnded once it is gone). Owning again (a replay) or letting go
@@ -1159,9 +1166,11 @@ public sealed unsafe class TimelineSeekService : IDisposable
             nint playInfo = TimelineSeekEngine.PlayInfo(root);
             bool armed = lead >= 0 && playInfo != 0 && *(int*)(playInfo + 0x30) != -1;
             float remaining = armed ? _engine.Remaining(root) : -1f;
+            int blend = lead >= 0 ? lead : NoLeadLoopBlendFrames;
             // Nothing runs past its own end, and a timeline whose every clip is done
-            // ends on its next Advance (finalization).
-            bool atEnd = TimelineState.Of(root).Clock + frames * speed * LoopLeadSteps >= end - 1f
+            // ends on its next Advance (finalization). Without a lead the seam is the
+            // blend's length before the end.
+            bool atEnd = TimelineState.Of(root).Clock + frames * speed * LoopLeadSteps >= end - Math.Max(1f, lead >= 0 ? 1f : blend)
                 || _engine.Finalized(root);
             if (!atEnd && remaining >= 0f)
             {
@@ -1174,16 +1183,16 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             _remaining.Remove(key);
             var work = new TimelineSeekWork();
-            var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: Math.Max((int)lead, 0));
+            var refused = _engine.Seek((nint)character, root, begin, work, blendFrames: blend);
             if (refused != null)
             {
                 LogOnce($"loop:{key}:{refused}", $"[TimelineSeek] loop of slot {key.Slot}: {refused}");
                 continue;
             }
             _work[((nint)character, key.Slot)] = work;
-            if (lead > 0)
+            if (blend > 0)
                 LogOnce($"loopblend:{loop}:{_engine.LastBlendPath}",
-                    $"[TimelineSeek] loop of {loop}: {lead}-frame crossfade via {_engine.LastBlendPath}");
+                    $"[TimelineSeek] loop of {loop}: {blend}-frame crossfade via {_engine.LastBlendPath}");
         }
     }
 
