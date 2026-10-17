@@ -983,7 +983,7 @@ public sealed partial class DebugBridge : IDisposable
                 global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
                 return Json(new { fallback = global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback });
             case "/physicsfreeze":
-                // The scene physics freeze (the patch at PartialSkeleton.SetBoneModelSpace+0x34F).
+                // The scene physics freeze (the patch at PartialSkeleton.SetBoneModelSpace+0x346/+0x34F).
             {
                 var result = _animation.SetScenePhysicsFrozen(query.GetValueOrDefault("on") == "1");
                 return Json(new { result.Success, result.Detail, frozen = _animation.IsPhysicsFrozen });

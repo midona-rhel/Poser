@@ -526,9 +526,9 @@ internal static class NativeFields
     public const int GPoseActorRecord_Kind = 0x10;
     /// <summary>checked against NativeOffsets.GPoseActorRecord_Actor</summary>
     public const int GPoseActorRecord_Actor = 0x90;
-    /// <summary>local: patch site, not a field: the registry's patch row PartialSkeleton.SetBoneModelSpace+0x34F checks FreezeSiteBytes there</summary>
+    /// <summary>local: patch site, not a field: region 1 (function+0x34F, 0F 11 48 10 movups [rax+0x10],xmm1); the registry's patch row PartialSkeleton.SetBoneModelSpace+0x346 checks FreezeSiteBytes from region 2 through it</summary>
     public const int PartialSkeleton_SetBoneModelSpace_FreezeSite = 0x34F;
-    /// <summary>local: patch region 2 (function+0x346, 0F 11 00 movups [rax],xmm0) sits 9 bytes before FreezeSiteBytes; no check covers it unless the site bytes start there</summary>
+    /// <summary>local: patch region 2 (function+0x346, 0F 11 00 movups [rax],xmm0), 9 bytes before region 1; FreezeSiteBytes start here, so the registry's patch row PartialSkeleton.SetBoneModelSpace+0x346 checks both regions</summary>
     public const int PartialSkeleton_SetBoneModelSpace_FreezeRegion2 = 0x9;
     /// <summary>local: the row count is the immediate in SchedulerClip.TypeTable's own pattern (cmp ebp, 0xD8): a changed count fails that pattern</summary>
     public const int SchedulerClipTypeTable_RowCount = 0xD8;
