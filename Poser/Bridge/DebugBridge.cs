@@ -906,6 +906,27 @@ public sealed partial class DebugBridge : IDisposable
                     unsafe { flags = *((byte*)System.Reflection.Pointer.Unbox(pointer) + 0x88); }
                 return Json(new { light.Name, light.IsOn, flags = $"0x{flags:X2}" });
             }
+            case "/envhold":
+            {
+                // Debug: ?section=Fog&on=1|0 holds a section; ?tail=VALUE writes the float at
+                // EnvState Fog +0x60 (past the 0x28 Poser mapped before); returns that float.
+                var env = (Game.Environment.EnvironmentService)_environment;
+                if (query.TryGetValue("section", out var sectionText)
+                    && Enum.TryParse<global::Poser.Domain.Scene.EnvSection>(sectionText, true, out var section)
+                    && query.TryGetValue("on", out var onText))
+                    env.SetSectionHeld(section, onText == "1");
+                float tail;
+                unsafe
+                {
+                    var manager = FFXIVClientStructs.FFXIV.Client.Graphics.Environment.EnvManager.Instance();
+                    float* at = (float*)((byte*)manager + 0x58 + 0xC0 + 0x60);
+                    if (query.TryGetValue("tail", out var tailText) && float.TryParse(tailText,
+                            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value))
+                        *at = value;
+                    tail = *at;
+                }
+                return Json(new { fogHeld = env.IsSectionHeld(global::Poser.Domain.Scene.EnvSection.Fog), tail, weather = _environment.CurrentWeatherId });
+            }
             case "/scrubfallback":
                 // Debug: scrubs go through the clock-writing fallback (on=1) or the seek (on=0).
                 global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
