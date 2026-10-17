@@ -105,6 +105,20 @@ public sealed unsafe partial class AnimationNativeState
         return (float*)((byte*)handle->Data + SchedulerTimestampOffset);
     }
 
+    /// <summary>The row the slot was asked to play (ClientStructs TimelineIds, seq+0xE0):
+    /// the one the base pick compares. For slot 0 it runs ahead of
+    /// <see cref="StartedId"/> while the row is queued.</summary>
+    internal static ushort RequestedId(ActionTimelineSequencer* sequencer, int slot) =>
+        sequencer->TimelineIds[slot];
+
+    /// <summary>The row StartSlot last started on the slot (seq+0xFC).</summary>
+    internal static ushort StartedId(ActionTimelineSequencer* sequencer, int slot) =>
+        *(ushort*)((byte*)sequencer + 0xFC + 2 * slot);
+
+    /// <summary>Slot 0's queued second row (seq+0x152; an emote's loop after its intro).</summary>
+    internal static ushort QueuedId(ActionTimelineSequencer* sequencer) =>
+        *(ushort*)((byte*)sequencer + 0x152);
+
     /// <summary>The slot's live SchedulerTimeline, or 0.</summary>
     internal static nint SlotTimeline(ActionTimelineSequencer* sequencer, int slot)
     {

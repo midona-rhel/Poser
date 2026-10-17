@@ -201,24 +201,6 @@ internal sealed unsafe class TimelineSeekEngine
 
     // ── Clock ─────────────────────────────────────────────────────────
 
-    /// <summary>A timeline's clock as the game reads it: integer mode +0x64,
-    /// finished +0x48, otherwise +0x34.</summary>
-    public static float Clock(nint timeline)
-    {
-        byte flags = *(byte*)(timeline + 0x7C);
-        if ((flags & 0x20) != 0)
-            return *(uint*)(timeline + 0x64);
-        if ((flags & 0x40) != 0)
-            return *(float*)(timeline + 0x48);
-        return *(float*)(timeline + 0x34);
-    }
-
-    public static bool IsIntegerFrame(nint timeline) => (*(byte*)(timeline + 0x7C) & 0x20) != 0;
-    public static bool IsLoaded(nint timeline) => *(int*)(timeline + 0x78) == 5;
-    public static float Length(nint timeline) => *(float*)(timeline + 0x48);
-    /// <summary>The clock runs in [begin +0x3C, end +0x40] (end = begin + length).</summary>
-    public static float Begin(nint timeline) => *(float*)(timeline + 0x3C);
-    public static float End(nint timeline) => *(float*)(timeline + 0x40);
 
     // ── Speed window ──────────────────────────────────────────────────
     // Advance multiplies dt by tl+0x240 and the clip sync multiplies the whole
@@ -229,7 +211,7 @@ internal sealed unsafe class TimelineSeekEngine
 
     private float OpenWindow(nint root)
     {
-        float speed = *(float*)(root + 0x240);
+        float speed = TimelineState.Of(root).Speed;
         if (speed != 1f)
             _n.SetSpeed(root, 1f);
         return speed;
@@ -237,7 +219,7 @@ internal sealed unsafe class TimelineSeekEngine
 
     private void CloseWindow(nint root, float speed)
     {
-        if (*(float*)(root + 0x240) != speed)
+        if (TimelineState.Of(root).Speed != speed)
             _n.SetSpeed(root, speed);
     }
 
@@ -334,29 +316,29 @@ internal sealed unsafe class TimelineSeekEngine
     {
         if (!Ready)
             return "native seek unavailable";
-        if (!IsLoaded(root))
+        if (!TimelineState.Of(root).Loaded)
             return "timeline still loading";
         _frameTrees.Remove(root);
-        if (IsIntegerFrame(root))
+        if (TimelineState.Of(root).IntegerFrame)
             return "integer-frame timeline";
-        if ((*(byte*)(root + 0x7C) & 0x40) != 0)
+        if (TimelineState.Of(root).Finished)
             return "timeline already finished";
-        if (ClampedAtEnd(root))
+        if (TimelineState.Of(root).ClampedAtEnd)
             return "one-shot clamped at its end (seeked by its controls)";
         // Any pause bit besides the game's own bit 2 freezes Advance: no step.
-        if ((*(uint*)(root + 0x54) & ~4u) != 0)
+        if ((TimelineState.Of(root).PauseMask & ~4u) != 0)
             return "timeline is held by a pause bit";
 
         // One frame short of the end: a C010 child placed exactly on its end fires
         // its end events but never completes.
-        float begin = Begin(root), end = End(root);
+        float begin = TimelineState.Of(root).Begin, end = TimelineState.Of(root).End;
         if (!(end > begin))
-            end = begin + Length(root);
+            end = begin + TimelineState.Of(root).Length;
         target = Math.Clamp(target, begin, Math.Max(begin, end - 1f));
         var tree = Collect(root);
         work.Begin(character, root, VfxHandles(tree));
 
-        float clock = Clock(root);
+        float clock = TimelineState.Of(root).Clock;
         // Forward only needs the wrap while an effect is alive: an in-place step
         // spawns the effects it crosses at their right age by itself.
         if (target < clock - 0.001f
@@ -418,7 +400,7 @@ internal sealed unsafe class TimelineSeekEngine
                     stop = start - 0.5f;
                     break;
                 }
-            float step = Math.Min(stop - now, Length(root));
+            float step = Math.Min(stop - now, TimelineState.Of(root).Length);
             if (step <= 0.001f)
                 break;
             // UpdateBanner clears +0x6B8 at its end: every chunk needs it again, or
@@ -531,15 +513,6 @@ internal sealed unsafe class TimelineSeekEngine
         }
     }
 
-    /// <summary>A timeline standing at its end (clock at +0x40, not finished) while
-    /// its C009 controls free-run: a one-shot clamped there (+0x58 = 1, +0x74 = 3;
-    /// mount idles) or one holding there (+0x7D bit 1). Its clock means nothing to
-    /// a seek. +0x7D bit 1 alone isn't it: Toast carries it from its start (frame
-    /// 61, +0x74 = 1).</summary>
-    public static bool ClampedAtEnd(nint root) =>
-        (*(byte*)(root + 0x7C) & 0x40) == 0
-        && Math.Abs(*(float*)(root + 0x34) - *(float*)(root + 0x40)) < 0.01f
-        && ((*(byte*)(root + 0x7D) & 2) != 0 || (*(int*)(root + 0x58) == 1 && *(int*)(root + 0x74) == 3));
 
     /// <summary>The Havok controls a C009 drives: instance → holder +0x20 handle →
     /// its controller set (+0x18, a tree) → each controller's control (+0x38).</summary>
@@ -791,13 +764,13 @@ internal sealed unsafe class TimelineSeekEngine
     /// reads them (FUN_1418FF650, which can't be called: it may send the notify
     /// itself): the max of each C009's vfunc 0x98 (read-only; it resolves the
     /// length if needed), skipping clips marked +0x10 bit 7; 0 once the root is
-    /// ended (+0x273 bit 0); −1 without C009s. In the clip's own units: a
+    /// torn down (+0x273 bit 0); −1 without C009s. In the clip's own units: a
     /// stretched clip (an expression's 1-frame face at 1/150) counts down slower
     /// than the timeline, so callers measure its rate rather than assume it.
     /// </summary>
     public float Remaining(nint root)
     {
-        if ((*(byte*)(root + 0x273) & 1) != 0)
+        if (TimelineState.Of(root).Dead)
             return 0f;
         float remaining = -1f;
         foreach (var clip in Collect(root).Havok.Keys)
@@ -1013,7 +986,7 @@ internal sealed unsafe class TimelineSeekEngine
             *(byte*)(control + 0x6B8) = 1;
         for (int i = 0; i < 32; i++)
         {
-            float step = Math.Min(target - *(float*)(prop + 0x34), Length(prop));
+            float step = Math.Min(target - *(float*)(prop + 0x34), TimelineState.Of(prop).Length);
             if (step <= 0.001f)
                 break;
             _n.UpdateBanner(prop, step, 1);
@@ -1148,7 +1121,7 @@ internal sealed unsafe class TimelineSeekEngine
         for (nint timeline = group != 0 ? *(nint*)(group + 0x18) : 0;
              timeline != 0 && guard < 64;
              timeline = *(nint*)(timeline + 0x88), guard++)
-            if ((*(byte*)(timeline + 0x273) & 1) == 0 && *(sbyte*)(timeline + 0x10) >= 0)
+            if (!TimelineState.Of(timeline).Dead && *(sbyte*)(timeline + 0x10) >= 0)
                 _n.SetSpeed(timeline, speed);
     }
 
@@ -1157,7 +1130,7 @@ internal sealed unsafe class TimelineSeekEngine
 
     /// <summary>Every live timeline in the actor's W|2 prop groups takes the
     /// overall speed, walked like the game's TimelineGroup.SetSpeedAll: +0x18,
-    /// next +0x88, skipping ended (+0x273 bit 0) and detached (+0x10 sign).</summary>
+    /// next +0x88, skipping torn down (+0x273 bit 0) and detached (+0x10 sign).</summary>
     public void SetPropSpeeds(nint character, float overall)
     {
         if (!Ready)
@@ -1170,7 +1143,7 @@ internal sealed unsafe class TimelineSeekEngine
                  timeline != 0 && guard < 64;
                  timeline = *(nint*)(timeline + 0x88), guard++)
             {
-                if ((*(byte*)(timeline + 0x273) & 1) != 0 || *(sbyte*)(timeline + 0x10) < 0)
+                if (TimelineState.Of(timeline).Dead || *(sbyte*)(timeline + 0x10) < 0)
                     continue;
                 _n.SetSpeed(timeline, overall);
             }
@@ -1272,7 +1245,7 @@ internal sealed unsafe class TimelineSeekEngine
         nint character, nint weapon, nint prop, out string? log)
     {
         log = null;
-        if (!IsLoaded(prop))
+        if (!TimelineState.Of(prop).Loaded)
             return false;
         int timelineId = (int)(*(uint*)(prop + 0x224) - 0x20000);
         foreach (int slot in new[] { 0, 1 })
@@ -1284,7 +1257,7 @@ internal sealed unsafe class TimelineSeekEngine
             {
                 if (PropWeapon(character, clip) != weapon || PropTimelineId(clip) != timelineId)
                     continue;
-                float err = (Clock(root) - start) - *(float*)(prop + 0x34);
+                float err = (TimelineState.Of(root).Clock - start) - *(float*)(prop + 0x34);
                 if (err <= 0.001f)
                     return true;
                 if (err >= 2f)
@@ -1292,7 +1265,7 @@ internal sealed unsafe class TimelineSeekEngine
                     log = $"prop {timelineId} is {err:0.###} frames behind its body; left alone";
                     return true;
                 }
-                SeekProp(prop, Clock(root) - start, *(float*)(prop + 0x240), new HashSet<nint>());
+                SeekProp(prop, TimelineState.Of(root).Clock - start, *(float*)(prop + 0x240), new HashSet<nint>());
                 return true;
             }
         }
@@ -1377,7 +1350,7 @@ internal sealed unsafe class TimelineSeekEngine
             for (nint timeline = group != 0 ? *(nint*)(group + 0x18) : 0;
                  timeline != 0 && guard < 64;
                  timeline = *(nint*)(timeline + 0x88), guard++)
-                if ((*(byte*)(timeline + 0x273) & 1) == 0 && *(sbyte*)(timeline + 0x10) >= 0)
+                if (!TimelineState.Of(timeline).Dead && *(sbyte*)(timeline + 0x10) >= 0)
                     SetVfxSpeeds(timeline, speed);
         }
     }

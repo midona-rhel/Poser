@@ -61,7 +61,7 @@ internal sealed unsafe class TimelineSeekWork
     /// root clock − absolute C031 start; one still loading waits for a later frame.</summary>
     public void PumpProps(TimelineSeekEngine engine)
     {
-        float body = TimelineSeekEngine.Clock(Root);
+        float body = TimelineState.Of(Root).Clock;
         foreach (var prop in Props)
         {
             if (prop.Seeked)
@@ -81,7 +81,7 @@ internal sealed unsafe class TimelineSeekWork
                 engine.PropGroup(weapon), TimelineSeekEngine.PropTimelineId(prop.Clip));
             if (timeline == 0 && AllowFire && !prop.Fired && engine.FireProp(Character, prop.Clip))
                 prop.Fired = true;
-            if (timeline == 0 || !TimelineSeekEngine.IsLoaded(timeline))
+            if (timeline == 0 || !TimelineState.Of(timeline).Loaded)
                 continue;
             prop.Timeline = timeline;
             prop.Seeked = true;

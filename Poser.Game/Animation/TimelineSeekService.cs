@@ -234,8 +234,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if ((*(byte*)((nint)character + 0x1CE8) & 0x10) != 0)
             return false;
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
-        return root != 0 && TimelineSeekEngine.IsLoaded(root) && !TimelineSeekEngine.IsIntegerFrame(root)
-            && (*(byte*)(root + 0x7C) & 0x40) == 0;
+        var state = TimelineState.Of(root);
+        return state.Seekable && !state.IntegerFrame;
     }
 
     /// <summary>A layer's scrub reading from its slot timeline clock, in seconds
@@ -247,13 +247,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
         // Clamped at its end, the clock stands still while the controls loop: the
         // layer's time is its controls'.
-        if (TimelineSeekEngine.ClampedAtEnd(root))
+        if (TimelineState.Of(root).ClampedAtEnd)
             return _engine.ClampedReading(root) is { } clamped
-                ? new(Poser.Domain.Animation.ScrubControlId.Timeline(slot), clamped.Time, clamped.Duration, *(float*)(root + 0x240))
+                ? new(Poser.Domain.Animation.ScrubControlId.Timeline(slot), clamped.Time, clamped.Duration, TimelineState.Of(root).Speed)
                 : null;
-        float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
+        float begin = TimelineState.Of(root).Begin, end = TimelineState.Of(root).End;
         if (!(end > begin))
-            end = begin + TimelineSeekEngine.Length(root);
+            end = begin + TimelineState.Of(root).Length;
         // +0x40 counts the TMB's padding: past the last animation's end every clip is
         // done and the timeline finalizes (ends) on its next Advance.
         var tree = _engine.Collect(root);
@@ -262,7 +262,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (!(end > begin))
             return null;
         return new(Poser.Domain.Animation.ScrubControlId.Timeline(slot),
-            (TimelineSeekEngine.Clock(root) - begin) / 30f, (end - begin) / 30f, *(float*)(root + 0x240));
+            (TimelineState.Of(root).Clock - begin) / 30f, (end - begin) / 30f, TimelineState.Of(root).Speed);
     }
 
     /// <summary>Records the latest scrub target for a layer scrubbed by its
@@ -272,7 +272,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
         if (root == 0)
             return;
-        if (TimelineSeekEngine.ClampedAtEnd(root))
+        if (TimelineState.Of(root).ClampedAtEnd)
         {
             lock (_targetLock)
                 _controlTargets[(actor, (int)slot)] = seconds;
@@ -281,7 +281,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         lock (_targetLock)
         {
             _pendingTargets.Remove((actor, (int)slot));
-            _targets[(actor, (int)slot)] = TimelineSeekEngine.Begin(root) + seconds * 30f;
+            _targets[(actor, (int)slot)] = TimelineState.Of(root).Begin + seconds * 30f;
         }
     }
 
@@ -303,7 +303,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (character == null)
                 continue;
             nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot);
-            if (root != 0 && TimelineSeekEngine.ClampedAtEnd(root))
+            if (root != 0 && TimelineState.Of(root).ClampedAtEnd)
                 _engine.SeekClampedControls(root, seconds);
         }
     }
@@ -314,7 +314,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     internal bool RequestTimelineWhenLoaded(ActorId actor, Character* character, AnimationSlot slot, float seconds)
     {
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
-        if (!Available || root == 0 || TimelineSeekEngine.IsLoaded(root))
+        if (!Available || root == 0 || TimelineState.Of(root).Loaded)
             return false;
         lock (_targetLock)
             _pendingTargets[(actor, (int)slot)] = (seconds, _tick);
@@ -344,7 +344,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 if (ready)
                 {
                     nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot);
-                    _targets[key] = TimelineSeekEngine.Begin(root) + target.Seconds * 30f;
+                    _targets[key] = TimelineState.Of(root).Begin + target.Seconds * 30f;
                 }
             }
         }
@@ -359,7 +359,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (root == 0)
             return;
         // Clamped at its end: the control's own seconds are the target.
-        if (TimelineSeekEngine.ClampedAtEnd(root))
+        if (TimelineState.Of(root).ClampedAtEnd)
         {
             lock (_targetLock)
                 _controlTargets[key] = seconds;
@@ -369,7 +369,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         // clip sync leaves LocalTime a fraction (its ε) short of natural, so a
         // re-measure after a seek would carry that fraction into the next target.
         if (!_offsets.TryGetValue(key, out var mapping) || mapping.Root != root)
-            mapping = (root, TimelineSeekEngine.Clock(root) - controlLocalTime * 30f);
+            mapping = (root, TimelineState.Of(root).Clock - controlLocalTime * 30f);
         _offsets[key] = mapping;
         lock (_targetLock)
             _targets[key] = seconds * 30f + mapping.Offset;
@@ -657,7 +657,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             nint weapon = TimelineSeekEngine.PropWeapon(character, top.Clip);
             nint current = TimelineSeekEngine.CurrentPropTimelineAny(_engine.PropGroup(weapon));
-            if (current == 0 || !TimelineSeekEngine.IsLoaded(current))
+            if (current == 0 || !TimelineState.Of(current).Loaded)
                 continue;
             int currentId = TimelineSeekEngine.PropTimelineIdOf(current);
             // The model belongs to a higher layer that doesn't animate it.
@@ -763,11 +763,11 @@ public sealed unsafe class TimelineSeekService : IDisposable
         foreach (int slot in new[] { 0, 1, 2 })
         {
             nint timeline = AnimationNativeState.SlotTimeline(sequencer, slot);
-            ushort id = *(ushort*)((byte*)sequencer + 0xE0 + 2 * slot);
-            if (timeline == 0 || id == 0 || !TimelineSeekEngine.IsLoaded(timeline)
-                || TimelineSeekEngine.IsIntegerFrame(timeline) || (*(byte*)(timeline + 0x7C) & 0x40) != 0)
+            ushort id = AnimationNativeState.RequestedId(sequencer, slot);
+            if (timeline == 0 || id == 0 || !TimelineState.Of(timeline).Loaded
+                || TimelineState.Of(timeline).IntegerFrame || TimelineState.Of(timeline).Finished)
                 continue;
-            slots.Add((slot, id, TimelineSeekEngine.Clock(timeline)));
+            slots.Add((slot, id, TimelineState.Of(timeline).Clock));
         }
         var go = (CSGameObject*)character;
         if (slots.Count > 0)
@@ -831,7 +831,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (!restore.Replayed)
             {
                 nint baseTimeline = AnimationNativeState.SlotTimeline(sequencer, 0);
-                if (baseTimeline == 0 || !TimelineSeekEngine.IsLoaded(baseTimeline))
+                if (baseTimeline == 0 || !TimelineState.Of(baseTimeline).Loaded)
                     continue;
                 _engine.SetNoBlendStart(baseTimeline);
                 foreach (var (_, id, _) in restore.Slots)
@@ -853,8 +853,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
                     continue;
                 var (slot, id, clock) = restore.Slots[i];
                 nint timeline = AnimationNativeState.SlotTimeline(sequencer, slot);
-                ushort live = *(ushort*)((byte*)sequencer + 0xE0 + 2 * slot);
-                if (timeline == 0 || live != id || !TimelineSeekEngine.IsLoaded(timeline))
+                ushort live = AnimationNativeState.RequestedId(sequencer, slot);
+                if (timeline == 0 || live != id || !TimelineState.Of(timeline).Loaded)
                 {
                     all = false;
                     continue;
@@ -862,8 +862,8 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 if (!restore.SpeedLogged)
                 {
                     restore.SpeedLogged = true;
-                    LogOnce($"restore-speed:{*(float*)(timeline + 0x240)}",
-                        $"[TimelineSeek] redraw restore: replayed timeline born at speed {*(float*)(timeline + 0x240)}");
+                    LogOnce($"restore-speed:{TimelineState.Of(timeline).Speed}",
+                        $"[TimelineSeek] redraw restore: replayed timeline born at speed {TimelineState.Of(timeline).Speed}");
                 }
                 var work = new TimelineSeekWork { AllowFire = true };
                 var refused = _engine.Seek(character, timeline, clock, work, wrapForward: false);
@@ -1059,7 +1059,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     /// wrap moves the clock by far more (or backward), and its jump is no rate.</summary>
     private float MeasureStep((ActorId Actor, int Slot) key, nint root, float remaining, float expected)
     {
-        float clock = TimelineSeekEngine.Clock(root);
+        float clock = TimelineState.Of(root).Clock;
         float step = _remaining.TryGetValue(key, out var last) && last.Root == root
             && Math.Abs(clock - last.Clock - expected) <= Math.Max(1f, expected)
             ? last.Value - remaining
@@ -1112,7 +1112,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
             if (character == null || _restores.ContainsKey((nint)character))
                 continue;
             var sequencer = &character->Timeline.TimelineSequencer;
-            ushort live = *(ushort*)((byte*)sequencer + 0xE0 + 2 * key.Slot);
+            ushort live = AnimationNativeState.RequestedId(sequencer, key.Slot);
             bool owned;
             lock (_targetLock)
                 owned = _owned.ContainsKey(key);
@@ -1122,13 +1122,13 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 continue;
             nint root = AnimationNativeState.SlotTimeline(sequencer, key.Slot);
             short lead = HoldLead(key, root);
-            float speed = *(float*)(root + 0x240);
+            float speed = TimelineState.Of(root).Speed;
             if (loop == 0)
             {
                 // A one-shot (+0x58 == 1; a looping row never ends), not an emote's
                 // intro with its loop queued behind it, and only where the game
                 // has a pre-end notify (otherwise it ends at finalization anyway).
-                if (*(int*)(root + 0x58) != 1 || (key.Slot == 0 && IntroQueued(sequencer, live)))
+                if (!TimelineState.Of(root).OneShot || (key.Slot == 0 && IntroQueued(sequencer, live)))
                     continue;
                 nint info = TimelineSeekEngine.PlayInfo(root);
                 if (lead < 0 || info == 0 || *(int*)(info + 0x30) == -1)
@@ -1145,15 +1145,15 @@ public sealed unsafe class TimelineSeekService : IDisposable
             }
             if (!(speed > 0f))
                 continue;
-            float begin = TimelineSeekEngine.Begin(root), end = TimelineSeekEngine.End(root);
+            float begin = TimelineState.Of(root).Begin, end = TimelineState.Of(root).End;
             if (!(end > begin))
-                end = begin + TimelineSeekEngine.Length(root);
+                end = begin + TimelineState.Of(root).Length;
             nint playInfo = TimelineSeekEngine.PlayInfo(root);
             bool armed = lead >= 0 && playInfo != 0 && *(int*)(playInfo + 0x30) != -1;
             float remaining = armed ? _engine.Remaining(root) : -1f;
             // Nothing runs past its own end, and a timeline whose every clip is done
             // ends on its next Advance (finalization).
-            bool atEnd = TimelineSeekEngine.Clock(root) + frames * speed * LoopLeadSteps >= end - 1f
+            bool atEnd = TimelineState.Of(root).Clock + frames * speed * LoopLeadSteps >= end - 1f
                 || _engine.Finalized(root);
             if (!atEnd && remaining >= 0f)
             {
@@ -1224,7 +1224,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
     private static bool IntroQueued(
         FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer, ushort live)
     {
-        ushort queued = *(ushort*)((byte*)sequencer + 0x152);
+        ushort queued = AnimationNativeState.QueuedId(sequencer);
         return queued != 0 && queued != live;
     }
 
@@ -1237,7 +1237,7 @@ public sealed unsafe class TimelineSeekService : IDisposable
         if (!Available || character == null)
             return;
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
-        if (root == 0 || *(float*)(root + 0x240) != 0f)
+        if (root == 0 || TimelineState.Of(root).Speed != 0f)
             return;
         *(uint*)(root + 0x220) = 0;
         _engine.SetNoBlendStart(root);

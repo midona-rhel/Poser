@@ -532,6 +532,86 @@ internal static class NativeSignatures
     public const string EmoteController_ClearPose = "40 53 48 83 EC 30 48 8B D9 45 33 C0 48 8B 49 08 B2 01";
     /// <summary>EmoteController.GetAvailablePoses (0x1406140C0 on the analysed build).</summary>
     public const string EmoteController_GetAvailablePoses = "48 63 C1 48 8D 0D ?? ?? ?? ?? 48 C1 E0 05 0F B6 04";
+    /// <summary>TimelineContainer.CancelTimeline (0x1408BF220 on the analysed build).</summary>
+    public const string TimelineContainer_CancelTimeline = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8B F1 41 0F B6 D8";
+    /// <summary>TimelineContainer.SetWeaponDrawn (0x1408BFBC0 on the analysed build).</summary>
+    public const string TimelineContainer_SetWeaponDrawn = "48 89 6C ?? ?? 57 48 83 EC 30 44 0F B6 89 4E 03 00 00";
+    /// <summary>EmoteController.StopLoopedEmote (0x1406145A0 on the analysed build).</summary>
+    public const string EmoteController_StopLoopedEmote = "48 89 5C ?? ?? 57 48 83 EC 20 48 8B D9 45 33 C0 48 8B 49 08";
+    /// <summary>EmoteController.CancelEmote (0x140616300 on the analysed build).</summary>
+    public const string EmoteController_CancelEmote = "40 53 48 83 EC 20 0F B7 41 14";
+    /// <summary>ActionTimelineSequencer.GetSlotTimeline (0x140606D80 on the analysed build).</summary>
+    public const string ActionTimelineSequencer_GetSlotTimeline = "83 FA 0E 72 ?? 33 C0 C3 8B C2 0F B7 84 41 E0 00 00 00";
+    /// <summary>TimelineContainer.SetGPoseIdleRow (0x1408C23E0 on the analysed build).</summary>
+    public const string TimelineContainer_SetGPoseIdleRow = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 0F B7 FA 48 8B D9 E8 ?? ?? ?? ?? 84 C0 0F 84";
+    /// <summary>TimelineContainer.RestoreGPoseIdleRow (0x1408C24F0 on the analysed build).</summary>
+    public const string TimelineContainer_RestoreGPoseIdleRow = "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 0F B7 83 DE 02 00 00";
+    /// <summary>VfxResourceInstance.TogglePause (0x14038F290 on the analysed build).</summary>
+    public const string VfxResourceInstance_TogglePause = "E8 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 0F 2E C7";
+    /// <summary>VfxResourceInstance.SetSpeed (0x14038FE10 on the analysed build).</summary>
+    public const string VfxResourceInstance_SetSpeed = "48 89 5C ?? ?? 57 48 83 EC 30 48 8B 59 60";
+    /// <summary>VfxObject.IsActive (0x14045C860 on the analysed build).</summary>
+    public const string VfxObject_IsActive = "48 8B 89 A0 02 00 00 48 85 C9 0F 85 ?? ?? ?? ?? 32 C0 C3 CC CC CC CC CC CC CC CC CC CC CC CC CC 40 57";
+    /// <summary>ApricotCore.CreateAvfxResource (0x1403BA290 on the analysed build).</summary>
+    public const string ApricotCore_CreateAvfxResource = "4C 89 4C ?? ?? 48 89 54 ?? ?? 48 89 4C ?? ?? 55 53 56 57";
+    /// <summary>Camera.Update (0x1418AC450 on the analysed build).</summary>
+    public const string Camera_Update = "40 55 53 57 48 8D ?? 24 A0 48 81 EC 60 01 00 00 48 8B 1D";
+    /// <summary>Camera.ResolveCollision (0x1418A3EE0 on the analysed build).</summary>
+    public const string Camera_ResolveCollision = "48 8B C4 48 89 ?? ?? 48 89 ?? ?? 48 89 ?? ?? 55 41 56 41 57 48 8D ?? 98 48 81 EC 50 01 00 00 F3 0F 58 1D";
+    /// <summary>RenderCamera.SetMatrices (0x1402610E0 on the analysed build).</summary>
+    public const string RenderCamera_SetMatrices = "48 89 5C ?? ?? 57 48 81 EC E0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 ?? ?? ?? ?? ?? 0F 28 02";
+    /// <summary>InputDeviceManager.Update (0x1401FDCB0 on the analysed build).</summary>
+    public const string InputDeviceManager_Update = "48 89 74 ?? ?? 57 48 83 EC 30 0F 29 74 ?? ?? 48 8B F9 48 8B 0D";
+    /// <summary>Camera.SmoothLookAt (0x1418A5160 on the analysed build).</summary>
+    public const string Camera_SmoothLookAt = "4C 8B DC 49 89 ?? ?? 49 89 ?? ?? 55 57 41 56 49 8D ?? 98";
+    /// <summary>SceneCamera.Update (0x14041FBC0 on the analysed build).</summary>
+    public const string SceneCamera_Update = "48 89 5C ?? ?? 57 48 81 EC B0 00 00 00 F6 81 F0 00 00 00 01 48 8B D9 48 89 B4";
+    /// <summary>EnvManager.Update (0x140074140 on the analysed build).</summary>
+    public const string EnvManager_Update = "40 53 48 83 EC 30 48 8B 05 ?? ?? ?? ?? 48 8B D9 0F 29 74";
+    /// <summary>EnvState.CopyFrom (0x140069800 on the analysed build).</summary>
+    public const string EnvState_CopyFrom = "0F 10 42 08 0F 11 41 08 F2 0F 10 4A 18";
+    /// <summary>WaterRenderer.Update (0x140298D80 on the analysed build).</summary>
+    public const string WaterRenderer_Update = "48 8B C4 48 89 ?? ?? 57 48 81 EC C0 00 00 00 0F B6 B9 DB 02 00 00";
+    /// <summary>TargetSystem.ProcessMouseState (0x140622420 on the analysed build).</summary>
+    public const string TargetSystem_ProcessMouseState = "40 57 48 83 EC 40 48 89 5C ?? ?? 48 8B F9 48 89 6C ?? ?? 48 89 74";
+    /// <summary>KeyboardDevice.ProcessKeyboardInputMessage (0x1405E8000 on the analysed build).</summary>
+    public const string KeyboardDevice_ProcessKeyboardInputMessage = "48 89 5C ?? ?? 55 56 57 41 56 41 57 48 8D ?? 24 B0 48 81 EC 50 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 ?? ?? 4D 8B F9";
+    /// <summary>EventGPoseController.ToggleCameraLight (0x140B0BC20 on the analysed build).</summary>
+    public const string EventGPoseController_ToggleCameraLight = "48 83 EC 28 4C 8B C1 83 FA 03";
+    /// <summary>Light.LoadProjectedTexture (0x1404218C0 on the analysed build).</summary>
+    public const string Light_LoadProjectedTexture = "40 53 48 83 EC 30 48 8B D9 C7 44 ?? ?? 78 65 74 00";
+    /// <summary>ResourceCategory.FromPath (0x1402FE560 on the analysed build).</summary>
+    public const string ResourceCategory_FromPath = "40 53 48 83 EC 20 44 0F BE 02";
+    /// <summary>Light.Create (0x140798F80 on the analysed build).</summary>
+    public const string Light_Create = "48 89 5C ?? ?? 57 48 83 EC 20 49 8B D8 8B F9";
+    /// <summary>Light.ctor (0x140421740 on the analysed build).</summary>
+    public const string Light_ctor = "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 89 ?? 33 C0 48 89 83 90 00 00 00 48 89 83 98 00 00 00 B8 FF FF 00 00";
+    /// <summary>BonePhysicsUpdater.Update (0x1417F8010 on the analysed build).</summary>
+    public const string BonePhysicsUpdater_Update = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 41 54 41 56 48 83 EC 20 48 8B 59 08";
+    /// <summary>RenderManager.Render (0x1402BA100 on the analysed build).</summary>
+    public const string RenderManager_Render = "40 53 57 41 54 41 55 48 83 EC 58 65 48 8B 04 25";
+    /// <summary>LookAtController.SetTarget (0x140611270 on the analysed build).</summary>
+    public const string LookAtController_SetTarget = "40 53 56 57 41 56 48 81 EC 38 01 00 00";
+    /// <summary>LookAtContainer.UpdateLookAt (0x1408C51F0 on the analysed build).</summary>
+    public const string LookAtContainer_UpdateLookAt = "40 55 57 41 54 48 8D ?? 24 B9";
+    /// <summary>hkaCcdIkSolver.ctor (0x141F0DED0 on the analysed build).</summary>
+    public const string hkaCcdIkSolver_ctor = "48 8D 05 ?? ?? ?? ?? F3 0F 11 51 14";
+    /// <summary>hkaCcdIkSolver.solve (0x141F0DF00 on the analysed build).</summary>
+    public const string hkaCcdIkSolver_solve = "48 8B C4 4C 89 ?? ?? 48 89 ?? ?? 48 89 ?? ?? 41 54 48 81 EC 60 01 00 00";
+    /// <summary>hkaTwoJointsIkSolver.solve (0x141F2FB70 on the analysed build).</summary>
+    public const string hkaTwoJointsIkSolver_solve = "48 89 54 ?? ?? 48 89 4C ?? ?? 55 53 56 41 57";
+    /// <summary>Character.Finalizer (0x140905F50 on the analysed build).</summary>
+    public const string Character_Finalizer = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 48 8B D9 48 89 ?? 48 8D 05 ?? ?? ?? ?? 48 89 ?? A0 01 00 00";
+    /// <summary>LayoutWorld.CreateSharedGroupInstance (0x140798AF0 on the analysed build).</summary>
+    public const string LayoutWorld_CreateSharedGroupInstance = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 41 54 41 55 41 56 41 57 48 83 EC 70 F7 05 ?? ?? ?? ?? FD FF FF FF";
+    /// <summary>LayoutWorld.DestroySharedGroupInstance (0x140798D10 on the analysed build).</summary>
+    public const string LayoutWorld_DestroySharedGroupInstance = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8B 19 48 8B F9 48 8B F2";
+    /// <summary>SharedGroup.SetHousingState (0x1406FE480 on the analysed build).</summary>
+    public const string SharedGroup_SetHousingState = "48 89 5C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8B 3D ?? ?? ?? ?? 48 8B F1 48 8B 47 20";
+    /// <summary>hkaInterleavedUncompressedAnimation.ctor (0x141F118C0 on the analysed build).</summary>
+    public const string hkaInterleavedUncompressedAnimation_ctor = "48 89 5C ?? ?? 48 89 6C ?? ?? 56 57 41 55 41 56 41 57 48 83 EC 60 0F 29 74";
+    /// <summary>PartialSkeleton.SetBoneModelSpace (0x1402F97F0 on the analysed build).</summary>
+    public const string PartialSkeleton_SetBoneModelSpace = "48 8B C4 48 89 ?? ?? 55 56 57 41 54 41 55 41 56 41 57 48 81 EC D0 00 00 00 0F 29 ?? ?? 0F 29 ?? ?? 44 0F 29 ?? ?? 44 0F 29 ?? ?? 48 8B 05";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
@@ -581,6 +661,60 @@ internal static class NativeOffsets
     public static readonly OffsetPattern GraphicsConfig_DlssQualityMode = new("GraphicsConfig.DlssQualityMode", "41 0F B6 40 ?? 83 F8 06", 4, 1, 0x55);
     public static readonly OffsetPattern RenderTargetManager_RenderHeightMax = new("RenderTargetManager.RenderHeightMax", "0F B7 83 ?? ?? ?? ?? 3B C6 0F 85", 3, 4, 0x704);
     public static readonly OffsetPattern PostEffectManager_Dlss = new("PostEffectManager.Dlss", "48 8B 98 ?? ?? ?? ?? 48 85 DB 74 ?? 48 8B 05", 3, 4, 0x4220);
+    public static readonly OffsetPattern SchedulerTimeline_State = new("SchedulerTimeline.State", "80 7B ?? 00 7C ?? 0F 28 CE 48 8B CB E8 ?? ?? ?? ?? 48 8B 9B 88 00 00 00 48 85 DB 75 ?? 0F 28 74", 2, 1, 0x10);
+    public static readonly OffsetPattern SchedulerTimeline_Actors = new("SchedulerTimeline.Actors", "48 8B 41 ?? 48 8B C8 48 85 C0 74", 3, 1, 0x18);
+    public static readonly OffsetPattern SchedulerTimeline_PrevClock = new("SchedulerTimeline.PrevClock", "F3 0F 11 73 ?? F3 0F 10 73 34", 4, 1, 0x38);
+    public static readonly OffsetPattern SchedulerTimeline_Begin = new("SchedulerTimeline.Begin", "0F 2F 73 ?? 40 0F 93 C7", 3, 1, 0x3C);
+    public static readonly OffsetPattern SchedulerTimeline_End = new("SchedulerTimeline.End", "F3 0F 10 43 ?? 0F 2F F0 72", 4, 1, 0x40);
+    public static readonly OffsetPattern SchedulerTimeline_Length = new("SchedulerTimeline.Length", "F3 0F 10 4B ?? 0F 28 D9", 4, 1, 0x48);
+    public static readonly OffsetPattern SchedulerTimeline_LoopMode = new("SchedulerTimeline.LoopMode", "83 79 ?? 01 0F 29 74", 2, 1, 0x58);
+    public static readonly OffsetPattern SchedulerTimeline_PassCount = new("SchedulerTimeline.PassCount", "01 4B ?? 40 B5 01", 2, 1, 0x5C);
+    public static readonly OffsetPattern SchedulerTimeline_IntegerFrame = new("SchedulerTimeline.IntegerFrame", "89 43 ?? 48 8B 5C ?? ?? 48 83 C4 40 5F C3 CC CC CC CC CC CC CC CC CC CC CC CC 83 FA 01", 2, 1, 0x64);
+    public static readonly OffsetPattern SchedulerTimeline_PlayState = new("SchedulerTimeline.PlayState", "89 7B ?? 0F 28 74 ?? ?? F3 48 0F 2C C7", 2, 1, 0x74);
+    public static readonly OffsetPattern SchedulerTimeline_LoadState = new("SchedulerTimeline.LoadState", "83 79 ?? 05 75 ?? 0F B6 81 70 02 00 00", 2, 1, 0x78);
+    public static readonly OffsetPattern SchedulerTimeline_ClockFlags = new("SchedulerTimeline.ClockFlags", "80 63 ?? BF F3 0F 10 43 40", 2, 1, 0x7C);
+    public static readonly OffsetPattern SchedulerTimeline_Flags272 = new("SchedulerTimeline.Flags272", "0F B6 83 ?? ?? ?? ?? 0F 44 CD", 3, 4, 0x272);
+    public static readonly OffsetPattern SchedulerTimeline_Flags273 = new("SchedulerTimeline.Flags273", "F6 83 ?? ?? ?? ?? 01 75 ?? 80 7B 10 00 7C ?? 0F 28 CE 48 8B CB E8 ?? ?? ?? ?? 48 8B 9B 88 00 00 00 48 85 DB 75 ?? 0F 28 74", 2, 4, 0x273);
+    public static readonly OffsetPattern TimelineGroup_Timelines = new("TimelineGroup.Timelines", "48 8B 59 ?? 0F 29 74 ?? ?? 0F 28 F1 48 85 DB", 3, 1, 0x18);
+    public static readonly OffsetPattern TimelineGroup_Next = new("TimelineGroup.Next", "48 8B 5B ?? 48 85 DB 75 ?? 48 8B 5C ?? ?? 0F 28 74", 3, 1, 0x10);
+    public static readonly OffsetPattern TimelineGroup_Key = new("TimelineGroup.Key", "48 8D 4B ?? 48 8D ?? 24 20 E8 ?? ?? ?? ?? 84 C0 75 ?? 48 8B 5B 10 48 85 DB 75 ?? 48 8B 5C ?? ?? 0F 28 74", 3, 1, 0x28);
+    public static readonly OffsetPattern ActionTimelineManager_Bucket3 = new("ActionTimelineManager.Bucket3", "48 8B 5F ?? 48 85 DB 74 ?? 48 8D 4B 28 48 8D ?? 24 20", 3, 1, 0x30);
+    public static readonly OffsetPattern TmbActor_Next = new("TmbActor.Next", "48 8B 76 ?? 84 C0", 3, 1, 0x20);
+    public static readonly OffsetPattern TmbActor_Tracks = new("TmbActor.Tracks", "48 8B 59 ?? 0F B7 41 32 48 8D 0C C3 48 3B D9 73 ?? 66 90", 3, 1, 0x28);
+    public static readonly OffsetPattern TmbActor_TrackCount = new("TmbActor.TrackCount", "0F B7 41 ?? 48 8D 0C C3 48 3B D9 73 ?? 66 90", 3, 1, 0x32);
+    public static readonly OffsetPattern TmbTrack_Clips = new("TmbTrack.Clips", "48 8B 59 ?? 0F B7 41 22 48 8D 0C C3 48 3B D9 73 ?? 48 89 6C", 3, 1, 0x18);
+    public static readonly OffsetPattern TmbTrack_ClipCount = new("TmbTrack.ClipCount", "0F B7 41 ?? 48 8D 0C C3 48 3B D9 73 ?? 48 89 6C", 3, 1, 0x22);
+    public static readonly OffsetPattern SchedulerClip_State = new("SchedulerClip.State", "0F B6 41 ?? 24 E3 0C 20 88 41 10 84 D2 74 ?? 80 61 11 FB", 3, 1, 0x10);
+    public static readonly OffsetPattern SchedulerClip_Data = new("SchedulerClip.Data", "4C 8B 69 ?? 48 8B D9 E8", 3, 1, 0x48);
+    public static readonly OffsetPattern SchedulerClip_StartFrame = new("SchedulerClip.StartFrame", "F3 0F 10 43 ?? 48 83 C4 20 5B C3 48 8B 01", 4, 1, 0x50);
+    public static readonly OffsetPattern HavokAnimationClip_LengthFrames = new("HavokAnimationClip.LengthFrames", "89 87 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 83 BF B0 00 00 00 00", 2, 4, 0xB0);
+    public static readonly OffsetPattern HavokAnimationClip_Flags = new("HavokAnimationClip.Flags", "44 0F B6 83 ?? ?? ?? ?? 8B 4A 34", 4, 4, 0xCC);
+    public static readonly OffsetPattern TimelineClip_Child = new("TimelineClip.Child", "4C 8B 81 ?? ?? ?? ?? 4D 85 C0 74 ?? 83 B9 84 00 00 00 07", 3, 4, 0x138);
+    public static readonly OffsetPattern C031Data_PropTimelineId = new("C031Data.PropTimelineId", "41 0F B7 6D ?? 4C 89 B4", 4, 1, 0xC);
+    public static readonly OffsetPattern C031Data_PropSlot = new("C031Data.PropSlot", "45 0F B7 65 ?? C0 EA 03", 4, 1, 0xE);
+    public static readonly OffsetPattern ClipAnimation_Next = new("ClipAnimation.Next", "48 89 41 ?? 48 8B 47 30", 3, 1, 0x10);
+    public static readonly OffsetPattern ClipAnimation_Bits = new("ClipAnimation.Bits", "8B 4A ?? C1 E9 05", 2, 1, 0x34);
+    public static readonly OffsetPattern ClipAnimation_Clip = new("ClipAnimation.Clip", "48 8B 7B ?? 48 8B 47 38", 3, 1, 0x60);
+    public static readonly OffsetPattern ActorControl_Instances = new("ActorControl.Instances", "48 83 7B ?? 00 74 ?? B0 01 48 83 C4 20 5B C3 32 C0 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC 48 8B C1", 3, 1, 0x30);
+    public static readonly OffsetPattern Character_TimelineFlags1CE8 = new("Character.TimelineFlags1CE8", "F6 80 ?? ?? ?? ?? 10 4C 0F 45 F8", 2, 4, 0x1CE8);
+    public static readonly OffsetPattern Character_DrawFlags9A = new("Character.DrawFlags9A", "80 B9 ?? ?? ?? ?? 00 48 8B D9 7D ?? F6 81 9C 00 00 00 04 74 ?? 48 83 B9 08 01 00 00 00 74 ?? 48 83 B9 00 01 00 00 00 75 ?? 48 83 B9 08 01 00 00 00 74", 2, 4, 0x9A);
+    public static readonly OffsetPattern Character_Mode = new("Character.Mode", "44 0F B6 A1 ?? ?? ?? ?? 4C 89 ?? ?? 44 0F B6 A9 65 23 00 00", 4, 4, 0x2364);
+    public static readonly OffsetPattern Character_ModeParam = new("Character.ModeParam", "44 0F B6 A9 ?? ?? ?? ?? 4C 89 ?? ?? 45 8B F0", 4, 4, 0x2365);
+    public static readonly OffsetPattern Character_PostureState = new("Character.PostureState", "80 BB ?? ?? ?? ?? 07 0F 85 ?? ?? ?? ?? 33 FF", 2, 4, 0x2367);
+    public static readonly OffsetPattern DrawObject_LoadState = new("DrawObject.LoadState", "0F B6 80 ?? ?? ?? ?? 24 0F 3C 03 75 ?? 0F B6 83 9C 00 00 00 C0 E8 04 24 01 48 83 C4 20 5B C3 32 C0 48 83 C4 20 5B C3 CC CC CC CC CC CC CC 48 83 EC 28", 3, 4, 0x89);
+    public static readonly OffsetPattern ActionTimelineSequencer_SlotHandles = new("ActionTimelineSequencer.SlotHandles", "48 8B 4B ?? 48 85 C9 74 ?? B8 FF FF FF FF F0 0F C1 41 08 83 F8 01 75 ?? 48 C7 01 00 00 00 00 48 8D 4B 70", 3, 1, 0x70);
+    public static readonly OffsetPattern ActionTimelineSequencer_SlotStartedIds = new("ActionTimelineSequencer.SlotStartedIds", "42 0F B7 84 63 ?? ?? ?? ?? 66 85 C0", 5, 4, 0xFC);
+    public static readonly OffsetPattern ActionTimelineSequencer_Group = new("ActionTimelineSequencer.Group", "48 8B 81 ?? ?? ?? ?? 88 90 68 0A 00 00", 3, 4, 0x1D0);
+    public static readonly OffsetPattern TimelineContainer_DrawnFlags = new("TimelineContainer.DrawnFlags", "F6 81 ?? ?? ?? ?? 01 75 ?? 48 8B 41 08", 2, 4, 0x2C3);
+    public static readonly OffsetPattern TimelineContainer_MoveCancelTimeline = new("TimelineContainer.MoveCancelTimeline", "0F B7 83 ?? ?? ?? ?? 33 D2 8B 4C", 3, 4, 0x2E0);
+    public static readonly OffsetPattern TimelineContainer_BaseOverride = new("TimelineContainer.BaseOverride", "0F B7 BB ?? ?? ?? ?? 66 85 FF 0F 85", 3, 4, 0x2E6);
+    public static readonly OffsetPattern EmoteController_PoseKind = new("EmoteController.PoseKind", "66 C7 41 ?? FF 00 45 33 C0", 3, 1, 0x20);
+    public static readonly OffsetPattern EmoteController_PoseIndex = new("EmoteController.PoseIndex", "40 88 73 ?? 48 8B 5C ?? ?? 48 8B 74 ?? ?? 48 83 C4 20 5F C3 CC CC CC CC CC CC CC CC CC CC CC CC CC 48 89 5C", 3, 1, 0x21);
+    public static readonly OffsetPattern EmoteController_StopRequest = new("EmoteController.StopRequest", "C6 43 ?? 01 B0 01 48 83 C4 20 5B C3 32 C0 48 83 C4 20 5B C3 CC CC CC CC CC CC CC CC CC CC CC CC 40 53", 2, 1, 0x35);
+    public static readonly OffsetPattern VfxResourceInstance_Handle = new("VfxResourceInstance.Handle", "48 8B 59 ?? 0F 29 74 ?? ?? 48 8B FB", 3, 1, 0x60);
+    public static readonly OffsetPattern VfxResourceInstance_Speed = new("VfxResourceInstance.Speed", "F3 0F 11 71 ?? E8 ?? ?? ?? ?? 81 FF 00 08 00 00", 4, 1, 0x70);
+    public static readonly OffsetPattern VfxResourceInstance_Flags = new("VfxResourceInstance.Flags", "F6 86 ?? ?? ?? ?? 01 75 ?? 32 C0 48 8B 5C", 2, 4, 0xC4);
+    public static readonly OffsetPattern ApricotJob_Speed = new("ApricotJob.Speed", "F3 0F 11 B1 ?? ?? ?? ?? 48 8B 5C", 4, 4, 0x2078);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)
@@ -635,6 +769,8 @@ internal static class NativeData
     public static readonly DataPattern KernelDevice_InstancePtr = new("KernelDevice.InstancePtr", "48 8B 1D ?? ?? ?? ?? 48 8B F1 48 89 6C", 3, 7, 0x1428F2D00UL);
     public static readonly DataPattern GraphicsConfig_InstancePtr = new("GraphicsConfig.InstancePtr", "48 8B 05 ?? ?? ?? ?? 80 78 54 02 75", 3, 7, 0x1428F9470UL);
     public static readonly DataPattern EmoteController_CPoseTableCount = new("EmoteController.CPoseTableCount", "48 8D 0D ?? ?? ?? ?? 48 C1 E0 05 0F B6 04", 3, 7, 0x142179C88UL);
+    public static readonly DataPattern Framework_TaskBeginFn = new("Framework.TaskBeginFn", "48 8D 0D ?? ?? ?? ?? 48 89 78 10 48 89 ?? 48 89 70 20 48 89 ?? 18 48 89 70 28 48 89 70 30 EB ?? 48 8B C6 4C 8B C0 33 D2", 3, 7, 0x1400D3640UL);
+    public static readonly DataPattern EmoteController_CPoseTable = new("EmoteController.CPoseTable", "4C 8D 05 ?? ?? ?? ?? 48 C1 E2 05 42 3A 74", 3, 7, 0x142179C70UL);
 
     /// <summary>Address the instruction refers to: match + InstructionLength + rel32. A value different from
     /// <see cref="DataPattern.Analysed"/> is normal after a patch.</summary>
