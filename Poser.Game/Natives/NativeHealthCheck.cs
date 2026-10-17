@@ -21,6 +21,7 @@ public sealed partial class NativeHealthCheck : INativeHealth
     private readonly ISigScanner _scanner;
     private readonly HookLedger _hooks;
     private readonly IPluginLog _log;
+    private readonly long _moduleBase;
     private readonly object _lock = new();
     private IReadOnlyList<NativeHealthRow> _static = Array.Empty<NativeHealthRow>();
     private Dictionary<nint, string> _functionsByAddress = new();
@@ -32,6 +33,7 @@ public sealed partial class NativeHealthCheck : INativeHealth
         _scanner = scanner;
         _hooks = hooks;
         _log = log;
+        _moduleBase = scanner.Module?.BaseAddress ?? 0;
         Recheck();
     }
 
@@ -75,7 +77,7 @@ public sealed partial class NativeHealthCheck : INativeHealth
     private static partial Regex PatchSite();
 
     private string Relative(long address) =>
-        address == 0 ? "" : $"ffxiv+0x{address - _scanner.Module.BaseAddress:X}";
+        address == 0 ? "" : $"ffxiv+0x{address - _moduleBase:X}";
 
     private void Check()
     {
@@ -92,9 +94,13 @@ public sealed partial class NativeHealthCheck : INativeHealth
                     rows.Add(CheckOffset(entry));
                     break;
                 case NativeKind.Data:
-                    rows.Add(entry.TryResolve(_scanner, out var data) && data != 0
-                        ? Row("Data", entry, NativeHealthState.Ok, Relative(data), entry.Note)
-                        : Row("Data", entry, NativeHealthState.Missing, "", "pattern not found"));
+                    if (entry.TryResolve(_scanner, out var data) && data != 0)
+                    {
+                        functions.TryAdd((nint)data, entry.Name);
+                        rows.Add(Row("Data", entry, NativeHealthState.Ok, Relative(data), entry.Note));
+                    }
+                    else
+                        rows.Add(Row("Data", entry, NativeHealthState.Missing, "", "pattern not found"));
                     break;
                 case NativeKind.Hook:
                     break; // read live from the ledger

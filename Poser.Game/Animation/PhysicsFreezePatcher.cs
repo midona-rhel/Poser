@@ -59,8 +59,7 @@ internal sealed class PhysicsFreezePatcher : IDisposable
     // site, used by Brio). Its first four bytes ARE region 1's instruction:
     // movups [rax+0x10], xmm1.
     internal const int FreezeSiteOffset = 0x34F;
-    internal const string FreezeSiteBytes =
-        "0F 11 48 10 41 0F 10 44 24 ?? 0F 11 40 20 48 8B 46 28";
+    internal const string FreezeSiteBytes = "0F 11 48 10 41 0F 10 44 24 ?? 0F 11 40 20 48 8B 46 28";
 
     // Region 2 sits 0x9 bytes before the match: a 3-byte movups store in the
     // same physics write sequence (Brio/SimpleTweaks provenance). Its opcode

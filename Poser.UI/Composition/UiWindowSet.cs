@@ -25,6 +25,9 @@ public sealed class UiWindowSet : IDisposable
     /// <summary>The PERF panel. Up exactly while its setting is on — the
     /// switch IS the window, so nothing else opens or closes it.</summary>
     private FrameProfilerWindow FrameProfilerPanel { get; }
+
+    /// <summary>The game function check. Up exactly while its setting is on.</summary>
+    private NativeHealthWindow? NativeHealthPanel { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly ConfigurationService _configService;
@@ -137,6 +140,13 @@ public sealed class UiWindowSet : IDisposable
         System.AddWindow(FrameProfilerPanel);
 
 
+        if (services.GetService(typeof(Poser.Application.Diagnostics.INativeHealth))
+            is Poser.Application.Diagnostics.INativeHealth health)
+        {
+            NativeHealthPanel = new NativeHealthWindow(configService, health);
+            System.AddWindow(NativeHealthPanel);
+        }
+
         _configService.OnConfigurationChanged += SyncSplitWindows;
         _configService.OnConfigurationChanged += SyncFrameProfiler;
         SyncFrameProfiler();
@@ -154,6 +164,8 @@ public sealed class UiWindowSet : IDisposable
         bool showing = _configService.Config.UI.ShowFrameProfiler;
         FrameProfilerPanel.IsOpen = showing;
         _profiler.SetEnabled(showing);
+        if (NativeHealthPanel != null)
+            NativeHealthPanel.IsOpen = _configService.Config.UI.ShowNativeCheck;
     }
 
     public void SetPrimaryOpen(bool isOpen)
