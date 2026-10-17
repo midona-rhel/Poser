@@ -887,6 +887,12 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/history":
                 return Json(History());
+            case "/physicsfreeze":
+                // The scene physics freeze (the patch at PartialSkeleton.SetBoneModelSpace+0x34F).
+            {
+                var result = _animation.SetScenePhysicsFrozen(query.GetValueOrDefault("on") == "1");
+                return Json(new { result.Success, result.Detail, frozen = _animation.IsPhysicsFrozen });
+            }
             case "/natives":
             {
                 // The native check: ?recheck=1 runs it again; ?all=1 lists every row,
