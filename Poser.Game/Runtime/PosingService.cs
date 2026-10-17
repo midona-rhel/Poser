@@ -94,6 +94,10 @@ public unsafe class PosingService : IPosingService
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Subscribe<GPoseExitingEvent>(OnGPoseExiting);
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+        // The list is published only when it changes: one built before this service
+        // subscribed (a plugin load inside GPose) would leave no actor movable.
+        foreach (var actor in _actors.Actors.Concat(_actors.AuxiliaryActors))
+            _liveActors[actor.Address] = actor;
 
         _log.Debug("PosingService initialized");
     }
