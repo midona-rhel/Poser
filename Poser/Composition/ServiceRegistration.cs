@@ -67,10 +67,12 @@ internal static class ServiceRegistration
         ITargetManager targetManager,
         IChatGui chatGui,
         INotificationManager notificationManager,
-        ISeStringEvaluator seStringEvaluator)
+        ISeStringEvaluator seStringEvaluator,
+        IGameGui gameGui)
     {
         services.AddSingleton(notificationManager);
         services.AddSingleton(seStringEvaluator);
+        services.AddSingleton(gameGui);
         services.AddSingleton(pluginInterface);
         services.AddSingleton(log);
         services.AddSingleton(clientState);

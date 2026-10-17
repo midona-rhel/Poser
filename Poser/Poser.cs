@@ -47,7 +47,8 @@ public class Poser : IDalamudPlugin
         ITargetManager targetManager,
         IChatGui chatGui,
         INotificationManager notificationManager,
-        ISeStringEvaluator seStringEvaluator)
+        ISeStringEvaluator seStringEvaluator,
+        IGameGui gameGui)
     {
         log.Info($"Starting {PluginConstants.PluginName}...");
 
@@ -71,7 +72,8 @@ public class Poser : IDalamudPlugin
             targetManager,
             chatGui,
             notificationManager,
-            seStringEvaluator);
+            seStringEvaluator,
+            gameGui);
         startup.OnFailure(_serviceProvider.Dispose);
         log.Debug("Load stage: configuration");
         var configuration =
@@ -139,7 +141,8 @@ public class Poser : IDalamudPlugin
         ITargetManager targetManager,
         IChatGui chatGui,
         INotificationManager notificationManager,
-        ISeStringEvaluator seStringEvaluator)
+        ISeStringEvaluator seStringEvaluator,
+        IGameGui gameGui)
     {
         return new ServiceCollection()
             .AddDalamudDependencies(
@@ -158,7 +161,8 @@ public class Poser : IDalamudPlugin
                 targetManager,
                 chatGui,
                 notificationManager,
-                seStringEvaluator)
+                seStringEvaluator,
+                gameGui)
             .AddPoserRuntime()
             .AddPoserFeatures()
             .AddPoserPresentation()
