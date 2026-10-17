@@ -126,7 +126,7 @@ internal static class NativeRegistry
         new("CharacterBase.ScaleFactor2", NativeKind.Offset, "signed", "used through NativeFields.CharacterBase_ScaleFactor2", "Entities/Skeleton.cs:39"),
         new("NativeFields.CharacterBase_VfSetTint", NativeKind.Constant, "const", "vtable slot 24 (0xC0/8) of CharacterBase = CharacterBase.SetTint 0x140432360 (signed as a function)", "Presentation/PresentationRuntimePort.cs:99"),
         new("Character.DrawFlags9A", NativeKind.Offset, "signed", "used through NativeFields.Character_DrawFlags9A", "Animation/TimelineSeekService.Restore.cs:65"),
-        new("Character.MountId", NativeKind.Offset, "signed", "used through NativeFields.Character_MountId", "Animation/TimelineSeekService.Speeds.cs:127"),
+        new("Character.MountId", NativeKind.Offset, "signed", "used through NativeFields.Character_MountId", "Animation/TimelineSeekService.Speeds.cs:134"),
         new("Character.StatusVfx", NativeKind.Offset, "signed", "used through NativeFields.Character_StatusVfx", "Animation/TimelineSeekEngine.cs:642"),
         new("Character.SummonedPropWeapon", NativeKind.Offset, "signed", "used through NativeFields.Character_SummonedPropWeapon", "Animation/TimelineSeekEngine.Props.cs:20,Animation/TimelineSeekEngine.Speeds.cs:21,Animation/TimelineSeekLayout.Runtime.cs:98"),
         new("Character.Tethers", NativeKind.Offset, "signed", "used through NativeFields.Character_Tethers", "Animation/TimelineSeekEngine.cs:648"),
@@ -282,7 +282,7 @@ internal static class NativeRegistry
         new("SchedulerTimeline.LoadState", NativeKind.Offset, "signed", "used through NativeFields.SchedulerTimeline_LoadState", "Animation/TimelineState.cs:23"),
         new("SchedulerTimeline.LoopMode", NativeKind.Offset, "signed", "used through NativeFields.SchedulerTimeline_LoopMode", "Animation/TimelineState.cs:20"),
         new("SchedulerTimeline.PlayState", NativeKind.Offset, "signed", "used through NativeFields.SchedulerTimeline_PlayState", "Animation/TimelineState.cs:22"),
-        new("SchedulerTimeline.PreEndLead", NativeKind.Offset, "signed", "used through NativeFields.SchedulerTimeline_PreEndLead", "Animation/TimelineSeekService.Loops.cs:222,Animation/TimelineSeekService.Loops.cs:277,Animation/TimelineSeekService.Loops.cs:280,Animation/TimelineSeekService.Loops.cs:308"),
+        new("SchedulerTimeline.PreEndLead", NativeKind.Offset, "signed", "used through NativeFields.SchedulerTimeline_PreEndLead", "Animation/TimelineSeekService.Loops.cs:222,Animation/TimelineSeekService.Loops.cs:278,Animation/TimelineSeekService.Loops.cs:281,Animation/TimelineSeekService.Loops.cs:309"),
         new("SchedulerTimeline.SelfHandle", NativeKind.Offset, "signed", "used through NativeFields.SchedulerTimeline_SelfHandle", "Animation/TimelineSeekEngine.Props.cs:48,Animation/TimelineSeekEngine.Speeds.cs:149,Animation/TimelineState.cs:30,Animation/TimelineSeekLayout.Runtime.cs:95"),
         new("SchedulerTimeline.Speed", NativeKind.Offset, "signed", "used through NativeFields.SchedulerTimeline_Speed", "Animation/TimelineSeekEngine.Props.cs:177,Animation/TimelineState.cs:26,Animation/TimelineSeekLayout.Runtime.cs:90"),
         new("SchedulerTimeline.State", NativeKind.Offset, "signed", "used through NativeFields.SchedulerTimeline_State", "Animation/TimelineSeekEngine.Speeds.cs:70,Animation/TimelineSeekEngine.Speeds.cs:92,Animation/TimelineSeekEngine.Vfx.cs:88,Animation/TimelineState.cs:13"),
@@ -298,7 +298,7 @@ internal static class NativeRegistry
         new("TimelineClip.Skip", NativeKind.Offset, "signed", "used through NativeFields.TimelineClip_Skip", "Animation/TimelineSeekEngine.cs:860"),
         new("TimelineClip.SkipNode", NativeKind.Offset, "signed", "used through NativeFields.TimelineClip_SkipNode", "Animation/TimelineSeekEngine.cs:857"),
         new("TimelineContainer.DrawnFlags", NativeKind.Offset, "signed", "used through NativeFields.TimelineContainer_DrawnFlags", "Animation/TimelineSeekService.Restore.cs:120"),
-        new("TimelineContainer.Flags3", NativeKind.Offset, "signed", "used through NativeFields.TimelineContainer_Flags3", "Animation/TimelineSeekService.Speeds.cs:156"),
+        new("TimelineContainer.Flags3", NativeKind.Offset, "signed", "used through NativeFields.TimelineContainer_Flags3", "Animation/TimelineSeekService.Speeds.cs:163"),
         new("TimelineController.CurrentTimestamp", NativeKind.Offset, "signed", "used through NativeFields.TimelineController_CurrentTimestamp", "Animation/AnimationNativeState.cs:109,Animation/TimelineSeekEngine.Props.cs:169,Animation/TimelineSeekEngine.Props.cs:63,Animation/TimelineSeekEngine.cs:396,Animation/TimelineSeekWork.cs:91,Animation/TimelineState.cs:15,Animation/TimelineSeekLayout.Runtime.cs:92"),
         new("TimelineGroup.CurrentHandle", NativeKind.Offset, "signed", "used through NativeFields.TimelineGroup_CurrentHandle", "Animation/TimelineSeekEngine.Props.cs:117,Animation/TimelineSeekEngine.Props.cs:45,Animation/TimelineSeekEngine.Speeds.cs:147,Animation/TimelineSeekService.Props.cs:334,Animation/TimelineSeekLayout.Runtime.cs:93"),
         new("TimelineGroup.Key", NativeKind.Offset, "signed", "used through NativeFields.TimelineGroup_KeyTagged", "Animation/TimelineSeekEngine.Props.cs:34"),
@@ -413,6 +413,7 @@ internal static class NativeRegistry
         new("hkaCcdIkSolver.solve", NativeKind.Function, "signed", "used through the generated name", "Runtime/IKService.cs:59"),
         new("hkaInterleavedUncompressedAnimation.ctor", NativeKind.Function, "signed", "used through the generated name", "Animation/IdleHavokEncoder.cs:201"),
         new("hkaTwoJointsIkSolver.solve", NativeKind.Function, "signed", "used through the generated name", "Runtime/IKService.cs:61"),
+        new("GPoseActorRecord.Id", NativeKind.Offset, "signed", "checked through NativeFields.GPoseActorRecord_Id", ""),
     };
 
     internal static readonly System.Collections.Generic.Dictionary<string, string> Signatures = new()
@@ -604,6 +605,7 @@ internal static class NativeRegistry
         ["EnvState.StarIntensity"] = NativeOffsets.EnvState_StarIntensity,
         ["EventGPoseController.CameraLights"] = NativeOffsets.EventGPoseController_CameraLights,
         ["GPoseActorRecord.Actor"] = NativeOffsets.GPoseActorRecord_Actor,
+        ["GPoseActorRecord.Id"] = NativeOffsets.GPoseActorRecord_Id,
         ["GPoseActorRecord.Kind"] = NativeOffsets.GPoseActorRecord_Kind,
         ["HavokAnimationClip.AnimObject"] = NativeOffsets.HavokAnimationClip_AnimObject,
         ["HavokAnimationClip.Flags"] = NativeOffsets.HavokAnimationClip_Flags,

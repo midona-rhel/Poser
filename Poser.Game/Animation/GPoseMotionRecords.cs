@@ -26,6 +26,7 @@ internal sealed unsafe class GPoseMotionRecords
     private const int RecordSize = NativeFields.GPoseActorRecord_Size;
     private const int KindOffset = NativeFields.GPoseActorRecord_Kind;    // patchcheck GPoseActorRecord.Kind: 1 emote, 2 action, 3 other
     private const int ActorOffset = NativeFields.GPoseActorRecord_Actor;   // patchcheck GPoseActorRecord.Actor
+    private const int IdOffset = NativeFields.GPoseActorRecord_Id;         // patchcheck GPoseActorRecord.Id: the recorded motion
 
     /// <summary>A record Poser took: its bytes and the Full body state Poser took it in.</summary>
     private sealed record Taken(byte[] Record, uint EntityId, CharacterModes Mode, byte Param,
@@ -89,20 +90,15 @@ internal sealed unsafe class GPoseMotionRecords
         if (taken.Mode != mode || taken.Param != param || taken.BaseOverride != baseOverride || taken.SlotRow != slotRow)
             return;
         _taken.Remove((nint)character);
-        // Only over the record exactly as Poser left it (its snapshot with the kind
-        // cleared): a newer recording, or another GPose session's record at a reused
-        // address, must not be overwritten by an old snapshot.
+        // Only over the record Poser cleared: its kind still 0 and the same recorded
+        // motion. A newer recording sets a kind; another GPose session's record at a
+        // reused address carries another motion (or none). The game's own per-frame
+        // writes to the record (its countdown and flags) don't count.
+        // A snapshot without a motion id (kind 3 can carry 0) can't tell its record
+        // from an empty one, so it is never copied back.
+        uint takenId = BitConverter.ToUInt32(taken.Record, IdOffset);
         byte* record = Record(character);
-        if (record != null && LeftAsTaken(record, taken.Record))
+        if (record != null && takenId != 0 && record[KindOffset] == 0 && *(uint*)(record + IdOffset) == takenId)
             taken.Record.CopyTo(new Span<byte>(record, RecordSize));
-    }
-
-    private static bool LeftAsTaken(byte* record, byte[] snapshot)
-    {
-        var live = new ReadOnlySpan<byte>(record, RecordSize);
-        for (int i = 0; i < RecordSize; i++)
-            if (live[i] != (i == KindOffset ? (byte)0 : snapshot[i]))
-                return false;
-        return true;
     }
 }

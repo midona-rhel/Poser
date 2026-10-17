@@ -570,6 +570,8 @@ internal static class NativeFields
     public const int EmoteControllerCPoseTable_EntrySize = 0x20;
     /// <summary>local: CPose row's u8 emote count; the game addresses it as its own symbol, signed as the DAT EmoteController.CPoseTableCount (= CPoseTable + 0x18); better: read NativeData.EmoteController_CPoseTableCount</summary>
     public const int EmoteControllerCPoseTable_Count = 0x18;
+    /// <summary>checked against NativeOffsets.GPoseActorRecord_Id</summary>
+    public const int GPoseActorRecord_Id = 0x14;
 }
 
 /// <summary>A constant and the signed entry it is checked against: resolved − Delta must equal Value.</summary>
@@ -826,5 +828,6 @@ internal static class NativeFieldChecks
         new("CharacterBase_ScaleFactor2", 0x2A4, "CharacterBase.ScaleFactor2", 0),
         new("BgObject_NightState", 0xCD, "BgObject.NightState", 0),
         new("VfxObject_ColorAlpha", 0x26C, "VfxObject.ColorAlpha", 0),
+        new("GPoseActorRecord_Id", 0x14, "GPoseActorRecord.Id", 0),
     };
 }
