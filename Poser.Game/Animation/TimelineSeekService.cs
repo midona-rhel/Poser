@@ -116,11 +116,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
         // window; the object index and entity id must match too.
         public readonly ushort ObjectIndex;
         public readonly uint EntityId;
-        // The mode the actor had: replaying a row with the Pause flag (the idle
-        // has it) switches the actor to an emote loop with no emote, and the next
-        // redraw then never starts a base timeline or shows the actor.
-        public readonly CharacterModes Mode;
-        public readonly byte ModeParam;
         public bool Replayed;
         public bool SpeedLogged;
         public int Frame;
@@ -132,15 +127,12 @@ public sealed unsafe class TimelineSeekService : IDisposable
             Array.Clear(Done);
             Frame = 0;
         }
-        public Restore((int, ushort, float)[] slots, ushort objectIndex, uint entityId,
-            CharacterModes mode, byte modeParam)
+        public Restore((int, ushort, float)[] slots, ushort objectIndex, uint entityId)
         {
             Slots = slots;
             Done = new bool[slots.Length];
             ObjectIndex = objectIndex;
             EntityId = entityId;
-            Mode = mode;
-            ModeParam = modeParam;
         }
     }
 
@@ -754,7 +746,6 @@ public sealed unsafe class TimelineSeekService : IDisposable
             _work.Remove((character, 0));
             _work.Remove((character, 1));
             _work.Remove((character, 2));
-            LeaveEmptyLoop((Character*)character);
             return;
         }
         var sequencer = &((Character*)character)->Timeline.TimelineSequencer;
@@ -771,29 +762,21 @@ public sealed unsafe class TimelineSeekService : IDisposable
         }
         var go = (CSGameObject*)character;
         if (slots.Count > 0)
-        {
-            _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId,
-                ((Character*)character)->Mode, ((Character*)character)->ModeParam);
-            LeaveEmptyLoop((Character*)character);
-        }
+            _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId);
     }
 
-    /// <summary>
-    /// EmoteLoop with no EmoteMode (a standing pose, a Pause row) has nothing that
-    /// starts a Base timeline after the redraw, and the redraw never finishes without
-    /// one. Normal mode's base-idle pick starts it; the replay puts the mode back.
-    /// </summary>
-    private static void LeaveEmptyLoop(Character* character)
-    {
-        if (character->Mode == CharacterModes.EmoteLoop && character->ModeParam == 0)
-            character->Mode = CharacterModes.Normal;
-    }
+    // TimelineContainer +0x2C3 bit 0 (patchcheck TimelineContainer.DrawnFlags): cleared by
+    // DisableDraw, set by OnEnableDraw before the draw-ready check runs.
+    private const int ContainerDrawnFlagsOffset = 0x2C3;
 
     /// <summary>
-    /// After the redraw: wait for the new draw object and the game's base
-    /// timeline, replay each recorded id (no blend), wait until it is loaded,
-    /// then seek it to the recorded clock. The seek's deferred work re-fires a
-    /// C031 whose start gave up while the new weapon object loaded, and seeks it.
+    /// After the redraw (RE notes/poser-animation-model.md §2): Mode, BaseOverride and
+    /// the emote state survive it; the slots don't. Replay each recorded id as soon as
+    /// the container is drawn again, not after the draw is ready: an actor in EmoteLoop
+    /// with no EmoteMode starts no Base timeline itself, and the draw waits for one.
+    /// Then wait until each is loaded and seek it to the recorded clock. The seek's
+    /// deferred work re-fires a C031 whose start gave up while the new weapon object
+    /// loaded, and seeks it.
     /// </summary>
     private void PumpRestores()
     {
@@ -818,31 +801,25 @@ public sealed unsafe class TimelineSeekService : IDisposable
                 (finished ??= new()).Add(character); // a different object now lives here
                 continue;
             }
-            // The replay's C009s start only once the new CharacterBase has its
-            // skeleton (cb+0xA0) and partials.
-            // The game's own fully-loaded edge (+0x9C bit 4: cleared by Disable/EnableDraw,
-            // set at load state 3 with animations loaded), plus the skeleton the
-            // replay's C009s start on.
-            if (go->RenderFlags != 0 || go->DrawObject == null || (*(byte*)(character + 0x9C) & 0x10) == 0
-                || ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)go->DrawObject)->Skeleton == null)
-                continue;
             var chara = (Character*)character;
+            if (go->DrawObject == null || (*((byte*)&chara->Timeline + ContainerDrawnFlagsOffset) & 1) == 0)
+                continue;
             var sequencer = &chara->Timeline.TimelineSequencer;
             if (!restore.Replayed)
             {
-                nint baseTimeline = AnimationNativeState.SlotTimeline(sequencer, 0);
-                if (baseTimeline == 0 || !TimelineState.Of(baseTimeline).Loaded)
-                    continue;
-                _engine.SetNoBlendStart(baseTimeline);
-                foreach (var (_, id, _) in restore.Slots)
+                nint noBlend = 0;
+                foreach (var (slot, id, _) in restore.Slots)
                 {
                     var played = _native.ReplayTimeline(chara, id);
                     if (!played.Success)
                         LogOnce($"restore-play:{id}", $"[TimelineSeek] redraw restore could not replay {id}: {played.Detail}");
+                    else if (noBlend == 0)
+                        noBlend = AnimationNativeState.SlotTimeline(sequencer, slot);
                 }
-                // The actor leaves the redraw in the mode it entered it with.
-                chara->Mode = restore.Mode;
-                chara->ModeParam = restore.ModeParam;
+                // The replayed clips start once loaded, without a blend in from whatever
+                // the game started first (the actor control's +0x6B8, one start).
+                if (noBlend != 0)
+                    _engine.SetNoBlendStart(noBlend);
                 restore.Replayed = true;
                 continue;
             }
