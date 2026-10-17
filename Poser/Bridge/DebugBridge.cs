@@ -965,6 +965,19 @@ public sealed partial class DebugBridge : IDisposable
                     before = before?.Position.ToString(), after = after?.Position.ToString(), original = original.Position.ToString(),
                 });
             }
+            case "/gameui":
+            {
+                // Debug: the game's own UI hide (RaptureAtkModule.SetUiVisibility), ?visible=0|1.
+                unsafe
+                {
+                    var atk = FFXIVClientStructs.FFXIV.Client.UI.RaptureAtkModule.Instance();
+                    if (atk == null) return Json(new { error = "no RaptureAtkModule" });
+                    if (query.TryGetValue("visible", out var v))
+                        atk->SetUiVisibility(v == "1");
+                }
+                var gameGui = (Dalamud.Plugin.Services.IGameGui)_services.GetService(typeof(Dalamud.Plugin.Services.IGameGui))!;
+                return Json(new { hidden = gameGui.GameUiHidden });
+            }
             case "/scrubfallback":
                 // Debug: scrubs go through the clock-writing fallback (on=1) or the seek (on=0).
                 global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
