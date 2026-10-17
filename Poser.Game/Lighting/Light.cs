@@ -73,7 +73,7 @@ internal sealed unsafe class Light : ILight
             // World lights now edit an owned replacement. On/off must not
             // destroy the authored intensity (including while hidden).
             if (IsValid)
-                _native->VisibilityFlags = (byte)(value ? 79 : 0);
+                _native->IsVisible = value;
         }
     }
 

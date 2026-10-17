@@ -16,63 +16,20 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;
     private readonly TimelineSeekService? _seek;
-    private int _scrubLogCounter;
+#if DEBUG
+    /// <summary>Debug bridge: scrub Base and Upper Body through the clock-writing
+    /// fallback even where the native seek could move them.</summary>
+    public static bool ForceFallback;
+    private bool SeekAllowed => !ForceFallback;
+#else
+    private const bool SeekAllowed = true;
+#endif
 
     public AnimationScrubRuntimePort(IPluginLog log, AnimationNativeState native, TimelineSeekService? seek = null)
     {
         _log = log;
         _native = native;
         _seek = seek;
-    }
-
-    private static void PropagateScrubToProps(
-        Character* character, float before, float duration, float delta)
-    {
-        AnimationNativeState.ForEachPropControl(character, control =>
-        {
-            if (!AnimationNativeState.TracksControl(control, before, duration, out var propDuration))
-                return;
-            float target = control->hkaAnimationControl.LocalTime + delta;
-            control->hkaAnimationControl.LocalTime =
-                Math.Clamp(target, 0f, Math.Max(0f, propDuration - 1f / 30f));
-        });
-    }
-
-    /// <summary>Walks a track controller's tracks and clips; every
-    /// ChildTimelineClip gets its frame cursor written and its child
-    /// controller seeked (timestamp + previous), recursively.</summary>
-    private static void SeekChildTimelines(nint trackController, float frames, int depth)
-    {
-        if (trackController == 0 || depth > 3)
-            return;
-        nint trackPointers = *(nint*)(trackController + 0x28);
-        int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
-        for (int t = 0; t < trackCount && t < 8 && trackPointers != 0; t++)
-        {
-            nint track = *(nint*)(trackPointers + t * 8);
-            if (track == 0)
-                continue;
-            nint clipPointers = *(nint*)(track + 0x18);
-            int clipCount = *(ushort*)(track + 0x18 + 0xA);
-            for (int c = 0; c < clipCount && c < 8 && clipPointers != 0; c++)
-            {
-                nint clip = *(nint*)(clipPointers + c * 8);
-                if (clip == 0 || !AnimationNativeState.RegionReadable(clip, 0x160) || *(int*)(clip + 0x84) != 7)
-                    continue;
-                *(float*)(clip + 0xCC) = frames;   // ChildFrame
-                *(float*)(clip + 0xD0) = frames;   // PrevChildFrame
-                // The child controller: +0x138 in this client (Ktisis says
-                // +0x130; the addressed hunt proved +0x138 -> +0x34/38).
-                nint child = *(nint*)(clip + 0x138);
-                if (child == 0 || !AnimationNativeState.RegionReadable(child, 0x80))
-                    child = *(nint*)(clip + 0x130);
-                if (child == 0 || !AnimationNativeState.RegionReadable(child, 0x80))
-                    continue;
-                *(float*)(child + AnimationNativeState.SchedulerTimestampOffset) = frames;
-                *(float*)(child + AnimationNativeState.SchedulerTimestampOffset + 4) = frames;
-                SeekChildTimelines(*(nint*)(child + 0x18), frames, depth + 1);
-            }
-        }
     }
 
     public IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token)
@@ -108,7 +65,7 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         var character = _native.Resolve(actor, out _);
         if (character == null)
             return null;
-        if (_seek?.TimelineReading(character, slot) is { } timeline)
+        if (SeekAllowed && _seek?.TimelineReading(character, slot) is { } timeline)
             return timeline;
         if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
             return null;
@@ -198,7 +155,7 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         // #533: the game's own scheduler seek when available (same frame, both
         // directions, props and VFX enter as in playback); the clock writes below
         // remain the fallback for anything it refuses.
-        if (_seek != null && control.Control is 0 or 1 && _seek.Supports(character, control.Control))
+        if (SeekAllowed && _seek != null && control.Control is 0 or 1 && _seek.Supports(character, control.Control))
         {
             _seek.Request(actor, character, (AnimationSlot)control.Control, time, target->hkaAnimationControl.LocalTime);
             return Outcome.Ok();
@@ -215,12 +172,12 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         time = Math.Clamp(time, 0f, lastFrame);
         float before = target->hkaAnimationControl.LocalTime;
         target->hkaAnimationControl.LocalTime = time;
-        // Props: an attached weapon/prop skeleton control that runs on the
-        // same clock as this control (same clip length within a second, and
-        // its time within a second of ours — the bubble wand reads
-        // 19.33/19.50 with a fixed 0.18s lead-in) moves by the same delta,
-        // keeping its offset. Measured 2026-09-01 22:27 through the bridge.
-        PropagateScrubToProps(character, before, duration, time - before);
+        // The slot's props move by the same delta: the props its C031s summon, found
+        // in the game's prop group (TimelineSeekEngine.ShiftPropControls).
+        nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, control.Control);
+        var engine = _seek is { Available: true } seek ? seek.Engine : null;
+        if (engine != null && root != 0)
+            engine.ShiftPropControls((nint)character, root, time - before);
         // EVERY partial runs its own control for the same slot (body,
         // face, hair). Scrubbing only one left the others on the old
         // schedule — one of them reaches its clip's end at the old time
@@ -245,59 +202,19 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
             siblingControl->hkaAnimationControl.LocalTime =
                 Math.Clamp(time, 0f, siblingClip);
         }
-        // The SCHEDULER's clock moves with the scrub — without this the
-        // timeline layer keeps counting from the old position and resets
-        // the animation on the old schedule. It counts in 30fps FRAMES
-        // (dump-proven: control 1.42s ↔ clock 42.74), not seconds.
-        var timestamp = AnimationNativeState.SchedulerTimestamp(
-            &character->Timeline.TimelineSequencer, control.Control);
-        if (timestamp != null)
+        // The timeline clocks move with the scrub, in 30 fps frames: left behind, the
+        // timeline keeps counting from the old position and resets the animation on
+        // the old schedule. The engine writes the timeline, its TMB actors and tracks,
+        // and every child timeline on its own clock; without the seek's layout only the
+        // slot timeline's own clock is moved.
+        float frames = Math.Clamp(time, 0f, duration) * 30f;
+        if (root != 0 && engine != null)
+            engine.WriteClocks(root, frames);
+        else if (AnimationNativeState.SchedulerTimestamp(&character->Timeline.TimelineSequencer, control.Control)
+                 is var timestamp && timestamp != null)
         {
-            *timestamp = Math.Clamp(time, 0f, duration) * 30f;
-            // The previous-timestamp twin too: leaving it at the old value
-            // made the next tick's delta enormous — the one-frame "way
-            // faster" blip after a scrub.
-            *(timestamp + 1) = *timestamp;
-            nint schedulerForLog = (nint)timestamp - AnimationNativeState.SchedulerTimestampOffset;
-            if (++_scrubLogCounter % 45 == 1)
-                _log.Information(
-                    $"[AnimState] scrub {time:0.00}s -> {*timestamp:0.0}f; "
-                    + $"end candidates: sched+68={*(int*)(schedulerForLog + 0x68)} "
-                    + $"clipDuration={duration * 30f:0.0}f");
-            // THE CLOCK FAMILY (clock hunt with addresses, 22:19): during
-            // natural play six timestamp pairs mirror each other in FRAMES —
-            // scheduler +0x34/38, track controller +0x18C/190, track
-            // +0x11C/120, ChildTimelineClip +0xCC/D0, and the child
-            // controller (clip+0x138 ->) +0x34/38. A scrub that leaves ANY
-            // of them behind lets that one gate completion on the old
-            // schedule (the forward-scrub stall). tctl+0x11C / track+0xAC /
-            // clip+0x5C are per-tick DELTA fields, not clocks — untouched.
-            float frames = Math.Clamp(time, 0f, duration) * 30f;
-            nint schedulerObject = (nint)timestamp - AnimationNativeState.SchedulerTimestampOffset;
-            nint trackController = *(nint*)(schedulerObject + 0x18);
-            if (trackController != 0 && AnimationNativeState.RegionReadable(trackController, 0x1A0))
-            {
-                *(float*)(trackController + 0x18C) = frames;
-                *(float*)(trackController + 0x190) = frames;
-                nint trackPointers = *(nint*)(trackController + 0x28);
-                int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
-                for (int trackIndex = 0;
-                    trackIndex < trackCount && trackIndex < 8 && trackPointers != 0;
-                    trackIndex++)
-                {
-                    nint track = *(nint*)(trackPointers + trackIndex * 8);
-                    if (track == 0 || !AnimationNativeState.RegionReadable(track, 0x130))
-                        continue;
-                    *(float*)(track + 0x11C) = frames;
-                    *(float*)(track + 0x120) = frames;
-                }
-            }
-            // THE CHILD TIMELINE: the slot's timeline is a PARENT whose clip
-            // (ClipType 7, Ktisis ChildTimelineClip) runs a child
-            // TimelineController with its own frame clock. Scrubbing only
-            // the parent left the child on the old position — the end is
-            // judged there, hence "dies on the old schedule" (2026-09-01).
-            SeekChildTimelines(trackController, frames, 0);
+            *timestamp = frames;
+            *(timestamp + 1) = frames;
         }
         return Outcome.Ok();
     }

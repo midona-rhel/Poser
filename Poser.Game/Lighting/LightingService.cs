@@ -380,8 +380,8 @@ public sealed unsafe class LightingService : ILightingService
             render->ShadowPlaneFar = 17f;
         }
 
-        if (native->VisibilityFlags == 0)
-            native->VisibilityFlags = 79;
+        if (!native->IsVisible)
+            native->IsVisible = true;
 
         var light = new Light(native, name, ownership);
         _lights.Add(light);

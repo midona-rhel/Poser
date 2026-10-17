@@ -213,6 +213,9 @@ public sealed unsafe class TimelineSeekService : IDisposable
 
     public bool Available => _engine.Ready;
 
+    /// <summary>The engine's tree walks, for the scrub fallback.</summary>
+    internal TimelineSeekEngine Engine => _engine;
+
     /// <summary>
     /// Whether the native seek can move this actor's slot right now (a live,
     /// loaded, float-frame timeline). False keeps the caller on its fallback.

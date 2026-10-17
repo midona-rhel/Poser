@@ -141,21 +141,6 @@ public sealed unsafe partial class AnimationNativeState
         return timestamp == null ? 0 : (nint)timestamp - SchedulerTimestampOffset;
     }
 
-    /// <summary>Whether a weapon/prop control runs on the same clock as an
-    /// actor control: clip lengths and current times both within a second.</summary>
-    internal static bool TracksControl(
-        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* prop,
-        float time, float duration, out float propDuration)
-    {
-        propDuration = -1f;
-        var binding = prop->hkaAnimationControl.Binding;
-        if (binding.ptr == null || binding.ptr->Animation.ptr == null)
-            return false;
-        propDuration = binding.ptr->Animation.ptr->Duration;
-        return Math.Abs(propDuration - duration) < 1f
-            && Math.Abs(prop->hkaAnimationControl.LocalTime - time) < 1f;
-    }
-
     internal delegate void PropControlVisitor(
         FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* control);
 

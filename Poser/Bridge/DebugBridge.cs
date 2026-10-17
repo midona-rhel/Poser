@@ -887,6 +887,10 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/history":
                 return Json(History());
+            case "/scrubfallback":
+                // Debug: scrubs go through the clock-writing fallback (on=1) or the seek (on=0).
+                global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
+                return Json(new { fallback = global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback });
             case "/physicsfreeze":
                 // The scene physics freeze (the patch at PartialSkeleton.SetBoneModelSpace+0x34F).
             {
