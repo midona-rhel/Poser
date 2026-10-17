@@ -9,6 +9,15 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 20), "Driven bones, box select and map pictures",
+        [
+            "Made bones the game moves along with other bones, such as eyelids and body or gear helpers, follow your pose instead of the animation.",
+            "Kept your own edits on those bones on top, so an edited eyelid still follows the eye.",
+            "Added Driven bones follow the pose to the Skeleton settings to turn this off.",
+            "Added Tail to the default bone presets.",
+            "Brought back box selection on the Body and Face maps, with the box kept inside the map.",
+            "Added a choice of any pose picture as a map's background.",
+        ]),
         new(new(0, 9, 19), "Animation layers, exact scrubbing and smooth loops",
         [
             "Made scrubbing land on the exact frame in both directions, with props and effects in sync.",
