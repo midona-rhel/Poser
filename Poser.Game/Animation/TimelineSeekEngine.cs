@@ -777,6 +777,13 @@ internal sealed unsafe class TimelineSeekEngine
             *(int*)(root + 0x21C) = frames;
             *(byte*)(root + 0x272) = (byte)(flags | 2);
         }
+        // A NoBlendStart left set (a seek's banner chunk sets it, UpdateBanner clears it
+        // only at a chunk's end) makes the holder insert take a blend of 0: no
+        // crossfade, and for a pose-fade animation no fade either.
+        nint actorControl = _n.GetActorControl(root);
+        bool noBlendWasSet = actorControl != 0 && _l.IsActorControl(actorControl) && *(byte*)(actorControl + 0x6B8) != 0;
+        if (noBlendWasSet)
+            *(byte*)(actorControl + 0x6B8) = 0;
         try
         {
             StopAll(root, clip => *(int*)(root + 0x220) =
@@ -784,6 +791,15 @@ internal sealed unsafe class TimelineSeekEngine
             foreach (var holder in holders)
                 *(uint*)(holder + 0x40) = ~*(uint*)(holder + 0x40);
             Rewind(root, tree);
+            int created = 0;
+            foreach (var clip in tree.Havok.Keys)
+            {
+                nint instance = *(nint*)(clip + 0x98);
+                nint holder = instance != 0 ? *(nint*)(instance + 0x78) : 0;
+                if (holder != 0 && !holders.Contains(holder))
+                    created++;
+            }
+            LastBlendPath += $"; NoBlendStart was {(noBlendWasSet ? "set" : "clear")}, {created} of {holders.Count} holders new";
         }
         finally
         {
