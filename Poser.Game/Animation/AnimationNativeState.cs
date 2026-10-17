@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Dalamud.Game;
 using Dalamud.Plugin.Services;
@@ -90,6 +91,9 @@ public sealed unsafe partial class AnimationNativeState
     // EmoteController.CPoseTable (patchcheck DAT): 8 kinds x 0x20 bytes, +0x00 u16* pose
     // emotes, +0x08 u16 base timeline, +0x10 predicate, +0x18 u8 emote count.
     private readonly byte* _cposeTable;
+    // EmoteController.PlayEmoteOptionVtbl (patchcheck DAT): nothing calls through it,
+    // it is set so the option is the game's own object.
+    private readonly nint _playEmoteOptionVtbl;
     private const int CPoseKinds = 8, CPoseEntrySize = 0x20, CPoseCountOffset = 0x18;
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
@@ -242,6 +246,8 @@ public sealed unsafe partial class AnimationNativeState
             sigScanner, Poser.Game.Natives.NativeSignatures.Character_SetMode, "Character.SetMode");
         _setWeaponDrawn = ScanDelegate<SetWeaponDrawnDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.TimelineContainer_SetWeaponDrawn, "TimelineContainer.SetWeaponDrawn");
+        if (Poser.Game.Natives.NativeData.TryResolve(sigScanner, Poser.Game.Natives.NativeData.EmoteController_PlayEmoteOptionVtbl, out var optionVtbl))
+            _playEmoteOptionVtbl = optionVtbl;
         if (Poser.Game.Natives.NativeData.TryResolve(sigScanner, Poser.Game.Natives.NativeData.EmoteController_CPoseTable, out var cposeTable))
             _cposeTable = (byte*)cposeTable;
         else
@@ -612,20 +618,55 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>
-    /// An emote from its start, the way the game's emote start ends up playing it:
-    /// PlayActionTimeline(intro = Emote.ActionTimeline[1], loop); the game hands
-    /// over to the loop itself. The loop is the caller's (the posture's row, or
-    /// [0]): the intro is the same for every posture. The emote controller's own start (the old
-    /// path) checks a slot priority that Poser's earlier plays leave set, and for
-    /// any actor but the real local player returns true without playing.
-    /// Expression emotes take another path and are not handled here. True only if
-    /// the base slot actually changed.
+    /// An emote from its start with the game's own emote start (RE
+    /// notes/poser-animation-model.md §1.1): EmoteController::PlayEmote picks the
+    /// posture's rows, plays the intro and hands over to the loop, enters the emote's
+    /// EmoteMode and clears the pending emote cancel. A pose emote or a loop with no
+    /// EmoteMode holds EmoteLoop 0 first, since the Normal-mode base-idle pick replaces
+    /// it; the start is refused above priority 1, so a higher row Poser played is
+    /// cleared first. The real player only plays its rows: PlayEmote starts nothing
+    /// for the local actor, and Poser changes no mode on it. Expression emotes take
+    /// another path. True when slot 0 was given the emote's row.
     /// </summary>
     internal bool PlayEmoteFromStart(Character* character, uint emoteId, ushort loop)
     {
-        if (_playActionTimeline == null || _characterSetMode == null
+        if (_characterSetMode == null || _cancelTimeline == null
             || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
             || emote.ActionTimeline.Count < 2)
+            return false;
+        if (IsRealPlayer(character))
+            return PlayEmoteRows(character, emote, loop);
+        ushort intro = (ushort)emote.ActionTimeline[1].RowId;
+        ushort standingLoop = (ushort)emote.ActionTimeline[0].RowId;
+        ushort first = intro != 0 ? intro : standingLoop;
+        if (first == 0)
+            return false;
+        var sequencer = &character->Timeline.TimelineSequencer;
+        LeaveForFullBody(character);
+        if (emote.EmoteMode.RowId == 0
+            && (IsPoseEmote(emoteId) || _timelineSheet?.GetRowOrDefault(standingLoop)?.Pause == true))
+            _characterSetMode(character, (int)CharacterModes.EmoteLoop, 0);
+        if (*(int*)((byte*)sequencer + Slot0PriorityOffset) > 1)
+            _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
+        var option = stackalloc EmoteController.PlayEmoteOption[1];
+        *option = default;
+        *(nint*)option = _playEmoteOptionVtbl;
+        option->TargetId = 0xE0000000;
+        // Bit 0: no chat line and no target lookup.
+        option->Flags = 1;
+        var controller = &character->EmoteController;
+        bool started = WithUpperKept(first, () => controller->PlayEmote(emoteId, option));
+        return started && RequestedId(sequencer, 0) != 0
+            && RequestedId(sequencer, 0) is var row
+            && emote.ActionTimeline.Any(t => t.RowId == row);
+    }
+
+    /// <summary>The real player's emote from its start: its intro and loop rows
+    /// queued on its own timeline (TimelineContainer::PlayActionTimeline), the loop
+    /// the caller's posture row.</summary>
+    private bool PlayEmoteRows(Character* character, Lumina.Excel.Sheets.Emote emote, ushort loop)
+    {
+        if (_playActionTimeline == null)
             return false;
         if (loop == 0)
             loop = (ushort)emote.ActionTimeline[0].RowId;
@@ -635,23 +676,29 @@ public sealed unsafe partial class AnimationNativeState
             return false;
         var sequencer = &character->Timeline.TimelineSequencer;
         nint before = SlotTimeline(sequencer, 0);
-        // The mode the emote settles in: the emote's own EmoteMode (a sit, a dance loop),
-        // else EmoteLoop 0 for a looping row (no base-idle pick there), else Normal at
-        // priority 1 or more, so the pick leaves it until it ends.
-        LeaveForFullBody(character);
-        bool poserMode = !IsRealPlayer(character);
-        if (poserMode && emote.EmoteMode.RowId != 0 && _setEmoteMode != null)
-            _setEmoteMode(&character->EmoteController, emote.EmoteMode.RowId);
-        else if (poserMode && _timelineSheet?.GetRowOrDefault(loop != 0 ? loop : first)?.Pause == true)
-            _characterSetMode!(character, (int)CharacterModes.EmoteLoop, 0);
         WithUpperKept(first, () =>
         {
             _playActionTimeline(&character->Timeline, first, intro != 0 ? loop : (ushort)0, nint.Zero);
             return true;
         });
-        ClearEmoteCancelPending(character);
-        if (character->Mode is not (CharacterModes.EmoteLoop or CharacterModes.InPositionLoop))
-            HoldAgainstBasePick(sequencer);
         return SlotTimeline(sequencer, 0) != before;
+    }
+
+    /// <summary>Whether an emote is one of the game's /changepose poses (the pose
+    /// table's emote lists).</summary>
+    private bool IsPoseEmote(uint emoteId)
+    {
+        if (_cposeTable == null)
+            return false;
+        for (int kind = 0; kind < CPoseKinds; kind++)
+        {
+            byte* entry = _cposeTable + kind * CPoseEntrySize;
+            ushort* emotes = *(ushort**)entry;
+            int count = entry[CPoseCountOffset];
+            for (int i = 0; emotes != null && i < count; i++)
+                if (emotes[i] == emoteId)
+                    return true;
+        }
+        return false;
     }
 }
