@@ -95,20 +95,27 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
 
     private TimelineSeekEngine? Engine => _seek is { Available: true } seek ? seek.Engine : null;
 
-    /// <summary>The slot's first C009 control, as a reading of the slot.</summary>
+    /// <summary>The slot's main animation control: its longest C009 control (the body
+    /// animation; a slot's tree also carries short clips).</summary>
+    private static nint MainControl(List<nint> controls)
+    {
+        nint main = 0;
+        float longest = 0f;
+        foreach (nint control in controls)
+            if (TimelineSeekEngine.ControlLength(control) is var length && length > longest)
+                (main, longest) = (control, length);
+        return main;
+    }
+
+    /// <summary>The slot's main control, as a reading of the slot.</summary>
     private static ScrubControlReading? SlotControlReading(TimelineSeekEngine engine, Character* character, AnimationSlot slot)
     {
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
         if (root == 0 || !TimelineState.Of(root).Loaded)
             return null;
-        foreach (nint control in engine.SlotControls(root))
-        {
-            float length = TimelineSeekEngine.ControlLength(control);
-            if (length > 0f)
-                return new ScrubControlReading(ScrubControlId.Timeline(slot),
-                    *(float*)(control + 0x10), length, *(float*)(control + 0x5C));
-        }
-        return null;
+        nint control = MainControl(engine.SlotControls(root));
+        return control == 0 ? null : new ScrubControlReading(ScrubControlId.Timeline(slot),
+            *(float*)(control + 0x10), TimelineSeekEngine.ControlLength(control), *(float*)(control + 0x5C));
     }
 
     /// <summary>
@@ -122,11 +129,12 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
     {
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
         var controls = root != 0 ? engine.SlotControls(root) : new List<nint>();
-        if (controls.Count == 0)
+        nint main = MainControl(controls);
+        if (main == 0)
             return Outcome.Fail("This layer's animation can no longer be scrubbed.");
-        float duration = TimelineSeekEngine.ControlLength(controls[0]);
+        float duration = TimelineSeekEngine.ControlLength(main);
         time = Math.Clamp(time, 0f, Math.Max(0f, duration - 1f / 30f));
-        float before = *(float*)(controls[0] + 0x10);
+        float before = *(float*)(main + 0x10);
         foreach (nint control in controls)
             *(float*)(control + 0x10) = Math.Clamp(time, 0f, Math.Max(0f, TimelineSeekEngine.ControlLength(control)));
         engine.ShiftPropControls((nint)character, root, time - before);
