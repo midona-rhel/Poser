@@ -166,7 +166,9 @@ public sealed partial class NativeHealthCheck : INativeHealth
         var createdPerFile = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var hook in made)
         {
-            string name = functions.TryGetValue(hook.Address, out var known) ? known : hook.Delegate;
+            // Dalamud may follow a leading jump, so the requested address names it too.
+            string name = functions.TryGetValue(hook.Address, out var known)
+                || functions.TryGetValue(hook.Requested, out known) ? known : hook.Delegate;
             string file = hook.CreatedBy;
             createdPerFile[file] = createdPerFile.GetValueOrDefault(file) + 1;
             var (state, detail) = hook switch

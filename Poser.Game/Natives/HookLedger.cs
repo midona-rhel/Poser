@@ -14,7 +14,7 @@ namespace Poser.Game.Natives;
 /// </summary>
 public sealed class HookLedger : IGameInteropProvider
 {
-    internal sealed record Entry(string Delegate, nint Address, string CreatedBy, IDalamudHook? Hook, string? Failure);
+    internal sealed record Entry(string Delegate, nint Address, nint Requested, string CreatedBy, IDalamudHook? Hook, string? Failure);
 
     private readonly IGameInteropProvider _inner;
     private readonly List<Entry> _entries = new();
@@ -38,13 +38,13 @@ public sealed class HookLedger : IGameInteropProvider
         {
             var hook = create();
             lock (_lock)
-                _entries.Add(new Entry(typeof(T).Name, hook.Address, createdBy, hook, null));
+                _entries.Add(new Entry(typeof(T).Name, hook.Address, address, createdBy, hook, null));
             return hook;
         }
         catch (Exception ex)
         {
             lock (_lock)
-                _entries.Add(new Entry(typeof(T).Name, address, createdBy, null, ex.Message));
+                _entries.Add(new Entry(typeof(T).Name, address, address, createdBy, null, ex.Message));
             throw;
         }
     }
@@ -98,5 +98,6 @@ public sealed class HookLedger : IGameInteropProvider
     public Hook<T> HookFromFunctionPointerVariable<T>(nint address, T detour) where T : Delegate =>
         Record(address, () => _inner.HookFromFunctionPointerVariable(address, detour));
 
+    // Hooks made from [Signature] attributes aren't recorded; Poser declares none.
     public void InitializeFromAttributes(object self) => _inner.InitializeFromAttributes(self);
 }
