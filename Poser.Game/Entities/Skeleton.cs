@@ -10,6 +10,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Entities;
 
@@ -34,8 +35,8 @@ public class Skeleton : EntityBase, ISkeleton
     private const int MaxPoses = 4;
 
     // CharacterBase memory offsets for scale factors (from Brio's BrioCharacterBase)
-    private const int CharacterBaseScaleFactor1Offset = 0x2A0;
-    private const int CharacterBaseScaleFactor2Offset = 0x2A4;
+    private const int CharacterBaseScaleFactor1Offset = NativeFields.CharacterBase_ScaleFactor1;
+    private const int CharacterBaseScaleFactor2Offset = NativeFields.CharacterBase_ScaleFactor2;
 
     private readonly List<IBone> _bones = new();
 

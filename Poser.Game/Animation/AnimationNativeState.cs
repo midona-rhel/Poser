@@ -78,7 +78,7 @@ public sealed unsafe partial class AnimationNativeState
     // EmoteController +0x35: set when a non-local actor leaves a loop mode with no end
     // emote; in Normal mode the next base-idle pick then cancels the emote and clears the
     // pose. Only PlayEmote clears it, StartEmoteLocal and SetPose don't.
-    private const int EmoteCancelPendingOffset = 0x35;
+    private const int EmoteCancelPendingOffset = NativeFields.EmoteController_StopRequest;
     // EmoteController::StopLoopedEmote 0x1406145A0 (patchcheck EmoteController.StopLoopedEmote):
     // in a loop mode, CancelEmote (the emote's slot stopped, ClearPose) and then Normal
     // mode for client objects; with no emote playing it only clears the pose.
@@ -96,7 +96,7 @@ public sealed unsafe partial class AnimationNativeState
     // EmoteController.PlayEmoteOptionVtbl (patchcheck DAT): nothing calls through it,
     // it is set so the option is the game's own object.
     private readonly nint _playEmoteOptionVtbl;
-    private const int CPoseKinds = 8, CPoseEntrySize = 0x20, CPoseCountOffset = 0x18;
+    private const int CPoseKinds = 8, CPoseEntrySize = NativeFields.EmoteControllerCPoseTable_EntrySize, CPoseCountOffset = NativeFields.EmoteControllerCPoseTable_Count;
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
@@ -105,8 +105,8 @@ public sealed unsafe partial class AnimationNativeState
     // .CurrentTimestamp — at +0x34 of the pointed object. This is the
     // second clock a real scrub must move: the havok controls are only the
     // sampling side, and the scheduler resets the animation on ITS time.
-    private const int SequencerSchedulerHandlesOffset = 0x70;
-    internal const int SchedulerTimestampOffset = 0x34;
+    private const int SequencerSchedulerHandlesOffset = NativeFields.ActionTimelineSequencer_SlotHandles;
+    internal const int SchedulerTimestampOffset = NativeFields.TimelineController_CurrentTimestamp;
 
     /// <summary>The slot's live scheduler clock, or null.</summary>
     internal static float* SchedulerTimestamp(
@@ -465,7 +465,7 @@ public sealed unsafe partial class AnimationNativeState
     // seq+0x54 (i32): slot 0's current priority. The immediate play writes the row's;
     // the queued plays (the base-idle pick, emotes) are refused above theirs. ClearSlot
     // sets it to -1 when the row ends.
-    private const int Slot0PriorityOffset = 0x54;
+    private const int Slot0PriorityOffset = NativeFields.ActionTimelineSequencer_CurrentPriority;
 
     /// <summary>A priority-0 row (loops, idles, most Pause rows) would be replaced by
     /// the base-idle pick on the next frame: priority 1 keeps it, as a play-params

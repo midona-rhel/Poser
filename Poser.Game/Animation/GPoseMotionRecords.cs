@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Poser.Game.Core;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -22,9 +23,9 @@ internal sealed unsafe class GPoseMotionRecords
     private delegate byte* FindActorRecordDelegate(nint controller, Character* actor);
     private readonly FindActorRecordDelegate? _find;
 
-    private const int RecordSize = 0xC0;
-    private const int KindOffset = 0x10;    // patchcheck GPoseActorRecord.Kind: 1 emote, 2 action, 3 other
-    private const int ActorOffset = 0x90;   // patchcheck GPoseActorRecord.Actor
+    private const int RecordSize = NativeFields.GPoseActorRecord_Size;
+    private const int KindOffset = NativeFields.GPoseActorRecord_Kind;    // patchcheck GPoseActorRecord.Kind: 1 emote, 2 action, 3 other
+    private const int ActorOffset = NativeFields.GPoseActorRecord_Actor;   // patchcheck GPoseActorRecord.Actor
 
     /// <summary>A record Poser took: its bytes and the Full body state Poser took it in.</summary>
     private sealed record Taken(byte[] Record, uint EntityId, CharacterModes Mode, byte Param,

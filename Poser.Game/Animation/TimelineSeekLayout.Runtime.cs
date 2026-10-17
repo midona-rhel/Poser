@@ -18,7 +18,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
 {
     // Type table rows (FUN_1418C5330 writes clip+0x84 = the row's id):
     // 216 rows × 0x30 — +0x00 u32 id, +0x10 char* tag ("C009").
-    private const int TypeRows = 0xD8, TypeRowSize = 0x30;
+    private const int TypeRows = NativeFields.SchedulerClipTypeTable_RowCount, TypeRowSize = NativeFields.SchedulerClipTypeTable_RowSize;
 
     private readonly int _c009 = -1, _c010 = -1, _c012 = -1, _c049 = -1, _c031 = -1, _c173 = -1, _c198 = -1,
         _c043 = -1, _c094 = -1;

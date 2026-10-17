@@ -84,7 +84,7 @@ internal sealed unsafe class BgObjectNative
     /// its own objects by day and a raw spawn ships 0xFF, which is why
     /// spawned lamps always glowed. No reference plugin knows this byte.
     /// </summary>
-    private const int BgNightStateOffset = 0xCD;
+    private const int BgNightStateOffset = NativeFields.BgObject_NightState;
 
     /// <summary>Whether this BG model can take dye at all. The stain
     /// buffer exists only on models BUILT for staining (housing-style

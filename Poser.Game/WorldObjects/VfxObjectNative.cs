@@ -128,7 +128,7 @@ internal sealed unsafe class VfxObjectNative
 
     /// <summary>A vfx's drawn state is its ALPHA (Brio's rule); the draw
     /// flag says nothing for an effect.</summary>
-    internal const int VfxAlphaOffset = 0x26C;
+    internal const int VfxAlphaOffset = NativeFields.VfxObject_ColorAlpha;
 
     public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
     {
@@ -145,7 +145,7 @@ internal sealed unsafe class VfxObjectNative
     /// instance (Brio's SetIntensity): one uniform value drives all three
     /// components, then the transform/culling nudge makes it take.
     /// </summary>
-    private const int VfxIntensityOffset = 0x90;
+    private const int VfxIntensityOffset = NativeFields.VfxResourceInstance_Scale;
 
     public void SetVfxIntensity(nint address, float intensity)
     {

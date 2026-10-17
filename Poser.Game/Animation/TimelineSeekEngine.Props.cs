@@ -156,7 +156,7 @@ internal sealed unsafe partial class TimelineSeekEngine
         log = null;
         if (!TimelineState.Of(prop).Loaded)
             return false;
-        int timelineId = (int)(*(uint*)(prop + NativeFields.SchedulerTimeline_ActionKey) - 0x20000);
+        int timelineId = (int)(*(uint*)(prop + NativeFields.SchedulerTimeline_ActionKey) - NativeFields.SchedulerTimeline_ActionKeyBias);
         foreach (int slot in new[] { 0, 1 })
         {
             nint root = AnimationNativeState.SlotTimeline(sequencer, slot);

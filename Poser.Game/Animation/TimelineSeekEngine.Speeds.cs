@@ -150,7 +150,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     }
 
     /// <summary>The ActionTimeline id a prop timeline plays (+0x224 − 0x20000).</summary>
-    public static int PropTimelineIdOf(nint prop) => (int)(*(uint*)(prop + NativeFields.SchedulerTimeline_ActionKey) - 0x20000);
+    public static int PropTimelineIdOf(nint prop) => (int)(*(uint*)(prop + NativeFields.SchedulerTimeline_ActionKey) - NativeFields.SchedulerTimeline_ActionKeyBias);
 
     /// <summary>Fires a C031 over whatever prop timeline its weapon has (the start
     /// replaces it, as a natural fire does); needs the weapon loaded.</summary>

@@ -902,6 +902,12 @@ internal static class NativeOffsets
     public static readonly OffsetPattern ActionTimelineSequencer_QueuedFirst = new("ActionTimelineSequencer.QueuedFirst", "66 89 91 ?? ?? ?? ?? 8B C3", 3, 4, 0x150);
     public static readonly OffsetPattern ActionTimelineSequencer_QueueIndex = new("ActionTimelineSequencer.QueueIndex", "89 87 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0 75 ?? 48 8B 5C", 2, 4, 0x1DC);
     public static readonly OffsetPattern hkaDefaultAnimationControl_PlaybackSpeed = new("hkaDefaultAnimationControl.PlaybackSpeed", "F3 0F 59 5B ?? 8B EF", 4, 1, 0x5C);
+    public static readonly OffsetPattern ActionTimelineSequencer_CurrentPriority = new("ActionTimelineSequencer.CurrentPriority", "8B 79 ?? 48 8B D9 84 D2", 2, 1, 0x54);
+    public static readonly OffsetPattern SchedulerTimeline_Latch = new("SchedulerTimeline.Latch", "F6 41 ?? 02 48 8B F2", 2, 1, 0x11);
+    public static readonly OffsetPattern CharacterBase_ScaleFactor1 = new("CharacterBase.ScaleFactor1", "F3 0F 59 81 ?? ?? ?? ?? 0F 28 E3 80 78 15 00", 4, 4, 0x2A0);
+    public static readonly OffsetPattern CharacterBase_ScaleFactor2 = new("CharacterBase.ScaleFactor2", "F3 0F 10 81 ?? ?? ?? ?? F3 0F 59 41 74", 4, 4, 0x2A4);
+    public static readonly OffsetPattern BgObject_NightState = new("BgObject.NightState", "0F B6 83 ?? ?? ?? ?? 88 44 ?? ?? 0F B6 83 CE 00 00 00", 3, 4, 0xCD);
+    public static readonly OffsetPattern VfxObject_ColorAlpha = new("VfxObject.ColorAlpha", "F3 0F 11 81 ?? ?? ?? ?? F3 0F 11 89 60 02 00 00", 4, 4, 0x26C);
 
     /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
     /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)

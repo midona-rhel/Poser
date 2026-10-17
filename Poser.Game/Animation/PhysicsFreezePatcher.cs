@@ -4,6 +4,7 @@ using Dalamud.Memory;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Domain;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -58,7 +59,7 @@ internal sealed class PhysicsFreezePatcher : IDisposable
     // PartialSkeleton.SetBoneModelSpace+0x34F; Anamnesis' SkeletonFreezePhysics
     // site, used by Brio). Its first four bytes ARE region 1's instruction:
     // movups [rax+0x10], xmm1.
-    internal const int FreezeSiteOffset = 0x34F;
+    internal const int FreezeSiteOffset = NativeFields.PartialSkeleton_SetBoneModelSpace_FreezeSite;
     internal const string FreezeSiteBytes = "0F 11 48 10 41 0F 10 44 24 ?? 0F 11 40 20 48 8B 46 28";
 
     // Region 2 sits 0x9 bytes before the match: a 3-byte movups store in the
@@ -66,7 +67,7 @@ internal sealed class PhysicsFreezePatcher : IDisposable
     // (0F 11) is pinned; the third byte is the ModRM operand byte, which is
     // not proven by the signature, so it is captured at startup rather than
     // hard-coded.
-    private const int Region2Offset = 0x9;
+    private const int Region2Offset = NativeFields.PartialSkeleton_SetBoneModelSpace_FreezeRegion2;
 
     private static readonly byte[] ExpectedRegion1 = [0x0F, 0x11, 0x48, 0x10];
     private static readonly byte[] NopRegion1 = [0x90, 0x90, 0x90, 0x90];

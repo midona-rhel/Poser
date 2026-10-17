@@ -1,4 +1,5 @@
 using System;
+using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
@@ -9,24 +10,24 @@ namespace Poser.Game.Animation;
 /// </summary>
 internal readonly unsafe struct TimelineState
 {
-    internal const int Flags10 = 0x10;          // bit 5: started
-    internal const int Flags11 = 0x11;          // bit 1: finished
-    internal const int ClockOffset = 0x34;
-    internal const int BeginOffset = 0x3C;
-    internal const int EndOffset = 0x40;
-    internal const int LengthOffset = 0x48;
-    internal const int PauseMaskOffset = 0x54;
-    internal const int PlayModeOffset = 0x58;   // 1: one-shot
-    internal const int FrameOffset = 0x64;      // the integer-frame clock
-    internal const int RunStateOffset = 0x74;   // 0 before begin, 1 running, 2/3 ended
-    internal const int LoadStateOffset = 0x78;  // 5: every clip ready
-    internal const int Flags7C = 0x7C;          // bit 5 integer frame, bit 6 finished (clock frozen at +0x48)
-    internal const int Flags7D = 0x7D;          // bit 1 holds at its end, bit 2 releases the hold
-    internal const int SpeedOffset = 0x240;     // the effective speed
-    internal const int Flags272 = 0x272;        // bit 2 set by TimelineGroup.Teardown
-    internal const int Flags273 = 0x273;        // bit 0 teardown marked, bit 5 ENDED (Notify(0))
-    internal const int IdOffset = 0x224;        // the action key (row id + 0x20000)
-    internal const int SelfHandleOffset = 0x180;
+    internal const int Flags10 = NativeFields.SchedulerTimeline_State;          // bit 5: started
+    internal const int Flags11 = NativeFields.SchedulerTimeline_Latch;          // bit 1: finished
+    internal const int ClockOffset = NativeFields.TimelineController_CurrentTimestamp;
+    internal const int BeginOffset = NativeFields.SchedulerTimeline_Begin;
+    internal const int EndOffset = NativeFields.SchedulerTimeline_End;
+    internal const int LengthOffset = NativeFields.SchedulerTimeline_Length;
+    internal const int PauseMaskOffset = NativeFields.SchedulerState_PauseMask;
+    internal const int PlayModeOffset = NativeFields.SchedulerTimeline_LoopMode;   // 1: one-shot
+    internal const int FrameOffset = NativeFields.SchedulerTimeline_IntegerFrame;      // the integer-frame clock
+    internal const int RunStateOffset = NativeFields.SchedulerTimeline_PlayState;   // 0 before begin, 1 running, 2/3 ended
+    internal const int LoadStateOffset = NativeFields.SchedulerTimeline_LoadState;  // 5: every clip ready
+    internal const int Flags7C = NativeFields.SchedulerTimeline_ClockFlags;          // bit 5 integer frame, bit 6 finished (clock frozen at +0x48)
+    internal const int Flags7D = NativeFields.SchedulerTimeline_WrapControl;          // bit 1 holds at its end, bit 2 releases the hold
+    internal const int SpeedOffset = NativeFields.SchedulerTimeline_Speed;     // the effective speed
+    internal const int Flags272 = NativeFields.SchedulerTimeline_Flags272;        // bit 2 set by TimelineGroup.Teardown
+    internal const int Flags273 = NativeFields.SchedulerTimeline_Flags273;        // bit 0 teardown marked, bit 5 ENDED (Notify(0))
+    internal const int IdOffset = NativeFields.SchedulerTimeline_ActionKey;        // the action key (row id + 0x20000)
+    internal const int SelfHandleOffset = NativeFields.SchedulerTimeline_SelfHandle;
 
     private readonly byte* _tl;
 

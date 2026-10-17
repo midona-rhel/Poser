@@ -117,7 +117,7 @@ public sealed unsafe partial class TimelineSeekService
 
     // TimelineContainer +0x2C3 bit 0 (patchcheck TimelineContainer.DrawnFlags): cleared by
     // DisableDraw, set by OnEnableDraw before the draw-ready check runs.
-    private const int ContainerDrawnFlagsOffset = 0x2C3;
+    private const int ContainerDrawnFlagsOffset = NativeFields.TimelineContainer_DrawnFlags;
 
     /// <summary>
     /// After the redraw (RE notes/poser-animation-model.md §2): Mode, BaseOverride and

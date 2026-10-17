@@ -179,9 +179,9 @@ public sealed unsafe partial class TimelineSeekService
             *(byte*)(clip + NativeFields.C094_SlotMask) &= unchecked((byte)~PropSlotBit);
             _maskedFades[clip] = PropSlotBit;
             // FUN_1408B0B00(ddc = &chara->DrawData, slot, alpha): slot 2's alpha at
-            // ddc + 2·0x70 + 0x68. Stored, not multiplied: a higher layer's own
+            // ddc + 2·sizeof(DrawObjectData) + SlotAlpha. Stored, not multiplied: a higher layer's own
             // active C094 writes over it the same tick.
-            *(float*)((byte*)&((Character*)character)->DrawData + 2 * 0x70 + NativeFields.DrawDataContainer_SlotAlpha) = 1f;
+            *(float*)((byte*)&((Character*)character)->DrawData + 2 * sizeof(DrawObjectData) + NativeFields.DrawDataContainer_SlotAlpha) = 1f;
             LogOnce($"fademask:{clip}", $"[TimelineSeek] slot {slot}'s fade no longer reaches slot {owner0}'s prop");
         }
     }
