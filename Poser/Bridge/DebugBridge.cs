@@ -887,6 +887,25 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/history":
                 return Json(History());
+            case "/lighton":
+            {
+                // Debug: a Poser light's on/off (?index=N&on=1|0, read without on) and its
+                // DrawObject flags byte (+0x88).
+                var lights = (global::Poser.Game.Services.ILightingService)_services.GetService(
+                    typeof(global::Poser.Game.Services.ILightingService))!;
+                int index = int.TryParse(query.GetValueOrDefault("index", "0"), out var li) ? li : 0;
+                if (index < 0 || index >= lights.Lights.Count)
+                    return Json(new { error = "no such light", count = lights.Lights.Count });
+                var light = lights.Lights[index];
+                if (query.TryGetValue("on", out var onText))
+                    light.IsOn = onText == "1";
+                var native = light.GetType().GetProperty("NativePtr",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(light);
+                byte flags = 0;
+                if (native is System.Reflection.Pointer pointer)
+                    unsafe { flags = *((byte*)System.Reflection.Pointer.Unbox(pointer) + 0x88); }
+                return Json(new { light.Name, light.IsOn, flags = $"0x{flags:X2}" });
+            }
             case "/scrubfallback":
                 // Debug: scrubs go through the clock-writing fallback (on=1) or the seek (on=0).
                 global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
