@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.9.21-beta — Colliders, ropes and borrowed actors
+
+### GPose
+
+- Added Start GPose without depth of field to the General settings, on by default, so entering GPose no longer turns depth of field on.
+
+### Posing
+
+- Fixed scale edits on some bones the game moves along with other bones being applied twice.
+- Fixed ropes and chains with collisions jumping back to where they hung when collisions or Parent depth were changed.
+
+### Colliders
+
+- Fixed generating body colliders, which failed with "A collider has not joined the scene".
+- Closed the gap between the waist and the lower back in generated body colliders.
+
+### Actors
+
+- Fixed hiding actors borrowed from the scene, which the game refused.
+
+### Sidebar
+
+- Kept bone categories such as Body selected in the sidebar after clicking them.
+- Added a Waist row under Spine in the sidebar.
+
 ## 0.9.20-beta — Driven bones, box select and map pictures
 
 ### Posing

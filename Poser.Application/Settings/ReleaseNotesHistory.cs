@@ -9,6 +9,17 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 21), "Colliders, ropes and borrowed actors",
+        [
+            "Added Start GPose without depth of field to the General settings, on by default, so entering GPose no longer turns depth of field on.",
+            "Fixed scale edits on some bones the game moves along with other bones being applied twice.",
+            "Fixed ropes and chains with collisions jumping back to where they hung when collisions or Parent depth were changed.",
+            "Fixed generating body colliders, which failed with \"A collider has not joined the scene\".",
+            "Closed the gap between the waist and the lower back in generated body colliders.",
+            "Fixed hiding actors borrowed from the scene, which the game refused.",
+            "Kept bone categories such as Body selected in the sidebar after clicking them.",
+            "Added a Waist row under Spine in the sidebar.",
+        ]),
         new(new(0, 9, 20), "Driven bones, box select and map pictures",
         [
             "Made bones the game moves along with other bones, such as eyelids and body or gear helpers, follow your pose instead of the animation.",
