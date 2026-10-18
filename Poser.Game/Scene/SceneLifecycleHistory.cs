@@ -281,12 +281,18 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     public object? SpawnOverlay(OverlayNodeKind kind) => _overlayOwner.SpawnOverlay(kind);
 
-    internal SceneGroup SpawnOverlayGroup(string name,
-        IReadOnlyList<OverlayNodeState> states, SceneGroups groups,
-        GroupSteps groupSteps,
+    internal OverlayLifecycleOwner.PendingOverlayGroup BeginOverlayGroup(
+        IReadOnlyList<OverlayNodeState> states, GroupSteps groupSteps) =>
+        _overlayOwner.BeginOverlayGroup(states, groupSteps);
+
+    internal SceneGroup? TryCompleteOverlayGroup(OverlayLifecycleOwner.PendingOverlayGroup pending, string name,
+        SceneGroups groups, GroupSteps groupSteps,
         Func<object, SelectionId?> selection,
         Action<SelectionId, int>? initialize = null) =>
-        _overlayOwner.SpawnOverlayGroup(name, states, groups, groupSteps, selection, initialize);
+        _overlayOwner.TryCompleteOverlayGroup(pending, name, groups, groupSteps, selection, initialize);
+
+    internal void AbortOverlayGroup(OverlayLifecycleOwner.PendingOverlayGroup pending, GroupSteps groupSteps) =>
+        _overlayOwner.AbortOverlayGroup(pending, groupSteps);
 
     /// <summary>Records one overlay node the user added, from a complete
     /// document: a fresh create, a duplicate of the selected node, or a

@@ -112,25 +112,65 @@ internal sealed class OverlayLifecycleOwner
     public object? SpawnOverlay(OverlayNodeKind kind) =>
         SpawnOverlay(OverlayNodeService.DefaultState(kind));
 
-    public SceneGroup SpawnOverlayGroup(string name,
-        IReadOnlyList<OverlayNodeState> states, SceneGroups groups,
-        GroupSteps groupSteps,
-        Func<object, SelectionId?> selection,
-        Action<SelectionId, int>? initialize = null)
+    /// <summary>Overlays created for a group that waits for their scene identities.</summary>
+    public sealed class PendingOverlayGroup
     {
-        var before = groupSteps.Capture();
-        var slots = new List<OverlayLifecycleSlot>();
-        SelectionId[] Members() => slots.Select(s => selection(_slots.CurrentInstance(s)!)
-            ?? throw new InvalidOperationException("A collider has not joined the scene.")).ToArray();
-        SceneGroup group;
+        internal PendingOverlayGroup(GroupsSnapshot before, List<OverlayLifecycleSlot> slots)
+        {
+            Before = before;
+            Slots = slots;
+        }
+
+        internal GroupsSnapshot Before { get; }
+        internal List<OverlayLifecycleSlot> Slots { get; }
+    }
+
+    /// <summary>Creates the group's overlays. They get their scene identities when
+    /// the scene next publishes, so the group is formed by
+    /// <see cref="TryCompleteOverlayGroup"/> once it has.</summary>
+    public PendingOverlayGroup BeginOverlayGroup(IReadOnlyList<OverlayNodeState> states, GroupSteps groupSteps)
+    {
+        var pending = new PendingOverlayGroup(groupSteps.Capture(), new List<OverlayLifecycleSlot>());
         try
         {
             foreach (var state in states)
-                slots.Add(_slots.SlotFor(_overlays.Create(state)
+                pending.Slots.Add(_slots.SlotFor(_overlays.Create(state)
                     ?? throw new InvalidOperationException("A body collider could not be created.")));
-            group = groups.Create(name, Members(), allowThin: true)
+        }
+        catch
+        {
+            RemoveOverlays(pending.Slots);
+            throw;
+        }
+        return pending;
+    }
+
+    /// <summary>Removes a pending group's overlays and restores the groups.</summary>
+    public void AbortOverlayGroup(PendingOverlayGroup pending, GroupSteps groupSteps)
+    {
+        RemoveOverlays(pending.Slots);
+        groupSteps.Restore(pending.Before);
+    }
+
+    /// <summary>Forms the group once every overlay has its scene identity, and
+    /// records the whole creation as one step. Null while an identity is still
+    /// missing; a failure rolls everything back and throws.</summary>
+    public SceneGroup? TryCompleteOverlayGroup(PendingOverlayGroup pending, string name,
+        SceneGroups groups, GroupSteps groupSteps,
+        Func<object, SelectionId?> selection,
+        Action<SelectionId, int>? initialize = null)
+    {
+        var slots = pending.Slots;
+        var ids = slots.Select(s => _slots.CurrentInstance(s) is { } node ? selection(node) : null).ToArray();
+        if (ids.Any(id => id == null))
+            return null;
+        var members = ids.Select(id => id!.Value).ToArray();
+        var before = pending.Before;
+        SceneGroup group;
+        try
+        {
+            group = groups.Create(name, members, allowThin: true)
                 ?? throw new InvalidOperationException("The collider group could not be created.");
-            var members = Members();
             for (int i = 0; i < members.Length; i++) initialize?.Invoke(members[i], i);
         }
         catch
