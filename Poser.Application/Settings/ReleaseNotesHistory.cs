@@ -14,7 +14,7 @@ public static class ReleaseNotesHistory
             "Added Start GPose without depth of field to the General settings, on by default, so entering GPose no longer turns depth of field on.",
             "Fixed scale edits on some bones the game moves along with other bones being applied twice.",
             "Fixed ropes and chains with collisions jumping back to where they hung when collisions or Parent depth were changed.",
-            "Fixed generating body colliders, which failed with "A collider has not joined the scene".",
+            "Fixed generating body colliders, which failed with \"A collider has not joined the scene\".",
             "Closed the gap between the waist and the lower back in generated body colliders.",
             "Fixed hiding actors borrowed from the scene, which the game refused.",
             "Kept bone categories such as Body selected in the sidebar after clicking them.",
