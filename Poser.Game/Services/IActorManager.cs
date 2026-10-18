@@ -45,6 +45,14 @@ public interface IActorManager : IDisposable
     /// <summary>Whether the actor is an adopted overworld body.</summary>
     bool IsAdopted(IActor actor);
 
+    /// <summary>Whether an adopted body is shown; null when the actor is
+    /// not a current adoption.</summary>
+    bool? AdoptedVisibility(IActor actor);
+
+    /// <summary>Hides or shows an adopted body. False when the actor is not
+    /// a current adoption or not a character.</summary>
+    bool SetAdoptedVisibility(IActor actor, bool visible);
+
     /// <summary>Lets an adopted body go: it is seated back where it was
     /// taken and leaves the scene, the world keeping it.</summary>
     void ReleaseWorldActor(nint address);
