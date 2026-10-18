@@ -132,6 +132,11 @@ Release captures the actor's lifecycle state and name, then restores captured
 presentation baselines while the actor is still
 bound. Undo reclaims that same actor and restores the saved scene state without
 new history entries. Deferred pose restoration stops if the claim is released.
+Borrowed actors sit outside the client-object range spawns resolve through,
+so their adoption record owns visibility: hiding sets the character alpha to 0
+and showing restores the alpha it had when hidden. Release, GPose exit and
+unload give a hidden body back the alpha it was borrowed with, the same
+baseline presentation restores.
 
 ## Scene files
 

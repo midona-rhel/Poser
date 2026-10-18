@@ -277,12 +277,16 @@ public class ActorManager : IActorManager
     /// <c>Seat</c> is where its draw object stood when it was taken,
     /// so GPose leaving puts it back exactly there; its pose needs no
     /// restoring, the game's own animation writes the skeleton again.
-    /// <c>HiddenAlpha</c> is the character alpha it had when the user hid
-    /// it; null while it is shown.</summary>
+    /// <c>WorldAlpha</c> is the character alpha it was taken with: a hidden
+    /// body gets it back when it is let go, whatever Opacity did meanwhile
+    /// (presentation resets to that same baseline). <c>HiddenAlpha</c> is the
+    /// alpha it had when the user hid it, what showing it again restores;
+    /// null while it is shown.</summary>
     private readonly record struct Adoption(
         ushort ObjectIndex,
         ulong GameObjectId,
         (Vector3 Position, Quaternion Rotation, Vector3 Scale)? Seat,
+        float? WorldAlpha = null,
         float? HiddenAlpha = null);
 
     private readonly Dictionary<nint, Adoption> _adopted = new();
@@ -320,17 +324,20 @@ public class ActorManager : IActorManager
         if (source is null || !source.IsValid())
             return;
         (Vector3, Quaternion, Vector3)? seat = null;
+        float? worldAlpha = null;
         try
         {
             var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
             if (draw != null)
                 seat = (draw->Object.Position, draw->Object.Rotation, draw->Object.Scale);
+            if (source is ICharacter)
+                worldAlpha = ((FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)address)->Alpha;
         }
         catch (Exception ex)
         {
             _log?.Warning($"ActorManager: could not read an adopted actor's seat: {ex.Message}");
         }
-        _adopted[address] = new Adoption(source.ObjectIndex, source.GameObjectId, seat);
+        _adopted[address] = new Adoption(source.ObjectIndex, source.GameObjectId, seat, worldAlpha);
         RefreshActors();
     }
 
@@ -352,8 +359,8 @@ public class ActorManager : IActorManager
     {
         if (CurrentAdopted(address, adoption) is not { } current)
             return;
-        // The world gets its body back visible.
-        if (adoption.HiddenAlpha is { } alpha && current is ICharacter)
+        // The world gets its body back visible, as it was taken.
+        if (adoption.HiddenAlpha != null && adoption.WorldAlpha is { } alpha && current is ICharacter)
             ((FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)address)->Alpha = alpha;
         if (adoption.Seat is not { } seat)
             return;
