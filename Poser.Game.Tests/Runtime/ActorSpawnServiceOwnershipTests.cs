@@ -440,6 +440,8 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool IsLocalPlayer(IActor actor) => false;
         public void AdoptWorldActor(nint address) { }
         public bool IsAdopted(IActor actor) => false;
+        public bool? AdoptedVisibility(IActor actor) => null;
+        public bool SetAdoptedVisibility(IActor actor, bool visible) => false;
         public void ReleaseWorldActor(nint address) { }
         public void Dispose() { }
         public void RegisterAuxiliary(ushort objectIndex, ActorKind kind) { }

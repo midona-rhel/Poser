@@ -335,6 +335,8 @@ public sealed class WorldActorDiscoveryTests
         public bool IsAvailable(IActor actor) => Actors.Contains(actor) || AuxiliaryActors.Contains(actor);
         public bool Adopted { get; set; }
         public bool IsAdopted(IActor actor) => Adopted;
+        public bool? AdoptedVisibility(IActor actor) => null;
+        public bool SetAdoptedVisibility(IActor actor, bool visible) => false;
         public bool IsLocalPlayer(IActor actor) => false;
         public void AdoptWorldActor(nint address) { }
         public void ReleaseWorldActor(nint address) { }
