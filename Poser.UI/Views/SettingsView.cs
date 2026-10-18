@@ -124,7 +124,7 @@ public sealed class SettingsViewModel
     public bool CameraFlipPastNinety;
     public bool CameraLookThroughSelected;
     public bool CameraUpdateOrbitWithActorPosition = true;
-    public bool CameraStartGPoseWithoutDepthOfField = true;
+    public bool StartGPoseWithoutDepthOfField = true;
     public int DefaultSpawnPlacement;
 
     public bool DetachedShell;
@@ -593,6 +593,11 @@ public static partial class SettingsView
                 vm.CloseWithGPose,
                 next => vm.CloseWithGPose = next,
                 "Poser's windows close by themselves when you leave GPose");
+            form.Switch(
+                "Start GPose without depth of field",
+                vm.StartGPoseWithoutDepthOfField,
+                next => vm.StartGPoseWithoutDepthOfField = next,
+                "Entering GPose no longer switches depth of field on; GPose's own toggle still works");
             form.Switch(
                 "Block game mouse targeting",
                 vm.BlockGPoseMouseTargeting,
@@ -1204,11 +1209,6 @@ public static partial class SettingsView
                 vm.CameraUpdateOrbitWithActorPosition,
                 next => vm.CameraUpdateOrbitWithActorPosition = next,
                 "The native GPose pivot follows a moved actor after release; locked cameras are unchanged");
-            form.Switch(
-                "Start GPose without depth of field",
-                vm.CameraStartGPoseWithoutDepthOfField,
-                next => vm.CameraStartGPoseWithoutDepthOfField = next,
-                "Entering GPose no longer switches depth of field on; GPose's own toggle still works");
         });
         page.Section("Speed keys", form =>
         {

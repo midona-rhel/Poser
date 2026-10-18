@@ -224,6 +224,7 @@ public class SettingsWindow : Window
             FollowGameTarget = c.GPoseTargetChangesSelection,
             TargetFollowsSelection = c.SelectionChangesGPoseTarget,
             BlockGPoseMouseTargeting = c.BlockGPoseMouseTargeting,
+            StartGPoseWithoutDepthOfField = c.StartGPoseWithoutDepthOfField,
             UndoDepth = c.UndoDepth,
             ShowFrameProfiler = c.UI.ShowFrameProfiler,
             ShowNativeCheck = c.UI.ShowNativeCheck,
@@ -297,7 +298,6 @@ public class SettingsWindow : Window
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
             CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
             CameraUpdateOrbitWithActorPosition = c.Camera.UpdateOrbitWithActorPosition,
-            CameraStartGPoseWithoutDepthOfField = c.Camera.StartGPoseWithoutDepthOfField,
             DefaultSpawnPlacement = (int)c.DefaultSpawnPlacement,
 
             DetachedShell = c.UI.DetachedShell,
@@ -464,6 +464,7 @@ public class SettingsWindow : Window
         c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
         c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
         c.BlockGPoseMouseTargeting = _vm.BlockGPoseMouseTargeting;
+        c.StartGPoseWithoutDepthOfField = _vm.StartGPoseWithoutDepthOfField;
         c.UndoDepth = Math.Clamp(_vm.UndoDepth, 0, 500);
         c.AutoSave.Enabled = _vm.AutoSaveEnabled;
         c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
@@ -560,7 +561,6 @@ public class SettingsWindow : Window
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
         c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
         c.Camera.UpdateOrbitWithActorPosition = _vm.CameraUpdateOrbitWithActorPosition;
-        c.Camera.StartGPoseWithoutDepthOfField = _vm.CameraStartGPoseWithoutDepthOfField;
         c.DefaultSpawnPlacement =
             (global::Poser.Domain.Scene.ObjectPlacementMode)_vm.DefaultSpawnPlacement;
 

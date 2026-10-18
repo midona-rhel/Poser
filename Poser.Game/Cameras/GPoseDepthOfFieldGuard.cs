@@ -58,7 +58,7 @@ public sealed class GPoseDepthOfFieldGuard : IDisposable
         _hook!.Original(env, enable, force);
         try
         {
-            if (force != 0 && enable != 0 && _configuration.Config.Camera.StartGPoseWithoutDepthOfField
+            if (force != 0 && enable != 0 && _configuration.Config.StartGPoseWithoutDepthOfField
                 && _idleCameraActive!(env) == 0)
                 _hook.Original(env, 0, 0);
         }

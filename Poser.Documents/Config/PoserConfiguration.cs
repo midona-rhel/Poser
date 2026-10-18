@@ -52,6 +52,11 @@ public class PoserConfiguration
     public bool GPoseTargetChangesSelection { get; set; } = true;
     public bool BlockGPoseMouseTargeting { get; set; } = true;
 
+    /// <summary>Entering GPose leaves depth of field off: the game otherwise
+    /// switches it on at every entry, whatever the System Config says. GPose's
+    /// own DoF toggle still works.</summary>
+    public bool StartGPoseWithoutDepthOfField { get; set; } = true;
+
 
     /// <summary>
     /// With several bones selected, rotate every bone but the FIRST about the
