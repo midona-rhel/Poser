@@ -276,11 +276,18 @@ public class ActorManager : IActorManager
     /// reused by the game, and whatever stands there next is not ours.
     /// <c>Seat</c> is where its draw object stood when it was taken,
     /// so GPose leaving puts it back exactly there; its pose needs no
-    /// restoring, the game's own animation writes the skeleton again.</summary>
+    /// restoring, the game's own animation writes the skeleton again.
+    /// <c>WorldAlpha</c> is the character alpha it was taken with: a hidden
+    /// body gets it back when it is let go, whatever Opacity did meanwhile
+    /// (presentation resets to that same baseline). <c>HiddenAlpha</c> is the
+    /// alpha it had when the user hid it, what showing it again restores;
+    /// null while it is shown.</summary>
     private readonly record struct Adoption(
         ushort ObjectIndex,
         ulong GameObjectId,
-        (Vector3 Position, Quaternion Rotation, Vector3 Scale)? Seat);
+        (Vector3 Position, Quaternion Rotation, Vector3 Scale)? Seat,
+        float? WorldAlpha = null,
+        float? HiddenAlpha = null);
 
     private readonly Dictionary<nint, Adoption> _adopted = new();
 
@@ -317,17 +324,20 @@ public class ActorManager : IActorManager
         if (source is null || !source.IsValid())
             return;
         (Vector3, Quaternion, Vector3)? seat = null;
+        float? worldAlpha = null;
         try
         {
             var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
             if (draw != null)
                 seat = (draw->Object.Position, draw->Object.Rotation, draw->Object.Scale);
+            if (source is ICharacter)
+                worldAlpha = ((FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)address)->Alpha;
         }
         catch (Exception ex)
         {
             _log?.Warning($"ActorManager: could not read an adopted actor's seat: {ex.Message}");
         }
-        _adopted[address] = new Adoption(source.ObjectIndex, source.GameObjectId, seat);
+        _adopted[address] = new Adoption(source.ObjectIndex, source.GameObjectId, seat, worldAlpha);
         RefreshActors();
     }
 
@@ -347,7 +357,12 @@ public class ActorManager : IActorManager
 
     private unsafe void SeatBack(nint address, Adoption adoption)
     {
-        if (adoption.Seat is not { } seat || CurrentAdopted(address, adoption) is null)
+        if (CurrentAdopted(address, adoption) is not { } current)
+            return;
+        // The world gets its body back visible, as it was taken.
+        if (adoption.HiddenAlpha != null && adoption.WorldAlpha is { } alpha && current is ICharacter)
+            ((FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)address)->Alpha = alpha;
+        if (adoption.Seat is not { } seat)
             return;
         try
         {
@@ -368,6 +383,36 @@ public class ActorManager : IActorManager
         _adopted.TryGetValue(actor.Address, out var adoption)
         && actor.Id == ActorIdentity.For(adoption.GameObjectId, adoption.ObjectIndex)
         && CurrentAdopted(actor.Address, adoption) is not null;
+
+    public bool? AdoptedVisibility(IActor actor) =>
+        IsAdopted(actor) ? _adopted[actor.Address].HiddenAlpha == null : null;
+
+    /// <summary>An adopted body sits outside the client-object range the
+    /// spawn resolver covers, so its own adoption record hides it: by its
+    /// character alpha, as spawned actors hide (the draw object and the pose
+    /// survive). Showing puts back the alpha it had when hidden.</summary>
+    public unsafe bool SetAdoptedVisibility(IActor actor, bool visible)
+    {
+        if (!IsAdopted(actor))
+            return false;
+        var adoption = _adopted[actor.Address];
+        if (CurrentAdopted(actor.Address, adoption) is not ICharacter)
+            return false;
+        var character = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actor.Address;
+        if (visible)
+        {
+            if (adoption.HiddenAlpha is { } alpha)
+                character->Alpha = alpha;
+            _adopted[actor.Address] = adoption with { HiddenAlpha = null };
+        }
+        else
+        {
+            if (adoption.HiddenAlpha == null)
+                _adopted[actor.Address] = adoption with { HiddenAlpha = character->Alpha };
+            character->Alpha = 0f;
+        }
+        return true;
+    }
 
     public void RefreshActors()
     {

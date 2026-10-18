@@ -92,18 +92,28 @@ internal sealed class ActorModelControl
 
         try
         {
-            if (!_resolver.TryResolveForOperation(actor, out var descriptor, out var ownership))
+            // A borrowed body is outside the client-object range the resolver
+            // covers: its adoption record hides it.
+            if (_actorManager.IsAdopted(actor))
+            {
+                if (!_actorManager.SetAdoptedVisibility(actor, visible))
+                    return;
+            }
+            else if (!_resolver.TryResolveForOperation(actor, out var descriptor, out var ownership))
                 return;
-            // Fade, never tear down — see IActorSpawnNativeAdapter.SetAlpha.
-            // The remembered flag below stays the record of what the USER
-            // asked for; the alpha is only how the game is told.
-            if (!_native.SetAlpha(descriptor, visible ? 1f : 0f))
-                return;
-
-            if (ownership is not null)
-                _ownership.TrySetVisibility(actor, descriptor, visible);
             else
-                RememberLegacyVisibility(descriptor, visible);
+            {
+                // Fade, never tear down — see IActorSpawnNativeAdapter.SetAlpha.
+                // The remembered flag below stays the record of what the USER
+                // asked for; the alpha is only how the game is told.
+                if (!_native.SetAlpha(descriptor, visible ? 1f : 0f))
+                    return;
+
+                if (ownership is not null)
+                    _ownership.TrySetVisibility(actor, descriptor, visible);
+                else
+                    RememberLegacyVisibility(descriptor, visible);
+            }
         }
         catch (Exception ex)
         {
@@ -150,6 +160,8 @@ internal sealed class ActorModelControl
 
         try
         {
+            if (_actorManager.AdoptedVisibility(actor) is { } adopted)
+                return adopted;
             if (!_resolver.TryResolveForOperation(actor, out var descriptor, out var ownership))
                 return false;
             if (ownership is not null)
