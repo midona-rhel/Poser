@@ -17,6 +17,11 @@ public class CameraConfiguration
     /// Independent of Poser actor/bone follow; deferred while dragging or locked.</summary>
     public bool UpdateOrbitWithActorPosition { get; set; } = true;
 
+    /// <summary>Entering GPose leaves depth of field off: the game otherwise
+    /// switches it on at every entry, whatever the System Config says. GPose's
+    /// own DoF toggle still works.</summary>
+    public bool StartGPoseWithoutDepthOfField { get; set; } = true;
+
     /// <summary>The fly speed a new free camera is created with — Brio's
     /// <c>DefaultFreeCameraMovementSpeed</c>. A per-camera Speed row still
     /// overrides it, and the wheel still steps that row.</summary>
