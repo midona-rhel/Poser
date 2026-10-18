@@ -40,32 +40,56 @@ public sealed class ActorColliderCapture(
         {
             var snapshot = await integration.OnFrameworkThread(() => Capture(actorId));
             var parts = await Task.Run(() => Build(snapshot));
-            return await integration.OnFrameworkThread(() =>
+            var states = parts.Select(part => new OverlayNodeState
+            {
+                Kind = OverlayNodeKind.Collider,
+                Name = part.Name,
+                Alpha = .15f,
+                Collider = part.Collider with
+                {
+                    Transform = part.Collider.Transform with { Position = part.Collider.Transform.Position + snapshot.Origin },
+                },
+            }).ToArray();
+            var pending = await integration.OnFrameworkThread(() =>
             {
                 if (!gpose.IsGPosing || !bindings.Resolve(actorId).Success)
                     throw new InvalidOperationException("The actor left the scene during collider capture.");
-                var states = parts.Select(part => new OverlayNodeState
-                {
-                    Kind = OverlayNodeKind.Collider,
-                    Name = part.Name,
-                    Alpha = .15f,
-                    Collider = part.Collider with
-                    {
-                        Transform = part.Collider.Transform with { Position = part.Collider.Transform.Position + snapshot.Origin },
-                    },
-                }).ToArray();
-                var group = lifecycle.SpawnOverlayGroup(name + " colliders", states, groups, groupSteps,
-                    node => bindings.GetOverlayId((IOverlayNode)node) is { } id ? SelectionId.ForOverlay(id) : null,
-                    (child, index) =>
-                    {
-                        var frame = snapshot.Frames[parts[index].BoneName];
-                        if (!parenting.Import(child, new(SelectionId.ForBone(frame.Id),
-                            TransformParent.Local(states[index].Collider!.Transform, frame.Frame))))
-                            throw new InvalidOperationException("The collider's parent bone is unavailable.");
-                    });
-                log.Information($"Actor body collider fitted {parts.Length} capsule/sphere parts from {snapshot.Models.Length} models in {timer.ElapsedMilliseconds} ms.");
-                return group;
+                return lifecycle.BeginOverlayGroup(states, groupSteps);
             });
+            // New colliders get their scene identities when the scene next
+            // publishes; the group and the bone parenting need those.
+            for (int attempt = 0; attempt < 120; attempt++)
+            {
+                await Task.Delay(16).ConfigureAwait(false);
+                var group = await integration.OnFrameworkThread(() =>
+                {
+                    if (!gpose.IsGPosing || !bindings.Resolve(actorId).Success)
+                    {
+                        lifecycle.AbortOverlayGroup(pending);
+                        throw new InvalidOperationException("The actor left the scene during collider capture.");
+                    }
+                    return lifecycle.TryCompleteOverlayGroup(pending, name + " colliders", groups, groupSteps,
+                        node => bindings.GetOverlayId((IOverlayNode)node) is { } id ? SelectionId.ForOverlay(id) : null,
+                        (child, index) =>
+                        {
+                            var frame = snapshot.Frames[parts[index].BoneName];
+                            if (!parenting.Import(child, new(SelectionId.ForBone(frame.Id),
+                                TransformParent.Local(states[index].Collider!.Transform, frame.Frame))))
+                                throw new InvalidOperationException("The collider's parent bone is unavailable.");
+                        });
+                });
+                if (group != null)
+                {
+                    log.Information($"Actor body collider fitted {parts.Length} capsule/sphere parts from {snapshot.Models.Length} models in {timer.ElapsedMilliseconds} ms.");
+                    return group;
+                }
+            }
+            await integration.OnFrameworkThread(() =>
+            {
+                lifecycle.AbortOverlayGroup(pending);
+                return true;
+            });
+            throw new InvalidOperationException("The colliders did not join the scene.");
         }
         finally { Busy = false; }
     }
