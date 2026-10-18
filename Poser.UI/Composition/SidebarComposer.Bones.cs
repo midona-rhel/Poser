@@ -283,7 +283,8 @@ internal sealed partial class SidebarComposer
             return;
 
         var childLines = Descend(lines ?? [], isLast);
-        var bones = mergedBone == null
+        // Spine's header selects the waist, which also keeps its own row.
+        var bones = mergedBone == null || category.Id == "Spine"
             ? category.VisibleBones
             : category.VisibleBones.FindAll(
                 bone => !bone.Id.Equals(mergedBone.Id));
@@ -311,6 +312,10 @@ internal sealed partial class SidebarComposer
                 TreeLines = childLines,
                 Active = _selection.IsSelected(boneSelectionId),
                 Tag = boneSelectionId,
+                // The header carries this bone's tag too.
+                Key = mergedBone != null && bones[b].Id.Equals(mergedBone.Id)
+                    ? catKey + "/bone"
+                    : null,
                 OverlayBones = new[] { bones[b].Id },
             });
         }

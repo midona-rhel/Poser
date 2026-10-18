@@ -157,6 +157,49 @@ internal static class ActorBodyColliderBuilder
             fitted.Add(new(span.Name, collider, span.Start));
         }
 
+        // The torso slices fit as sideways capsules, or spheres when a slice
+        // is round. Where two stacked ones barely overlap, the crease between
+        // them opens toward the belly and the back: the waist and lower back
+        // leave a hole there.
+        void SeamCapsule(string name, string lower, string upper)
+        {
+            static bool Round(Fitted? part) =>
+                part?.Collider.Shape is IkColliderShape.Capsule or IkColliderShape.Sphere;
+            var below = fitted.Find(p => p.Name == lower);
+            var above = fitted.Find(p => p.Name == upper);
+            if (!Round(below) || !Round(above))
+                return;
+            var bone = above!.BoneName;
+            float radius = MathF.Min(below!.Collider.RoundDimensions().Radius, above.Collider.RoundDimensions().Radius);
+            var a = below.Collider.Transform.Position;
+            var b = above.Collider.Transform.Position;
+            // Centre lines within one radius keep the crease covered across
+            // most of the section's depth.
+            if (Vector3.Distance(a, b) <= radius) return;
+            if (fitted.Count >= MaximumParts)
+                throw new InvalidDataException($"Seam coverage exceeds the {MaximumParts}-part collider budget.");
+            // Only capsules have an axis and a stem; between two spheres the
+            // seam is a sphere.
+            var axis = Vector3.Zero;
+            float stem = float.MaxValue;
+            foreach (var part in new[] { below, above })
+            {
+                if (part.Collider.Shape != IkColliderShape.Capsule) continue;
+                var direction = Vector3.Transform(Vector3.UnitY, part.Collider.Transform.Rotation);
+                if (Vector3.Dot(axis, direction) < 0) direction = -direction;
+                axis += direction;
+                stem = MathF.Min(stem, part.Collider.RoundDimensions().Stem);
+            }
+            if (stem == float.MaxValue) stem = 0;
+            axis = axis.LengthSquared() > 1e-12f ? Vector3.Normalize(axis) : Vector3.UnitY;
+            var rotation = axis.Y < -.999999f
+                ? Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI)
+                : Quaternion.Normalize(new Quaternion(Vector3.Cross(Vector3.UnitY, axis), 1 + axis.Y));
+            fitted.Add(new(name, new IkCollider { Shape = stem > 0 ? IkColliderShape.Capsule : IkColliderShape.Sphere,
+                Transform = new((a + b) * .5f, rotation, IkCollider.CapsuleScale(radius, stem)) }, bone));
+        }
+        SeamCapsule("Waist seam", "Waist", "Lower back");
+
         void JointSphere(string name, string bone, params string[] neighbours)
         {
             if (!joints.TryGetValue(bone, out var joint)) return;
