@@ -630,6 +630,8 @@ internal static class NativeSignatures
     public const string TimelineGroup_TeardownTimeline = "40 53 48 83 EC 20 0F B6 81 72 02 00 00";
     /// <summary>SchedulerTimeline.Destroy (0x141C01280 on the analysed build).</summary>
     public const string SchedulerTimeline_Destroy = "48 89 5C ?? ?? 48 89 6C ?? ?? 48 89 74 ?? ?? 57 48 83 EC 20 48 8D 05 ?? ?? ?? ?? 8B F2 48 89 ?? 48 8B D9 E8";
+    /// <summary>EventIdleCamController.IsActive (0x140B15AB0 on the analysed build).</summary>
+    public const string EventIdleCamController_IsActive = "48 83 EC 28 48 83 3D ?? ?? ?? ?? 00 74 ?? E8 ?? ?? ?? ?? 48 8B C8 E8 ?? ?? ?? ?? 3D 30 01 0B 00 75 ?? B0 01";
 }
 
 /// <summary>An instruction pattern whose displacement is a struct-field offset.</summary>
