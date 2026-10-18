@@ -157,6 +157,38 @@ internal static class ActorBodyColliderBuilder
             fitted.Add(new(span.Name, collider, span.Start));
         }
 
+        // The torso slices fit as sideways capsules. Where two stacked ones
+        // barely overlap, the crease between them opens toward the belly and
+        // the back: the waist and lower back leave a hole there.
+        void SeamCapsule(string name, string lower, string upper)
+        {
+            if (fitted.Find(p => p.Name == lower) is not { Collider.Shape: IkColliderShape.Capsule } below
+                || fitted.Find(p => p.Name == upper) is not { Collider.Shape: IkColliderShape.Capsule } above)
+                return;
+            var bone = above.BoneName;
+            var (belowRadius, belowStem) = below.Collider.RoundDimensions();
+            var (aboveRadius, aboveStem) = above.Collider.RoundDimensions();
+            float radius = MathF.Min(belowRadius, aboveRadius);
+            var a = below.Collider.Transform.Position;
+            var b = above.Collider.Transform.Position;
+            // Centre lines within one radius keep the crease covered across
+            // most of the section's depth.
+            if (Vector3.Distance(a, b) <= radius) return;
+            if (fitted.Count >= MaximumParts)
+                throw new InvalidDataException($"Seam coverage exceeds the {MaximumParts}-part collider budget.");
+            var belowAxis = Vector3.Transform(Vector3.UnitY, below.Collider.Transform.Rotation);
+            var aboveAxis = Vector3.Transform(Vector3.UnitY, above.Collider.Transform.Rotation);
+            if (Vector3.Dot(belowAxis, aboveAxis) < 0) aboveAxis = -aboveAxis;
+            var axis = belowAxis + aboveAxis;
+            axis = axis.LengthSquared() > 1e-12f ? Vector3.Normalize(axis) : belowAxis;
+            var rotation = axis.Y < -.999999f
+                ? Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI)
+                : Quaternion.Normalize(new Quaternion(Vector3.Cross(Vector3.UnitY, axis), 1 + axis.Y));
+            fitted.Add(new(name, new IkCollider { Shape = IkColliderShape.Capsule,
+                Transform = new((a + b) * .5f, rotation, IkCollider.CapsuleScale(radius, MathF.Min(belowStem, aboveStem))) }, bone));
+        }
+        SeamCapsule("Waist seam", "Waist", "Lower back");
+
         void JointSphere(string name, string bone, params string[] neighbours)
         {
             if (!joints.TryGetValue(bone, out var joint)) return;
