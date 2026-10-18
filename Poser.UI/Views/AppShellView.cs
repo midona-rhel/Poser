@@ -79,6 +79,9 @@ public sealed class ShellSidebarRow
     public bool Expanded;
     public bool Active;
     public object? Tag;
+    /// <summary>The row's identity when its tag is not unique: a bone also
+    /// listed under the category header that selects it.</summary>
+    public string? Key;
     /// <summary>Bones selected when this group row is clicked.</summary>
     public IReadOnlyList<Domain.Identity.BoneId>? SelectionBones;
     public bool ActorActions;

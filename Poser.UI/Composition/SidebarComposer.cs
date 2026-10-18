@@ -448,6 +448,16 @@ internal sealed partial class SidebarComposer
             // Category rows carry a string tag and own no selection state.
             if (row.Tag is not SelectionId id)
                 continue;
+            // A bone category row selects its bones, not its own tag: it is
+            // lit while one of them is, as the rebuild lights it.
+            if (row.SelectionBones is { Count: > 0 } categoryBones)
+            {
+                bool any = false;
+                for (int b = 0; b < categoryBones.Count && !any; b++)
+                    any = _selection.IsSelected(SelectionId.ForBone(categoryBones[b]));
+                row.Active = any;
+                continue;
+            }
             row.Active = row.GroupMember
                 ? matchedGroup == null && _selection.IsSelected(id)
                 : _selection.IsSelected(id);
