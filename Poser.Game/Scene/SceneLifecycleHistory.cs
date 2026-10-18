@@ -291,8 +291,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         Action<SelectionId, int>? initialize = null) =>
         _overlayOwner.TryCompleteOverlayGroup(pending, name, groups, groupSteps, selection, initialize);
 
-    internal void AbortOverlayGroup(OverlayLifecycleOwner.PendingOverlayGroup pending, GroupSteps groupSteps) =>
-        _overlayOwner.AbortOverlayGroup(pending, groupSteps);
+    internal void AbortOverlayGroup(OverlayLifecycleOwner.PendingOverlayGroup pending) =>
+        _overlayOwner.AbortOverlayGroup(pending);
 
     /// <summary>Records one overlay node the user added, from a complete
     /// document: a fresh create, a duplicate of the selected node, or a

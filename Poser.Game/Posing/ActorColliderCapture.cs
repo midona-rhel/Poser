@@ -65,7 +65,7 @@ public sealed class ActorColliderCapture(
                 {
                     if (!gpose.IsGPosing || !bindings.Resolve(actorId).Success)
                     {
-                        lifecycle.AbortOverlayGroup(pending, groupSteps);
+                        lifecycle.AbortOverlayGroup(pending);
                         throw new InvalidOperationException("The actor left the scene during collider capture.");
                     }
                     return lifecycle.TryCompleteOverlayGroup(pending, name + " colliders", groups, groupSteps,
@@ -86,7 +86,7 @@ public sealed class ActorColliderCapture(
             }
             await integration.OnFrameworkThread(() =>
             {
-                lifecycle.AbortOverlayGroup(pending, groupSteps);
+                lifecycle.AbortOverlayGroup(pending);
                 return true;
             });
             throw new InvalidOperationException("The colliders did not join the scene.");

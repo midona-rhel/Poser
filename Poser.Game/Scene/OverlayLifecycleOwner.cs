@@ -145,12 +145,12 @@ internal sealed class OverlayLifecycleOwner
         return pending;
     }
 
-    /// <summary>Removes a pending group's overlays and restores the groups.</summary>
-    public void AbortOverlayGroup(PendingOverlayGroup pending, GroupSteps groupSteps)
-    {
+    /// <summary>Removes a pending group's overlays. Nothing was grouped yet,
+    /// so the groups are left as they are now: restoring the snapshot from
+    /// before the wait would undo whatever changed meanwhile, such as GPose
+    /// exit clearing every group.</summary>
+    public void AbortOverlayGroup(PendingOverlayGroup pending) =>
         RemoveOverlays(pending.Slots);
-        groupSteps.Restore(pending.Before);
-    }
 
     /// <summary>Forms the group once every overlay has its scene identity, and
     /// records the whole creation as one step. Null while an identity is still
