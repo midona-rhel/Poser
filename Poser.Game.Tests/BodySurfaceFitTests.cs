@@ -68,6 +68,29 @@ public class BodySurfaceFitTests
         Assert.InRange(fit.Single(p => p.BoneName == "n_sippo_a").Collider.RoundDimensions().Radius, .06f, .08f);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheWaistSeamIsCoveredWhereTheStackedTorsoCapsulesBarelyOverlap(bool roundWaist)
+    {
+        var sideways = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2);
+        var mesh = new Mesh();
+        mesh.Add(Capsule(new(0, .85f, 0), .1f, roundWaist ? 0 : .2f, sideways), [new("j_kosi", 1)]);
+        mesh.Add(Capsule(new(0, 1.03f, 0), .1f, .2f, sideways), [new("j_sebo_a", 1)]);
+        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint>
+        {
+            ["j_kosi"] = new(new(0, .8f, 0), null),
+            ["j_sebo_a"] = new(new(0, .94f, 0), "j_kosi"),
+            ["j_sebo_b"] = new(new(0, 1.1f, 0), "j_sebo_a"),
+        };
+        var fit = ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights);
+        Assert.Equal(roundWaist ? IkColliderShape.Sphere : IkColliderShape.Capsule, fit.Single(p => p.Name == "Waist").Collider.Shape);
+        Assert.Equal("j_sebo_a", Assert.Single(fit, p => p.Name == "Waist seam").BoneName);
+        // The belly and the back at the seam height.
+        foreach (var point in new[] { new Vector3(0, .94f, .08f), new Vector3(0, .94f, -.08f) })
+            Assert.Contains(fit, p => BodySurfaceFit.Distance(p.Collider, point) <= 0);
+    }
+
     [Fact]
     public void UnknownOrOverBudgetSkeletonRefusesWithoutInventingBodyParts()
     {
