@@ -297,6 +297,7 @@ public class SettingsWindow : Window
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
             CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
             CameraUpdateOrbitWithActorPosition = c.Camera.UpdateOrbitWithActorPosition,
+            CameraStartGPoseWithoutDepthOfField = c.Camera.StartGPoseWithoutDepthOfField,
             DefaultSpawnPlacement = (int)c.DefaultSpawnPlacement,
 
             DetachedShell = c.UI.DetachedShell,
@@ -559,6 +560,7 @@ public class SettingsWindow : Window
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
         c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
         c.Camera.UpdateOrbitWithActorPosition = _vm.CameraUpdateOrbitWithActorPosition;
+        c.Camera.StartGPoseWithoutDepthOfField = _vm.CameraStartGPoseWithoutDepthOfField;
         c.DefaultSpawnPlacement =
             (global::Poser.Domain.Scene.ObjectPlacementMode)_vm.DefaultSpawnPlacement;
 

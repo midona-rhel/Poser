@@ -300,6 +300,8 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Input.CameraInputState>();
         services.AddSingleton<IVirtualCameraService, Game.Cameras.VirtualCameraService>();
         services.AddStartable<IVirtualCameraService>(StartStage.Cameras);
+        services.AddSingleton<Game.Cameras.GPoseDepthOfFieldGuard>();
+        services.AddStartable<Game.Cameras.GPoseDepthOfFieldGuard>(StartStage.Cameras);
         services.AddSingleton<Application.Presentation.CameraSelectionPolicy>();
         services.AddSingleton<Game.Cameras.CameraTargetControl>();
         services.AddSingleton<Application.Presentation.ICameraTargetControl>(sp =>
