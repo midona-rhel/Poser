@@ -312,6 +312,10 @@ internal sealed partial class SidebarComposer
                 TreeLines = childLines,
                 Active = _selection.IsSelected(boneSelectionId),
                 Tag = boneSelectionId,
+                // The header carries this bone's tag too.
+                Key = mergedBone != null && bones[b].Id.Equals(mergedBone.Id)
+                    ? catKey + "/bone"
+                    : null,
                 OverlayBones = new[] { bones[b].Id },
             });
         }

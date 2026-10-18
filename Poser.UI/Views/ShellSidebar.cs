@@ -373,7 +373,7 @@ public sealed class ShellSidebar
     /// <summary>Returns a stable row identity.</summary>
     private static string RowId(ShellSidebarRow row)
     {
-        string key = row.Tag as string ?? row.Tag?.ToString() ?? row.Label;
+        string key = row.Key ?? row.Tag as string ?? row.Tag?.ToString() ?? row.Label;
         return key;
     }
 
