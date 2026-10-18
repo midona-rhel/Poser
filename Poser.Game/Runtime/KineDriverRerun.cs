@@ -22,11 +22,13 @@ namespace Poser.Game;
 /// </summary>
 internal sealed unsafe class KineDriverRerun
 {
-    // Node types that write their bone (ApplyDriver), each one channel of its
-    // local transform: 6 TargetTranslate (scale too in its rescale branch),
+    // Node types that replace one channel of their bone's local transform with a
+    // value computed from their sources (ApplyDriver): 6 TargetTranslate,
     // 12 PosConstraint: position; 8 TargetRotate, 9 BendRoll, 10 BendSTRoll,
     // 11 Expmap, 13 OrientationConstraint, 14 DirectionConstraint: rotation;
-    // 7 TargetScale and its child list: scale. RBF, Expr and the link nodes
+    // 7 TargetScale: scale. What a driver only recomputes from the bone's own
+    // value (TargetTranslate's rescale, TargetScale's child compensation) still
+    // carries the user's edit and is not counted. RBF, Expr and the link nodes
     // write none.
     private const byte FirstWriter = 6, TargetTranslate = 6, TargetScale = 7, PosConstraint = 12, LastWriter = 14;
     private const int PartialSlots = 5;
@@ -144,24 +146,11 @@ internal sealed unsafe class KineDriverRerun
                         continue;
                     var channels = type switch
                     {
-                        // Its rescale branch (segment scale with a source) also writes scale.
-                        TargetTranslate => *(byte*)(node + NativeFields.KineDriverTargetTranslate_SegmentScale) != 0
-                            && *(long*)(node + NativeFields.KineDriverTargetTranslate_SegmentScaleSource) != 0
-                                ? TransformComponents.Position | TransformComponents.Scale
-                                : TransformComponents.Position,
-                        PosConstraint => TransformComponents.Position,
+                        TargetTranslate or PosConstraint => TransformComponents.Position,
                         TargetScale => TransformComponents.Scale,
                         _ => TransformComponents.Rotation,
                     };
                     Add(skeleton, p, mergedPose, *(short*)(node + NativeFields.KineDriverNode_Bone), channels);
-                    if (type == TargetScale)
-                    {
-                        nint children = node + NativeFields.KineDriverTargetScale_Children;
-                        children += *(int*)children;
-                        uint count = *(uint*)(node + NativeFields.KineDriverTargetScale_ChildCount);
-                        for (uint c = 0; c < count && c < 256; c++)
-                            Add(skeleton, p, mergedPose, *(short*)(children + 2 * (nint)c), TransformComponents.Scale);
-                    }
                 }
             }
         }
