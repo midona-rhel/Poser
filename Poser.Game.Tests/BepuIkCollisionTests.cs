@@ -32,6 +32,20 @@ public class BepuIkCollisionTests(Xunit.ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public void ANewChainStartsOnTheSolvedRouteNotTheRestShape()
+    {
+        // Captured hanging straight down; the user holds the end up and out.
+        var rest = Enumerable.Range(0, 21).Select(i => new Vector3(0, 2 - i * .1f, 0)).ToArray();
+        var held = Enumerable.Range(0, 21).Select(i => new Vector3(i * .07f, 2 - i * .07f, 0)).ToArray();
+        var remote = new ColliderGeometry(new IkCollider { Shape = IkColliderShape.Sphere,
+            Transform = new(new(10, 0, 0), Quaternion.Identity, Vector3.One) });
+        using var state = new BepuIkCollisionState();
+        var positions = held.ToArray();
+        state.Solve(positions, 20, [remote], .02f, -Vector3.UnitY, rest);
+        Assert.True(Vector3.Distance(positions[^1], held[^1]) < .02f, $"Handle started at {positions[^1]}, held at {held[^1]}");
+    }
+
     [Theory]
     [InlineData(true, true, 50)]
     public void CylinderWrapSurvivesTargetAndColliderDragging(bool rope, bool moveCollider, int links)

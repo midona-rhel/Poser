@@ -36,7 +36,10 @@ internal sealed class BepuIkCollisionState : IIkCollisionState
             .Select(i => Vector3.Distance(restPose[i], restPose[i + 1])).ToArray();
         if (_simulation == null || _handle != handle || _down != down ||
             _lengths.Length != lengths.Length || lengths.Where((v, i) => MathF.Abs(v - _lengths[i]) > .0001f).Any())
-            Initialize(restPose, lengths, handle, radius, down);
+            // Start on this frame's route with the rest lengths. Starting from
+            // the captured rest shape put the handle back where the chain was
+            // captured, then dragged it through the colliders to its target.
+            Initialize(positions, lengths, handle, radius, down);
         var simulation = _simulation!;
         if (_radius != radius)
         {
