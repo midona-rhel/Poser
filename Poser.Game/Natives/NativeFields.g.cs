@@ -610,14 +610,6 @@ internal static class NativeFields
     public const int KineDriverNode_Type = 0xB;
     /// <summary>checked against NativeOffsets.KineDriverNode_Bone</summary>
     public const int KineDriverNode_Bone = 0x40;
-    /// <summary>checked against NativeOffsets.KineDriverTargetScale_Children</summary>
-    public const int KineDriverTargetScale_Children = 0x48;
-    /// <summary>checked against NativeOffsets.KineDriverTargetScale_ChildCount</summary>
-    public const int KineDriverTargetScale_ChildCount = 0x4C;
-    /// <summary>checked against NativeOffsets.KineDriverTargetTranslate_SegmentScale</summary>
-    public const int KineDriverTargetTranslate_SegmentScale = 0x30;
-    /// <summary>checked against NativeOffsets.KineDriverTargetTranslate_SegmentScaleSource</summary>
-    public const int KineDriverTargetTranslate_SegmentScaleSource = 0x28;
 }
 
 /// <summary>A constant and the signed entry it is checked against: resolved − Delta must equal Value.</summary>
@@ -893,9 +885,5 @@ internal static class NativeFieldChecks
         new("KineDriverNode_Enabled", 0xA, "KineDriverNode.Enabled", 0),
         new("KineDriverNode_Type", 0xB, "KineDriverNode.Type", 0),
         new("KineDriverNode_Bone", 0x40, "KineDriverNode.Bone", 0),
-        new("KineDriverTargetScale_Children", 0x48, "KineDriverTargetScale.Children", 0),
-        new("KineDriverTargetScale_ChildCount", 0x4C, "KineDriverTargetScale.ChildCount", 0),
-        new("KineDriverTargetTranslate_SegmentScale", 0x30, "KineDriverTargetTranslate.SegmentScale", 0),
-        new("KineDriverTargetTranslate_SegmentScaleSource", 0x28, "KineDriverTargetTranslate.SegmentScaleSource", 0),
     };
 }
