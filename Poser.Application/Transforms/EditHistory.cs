@@ -120,8 +120,13 @@ public sealed class EditHistory
     /// <summary>An undo or redo was committed.</summary>
     public event Action? Stepped;
 
+    /// <summary>An entry is about to be appended: observers may append what
+    /// belongs before it.</summary>
+    public event Action? Appending;
+
     public void Append(HistoryEntry patch)
     {
+        Appending?.Invoke();
         BeforeAppend?.Invoke();
         if (_batch is { } batch)
         {
