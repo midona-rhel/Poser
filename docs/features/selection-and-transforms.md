@@ -177,6 +177,16 @@ turning it on affects subsequent edits. Explicit actor/bone follow is separate.
 The transform owner restores the original native position and default position
 when its override is cleared, on GPose exit, or when the plugin unloads.
 
+Moving the live camera with the game's own controls, or a free camera with its
+keys, journals nothing while it moves. Once the framing (a free camera's position
+and rotation, the game camera's angle, pan, zoom and offset, and roll and field
+of view) has held still for five seconds, it becomes one `Move camera` step from
+where it last rested; moves less than five seconds apart are one step. A move
+still settling when another step is appended is recorded first, up to the last
+framing a tick saw. Poser's own camera edits (a staged slider or field, an active
+gesture), undo, redo and switching cameras re-base the resting framing instead.
+Replay resolves a restored camera through its history binding.
+
 Camera startup checks the current GPose session on its first framework tick,
 including reloads inside GPose. It waits for native camera readiness and
 creates the default camera once; it does not require another GPose entry.

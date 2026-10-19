@@ -308,6 +308,8 @@ internal static class ServiceRegistration
             sp.GetRequiredService<Game.Cameras.CameraTargetControl>());
         services.AddSingleton<Game.Cameras.CameraWorkspaceRuntime>();
         services.AddStartable<Game.Cameras.CameraWorkspaceRuntime>(StartStage.CameraWorkspace);
+        services.AddSingleton<Game.Cameras.CameraRestRecorder>();
+        services.AddStartable<Game.Cameras.CameraRestRecorder>(StartStage.CameraWorkspace);
         services.AddSingleton<Application.Presentation.ICameraControl, Game.Cameras.CameraControl>();
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<Application.Viewport.IViewportReads>(sp => sp.GetRequiredService<Game.Viewport.ViewportProjection>());

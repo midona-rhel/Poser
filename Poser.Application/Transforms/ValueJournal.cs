@@ -52,6 +52,10 @@ public sealed class ValueJournal
         }
     }
 
+    /// <summary>A continuous edit is still staged (a slider or field being
+    /// changed): its value moves without a step yet.</summary>
+    public bool IsStaging => _pending != null || _staged.Count > 0 || _control != null;
+
     public ValueJournal(EditHistory history, Func<object, SelectionId?>? identify = null)
     {
         _history = history;
