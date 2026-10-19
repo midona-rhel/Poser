@@ -672,11 +672,23 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             TurnEndWithForearm(pose, boneIdx, ik, authored.Rotation);
     }
 
-    /// <summary>The rotation a held Two Joint end keeps: the one at the last
-    /// End rotation switch when there was one, else <paramref name="held"/>.</summary>
-    private static Quaternion HeldEndRotation(IkChainState ik, Quaternion held, Quaternion authored) =>
-        ik.Config is { Solver: Poser.Domain.Posing.IkSolver.TwoJoint, EndAnchor: { } anchor }
-            ? anchor.Resolve(authored, null) : held;
+    /// <summary>The rotation a held Two Joint end keeps: <paramref name="held"/>,
+    /// the held target's, turned by where the end stood at the last End rotation
+    /// switch. The first solve after the switch fixes that turn, so the switch
+    /// moves nothing and a turning target bone or prop still turns the end.</summary>
+    private static Quaternion HeldEndRotation(IkChainState ik, Quaternion held, Quaternion authored)
+    {
+        if (ik.Config is not { Solver: Poser.Domain.Posing.IkSolver.TwoJoint, EndAnchor: { } anchor })
+            return held;
+        if (anchor.HeldOffset is not { } offset)
+        {
+            offset = Quaternion.Normalize(Quaternion.Inverse(held) * anchor.Resolve(authored, null));
+            if (!Poser.Domain.Transforms.TransformMath.IsFinite(offset) || offset.LengthSquared() < 1e-8f)
+                return held;
+            ik.Config = ik.Config with { EndAnchor = anchor with { HeldOffset = offset } };
+        }
+        return Quaternion.Normalize(held * offset);
+    }
 
     /// <summary>A following Two Joint end after an End rotation switch: it turns
     /// as the solved forearm has turned since the switch, so the switch itself

@@ -21,7 +21,9 @@ internal sealed unsafe partial class IkChainRegistry
             return config.EndAnchor == null ? config : config with { EndAnchor = null };
         bool switched = previous != null && previous.EnforceEndRotation != config.EnforceEndRotation;
         bool reenabled = previous is { Enabled: false } && config.EndAnchor != null;
-        if (!config.Enabled || !(switched || reenabled))
+        // A held end is relative to the held target; a new target retakes where it stands.
+        bool retargeted = previous != null && previous.TargetMode != config.TargetMode && config.EndAnchor != null;
+        if (!config.Enabled || !(switched || reenabled || retargeted))
             return config;
         var chain = ResolveChain(endpoint, definition);
         return chain.TwoJointAvailable && _held.CaptureEndAnchor(endpoint, chain.SecondJoint) is { } anchor

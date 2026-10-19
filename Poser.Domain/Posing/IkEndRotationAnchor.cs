@@ -10,7 +10,13 @@ namespace Poser.Domain.Posing;
 /// moves nothing.</summary>
 public readonly record struct IkEndRotationAnchor(Quaternion Forearm, Quaternion End, Quaternion Authored)
 {
-    public bool IsValid => Valid(Forearm) && Valid(End) && Valid(Authored);
+    /// <summary>Held: the end bone's rotation relative to the held target's,
+    /// fixed at the first solve after the switch, so a turning target bone or
+    /// prop still turns the end. Null until then.</summary>
+    public Quaternion? HeldOffset { get; init; }
+
+    public bool IsValid => Valid(Forearm) && Valid(End) && Valid(Authored)
+        && (HeldOffset is not { } offset || Valid(offset));
 
     private static bool Valid(Quaternion value) =>
         TransformMath.IsFinite(value) && value.LengthSquared() > 1e-8f;

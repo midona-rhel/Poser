@@ -324,7 +324,17 @@ internal sealed unsafe partial class IkChainRegistry
             ? _held.CaptureBoneOffset(endpoint, target)
             : null;
         state.SeatPending = state.HeldCapture != null;
+        RetakeEndAnchor(endpoint, state);
         return null;
+    }
+
+    /// <summary>A held end is relative to the held target: following another bone
+    /// or prop retakes where the end stands now.</summary>
+    private void RetakeEndAnchor(IBone endpoint, IkChainState state)
+    {
+        if (state.Config is { Enabled: true, EndAnchor: not null } && state.Chain.TwoJointAvailable
+            && _held.CaptureEndAnchor(endpoint, state.Chain.SecondJoint) is { } anchor)
+            state.Config = state.Config with { EndAnchor = anchor };
     }
 
     public IBone? GetIkBoneTarget(IBone endpoint) =>
@@ -354,6 +364,7 @@ internal sealed unsafe partial class IkChainRegistry
         state.Config = state.Config with { TargetMode = IkTargetMode.Entity };
         state.HeldCapture = state.Config.Enabled ? capture : null;
         state.SeatPending = state.HeldCapture != null;
+        RetakeEndAnchor(endpoint, state);
         return null;
     }
 
