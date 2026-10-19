@@ -107,9 +107,20 @@ With constraints disabled, translation remains unrestricted. Zero-translation
 edits never clamp an existing target; rotation and scale cannot move the handle.
 
 Two Joint's End rotation is the sole orientation switch in every target mode:
-on preserves the authored target orientation, off lets the endpoint turn with
-the solved limb. Other solvers retain Keep rotation; its saved value never
-overrides Two Joint's End rotation, including after the native solve.
+off (the default) keeps the endpoint's rotation while the limb is solved or
+swivelled, following the held target's rotation in Bone, Entity and World mode;
+on lets it turn with the solved limb. The stored `EnforceEndRotation` keeps its
+meaning (true holds), so the switch shows its inverse and saved chains behave as
+saved. Switching moves nothing: the switch records the forearm, the endpoint and
+the user's end rotation, and holding or following continues from there. Other
+solvers retain Keep rotation; its saved value never overrides Two Joint's End
+rotation, including after the native solve.
+
+A fresh target capture (enabling, switching the target mode, picking a target
+bone or entity) is seated on the first solve onto the endpoint as the solve sees
+it, plus the user's IK offset, so it moves nothing where Customize+ scales the
+body after the solve. History keeps an Actor anchor's unseated mark, so a redo
+seats again.
 
 Scene entity targets follow props, scenery/world objects, lights and VFX through
 their exact stable scene IDs; they do not need a skeleton. Attachment captures

@@ -162,7 +162,8 @@ internal sealed unsafe class IkHeldTargets
     /// and the displayed pose the capture read is not the solve's.</summary>
     private void Seat(IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose)
     {
-        ik.SeatPending = false;
+        // Each path clears its mark only once seated: a target that cannot be
+        // resolved this frame is tried again on the next.
         var native = pose->AccessBoneModelSpace(endpoint.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
         if (native == null)
             return;
@@ -183,12 +184,18 @@ internal sealed unsafe class IkHeldTargets
                 return;
             ik.Config = ik.Config with { ActorAnchor = seated };
             ik.HeldCapture = new(seated.Position, seated.Rotation, seated.AuthoredPosition, seated.AuthoredRotation);
+            ik.SeatPending = false;
             return;
         }
         // World, Bone, Entity: shift the capture so it resolves onto the end bone.
+        // The resolve below must not seat again.
+        ik.SeatPending = false;
         if (ik.HeldCapture is not { } capture
             || ResolveHeld(ik, endpoint, authoredPosition, authoredRotation, pose) is not { } resolved)
+        {
+            ik.SeatPending = ik.HeldCapture != null;
             return;
+        }
         var rotationDelta = Quaternion.Normalize(authoredRotation * Quaternion.Inverse(end.Rotation)
             * resolved.Rotation * Quaternion.Inverse(authoredRotation) * capture.RotationDelta);
         var shifted = capture with
@@ -198,6 +205,8 @@ internal sealed unsafe class IkHeldTargets
         };
         if (TransformMath.IsFinite(shifted.Translation) && TransformMath.IsFinite(shifted.RotationDelta))
             ik.HeldCapture = shifted;
+        else
+            ik.SeatPending = true;
     }
 
     /// <summary>A bone the apply pass never visits (no stack) keeps a
