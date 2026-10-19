@@ -300,12 +300,20 @@ public class BonePoseInfo
                 currentNamed[layer] = stack;
         }
 
+        // A gesture baseline comes back through the transform port's layers,
+        // which carry the delta and propagation only. A layer that is the one
+        // already here keeps its IK offset and frame: an imported edit must not
+        // turn into an IK handle offset on the first drag.
+        var currentInteractive = _stacks.Where(stack => stack.Layer == null).ToList();
         var restored = new List<BonePoseTransformInfo>();
         foreach (var stack in snapshot)
         {
             if (stack.Layer == null)
             {
-                restored.Add(stack);
+                int index = restored.Count(entry => entry.Layer == null);
+                restored.Add(stack.IkTransform == null && stack.Frame == TransformFrame.BoneLocal
+                    && index < currentInteractive.Count && SameLayer(currentInteractive[index], stack)
+                        ? currentInteractive[index] : stack);
                 continue;
             }
 
@@ -316,6 +324,13 @@ public class BonePoseInfo
         restored.AddRange(currentNamed.Values);
         return ReplaceStacks(restored);
     }
+
+    private static bool SameLayer(BonePoseTransformInfo current, BonePoseTransformInfo incoming) =>
+        current.PropagateComponents == incoming.PropagateComponents
+        && Vector3.DistanceSquared(current.Transform.Position, incoming.Transform.Position) < 1e-12f
+        && Vector3.DistanceSquared(current.Transform.Scale, incoming.Transform.Scale) < 1e-12f
+        && MathF.Abs(Quaternion.Dot(Quaternion.Normalize(current.Transform.Rotation),
+            Quaternion.Normalize(incoming.Transform.Rotation))) > 1f - 1e-6f;
 
     // Imported transforms place the pose, not the IK handle. An import reset
     // keeps the handle's authored offset as a zero-pose stack, so ordinary

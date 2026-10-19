@@ -2337,11 +2337,13 @@ public partial class PoseInspectorPane : IDisposable
                 config.EnforceConstraints,
                 next => Apply(config with { EnforceConstraints = next }),
                 help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
+            // On: the end turns with the limb. Stored as the hold it replaces,
+            // so saved chains keep behaving as they were saved.
             form.Switch(
                 "End rotation",
-                config.EnforceEndRotation,
-                next => Apply(config with { EnforceEndRotation = next }),
-                help: "Keep the hand or foot's authored target rotation; off lets it rotate with the solved limb");
+                !config.EnforceEndRotation,
+                next => Apply(config with { EnforceEndRotation = !next }),
+                help: "On: the hand or foot turns with the limb as the IK moves or swivels it. Off: it keeps its rotation");
 
             var definition =
                 Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName);
