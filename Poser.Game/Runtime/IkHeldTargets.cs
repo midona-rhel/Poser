@@ -94,6 +94,9 @@ internal sealed unsafe class IkHeldTargets
     public (Vector3 Position, Quaternion Rotation)? ResolveHeld(
         IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null)
     {
+        if (pose != null && !ik.PreviewModelSpace
+            && (ik.SeatPending || ik.Config.ActorAnchor is { Unseated: true }))
+            Seat(ik, endpoint, authoredPosition, authoredRotation, pose);
         if (ik.HeldCapture is not { } capture)
             return null;
         if (ik.PreviewModelSpace)
@@ -153,6 +156,47 @@ internal sealed unsafe class IkHeldTargets
         return (position, rotation);
     }
 
+    /// <summary>Puts a fresh capture onto the end bone as this solve sees it,
+    /// before anything is solved: enabling a chain or switching its target
+    /// moves nothing, even where Customize+ scales the body after the solve
+    /// and the displayed pose the capture read is not the solve's.</summary>
+    private void Seat(IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose)
+    {
+        ik.SeatPending = false;
+        var native = pose->AccessBoneModelSpace(endpoint.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+        if (native == null)
+            return;
+        var end = BoneApplyPass.ReadTransform(native);
+        if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
+        {
+            var seated = anchor with
+            {
+                Position = end.Position, Rotation = end.Rotation,
+                AuthoredPosition = authoredPosition, AuthoredRotation = authoredRotation,
+                ParentTransform = anchor.ParentName == null ? null : ActorParentFrame(endpoint, anchor, pose),
+                Unseated = false,
+            };
+            if (!seated.IsValid)
+                return;
+            ik.Config = ik.Config with { ActorAnchor = seated };
+            ik.HeldCapture = new(seated.Position, seated.Rotation, seated.AuthoredPosition, seated.AuthoredRotation);
+            return;
+        }
+        // World, Bone, Entity: shift the capture so it resolves onto the end bone.
+        if (ik.HeldCapture is not { } capture
+            || ResolveHeld(ik, endpoint, authoredPosition, authoredRotation, pose) is not { } resolved)
+            return;
+        var rotationDelta = Quaternion.Normalize(authoredRotation * Quaternion.Inverse(end.Rotation)
+            * resolved.Rotation * Quaternion.Inverse(authoredRotation) * capture.RotationDelta);
+        var shifted = capture with
+        {
+            Translation = capture.Translation + resolved.Position - end.Position,
+            RotationDelta = rotationDelta,
+        };
+        if (TransformMath.IsFinite(shifted.Translation) && TransformMath.IsFinite(shifted.RotationDelta))
+            ik.HeldCapture = shifted;
+    }
+
     /// <summary>A bone the apply pass never visits (no stack) keeps a
     /// stale cached transform; a capture reads the live pose.</summary>
     internal static void RefreshCache(IBone bone)
@@ -174,6 +218,7 @@ internal sealed unsafe class IkHeldTargets
         var authored = _stacks.GetIkModification(endpoint) ?? Transform.Identity;
         return new(model.Position, model.Rotation, authored.Position, authored.Rotation)
         {
+            Unseated = true,
             ParentName = parent?.BoneName, ParentPartial = parent?.PartialId ?? 0,
             ParentTransform = parent == null ? null : AnchorPose(_stacks.ToApplySpace(parent, parent.LastTransform)),
         };

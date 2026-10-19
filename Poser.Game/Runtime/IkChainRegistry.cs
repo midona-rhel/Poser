@@ -38,6 +38,10 @@ internal sealed class IkChainState
     /// bone. Translation is the authored delta at capture, so a later
     /// drag moves the target by exactly what was dragged.</summary>
     public HeldTarget? HeldCapture;
+    /// <summary>A capture taken from the displayed pose, not yet put onto the
+    /// end bone as the solve sees it (Customize+ scales the body after the
+    /// solve, so the two can differ): the first solve seats it.</summary>
+    public bool SeatPending;
     public IBone? TargetBone;
     public SelectionId? TargetEntity;
     public bool PreviewModelSpace;
@@ -263,18 +267,23 @@ internal sealed unsafe partial class IkChainRegistry
             state.TargetBone = null;
             state.TargetEntity = null;
             state.HeldCapture = _held.CaptureWorld(bone);
+            state.SeatPending = state.HeldCapture != null;
         }
         else if (mode == Poser.Domain.Posing.IkTargetMode.Bone)
         {
             if (state.TargetBone is not { } targetBone)
                 state.HeldCapture = null;
             else if (fresh)
+            {
                 state.HeldCapture = _held.CaptureBoneOffset(bone, targetBone);
+                state.SeatPending = state.HeldCapture != null;
+            }
         }
         else if (mode == IkTargetMode.Entity && fresh)
         {
             state.HeldCapture = state.TargetEntity is { } entity
                 ? _held.CaptureEntityOffset(bone, entity) : null;
+            state.SeatPending = state.HeldCapture != null;
         }
 
         _ikChains[key] = state;
@@ -314,6 +323,7 @@ internal sealed unsafe partial class IkChainRegistry
         state.HeldCapture = state.Config.Enabled
             ? _held.CaptureBoneOffset(endpoint, target)
             : null;
+        state.SeatPending = state.HeldCapture != null;
         return null;
     }
 
@@ -343,6 +353,7 @@ internal sealed unsafe partial class IkChainRegistry
         state.TargetEntity = target;
         state.Config = state.Config with { TargetMode = IkTargetMode.Entity };
         state.HeldCapture = state.Config.Enabled ? capture : null;
+        state.SeatPending = state.HeldCapture != null;
         return null;
     }
 
