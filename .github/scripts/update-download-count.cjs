@@ -50,10 +50,24 @@ module.exports = async function updateDownloadCount({ github, context, core }) {
   });
   core.info(`Created ${pr.html_url}`);
 
-  // main requires the "portable" check, but events from GITHUB_TOKEN do not
-  // start pull_request workflows. A workflow_dispatch is the one event that
-  // does, and its check run lands on the same head commit.
-  await github.rest.actions.createWorkflowDispatch({ ...repo, workflow_id: 'architecture.yml', ref: branch });
+  // main requires the "portable" check from this pull request's own run. A
+  // pull request opened with GITHUB_TOKEN holds its pull_request workflows at
+  // "action_required" until they are approved (a dispatched run lands on the
+  // same commit but never counted for the pull request). Approve this commit's
+  // waiting runs; auto-merge then lands it once they pass.
+  let approved = 0;
+  for (let attempt = 0; attempt < 24 && approved === 0; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+      ...repo, branch, event: 'pull_request', status: 'action_required', per_page: 20 });
+    for (const run of data.workflow_runs.filter(run => run.head_sha === commit.commit.sha)) {
+      await github.rest.actions.approveWorkflowRun({ ...repo, run_id: run.id });
+      approved++;
+      core.info(`Approved ${run.name}: ${run.html_url}`);
+    }
+  }
+  if (approved === 0)
+    core.warning(`No waiting pull request run appeared to approve; ${pr.html_url} may not get its required check.`);
   // Auto-merge waits for the required check; it never bypasses protections.
   await github.graphql(`mutation($id: ID!, $head: GitObjectID!) {
     enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: SQUASH,

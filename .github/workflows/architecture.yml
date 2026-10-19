@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [main, refactor]
-  # The download-count bot dispatches this: its own PRs cannot trigger it.
+  # Manual runs. The download-count bot approves its pull request's own run.
   workflow_dispatch:
 permissions:
   contents: read
