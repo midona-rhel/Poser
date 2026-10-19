@@ -223,6 +223,11 @@ public unsafe class BonePosingService : IBonePosingService
             applied.Position = original.Position + anchor.ToReferenceDelta(
                 applied.Position - original.Position, _ik.Held.ActorParentFrame(bone, anchor));
         }
+        else if (!_ik.IsImportSuppressed(SkeletonKey.Of(bone.Skeleton).Actor)
+            && GetIkConfiguration(bone) is { Enabled: true, Solver: IkSolver.TwoJoint or IkSolver.Ccd } held
+            && held.TargetMode != IkTargetMode.Actor
+            && _ik.TryGetChain((SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex), out var chain))
+            applied.Position = original.Position + _ik.Held.ToSolveDelta(chain, applied.Position - original.Position);
         bonePoseInfo.Apply(applied, original);
 
         // Linked bones (Anamnesis parity): transfer the SAME delta to the rest

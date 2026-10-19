@@ -31,6 +31,19 @@ public sealed class IkImportOffsetTests
     }
 
     [Fact]
+    public void A_gesture_baseline_restore_keeps_an_imported_edit_out_of_the_IK_handle()
+    {
+        var pose = new BonePoseInfo("j_te_l", 0);
+        pose.Apply(Delta(9), Transform.Zero, forceNewStack: true, drivesIk: false);
+        var handle = pose.IkModification();
+        // The transform port hands the layer back without its IK offset.
+        var stripped = pose.Stacks.Select(stack => stack with { IkTransform = null }).ToArray();
+        pose.RestoreInteractiveStacks(stripped);
+        Assert.Equal(handle, pose.IkModification());
+        Assert.Equal(Delta(9), pose.Stacks[0].Transform);
+    }
+
+    [Fact]
     public void Reset_import_keeps_only_an_active_tethers_offset()
     {
         const bool held = true;
