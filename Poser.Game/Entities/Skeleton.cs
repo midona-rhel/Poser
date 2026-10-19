@@ -92,6 +92,15 @@ public class Skeleton : EntityBase, ISkeleton
     public IReadOnlyList<IBone> Bones => _bonesView;
     public bool IsValid { get; private set; }
 
+    /// <summary>The apply pass that last re-ran KineDriver on this skeleton;
+    /// its bones' <see cref="Bone.LastUndrivenTransform"/> hold the pose before it.</summary>
+    internal long UndrivenSnapshotPass { get; set; } = -1;
+
+    /// <summary>The latest apply pass re-ran KineDriver here, so the bones'
+    /// undriven transforms are current. A skeleton the pass stopped visiting
+    /// falls back to its final transforms.</summary>
+    public bool UndrivenSnapshotValid => UndrivenSnapshotPass == global::Poser.Game.BoneApplyPass.PassCount;
+
     /// <summary>Monotonic counter across every skeleton (re)build in the
     /// process. This — not any per-instance id — is the skeleton-change key:
     /// it advances exactly when the cache invalidated and rebuilt the native

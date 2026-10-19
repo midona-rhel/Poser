@@ -59,6 +59,11 @@ public class Bone : EntityBase, IBone
     /// </summary>
     public Transform LastRawTransform { get; internal set; } = Transform.Identity;
 
+    /// <summary>The bone just before the apply pass re-ran the skeleton's
+    /// KineDriver: the posed bone without the share the drivers add from the
+    /// posed sources. Read while <see cref="Skeleton.UndrivenSnapshotValid"/>.</summary>
+    public Transform LastUndrivenTransform { get; internal set; } = Transform.Identity;
+
     public System.Numerics.Vector3? PartialRootScale { get; set; }
 
     /// <summary>

@@ -205,8 +205,13 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         return result;
     }
 
+    /// <summary>Counts apply passes; a skeleton's undriven snapshot is current
+    /// only while it carries the latest count.</summary>
+    internal static long PassCount { get; private set; }
+
     private void ApplyAllBoneTransforms()
     {
+        PassCount++;
         _gazeFrames.BeginPass();
         // The pass can purge (and therefore mutate _skeletonsToUpdate) while it
         // runs, so it iterates a snapshot — a REUSED buffer, because this runs
@@ -298,11 +303,24 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         // posed skeleton: the driven bones follow the posed sources, and the
         // user's own edits on them go back on top as offsets (the driver
         // overwrote them). Then refresh the caches the driven bones changed.
-        if (_driversFollowPose() && _kineDrivers.Run(gameSkeleton, out var driven))
+        // A save keeps the pose from before the re-run: a loaded driven bone
+        // must come back as the user's edit only, or the drivers add their
+        // share a second time (eyelids shut a little more every save and load).
+        bool rerun = false;
+        if (_driversFollowPose() && _kineDrivers.IsAvailable)
         {
-            ReapplyDrivenEdits(skeleton, gameSkeleton, poseInfo, driven);
-            UpdateAllLastTransforms(skeleton, gameSkeleton);
+            var bones = skeleton.Bones;
+            for (int i = 0; i < bones.Count; i++)
+                if (bones[i] is Bone each)
+                    each.LastUndrivenTransform = each.LastRawTransform;
+            if (_kineDrivers.Run(gameSkeleton, out var driven))
+            {
+                rerun = true;
+                ReapplyDrivenEdits(skeleton, gameSkeleton, poseInfo, driven);
+                UpdateAllLastTransforms(skeleton, gameSkeleton);
+            }
         }
+        skeleton.UndrivenSnapshotPass = rerun ? PassCount : -1;
         if (gazeFrame is { } captured) _gazeFrames.After(captured);
 #if DEBUG
         if (slotKey.Slot == PoseSlot.Character)
