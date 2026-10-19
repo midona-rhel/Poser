@@ -70,6 +70,11 @@ public sealed class PoseImportCapture : IDisposable
     /// <summary>Brio's Reconcile() runs its export-reset-reimport at +2
     /// ticks (PosingCapability.cs:419,428).</summary>
     private const int FlattenDelayTicks = 2;
+    /// <summary>Driven-bone corrections: at most this many rounds (a lid and the
+    /// bones under it), each a pass apart so a child is measured against its
+    /// corrected parent.</summary>
+    private const int MaxDrivenRounds = 4;
+    private const int DrivenRoundTicks = 2;
 
     private readonly IFramework _framework;
     private readonly SceneSession _scene;
@@ -808,11 +813,29 @@ public sealed class PoseImportCapture : IDisposable
             }
         }
 
+        if (failure == null && import.DrivenRounds < MaxDrivenRounds)
+        {
+            int corrected = 0;
+            try
+            {
+                corrected = CorrectDrivenBones(import);
+            }
+            catch (Exception exception)
+            {
+                failure = $"Could not correct the driven bones: {exception.Message}";
+            }
+            if (failure == null && corrected > 0)
+            {
+                import.DrivenRounds++;
+                _framework.RunOnTick(() => Complete(generation), delayTicks: DrivenRoundTicks);
+                return;
+            }
+        }
+
         if (failure == null)
         {
             try
             {
-                CorrectDrivenBones(import);
                 failure = _terminal.AppendHistory(import, IsFrameworkCurrent);
             }
             catch (Exception exception)
@@ -846,14 +869,17 @@ public sealed class PoseImportCapture : IDisposable
     /// pass, before the drivers saw the imported sources (the eye): the drivers
     /// run after every bone, so its edit took the drivers' share once more and
     /// the lid closed further on every save and load. Now that the pass has run
-    /// the drivers on the imported pose, each driven bone the file names is put
-    /// onto its file value, in the same history entry.
+    /// the drivers on the imported pose, each driven bone the file names, and
+    /// each file bone under one, is put onto its file value, in the same history
+    /// entry. A bone whose ancestor moved this round waits for the next pass.
+    /// Returns how many bones moved.
     /// </summary>
-    private void CorrectDrivenBones(PendingPoseImport import)
+    private int CorrectDrivenBones(PendingPoseImport import)
     {
+        int corrected = 0;
         if (import.Stage == PoseImportStage.HeadRestore
             || _bindings.Resolve(import.TargetActorId) is not { Success: true, Value: { } actor })
-            return;
+            return 0;
         foreach (var skeleton in _skeletons.GetSkeletons(actor))
         {
             if (skeleton is not Skeleton live || live.DrivenBones.Count == 0)
@@ -863,10 +889,18 @@ public sealed class PoseImportCapture : IDisposable
             {
                 if (slot.Slot != skeleton.Slot)
                     continue;
+                var moved = new HashSet<IBone>();
                 foreach (var bone in skeleton.Bones)
                 {
-                    if (!live.DrivenBones.Contains((bone.PartialId, bone.BoneIndex))
-                        || !slot.Writes.TryGetValue((bone.PartialId, bone.BoneName), out var entry))
+                    if (!slot.Writes.TryGetValue((bone.PartialId, bone.BoneName), out var entry))
+                        continue;
+                    bool underDriver = false, ancestorMoved = false;
+                    for (IBone? each = bone; each != null && each.PartialId == bone.PartialId; each = each.ParentBone)
+                    {
+                        underDriver |= live.DrivenBones.Contains((each.PartialId, each.BoneIndex));
+                        ancestorMoved |= !ReferenceEquals(each, bone) && moved.Contains(each);
+                    }
+                    if (!underDriver || ancestorMoved)
                         continue;
                     var desired = _posing.ToApplySpace(bone, entry.File);
                     var basis = _posing.ToApplySpace(bone, bone.LastRawTransform);
@@ -877,10 +911,15 @@ public sealed class PoseImportCapture : IDisposable
                     if (poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).Apply(
                             desired, basis, TransformComponents.All, entry.Components,
                             forceNewStack: true, drivesIk: false) != null)
+                    {
                         import.Written.Add(entry.Target);
+                        moved.Add(bone);
+                        corrected++;
+                    }
                 }
             }
         }
+        return corrected;
     }
 
     private GestureResult FailAdmitted(PendingPoseImport import, string detail)
