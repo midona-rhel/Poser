@@ -42,6 +42,11 @@ internal sealed class IkChainState
     /// end bone as the solve sees it (Customize+ scales the body after the
     /// solve, so the two can differ): the first solve seats it.</summary>
     public bool SeatPending;
+    /// <summary>World, Bone, Entity: the first bone above the chain and its frame
+    /// as the last solve saw it, so a displayed drag converts into the solve's
+    /// frame (Customize+ scales the body after the solve).</summary>
+    public IBone? SolveParent;
+    public PoseTransform? SolveParentFrame;
     public IBone? TargetBone;
     public SelectionId? TargetEntity;
     public bool PreviewModelSpace;
@@ -232,6 +237,8 @@ internal sealed unsafe partial class IkChainRegistry
                 return "This FABRIK chain overlaps another active IK chain. Reduce Depth or disable the other chain.";
         }
         var state = previous ?? new IkChainState { Config = config };
+        state.SolveParent = null;
+        state.SolveParentFrame = null;
         state.Chain = chain;
         if (previous != null && (previous.Config.Enabled != config.Enabled
             || previous.Config.Collisions != config.Collisions || previous.Config.Solver != config.Solver

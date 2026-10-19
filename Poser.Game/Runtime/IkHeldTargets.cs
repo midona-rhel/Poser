@@ -97,6 +97,8 @@ internal sealed unsafe class IkHeldTargets
         if (pose != null && !ik.PreviewModelSpace
             && (ik.SeatPending || ik.Config.ActorAnchor is { Unseated: true }))
             Seat(ik, endpoint, authoredPosition, authoredRotation, pose);
+        if (pose != null && ik.Config.TargetMode != IkTargetMode.Actor)
+            RecordSolveParent(ik, endpoint, pose);
         if (ik.HeldCapture is not { } capture)
             return null;
         if (ik.PreviewModelSpace)
@@ -218,6 +220,36 @@ internal sealed unsafe class IkHeldTargets
     }
 
     private static PoseTransform AnchorPose(Transform value) => new(value.Position, value.Rotation, value.Scale);
+
+    private static void RecordSolveParent(IkChainState ik, IBone endpoint, hkaPose* pose)
+    {
+        if (ik.SolveParent == null)
+        {
+            var parent = NativeIkMembers(endpoint, ik.Config).FirstOrDefault()?.ParentBone;
+            ik.SolveParent = parent?.PartialId == endpoint.PartialId ? parent : null;
+        }
+        if (ik.SolveParent is not { } solveParent)
+            return;
+        var native = pose->AccessBoneModelSpace(solveParent.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+        ik.SolveParentFrame = native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
+    }
+
+    /// <summary>A drag on a World, Bone or Entity held end, in the solve's frame:
+    /// the displayed body can be scaled after the solve (Customize+), so the same
+    /// move shown is larger than the solve's. The conversion an Actor anchor makes
+    /// through its parent.</summary>
+    public Vector3 ToSolveDelta(IkChainState ik, Vector3 step)
+    {
+        if (ik.SolveParent is not { } parent || ik.SolveParentFrame is not { } solve)
+            return step;
+        _ = parent.LastTransform;
+        RefreshCache(parent);
+        var shown = AnchorPose(_stacks.ToApplySpace(parent, parent.LastTransform));
+        var frame = new IkActorAnchor(Vector3.Zero, Quaternion.Identity, Vector3.Zero, Quaternion.Identity)
+            { ParentName = parent.BoneName, ParentPartial = parent.PartialId, ParentTransform = solve };
+        var converted = frame.ToReferenceDelta(step, shown);
+        return TransformMath.IsFinite(converted) ? converted : step;
+    }
     public IkActorAnchor CaptureActorAnchor(IBone endpoint, IkChainConfig config)
     {
         var members = NativeIkMembers(endpoint, config);
