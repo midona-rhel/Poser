@@ -114,9 +114,7 @@ public class PoseFileService : IPoseFileService
                 // chain link) carries an all-zero quaternion; a file cannot
                 // hold it and an import could not apply it. Left out — a
                 // NaN, by contrast, is corruption and still refuses.
-                var transform = readTransform?.Invoke(bone)
-                    ?? (bone is Bone posed && skeleton is Skeleton live && live.UndrivenSnapshotValid
-                        ? posed.LastUndrivenTransform : bone.LastRawTransform);
+                var transform = readTransform?.Invoke(bone) ?? bone.LastRawTransform;
                 if (IsZeroRotation(transform.Rotation))
                 {
                     degenerate++;

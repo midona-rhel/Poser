@@ -812,6 +812,7 @@ public sealed class PoseImportCapture : IDisposable
         {
             try
             {
+                CorrectDrivenBones(import);
                 failure = _terminal.AppendHistory(import, IsFrameworkCurrent);
             }
             catch (Exception exception)
@@ -838,6 +839,48 @@ public sealed class PoseImportCapture : IDisposable
             import.SessionGeneration,
             import.TargetActorId,
             import.Description));
+    }
+
+    /// <summary>
+    /// A bone KineDriver writes (an eyelid) was measured in its own turn of the
+    /// pass, before the drivers saw the imported sources (the eye): the drivers
+    /// run after every bone, so its edit took the drivers' share once more and
+    /// the lid closed further on every save and load. Now that the pass has run
+    /// the drivers on the imported pose, each driven bone the file names is put
+    /// onto its file value, in the same history entry.
+    /// </summary>
+    private void CorrectDrivenBones(PendingPoseImport import)
+    {
+        if (import.Stage == PoseImportStage.HeadRestore
+            || _bindings.Resolve(import.TargetActorId) is not { Success: true, Value: { } actor })
+            return;
+        foreach (var skeleton in _skeletons.GetSkeletons(actor))
+        {
+            if (skeleton is not Skeleton live || live.DrivenBones.Count == 0)
+                continue;
+            var poseInfo = _posing.GetPoseInfo(skeleton);
+            foreach (var slot in import.ApplySlots)
+            {
+                if (slot.Slot != skeleton.Slot)
+                    continue;
+                foreach (var bone in skeleton.Bones)
+                {
+                    if (!live.DrivenBones.Contains((bone.PartialId, bone.BoneIndex))
+                        || !slot.Writes.TryGetValue((bone.PartialId, bone.BoneName), out var entry))
+                        continue;
+                    var desired = _posing.ToApplySpace(bone, entry.File);
+                    var basis = _posing.ToApplySpace(bone, bone.LastRawTransform);
+                    var delta = BonePoseInfo.FilterDelta(BonePoseInfo.Diff(desired, basis), entry.Components);
+                    if (TransformMath.IsApproximatelyIdentityDelta(delta))
+                        continue;
+                    import.MutationStarted = true;
+                    if (poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId).Apply(
+                            desired, basis, TransformComponents.All, entry.Components,
+                            forceNewStack: true, drivesIk: false) != null)
+                        import.Written.Add(entry.Target);
+                }
+            }
+        }
     }
 
     private GestureResult FailAdmitted(PendingPoseImport import, string detail)
