@@ -11,9 +11,27 @@ namespace Poser.Game;
 
 internal sealed unsafe partial class IkChainRegistry
 {
+    /// <summary>Switching End rotation moves nothing: the switch records the
+    /// forearm, the end bone and the user's end rotation, and the solve goes on
+    /// from them. A chain enabled again with a record retakes it, since the
+    /// limb may have moved while it was off.</summary>
+    private IkChainConfig PrepareEndAnchor(IBone endpoint, IkChainConfig config, IkChainConfig? previous)
+    {
+        if (config.Solver != IkSolver.TwoJoint || IkChains.ForEndpoint(endpoint.BoneName) is not { } definition)
+            return config.EndAnchor == null ? config : config with { EndAnchor = null };
+        bool switched = previous != null && previous.EnforceEndRotation != config.EnforceEndRotation;
+        bool reenabled = previous is { Enabled: false } && config.EndAnchor != null;
+        if (!config.Enabled || !(switched || reenabled))
+            return config;
+        var chain = ResolveChain(endpoint, definition);
+        return chain.TwoJointAvailable && _held.CaptureEndAnchor(endpoint, chain.SecondJoint) is { } anchor
+            ? config with { EndAnchor = anchor } : config;
+    }
+
     public IkChainConfig PrepareIkConfiguration(IBone endpoint, IkChainConfig config)
     {
         var previous = GetIkConfiguration(endpoint);
+        config = PrepareEndAnchor(endpoint, config, previous);
         if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope))
         {
             // Prepare before the value journal captures its after-state too:

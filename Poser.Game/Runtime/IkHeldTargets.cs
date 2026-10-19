@@ -179,6 +179,23 @@ internal sealed unsafe class IkHeldTargets
         };
     }
 
+    /// <summary>The forearm and end bone as they stand now, and the user's
+    /// own end rotation: what an End rotation switch continues from.</summary>
+    public IkEndRotationAnchor? CaptureEndAnchor(IBone endpoint, int secondJoint)
+    {
+        var forearm = endpoint.Skeleton.Bones.FirstOrDefault(b => b.PartialId == endpoint.PartialId
+            && b.BoneIndex == secondJoint);
+        if (forearm == null) return null;
+        _ = endpoint.LastTransform;
+        _ = forearm.LastTransform;
+        RefreshCache(endpoint);
+        var anchor = new IkEndRotationAnchor(
+            _stacks.ToApplySpace(forearm, forearm.LastTransform).Rotation,
+            _stacks.ToApplySpace(endpoint, endpoint.LastTransform).Rotation,
+            (_stacks.GetIkModification(endpoint) ?? Transform.Identity).Rotation);
+        return anchor.IsValid ? anchor : null;
+    }
+
     public PoseTransform? ActorParentFrame(IBone endpoint, IkActorAnchor anchor, hkaPose* pose = null)
     {
         if (anchor.ParentName == null) return null;
