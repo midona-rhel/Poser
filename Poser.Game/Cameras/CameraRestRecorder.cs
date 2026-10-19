@@ -27,6 +27,7 @@ public sealed class CameraRestRecorder : IDisposable
     private readonly ValueJournal _journal;
     private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
+    private readonly IEntityHistoryResolver<IVirtualCamera>? _restored;
     private IVirtualCamera? _camera;
     private Framing _rested;
     private Framing _last;
@@ -37,8 +38,10 @@ public sealed class CameraRestRecorder : IDisposable
     private bool _recording;
 
     public CameraRestRecorder(IFramework framework, IVirtualCameraService cameras,
-        ValueJournal journal, EditHistory history, TransformGestureService gestures)
+        ValueJournal journal, EditHistory history, TransformGestureService gestures,
+        IEntityHistoryResolver<IVirtualCamera>? restored = null)
     {
+        _restored = restored;
         _framework = framework;
         _cameras = cameras;
         _journal = journal;
@@ -111,12 +114,14 @@ public sealed class CameraRestRecorder : IDisposable
         try
         {
             // Keys led by the camera service name no entity: this step stays global.
+            // A camera removed and restored by undo is a new instance: resolve it.
+            IVirtualCamera? Current() => (_restored?.Resolve(camera) ?? camera) is { IsValid: true } live ? live : null;
             _journal.Record((_cameras, camera, nameof(CameraRestRecorder)), "Move camera", before, after, state =>
             {
-                if (!camera.IsValid) return new(false, Unavailable);
-                state.Apply(camera);
+                if (Current() is not { } live) return new(false, Unavailable);
+                state.Apply(live);
                 return Outcome.Ok();
-            }, () => camera.IsValid);
+            }, () => Current() != null);
         }
         finally
         {
