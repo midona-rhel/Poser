@@ -167,11 +167,14 @@ internal sealed unsafe class IkHeldTargets
         if (native == null)
             return;
         var end = BoneApplyPass.ReadTransform(native);
+        // The solve holds back the IK offset the displayed pose applies as a
+        // move (a chain enabled again after a drag); the target keeps it.
+        var target = end.Position + authoredPosition;
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
         {
             var seated = anchor with
             {
-                Position = end.Position, Rotation = end.Rotation,
+                Position = target, Rotation = end.Rotation,
                 AuthoredPosition = authoredPosition, AuthoredRotation = authoredRotation,
                 ParentTransform = anchor.ParentName == null ? null : ActorParentFrame(endpoint, anchor, pose),
                 Unseated = false,
@@ -190,7 +193,7 @@ internal sealed unsafe class IkHeldTargets
             * resolved.Rotation * Quaternion.Inverse(authoredRotation) * capture.RotationDelta);
         var shifted = capture with
         {
-            Translation = capture.Translation + resolved.Position - end.Position,
+            Translation = capture.Translation + resolved.Position - target,
             RotationDelta = rotationDelta,
         };
         if (TransformMath.IsFinite(shifted.Translation) && TransformMath.IsFinite(shifted.RotationDelta))
