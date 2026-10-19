@@ -539,6 +539,14 @@ public sealed class PoseImportCapture : IDisposable
             return;
         if (!GuardFramework(import, "The pose import session or target was replaced."))
             return;
+        // The apply passes ran; only the driven-bone rounds are still going.
+        // Finish with what they reached rather than roll the import back.
+        if (import.DrivenRounds > 0 && import.Failure == null)
+        {
+            import.DrivenRounds = MaxDrivenRounds;
+            Complete(generation);
+            return;
+        }
         import.Failure ??= import.Stage switch
         {
             PoseImportStage.Apply => "The import never reached an apply pass.",
