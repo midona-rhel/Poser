@@ -9,6 +9,15 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 22), "Steadier IK, open eyes and camera undo",
+        [
+            "Changed how End rotation works on two-bone IK: off now keeps the hand or foot pointing the way it was while you drag or swivel the arm or leg, and on lets it turn with the limb. Off is the new default, and chains in your saved scenes keep working the way they did.",
+            "Fixed hands and feet jumping when you turned End rotation on or off, turned IK on, or switched the IK target, including on bodies changed with Customize+.",
+            "Fixed the first IK drag on a new chain twisting the hand by its own rotation.",
+            "Fixed IK hands moving further than you dragged them on bodies scaled with Customize+ when they follow a bone, a scene object or a spot in the world.",
+            "Fixed a bug that applied bones the game moves along with other bones, like eyelids, twice when a pose or scene loaded, so eyes closed a little more every time you saved and loaded.",
+            "Added undo for camera moves made with the game's own controls or a free camera's keys: once the camera has been still for 5 seconds, that spot becomes an undo step.",
+        ]),
         new(new(0, 9, 21), "Colliders, ropes and borrowed actors",
         [
             "Added Start GPose without depth of field to the General settings, on by default, so entering GPose no longer turns depth of field on.",
