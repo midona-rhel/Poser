@@ -148,6 +148,7 @@ internal sealed class PoseImportPlanner
                         (TransformTargetId, Transform, TransformComponents)>(),
                 };
                 import.Slots.Add(slot);
+                import.ApplySlots.Add(slot);
             }
             slot.Writes[(write.Partial, write.Bone)] =
                 (target, write.File, write.Components);

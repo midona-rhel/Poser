@@ -298,8 +298,15 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         // posed skeleton: the driven bones follow the posed sources, and the
         // user's own edits on them go back on top as offsets (the driver
         // overwrote them). Then refresh the caches the driven bones changed.
-        if (_driversFollowPose() && _kineDrivers.Run(gameSkeleton, out var driven))
+        // A run skipped this frame (the pose lock was busy) keeps the last
+        // sample; only switching the re-run off empties it.
+        if (!_driversFollowPose())
+            skeleton.DrivenBones.Clear();
+        else if (_kineDrivers.Run(gameSkeleton, out var driven))
         {
+            skeleton.DrivenBones.Clear();
+            foreach (var slot in driven.Keys)
+                skeleton.DrivenBones.Add(slot);
             ReapplyDrivenEdits(skeleton, gameSkeleton, poseInfo, driven);
             UpdateAllLastTransforms(skeleton, gameSkeleton);
         }
