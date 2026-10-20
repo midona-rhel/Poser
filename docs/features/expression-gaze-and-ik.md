@@ -217,6 +217,10 @@ The reader supports V5 and V6 bone tables using Penumbra's documented V6 layout;
 unmapped bones or unsupported vertex formats refuse capture instead of silently
 substituting an unposed model. Native reads precede background file parsing and
 skinning; creation returns to the framework thread.
+Racial deformation supports models on sibling branches of the active PBD tree:
+convert from the model through the common ancestor into the actor's race before
+posed skinning. Missing ancestry or non-invertible source deformation refuses
+capture rather than silently dropping a model or substituting identity.
 Overlay tessellation is independent of collision geometry. Shared translucent
 triangle edges are not anti-aliased individually, which would expose mesh seams.
 
