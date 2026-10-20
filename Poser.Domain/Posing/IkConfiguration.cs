@@ -63,6 +63,9 @@ public sealed record IkChainConfig(
     public int ChildDepth { get; init; }
     public FabrikControl? Fabrik { get; init; }
     public IkActorAnchor? ActorAnchor { get; init; }
+    /// <summary>Two Joint: the end bone as it stood at the last End rotation
+    /// switch. Null until the first switch.</summary>
+    public IkEndRotationAnchor? EndAnchor { get; init; }
     public bool Collisions { get; init; }
     /// <summary>Two Joint has one rotation authority: End rotation. A saved
     /// Keep rotation value belongs to other solvers and must not override it.</summary>
@@ -94,6 +97,8 @@ public sealed record IkChainConfig(
         if (Fabrik?.Validate() is { } fabrikError) return fabrikError;
         if (ActorAnchor is { } anchor && !anchor.IsValid)
             return "The actor IK target must contain finite transforms.";
+        if (EndAnchor is { } endAnchor && !endAnchor.IsValid)
+            return "The end rotation record must contain finite rotations.";
         if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd or IkSolver.Fabrik or IkSolver.Rope))
             return "IK solver is unsupported.";
         if (!float.IsFinite(SwivelDegrees)
@@ -192,7 +197,8 @@ public sealed record IkChainConfig(
         HingeMinDegrees: 0f,
         HingeMaxDegrees: 180f,
         HingeAxis: isArm ? Vector3.UnitZ : -Vector3.UnitZ,
-        EnforceEndRotation: false);
+        // The hand or foot keeps its rotation until End rotation is turned on.
+        EnforceEndRotation: true);
 
     /// <summary>Defaults for a bone with no declared chain: CCD, at Brio's
     /// depth 3 and iterations 8 (<c>Brio/Game/Posing/PoseInfo.cs:291-295</c>).

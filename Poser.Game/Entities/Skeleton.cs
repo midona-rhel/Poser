@@ -92,6 +92,10 @@ public class Skeleton : EntityBase, ISkeleton
     public IReadOnlyList<IBone> Bones => _bonesView;
     public bool IsValid { get; private set; }
 
+    /// <summary>The (partial, bone) slots the apply pass's last KineDriver
+    /// re-run wrote. Empty when it did not run.</summary>
+    internal HashSet<(int Partial, int Bone)> DrivenBones { get; } = new();
+
     /// <summary>Monotonic counter across every skeleton (re)build in the
     /// process. This — not any per-instance id — is the skeleton-change key:
     /// it advances exactly when the cache invalidated and rebuilt the native

@@ -117,8 +117,16 @@ public sealed class EditHistory
     /// action recorder. Observers cannot roll the append back.</summary>
     public event Action<HistoryEntry>? Appended;
 
+    /// <summary>An undo or redo was committed.</summary>
+    public event Action? Stepped;
+
+    /// <summary>An entry is about to be appended: observers may append what
+    /// belongs before it.</summary>
+    public event Action? Appending;
+
     public void Append(HistoryEntry patch)
     {
+        Appending?.Invoke();
         BeforeAppend?.Invoke();
         if (_batch is { } batch)
         {
@@ -180,6 +188,7 @@ public sealed class EditHistory
         patch = _undo[index];
         _undo.RemoveAt(index);
         _redo.Add(patch);
+        Stepped?.Invoke();
     }
 
     public HistoryEntry? PeekRedo(SelectionId? entity = null)
@@ -197,6 +206,7 @@ public sealed class EditHistory
         patch = _redo[index];
         _redo.RemoveAt(index);
         _undo.Add(patch);
+        Stepped?.Invoke();
     }
 
     public static SelectionId EntityOf(SelectionId selected) =>

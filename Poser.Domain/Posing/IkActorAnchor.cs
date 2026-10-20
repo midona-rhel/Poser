@@ -10,6 +10,9 @@ public readonly record struct IkActorAnchor(Vector3 Position, Quaternion Rotatio
     public string? ParentName { get; init; }
     public int ParentPartial { get; init; }
     public PoseTransform? ParentTransform { get; init; }
+    /// <summary>Captured from the displayed pose and not yet put onto the end
+    /// bone as the first solve sees it. Kept in history so a redo seats again.</summary>
+    public bool Unseated { get; init; }
     public bool IsValid => TransformMath.IsFinite(Position) && TransformMath.IsFinite(AuthoredPosition)
         && TransformMath.IsFinite(Rotation) && Rotation.LengthSquared() > 1e-8f
         && TransformMath.IsFinite(AuthoredRotation) && AuthoredRotation.LengthSquared() > 1e-8f

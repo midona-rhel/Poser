@@ -10,6 +10,24 @@ public sealed class IkAnchorAndSpanTests
     private static readonly JsonSerializerOptions Json = new() { IncludeFields = true };
 
     [Fact]
+    public void End_rotation_switch_moves_nothing_then_holds_or_turns_with_the_forearm()
+    {
+        var forearm = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, .4f);
+        var end = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f);
+        var authored = Quaternion.CreateFromAxisAngle(Vector3.UnitX, .2f);
+        var anchor = new IkEndRotationAnchor(forearm, end, authored);
+        Same(end, anchor.Resolve(authored, null));
+        Same(end, anchor.Resolve(authored, forearm));
+        // The forearm turns 30° after the switch: held stays, following turns as much.
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 6);
+        Same(end, anchor.Resolve(authored, null));
+        Same(turn * end, anchor.Resolve(authored, turn * forearm));
+    }
+
+    private static void Same(Quaternion expected, Quaternion actual) =>
+        Assert.True(MathF.Abs(Quaternion.Dot(Quaternion.Normalize(expected), actual)) > .99999f);
+
+    [Fact]
     public void Actor_anchor_uses_captured_model_point_and_only_subsequent_handle_edits()
     {
         var rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f);

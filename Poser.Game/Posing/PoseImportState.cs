@@ -62,6 +62,11 @@ internal sealed class PendingPoseImport
     /// <summary>The CURRENT stage's batches. <c>BeginReconcile</c>
     /// replaces the verified apply slots with the one reconcile slot.</summary>
     public required List<PoseImportSlot> Slots;
+    /// <summary>The plan's file writes, kept when later phases replace
+    /// <see cref="Slots"/> with their own batches.</summary>
+    public readonly List<PoseImportSlot> ApplySlots = new();
+    /// <summary>Driven-bone correction rounds run so far.</summary>
+    public int DrivenRounds;
     /// <summary>Ordered import targets and their pre-edit states —
     /// captured before anything was written, so a failure restores
     /// exactly what was there and success has a Before half that needs

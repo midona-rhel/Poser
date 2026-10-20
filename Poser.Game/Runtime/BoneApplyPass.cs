@@ -298,8 +298,15 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         // posed skeleton: the driven bones follow the posed sources, and the
         // user's own edits on them go back on top as offsets (the driver
         // overwrote them). Then refresh the caches the driven bones changed.
-        if (_driversFollowPose() && _kineDrivers.Run(gameSkeleton, out var driven))
+        // A run skipped this frame (the pose lock was busy) keeps the last
+        // sample; only switching the re-run off empties it.
+        if (!_driversFollowPose())
+            skeleton.DrivenBones.Clear();
+        else if (_kineDrivers.Run(gameSkeleton, out var driven))
         {
+            skeleton.DrivenBones.Clear();
+            foreach (var slot in driven.Keys)
+                skeleton.DrivenBones.Add(slot);
             ReapplyDrivenEdits(skeleton, gameSkeleton, poseInfo, driven);
             UpdateAllLastTransforms(skeleton, gameSkeleton);
         }
@@ -654,8 +661,9 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             rotSpace->Rotation.X, rotSpace->Rotation.Y,
             rotSpace->Rotation.Z, rotSpace->Rotation.W);
         bool holdRotation = ik.Config.HoldsEndRotation;
+        var heldRotation = holdRotation ? HeldEndRotation(ik, held.Rotation, authored.Rotation) : currentRotation;
         _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
-            target, holdRotation ? held.Rotation : currentRotation, ik.Config, ik.Chain));
+            target, heldRotation, ik.Config, ik.Chain));
         if (!ik.Config.EnforceConstraints)
         {
             var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
@@ -665,9 +673,47 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         {
             // The tip keeps the held rotation too; its children ride along.
             var heldSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
-            var heldRotation = held.Rotation;
             heldSpace->Rotation = *(hkQuaternionf*)(&heldRotation);
         }
+        else
+            TurnEndWithForearm(pose, boneIdx, ik, authored.Rotation);
+    }
+
+    /// <summary>The rotation a held Two Joint end keeps: <paramref name="held"/>,
+    /// the held target's, turned by where the end stood at the last End rotation
+    /// switch. The first solve after the switch fixes that turn, so the switch
+    /// moves nothing and a turning target bone or prop still turns the end.</summary>
+    private static Quaternion HeldEndRotation(IkChainState ik, Quaternion held, Quaternion authored)
+    {
+        if (ik.Config is not { Solver: Poser.Domain.Posing.IkSolver.TwoJoint, EndAnchor: { } anchor })
+            return held;
+        if (anchor.HeldOffset is not { } offset)
+        {
+            offset = Quaternion.Normalize(Quaternion.Inverse(held) * anchor.Resolve(authored, null));
+            if (!Poser.Domain.Transforms.TransformMath.IsFinite(offset) || offset.LengthSquared() < 1e-8f)
+                return held;
+            ik.Config = ik.Config with { EndAnchor = anchor with { HeldOffset = offset } };
+        }
+        return Quaternion.Normalize(held * offset);
+    }
+
+    /// <summary>A following Two Joint end after an End rotation switch: it turns
+    /// as the solved forearm has turned since the switch, so the switch itself
+    /// moves nothing. Without a switch the solver's own follow stands. True
+    /// when it wrote the end's rotation.</summary>
+    private static bool TurnEndWithForearm(hkaPose* pose, int boneIdx, IkChainState ik, Quaternion authored)
+    {
+        if (ik.Config is not { Solver: Poser.Domain.Posing.IkSolver.TwoJoint, EnforceEndRotation: false, EndAnchor: { } anchor }
+            || ik.Chain.SecondJoint < 0)
+            return false;
+        var forearm = pose->AccessBoneModelSpace(ik.Chain.SecondJoint, hkaPose.PropagateOrNot.DontPropagate);
+        if (forearm == null)
+            return false;
+        var turned = anchor.Resolve(authored,
+            new Quaternion(forearm->Rotation.X, forearm->Rotation.Y, forearm->Rotation.Z, forearm->Rotation.W));
+        var endSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
+        endSpace->Rotation = *(hkQuaternionf*)(&turned);
+        return true;
     }
 
     private void ApplyBoneTransform(hkaPose* pose, int boneIdx, BonePoseTransformInfo info, IBone bone, IkChainState? ik)
@@ -730,10 +776,12 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 target = held.Position;
                 if (ik.Config.HoldsEndRotation)
                 {
-                    requestedRotation = held.Rotation;
-                    heldRotation = held.Rotation;
+                    requestedRotation = HeldEndRotation(ik, held.Rotation, info.Transform.Rotation);
+                    heldRotation = requestedRotation;
                 }
             }
+            else if (ik!.Config.HoldsEndRotation)
+                requestedRotation = HeldEndRotation(ik, requestedRotation, info.Transform.Rotation);
 
             _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
                 target, requestedRotation, ik!.Config, ik.Chain));
@@ -741,7 +789,8 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             // second time below.
             rotationEnforcedByIk =
                 ik.Config.Solver == Poser.Domain.Posing.IkSolver.TwoJoint &&
-                ik.Config.EnforceEndRotation;
+                ik.Config.EnforceEndRotation
+                || TurnEndWithForearm(pose, boneIdx, ik, info.Transform.Rotation);
             if (!ik.Config.EnforceConstraints)
             {
                 modelSpace = pose->AccessBoneModelSpace(boneIdx, prop ? hkaPose.PropagateOrNot.Propagate : hkaPose.PropagateOrNot.DontPropagate);
