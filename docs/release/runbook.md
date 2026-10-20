@@ -116,8 +116,9 @@ or SBOMs. This measures downloads, not unique users, and includes verification d
 It updates only `repo.json`'s `DownloadCount` through a squash-merged bot PR, leaving
 release identity, URLs and `LastUpdate` untouched. No rebuild or retag is involved.
 Actions must be allowed to create PRs and the repository must allow auto-merge;
-branch protection remains in force. Bot PRs cannot trigger `pull_request` workflows,
-so the job dispatches the architecture workflow on its branch to produce the required
-`portable` check, then queues squash auto-merge. A green job therefore means *queued*,
+branch protection remains in force. A bot PR's own `pull_request` run waits at
+"action_required" (a dispatched run lands on the same commit but does not count for
+the PR), so the job approves that run to produce the required `portable` check, then
+queues squash auto-merge. A green job therefore means *queued*,
 not merged: an update that fails its check stays open, and the next run closes it as
 superseded and opens a fresh one. An open count PR older than a day needs a look.
