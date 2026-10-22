@@ -172,7 +172,7 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
     /// <summary>Nulls the hair, face and tail model slots on the redrawn
     /// body — the material remap covers the body skin; these three carry
     /// the hair, the face (eyes included) and the tail. Ktisis'
-    /// SetInvisibleSkin, verbatim. Framework thread only, and only on a
+    /// SetInvisibleSkin's slot selection. Framework thread only, and only on a
     /// GPose copy — the native-write gate every other write honors.</summary>
     private unsafe bool StripHeadModels(ActorId actor)
     {
@@ -194,8 +194,11 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
             if (model == null)
                 continue;
             characterBase->Models[slot] = null;
-            model->ModelResourceHandle->DecRef();
-            model->RefCount = 0;
+            // Release the slot's MODEL reference, not just its resource handle.
+            // Zeroing RefCount bypasses native model cleanup and leaves its
+            // skeleton referenced after CharacterBase destruction. The animation
+            // list then walks a freed owner on the next zone transition.
+            model->DecRef();
         }
         return true;
     }
