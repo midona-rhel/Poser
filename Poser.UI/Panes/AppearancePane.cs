@@ -730,7 +730,7 @@ public sealed partial class AppearancePane
         form.Switch(
             "Visible",
             visible ?? false,
-            value => SetActorVisibility(actor, value),
+            value => _entityActions.SetVisibility([SelectionId.ForActor(actor)], value),
             help: "Hide this actor without moving it",
             disabled: visible is null);
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
@@ -752,7 +752,7 @@ public sealed partial class AppearancePane
         form.Switch(
             "Visible",
             visible ?? false,
-            value => SetActorVisibility(actor, value),
+            value => _entityActions.SetVisibility([SelectionId.ForActor(actor)], value),
             help: "Hide this actor without moving it",
             disabled: visible is null);
         var glamourer = _integration.Glamourer;
@@ -786,13 +786,6 @@ public sealed partial class AppearancePane
                 help: human ? null : "Only human actors can hide their body",
                 variant: ButtonVariant.Disruptive);
         });
-    }
-
-    private void SetActorVisibility(ActorId actor, bool visible)
-    {
-        var result = _values.SetVisibility(actor, visible);
-        if (!result.Success)
-            _notices.Refused("Visibility", result.Detail ?? "The change was refused.");
     }
 
     private void CharacterTintRow(
