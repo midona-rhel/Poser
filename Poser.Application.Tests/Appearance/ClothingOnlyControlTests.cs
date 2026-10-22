@@ -62,8 +62,10 @@ public sealed class ClothingOnlyControlTests
     {
         var f = new Fixture();
         using var control = f.Control;
+        // Production withdraws the token before publishing the exit event.
+        f.Sessions.ActiveSessionGeneration.Returns((SessionGeneration?)null);
         f.Exit(new());
-        Assert.Equal("Clothing-only is unavailable during GPose exit.",
+        Assert.Equal("Clothing-only requires an active GPose session.",
             await control.Apply(default, TestContext.Current.CancellationToken));
         await f.Runtime.DidNotReceive().Apply(default, Arg.Any<CancellationToken>());
         f.Sessions.ActiveSessionGeneration.Returns(SessionGeneration.New());

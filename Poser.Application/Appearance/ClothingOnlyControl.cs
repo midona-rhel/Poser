@@ -14,7 +14,6 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
     private readonly object _gate = new();
     private readonly HashSet<CancellationTokenSource> _pending = new();
     private bool _closed;
-    private Poser.Domain.Operations.SessionGeneration? _exitingSession;
 
     public ClothingOnlyControl(IClothingOnlyRuntimePort runtime, ISessionGenerationSource sessions, IEventBus events)
     {
@@ -37,7 +36,6 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
         lock (_gate)
         {
             if (_closed) return "Clothing-only is shutting down.";
-            if (_exitingSession == session) return "Clothing-only is unavailable during GPose exit.";
             _pending.Add(operation);
         }
         bool entered = false;
@@ -61,16 +59,9 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
         }
     }
 
-    private void OnExit(GPoseExitingEvent _)
-    {
-        // Exit notification precedes clearing the published session. Refuse new
-        // requests in that interval as well as cancelling those already admitted.
-        lock (_gate)
-        {
-            _exitingSession = _sessions.ActiveSessionGeneration;
-            CancelPending();
-        }
-    }
+    // SessionLifecycleCoordinator has already withdrawn the session token.
+    // Reuse that admission owner; this event cancels work already in flight.
+    private void OnExit(GPoseExitingEvent _) => CancelPending();
 
     private void CancelPending()
     {
