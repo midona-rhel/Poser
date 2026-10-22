@@ -2167,15 +2167,6 @@ public sealed class PoseFileInspectorSection : IDisposable
         => System.Text.RegularExpressions.Regex.Replace(
             name, @"\s*\(\d+\)$", "");
 
-    private static string SanitizeFileName(string name)
-    {
-        var invalid = System.IO.Path.GetInvalidFileNameChars();
-        return name.IndexOfAny(invalid) < 0
-            ? name
-            : new string(name.Where(c => Array.IndexOf(invalid, c) < 0)
-                .ToArray());
-    }
-
     private void OpenExportToLibrary(ActorId actorId)
     {
         var sources = ExportableSources();
@@ -2204,7 +2195,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             }
         }
 
-        _libraryExportName = SanitizeFileName(
+        _libraryExportName = FileNamePolicy.FilterInput(
             _config.GetNickname(actorId.LogicalId)
                 ?? DisplayName(_scene.Snapshot.FindActor(actorId)?.Name ?? "Actor")).Trim();
         _libraryExportCandidate = string.Empty;
@@ -2242,7 +2233,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             ImGui.Dummy(new Vector2(1f, captionAdvance));
             TextInput(
                 "##library-export-name", _libraryExportName,
-                next => _libraryExportName = SanitizeFileName(next),
+                next => _libraryExportName = FileNamePolicy.FilterInput(next),
                 placeholder: "Pose name");
             ImGui.Dummy(new Vector2(0f, rowGap));
 
