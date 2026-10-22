@@ -444,8 +444,8 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Integration.CustomizePlusIpc>();
         services.AddSingleton<Application.Integration.ICustomizePlusPort>(
             sp => sp.GetRequiredService<Game.Integration.CustomizePlusIpc>());
-        services.AddSingleton<Game.Integration.InvisibleSkinService>();
-        services.AddSingleton<IInvisibleSkinService>(sp => sp.GetRequiredService<Game.Integration.InvisibleSkinService>());
+        services.AddSingleton<IClothingOnlyRuntimePort, Game.Integration.InvisibleSkinService>();
+        services.AddSingleton<IInvisibleSkinService, ClothingOnlyControl>();
         services.AddSingleton<Application.Integration.IntegrationOwnership>();
         services.AddSingleton(sp =>
         {
@@ -769,6 +769,7 @@ internal static class ServiceRegistration
         services.AddSingleton<WorldAdoptionSource>();
         services.AddSingleton<Application.Scene.IActorSceneControl, Game.Scene.ActorSceneControl>();
         services.AddSingleton<EntityActions>();
+        services.AddSingleton<Application.Selection.EntityLockCommands>();
         services.AddSingleton<ISelectionEntityCommandPort, Game.Selection.SelectionEntityCommandPort>();
         services.AddSingleton<Game.WorldObjects.WorldService>();
         services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldService>());

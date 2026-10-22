@@ -300,10 +300,7 @@ public partial class PoseInspectorPane : IDisposable
         _effectiveGroupsRevision = _groups.Revision;
         _effectiveKey.Clear();
         _effectiveKey.AddRange(selected);
-        _effective = TransformTargetResolver.Resolve(
-            selected, _scene.Snapshot,
-            id => _groups.IsLockedChild(id, selected) ||
-                (id.Overlay is { } o && _viewport.GetCollider(o)?.Locked == true));
+        _effective = TransformSelectionPolicy.Editing(selected, _scene.Snapshot, _groups, _viewport);
         return _effective;
     }
 

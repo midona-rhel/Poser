@@ -591,7 +591,7 @@ internal sealed partial class EntityContextMenus
                 new ContextMenuItem(collider.Enabled ? "Disable collision" : "Enable collision", TablerIcon.Cube) }
                 .Concat(items).ToArray();
             actions = new Action?[] {
-                () => _overlayControl.EditCollider(overlayId, c => c with { Locked = !collider.Locked }),
+                () => _entityActions.ToggleLock(SelectionId.ForOverlay(overlayId)),
                 () => _overlayControl.EditCollider(overlayId, c => c with { Enabled = !collider.Enabled }) }
                 .Concat(actions).ToArray();
         }
@@ -887,7 +887,7 @@ internal sealed partial class EntityContextMenus
         var actions = new List<Action?>
         {
             () => _cameraControl.SetLive(cameraId, !camera.IsLive),
-            () => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.IsLocked, !camera.IsLocked),
+            () => _entityActions.ToggleLock(SelectionId.ForCamera(cameraId)),
             () => RecenterCameraOnTrackedActor(cameraId),
             () => OpenEntityRename(
                 "Rename camera", camera.Name, next => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Name, next)),
@@ -1111,7 +1111,7 @@ internal sealed partial class EntityContextMenus
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(
                     _groups.Descendants(group).ToArray(), name)),
-            () => _groupSteps.SetLocked(groupId, !group.Locked),
+            () => _entityActions.ToggleGroupLock(groupId),
             null, // separator
             () => _groupSteps.SetHidden(group, !group.Hidden),
             () => _overlayPresentation.ToggleHandle(groupId),

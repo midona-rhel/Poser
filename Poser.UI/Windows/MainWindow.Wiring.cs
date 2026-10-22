@@ -56,9 +56,8 @@ public partial class MainWindow
         };
         _vm.OnGroupLock = row =>
         {
-            if (row.Tag is GroupRowTag lockTag
-                && _groups.Find(lockTag.Id) is { } lockGroup)
-                _groupSteps.SetLocked(lockTag.Id, !lockGroup.Locked);
+            if (row.Tag is GroupRowTag lockTag)
+                _entityActions.ToggleGroupLock(lockTag.Id);
         };
         _vm.OnGroupVisibility = row =>
         {
@@ -268,8 +267,8 @@ public partial class MainWindow
             if (row.Tag is SelectionId { Overlay: { } id }
                 && _overlayControl.Read(id) is { State.Collider: { } collider })
             {
-                _overlayControl.EditCollider(id, c => c with { Locked = !collider.Locked });
-                row.ColliderLocked = !collider.Locked;
+                _entityActions.ToggleLock(SelectionId.ForOverlay(id));
+                row.ColliderLocked = _overlayControl.Read(id)?.State.Collider?.Locked ?? collider.Locked;
             }
         };
         _vm.OnLightVisibility = row =>
@@ -343,7 +342,7 @@ public partial class MainWindow
             if (row.Tag is not SelectionId { Camera: { } rowCameraId }
                 || _cameraControl.Read(rowCameraId) is not { } camera)
                 return;
-            _cameraControl.Set(rowCameraId, Application.Presentation.CameraProperties.IsLocked, !camera.IsLocked);
+            _entityActions.ToggleLock(SelectionId.ForCamera(rowCameraId));
             row.CameraLocked = _cameraControl.Read(rowCameraId)?.IsLocked ?? row.CameraLocked;
         };
         _vm.OnOverlayVisibility = row =>

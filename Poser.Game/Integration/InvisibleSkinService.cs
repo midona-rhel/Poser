@@ -25,7 +25,7 @@ namespace Poser.Game.Integration;
 /// sharing it keeps the change. The drawn body holds the state until its
 /// next redraw, which is therefore the restore.
 /// </summary>
-public sealed class InvisibleSkinService : IInvisibleSkinService
+public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
 {
     private readonly PenumbraIpc _port;
     private readonly IFramework _framework;
@@ -38,7 +38,6 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
     /// the assets are missing, which refuses cleanly.</summary>
     private Dictionary<string, string>? _paths;
     private bool _pathsLoaded;
-    private readonly SemaphoreSlim _applyGate = new(1, 1);
     // Bound to the rendered body, not just an actor/slot: an ordinary redraw
     // restores skin and must not be saved as still clothing-only.
     private readonly Dictionary<ActorId, nint> _appliedBodies = new();
@@ -95,37 +94,7 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
         => _bindings.Value.Resolve(actor) is { Success: true, Value: { } legacy }
             && IsHuman(legacy.Address);
 
-    /// <summary>Runs the whole flow and reports the outcome to
-    /// <paramref name="onFailure"/> (framework thread) when it fails.
-    /// Redraw restores the actor; this verb has no other undo.</summary>
-    public void Request(ActorId actor, Action<string>? onFailure)
-    {
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var failure = await Apply(actor, CancellationToken.None).ConfigureAwait(false);
-                if (failure != null && onFailure != null)
-                    await _framework.RunOnFrameworkThread(
-                        () => onFailure(failure)).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"[InvisibleSkin] failed: {ex}");
-            }
-        });
-    }
-
     public async Task<string?> Apply(ActorId actor, CancellationToken cancellation)
-    {
-        // The temporary mod has one tag per collection. Serialize applications
-        // so one actor cannot remove it while another is still redrawing.
-        await _applyGate.WaitAsync(cancellation).ConfigureAwait(false);
-        try { return await ApplyCore(actor, cancellation).ConfigureAwait(false); }
-        finally { _applyGate.Release(); }
-    }
-
-    private async Task<string?> ApplyCore(ActorId actor, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
         if (!await _framework.RunOnFrameworkThread(() => IsHuman(actor)).ConfigureAwait(false))
@@ -140,8 +109,11 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
         if (!collection.Success)
             return collection.Detail;
 
-        var added = await _framework.RunOnFrameworkThread(
-            () => _port.AddInvisibleSkinMods(collection.Value, paths))
+        var added = await _framework.RunOnFrameworkThread(() =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                return _port.AddInvisibleSkinMods(collection.Value, paths);
+            })
             .ConfigureAwait(false);
         if (!added.Success)
             return added.Detail;

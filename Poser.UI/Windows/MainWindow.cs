@@ -1056,9 +1056,8 @@ public partial class MainWindow : Window
         _pivotKey.Clear();
         _pivotKey.AddRange(selected);
 
-        var effective = Application.Transforms.TransformTargetResolver.Resolve(
-            selected, _scene.Snapshot,
-            id => _groups.IsLockedChild(id, selected));
+        var effective = Application.Transforms.TransformSelectionPolicy.Editing(
+            selected, _scene.Snapshot, _groups, _viewportProjection);
         _pivotPrimaryIsBone =
             effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
         _pivotParentAvailable = false;

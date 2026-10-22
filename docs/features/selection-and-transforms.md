@@ -208,6 +208,13 @@ only to block game input, never used as the authority for continuous movement.
 
 ## The journal
 
+Sidebar and context-menu lock toggles re-read the exact entity through one
+command owner, delegating to the existing camera, collider or group journal.
+Inspector, gizmo, pivot and placement share transform-lock admission: locked
+colliders cannot be edited; locked group children can move only as a complete
+group selection. Discrete placement still refuses locked group members,
+including a complete selection. These are distinct intentional operations.
+
 Every change made through the UI is one step with an inverse. Undo runs
 the inverse; redo runs the step again. Drags are one step on release;
 typed fields are one step on commit. Selection is never a step.

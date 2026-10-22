@@ -13,10 +13,6 @@ namespace Poser.Game.Core;
 
 #region System Events
 
-/// <summary>Final capture has finished; restore owned native values before
-/// GPoseStateChangedEvent(false) removes actors and their bindings.</summary>
-public record GPoseExitingEvent : IEvent;
-
 /// <summary>One present actor, as a value: what presence subscribers prune
 /// their state against. Never the wrapper itself.</summary>
 public readonly record struct ActorPresence(EntityId Id, nint Address);
