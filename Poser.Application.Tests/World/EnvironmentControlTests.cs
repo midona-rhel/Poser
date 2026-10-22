@@ -7,6 +7,33 @@ namespace Poser.Application.Tests.World;
 
 public sealed class EnvironmentControlTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Brightness_reset_and_release_replay_preserve_runtime_refusals(bool reset)
+    {
+        var runtime = new Runtime { IsHousingInterior = true, InteriorBrightnessValue = .4f };
+        var history = new EditHistory();
+        var control = new EnvironmentControl(new(history), runtime, runtime, runtime);
+        control.SetInteriorBrightness(.6f);
+        if (reset) control.ResetInteriorBrightness();
+        else control.ReleaseInteriorBrightness();
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        float? current = runtime.InteriorBrightnessValue;
+        runtime.RefuseBrightness = true;
+        Assert.False(step.Undo());
+        Assert.Equal(current, runtime.InteriorBrightnessValue);
+        Assert.Same(step, history.PeekUndo());
+        runtime.RefuseBrightness = false;
+        Assert.True(step.Undo());
+        Assert.Equal(.6f, runtime.InteriorBrightnessValue);
+        runtime.HousingInteriorBinding++;
+        // Like slider history, an expired interior binding is skipped rather
+        // than replayed into a different room or left wedging the journal.
+        Assert.True(step.Redo());
+        Assert.Equal(.6f, runtime.InteriorBrightnessValue);
+    }
+
     [Fact]
     public void File_application_preserves_clock_order_and_replays_as_one_environment_step()
     {
@@ -73,9 +100,10 @@ public sealed class EnvironmentControlTests
         public bool IsInteriorBrightnessOverridden { get; private set; }
         private float? InteriorBrightnessBaseline { get; set; }
         public ulong HousingInteriorBinding { get; set; } = 1;
+        public bool RefuseBrightness { get; set; }
         public bool TrySetInteriorBrightness(float value, ulong binding)
         {
-            if (!IsHousingInterior || binding != HousingInteriorBinding)
+            if (RefuseBrightness || !IsHousingInterior || binding != HousingInteriorBinding)
                 return false;
             InteriorBrightnessBaseline ??= InteriorBrightnessValue;
             InteriorBrightnessValue = value;
@@ -86,7 +114,7 @@ public sealed class EnvironmentControlTests
             TrySetInteriorBrightness(0.8f, binding);
         public bool ReleaseInteriorBrightness(ulong binding)
         {
-            if (!IsHousingInterior || binding != HousingInteriorBinding || !IsInteriorBrightnessOverridden)
+            if (RefuseBrightness || !IsHousingInterior || binding != HousingInteriorBinding || !IsInteriorBrightnessOverridden)
                 return false;
             InteriorBrightnessValue = InteriorBrightnessBaseline;
             InteriorBrightnessBaseline = null;
