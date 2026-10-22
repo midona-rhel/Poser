@@ -188,17 +188,7 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
             return false;
         for (int slot = HairModelSlot; slot <= TailModelSlot; slot++)
         {
-            if (slot >= characterBase->SlotCount)
-                break;
-            var model = characterBase->Models[slot];
-            if (model == null)
-                continue;
-            characterBase->Models[slot] = null;
-            // Release the slot's MODEL reference, not just its resource handle.
-            // Zeroing RefCount bypasses native model cleanup and leaves its
-            // skeleton referenced after CharacterBase destruction. The animation
-            // list then walks a freed owner on the next zone transition.
-            model->DecRef();
+            Appearance.CharacterModelNative.ReleaseSlot(characterBase, slot);
         }
         return true;
     }

@@ -393,12 +393,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
             currentIdentity = currentObserved;
         try
         {
-            // Brio's teardown order (BGOObject.Destroy): render cleanup
-            // first, then the freeing destructor. VfxObject shares the
-            // same virtual seats, so one call site serves both types.
-            var bg = (BgObject*)node;
-            bg->CleanupRender();
-            bg->Dtor(1);
+            Natives.OwnedSceneObjectLifetime.Destroy((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object*)node);
             lock (_handledLock)
                 _spawned.Remove(address);
             if (expected is { } destroyed)

@@ -85,6 +85,20 @@ source actor.
 
 ## Native ordering
 
+Character model-ID assignment and render-slot release have one native mutation
+owner, `CharacterModelNative`. Spawn and redraw keep their lifecycle ordering but
+use that same boundary; feature services must not replace model slots directly.
+Slot removal releases the model through its native lifetime operation, never by
+overwriting a reference count or releasing only a nested resource. Source checks
+reject competing model writers and direct reference-count assignments in Game.
+
+Directly owned scene allocations (props, background objects and VFX) share
+`OwnedSceneObjectLifetime` for cleanup-before-destruction, including rollback.
+Callers retain incarnation checks and ownership records. Manager-owned actors
+still release through ClientObjectManager; reference-counted models release
+through their native reference operation. These are different ownership contracts,
+not interchangeable variants of a generic delete.
+
 The Game scene-frame owner runs native scene update, scenery animation anchors,
 transform parenting, then camera view replacement, in that order. Parenting
 also refreshes collider placement before the existing IK collision solve reads
