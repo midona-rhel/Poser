@@ -417,6 +417,8 @@ public sealed partial class DebugBridge : IDisposable
                 return Screenshot();
             case "/bodycolliders":
                 return CreateBodyColliders(query);
+            case "/clothingonly":
+                return ClothingOnly(query);
             case "/worldobjectmodel":
                 return WorldObjectModel(query);
             case "/worldsources":

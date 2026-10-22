@@ -380,6 +380,12 @@ public sealed class SceneWorkflowTests
         }
 
         public int CollectionRestoresRunning;
+        public Task<string?> RestoreClothingOnly(SceneEntityHandle actor, CancellationToken cancellation)
+        {
+            Record("ClothingOnly");
+            cancellation.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
+        }
         public int PeakCollectionRestores;
         public Func<SceneActor, Outcome>? CollectionResult;
 
@@ -1306,6 +1312,28 @@ public sealed class SceneWorkflowTests
         Assert.DoesNotContain("RestoreCollection:Packaged", runtime.Calls);
         Assert.Contains("ImportMcdf:Packaged", runtime.Calls);
         Assert.DoesNotContain(load.Progress!.Outcome!.Entities, entity => entity.Kind == SceneOutcomeKind.Collection);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Clothing_only_restores_after_appearance_before_pose(bool packaged)
+    {
+        var actor = Actor("Clothed", out _);
+        actor.ClothingOnly = true;
+        if (packaged) actor.Mcdf = new SceneActorMcdf { Path = "appearance.mcdf", FileName = "appearance.mcdf" };
+        var json = System.Text.Json.JsonSerializer.Serialize(actor, SceneFile.JsonOptions);
+        actor = System.Text.Json.JsonSerializer.Deserialize<SceneActor>(json, SceneFile.JsonOptions)!;
+        Assert.True(actor.ClothingOnly);
+        var runtime = new FakeRuntime { ReadResult = SceneWith(actor) };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("clothing.xivs").Success);
+        await load.Drain;
+        AssertApplied(load);
+        var calls = runtime.Calls.ToList();
+        Assert.Contains("ClothingOnly", calls);
+        if (packaged) Assert.True(calls.IndexOf("ImportMcdf:Clothed") < calls.IndexOf("ClothingOnly"));
+        Assert.True(calls.Skip(calls.IndexOf("ClothingOnly") + 1).Any(c => c.Contains("ActorReady")));
     }
 
     /// <summary>A whole scene: one of every entity kind the load restores, so

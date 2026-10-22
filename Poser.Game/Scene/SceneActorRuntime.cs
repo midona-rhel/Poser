@@ -44,6 +44,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     private readonly AnimationSession _animation;
     private readonly IBonePosingService _bonePosing;
     private readonly GazeService _gaze;
+    private readonly IFramework _framework;
+    private readonly Poser.Application.Appearance.IInvisibleSkinService _invisibleSkin;
 
     /// <summary>Breadcrumbs for the scene pose leg.</summary>
     private readonly IPluginLog _log;
@@ -61,8 +63,12 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         AnimationSession animation,
         GazeService gaze,
         IPluginLog log,
-        IBonePosingService bonePosing)
+        IBonePosingService bonePosing,
+        IFramework framework,
+        Poser.Application.Appearance.IInvisibleSkinService invisibleSkin)
     {
+        _framework = framework;
+        _invisibleSkin = invisibleSkin;
         _bonePosing = bonePosing;
         _handles = handles;
         _appearance = appearance;
@@ -152,6 +158,14 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     public bool CompanionReady(SceneEntityHandle actor) =>
         _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion &&
         Posable(companion);
+
+    public async Task<string?> RestoreClothingOnly(SceneEntityHandle actor, System.Threading.CancellationToken cancellation)
+    {
+        var id = await _framework.RunOnFrameworkThread(() =>
+            _bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)));
+        return id is { } target ? await _invisibleSkin.Apply(target, cancellation)
+            : "The clothing-only actor is no longer bound.";
+    }
 
     public Task<Outcome> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
         System.Threading.CancellationToken cancellation) =>

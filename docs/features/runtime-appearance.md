@@ -7,6 +7,13 @@ separate from visibility; zero opacity does not invoke the visibility action.
 Glamourer and other external systems own equipment, customization, dyes,
 materials, and saved designs.
 
+Clothing-only is recorded explicitly in scene actor data, independently of
+embedded appearance resources. Load reapplies it after appearance redraws and
+before the pose/readiness barrier. Ordinary redraw restores the body and clears
+the effective clothing-only state. Older scenes omit the flag and load normally;
+their former clothing-only intent cannot be inferred reliably from an MCDF.
+Temporary material overrides are serialized and removed even on cancellation.
+
 For each field, Poser captures the incoming value once before its first
 successful edit. Restore gives the field back only after native success. A
 failure stays owned and retryable. Reset Appearance, Reset All, GPose exit,

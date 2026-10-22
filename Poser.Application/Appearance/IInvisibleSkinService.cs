@@ -14,5 +14,7 @@ namespace Poser.Application.Appearance;
 public interface IInvisibleSkinService
 {
     bool IsHuman(ActorId actor);
+    bool IsApplied(ActorId actor);
+    Task<string?> Apply(ActorId actor, System.Threading.CancellationToken cancellation);
     void Request(ActorId actor, Action<string>? onFailure);
 }
