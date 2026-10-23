@@ -13,6 +13,12 @@ the bone and catch mismatches; it is not a portable id. Feature ports capture,
 apply, restore, and report using stable ids. `ViewportProjection` is a
 frame-scoped display value, not a gesture baseline.
 
+Bone-to-world conversion uses the current slot's native renderer skeleton
+transform, including its completed height/scale. Do not reconstruct it from
+the mutable draw-object fields: Customize+ can write root scale after native
+skeleton update. Overlay, gizmos, IK and collider consumers share this frame,
+matching Ktisis `BoneNode.CalcMatrixWorld`; weapon slots retain their own frame.
+
 Actor resolution rechecks the discovery-time object-table slot, address and
 game identity on the framework thread. Logout refuses before probing native
 bodies, even before the next discovery/exit notification. Auxiliary preview

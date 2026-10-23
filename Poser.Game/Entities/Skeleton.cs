@@ -34,10 +34,6 @@ public class Skeleton : EntityBase, ISkeleton
 {
     private const int MaxPoses = 4;
 
-    // CharacterBase memory offsets for scale factors (from Brio's BrioCharacterBase)
-    private const int CharacterBaseScaleFactor1Offset = NativeFields.CharacterBase_ScaleFactor1;
-    private const int CharacterBaseScaleFactor2Offset = NativeFields.CharacterBase_ScaleFactor2;
-
     private readonly List<IBone> _bones = new();
 
     /// <summary>Live view over <c>_bones</c>, allocated once. Refresh() clears
@@ -730,11 +726,11 @@ public class Skeleton : EntityBase, ISkeleton
 
     /// <summary>
     /// Gets the model matrix for transforming bone positions to world space.
-    /// Includes the character's ScaleFactor like Brio does.
+    /// Uses the native skeleton transform shared by the rendered mesh.
     /// </summary>
     public unsafe Matrix4x4 GetModelMatrix()
     {
-        // The matrix comes from THIS slot's draw object: a weapon's model
+        // The matrix comes from THIS slot's skeleton: a weapon's model
         // moves with the hand, not with the actor origin.
         var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
             _resolveCharacterBase(Actor);
@@ -743,32 +739,16 @@ public class Skeleton : EntityBase, ISkeleton
 
     private unsafe Matrix4x4 ModelMatrixOf(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase* charaBase)
     {
-        if (charaBase == null)
+        if (charaBase == null || charaBase->Skeleton == null)
             return Matrix4x4.Identity;
 
-        var position = charaBase->DrawObject.Object.Position;
-        var rotation = charaBase->DrawObject.Object.Rotation;
-        // Include ScaleFactor like Brio does (ScaleFactor1 * ScaleFactor2 at offsets 0x2A0 and 0x2A4)
-        var scaleFactor = GetScaleFactor(charaBase);
-        var scale = charaBase->DrawObject.Object.Scale * scaleFactor;
-
-        return Matrix4x4.CreateScale(scale) *
-               Matrix4x4.CreateFromQuaternion(rotation) *
-               Matrix4x4.CreateTranslation(position);
-    }
-
-    /// <summary>
-    /// Gets the scale factor from CharacterBase (ScaleFactor1 * ScaleFactor2).
-    /// Based on Brio's BrioCharacterBase offsets.
-    /// </summary>
-    private static unsafe float GetScaleFactor(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase* charaBase)
-    {
-        if (charaBase == null)
-            return 1f;
-
-        var basePtr = (byte*)charaBase;
-        var scaleFactor1 = *(float*)(basePtr + CharacterBaseScaleFactor1Offset);
-        var scaleFactor2 = *(float*)(basePtr + CharacterBaseScaleFactor2Offset);
-        return scaleFactor1 * scaleFactor2;
+        // Customize+ can overwrite DrawObject.Scale after native skeleton update.
+        // Reconstructing from that value puts overlays/IK in a different frame
+        // from the mesh. Like Ktisis BoneNode.CalcMatrixWorld, use the renderer's
+        // completed transform; its scale already includes the native height factors.
+        var rendered = charaBase->Skeleton->Transform;
+        return Matrix4x4.CreateScale(rendered.Scale) *
+               Matrix4x4.CreateFromQuaternion(rendered.Rotation) *
+               Matrix4x4.CreateTranslation(rendered.Position);
     }
 }
