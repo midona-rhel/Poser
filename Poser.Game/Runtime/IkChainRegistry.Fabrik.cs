@@ -196,7 +196,7 @@ internal sealed unsafe partial class IkChainRegistry
             ? (position, rotation) : null;
     }
 
-    public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false)
+    public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false, Vector3? inputPosition = null)
     {
         // Rotation/scale gestures must not pay off a stale translation target.
         if (delta == Vector3.Zero) return delta;
@@ -214,15 +214,19 @@ internal sealed unsafe partial class IkChainRegistry
         // Reach is measured in the solver's pre-reparent frame. Only the
         // distance limit feeds back into authored coordinates, never contact lag.
         var displayed = _stacks.FromApplySpace(bone, new Transform(handle.Value.Position, Quaternion.Identity, Vector3.One));
-        var requested = _stacks.ToApplySpace(bone, displayed with { Position = displayed.Position + delta });
+        // A collision-solved bone can be well short of its authored target.
+        // Mouse input starts at the gizmo, not at that hidden target. Preserve
+        // the gesture's input frame; never re-read the moving solved endpoint.
+        var input = displayed with { Position = inputPosition ?? displayed.Position };
+        var inputApplied = _stacks.ToApplySpace(bone, input);
+        var requested = _stacks.ToApplySpace(bone, input with { Position = input.Position + delta });
         var source = control.Bones.Select(b => b.Position).ToArray();
         var limited = FabrikSolver.MoveHandle(source, control.HandleIndex, root.Value.Position, tip.Value.Position,
-            handle.Value.Position, requested.Position - handle.Value.Position);
-        var start = fromAuthoredBaseline ? displayed.Position : _stacks.FromApplySpace(bone, requested with
-        {
-            Position = FabrikSolver.ClampHandle(source, control.HandleIndex,
-                root.Value.Position, tip.Value.Position, handle.Value.Position)
-        }).Position;
+            inputApplied.Position, requested.Position - inputApplied.Position);
+        // Pose stacks store an offset from the held target; presentation stores
+        // an offset from the input position. They agree on the accepted point,
+        // not on the delta when contact has displaced the visible bone.
+        var start = fromAuthoredBaseline ? displayed.Position : input.Position;
         return _stacks.FromApplySpace(bone, requested with { Position = limited }).Position - start;
     }
 

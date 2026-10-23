@@ -49,7 +49,7 @@ public interface IBonePosingService : IDisposable
     /// <summary>Limit a translation step to the active FABRIK/Rope span's reach.
     /// Authored writes also remove any existing excess; UI steps start at the reachable position.</summary>
     System.Numerics.Vector3 ClampIkTranslation(IBone bone, System.Numerics.Vector3 delta,
-        bool fromAuthoredBaseline = false) => delta;
+        bool fromAuthoredBaseline = false, System.Numerics.Vector3? inputPosition = null) => delta;
 
     /// <summary>Convert a displayed model-space target to the native pre-reparent apply frame.</summary>
     Transform ToApplySpace(IBone bone, Transform visible) => visible;

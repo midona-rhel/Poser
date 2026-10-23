@@ -194,6 +194,10 @@ against excess clearance rather than using extreme or mean vertex bounds.
 For free-axis sections, covariance/bone directions seed a bounded angular
 refinement; they do not lock the final orientation. Limb axes remain bone-aligned.
 Racial deformation uses the original game resource identity, not a mod's disk filename.
+Visible triangles with unresolved skin bones are omitted, never fitted with
+partial weights or guessed replacement bones. Valid regions still generate;
+the capture reports omitted triangles/bones and regions without enough samples.
+No usable surface means no collider group is created.
 Hair, ears and skirt chains do not inflate the fit; each recognized tail segment
 has its own bone owner. This is a coarse body approximation, not exact clothing
 collision; unknown or over-budget rigs refuse capture. No actor triangles enter
@@ -246,6 +250,10 @@ The selected handle has limited pulling force so a taut wrapped span can stop
 short of its target. FABRIK/Rope translation edits clamp their authored target to
 the span's distance limits; rejected drag travel is discarded so reversing responds
 immediately. Collision lag does not feed back into that target.
+Dragging starts from the visible gizmo position, which can differ from the held
+target after contact. Reach limiting uses that frozen input position, and the
+accepted point is converted back to an authored offset; solved motion during the
+gesture does not move its input baseline.
 Conflicting anchors or inserting geometry through an already
 pinned chain can remain unresolved; collision is not a guarantee that every
 requested arrangement is physically possible.

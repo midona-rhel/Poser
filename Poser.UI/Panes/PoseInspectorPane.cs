@@ -3035,7 +3035,7 @@ public partial class PoseInspectorPane : IDisposable
         if (_primary?.Bone is { } bone && _cleanDisplayedCurrent is { } previous
             && displayedAfter.Position != previous.Position)
             displayedAfter = displayedAfter with { Position = previous.Position
-                + _interaction.ClampIkTranslation(bone, displayedAfter.Position - previous.Position) };
+                + _interaction.ClampIkTranslation(bone, displayedAfter.Position - previous.Position, previous.Position) };
         var modelAfter = displayedAfter;
         var delta = new DomainDelta(
             modelAfter.Position - modelStart.Position,

@@ -13,14 +13,26 @@ public class ActorColliderMeshTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void DisabledSubmeshDoesNotRequireTransformsButVisibleSubmeshDoes(bool v6)
+    public void MissingTransformsOmitOnlyVisibleTrianglesAndReportTheirBones(bool v6)
     {
         var indices = new List<int>();
+        var omissions = new ActorColliderMeshBuilder.Omissions();
         ActorColliderMeshBuilder.Append(Model(v6), 0, 0,
-            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], indices);
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], indices, omissions: omissions);
         Assert.Empty(indices);
-        Assert.Throws<InvalidDataException>(() => ActorColliderMeshBuilder.Append(Model(v6), 1, 0,
-            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], []));
+        Assert.Equal(0, omissions.Triangles);
+        Assert.Empty(omissions.Bones);
+        var vertices = new List<Vector3>();
+        ActorColliderMeshBuilder.Append(Model(v6), 1, 0,
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, vertices, indices, omissions: omissions);
+        Assert.Empty(indices);
+        Assert.Equal(1, omissions.Triangles);
+        Assert.Equal("arm", Assert.Single(omissions.Bones));
+        ActorColliderMeshBuilder.Append(Model(v6), 1, 0,
+            new Dictionary<string, Matrix4x4> { ["arm"] = Matrix4x4.Identity },
+            Matrix4x4.Identity, Vector3.Zero, vertices, indices, omissions: omissions);
+        Assert.Equal(new[] { 4, 5, 6 }, indices);
+        Assert.Equal(1, omissions.Triangles);
     }
 
     [Fact]

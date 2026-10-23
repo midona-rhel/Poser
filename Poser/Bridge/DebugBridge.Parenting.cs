@@ -28,8 +28,9 @@ public sealed partial class DebugBridge
             return live == null ? (ActorId?)null : _bindings.GetActorId(live);
         });
         if (actor == null) return Json(new { error = "No such actor." });
-        var group = await _bodyColliders.CreateAsync(actor.Value, "Parenting test");
-        return Json(new { group.Id, group.Name, members = group.Members.Select(m => m.ToString()).ToArray() });
+        var result = await _bodyColliders.CreateAsync(actor.Value, "Parenting test");
+        var group = result.Group;
+        return Json(new { group.Id, group.Name, result.Warning, members = group.Members.Select(m => m.ToString()).ToArray() });
     }
 
     private IEnumerable<(SelectionId Id, string Name)> ParentProbeEntities()

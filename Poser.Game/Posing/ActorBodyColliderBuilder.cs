@@ -104,7 +104,8 @@ internal static class ActorBodyColliderBuilder
         Fit(joints, vertices, indices, influences.Select(name => name == null ? Array.Empty<BoneWeight>() : new[] { new BoneWeight(name, 1) }).ToArray());
 
     internal static Fitted[] Fit(IReadOnlyDictionary<string, Joint> joints,
-        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<BoneWeight[]> influences)
+        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<BoneWeight[]> influences,
+        ICollection<string>? omittedRegions = null)
     {
         if (vertices.Count != influences.Count || indices.Count % 3 != 0)
             throw new InvalidDataException("Body fitting requires an indexed weighted triangle surface.");
@@ -149,7 +150,11 @@ internal static class ActorBodyColliderBuilder
         var fitted = new List<Fitted>();
         for (int i = 0; i < spans.Count; i++)
         {
-            if (samples[i].Count < 4) continue;
+            if (samples[i].Count < 4)
+            {
+                omittedRegions?.Add(spans[i].Name);
+                continue;
+            }
             var span = spans[i];
             var start = joints[span.Start];
             var collider = BodySurfaceFit.Fit(samples[i], start.Position, start.Rotation,

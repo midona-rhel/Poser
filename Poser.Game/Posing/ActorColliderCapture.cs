@@ -31,7 +31,7 @@ public sealed class ActorColliderCapture(
 
     public bool Busy { get; private set; }
 
-    public async Task<SceneGroup> CreateAsync(ActorId actorId, string name)
+    public async Task<Application.Posing.ActorColliderCaptureResult> CreateAsync(ActorId actorId, string name)
     {
         if (Busy) throw new InvalidOperationException("An actor collider is already being captured.");
         Busy = true;
@@ -39,7 +39,7 @@ public sealed class ActorColliderCapture(
         try
         {
             var snapshot = await integration.OnFrameworkThread(() => Capture(actorId));
-            var parts = await Task.Run(() => Build(snapshot));
+            var (parts, warning) = await Task.Run(() => Build(snapshot));
             var states = parts.Select(part => new OverlayNodeState
             {
                 Kind = OverlayNodeKind.Collider,
@@ -81,7 +81,8 @@ public sealed class ActorColliderCapture(
                 if (group != null)
                 {
                     log.Information($"Actor body collider fitted {parts.Length} capsule/sphere parts from {snapshot.Models.Length} models in {timer.ElapsedMilliseconds} ms.");
-                    return group;
+                    if (warning != null) log.Warning(warning);
+                    return new(group, warning);
                 }
             }
             await integration.OnFrameworkThread(() =>
@@ -174,12 +175,13 @@ public sealed class ActorColliderCapture(
         !Regex.IsMatch(path.Replace('\\', '/'), @"(?:/hair/|_hir\.mdl$)",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-    private ActorBodyColliderBuilder.Fitted[] Build(Snapshot snapshot)
+    private (ActorBodyColliderBuilder.Fitted[] Parts, string? Warning) Build(Snapshot snapshot)
     {
         var vertices = new List<Vector3>();
         var indices = new List<int>();
         var influences = new List<ActorColliderMeshBuilder.BoneWeight[]>();
         var bodyBones = ActorBodyColliderBuilder.BodyBones(snapshot.Joints);
+        var omissions = new ActorColliderMeshBuilder.Omissions();
         byte[] ReadFile(string path) => Path.IsPathRooted(path) ? File.ReadAllBytes(path)
             : data.GetFile(path)?.Data ?? throw new IOException("Could not load actor resource: " + path);
         byte[]? pbd = null;
@@ -202,13 +204,20 @@ public sealed class ActorColliderCapture(
                     }
                 }
                 ActorColliderMeshBuilder.Append(bytes, model.Attributes, model.Shapes,
-                    bones, snapshot.World, snapshot.Origin, vertices, indices, bodyBones: bodyBones, skinWeights: influences);
+                    bones, snapshot.World, snapshot.Origin, vertices, indices, bodyBones: bodyBones, skinWeights: influences, omissions: omissions);
             }
             catch (InvalidDataException ex)
             {
                 throw new InvalidDataException($"{Path.GetFileName(model.Path)}: {ex.Message}", ex);
             }
         }
-        return ActorBodyColliderBuilder.Fit(snapshot.Joints, vertices, indices, influences);
+        var omittedRegions = new List<string>();
+        var parts = ActorBodyColliderBuilder.Fit(snapshot.Joints, vertices, indices, influences, omittedRegions);
+        var details = new List<string>();
+        if (omissions.Triangles > 0)
+            details.Add($"Skipped {omissions.Triangles} triangles with unavailable bones: {string.Join(", ", omissions.Bones.Order())}.");
+        if (omittedRegions.Count > 0)
+            details.Add($"No collider fitted for: {string.Join(", ", omittedRegions)}.");
+        return (parts, details.Count > 0 ? "Body colliders have incomplete coverage. " + string.Join(" ", details) : null);
     }
 }

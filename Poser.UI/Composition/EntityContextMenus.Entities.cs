@@ -270,10 +270,12 @@ internal sealed partial class EntityContextMenus
     {
         try
         {
-            var group = await _actorColliderCapture.CreateAsync(actorId, name);
+            var result = await _actorColliderCapture.CreateAsync(actorId, name);
+            var group = result.Group;
             _selection.Select(group.Members[0]);
             foreach (var member in group.Members.Skip(1)) _selection.Add(member);
             _groups.ActiveGroupId = group.Id;
+            if (result.Warning != null) _notices.Note(result.Warning);
         }
         catch (Exception ex)
         {

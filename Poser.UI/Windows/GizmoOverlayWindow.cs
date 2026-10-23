@@ -1411,7 +1411,7 @@ public class GizmoOverlayWindow : Window
                 if (EffectiveSelection()?.Primary is { Bone: { } boneId })
                 {
                     var limited = gesture.Current.Position + _poseInteraction.ClampIkTranslation(
-                        boneId, position - gesture.Current.Position);
+                        boneId, position - gesture.Current.Position, gesture.Current.Position);
                     if (Vector3.DistanceSquared(limited, position) > 1e-10f)
                     {
                         // Discard rejected travel: reversing the mouse should move
