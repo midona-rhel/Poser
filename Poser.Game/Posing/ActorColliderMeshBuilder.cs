@@ -46,6 +46,7 @@ internal static class ActorColliderMeshBuilder
                 ? file.BoneTables[mesh.BoneTableIndex].BoneIndex : [];
             int start = vertices.Count;
             var included = new bool[mesh.VertexCount];
+            var missingTransforms = new string?[mesh.VertexCount];
             for (int v = 0; v < mesh.VertexCount; v++)
             {
                 var p = ReadElement(bytes, file, mesh, positions[0], v);
@@ -84,8 +85,7 @@ internal static class ActorColliderMeshBuilder
                 // are not body-fit samples. Retained vertices still need every
                 // weighted transform; never substitute bind pose for missing data.
                 included[v] = bodyBones == null || total > 0 && bodyWeight / total >= .5f;
-                if (included[v] && missingBone != null)
-                    throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: bone '{missingBone}' has no captured transform.");
+                missingTransforms[v] = missingBone;
                 vertices.Add((total > 0 ? posed / total : Vector3.Transform(position, world)) - origin);
                 influences?.Add(included[v] ? influence : null);
                 skinWeights?.Add(included[v] && vertexWeights != null && total > 0
@@ -120,9 +120,20 @@ internal static class ActorColliderMeshBuilder
                     if ((uint)(a - start) >= mesh.VertexCount || (uint)(b - start) >= mesh.VertexCount || (uint)(c - start) >= mesh.VertexCount)
                         throw new InvalidDataException("An actor mesh triangle references a missing vertex.");
                     if (!included[a - start] || !included[b - start] || !included[c - start]) continue;
+                    // Attribute masks and shape replacements decide which vertices
+                    // actually render. Unused variants must not require live bones.
+                    // Retained triangles still require every weighted transform.
+                    RequireTransform(a - start);
+                    RequireTransform(b - start);
+                    RequireTransform(c - start);
                     if (Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]).LengthSquared() < 1e-16f) continue;
                     indices.Add(a); indices.Add(b); indices.Add(c);
                 }
+            }
+            void RequireTransform(int vertex)
+            {
+                if (missingTransforms[vertex] is { } missing)
+                    throw new InvalidDataException($"Mesh {meshIndex}, vertex {vertex}: bone '{missing}' has no captured transform.");
             }
             if (mesh.SubMeshCount == 0) AddRange(0, meshIndices.Length);
             else for (int sub = mesh.SubMeshIndex; sub < mesh.SubMeshIndex + mesh.SubMeshCount; sub++)

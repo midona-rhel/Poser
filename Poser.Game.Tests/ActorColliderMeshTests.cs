@@ -10,6 +10,19 @@ namespace Poser.Game.Tests;
 
 public class ActorColliderMeshTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DisabledSubmeshDoesNotRequireTransformsButVisibleSubmeshDoes(bool v6)
+    {
+        var indices = new List<int>();
+        ActorColliderMeshBuilder.Append(Model(v6), 0, 0,
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], indices);
+        Assert.Empty(indices);
+        Assert.Throws<InvalidDataException>(() => ActorColliderMeshBuilder.Append(Model(v6), 1, 0,
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], []));
+    }
+
     [Fact]
     public void RacialDeformationMovesTheModelBeforePosedSkinning()
     {
