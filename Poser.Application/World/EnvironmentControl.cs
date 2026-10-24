@@ -76,6 +76,11 @@ public sealed class EnvironmentControl
     public void SetResetSectionsOnGPoseExit(bool v) => Set("ResetSectionsOnGPoseExit", "Set section restore", () => _environment.ResetSectionsOnGPoseExit, x => _environment.ResetSectionsOnGPoseExit = x, v);
 
     // ── housing interior brightness ──────────────────────────
+    private Outcome RestoreInteriorBrightness(ulong binding, (bool Owned, float Value) state) =>
+        new(state.Owned
+            ? _environment.TrySetInteriorBrightness(state.Value, binding)
+            : _environment.ReleaseInteriorBrightness(binding));
+
     public void SetInteriorBrightness(float v)
     {
         if (!float.IsFinite(v) || _environment.InteriorBrightness is null)
@@ -86,9 +91,7 @@ public sealed class EnvironmentControl
             "Set interior brightness",
             () => (Owned: _environment.IsInteriorBrightnessOverridden,
                 Value: _environment.InteriorBrightness ?? value),
-            next => new Outcome(next.Owned
-                ? _environment.TrySetInteriorBrightness(next.Value, binding)
-                : _environment.ReleaseInteriorBrightness(binding)),
+            next => RestoreInteriorBrightness(binding, next),
             (Owned: true, Value: value),
             () => _environment.HousingInteriorBinding == binding);
     }
@@ -103,13 +106,9 @@ public sealed class EnvironmentControl
             _environment.InteriorBrightness is not { } reset)
             return;
         _journal.Record(_environment, "Reset interior brightness",
-            (Owned: owned, Value: before), (Owned: true, Value: reset), ValueWrites.Unchecked<(bool Owned, float Value)>(next =>
-        {
-            if (next.Owned)
-                _environment.TrySetInteriorBrightness(next.Value, binding);
-            else
-                _environment.ReleaseInteriorBrightness(binding);
-        }));
+            (Owned: owned, Value: before), (Owned: true, Value: reset),
+            next => RestoreInteriorBrightness(binding, next),
+            () => _environment.HousingInteriorBinding == binding);
     }
 
     public void ReleaseInteriorBrightness()
@@ -123,13 +122,9 @@ public sealed class EnvironmentControl
             return;
         // Ownership changes even when the slider already equals its baseline.
         _journal.Record(_environment, "Release interior brightness",
-            (Owned: true, Value: before), (Owned: false, Value: restored), ValueWrites.Unchecked<(bool Owned, float Value)>(next =>
-        {
-            if (next.Owned)
-                _environment.TrySetInteriorBrightness(next.Value, binding);
-            else
-                _environment.ReleaseInteriorBrightness(binding);
-        }));
+            (Owned: true, Value: before), (Owned: false, Value: restored),
+            next => RestoreInteriorBrightness(binding, next),
+            () => _environment.HousingInteriorBinding == binding);
     }
 
     public void SetSky(EnvSkyValues v) => Set("Sky", "Set sky", () => _environment.Sky, x => _environment.Sky = x, v);

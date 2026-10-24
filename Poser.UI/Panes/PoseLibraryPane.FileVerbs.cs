@@ -140,22 +140,6 @@ public sealed partial class PoseLibraryPane
 
     // ── the file modals ──────────────────────────────────────────────────
 
-    /// <summary>Strips every character Windows refuses in a file NAME —
-    /// typed or pasted, the input simply never holds one (the export
-    /// modal's rule).</summary>
-    private static string SanitizeFileName(string name)
-    {
-        var invalid = System.IO.Path.GetInvalidFileNameChars();
-        if (name.IndexOfAny(invalid) < 0)
-            return name;
-        var kept = new char[name.Length];
-        int count = 0;
-        foreach (var c in name)
-            if (Array.IndexOf(invalid, c) < 0)
-                kept[count++] = c;
-        return new string(kept, 0, count);
-    }
-
     /// <summary>The file rename: the shared name prompt with the library's
     /// rules — a name is required, an existing sibling is never overwritten,
     /// the extension is kept. A success rescans.</summary>
@@ -194,7 +178,7 @@ public sealed partial class PoseLibraryPane
                 }
                 return taken ? "That name already exists here." : null;
             },
-            sanitize: SanitizeFileName,
+            sanitize: Poser.Documents.Files.FileNamePolicy.FilterInput,
             placeholder: "File name");
     }
 

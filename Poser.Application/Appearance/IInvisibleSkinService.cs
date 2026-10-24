@@ -1,12 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using Poser.Domain.Actors;
 using Poser.Domain.Identity;
-using Poser.Domain.Operations;
-using Poser.Domain.Posing;
-using Poser.Domain.Scene;
-using Poser.Domain.Transforms;
 
 namespace Poser.Application.Appearance;
 
@@ -14,5 +6,14 @@ namespace Poser.Application.Appearance;
 public interface IInvisibleSkinService
 {
     bool IsHuman(ActorId actor);
-    void Request(ActorId actor, Action<string>? onFailure);
+    bool IsApplied(ActorId actor);
+    Task<string?> Apply(ActorId actor, System.Threading.CancellationToken cancellation);
+}
+
+/// <summary>Framework-aware native mechanism; command admission belongs to ClothingOnlyControl.</summary>
+public interface IClothingOnlyRuntimePort
+{
+    bool IsHuman(ActorId actor);
+    bool IsApplied(ActorId actor);
+    Task<string?> Apply(ActorId actor, System.Threading.CancellationToken cancellation);
 }

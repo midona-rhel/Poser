@@ -10,6 +10,55 @@ internal static class BodySurfaceFit
     internal readonly record struct Sample(Vector3 Position, float Area);
     private readonly record struct Capsule(Vector3 Center, Vector3 Axis, float Radius, float HalfStem);
 
+    internal static IkCollider[] FitCompound(IReadOnlyList<Sample> surface, Vector3 origin,
+        Quaternion frame, Vector3 direction, bool freeAxis)
+    {
+        var single = Fit(surface, origin, frame, direction, false, freeAxis);
+        if (!freeAxis) return [single];
+        var points = Resample(surface, 768);
+        float Score(IkCollider[] parts) => points.Average(p =>
+        {
+            // Score the UNION, not the closest individual surface: a sample
+            // buried inside either shape is excess clearance even at a seam.
+            float error = parts.Min(part => Distance(part, p));
+            return error * error * (error > 0 ? 2 : 1);
+        });
+        float initial = Score([single]);
+        float radius = single.RoundDimensions().Radius;
+        if (initial < radius * radius * .01f) return [single];
+        IkCollider[] best = [single];
+        float bestScore = initial;
+        var center = single.Transform.Position;
+        foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
+        {
+            var worldAxis = Vector3.Transform(axis, single.Transform.Rotation);
+            var left = surface.Where(p => Vector3.Dot(p.Position - center, worldAxis) < 0).ToArray();
+            var right = surface.Where(p => Vector3.Dot(p.Position - center, worldAxis) >= 0).ToArray();
+            if (left.Length < 4 || right.Length < 4) continue;
+            // Both halves must have substantial support; tiny accessories must
+            // not acquire a second collider of their own.
+            float total = surface.Sum(p => p.Area);
+            if (left.Sum(p => p.Area) < total * .2f || right.Sum(p => p.Area) < total * .2f) continue;
+            IkCollider[] pair;
+            try
+            {
+                pair = [Fit(left, origin, frame, direction, false, true),
+                    Fit(right, origin, frame, direction, false, true)];
+            }
+            catch (InvalidDataException)
+            {
+                // A split can isolate coincident/degenerate samples even when
+                // the complete region is valid. Retain its successful fit.
+                continue;
+            }
+            float score = Score(pair);
+            if (score < bestScore) { bestScore = score; best = pair; }
+        }
+        // Extra contacts have a runtime cost. Keep one shape unless the bounded
+        // two-part candidate improves whole-region error by at least 25%.
+        return bestScore < initial * .75f ? best : [single];
+    }
+
     internal static IkCollider Fit(IReadOnlyList<Sample> surface, Vector3 origin,
         Quaternion frame, Vector3 direction, bool roundOnly, bool freeAxis)
     {

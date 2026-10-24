@@ -614,10 +614,7 @@ public class GizmoOverlayWindow : Window
 
     /// <summary>Resolves the effective transform selection.</summary>
     private EffectiveTransformSelection? EffectiveSelection() =>
-        TransformTargetResolver.Resolve(
-            _selection.Selected, _scene.Snapshot,
-            id => _groups.IsLockedChild(id, _selection.Selected) ||
-                (id.Overlay is { } o && _viewport.GetCollider(o)?.Locked == true));
+        TransformSelectionPolicy.Editing(_selection.Selected, _scene.Snapshot, _groups, _viewport);
 
     /// <summary>Validates the active gesture against current editor state.</summary>
     private GizmoGesture? GuardGesture(
@@ -1414,7 +1411,7 @@ public class GizmoOverlayWindow : Window
                 if (EffectiveSelection()?.Primary is { Bone: { } boneId })
                 {
                     var limited = gesture.Current.Position + _poseInteraction.ClampIkTranslation(
-                        boneId, position - gesture.Current.Position);
+                        boneId, position - gesture.Current.Position, gesture.Current.Position);
                     if (Vector3.DistanceSquared(limited, position) > 1e-10f)
                     {
                         // Discard rejected travel: reversing the mouse should move

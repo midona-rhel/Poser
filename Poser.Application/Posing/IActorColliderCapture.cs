@@ -6,5 +6,7 @@ namespace Poser.Application.Posing;
 public interface IActorColliderCapture
 {
     bool Busy { get; }
-    Task<SceneGroup> CreateAsync(ActorId actorId, string name);
+    Task<ActorColliderCaptureResult> CreateAsync(ActorId actorId, string name);
 }
+
+public sealed record ActorColliderCaptureResult(SceneGroup Group, string? Warning);

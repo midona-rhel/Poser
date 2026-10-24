@@ -14,6 +14,10 @@ bindings, then detaches gaze before the import samples its settled basis.
 A still-paused posed duplicate restored by history retains
 its frozen import basis; this does not recover animation playback.
 
+Native pose observations use the read-only model-pose path. Havok's mutable
+bone accessors belong only to writes: even a non-propagating access changes
+local/model validity and must not be used for display, capture or solver reads.
+
 Each discrete edit captures its targets, computes the change, and writes it to
 the game. On failure it tries every captured baseline. If
 rollback cannot finish, recovery information and ownership remain available;

@@ -25,9 +25,9 @@ public sealed class SelectionPlacement(
 
     private TransformTargetId? ResolveOne(SelectionId target)
     {
-        if (target.Bone != null || groups.IsLockedMember(target) || target.Overlay is { } overlay && viewport.GetCollider(overlay)?.Locked == true)
+        if (target.Bone != null)
             return null;
-        var resolved = TransformTargetResolver.Resolve([target], scene.Snapshot);
+        var resolved = TransformSelectionPolicy.Placement([target], scene.Snapshot, groups, viewport);
         return resolved?.Targets.Count == 1 ? resolved.Primary : null;
     }
 
@@ -49,8 +49,7 @@ public sealed class SelectionPlacement(
 
     public GestureResult MoveToCamera(IReadOnlyList<SelectionId> targetsToMove)
     {
-        var resolved = TransformTargetResolver.Resolve(targetsToMove, scene.Snapshot,
-            id => groups.IsLockedMember(id) || id.Overlay is { } overlay && viewport.GetCollider(overlay)?.Locked == true);
+        var resolved = TransformSelectionPolicy.Placement(targetsToMove, scene.Snapshot, groups, viewport);
         if (resolved is not { } targets)
             return GestureResult.Fail("Nothing movable is selected.");
         var sum = Vector3.Zero;

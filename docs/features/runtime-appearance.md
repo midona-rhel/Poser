@@ -7,6 +7,17 @@ separate from visibility; zero opacity does not invoke the visibility action.
 Glamourer and other external systems own equipment, customization, dyes,
 materials, and saved designs.
 
+Clothing-only is recorded explicitly in scene actor data, independently of
+embedded appearance resources. Load reapplies it after appearance redraws and
+before the pose/readiness barrier. Ordinary redraw restores the body and clears
+the effective clothing-only state. Older scenes omit the flag and load normally;
+their former clothing-only intent cannot be inferred reliably from an MCDF.
+Temporary material overrides are serialized and removed even on cancellation.
+UI, bridge and scene requests share one clothing-only operation owner. It
+serializes native work, cancels queued and active requests on GPose exit, and
+refuses new work for the exiting session. The native port owns only the
+framework-thread mechanism and cleanup; callers await the same result.
+
 For each field, Poser captures the incoming value once before its first
 successful edit. Restore gives the field back only after native success. A
 failure stays owned and retryable. Reset Appearance, Reset All, GPose exit,
@@ -40,6 +51,12 @@ alone does not replace an old IPC model override. The source must still be curre
 read/write refusals do not unlock either actor or change the source. A duplicate
 may read a Poser-held MCDF source using Poser's owner key after an unkeyed refusal;
 it still writes the new target unkeyed and never reads through a foreign hold.
+
+New non-player catalog models discard the player's inherited weapon model IDs
+before first draw, matching Brio's empty catalog weapon appearance. Hidden
+weapons are not absent weapons and can alter a monster's ground shadow.
+Ordinary duplicates retain their source equipment; catalog initialization does
+not run when copying an actor or later changing its model.
 
 Copying without pose retains the source's active Customize+ profile contents as
 an owned temporary profile on the copy, independent of animation and pose.

@@ -27,7 +27,7 @@ public sealed class PoseInteraction(
             posing.GetPoseInfo(current).DefaultPropagation = propagation;
     }
 
-    public Vector3 ClampIkTranslation(BoneId bone, Vector3 delta) =>
+    public Vector3 ClampIkTranslation(BoneId bone, Vector3 delta, Vector3 inputPosition) =>
         bindings.Resolve(bone).Value is { } current
-            ? posing.ClampIkTranslation(current, delta) : Vector3.Zero;
+            ? posing.ClampIkTranslation(current, delta, inputPosition: inputPosition) : Vector3.Zero;
 }

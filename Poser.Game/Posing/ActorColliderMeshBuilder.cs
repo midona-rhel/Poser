@@ -11,11 +11,16 @@ namespace Poser.Game.Posing;
 
 internal static class ActorColliderMeshBuilder
 {
+    internal sealed class Omissions
+    {
+        public int Triangles { get; set; }
+        public HashSet<string> Bones { get; } = new(StringComparer.Ordinal);
+    }
     internal readonly record struct BoneWeight(string Bone, float Weight);
     internal static void Append(byte[] bytes, uint attributes, uint shapes,
         IReadOnlyDictionary<string, Matrix4x4> bones, Matrix4x4 world, Vector3 origin,
         List<Vector3> vertices, List<int> indices, List<string?>? influences = null,
-        IReadOnlySet<string>? bodyBones = null, List<BoneWeight[]>? skinWeights = null)
+        IReadOnlySet<string>? bodyBones = null, List<BoneWeight[]>? skinWeights = null, Omissions? omissions = null)
     {
         var file = Read(bytes);
         Span<float> weightValues = stackalloc float[8];
@@ -46,6 +51,7 @@ internal static class ActorColliderMeshBuilder
                 ? file.BoneTables[mesh.BoneTableIndex].BoneIndex : [];
             int start = vertices.Count;
             var included = new bool[mesh.VertexCount];
+            var missingTransforms = new HashSet<string>?[mesh.VertexCount];
             for (int v = 0; v < mesh.VertexCount; v++)
             {
                 var p = ReadElement(bytes, file, mesh, positions[0], v);
@@ -54,7 +60,7 @@ internal static class ActorColliderMeshBuilder
                 float total = 0;
                 float strongest = 0;
                 string? influence = null;
-                string? missingBone = null;
+                HashSet<string>? missingBones = null;
                 var vertexWeights = skinWeights != null ? new List<BoneWeight>() : null;
                 float bodyWeight = 0;
                 for (int set = 0; set < weights.Length; set++)
@@ -71,7 +77,7 @@ internal static class ActorColliderMeshBuilder
                         if ((uint)localBone >= (uint)palette.Length || palette[localBone] >= boneNames.Length)
                             throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: invalid bone palette index {localBone}.");
                         if (!bones.TryGetValue(boneNames[palette[localBone]], out var skin))
-                            missingBone = boneNames[palette[localBone]];
+                            (missingBones ??= new(StringComparer.Ordinal)).Add(boneNames[palette[localBone]]);
                         else posed += Vector3.Transform(position, skin) * weight;
                         if (weight > strongest) { strongest = weight; influence = boneNames[palette[localBone]]; }
                         total += weight;
@@ -84,8 +90,7 @@ internal static class ActorColliderMeshBuilder
                 // are not body-fit samples. Retained vertices still need every
                 // weighted transform; never substitute bind pose for missing data.
                 included[v] = bodyBones == null || total > 0 && bodyWeight / total >= .5f;
-                if (included[v] && missingBone != null)
-                    throw new InvalidDataException($"Mesh {meshIndex}, vertex {v}: bone '{missingBone}' has no captured transform.");
+                missingTransforms[v] = missingBones;
                 vertices.Add((total > 0 ? posed / total : Vector3.Transform(position, world)) - origin);
                 influences?.Add(included[v] ? influence : null);
                 skinWeights?.Add(included[v] && vertexWeights != null && total > 0
@@ -119,6 +124,20 @@ internal static class ActorColliderMeshBuilder
                     int a = start + meshIndices[i], b = start + meshIndices[i + 1], c = start + meshIndices[i + 2];
                     if ((uint)(a - start) >= mesh.VertexCount || (uint)(b - start) >= mesh.VertexCount || (uint)(c - start) >= mesh.VertexCount)
                         throw new InvalidDataException("An actor mesh triangle references a missing vertex.");
+                    // Attribute masks and shape replacements decide which vertices
+                    // actually render. Unused variants must not require live bones.
+                    // Drop whole triangles, never renormalize partial skin weights:
+                    // that would fit a collider to invented geometry.
+                    if (missingTransforms[a - start] != null || missingTransforms[b - start] != null || missingTransforms[c - start] != null)
+                    {
+                        if (omissions != null)
+                        {
+                            omissions.Triangles++;
+                            foreach (int vertex in new[] { a - start, b - start, c - start })
+                                if (missingTransforms[vertex] is { } missing) omissions.Bones.UnionWith(missing);
+                        }
+                        continue;
+                    }
                     if (!included[a - start] || !included[b - start] || !included[c - start]) continue;
                     if (Vector3.Cross(vertices[b] - vertices[a], vertices[c] - vertices[a]).LengthSquared() < 1e-16f) continue;
                     indices.Add(a); indices.Add(b); indices.Add(c);

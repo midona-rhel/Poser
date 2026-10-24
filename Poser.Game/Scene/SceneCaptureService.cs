@@ -58,6 +58,7 @@ public sealed class SceneCaptureService
     private readonly IPosingService _posing;
     private readonly AnimationSession _animation;
     private readonly IBonePosingService _bonePosing;
+    private readonly Poser.Application.Appearance.IInvisibleSkinService _invisibleSkin;
     private readonly GazeService _gaze;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.IntegrationSelectors _integration;
@@ -90,8 +91,10 @@ public sealed class SceneCaptureService
         WorldObjects.WorldService worldObjects,
         PlacementAnchorSource anchors,
         Poser.Application.Settings.ConfigurationService configuration,
-        IBonePosingService bonePosing)
+        IBonePosingService bonePosing,
+        Poser.Application.Appearance.IInvisibleSkinService invisibleSkin)
     {
+        _invisibleSkin = invisibleSkin;
         _bonePosing = bonePosing;
         _configuration = configuration;
         _anchors = anchors;
@@ -312,6 +315,7 @@ public sealed class SceneCaptureService
                 NameIsDisplayName = true,
                 PenumbraCollection = id is { } collectionActor ? CaptureCollection(collectionActor) : null,
                 Visible = _spawns.IsVisible(actor),
+                ClothingOnly = id is { } clothingActor && _invisibleSkin.IsApplied(clothingActor),
                 // A live attachment proves the slot exists even when the
                 // actor was not spawned by Poser with an explicit reservation.
                 HasCompanionSlot = _spawns.HasCompanionSlot(actor) ||

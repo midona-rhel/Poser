@@ -300,10 +300,7 @@ public partial class PoseInspectorPane : IDisposable
         _effectiveGroupsRevision = _groups.Revision;
         _effectiveKey.Clear();
         _effectiveKey.AddRange(selected);
-        _effective = TransformTargetResolver.Resolve(
-            selected, _scene.Snapshot,
-            id => _groups.IsLockedChild(id, selected) ||
-                (id.Overlay is { } o && _viewport.GetCollider(o)?.Locked == true));
+        _effective = TransformSelectionPolicy.Editing(selected, _scene.Snapshot, _groups, _viewport);
         return _effective;
     }
 
@@ -3038,7 +3035,7 @@ public partial class PoseInspectorPane : IDisposable
         if (_primary?.Bone is { } bone && _cleanDisplayedCurrent is { } previous
             && displayedAfter.Position != previous.Position)
             displayedAfter = displayedAfter with { Position = previous.Position
-                + _interaction.ClampIkTranslation(bone, displayedAfter.Position - previous.Position) };
+                + _interaction.ClampIkTranslation(bone, displayedAfter.Position - previous.Position, previous.Position) };
         var modelAfter = displayedAfter;
         var delta = new DomainDelta(
             modelAfter.Position - modelStart.Position,

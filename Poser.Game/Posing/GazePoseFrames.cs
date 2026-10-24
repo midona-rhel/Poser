@@ -83,7 +83,7 @@ public sealed class GazePoseFrames
             return null;
         var pose = native->PartialSkeletons[bone.PartialId].GetHavokPose(0);
         if (pose == null || bone.BoneIndex < 0 || bone.BoneIndex >= pose->Skeleton->Bones.Length) return null;
-        var value = pose->AccessBoneModelSpace(bone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+        var value = Poser.Game.Entities.NativePoseRead.Model(pose, bone.BoneIndex);
         if (value == null) return null;
         return Matrix4x4.CreateScale(value->Scale.X, value->Scale.Y, value->Scale.Z)
             * Matrix4x4.CreateFromQuaternion(new(value->Rotation.X, value->Rotation.Y, value->Rotation.Z, value->Rotation.W))

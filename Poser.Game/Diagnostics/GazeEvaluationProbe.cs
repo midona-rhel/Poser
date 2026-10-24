@@ -79,7 +79,7 @@ public static class GazeEvaluationProbe
                     (uint)bone.BoneIndex >= pose->Skeleton->Bones.Length) continue;
                 // Read this phase's native pose, not LastRawTransform: that
                 // cache has already had authored transforms applied to it.
-                var t = pose->AccessBoneModelSpace(bone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+                var t = Poser.Game.Entities.NativePoseRead.Model(pose, bone.BoneIndex);
                 if (t == null) continue;
                 values.Add(new(bone.BoneName, bone.PartialId,
                     new(t->Translation.X, t->Translation.Y, t->Translation.Z),

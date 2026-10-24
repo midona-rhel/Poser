@@ -208,7 +208,8 @@ public unsafe class BonePosingService : IBonePosingService
             return;
 
         newTransform = newTransform with { Position = originalTransform.Position
-            + ClampIkTranslation(bone, newTransform.Position - originalTransform.Position, fromAuthoredBaseline: true) };
+            + ClampIkTranslation(bone, newTransform.Position - originalTransform.Position,
+                fromAuthoredBaseline: true, inputPosition: originalTransform.Position) };
 
         var poseInfo = GetPoseInfo(bone.Skeleton);
         var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId);
@@ -292,8 +293,8 @@ public unsafe class BonePosingService : IBonePosingService
     public string? RestoreFabrik(IBone tip, IkChainConfig config) =>
         _ik.RestoreFabrik(tip, config);
 
-    public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false) =>
-        _ik.ClampIkTranslation(bone, delta, fromAuthoredBaseline);
+    public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false, Vector3? inputPosition = null) =>
+        _ik.ClampIkTranslation(bone, delta, fromAuthoredBaseline, inputPosition);
 
     public string? SetIkBoneTarget(IBone endpoint, IBone target) =>
         _ik.SetIkBoneTarget(endpoint, target);

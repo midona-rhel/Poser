@@ -253,13 +253,7 @@ public partial class LibraryConfiguration
     /// </summary>
     public static string NewEntryPath(string root, string name, string extension)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var builder = new System.Text.StringBuilder(name.Length);
-        foreach (var ch in name)
-            builder.Append(Array.IndexOf(invalid, ch) >= 0 ? '_' : ch);
-        var cleaned = builder.ToString().Trim();
-        if (string.IsNullOrWhiteSpace(cleaned))
-            cleaned = "Entry";
+        var cleaned = Files.FileNamePolicy.GeneratedStem(name, "Entry");
         var path = Path.Combine(root, cleaned + extension);
         if (File.Exists(path))
             path = Path.Combine(

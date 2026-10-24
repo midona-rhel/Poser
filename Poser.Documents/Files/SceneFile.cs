@@ -319,6 +319,8 @@ public class SceneActor
 
     public bool Visible { get; set; } = true;
 
+    public bool ClothingOnly { get; set; }
+
     /// <summary>Whether the actor reserved a companion slot at spawn. Required
     /// for a companion attachment to be restorable.</summary>
     public bool HasCompanionSlot { get; set; }

@@ -140,16 +140,7 @@ public sealed class PoseAutoSaveStore
         if (string.IsNullOrWhiteSpace(actorName))
             return "Actor";
 
-        var invalid = Path.GetInvalidFileNameChars();
-        var chars = actorName.ToCharArray();
-        for (var i = 0; i < chars.Length; i++)
-        {
-            if (Array.IndexOf(invalid, chars[i]) >= 0)
-                chars[i] = '_';
-        }
-
-        var sanitized = new string(chars).Trim();
-        return sanitized.Length == 0 ? "Actor" : sanitized;
+        return Files.FileNamePolicy.GeneratedStem(actorName, "Actor");
     }
 
     /// <summary>

@@ -10,6 +10,68 @@ namespace Poser.Game.Tests;
 
 public class ActorColliderMeshTests
 {
+    [Theory]
+    [InlineData("C:/temp/actor/p0011.dat")]
+    [InlineData("|collection|c:/TEMP/actor/p0011.dat")]
+    [InlineData("chara/equipment/e0000/model/c0201e0000_top.mdl")]
+    public void ResolvedModelKeepsOriginalRaceAcrossPathSpellings(string nativePath)
+    {
+        const string original = "chara/equipment/e0000/model/c0201e0000_top.mdl";
+        var resources = new Dictionary<string, IReadOnlyList<string>>
+        { [@"C:\temp\actor\p0011.dat"] = [original] };
+        var model = ActorColliderCapture.ResolveBodyModel(nativePath, resources)!.Value;
+        Assert.Equal(original, model.Original);
+        Assert.Equal(@"C:\temp\actor\p0011.dat", model.Path);
+        Assert.Equal(201, ActorColliderCapture.ModelRace(model.Original));
+    }
+
+    [Theory]
+    [InlineData("chara/human/c0801/obj/body/b0003/model/c0801b0003_top.mdl")]
+    [InlineData("chara/human/c0801/obj/hair/h0103/model/c0801h0103_hir.mdl")]
+    public void NonBodyResourcesAreExcludedEvenWithOpaqueModFilenames(string original)
+    {
+        Assert.Null(ActorColliderCapture.ResolveBodyModel(original, null));
+        var resources = new Dictionary<string, IReadOnlyList<string>>
+        { [@"C:\temp\actor\p0011.dat"] = [original] };
+        Assert.Null(ActorColliderCapture.ResolveBodyModel("C:/temp/actor/p0011.dat", resources));
+    }
+
+    [Fact]
+    public void UnknownOrAmbiguousModIdentityDoesNotSilentlySkipDeformation()
+    {
+        Assert.Throws<InvalidDataException>(() => ActorColliderCapture.ResolveBodyModel("C:/temp/unknown.dat", null));
+        var resources = new Dictionary<string, IReadOnlyList<string>>
+        { ["C:/temp/shared.dat"] = ["chara/equipment/e0000/model/c0201e0000_top.mdl",
+            "chara/equipment/e0000/model/c0801e0000_top.mdl"] };
+        Assert.Throws<InvalidDataException>(() => ActorColliderCapture.ResolveBodyModel("C:/temp/shared.dat", resources));
+        Assert.NotNull(ActorColliderCapture.ResolveBodyModel("chara/human/c0801/obj/body/b0002/model/c0801b0002_top.mdl", null));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MissingTransformsOmitOnlyVisibleTrianglesAndReportTheirBones(bool v6)
+    {
+        var indices = new List<int>();
+        var omissions = new ActorColliderMeshBuilder.Omissions();
+        ActorColliderMeshBuilder.Append(Model(v6), 0, 0,
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, [], indices, omissions: omissions);
+        Assert.Empty(indices);
+        Assert.Equal(0, omissions.Triangles);
+        Assert.Empty(omissions.Bones);
+        var vertices = new List<Vector3>();
+        ActorColliderMeshBuilder.Append(Model(v6), 1, 0,
+            new Dictionary<string, Matrix4x4>(), Matrix4x4.Identity, Vector3.Zero, vertices, indices, omissions: omissions);
+        Assert.Empty(indices);
+        Assert.Equal(1, omissions.Triangles);
+        Assert.Equal("arm", Assert.Single(omissions.Bones));
+        ActorColliderMeshBuilder.Append(Model(v6), 1, 0,
+            new Dictionary<string, Matrix4x4> { ["arm"] = Matrix4x4.Identity },
+            Matrix4x4.Identity, Vector3.Zero, vertices, indices, omissions: omissions);
+        Assert.Equal(new[] { 4, 5, 6 }, indices);
+        Assert.Equal(1, omissions.Triangles);
+    }
+
     [Fact]
     public void RacialDeformationMovesTheModelBeforePosedSkinning()
     {

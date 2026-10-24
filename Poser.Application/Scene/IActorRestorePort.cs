@@ -26,6 +26,8 @@ public interface IActorRestorePort
     /// companion pose cannot be imported before it does.</summary>
     bool CompanionReady(SceneEntityHandle actor);
 
+    Task<string?> RestoreClothingOnly(SceneEntityHandle actor, System.Threading.CancellationToken cancellation);
+
     /// <summary>Assigns the saved Penumbra collection when the actor states
     /// one and no character file. A missing local collection succeeds with a
     /// caveat, retaining the spawned actor's inherited collection. Integration

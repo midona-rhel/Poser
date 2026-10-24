@@ -7,8 +7,15 @@ using Poser.Domain.Identity;
 namespace Poser.UI;
 
 /// <summary>Shared UI reporting for entity commands; ownership and history stay behind the port.</summary>
-public sealed class EntityActions(SelectionEntityCommands commands, UserNotices notices)
+public sealed class EntityActions(SelectionEntityCommands commands, EntityLockCommands locks, UserNotices notices)
 {
+    public void ToggleLock(SelectionId id) => ReportLock(locks.Toggle(id));
+    public void ToggleGroupLock(Guid id) => ReportLock(locks.ToggleGroup(id));
+    private void ReportLock(Poser.Domain.Outcome outcome)
+    {
+        if (!outcome.Success) notices.Refused("Lock", outcome.Detail ?? "The change was refused.");
+    }
+
     public Task<int?> Remove(SelectionId id) => Remove([id]);
 
     /// <summary>Shows or hides the ids as one command; every refusal is

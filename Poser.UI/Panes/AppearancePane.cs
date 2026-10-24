@@ -152,6 +152,7 @@ public sealed partial class AppearancePane
 
     private readonly Application.Settings.ConfigurationService _configuration;
     private readonly PoseFileInspectorSection _poseFiles;
+    private readonly IFramework _framework;
 
     public AppearancePane(
         ActorPresentationSession presentation,
@@ -175,9 +176,11 @@ public sealed partial class AppearancePane
         ICustomizeControl customizeSession,
         IAppearanceColorControl colors,
         ICharacterFiles characterFiles,
-        PoseFileInspectorSection poseFiles)
+        PoseFileInspectorSection poseFiles,
+        IFramework framework)
     {
         _poseFiles = poseFiles;
+        _framework = framework;
         _configuration = config;
         _characterFiles = characterFiles;
         _customize = customize;
@@ -730,7 +733,7 @@ public sealed partial class AppearancePane
         form.Switch(
             "Visible",
             visible ?? false,
-            value => SetActorVisibility(actor, value),
+            value => _entityActions.SetVisibility([SelectionId.ForActor(actor)], value),
             help: "Hide this actor without moving it",
             disabled: visible is null);
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
@@ -752,7 +755,7 @@ public sealed partial class AppearancePane
         form.Switch(
             "Visible",
             visible ?? false,
-            value => SetActorVisibility(actor, value),
+            value => _entityActions.SetVisibility([SelectionId.ForActor(actor)], value),
             help: "Hide this actor without moving it",
             disabled: visible is null);
         var glamourer = _integration.Glamourer;
@@ -781,18 +784,16 @@ public sealed partial class AppearancePane
                 variant: ButtonVariant.Disruptive);
             bool human = _invisibleSkin.IsHuman(actor);
             actions.Button("Clothing only",
-                () => _invisibleSkin.Request(actor, _notices.Failed),
+                async () =>
+                {
+                    var failure = await _invisibleSkin.Apply(actor, System.Threading.CancellationToken.None);
+                    if (failure != null)
+                        await _framework.RunOnFrameworkThread(() => _notices.Failed(failure));
+                },
                 disabled: !human,
                 help: human ? null : "Only human actors can hide their body",
                 variant: ButtonVariant.Disruptive);
         });
-    }
-
-    private void SetActorVisibility(ActorId actor, bool visible)
-    {
-        var result = _values.SetVisibility(actor, visible);
-        if (!result.Success)
-            _notices.Refused("Visibility", result.Detail ?? "The change was refused.");
     }
 
     private void CharacterTintRow(

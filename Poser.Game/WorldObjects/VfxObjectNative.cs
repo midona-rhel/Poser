@@ -442,8 +442,7 @@ internal sealed unsafe class VfxObjectNative
             {
                 if (vfx != null)
                 {
-                    vfx->CleanupRender();
-                    vfx->Dtor(1);
+                    OwnedSceneObjectLifetime.Destroy((CSObject*)vfx);
                 }
                 cleaned = true;
             }

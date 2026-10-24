@@ -276,7 +276,7 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         // draw down, wait for ready, draw up. The customize and equipment
         // bytes stay in DrawData behind a creature model, which is what makes
         // writing 0 later bring the human look back.
-        character->ModelContainer.ModelCharaId = modelCharaId;
+        Appearance.CharacterModelNative.SetModelId(character, modelCharaId);
         character->GameObject.DisableDraw();
         return true;
     }

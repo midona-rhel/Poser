@@ -9,7 +9,7 @@ internal static class ActorBodyColliderBuilder
     internal const int MaximumParts = 48;
     internal sealed record Joint(Vector3 Position, string? Parent, Quaternion Rotation = default);
     internal sealed record Fitted(string Name, IkCollider Collider, string BoneName);
-    private sealed record Span(string Name, string Start, string End, bool Volume = false, bool Sphere = false);
+    private sealed record Span(string Name, string Start, string End, bool Volume = false);
     private static readonly HashSet<string> ExcludedNames = ExcludedCategories();
 
     private static List<Span> BodySpans(IReadOnlyDictionary<string, Joint> joints)
@@ -24,7 +24,10 @@ internal static class ActorBodyColliderBuilder
         foreach (var side in new[] { "l", "r" })
         {
             string label = side == "l" ? "Left" : "Right";
-            spans.AddRange([new($"{label} breast", $"j_mune_{side}", $"j_mune_{side}", true, true),
+            // Fit the posed surface, including anisotropic body shaping. A
+            // forced sphere inflates its radius to cover an elongated region;
+            // the volume fitter can choose a capsule or a sphere as appropriate.
+            spans.AddRange([new($"{label} breast", $"j_mune_{side}", $"j_mune_{side}", true),
                 new($"{label} shoulder", $"j_sako_{side}", $"j_ude_a_{side}"),
                 new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"),
                 new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
@@ -104,7 +107,8 @@ internal static class ActorBodyColliderBuilder
         Fit(joints, vertices, indices, influences.Select(name => name == null ? Array.Empty<BoneWeight>() : new[] { new BoneWeight(name, 1) }).ToArray());
 
     internal static Fitted[] Fit(IReadOnlyDictionary<string, Joint> joints,
-        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<BoneWeight[]> influences)
+        IReadOnlyList<Vector3> vertices, IReadOnlyList<int> indices, IReadOnlyList<BoneWeight[]> influences,
+        ICollection<string>? omittedRegions = null)
     {
         if (vertices.Count != influences.Count || indices.Count % 3 != 0)
             throw new InvalidDataException("Body fitting requires an indexed weighted triangle surface.");
@@ -149,12 +153,22 @@ internal static class ActorBodyColliderBuilder
         var fitted = new List<Fitted>();
         for (int i = 0; i < spans.Count; i++)
         {
-            if (samples[i].Count < 4) continue;
+            if (samples[i].Count < 4)
+            {
+                omittedRegions?.Add(spans[i].Name);
+                continue;
+            }
             var span = spans[i];
             var start = joints[span.Start];
-            var collider = BodySurfaceFit.Fit(samples[i], start.Position, start.Rotation,
-                joints[span.End].Position - start.Position, span.Sphere, span.Volume);
-            fitted.Add(new(span.Name, collider, span.Start));
+            var parts = BodySurfaceFit.FitCompound(samples[i], start.Position, start.Rotation,
+                joints[span.End].Position - start.Position, span.Volume);
+            // Reserve one slot for every remaining region and eight for joint
+            // coverage. Compound fitting must not exhaust the actor budget.
+            if (parts.Length > 1 && fitted.Count + parts.Length + spans.Count - i - 1 + 8 > MaximumParts)
+                parts = [BodySurfaceFit.Fit(samples[i], start.Position, start.Rotation,
+                    joints[span.End].Position - start.Position, false, span.Volume)];
+            for (int part = 0; part < parts.Length; part++)
+                fitted.Add(new(part == 0 ? span.Name : $"{span.Name} / {part + 1}", parts[part], span.Start));
         }
 
         // The torso slices fit as sideways capsules, or spheres when a slice

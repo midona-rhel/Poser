@@ -62,7 +62,10 @@ public readonly record struct PoseTransform(
     Vector3 Scale)
 {
     public const float MaxAbsoluteScale = 1000f;
-    public const float MinAbsoluteScale = 0.00001f;
+    // Appearance profiles hide bones with scales around 1e-6. Capture/import
+    // must admit those finite baselines (including float round-off), while
+    // still excluding zero and scales too small for useful reciprocal math.
+    public const float MinAbsoluteScale = 0.00000001f;
 
     public static PoseTransform Identity { get; } =
         new(Vector3.Zero, Quaternion.Identity, Vector3.One);

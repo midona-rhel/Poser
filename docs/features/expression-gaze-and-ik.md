@@ -177,7 +177,7 @@ seams are not outlined; sharp rims and box/plane edges are.
 An actor's **Create collider** action creates a named group
 of at most 48 ordinary capsules/spheres for recognized humanoid body chains and tails.
 Limbs follow their bone axes; torso, head, hands and feet may use the surface's
-long axis. Breasts remain spheres. Joint spheres are added only where endcaps
+long axis. Breast regions use the same surface fit. Joint spheres are added only where endcaps
 do not already cover the joint, using the smaller adjacent radius.
 Each part can be edited or removed
 individually; creating the group is one undo step. Each part is automatically
@@ -193,7 +193,21 @@ center, radius and stem in the bone's rotation frame, balancing penetration
 against excess clearance rather than using extreme or mean vertex bounds.
 For free-axis sections, covariance/bone directions seed a bounded angular
 refinement; they do not lock the final orientation. Limb axes remain bone-aligned.
+Free-axis regions may use two capsules when splitting the measured surface
+reduces whole-region squared fitting error by at least 25%. Error is measured
+against the union, including excess clearance inside either capsule. Nearly
+round regions retain one part; all parts share the region's bone owner and the
+existing 48-part actor budget. This changes generation, not saved colliders.
 Racial deformation uses the original game resource identity, not a mod's disk filename.
+Resource matching normalizes separators and ignores case while retaining the
+resolved file separately. Unidentified or conflicting mod identities refuse
+capture rather than silently skipping deformation. Auxiliary human `b0003_top`
+models are not skin surfaces and are excluded (also excluded by Meddle's
+character exporter); material-hidden body skin remains eligible.
+Visible triangles with unresolved skin bones are omitted, never fitted with
+partial weights or guessed replacement bones. Valid regions still generate;
+the capture reports omitted triangles/bones and regions without enough samples.
+No usable surface means no collider group is created.
 Hair, ears and skirt chains do not inflate the fit; each recognized tail segment
 has its own bone owner. This is a coarse body approximation, not exact clothing
 collision; unknown or over-budget rigs refuse capture. No actor triangles enter
@@ -217,6 +231,10 @@ The reader supports V5 and V6 bone tables using Penumbra's documented V6 layout;
 unmapped bones or unsupported vertex formats refuse capture instead of silently
 substituting an unposed model. Native reads precede background file parsing and
 skinning; creation returns to the framework thread.
+Racial deformation supports models on sibling branches of the active PBD tree:
+convert from the model through the common ancestor into the actor's race before
+posed skinning. Missing ancestry or non-invertible source deformation refuses
+capture rather than silently dropping a model or substituting identity.
 Overlay tessellation is independent of collision geometry. Shared translucent
 triangle edges are not anti-aliased individually, which would expose mesh seams.
 
@@ -242,6 +260,10 @@ The selected handle has limited pulling force so a taut wrapped span can stop
 short of its target. FABRIK/Rope translation edits clamp their authored target to
 the span's distance limits; rejected drag travel is discarded so reversing responds
 immediately. Collision lag does not feed back into that target.
+Dragging starts from the visible gizmo position, which can differ from the held
+target after contact. Reach limiting uses that frozen input position, and the
+accepted point is converted back to an authored offset; solved motion during the
+gesture does not move its input baseline.
 Conflicting anchors or inserting geometry through an already
 pinned chain can remain unresolved; collision is not a guarantee that every
 requested arrangement is physically possible.

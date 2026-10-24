@@ -1,5 +1,10 @@
 # Pose files and transfer
 
+Filename character handling belongs to Documents' `FileNamePolicy`: interactive
+inputs strip invalid characters, generated library/autosave stems replace them,
+and explicit rename validation refuses them. Callers retain extension, fallback,
+collision, overwrite and retention policy; those workflows are not interchangeable.
+
 ## Pose format and import
 
 `.pose` uses the same JSON structure as Brio v3. Each slot has its own data:

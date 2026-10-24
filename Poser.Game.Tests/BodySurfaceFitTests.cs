@@ -7,6 +7,31 @@ namespace Poser.Game.Tests;
 
 public class BodySurfaceFitTests
 {
+    [Fact]
+    public void CompoundFitImprovesFlattenedSurfaceWithoutSplittingRoundSurfaces()
+    {
+        var samples = new List<BodySurfaceFit.Sample>();
+        for (int latitude = 1; latitude < 24; latitude++)
+        for (int longitude = 0; longitude < 48; longitude++)
+        {
+            float theta = latitude * MathF.PI / 24, phi = longitude * MathF.Tau / 48;
+            samples.Add(new(new(.3f * MathF.Sin(theta) * MathF.Cos(phi),
+                .18f * MathF.Cos(theta), .08f * MathF.Sin(theta) * MathF.Sin(phi)), MathF.Sin(theta)));
+        }
+        var single = BodySurfaceFit.Fit(samples, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, false, true);
+        var parts = BodySurfaceFit.FitCompound(samples, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, true);
+        float Error(IkCollider[] shapes) => samples.Sum(p =>
+        {
+            float distance = shapes.Min(s => BodySurfaceFit.Distance(s, p.Position));
+            return p.Area * distance * distance * (distance > 0 ? 2 : 1);
+        });
+        Assert.Equal(2, parts.Length);
+        Assert.True(Error(parts) < Error([single]) * .75f);
+
+        var round = samples.Select(p => new BodySurfaceFit.Sample(Vector3.Normalize(p.Position) * .1f, p.Area)).ToArray();
+        Assert.Single(BodySurfaceFit.FitCompound(round, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, true));
+    }
+
     internal sealed class Mesh
     {
         internal readonly List<Vector3> Vertices = [];
@@ -29,6 +54,21 @@ public class BodySurfaceFitTests
         Shape = IkColliderShape.Capsule,
         Transform = new(center, rotation ?? Quaternion.Identity, IkCollider.CapsuleScale(radius, stem)),
     };
+
+    [Fact]
+    public void ElongatedBreastSurfaceIsNotForcedIntoAnOversizedSphere()
+    {
+        var mesh = new Mesh();
+        var center = new Vector3(.1f, .2f, .3f);
+        mesh.Add(Capsule(center, .06f, .35f,
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2)), [new("j_mune_r", 1)]);
+        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint>
+        { ["j_mune_r"] = new(center, null) };
+        var fit = Assert.Single(ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights));
+        Assert.Equal(IkColliderShape.Capsule, fit.Collider.Shape);
+        Assert.InRange(fit.Collider.RoundDimensions().Radius, .05f, .07f);
+        Assert.InRange(Vector3.Distance(center, fit.Collider.Transform.Position), 0, .01f);
+    }
 
     [Fact]
     public void FitsAnOffsetLimbSurfaceRatherThanCenteringItOnTheBone()
@@ -85,6 +125,26 @@ public class BodySurfaceFitTests
         };
         var fit = ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights);
         Assert.Equal(roundWaist ? IkColliderShape.Sphere : IkColliderShape.Capsule, fit.Single(p => p.Name == "Waist").Collider.Shape);
+        Assert.Equal("j_sebo_a", Assert.Single(fit, p => p.Name == "Waist seam").BoneName);
+        // The belly and the back at the seam height.
+        foreach (var point in new[] { new Vector3(0, .94f, .08f), new Vector3(0, .94f, -.08f) })
+            Assert.Contains(fit, p => BodySurfaceFit.Distance(p.Collider, point) <= 0);
+    }
+
+    [Fact]
+    public void TheWaistSeamIsCoveredForStackedCapsules()
+    {
+        var sideways = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2);
+        var mesh = new Mesh();
+        mesh.Add(Capsule(new(0, .85f, 0), .1f, .2f, sideways), [new("j_kosi", 1)]);
+        mesh.Add(Capsule(new(0, 1.03f, 0), .1f, .2f, sideways), [new("j_sebo_a", 1)]);
+        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint>
+        {
+            ["j_kosi"] = new(new(0, .8f, 0), null),
+            ["j_sebo_a"] = new(new(0, .94f, 0), "j_kosi"),
+            ["j_sebo_b"] = new(new(0, 1.1f, 0), "j_sebo_a"),
+        };
+        var fit = ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights);
         Assert.Equal("j_sebo_a", Assert.Single(fit, p => p.Name == "Waist seam").BoneName);
         // The belly and the back at the seam height.
         foreach (var point in new[] { new Vector3(0, .94f, .08f), new Vector3(0, .94f, -.08f) })

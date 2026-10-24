@@ -11,5 +11,5 @@ public interface IPoseInteraction
     bool IsCreature(ActorId actor);
     TransformComponents? GetPropagation(SkeletonId skeleton);
     void SetPropagation(SkeletonId skeleton, TransformComponents propagation);
-    Vector3 ClampIkTranslation(BoneId bone, Vector3 delta);
+    Vector3 ClampIkTranslation(BoneId bone, Vector3 delta, Vector3 inputPosition);
 }

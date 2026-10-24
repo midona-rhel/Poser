@@ -53,6 +53,37 @@ public sealed class NativeSignatureSourceTests
     }
 
     [Fact]
+    public void Owned_scene_object_cleanup_has_one_native_owner()
+    {
+        var cleanup = new Regex(@"->\s*(?:CleanupRender\s*\(|Dtor\s*\(\s*1\s*\))");
+        var offenders = ProductionLines("Poser.Game")
+            .Where(x => !x.Where.Contains("OwnedSceneObjectLifetime.cs:", StringComparison.Ordinal)
+                && cleanup.IsMatch(Prose.Replace(x.Line, "")))
+            .Select(x => $"{x.Where}: {x.Line.Trim()}").ToList();
+        Assert.True(offenders.Count == 0,
+            "Owned scene objects must use OwnedSceneObjectLifetime for cleanup-before-destruction:\n"
+            + string.Join("\n", offenders));
+    }
+
+    [Fact]
+    public void Character_model_mutations_have_one_native_owner()
+    {
+        var assignment = new Regex(@"(?:ModelContainer\s*\.\s*ModelCharaId|->Models\s*\[[^\]]+\])\s*=(?!=)");
+        var refCountWrite = new Regex(@"\bRefCount\s*(?:[+*/-]?=(?!=)|\+\+|--)");
+        var offenders = ProductionLines("Poser.Game")
+            .Where(x =>
+            {
+                var code = Prose.Replace(x.Line, "");
+                return refCountWrite.IsMatch(code)
+                    || (assignment.IsMatch(code) && !x.Where.Contains("CharacterModelNative.cs:", StringComparison.Ordinal));
+            })
+            .Select(x => $"{x.Where}: {x.Line.Trim()}").ToList();
+        Assert.True(offenders.Count == 0,
+            "Character model writes must use CharacterModelNative; reference counts must use native lifetime operations:\n"
+            + string.Join("\n", offenders));
+    }
+
+    [Fact]
     public void Production_code_scans_only_generated_signatures()
     {
         var offenders = ProductionLines("Poser", "Poser.Game", "Poser.Application", "Poser.UI", "Poser.Domain", "Poser.Documents")

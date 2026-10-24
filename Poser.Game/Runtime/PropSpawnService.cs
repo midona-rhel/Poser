@@ -303,8 +303,7 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
             if (world == null)
             {
                 _log.Warning("PropSpawnService: no world to add the prop to.");
-                weapon->CleanupRender();
-                weapon->Dtor(1);
+                Natives.OwnedSceneObjectLifetime.Destroy((CSObject*)weapon);
                 return null;
             }
 
@@ -367,8 +366,7 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
             {
                 if (weapon != null)
                 {
-                    weapon->CleanupRender();
-                    weapon->Dtor(1);
+                    Natives.OwnedSceneObjectLifetime.Destroy((CSObject*)weapon);
                 }
                 detail = "The game did not take the model.";
                 return false;
@@ -379,9 +377,7 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
             handle.Model = model;
             handle.Transform = placement;
             handle.Visible = visible;
-            var doomed = (CSWeapon*)old;
-            doomed->CleanupRender();
-            doomed->Dtor(1);
+            Natives.OwnedSceneObjectLifetime.Destroy((CSObject*)old);
             _events.Publish(new PropListChangedEvent());
             return true;
         }
@@ -418,10 +414,8 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
             return;
         try
         {
-            var weapon = (CSWeapon*)handle.Address;
             Diagnostics.GPoseTransitionLog.Model(_log, "prop-delete-before", handle.Address);
-            weapon->CleanupRender();
-            weapon->Dtor(1);
+            Natives.OwnedSceneObjectLifetime.Destroy((CSObject*)handle.Address);
             _log.Information($"[GPoseLifetime] prop-delete-complete draw=0x{handle.Address:X}");
         }
         catch (Exception ex)

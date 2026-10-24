@@ -75,7 +75,17 @@ public sealed partial class DebugBridge
                 bool readable = TraceRead(owner, out ulong vtable);
                 TraceRead(owner + 0x89, out byte kind);
                 TraceRead((nint)(&((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)owner)->Skeleton), out nint back);
-                string row = $"skeleton=0x{skeleton:X} owner=0x{owner:X} readable={readable} vt=0x{vtable:X} kind={kind & 15} back=0x{back:X}";
+                var parents = new List<string>();
+                var seenParents = new HashSet<nint>();
+                nint parent = owner;
+                for (int depth = 0; parent != 0 && depth < 16; depth++)
+                {
+                    if (!seenParents.Add(parent)) { parents.Add("cycle"); break; }
+                    if (!TraceRead(parent + 0x18, out nint next)) { parents.Add("unreadable"); break; }
+                    parents.Add($"0x{next:X}");
+                    parent = next;
+                }
+                string row = $"skeleton=0x{skeleton:X} owner=0x{owner:X} readable={readable} vt=0x{vtable:X} kind={kind & 15} back=0x{back:X} parents={string.Join(" -> ", parents)}";
                 if (!_lifetimeRows.TryGetValue(skeleton, out var previous) || previous != row)
                 {
                     _lifetimeTrace.WriteLine($"{DateTime.UtcNow:O} frame={_lifetimeFrame} {row}");

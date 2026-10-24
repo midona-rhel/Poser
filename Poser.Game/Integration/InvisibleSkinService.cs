@@ -25,7 +25,7 @@ namespace Poser.Game.Integration;
 /// sharing it keeps the change. The drawn body holds the state until its
 /// next redraw, which is therefore the restore.
 /// </summary>
-public sealed class InvisibleSkinService : IInvisibleSkinService
+public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
 {
     private readonly PenumbraIpc _port;
     private readonly IFramework _framework;
@@ -38,6 +38,31 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
     /// the assets are missing, which refuses cleanly.</summary>
     private Dictionary<string, string>? _paths;
     private bool _pathsLoaded;
+    // Bound to the rendered body, not just an actor/slot: an ordinary redraw
+    // restores skin and must not be saved as still clothing-only.
+    private readonly Dictionary<ActorId, nint> _appliedBodies = new();
+
+    private unsafe nint Body(ActorId actor) =>
+        _bindings.Value.Resolve(actor) is { Success: true, Value: { } live }
+            ? (nint)SlotCharacterBases.Resolve(live.Address, PoseSlot.Character) : 0;
+
+    private unsafe bool StillApplied(ActorId actor, nint body)
+    {
+        if (body == 0 || Body(actor) != body) return false;
+        var character = (CharacterBase*)body;
+        // The native allocator may reuse the address after redraw. Restored
+        // head models invalidate the marker even when the address is equal.
+        for (int slot = HairModelSlot; slot <= TailModelSlot && slot < character->SlotCount; slot++)
+            if (character->Models[slot] != null) return false;
+        return true;
+    }
+
+    public bool IsApplied(ActorId actor)
+    {
+        foreach (var key in new List<ActorId>(_appliedBodies.Keys))
+            if (!StillApplied(key, _appliedBodies[key])) _appliedBodies.Remove(key);
+        return _appliedBodies.ContainsKey(actor);
+    }
 
     public InvisibleSkinService(
         PenumbraIpc port,
@@ -69,29 +94,11 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
         => _bindings.Value.Resolve(actor) is { Success: true, Value: { } legacy }
             && IsHuman(legacy.Address);
 
-    /// <summary>Runs the whole flow and reports the outcome to
-    /// <paramref name="onFailure"/> (framework thread) when it fails.
-    /// Redraw restores the actor; this verb has no other undo.</summary>
-    public void Request(ActorId actor, Action<string>? onFailure)
+    public async Task<string?> Apply(ActorId actor, CancellationToken cancellation)
     {
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var failure = await Apply(actor).ConfigureAwait(false);
-                if (failure != null && onFailure != null)
-                    await _framework.RunOnFrameworkThread(
-                        () => onFailure(failure)).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"[InvisibleSkin] failed: {ex}");
-            }
-        });
-    }
-
-    private async Task<string?> Apply(ActorId actor)
-    {
+        cancellation.ThrowIfCancellationRequested();
+        if (!await _framework.RunOnFrameworkThread(() => IsHuman(actor)).ConfigureAwait(false))
+            return "Only a loaded human actor can hide its body.";
         var paths = LoadPaths();
         if (paths is null)
             return "The invisible-skin files are missing from the plugin "
@@ -102,8 +109,11 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
         if (!collection.Success)
             return collection.Detail;
 
-        var added = await _framework.RunOnFrameworkThread(
-            () => _port.AddInvisibleSkinMods(collection.Value, paths))
+        var added = await _framework.RunOnFrameworkThread(() =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                return _port.AddInvisibleSkinMods(collection.Value, paths);
+            })
             .ConfigureAwait(false);
         if (!added.Success)
             return added.Detail;
@@ -111,50 +121,48 @@ public sealed class InvisibleSkinService : IInvisibleSkinService
         // The redraw is what bakes the remapped materials into the drawn
         // body; the temporary mod is removed again afterwards WHATEVER
         // happened, so the collection never stays dirty.
-        string? failure = null;
-        var redraw = await _port.RedrawAndWait(
-            actor, TimeSpan.FromSeconds(20), CancellationToken.None)
-            .ConfigureAwait(false);
-        if (redraw.Success)
+        try
+        {
+            var redraw = await _port.RedrawAndWait(
+                actor, TimeSpan.FromSeconds(20), cancellation).ConfigureAwait(false);
+            if (!redraw.Success) return redraw.Detail;
+            return await _framework.RunOnFrameworkThread(() =>
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (!StripHeadModels(actor)) return "The clothing-only actor is no longer available.";
+                _appliedBodies[actor] = Body(actor);
+                return (string?)null;
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
             await _framework.RunOnFrameworkThread(
-                () => StripHeadModels(actor)).ConfigureAwait(false);
-        else
-            failure = redraw.Detail;
-
-        await _framework.RunOnFrameworkThread(
-            () => _port.RemoveInvisibleSkinMods(collection.Value))
-            .ConfigureAwait(false);
-        return failure;
+                () => _port.RemoveInvisibleSkinMods(collection.Value)).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Nulls the hair, face and tail model slots on the redrawn
     /// body — the material remap covers the body skin; these three carry
     /// the hair, the face (eyes included) and the tail. Ktisis'
-    /// SetInvisibleSkin, verbatim. Framework thread only, and only on a
+    /// SetInvisibleSkin's slot selection. Framework thread only, and only on a
     /// GPose copy — the native-write gate every other write honors.</summary>
-    private unsafe void StripHeadModels(ActorId actor)
+    private unsafe bool StripHeadModels(ActorId actor)
     {
         var resolved = _bindings.Value.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy
             || legacy.Address == nint.Zero)
-            return;
+            return false;
         if (!GPoseObjectTable.IsActorIndex(GPoseObjectTable.IndexOf(legacy.Address)))
-            return;
+            return false;
         var characterBase = SlotCharacterBases.Resolve(
             legacy.Address, PoseSlot.Character);
         if (GPoseObjectTable.AsHuman(characterBase) == null)
-            return;
+            return false;
         for (int slot = HairModelSlot; slot <= TailModelSlot; slot++)
         {
-            if (slot >= characterBase->SlotCount)
-                break;
-            var model = characterBase->Models[slot];
-            if (model == null)
-                continue;
-            characterBase->Models[slot] = null;
-            model->ModelResourceHandle->DecRef();
-            model->RefCount = 0;
+            Appearance.CharacterModelNative.ReleaseSlot(characterBase, slot);
         }
+        return true;
     }
 
     /// <summary>Human model slots (Ktisis SetInvisibleSkin): 10 hair,

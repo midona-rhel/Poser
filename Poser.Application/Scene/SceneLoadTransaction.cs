@@ -524,7 +524,7 @@ internal sealed class SceneLoadTransaction(
         // the ownership it registers — and the by-name unlock-and-restore
         // teardown that ownership buys — is the same one a hand-driven
         // import leaves behind.
-        if (!_actors.Any(entry => entry.Mcdf is not null || entry.PenumbraCollection is not null))
+        if (!_actors.Any(entry => entry.Mcdf is not null || entry.PenumbraCollection is not null || entry.ClothingOnly))
             return null;
         Step(ScenePhase.ApplyingAppearance);
         // Collections are per-actor redraws with no shared slot: all
@@ -557,6 +557,16 @@ internal sealed class SceneLoadTransaction(
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.CharacterFile, actor.Name,
                     appearance.Restored, detail));
+        }
+
+        // Clothing-only redraws must follow appearance and precede the final
+        // readiness barrier and pose import, which require the resulting body.
+        foreach (var actor in _actors.Where(actor => actor.ClothingOnly))
+        {
+            if (Guard() is { } stop) return Stop.Abort(stop);
+            var detail = await actorRestore.RestoreClothingOnly(_actorTokens[actor.Key], cancellation);
+            if (detail != null)
+                _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.CharacterFile, actor.Name, false, detail));
         }
 
         // The redraws rebuilt the skeletons every later phase reads.

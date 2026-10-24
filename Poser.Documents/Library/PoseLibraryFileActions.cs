@@ -156,7 +156,7 @@ public sealed class PoseLibraryFileActions
         var trimmed = (newName ?? string.Empty).Trim();
         if (trimmed.Length == 0)
             return Refused(kind, "A name is required.");
-        if (trimmed.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        if (Files.FileNamePolicy.HasInvalidCharacters(trimmed))
             return Refused(kind, "The name contains characters a file cannot carry.");
 
         try
