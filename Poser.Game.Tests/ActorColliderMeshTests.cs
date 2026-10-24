@@ -11,6 +11,43 @@ namespace Poser.Game.Tests;
 public class ActorColliderMeshTests
 {
     [Theory]
+    [InlineData("C:/temp/actor/p0011.dat")]
+    [InlineData("|collection|c:/TEMP/actor/p0011.dat")]
+    [InlineData("chara/equipment/e0000/model/c0201e0000_top.mdl")]
+    public void ResolvedModelKeepsOriginalRaceAcrossPathSpellings(string nativePath)
+    {
+        const string original = "chara/equipment/e0000/model/c0201e0000_top.mdl";
+        var resources = new Dictionary<string, IReadOnlyList<string>>
+        { [@"C:\temp\actor\p0011.dat"] = [original] };
+        var model = ActorColliderCapture.ResolveBodyModel(nativePath, resources)!.Value;
+        Assert.Equal(original, model.Original);
+        Assert.Equal(@"C:\temp\actor\p0011.dat", model.Path);
+        Assert.Equal(201, ActorColliderCapture.ModelRace(model.Original));
+    }
+
+    [Theory]
+    [InlineData("chara/human/c0801/obj/body/b0003/model/c0801b0003_top.mdl")]
+    [InlineData("chara/human/c0801/obj/hair/h0103/model/c0801h0103_hir.mdl")]
+    public void NonBodyResourcesAreExcludedEvenWithOpaqueModFilenames(string original)
+    {
+        Assert.Null(ActorColliderCapture.ResolveBodyModel(original, null));
+        var resources = new Dictionary<string, IReadOnlyList<string>>
+        { [@"C:\temp\actor\p0011.dat"] = [original] };
+        Assert.Null(ActorColliderCapture.ResolveBodyModel("C:/temp/actor/p0011.dat", resources));
+    }
+
+    [Fact]
+    public void UnknownOrAmbiguousModIdentityDoesNotSilentlySkipDeformation()
+    {
+        Assert.Throws<InvalidDataException>(() => ActorColliderCapture.ResolveBodyModel("C:/temp/unknown.dat", null));
+        var resources = new Dictionary<string, IReadOnlyList<string>>
+        { ["C:/temp/shared.dat"] = ["chara/equipment/e0000/model/c0201e0000_top.mdl",
+            "chara/equipment/e0000/model/c0801e0000_top.mdl"] };
+        Assert.Throws<InvalidDataException>(() => ActorColliderCapture.ResolveBodyModel("C:/temp/shared.dat", resources));
+        Assert.NotNull(ActorColliderCapture.ResolveBodyModel("chara/human/c0801/obj/body/b0002/model/c0801b0002_top.mdl", null));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void MissingTransformsOmitOnlyVisibleTrianglesAndReportTheirBones(bool v6)

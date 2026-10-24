@@ -23,7 +23,7 @@ public sealed class ActorColliderCapture(
     Scene.SceneLifecycleHistory lifecycle, SceneGroups groups, IGPoseService gpose, IPluginLog log,
     Application.Transforms.TransformParenting parenting, GroupSteps groupSteps) : Application.Posing.IActorColliderCapture
 {
-    private sealed record ModelSnapshot(string Path, ushort Race, uint Attributes, uint Shapes);
+    private sealed record ModelSnapshot(string Path, string OriginalPath, ushort Race, uint Attributes, uint Shapes);
     private sealed record Snapshot(ModelSnapshot[] Models, Dictionary<string, Matrix4x4> Bones,
         Dictionary<string, ActorBodyColliderBuilder.Joint> Joints,
         Matrix4x4 World, Vector3 Origin, ushort Race, string DeformerPath,
@@ -107,25 +107,17 @@ public sealed class ActorColliderCapture(
         var replacements = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (paths.Value is { } resources)
             foreach (var (actual, original) in resources)
-                foreach (var path in original) replacements[path] = actual;
+                foreach (var path in original) replacements[ResourceKey(path)] = actual;
 
         var models = new List<ModelSnapshot>();
         foreach (var entry in character->ModelsSpan)
         {
             var model = entry.Value;
             if (model == null || model->ModelResourceHandle == null) continue;
-            var path = model->ModelResourceHandle->FileName.ToString();
-            // Penumbra's collection discriminator is resource identity, not a disk path.
-            path = path[(path.LastIndexOf('|') + 1)..];
-            // Hair can also be weighted to the head, so bone ownership alone
-            // cannot classify it. Filter the original resource before resolving
-            // arbitrary Penumbra disk filenames.
-            var original = paths.Value is { } resourcePaths && resourcePaths.TryGetValue(path, out var originals)
-                ? originals.FirstOrDefault(IsBodyModelPath) : path;
-            if (original == null || !IsBodyModelPath(original)) continue;
-            ushort race = ModelRace(original);
-            if (replacements.TryGetValue(path, out var resolved)) path = resolved;
-            models.Add(new(path, race, model->EnabledAttributeIndexMask, model->EnabledShapeKeyIndexMask));
+            var resource = ResolveBodyModel(model->ModelResourceHandle->FileName.ToString(), paths.Value);
+            if (resource == null) continue;
+            models.Add(new(resource.Value.Path, resource.Value.Original, ModelRace(resource.Value.Original),
+                model->EnabledAttributeIndexMask, model->EnabledShapeKeyIndexMask));
         }
         if (models.Count == 0) throw new InvalidOperationException("The actor has no loaded meshes.");
 
@@ -171,8 +163,35 @@ public sealed class ActorColliderCapture(
         return match.Success ? ushort.Parse(match.Groups[1].Value) : (ushort)0;
     }
 
+    private static string ResourceKey(string path) => path[(path.LastIndexOf('|') + 1)..].Replace('\\', '/');
+
+    internal static (string Path, string Original)? ResolveBodyModel(string nativePath,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? resources)
+    {
+        string key = ResourceKey(nativePath);
+        var matches = resources?.Where(p => string.Equals(ResourceKey(p.Key), key, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(p => p.Value.Select(original => (Path: p.Key, Original: ResourceKey(original)))).ToArray() ?? [];
+        // Native handles may name the original game resource or the resolved
+        // physical file. Preserve both identities; a .dat filename has no race.
+        if (matches.Length == 0 && resources != null)
+            matches = resources.SelectMany(p => p.Value
+                .Where(original => string.Equals(ResourceKey(original), key, StringComparison.OrdinalIgnoreCase))
+                .Select(original => (Path: p.Key, Original: ResourceKey(original)))).ToArray();
+        if (matches.Length == 0)
+        {
+            if (!key.StartsWith("chara/", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Cannot identify the original game model for '{nativePath}'.");
+            return IsBodyModelPath(key) ? (key, key) : null;
+        }
+        var supported = matches.Where(p => IsBodyModelPath(p.Original)).ToArray();
+        if (supported.Length == 0) return null;
+        if (supported.Length != matches.Length || supported.Select(p => ModelRace(p.Original)).Distinct().Count() != 1)
+            throw new InvalidDataException($"Ambiguous body model identity for '{nativePath}'.");
+        return supported[0];
+    }
+
     internal static bool IsBodyModelPath(string path) =>
-        !Regex.IsMatch(path.Replace('\\', '/'), @"(?:/hair/|_hir\.mdl$)",
+        !Regex.IsMatch(ResourceKey(path), @"(?:/hair/|_hir\.mdl$|/body/b0003/model/c\d{4}b0003_top\.mdl$)",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private (ActorBodyColliderBuilder.Fitted[] Parts, string? Warning) Build(Snapshot snapshot)

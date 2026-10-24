@@ -177,7 +177,7 @@ seams are not outlined; sharp rims and box/plane edges are.
 An actor's **Create collider** action creates a named group
 of at most 48 ordinary capsules/spheres for recognized humanoid body chains and tails.
 Limbs follow their bone axes; torso, head, hands and feet may use the surface's
-long axis. Breasts remain spheres. Joint spheres are added only where endcaps
+long axis. Breast regions use the same surface fit. Joint spheres are added only where endcaps
 do not already cover the joint, using the smaller adjacent radius.
 Each part can be edited or removed
 individually; creating the group is one undo step. Each part is automatically
@@ -199,6 +199,11 @@ against the union, including excess clearance inside either capsule. Nearly
 round regions retain one part; all parts share the region's bone owner and the
 existing 48-part actor budget. This changes generation, not saved colliders.
 Racial deformation uses the original game resource identity, not a mod's disk filename.
+Resource matching normalizes separators and ignores case while retaining the
+resolved file separately. Unidentified or conflicting mod identities refuse
+capture rather than silently skipping deformation. Auxiliary human `b0003_top`
+models are not skin surfaces and are excluded (also excluded by Meddle's
+character exporter); material-hidden body skin remains eligible.
 Visible triangles with unresolved skin bones are omitted, never fitted with
 partial weights or guessed replacement bones. Valid regions still generate;
 the capture reports omitted triangles/bones and regions without enough samples.
