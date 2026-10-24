@@ -9,6 +9,22 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 23), "Better colliders and steadier posing",
+        [
+            "Improved generated body colliders to fit the actor's body more closely, including modded bodies.",
+            "Fixed oversized colliders extending into empty space.",
+            "Kept generating usable body colliders when some mesh bones are missing, with a warning about incomplete coverage.",
+            "Fixed skeleton overlays drifting away from actors scaled with Customize+.",
+            "Fixed rope IK dragging away from the cursor after colliding with something.",
+            "Fixed bone scaling twisting chains unexpectedly.",
+            "Saved and restored Hide everything but clothing with scenes.",
+            "Fixed a crash when leaving GPose and teleporting after hiding an actor's skin.",
+            "Fixed poses failing to load when a bone had a very small scale.",
+            "Fixed poor ground shadows on spawned minions and mounts.",
+            "Made actor visibility and position locks behave consistently across controls.",
+            "Made filename validation consistent when saving and renaming files.",
+            "Fixed housing brightness undo silently failing when the original setting could not be restored.",
+        ]),
         new(new(0, 9, 22), "Steadier IK, open eyes and camera undo",
         [
             "Changed how End rotation works on two-bone IK: off now keeps the hand or foot pointing the way it was while you drag or swivel the arm or leg, and on lets it turn with the limb. Off is the new default, and chains in your saved scenes keep working the way they did.",

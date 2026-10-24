@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.9.23-beta — Better colliders and steadier posing
+
+### Colliders
+
+- Improved generated body colliders to fit the actor's body more closely, including modded bodies.
+- Fixed oversized colliders extending into empty space.
+- Kept generating usable body colliders when some mesh bones are missing, with a warning about incomplete coverage.
+
+### Posing
+
+- Fixed skeleton overlays drifting away from actors scaled with Customize+.
+- Fixed rope IK dragging away from the cursor after colliding with something.
+- Fixed bone scaling twisting chains unexpectedly.
+
+### Scenes and actors
+
+- Saved and restored Hide everything but clothing with scenes.
+- Fixed a crash when leaving GPose and teleporting after hiding an actor's skin.
+- Fixed poses failing to load when a bone had a very small scale.
+- Fixed poor ground shadows on spawned minions and mounts.
+
+### Controls and files
+
+- Made actor visibility and position locks behave consistently across controls.
+- Made filename validation consistent when saving and renaming files.
+- Fixed housing brightness undo silently failing when the original setting could not be restored.
+
 ## 0.9.22-beta — Steadier IK, open eyes and camera undo
 
 ### IK
