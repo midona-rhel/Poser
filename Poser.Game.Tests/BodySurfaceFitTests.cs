@@ -31,6 +31,21 @@ public class BodySurfaceFitTests
     };
 
     [Fact]
+    public void ElongatedBreastSurfaceIsNotForcedIntoAnOversizedSphere()
+    {
+        var mesh = new Mesh();
+        var center = new Vector3(.1f, .2f, .3f);
+        mesh.Add(Capsule(center, .06f, .35f,
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2)), [new("j_mune_r", 1)]);
+        var joints = new Dictionary<string, ActorBodyColliderBuilder.Joint>
+        { ["j_mune_r"] = new(center, null) };
+        var fit = Assert.Single(ActorBodyColliderBuilder.Fit(joints, mesh.Vertices, mesh.Indices, mesh.Weights));
+        Assert.Equal(IkColliderShape.Capsule, fit.Collider.Shape);
+        Assert.InRange(fit.Collider.RoundDimensions().Radius, .05f, .07f);
+        Assert.InRange(Vector3.Distance(center, fit.Collider.Transform.Position), 0, .01f);
+    }
+
+    [Fact]
     public void FitsAnOffsetLimbSurfaceRatherThanCenteringItOnTheBone()
     {
         var mesh = new Mesh();

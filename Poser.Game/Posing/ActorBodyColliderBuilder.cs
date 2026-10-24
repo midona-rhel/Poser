@@ -9,7 +9,7 @@ internal static class ActorBodyColliderBuilder
     internal const int MaximumParts = 48;
     internal sealed record Joint(Vector3 Position, string? Parent, Quaternion Rotation = default);
     internal sealed record Fitted(string Name, IkCollider Collider, string BoneName);
-    private sealed record Span(string Name, string Start, string End, bool Volume = false, bool Sphere = false);
+    private sealed record Span(string Name, string Start, string End, bool Volume = false);
     private static readonly HashSet<string> ExcludedNames = ExcludedCategories();
 
     private static List<Span> BodySpans(IReadOnlyDictionary<string, Joint> joints)
@@ -24,7 +24,10 @@ internal static class ActorBodyColliderBuilder
         foreach (var side in new[] { "l", "r" })
         {
             string label = side == "l" ? "Left" : "Right";
-            spans.AddRange([new($"{label} breast", $"j_mune_{side}", $"j_mune_{side}", true, true),
+            // Fit the posed surface, including anisotropic body shaping. A
+            // forced sphere inflates its radius to cover an elongated region;
+            // the volume fitter can choose a capsule or a sphere as appropriate.
+            spans.AddRange([new($"{label} breast", $"j_mune_{side}", $"j_mune_{side}", true),
                 new($"{label} shoulder", $"j_sako_{side}", $"j_ude_a_{side}"),
                 new($"{label} upper arm", $"j_ude_a_{side}", $"j_ude_b_{side}"),
                 new($"{label} forearm", $"j_ude_b_{side}", $"j_te_{side}"),
@@ -158,7 +161,7 @@ internal static class ActorBodyColliderBuilder
             var span = spans[i];
             var start = joints[span.Start];
             var collider = BodySurfaceFit.Fit(samples[i], start.Position, start.Rotation,
-                joints[span.End].Position - start.Position, span.Sphere, span.Volume);
+                joints[span.End].Position - start.Position, false, span.Volume);
             fitted.Add(new(span.Name, collider, span.Start));
         }
 
