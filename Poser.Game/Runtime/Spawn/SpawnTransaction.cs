@@ -322,7 +322,7 @@ internal sealed unsafe class SpawnTransaction
         if (modelCharaId != 0)
         {
             EnsureCurrent(ownership);
-            Appearance.CharacterModelNative.SetModelId(newCharacter, modelCharaId);
+            Appearance.CharacterModelNative.InitializeCatalogModel(newCharacter, modelCharaId);
         }
 
         EnsureCurrent(ownership);

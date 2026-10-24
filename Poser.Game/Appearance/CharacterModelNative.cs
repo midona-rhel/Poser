@@ -13,6 +13,20 @@ internal static unsafe class CharacterModelNative
     internal static void SetModelId(Character* character, int modelId) =>
         character->ModelContainer.ModelCharaId = modelId;
 
+    internal static void InitializeCatalogModel(Character* character, int modelId)
+    {
+        if (modelId == 0) return;
+
+        // The seed is a player, not the catalog model's appearance. Even a
+        // hidden inherited weapon changes the monster's ground shadow (#622:
+        // clearing/restoring only the main-hand model reproduced both states).
+        // Clear model IDs before first draw; do not clear native weapon structs
+        // or their owned pointers. Ordinary duplicates never enter this path.
+        for (int slot = 0; slot < 3; slot++)
+            character->DrawData.Weapon((DrawDataContainer.WeaponSlot)slot).ModelId = default;
+        SetModelId(character, modelId);
+    }
+
     internal static void ReleaseSlot(CharacterBase* body, int slot)
     {
         if (slot < 0 || slot >= body->SlotCount) return;

@@ -52,6 +52,12 @@ read/write refusals do not unlock either actor or change the source. A duplicate
 may read a Poser-held MCDF source using Poser's owner key after an unkeyed refusal;
 it still writes the new target unkeyed and never reads through a foreign hold.
 
+New non-player catalog models discard the player's inherited weapon model IDs
+before first draw, matching Brio's empty catalog weapon appearance. Hidden
+weapons are not absent weapons and can alter a monster's ground shadow.
+Ordinary duplicates retain their source equipment; catalog initialization does
+not run when copying an actor or later changing its model.
+
 Copying without pose retains the source's active Customize+ profile contents as
 an owned temporary profile on the copy, independent of animation and pose.
 Saved source profiles are read through the same active-ID/JSON API Brio uses;
