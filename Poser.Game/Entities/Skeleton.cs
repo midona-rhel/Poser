@@ -541,7 +541,7 @@ public class Skeleton : EntityBase, ISkeleton
                 if (!_bonesByIndex.TryGetValue((partialIdx, boneIdx), out var bone))
                     continue;
 
-                var boneTransformPtr = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                var boneTransformPtr = NativePoseRead.Model(pose, boneIdx);
                 if (boneTransformPtr == null)
                     continue;
 
@@ -589,7 +589,7 @@ public class Skeleton : EntityBase, ISkeleton
                 }
                 if (boneIdx < 0 || boneIdx >= pose->Skeleton->Bones.Length)
                     continue;
-                var wantedPtr = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                var wantedPtr = NativePoseRead.Model(pose, boneIdx);
                 if (wantedPtr == null)
                     continue;
                 ref var wanted = ref *wantedPtr;

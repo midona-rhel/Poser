@@ -383,10 +383,9 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                     continue;
                 var frameKey = (slotKey, partialIdx, rootIndex);
                 _stacks.ForgetPartialFrame(frameKey);
-                var rootSpace = pose->AccessBoneModelSpace(rootIndex, hkaPose.PropagateOrNot.DontPropagate);
+                var rootSpace = NativePoseRead.Model(pose, rootIndex);
                 var parentPose = gameSkeleton->PartialSkeletons[parent.PartialId].GetHavokPose(0);
-                var parentSpace = parentPose == null ? null : parentPose->AccessBoneModelSpace(
-                    parent.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+                var parentSpace = NativePoseRead.Model(parentPose, parent.BoneIndex);
                 if (rootSpace == null || parentSpace == null)
                     continue;
                 var attached = ReadTransform(parentSpace);
@@ -426,9 +425,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 if (!bonePoseInfo.HasStacks && !fixedHold && actions == null)
                     continue;
 
-                var baselineSpace = pose->AccessBoneModelSpace(
-                    boneIdx,
-                    hkaPose.PropagateOrNot.DontPropagate);
+                var baselineSpace = NativePoseRead.Model(pose, boneIdx);
                 if (baselineSpace == null)
                     continue;
                 var animatedBaseline = ReadTransform(baselineSpace);
@@ -456,7 +453,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 }
 
                 // Brio captures both caches immediately after applying each bone.
-                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                var modelSpace = NativePoseRead.Model(pose, boneIdx);
                 if (modelSpace != null)
                 {
                     var transform = ReadTransform(modelSpace);
@@ -548,7 +545,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 if (bone == null)
                     continue;
 
-                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                var modelSpace = NativePoseRead.Model(pose, boneIdx);
                 if (modelSpace != null)
                 {
                     var transform = new Transform
@@ -614,7 +611,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                     // arm rather than dereferencing null.
                     var parentModelSpace = parentPose == null
                         ? null
-                        : parentPose->AccessBoneModelSpace(parentBone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+                        : NativePoseRead.Model(parentPose, parentBone.BoneIndex);
 
                     if (parentModelSpace != null)
                     {
@@ -656,7 +653,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         if (_ik.Held.ResolveHeld(ik, bone, authored.Position, authored.Rotation, pose) is not { } held)
             return;
         var target = held.Position;
-        var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+        var rotSpace = NativePoseRead.Model(pose, boneIdx);
         var currentRotation = new Quaternion(
             rotSpace->Rotation.X, rotSpace->Rotation.Y,
             rotSpace->Rotation.Z, rotSpace->Rotation.W);
@@ -706,7 +703,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         if (ik.Config is not { Solver: Poser.Domain.Posing.IkSolver.TwoJoint, EnforceEndRotation: false, EndAnchor: { } anchor }
             || ik.Chain.SecondJoint < 0)
             return false;
-        var forearm = pose->AccessBoneModelSpace(ik.Chain.SecondJoint, hkaPose.PropagateOrNot.DontPropagate);
+        var forearm = NativePoseRead.Model(pose, ik.Chain.SecondJoint);
         if (forearm == null)
             return false;
         var turned = anchor.Resolve(authored,
@@ -730,7 +727,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             int frameIndex = info.Frame == TransformFrame.ParentRelative
                 ? pose->Skeleton->ParentIndices[boneIdx] : 0;
             var rootSpace = frameIndex >= 0
-                ? pose->AccessBoneModelSpace(frameIndex, hkaPose.PropagateOrNot.DontPropagate) : null;
+                ? NativePoseRead.Model(pose, frameIndex) : null;
             if (rootSpace != null)
                 headRotation = new Quaternion(rootSpace->Rotation.X, rootSpace->Rotation.Y, rootSpace->Rotation.Z, rootSpace->Rotation.W);
         }
@@ -759,7 +756,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
 
             // Requested end rotation, computed BEFORE the solve so optional
             // enforcement receives the value the direct apply would produce.
-            var rotSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+            var rotSpace = NativePoseRead.Model(pose, boneIdx);
             var rotBefore = new Quaternion(
                 rotSpace->Rotation.X, rotSpace->Rotation.Y,
                 rotSpace->Rotation.Z, rotSpace->Rotation.W);

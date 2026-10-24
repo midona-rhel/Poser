@@ -139,7 +139,7 @@ public sealed class ActorColliderCapture(
             var partial = &character->Skeleton->PartialSkeletons[bone.PartialId];
             var pose = partial->GetHavokPose(0);
             if (pose == null) continue;
-            var live = pose->AccessBoneModelSpace(bone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+            var live = Poser.Game.Entities.NativePoseRead.Model(pose, bone.BoneIndex);
             if (live == null || !Matrix4x4.Invert(reference.ToMatrix(), out var inverseBind)) continue;
             var current = new global::Poser.Domain.Transforms.Transform
             {

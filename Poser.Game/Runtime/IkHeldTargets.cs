@@ -166,7 +166,7 @@ internal sealed unsafe class IkHeldTargets
     {
         // Each path clears its mark only once seated: a target that cannot be
         // resolved this frame is tried again on the next.
-        var native = pose->AccessBoneModelSpace(endpoint.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+        var native = Poser.Game.Entities.NativePoseRead.Model(pose, endpoint.BoneIndex);
         if (native == null)
             return;
         var end = BoneApplyPass.ReadTransform(native);
@@ -230,7 +230,7 @@ internal sealed unsafe class IkHeldTargets
         }
         if (ik.SolveParent is not { } solveParent)
             return;
-        var native = pose->AccessBoneModelSpace(solveParent.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+        var native = Poser.Game.Entities.NativePoseRead.Model(pose, solveParent.BoneIndex);
         ik.SolveParentFrame = native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
     }
 
@@ -295,7 +295,7 @@ internal sealed unsafe class IkHeldTargets
         // this pass's model transform; the chosen parent is outside the solve.
         if (pose != null && parent.PartialId == endpoint.PartialId)
         {
-            var native = pose->AccessBoneModelSpace(parent.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+            var native = Poser.Game.Entities.NativePoseRead.Model(pose, parent.BoneIndex);
             return native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
         }
         // An off-screen parent need not have a recent display cache. Mark it

@@ -228,7 +228,7 @@ internal sealed unsafe class BoneSnapshotPass : IDisposable
                 if (!seedAll && !bone.TransformWanted)
                     continue;
 
-                var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                var modelSpace = NativePoseRead.Model(pose, boneIdx);
                 if (modelSpace != null)
                 {
                     bone.LastTransform = new Transform

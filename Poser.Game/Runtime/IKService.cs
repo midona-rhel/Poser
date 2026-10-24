@@ -113,7 +113,7 @@ public unsafe class IKService : IDisposable
 
     private static bool ReadModelSpace(hkaPose* pose, int boneIndex, out Vector3 position, out Quaternion rotation)
     {
-        var entry = pose->AccessBoneModelSpace(boneIndex, hkaPose.PropagateOrNot.DontPropagate);
+        var entry = Poser.Game.Entities.NativePoseRead.Model(pose, boneIndex);
         if (entry == null)
         {
             position = default;

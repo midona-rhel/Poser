@@ -16,7 +16,7 @@ public static class BoneWorld
         if (native == null || bone.PartialId < 0 || bone.PartialId >= native->PartialSkeletonCount) return null;
         var pose = native->PartialSkeletons[bone.PartialId].GetHavokPose(0);
         if (pose == null || bone.BoneIndex < 0 || bone.BoneIndex >= pose->Skeleton->Bones.Length) return null;
-        var value = pose->AccessBoneModelSpace(bone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+        var value = NativePoseRead.Model(pose, bone.BoneIndex);
         if (value == null) return null;
         // A newly picked bone may not have requested a display snapshot yet.
         // Reading that stale snapshot, then refreshing it during Evaluate,
