@@ -7,6 +7,31 @@ namespace Poser.Game.Tests;
 
 public class BodySurfaceFitTests
 {
+    [Fact]
+    public void CompoundFitImprovesFlattenedSurfaceWithoutSplittingRoundSurfaces()
+    {
+        var samples = new List<BodySurfaceFit.Sample>();
+        for (int latitude = 1; latitude < 24; latitude++)
+        for (int longitude = 0; longitude < 48; longitude++)
+        {
+            float theta = latitude * MathF.PI / 24, phi = longitude * MathF.Tau / 48;
+            samples.Add(new(new(.3f * MathF.Sin(theta) * MathF.Cos(phi),
+                .18f * MathF.Cos(theta), .08f * MathF.Sin(theta) * MathF.Sin(phi)), MathF.Sin(theta)));
+        }
+        var single = BodySurfaceFit.Fit(samples, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, false, true);
+        var parts = BodySurfaceFit.FitCompound(samples, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, true);
+        float Error(IkCollider[] shapes) => samples.Sum(p =>
+        {
+            float distance = shapes.Min(s => BodySurfaceFit.Distance(s, p.Position));
+            return p.Area * distance * distance * (distance > 0 ? 2 : 1);
+        });
+        Assert.Equal(2, parts.Length);
+        Assert.True(Error(parts) < Error([single]) * .75f);
+
+        var round = samples.Select(p => new BodySurfaceFit.Sample(Vector3.Normalize(p.Position) * .1f, p.Area)).ToArray();
+        Assert.Single(BodySurfaceFit.FitCompound(round, Vector3.Zero, Quaternion.Identity, Vector3.UnitY, true));
+    }
+
     internal sealed class Mesh
     {
         internal readonly List<Vector3> Vertices = [];

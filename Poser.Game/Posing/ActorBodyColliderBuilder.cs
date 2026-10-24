@@ -160,9 +160,15 @@ internal static class ActorBodyColliderBuilder
             }
             var span = spans[i];
             var start = joints[span.Start];
-            var collider = BodySurfaceFit.Fit(samples[i], start.Position, start.Rotation,
-                joints[span.End].Position - start.Position, false, span.Volume);
-            fitted.Add(new(span.Name, collider, span.Start));
+            var parts = BodySurfaceFit.FitCompound(samples[i], start.Position, start.Rotation,
+                joints[span.End].Position - start.Position, span.Volume);
+            // Reserve one slot for every remaining region and eight for joint
+            // coverage. Compound fitting must not exhaust the actor budget.
+            if (parts.Length > 1 && fitted.Count + parts.Length + spans.Count - i - 1 + 8 > MaximumParts)
+                parts = [BodySurfaceFit.Fit(samples[i], start.Position, start.Rotation,
+                    joints[span.End].Position - start.Position, false, span.Volume)];
+            for (int part = 0; part < parts.Length; part++)
+                fitted.Add(new(part == 0 ? span.Name : $"{span.Name} / {part + 1}", parts[part], span.Start));
         }
 
         // The torso slices fit as sideways capsules, or spheres when a slice

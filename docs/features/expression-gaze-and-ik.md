@@ -193,6 +193,11 @@ center, radius and stem in the bone's rotation frame, balancing penetration
 against excess clearance rather than using extreme or mean vertex bounds.
 For free-axis sections, covariance/bone directions seed a bounded angular
 refinement; they do not lock the final orientation. Limb axes remain bone-aligned.
+Free-axis regions may use two capsules when splitting the measured surface
+reduces whole-region squared fitting error by at least 25%. Error is measured
+against the union, including excess clearance inside either capsule. Nearly
+round regions retain one part; all parts share the region's bone owner and the
+existing 48-part actor budget. This changes generation, not saved colliders.
 Racial deformation uses the original game resource identity, not a mod's disk filename.
 Visible triangles with unresolved skin bones are omitted, never fitted with
 partial weights or guessed replacement bones. Valid regions still generate;
