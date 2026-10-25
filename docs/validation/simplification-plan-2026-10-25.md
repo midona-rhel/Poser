@@ -673,4 +673,13 @@ test also keeps a body profile alive, resets the design, changes the actor name,
 and verifies a new design capture uses the new name. No test cases added or removed.
 Release build and all 906 existing tests pass. Sol found no actionable findings
 after checking ordering, gates, failure behavior, gone-actor cleanup and DI wiring.
-Production diff: +112/-140 lines (net -28). Local deployment results follow.
+Production diff: +112/-140 lines (net -28). Candidate `4c6c1931` deployed with
+matching canonical output hashes; reload confirmed at 19:04:32 local. Live on a
+disposable duplicate: setting Empty and resetting the collection preserved its
+inherited assignment and all 117 resource mappings. Its recreated temporary
+collection had a new GUID, which is not itself a mismatch. Applying a real C+
+profile and removing the actor succeeded; Customize+ logged profile removal.
+The live script first used unsupported actor-ID addressing and then an overly
+strict collection-GUID assertion; corrected checks passed. Design reset/name
+behavior was checked by the existing extended test, not clicked live. See
+[live reset evidence](audit-2026-10-25/658-live-reset.json).
