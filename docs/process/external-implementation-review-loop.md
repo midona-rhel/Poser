@@ -27,6 +27,16 @@ and detailed evidence in the linked validation record. Mention limitations when
 needed to assess the change, not as a routine list of everything not tested.
 Issue updates should explain progress, not reproduce the agent's work log.
 
+## Guard review
+
+Preserving an existing guard's behavior does not establish that it is needed.
+For each guard in the cleanup scope, trace the real producers and callers that
+could reach it, including provider behavior and relevant asynchronous ordering.
+Remove branches that only protect states production code cannot create. Keep
+checks for actual external failures. An unresolved reachability question is
+unfinished audit work, not a completed review or an automatic reason to retain
+code. Apply this check before handoff; the user should not have to request it.
+
 ## Validation and acceptance
 
 Follow the [testing and deployment contract](testing.md): Release is the

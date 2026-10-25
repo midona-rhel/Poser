@@ -352,8 +352,6 @@ public sealed class IntegrationSelectors
         var current = OverridesFor(actor);
         if (!current.CollectionOwned)
             return IntegrationResult.Ok();
-        if (current.Baseline.Collection == null)
-            return IntegrationResult.Fail("No captured collection baseline exists.");
 
         var restored = _reset.RestoreCollection(actor, ref current, resolvable: true, out _);
         if (!restored.Success)
@@ -412,7 +410,7 @@ public sealed class IntegrationSelectors
         if (!access.CanEdit)
             return IntegrationResult.Refused(access);
         var current = OverridesFor(actor);
-        if (current.DesignOwned && current.Baseline.GlamourerState != null)
+        if (current.DesignOwned)
             return IntegrationResult.Ok();
         var state = current.Baseline.GlamourerState;
         if (state == null)
@@ -448,8 +446,6 @@ public sealed class IntegrationSelectors
         var current = OverridesFor(actor);
         if (!current.DesignOwned)
             return IntegrationResult.Ok();
-        if (current.Baseline.GlamourerState == null)
-            return IntegrationResult.Fail("No captured Glamourer state exists.");
 
         var restored = _reset.RestoreDesign(actor, ref current, resolvable: true);
         if (!restored.Success)

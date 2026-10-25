@@ -683,3 +683,36 @@ The live script first used unsupported actor-ID addressing and then an overly
 strict collection-GUID assertion; corrected checks passed. Design reset/name
 behavior was checked by the existing extended test, not clicked live. See
 [live reset evidence](audit-2026-10-25/658-live-reset.json).
+
+### #658 guard necessity correction
+
+The initial #658 review established equivalence but left the missing-baseline
+guards unjustified. This follow-up traced actual state producers and removed
+the unreachable branches rather than preserving them as hypothetical recovery.
+
+`CollectionOwned` becomes true only in SetCollection, together with a non-null
+baseline captured before the provider change. `DesignOwned` becomes true only
+in ApplyDesign and OwnLook, together with successfully captured Glamourer state.
+History restores use these producers; clearing paths clear the owned flag and
+baseline together. MCDF preparation copies the existing baseline and only adds
+captured values. Commit either preserves design ownership with that baseline or
+clears ownership when the MCDF replaces it. Teardown clears Glamourer baseline
+only when DesignOwned is false. Rollback uses the prepared baseline or preserves
+the current one if preparation never completed. No persisted ownership record
+can inject a partial state; the actor-keyed store is private and in-memory.
+
+All producers that establish ownership are gated while MCDF work is active.
+Busy follows the actual task through rollback, not its visible progress.
+Cancellation marks the operation invalid before cleanup. Thus later selector
+ownership cannot appear between baseline capture and a late rollback. Ungated
+body/collection resets only clear ownership and cannot violate the implication.
+Sol independently checked this ordering at `a67209d0` and reviewed the final diff.
+
+Removed selector missing-baseline errors, lifecycle missing-baseline skips,
+OwnLook's repeated baseline condition, and the gone-actor design baseline check.
+The captured-name check stays: name capture is optional. Provider read/apply
+failures stay because they occur before ownership is established; restoration
+failures retain valid captured state. MCDF/edit restrictions and no-owned-state
+checks correspond to supported user and lifecycle operations. No replacement
+guards, assertions or tests were added. All 906 existing tests and Release build
+pass. The ownership fields now explain the captured-baseline relationship.

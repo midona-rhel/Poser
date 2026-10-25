@@ -133,9 +133,11 @@ public sealed record IntegrationOverrides
 {
     public IntegrationBaseline Baseline { get; init; } = IntegrationBaseline.None;
 
+    /// <summary>Set with the captured collection baseline; reset clears both together.</summary>
     public bool CollectionOwned { get; init; }
     public string? CollectionName { get; init; }
 
+    /// <summary>Set only after capturing Glamourer state; reset clears both together.</summary>
     public bool DesignOwned { get; init; }
     public string? DesignName { get; init; }
 

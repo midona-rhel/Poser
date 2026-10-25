@@ -64,17 +64,14 @@ public sealed class IntegrationReset : IDisposable
 
         if (resolvable)
         {
-            if (current.Baseline.GlamourerState is not { } state)
-                return IntegrationResult.Ok();
-            var result = _glamourer.RestoreGlamourerState(actor, state);
+            var result = _glamourer.RestoreGlamourerState(actor, current.Baseline.GlamourerState!);
             if (!result.Success)
                 return result;
         }
-        else if (current.Baseline.GlamourerState is { } state
-            && current.DesignActorName is { } name)
+        else if (current.DesignActorName is { } name)
         {
             // Glamourer can still hold appearance after the actor leaves the scene.
-            var result = _glamourer.RestoreGlamourerStateByName(name, state);
+            var result = _glamourer.RestoreGlamourerStateByName(name, current.Baseline.GlamourerState!);
             if (!result.Success)
                 return result;
         }
@@ -99,9 +96,7 @@ public sealed class IntegrationReset : IDisposable
 
         if (resolvable)
         {
-            if (current.Baseline.Collection is not { } baseline)
-                return IntegrationResult.Ok();
-            var result = _penumbra.RestoreCollection(actor, baseline);
+            var result = _penumbra.RestoreCollection(actor, current.Baseline.Collection!);
             if (!result.Success)
                 return result;
             redraw = true;
