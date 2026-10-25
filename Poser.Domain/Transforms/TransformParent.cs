@@ -3,7 +3,10 @@ using Poser.Domain.Identity;
 
 namespace Poser.Domain.Transforms;
 
-/// <summary>Rigid following; size is authored on the child, never inherited.</summary>
+/// <summary>
+/// Makes a child follow a target's position and rotation. Parent scale is not
+/// inherited; the child keeps its own scale.
+/// </summary>
 public sealed record TransformParent(SelectionId Target, PoseTransform Offset)
 {
     public static PoseTransform Local(PoseTransform world, PoseTransform parent) => new(

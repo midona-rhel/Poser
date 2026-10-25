@@ -7,11 +7,10 @@ using Poser.Application.Presentation;
 namespace Poser.Game.Overlays;
 
 /// <summary>
-/// Every status effect the game declares, as an icon the user can put on a
-/// staged status line. Built ONCE per session and lazily — a session that
-/// never opens the icon picker never walks the sheet.
+/// Provides the game's status-effect icons for staged status lines. The sheet
+/// is read lazily when the icon picker first requests it.
 ///
-/// <para>Deduplicated by ICON, not by row: the sheet states one row per stack
+/// <para>Deduplicated by icon, not by row: the sheet contains one row per stack
 /// count and per variant, and a picker that listed all of them would show the
 /// same picture forty times (Ktisis dedupes the same way,
 /// <c>Interface/Editor/Properties/OverlayPropertyList.cs:53</c>).</para>

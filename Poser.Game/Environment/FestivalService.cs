@@ -16,16 +16,10 @@ using FestivalRow = Lumina.Excel.Sheets.Festival;
 namespace Poser.Game.Environment;
 
 /// <summary>
-/// Brio's FestivalService, with its mediator replaced by the event bus and its
-/// toast by a log line. The eight engine slots are never written directly from
-/// a caller: a change is queued and applied on a framework tick, and only while
-/// the layout engine's festival status is 0 or 5 — applying one mid-transition
-/// is what leaves the zone's festival layers half-loaded.
-///
-/// Festivals are the one environment control that IS restored. The pre-override
-/// slots are snapshotted on the first mutation and written back on GPose exit
-/// and on disposal; a territory change drops both the queue and the snapshot,
-/// because the slots belong to the zone that is gone.
+/// Queues festival slot changes until the layout engine reports idle or ready,
+/// following Brio's update ordering. Captures the initial slots for restoration
+/// on GPose exit or disposal. A territory change discards the old zone's queue
+/// and snapshot.
 /// </summary>
 public sealed unsafe class FestivalService : IFestivalRuntimePort, IDisposable
 {

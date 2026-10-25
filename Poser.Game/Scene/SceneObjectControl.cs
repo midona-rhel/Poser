@@ -96,11 +96,9 @@ public sealed class SceneObjectControl : ISceneObjectControl
     }
 
     /// <summary>
-    /// Replaces the object's model in place. A replacement that landed on a
-    /// different path is one history step (#493); its undo and redo are
-    /// replacements too, so they complete when the model has loaded, like
-    /// the other multi-frame steps. A refused or cancelled replacement
-    /// records nothing.
+    /// Replaces a spawned object's model. A successful path change records one
+    /// history step; undo and redo wait for replacement loading to finish.
+    /// Refused or cancelled replacements add no entry.
     /// </summary>
     public async Task<Outcome> Respawn(WorldObjectId id, string path)
     {

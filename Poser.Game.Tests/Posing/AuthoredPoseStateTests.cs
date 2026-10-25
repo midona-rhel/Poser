@@ -19,7 +19,7 @@ public sealed class AuthoredPoseStateTests
         var rotation = new BonePoseTransformInfo(TransformComponents.All,
             new Transform(Vector3.Zero, Quaternion.CreateFromAxisAngle(Vector3.UnitY, .5f), Vector3.Zero));
         runtime.Stacks[arm] = [rotation];
-        // A continuously owned named layer is not a manual edit.
+        // The named expression layer is excluded from the saved manual edits.
         runtime.Stacks[untouched] = [new(TransformComponents.All, Transform.Zero, "expression")];
         arm.PartialRootScale = new Vector3(1.2f);
         var snapshot = AuthoredPoseState.Capture([skeleton], posing);
@@ -35,7 +35,8 @@ public sealed class AuthoredPoseStateTests
             Assert.Equal(new Vector3(1.2f), arm.PartialRootScale);
             snapshot = AuthoredPoseState.Capture([skeleton], posing);
         }
-        // The bone proxy throws for LastTransform / LastRawTransform. No frame is baked.
+        // The proxy rejects LastTransform and LastRawTransform reads, so capture
+        // cannot silently use a rendered pose instead of the saved edits.
         snapshot.Restore([], posing);
     }
 

@@ -25,14 +25,10 @@ public sealed record SkeletonDescriptor(
 }
 
 /// <summary>
-/// Owns the pointer-free facts for one actor and its present slot skeletons.
-/// It does not own native handles, transforms, or scene indexing.
+/// Actor information for the scene list, including attached skeletons.
+/// OwnerActor and AttachmentKind identify a companion's attachment when known.
+/// IsAdopted identifies a borrowed world actor; IsOwned controls eligibility to export appearance.
 /// </summary>
-/// <param name="OwnerActor">The exact actor generation this companion is
-/// attached to, when that relationship is known. The companion remains its
-/// own actor and state owner.</param>
-/// <param name="AttachmentKind">The exact owner-slot relationship. Null for
-/// root actors and standalone catalog creatures.</param>
 public sealed record ActorDescriptor(
     ActorId Id,
     string Name,
@@ -50,14 +46,9 @@ public sealed record ActorDescriptor(
     public IReadOnlyList<SkeletonDescriptor> Skeletons { get; init => field = ValueList.From(value); } =
         ValueList.From(Skeletons);
 
-    /// <summary><see cref="IsAdopted"/>: an overworld body taken into the
-    /// scene by reference; it is released, never destroyed.</summary>
-    /// <summary><see cref="IsOwned"/>: the actor was spawned by Poser or
-    /// is the player's own character. Only an owned actor's character
-    /// data — appearance, MCDF — may be exported or saved; anyone else's
-    /// (a friend posed in GPose) may be posed but never packaged.</summary>
-    /// <summary>The Character-slot skeleton; callers needing another slot use
-    /// <see cref="GetSkeleton"/>.</summary>
+    /// <summary>
+    /// The body skeleton, or null if absent. Use GetSkeleton for weapon and other slots.
+    /// </summary>
     public SkeletonDescriptor? CharacterSkeleton =>
         GetSkeleton(PoseSlot.Character);
 
@@ -91,8 +82,7 @@ public enum LightOwnership
 }
 
 /// <summary>
-/// Owns the pointer-free light row state and optional exact bone attachment.
-/// It does not own live light properties or native light lifetime.
+/// Light information for the scene list, with an optional bone attachment.
 /// </summary>
 public sealed record LightDescriptor(
     LightId Id,
@@ -111,8 +101,7 @@ public enum CameraKind
 }
 
 /// <summary>
-/// Owns the pointer-free camera row state, lock, and stable target relationship.
-/// It does not own the live camera or its native view matrix.
+/// Camera information for the scene list, including lock state and target.
 /// </summary>
 public sealed record CameraDescriptor(
     CameraId Id,
@@ -126,8 +115,7 @@ public sealed record CameraDescriptor(
     Vector3 TargetOffset = default);
 
 /// <summary>
-/// Owns the pointer-free prop row state. It does not own the live prop handle
-/// or native transform.
+/// Prop name and visibility for the scene list.
 /// </summary>
 public sealed record PropDescriptor(
     PropId Id,
@@ -135,10 +123,8 @@ public sealed record PropDescriptor(
     bool Visible = true);
 
 /// <summary>
-/// Owns the pointer-free ADOPTED-WORLD-OBJECT row state. It does not own the
-/// live claim or the native object under it. The PATH rides along because it
-/// is the only human-readable thing a BG object carries and the only half of
-/// its identity that survives the session the addresses belong to.
+/// World-object information for the scene list. Path identifies its game asset
+/// without retaining a game-memory address.
 /// </summary>
 public sealed record WorldObjectDescriptor(
     WorldObjectId Id,
@@ -151,11 +137,8 @@ public sealed record WorldObjectDescriptor(
     bool Night = false);
 
 /// <summary>
-/// Owns the pointer-free overlay-node row state. It does not own the live
-/// node or its native UI subtree. The KIND rides along because it decides the
-/// row's mark and the editor it opens, and nothing else about a node is a row
-/// fact — its text, its colours and its screen placement all live in the
-/// editor.
+/// Overlay name, type, and visibility for the scene list.
+/// Text, colors, and placement are stored separately in the overlay editor state.
 /// </summary>
 public sealed record OverlayDescriptor(
     OverlayId Id,
@@ -179,9 +162,7 @@ public enum EnvironmentSection
 }
 
 /// <summary>
-/// Pointer-free environment read state justified by the existing time,
-/// weather, and section-hold controls. It does not own native environment
-/// state or write policy.
+/// Observed time, weather, and environment sections held by Poser.
 /// </summary>
 public sealed record EnvironmentDescriptor(
     int MinuteOfDay,
@@ -211,8 +192,7 @@ public enum GazeParts
 }
 
 /// <summary>
-/// Owns one actor's pointer-free gaze read state and exact actor target. It
-/// does not own native look-at entries or per-frame gaze writes.
+/// An actor's gaze mode, targets, and lock settings, without game-memory pointers.
 /// </summary>
 public sealed record GazeDescriptor(
     ActorId Actor,
@@ -230,15 +210,8 @@ public sealed record GazeDescriptor(
 }
 
 /// <summary>
-/// Immutable, pointer-free application read state for one logical scene. It
-/// owns no native entities and carries no application indexes. SceneSession is
-/// the committed Application owner of this state, while the current Game
-/// producer remains a transitional candidate source and may leave additive
-/// relationship, environment, and gaze fields empty until lifecycle
-/// integration is serialized. Every list member, here and in the nested
-/// descriptors, is stored as a <see cref="ValueList{T}"/>, so generated record
-/// equality is structural all the way down and covers every field without a
-/// hand-written comparison to keep in step.
+/// Scene information shared with application readers, without native pointers.
+/// Lists use ValueList so record equality compares their contents rather than list objects.
 /// </summary>
 public sealed record SceneSnapshot
 {
@@ -281,7 +254,9 @@ public sealed record SceneSnapshot
         return null;
     }
 
-    /// <summary>The actor of this lineage, whatever its generation.</summary>
+    /// <summary>
+    /// Finds the logical actor regardless of its current game-object version.
+    /// </summary>
     public ActorDescriptor? FindActor(Guid lineage)
     {
         foreach (var actor in Actors)
@@ -315,10 +290,9 @@ public sealed record SceneSnapshot
         init => field = Freeze(value);
     }
 
-    /// <summary>The staged game-UI overlay nodes. Last of the entity lists and
-    /// defaulted empty, so a producer that knows nothing of them — every one
-    /// written before they existed — states an empty scene rather than a null
-    /// one.</summary>
+    /// <summary>
+    /// Scene overlays. Omitted constructor input becomes an empty list.
+    /// </summary>
     public IReadOnlyList<OverlayDescriptor> Overlays
     {
         get;
@@ -329,9 +303,9 @@ public sealed record SceneSnapshot
         }
     }
 
-    /// <summary>The adopted world objects. Last of the entity lists and
-    /// defaulted empty, exactly as the overlays are, so a producer that knows
-    /// nothing of them states an empty scene rather than a null one.</summary>
+    /// <summary>
+    /// World objects in the scene. Omitted constructor input becomes an empty list.
+    /// </summary>
     public IReadOnlyList<WorldObjectDescriptor> WorldObjects
     {
         get;
@@ -355,11 +329,7 @@ public sealed record SceneSnapshot
     }
 
     /// <summary>
-    /// Compares the complete snapshot content, including revision and every
-    /// descriptor field. SceneSession and the lifecycle use it for
-    /// equal-replay detection. It is generated record equality: strings are
-    /// ordinal, floats and vectors exact (<c>float.Equals</c>, so NaN equals
-    /// NaN), with no tolerances.
+    /// Compares revision and all stored content with record equality, without numeric tolerances.
     /// </summary>
     public bool ContentEquals(SceneSnapshot? other) =>
         other is not null && Revision == other.Revision && Equals(other);

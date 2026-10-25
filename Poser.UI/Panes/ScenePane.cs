@@ -30,16 +30,10 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>
-/// The scene workspace: the ONE surface that saves a scene, loads one,
-/// states what a running load is doing, and states what a finished one left
-/// behind — every named refusal and every recovered file.
+/// Scene save, load, progress, and recovery workspace.
 ///
-/// <para>It composes existing idioms rather than restating them: the two
-/// destinations are <see cref="FileDialog"/>s exactly as the light
-/// and camera files are, the load dialog's side panel is the codec's own
-/// verdict on the highlighted file (so a corrupt or future scene says so
-/// before it is opened, not after), and the page is
-/// <see cref="PageForm.Page"/> sections throughout.</para>
+/// <para>File dialogs provide save/load destinations, and the load dialog
+/// shows codec metadata and validation for the highlighted file.</para>
 ///
 /// <para>The pane owns no scene state. Progress, the terminal receipt and the
 /// snapshot result are read from their owners' immutable read models every
@@ -69,9 +63,8 @@ public sealed class ScenePane
     private readonly FileDialog _stageLoadBrowser =
         new("Import Stage", new[] { global::Poser.Documents.Scene.StageFile.Extension });
 
-    /// <summary>ONE dialog serves every "from file" row in the portal: an
-    /// entry's kind lives in its extension, and the load takes any of
-    /// them through the same placement-anchored BeginLoad.</summary>
+    /// <summary>Shared file dialog for scene-entry imports. Entry kind is
+    /// inferred from the extension.</summary>
     private readonly FileDialog _entryBrowser =
         new("Add from file", new[]
         {
@@ -102,19 +95,14 @@ public sealed class ScenePane
     /// it ever previewed.</summary>
     private const int VerdictCacheLimit = 64;
 
-    /// <summary>What a cached verdict was read FROM. A path is not an identity
-    /// — a re-save, or the snapshot writer landing on a path the dialog has
-    /// already probed, leaves the path saying something it no longer says — so
-    /// an answer is kept against the file's write time and size and is
-    /// re-probed the moment either moves. A file that cannot be stat'd stamps
-    /// as default, which simply never matches a real one.</summary>
+    /// <summary>File write time and size used to invalidate cached metadata.
+    /// A file that cannot be statted receives the default stamp.</summary>
     private readonly record struct FileStamp(long WriteTicks, long Length);
 
     /// <summary>
     /// The load dialog's verdict per probed path. A probe reads, parses and
-    /// VALIDATES a whole bounded document — up to the codec's file limit — so it
-    /// never runs on the render thread: the panel states a pending line while a
-    /// background read resolves, and the answer is kept against its path AND
+    /// validates a bounded document, so it runs off the render thread. The
+    /// panel shows a pending line while the read resolves and caches by path and
     /// the stamp it was read from. A cached null is a probe that could not
     /// produce an outcome at all.
     /// </summary>
@@ -135,17 +123,12 @@ public sealed class ScenePane
 
     private readonly UserNotices _notices;
 
-    /// <summary>Where the session is, for the map-mismatch line: a scene taken
-    /// somewhere else loads perfectly well and looks wrong, so the dialog says
-    /// so BEFORE the load rather than leaving the user to work it out from the
-    /// skybox. Ktisis turns its whole caption red on the same comparison
-    /// (<c>Interface/Windows/Editors/SceneWindow.cs</c>); Brio does not compare
-    /// at all.</summary>
+    /// <summary>Current place information used to warn when the highlighted
+    /// scene was captured in a different territory.</summary>
     private readonly IPlaceService _place;
 
-    /// <summary>What the NEXT load is asked to do. Held in the one shared
-    /// place rather than on this pane, because the library's scene tiles start
-    /// the very same load and must honour the very same answer.</summary>
+    /// <summary>Shared options for the next scene load, including loads
+    /// initiated by library tiles.</summary>
     private readonly SceneLoadPreferences _preferences;
 
     private SceneLoadOptions Options
@@ -154,9 +137,7 @@ public sealed class ScenePane
         set => _preferences.Options = value;
     }
 
-    /// <summary>What the NEXT save is asked to include. Same shared home as
-    /// the load's answer, for the same reason: the workspace's SAVE section
-    /// and the save dialog's band are two mounts of ONE answer.</summary>
+    /// <summary>Shared options for the next scene save.</summary>
     private SceneSaveOptions SaveOptions
     {
         get => _preferences.SaveOptions;
@@ -248,9 +229,8 @@ public sealed class ScenePane
         _librarySave = librarySave;
         _folder = new(config.Config.Library.EnsureSceneRootExists());
 
-        // The verdict column is not a reserved rectangle: it states what the
-        // highlighted file IS, and says so in its own words when nothing is
-        // highlighted yet, which is the only case where centred text belongs.
+        // The verdict column shows metadata for the highlighted file or a
+        // centered empty state when none is highlighted.
         var verdict = new FileSidePanel(220f, DrawVerdictPanel);
         _loadBrowser.SidePanels.Add(verdict);
         _snapshotBrowser.SidePanels.Add(verdict);
@@ -260,9 +240,7 @@ public sealed class ScenePane
         var band = new FileSidePanel(_optionsBandHeight, DrawLoadOptionsBand);
         _loadBrowser.BottomPanel = band;
         _snapshotBrowser.BottomPanel = band;
-        // The save dialog carries the ONE save choice that changes what the
-        // file contains, so the destination and the consent are decided in the
-        // same place.
+        // Keep content options beside the save destination.
         _saveBrowser.BottomPanel =
             new FileSidePanel(SaveBandHeight, DrawSaveOptionsBand);
     }
@@ -407,12 +385,8 @@ public sealed class ScenePane
     public void OnShown() => _library.RequestScan();
 
     /// <summary>
-    /// The workspace, ordered by TASK: what a save will write, what a load
-    /// will do, what is happening now, what the last one left behind, then the
-    /// two places a scene comes from. Each is its own titled section, so the
-    /// five concerns the issue named are visually distinct without any of them
-    /// inventing a layout — every row is a shared form row on the page's one
-    /// label grid.
+    /// Draws save options, load options, current progress, the previous result,
+    /// and scene sources as separate sections.
     ///
     /// <para>Both option sets are HERE as well as in their dialogs, and both
     /// mounts read and write the same shared preference: an option only
@@ -932,15 +906,10 @@ public sealed class ScenePane
     // ── the load dialog's verdict column ─────────────────────────────────
 
     /// <summary>
-    /// The highlighted file, read through the SAME codec the load uses. A
-    /// listing can therefore never offer a scene the load would reject without
-    /// saying so first.
+    /// Reads highlighted-file metadata through the scene codec used for load.
     ///
-    /// <para>The dialog hands a side panel its ORIGIN and its SIZE — never two
-    /// corners. Deriving the column width as if the second vector were the far
-    /// corner produced a negative width every frame the panel drew, which the
-    /// text constraint rejected: layout math that cannot state a width states
-    /// NOTHING here, it does not throw.</para>
+    /// <para>The side-panel callback receives an origin and size, not two
+    /// corners.</para>
     /// </summary>
     private void DrawVerdictPanel(Vector2 origin, Vector2 size, string? path)
     {
@@ -1092,9 +1061,8 @@ public sealed class ScenePane
                 _verdicts.Remove(_verdictOrder.Dequeue());
         }
 
-        // One stat per frame for ONE highlighted row: the read this replaced
-        // was a whole validated document, which is the cost that had to leave
-        // the render thread.
+        // Stat only the highlighted path on the render thread; document reads
+        // remain on the worker.
         var stamp = StampOf(path);
         if (_verdicts.TryGetValue(path, out var held) && held.Stamp == stamp)
         {

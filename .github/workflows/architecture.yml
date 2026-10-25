@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches: [main, refactor]
-  # Manual runs. The download-count bot approves its pull request's own run.
+  # Also allows manual validation, including the download-count pull request.
   workflow_dispatch:
 permissions:
   contents: read

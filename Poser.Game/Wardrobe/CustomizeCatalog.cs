@@ -42,9 +42,8 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
         _log = log;
     }
 
-    /// <summary>Reads the sheets and the colour file now, off the draw
-    /// thread, so the first Appearance view pays nothing. Cancellation stops
-    /// between loads; an unread one still loads on first use.</summary>
+    /// <summary>Loads names, menus, and palettes synchronously on the caller's thread.
+    /// Checks cancellation between names and menus; model discovery remains lazy.</summary>
     public void Warm(CancellationToken cancel)
     {
         LoadNames();

@@ -45,7 +45,7 @@ public sealed class AnimationHistoryTests
             Scrub.SetControlTime(Actor, Arg.Any<ScrubControlId>(), Arg.Any<float>(), Arg.Any<ulong>()).Returns(Outcome.Ok());
             Session = new AnimationSession(Timeline, Speed, Substitute.For<IAnimationStancePort>(),
                 Scrub, Substitute.For<IWorldRenderingRuntimePort>());
-            // What AnimationSteps installs.
+            // Match the journal callback installed by AnimationSteps in production.
             Session.Journal = (actor, description, action) =>
             {
                 var before = Session.Capture(actor);
@@ -82,7 +82,7 @@ public sealed class AnimationHistoryTests
             Assert.True(rig.Session.ResumeSlot(rig.Actor, AnimationSlot.UpperBody).Success);
         }
 
-        // The Apply plus six clicks.
+        // The initial apply plus six pause/resume clicks.
         Assert.Equal(7, rig.Steps());
     }
 
@@ -113,7 +113,7 @@ public sealed class AnimationHistoryTests
 
         Assert.True(Undo(rig.History));
         rig.Speed.Received().ClearSlotSpeed(rig.Actor, AnimationSlot.UpperBody);
-        // What is left is the Apply: three writes, one step.
+        // Only the initial apply remains: three speed writes formed one step.
         Assert.Equal(1, rig.Steps());
     }
 

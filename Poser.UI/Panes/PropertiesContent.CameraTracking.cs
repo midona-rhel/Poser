@@ -23,7 +23,7 @@ namespace Poser.UI;
 /// <summary>The camera tracking picker: tracked actors and bones, and the bone choice list.</summary>
 public sealed partial class PropertiesContent
 {
-    /// <summary>Draws one exact actor and its flat concrete-bone picker.</summary>
+    /// <summary>Draws tracking controls and a bone picker for the camera's tracked actor.</summary>
     private void DrawCameraTrackingActors(
         FormScope form, CameraId cameraId)
     {

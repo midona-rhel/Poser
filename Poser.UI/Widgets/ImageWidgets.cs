@@ -120,7 +120,7 @@ public static class ImageWidgets
         return hit.Activated;
     }
 
-    /// <summary>Direct overload for Dalamud textures (back-compat with existing call sites).</summary>
+    /// <summary>Direct overload retained for existing callers that use Dalamud textures.</summary>
     public static void Image(IDalamudTextureWrap texture, Vector2 size, Vector4? tint = null)
     {
         if (texture == null) return;

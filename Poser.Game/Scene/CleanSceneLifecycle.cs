@@ -1,4 +1,4 @@
-﻿using Dalamud.Plugin.Services;
+using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain;
@@ -10,15 +10,10 @@ using Poser.Game.Core;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// Owns native discovery refresh and clean GPose-session teardown. Skeleton
-/// discovery belongs HERE, not to any inspector section: an actor whose draw
-/// object or Havok skeleton is not ready at first discovery is retried on
-/// the framework thread at a bounded backoff cadence while it remains
-/// present. Every notification only requests a refresh; the framework
-/// update runs at most one per frame, never inside the publisher (which may be
-/// a native hook). A refresh that finds no structural change publishes
-/// nothing, increments no scene revision, and cancels no active transform
-/// gesture.
+/// Refreshes native scene bindings on the framework thread and restores owned
+/// state when GPose ends or the plugin unloads. Events request a refresh rather
+/// than running one inside the publisher. Missing skeletons are retried with
+/// backoff; unchanged scene content does not interrupt transform gestures.
 /// </summary>
 public sealed class CleanSceneLifecycle : IDisposable
 {
@@ -64,10 +59,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private DateTime _nextRetryUtc = DateTime.MinValue;
     private DateTime _nextSlotPollUtc = DateTime.MinValue;
 
-    /// <summary>Breadcrumbs for binding publication. The interesting line is
-    /// the one that says a refresh published NOTHING: bone bindings only ever
-    /// change here, so an actor whose bones never resolve is an actor this
-    /// pass coalesced away.</summary>
+    /// <summary>Optional timing and binding-publication diagnostics.</summary>
     private readonly IPluginLog? _log;
 
     public CleanSceneLifecycle(
@@ -237,25 +229,11 @@ public sealed class CleanSceneLifecycle : IDisposable
         var admitted = false;
         try
         {
-            // The refresh is the only place that resolves a whole skeleton's bone
-            // names at once, so it owns the flush of whatever those lookups found
-            // untranslated. One line per refresh instead of one per bone: a modded
-            // 400-bone character used to pay hundreds of synchronous log writes on
-            // this exact tick. No-op when nothing new was seen.
+            // Combine newly encountered untranslated bone names into one log write.
             Poser.Domain.Posing.BoneInfo.BoneInfoService.FlushUntranslatedLog();
-            // One structural signature coalesces every refresh source (events,
-            // retries, session transitions): identical scenes publish nothing —
-            // no snapshot churn, no revision increment, no gesture cancellation.
-            //
-            // The scene signature is not the WHOLE candidate, though: auxiliary
-            // bodies (the CharaView pose preview) are bound so the import
-            // pipeline can reach them and are deliberately absent from the
-            // snapshot, so one appearing or being replaced moves nothing this
-            // signature can see. Coalescing on it alone therefore ABORTS the
-            // candidate that carries the preview's own bindings, and every pose
-            // stated against the preview is dropped in silence — see
-            // StableBindingRegistry.AuxiliaryBindingsChanged. Both halves have
-            // to be unchanged for a refresh to publish nothing.
+            // Skip unchanged scene content only when auxiliary bindings are also
+            // unchanged. Preview bodies are bound for pose import but omitted from
+            // the public scene snapshot, so the snapshot alone cannot detect them.
             var signature = CanonicalSignature(candidate);
             _retryPending = candidate.Actors.Any(
                 actor => actor.CharacterSkeleton == null);
@@ -400,10 +378,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private void OnOverlayListChanged(OverlayNodeListChangedEvent _) =>
         RequestRefresh();
 
-    /// <summary>Borrowing a map object and releasing it both move the scene,
-    /// and this event was published from the first day with nothing listening:
-    /// an adopted object appeared only if some unrelated list happened to
-    /// change and kick a refresh.</summary>
+    /// <summary>Refreshes scene bindings after world objects are acquired or released.</summary>
     private void OnWorldObjectListChanged(WorldObjectListChangedEvent _) =>
         RequestRefresh();
 
@@ -427,16 +402,10 @@ public sealed class CleanSceneLifecycle : IDisposable
     }
 
     /// <summary>
-    /// Leaving GPose is the last chance to write into the actors Poser
-    /// overrode, so everything owned is put back here rather than dropped
-    /// when they disappear. GPoseService publishes this after the final
-    /// capture and before the state change, so it runs while every spawn,
-    /// clone and binding is still alive: the state-change subscribers that
-    /// unbind actors and destroy spawns subscribed first (DI order) and
-    /// would otherwise run before this restore. Normal exit and plugin
-    /// unload share this edge. The game's own GPose actors can still be gone
-    /// already (the edge is observed after IsGPosing flips), so the MCDF
-    /// teardown keeps its by-name Glamourer release for them.
+    /// Restores owned state after the final save capture and before state-change
+    /// subscribers unbind actors or destroy spawns. Native GPose actors may
+    /// already be gone when this notification arrives, so appearance teardown
+    /// also supports releasing provider ownership by name.
     /// </summary>
     private void OnGPoseExiting(GPoseExitingEvent _)
     {

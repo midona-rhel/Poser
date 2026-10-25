@@ -96,10 +96,9 @@ public sealed class FacialPoseCaptureTests
                 DispatchProxy.Create<IPluginLog, PropertyProxy>());
         }
 
-        /// <summary>Ticks a bake needs on a face that is holding still: two to
-        /// reach caches a pass has refreshed for this skeleton, two stable
-        /// readings to hand the facial drive back, and two more to prove the
-        /// face is still holding still on the frame it will keep.</summary>
+        /// <summary>Six ticks let the apply pass refresh the skeleton cache,
+        /// observe two stable samples before releasing the facial drive, and
+        /// confirm two more stable samples before committing the bake.</summary>
         public const int TicksToApply = 6;
 
         public void RunToApply()

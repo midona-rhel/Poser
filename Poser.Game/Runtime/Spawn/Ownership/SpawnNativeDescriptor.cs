@@ -1,15 +1,15 @@
 namespace Poser.Game;
 
 /// <summary>
-/// Exact native identity of one client-object slot occupant.
+/// Native identity of one client-object slot occupant.
 /// <see cref="Index"/> is the ClientObjectManager slot, never
 /// <c>GameObject.ObjectIndex</c> — see
 /// <c>docs/architecture/posing-runtime.md</c> for the index-space rule.
 /// <see cref="LifetimeStamp"/> is the destruction-sequence stamp for
 /// <see cref="Address"/> at resolve time. It advances inside the native
 /// Character finalize hook — the game's own lifetime transition — never at
-/// adapter observation, so an external delete-and-reuse with an identical
-/// index/address/EntityId still compares unequal and fails closed.
+/// adapter observation. Deleting and reusing the same index, address, and
+/// entity id therefore still produces a different descriptor.
 /// </summary>
 internal readonly record struct SpawnNativeDescriptor(
     ushort Index,
@@ -24,9 +24,8 @@ internal enum SpawnOwnershipState
     PendingDelete,
 
     /// <summary>
-    /// Create faulted without yielding a usable identity. The record is
-    /// retained as an explicit readout (snapshot + one Error log) and is
-    /// never allowed to touch native state.
+    /// Creation failed before producing a usable identity. The record remains
+    /// available for diagnostics but cannot access native state.
     /// </summary>
     NonRecoverable,
 }

@@ -16,14 +16,9 @@ using static Poser.UI.Widgets.WindowMovement;
 namespace Poser.UI;
 
 /// <summary>
-/// The library: its OWN window — never a mode of the main window, never
-/// replacing the properties window. The bar carries the title, the type
-/// strip and the close; the body is the file navigator; the types that can
-/// preview get a plain preview column (the old rail less a fifth, and NOT
-/// styled as an inspector — the library has none); every other type hands
-/// that width back to the navigator. The footer is the importer-style
-/// options band: ONE height whatever the type, so switching tabs never
-/// reflows the frame — only the band's content changes.
+/// Draws the library in a separate window with a title bar, type tabs,
+/// file navigator, and permanent details column. The column shows a pose
+/// preview, object properties, or file metadata for the active tab.
 /// </summary>
 public sealed class LibraryWindow : Window
 {
@@ -73,8 +68,7 @@ public sealed class LibraryWindow : Window
             "Groups", null),
     ];
 
-    /// <summary>The preview column, logical: the old 280 rail less a
-    /// fifth.</summary>
+    /// <summary>Width of the details column before UI scaling.</summary>
     private const float PreviewColumnWidth = 224f;
 
 
@@ -184,10 +178,8 @@ public sealed class LibraryWindow : Window
             "poser-library", InteractionLayer.Window, min, max);
         try
         {
-            // The library stands on the WORKSPACE ground — the darker
-            // coat the main content well wears. The chrome's own glass
-            // fill stands DOWN for it: two stacked translucent coats read
-            // as one opaque slab.
+            // Paint one translucent workspace fill. Omit the chrome fill
+            // so the two backgrounds do not stack their opacity.
             FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window, fill: false);
             var well = theme.Surface with
@@ -212,11 +204,8 @@ public sealed class LibraryWindow : Window
             float navigatorRight = max.X - columnSpan;
             float rule = MathF.Max(1f, s);
 
-            // There is NO footer: the navigator takes the whole height,
-            // and the right column is permanent — the preview where a
-            // pose can preview, the file's metadata everywhere else. The
-            // import options hide behind the importer's own menu, opened
-            // from the settings seat by the preview.
+            // The navigator and details column share the full body height.
+            // Import options open from the settings button beside the preview.
             pane.Draw(
                 new Vector2(min.X, stripBottom),
                 new Vector2(
@@ -235,17 +224,14 @@ public sealed class LibraryWindow : Window
                 max.Y - stripBottom - inset * 2f);
             if (preview)
             {
-                // The container owns its seat: the options button at the
-                // column's left with the Preview title beside it, and the
-                // menu opens leftward over the navigator. Only the types
-                // with import options get the seat.
+                // Include the options button for types that support it;
+                // its menu opens leftward over the navigator.
                 _main.PoseFiles.DrawPreviewColumn(
                     columnOrigin, columnSize, optionsSeat: true);
             }
             else if (type == PoseLibraryPane.LibraryType.Objects)
             {
-                // The objects rail already leads with the file's name and
-                // its properties — it IS the metadata panel here.
+                // Object details include the file name and saved properties.
                 pane.DrawObjectsRail(columnOrigin, columnSize);
             }
             else

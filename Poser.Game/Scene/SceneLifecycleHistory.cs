@@ -16,59 +16,12 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The ONE seam through which an entity enters or leaves the scene by a user's
-/// act, so that act lands in the SAME history the transforms do.
-///
-/// <para>A transform is undone by restoring state onto something that still
-/// exists; a spawn has no "before state" of an object that did not exist, so
-/// it is undone by running the opposite act through the service that owns the
-/// entity — <see cref="SceneLifecyclePatch"/>. The two directions of one entry
-/// are exact inverses and each reports whether it landed, so a spawn the game
-/// refuses leaves the entry where it was instead of eating a step of the
-/// user's history.</para>
-///
-/// <para>IDENTITY across the pair is the hard part, and it is why the SLOT —
-/// not the entry — is the unit here. Undo destroys the very object the entry
-/// was created for, so nothing may hold a native handle, and every entry that
-/// names ONE entity must name the SAME slot: "add light" and the later "remove
-/// light" are two entries about one light, and undoing past the removal has to
-/// destroy the light the removal's own undo just re-created, not the corpse the
-/// add was born holding. The typed slot owners provide that re-binding,
-/// keyed by the live instance and re-keyed every time a restore mints a new
-/// one.</para>
-///
-/// <para>A slot carries the live instance when there is one, plus the entity's
-/// own document (the same <c>.poserlight</c> / <c>.posercam</c> mapping export
-/// and scene capture use) captured at the MOMENT OF REMOVAL. Redo therefore
-/// restores the entity as the user last had it, not as it was born: an edited
-/// light that is deleted and undone comes back edited.</para>
-///
-/// <para>A PROP's whole identity is the model triple it was spawned from, so
-/// a removal captures that plus the transform and visibility the user gave it
-/// and comes back as itself. Clearing the list is one act of the user's, so it
-/// is one entry over every slot it took.</para>
-///
-/// <para>An ACTOR is the one whose document cannot rebuild it: its appearance
-/// is a redraw, not a receipt, so it is always brought back by re-running the
-/// call that made it, and the document then puts back what that call does not
-/// decide — placement, visibility, pose. Its restore is also the one that
-/// outlives the frame it starts in (see <see cref="IActorLifecycle"/>). A
-/// despawn therefore takes an entry only where this seam recorded the spawn;
-/// where it did not, the despawn is refused BY NAME rather than passing for
-/// an undoable one.</para>
-///
-/// <para>Borrowed world lights are re-acquired only from the same original
-/// native incarnation. Built-in GPose cameras/lights do not have a recreatable
-/// lifecycle here.</para>
-///
-/// <para>An entity that leaves by some path this seam does not own — a scene
-/// import, the game itself — leaves its slot holding a dead handle. Every
-/// direction therefore checks the entity is still there before touching it: a
-/// removal whose entity is already gone is SATISFIED (nothing left to remove),
-/// while a restore with no document behind it FAILS rather than minting a
-/// default-valued impostor. Leaving GPose clears the history outright and the
-/// slots go with it (<see cref="EditHistory.Cleared"/>), so a slot never
-/// outlives the session that made it.</para>
+/// Records entity creation and removal in the shared edit history.
+/// Each entity's entries share a slot so undo and redo resolve the current
+/// replacement instance. Removal captures the latest editable state.
+/// Actor restoration may continue on later ticks after the body is recreated;
+/// borrowed world objects can only be reclaimed while their original native
+/// instance still exists. Clearing history also clears these slots.
 /// </summary>
 public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     IEntityHistoryBinding<ILight>, IEntityHistoryBinding<IWorldObject>,

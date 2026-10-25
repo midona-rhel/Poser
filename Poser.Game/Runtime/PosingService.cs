@@ -107,9 +107,8 @@ public unsafe class PosingService : IPosingService
     /// </summary>
     private void SetPositionDetour(StructsGameObject* gameObject, float x, float y, float z)
     {
-        // Never fault the native caller (CharacterFinalizeDetour standard):
-        // a managed fault falls through to Original so the game's own write
-        // still happens.
+        // A managed override failure falls through to the original game call.
+        // The original call and invalid-memory faults are not covered here.
         try
         {
             if (_gPoseService.IsGPosing && IsAvailable((nint)gameObject) &&

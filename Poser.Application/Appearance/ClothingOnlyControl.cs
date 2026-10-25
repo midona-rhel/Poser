@@ -4,7 +4,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Appearance;
 
-/// <summary>One admission, lifetime and outcome owner for UI, scene and bridge requests.</summary>
+/// <summary>Runs clothing-only redraw requests from the UI, scene loader, and
+/// debug bridge, and cancels active requests when the GPose session ends.</summary>
 public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
 {
     private readonly IClothingOnlyRuntimePort _runtime;
@@ -26,8 +27,8 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
     public bool IsHuman(ActorId actor) => _runtime.IsHuman(actor);
     public bool IsApplied(ActorId actor) => _runtime.IsApplied(actor);
 
-    // No separate history here: scene load owns its transaction; interactive
-    // clothing-only retains the existing redraw-to-restore behavior.
+    // Scene loads record their own history. Interactive requests rely on the
+    // redraw service to restore the previous state.
     public async Task<string?> Apply(ActorId actor, CancellationToken cancellation)
     {
         var session = _sessions.ActiveSessionGeneration;
@@ -59,14 +60,13 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
         }
     }
 
-    // SessionLifecycleCoordinator has already withdrawn the session token.
-    // Reuse that admission owner; this event cancels work already in flight.
+    // The session has already stopped accepting new work. Cancel requests that
+    // were still running when the session ended.
     private void OnExit(GPoseExitingEvent _) => CancelPending();
 
     private void CancelPending()
     {
-        // Keep sources alive while cancelling; each operation removes and disposes
-        // its own source only after native cleanup finishes.
+        // Each operation disposes its cancellation source after native cleanup.
         lock (_gate)
             foreach (var operation in _pending.ToArray()) operation.Cancel();
     }

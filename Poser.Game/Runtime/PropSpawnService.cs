@@ -192,10 +192,6 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
 
     public int Count => _props.Count;
 
-    /// <summary>
-    /// Spawns one prop at the local player's position, using Brio's prop
-    /// base model (weapon model 9001 / type 249 / variant 1).
-    /// </summary>
     private const string PropDataResource = "Poser.Game.Data.props.json";
 
     private IReadOnlyList<PropModel>? _catalog;
@@ -295,10 +291,8 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
             weapon->Rotation = Quaternion.Identity;
             weapon->Scale = Vector3.One;
 
-            // World.Instance() is null outside a loaded scene; a null deref
-            // here is an AccessViolationException the catch below cannot
-            // catch, and would misreport as "spawning failed". Refusal
-            // destroys the just-created weapon so nothing leaks.
+            // A weapon needs a loaded graphics world. Release the new object
+            // if the world is unavailable before adding it.
             var world = CSWorld.Instance();
             if (world == null)
             {
@@ -328,12 +322,10 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
         }
     }
 
-    /// <summary>Destroys one prop and forgets it. Destroying a handle that
-    /// has already gone is a no-op.</summary>
     /// <summary>Recreates one prop's native weapon from the stated model
     /// — dyes and the animation variant bake at creation. The handle keeps
     /// its id, name, placement, and bindings; the old weapon dies only
-    /// after the new one took, so a failed create costs nothing.</summary>
+    /// after the replacement is installed. A null create leaves the old weapon intact.</summary>
     public bool Respawn(
         PropHandle handle, PropModel model, out string? detail)
     {

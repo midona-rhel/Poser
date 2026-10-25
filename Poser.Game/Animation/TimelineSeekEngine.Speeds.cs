@@ -4,7 +4,7 @@ using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Same-tick speed edges and layer weights on slots, props and holders.</summary>
+/// <summary>Applies speed changes and layer weights to timelines, props, and animation holders.</summary>
 internal sealed unsafe partial class TimelineSeekEngine
 {
     // ── Same-tick speed edges ─────────────────────────────────────────
@@ -12,8 +12,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     // container update's per-frame push into the W|2 groups) but to its slot
     // timelines only through seq+0x154 plus a dirty bit, one Advance later, and
     // Poser writes the Havok controls immediately: three ticks (speedtrace
-    // 2026-10-16). Setting every timeline in the same tick lines them up; the
-    // game's later pushes find identical values and are change-guarded no-ops.
+    // 2026-10-16). Updating them together avoids the visible delay between these native updates.
 
     /// <summary>The prop weapon objects: DrawData weapons 0–2 and the summoned
     /// prop (which gets no per-frame push at all).</summary>
@@ -100,9 +99,8 @@ internal sealed unsafe partial class TimelineSeekEngine
     // The game has no per-slot weight. Each C009's animation holder
     // (inst = clip+0x98, holder = inst+0x78) multiplies its blend-tree weight by
     // holder+0x5C every pool update (FUN_1418FB860 → SetWeight, clamped to
-    // [0, 1]); only holder init writes it (1.0). Holding it per slot never fights
-    // the game; new holders (a restart, a new clip) need it again, so it is
-    // re-applied every tick.
+    // [0, 1]); only holder init writes it (1.0). New holders start at 1.0 after a restart or new clip, so Poser
+    // reapplies the multiplier every tick.
 
     /// <summary>Sets every holder of the slot timeline's tree to <paramref name="weight"/>.</summary>
     public void SetSlotWeight(

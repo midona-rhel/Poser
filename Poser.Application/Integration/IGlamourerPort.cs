@@ -23,14 +23,15 @@ public interface IGlamourerPort
     /// flags and no persistent lock.</summary>
     IntegrationResult ApplyDesign(ActorId actor, Guid design);
 
-    /// <summary>MCDF application mode: applies a serialized state as a
-    /// FIXED state locked with Poser's own key, so the imported look
-    /// survives automation until <see cref="UnlockGlamourerState"/>.</summary>
+    /// <summary>
+    /// Applies imported appearance with Poser's Glamourer lock, keeping automation
+    /// from replacing it until the lock is released.
+    /// </summary>
     IntegrationResult HoldGlamourerState(ActorId actor, string state);
 
-    /// <summary>Baseline/design restoration mode: applies a serialized
-    /// state with the API's one-shot manual flags and NO persistent lock,
-    /// leaving no Poser fixed state behind.</summary>
+    /// <summary>
+    /// Restores saved appearance without leaving a persistent Poser lock.
+    /// </summary>
     IntegrationResult RestoreGlamourerState(ActorId actor, string state);
 
     /// <summary>Releases Poser's own lock only. Never touches another
@@ -38,21 +39,15 @@ public interface IGlamourerPort
     IntegrationResult UnlockGlamourerState(ActorId actor);
 
     /// <summary>
-    /// <see cref="UnlockGlamourerState"/> for a character whose exact
-    /// generation no longer resolves — the GPose clone is destroyed on the
-    /// exit edge, but Glamourer's state belongs to the character's IDENTITY
-    /// and outlives it. Never touches another plugin's lock: a foreign key
-    /// refuses. An absent character is a success, and never an excuse to
-    /// skip the restore that follows.
+    /// Releases Poser's lock by character name after its game object disappears.
+    /// This must not release another plugin's lock. An absent lock does not remove
+    /// the caller's obligation to restore captured appearance.
     /// </summary>
     IntegrationResult UnlockGlamourerStateByName(string name);
 
     /// <summary>
-    /// <see cref="RestoreGlamourerState"/> for that same character: writes
-    /// the CAPTURED pre-import state back by name, one-shot and unlocked.
-    /// Deliberately NOT a revert to game state — the clone and the player
-    /// share one Glamourer identity, so a revert would discard the design
-    /// the user actually had.
+    /// Restores the captured appearance by name without locking it.
+    /// Use the saved state, not a reset to game defaults: the player may have had a design applied.
     /// </summary>
     IntegrationResult RestoreGlamourerStateByName(string name, string state);
 
@@ -75,9 +70,13 @@ public interface IGlamourerPort
     /// <summary>Writes the given customize values and applies the whole
     /// customization once; a race or gender among them redraws.</summary>
     IntegrationResult SetCustomize(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values);
-    /// <summary>Applies a JSON state; what it carries with Apply set lands.</summary>
+    /// <summary>
+    /// Applies the appearance fields selected by the JSON state's Apply flags.
+    /// </summary>
     IntegrationResult ApplyGlamourerStateJson(ActorId actor, string stateJson);
-    /// <summary>Hands the actor back to what the game and automation say.</summary>
+    /// <summary>
+    /// Releases the appearance override so game state and automation can take effect.
+    /// </summary>
     IntegrationResult RevertGlamourerState(ActorId actor);
     /// <summary>Saves a JSON state as a named design; returns its id.</summary>
     IntegrationValue<Guid> AddDesign(string stateJson, string name);

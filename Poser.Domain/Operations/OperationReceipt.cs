@@ -4,19 +4,14 @@ using Poser.Domain.Identity;
 namespace Poser.Domain.Operations;
 
 /// <summary>
-/// Exact logical identity of one application session.
-///
-/// The GUID is an identity token, not a clock, native address, or
-/// <see cref="Poser.Application.Scene.SceneSession.Revision"/>. The default value is explicit
-/// invalid state so callers must obtain a generated or validated value. Record
-/// equality, hashing, and deconstruction all use the exact GUID; no ordering
-/// is provided because session identity has no precedence relationship.
+/// Identifies an application session. The default empty GUID is invalid.
+/// This identifies a session; it does not indicate time or order.
 /// </summary>
 public readonly record struct SessionGeneration
 {
     private SessionGeneration(Guid value) => Value = value;
 
-    /// <summary>The exact opaque identity of the session.</summary>
+    /// <summary>The session ID.</summary>
     public Guid Value { get; }
 
     /// <summary>Whether this value can identify an application session.</summary>
@@ -47,25 +42,23 @@ public readonly record struct SessionGeneration
 }
 
 /// <summary>
-/// A workflow-owner-local operation token. <see cref="First"/> and
-/// <see cref="Next"/> define the only sequencing convention; the type has no
-/// clock, registry, or shared mutable counter. Default is invalid, and numeric
-/// comparison is intentional token ordering only, not global operation order.
+/// An operation sequence number maintained by one workflow.
+/// Numbers from different workflows cannot establish a shared order; zero is invalid.
 /// </summary>
 public readonly record struct OperationEpoch : IComparable<OperationEpoch>, IComparable
 {
     private OperationEpoch(ulong value) => Value = value;
 
-    /// <summary>The owner-local ordinal carried by the operation.</summary>
+    /// <summary>The sequence number within its workflow.</summary>
     public ulong Value { get; }
 
     /// <summary>Whether this value is a usable operation epoch.</summary>
     public bool IsValid => Value != 0;
 
-    /// <summary>The first valid epoch for one owner-local sequence.</summary>
+    /// <summary>The first operation number in a workflow.</summary>
     public static OperationEpoch First => new(1);
 
-    /// <summary>Creates a valid epoch from a non-zero owner-local ordinal.</summary>
+    /// <summary>Creates a sequence number; zero is invalid.</summary>
     public static OperationEpoch Create(ulong value)
     {
         if (value == 0)
@@ -113,7 +106,7 @@ public readonly record struct OperationEpoch : IComparable<OperationEpoch>, ICom
     public static bool operator >=(OperationEpoch left, OperationEpoch right) =>
         left.CompareTo(right) >= 0;
 
-    /// <summary>Returns the owner-local ordinal for value deconstruction.</summary>
+    /// <summary>Returns the sequence number for tuple-style assignment.</summary>
     public void Deconstruct(out ulong value) => value = Value;
 
     public override string ToString() =>
@@ -121,8 +114,8 @@ public readonly record struct OperationEpoch : IComparable<OperationEpoch>, ICom
 }
 
 /// <summary>
-/// Current state of one operation receipt. Every state except Pending is
-/// terminal; Pending is the explicit non-terminal acknowledgement state.
+/// Recorded operation status. Pending means unfinished; the other values describe
+/// the attempt's result, including whether a separate recovery attempt is needed.
 /// </summary>
 public enum OperationReceiptState
 {
@@ -135,14 +128,9 @@ public enum OperationReceiptState
 }
 
 /// <summary>
-/// Immutable Application-owned read model for one exact operation attempt.
-/// Construction is private; the named factories and <see cref="Create"/>
-/// validate identity and state/evidence combinations before a receipt exists.
-/// Record equality includes the existing recovery receipt's reference identity,
-/// because that receipt is the exact retry/evidence token. All properties are
-/// get-only, so an empty <c>with</c> expression can make an equivalent copy but
-/// cannot alter a valid receipt into a contradictory state. Deconstruction
-/// exposes every carried field in the same order as the identity contract.
+/// Result of one operation attempt, tied to its session and actor version.
+/// Factories check required IDs and consistency between status and rollback data.
+/// Recovery objects compare by reference, not by their individual contents.
 /// </summary>
 public sealed record OperationReceipt
 {
@@ -167,7 +155,7 @@ public sealed record OperationReceipt
     /// <summary>The exact logical operation identity.</summary>
     public Guid OperationId { get; }
 
-    /// <summary>The workflow owner's exact operation epoch.</summary>
+    /// <summary>Sequence number within the workflow.</summary>
     public OperationEpoch OperationEpoch { get; }
 
     /// <summary>The exact application-session identity.</summary>
@@ -179,18 +167,16 @@ public sealed record OperationReceipt
     /// <summary>The operation's validated state.</summary>
     public OperationReceiptState State { get; }
 
-    /// <summary>Optional human/read-model detail; failures require one.</summary>
+    /// <summary>Explanation shown to the user; failures require one.</summary>
     public string? Detail { get; }
 
     /// <summary>
-    /// Existing immutable transform-recovery evidence. Incomplete evidence is
-    /// legal only with <see cref="OperationReceiptState.RecoveryRequired"/>.
+    /// Rollback results. An incomplete rollback is allowed only with RecoveryRequired status.
     /// </summary>
     public TransformRecoveryReceipt? Recovery { get; }
 
     /// <summary>
-    /// Creates a receipt after enforcing exact identity and state/evidence
-    /// invariants. This is a value factory, not an operation owner or manager.
+    /// Creates a result after checking IDs, status, detail, and rollback data.
     /// </summary>
     public static OperationReceipt Create(
         Guid operationId,
@@ -250,9 +236,7 @@ public sealed record OperationReceipt
             detail);
 
     /// <summary>
-    /// Creates a rolled-back receipt. Complete recovery evidence may be kept as
-    /// proof of the restore sweep; incomplete evidence requires the recovery
-    /// state instead.
+    /// Records a completed rollback, optionally including its results.
     /// </summary>
     public static OperationReceipt RolledBack(
         Guid operationId,
@@ -288,8 +272,7 @@ public sealed record OperationReceipt
             recovery);
 
     /// <summary>
-    /// Creates a recovery-required receipt with required incomplete evidence and
-    /// a detail describing the outstanding obligation.
+    /// Records an incomplete rollback with its results and an explanation of what remains.
     /// </summary>
     public static OperationReceipt RecoveryRequired(
         Guid operationId,
@@ -308,8 +291,7 @@ public sealed record OperationReceipt
             recovery);
 
     /// <summary>
-    /// Creates a cancelled receipt. Complete recovery evidence may document the
-    /// restore performed during cancellation.
+    /// Records cancellation, optionally including completed rollback results.
     /// </summary>
     public static OperationReceipt Cancelled(
         Guid operationId,
@@ -327,7 +309,9 @@ public sealed record OperationReceipt
             detail,
             recovery);
 
-    /// <summary>Deconstructs the complete immutable receipt read model.</summary>
+    /// <summary>
+    /// Returns all fields for tuple-style assignment.
+    /// </summary>
     public void Deconstruct(
         out Guid operationId,
         out OperationEpoch operationEpoch,

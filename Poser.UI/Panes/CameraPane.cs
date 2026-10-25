@@ -38,12 +38,10 @@ public sealed class CameraPane
 
     private readonly EntityActions _entityActions;
 
-    /// <summary>Where this pane's verb outcomes go; the page itself states
-    /// standing facts only.</summary>
+    /// <summary>Reports failed camera actions to the user.</summary>
     private readonly UserNotices _notices;
 
-    /// <summary>Whether destroy-all confirmation is armed.</summary>
-
+    // Expanded state of the camera page sections.
     private bool _openGeneral = true;
     private bool _openCamera = true;
     private bool _openMovement = true;
@@ -102,9 +100,8 @@ public sealed class CameraPane
     }
 
     /// <summary>
-    /// Pumped every frame by the window: the dialogs and pickers must survive
-    /// a tab switch, and the pending select has to resolve while no camera is
-    /// selected — the frame in which no tab of this pane runs at all.
+    /// Draws file dialogs every frame so they survive switching away from
+    /// the camera tab or clearing the camera selection.
     /// </summary>
     public void DrawBrowsers()
     {
@@ -436,9 +433,7 @@ public sealed class CameraPane
                     { Width = UiWidth.Content };
                 float buttonWidth = MeasureButton(
                     "Recenter", buttonStyle).X;
-                // Sized to a probable actor name, not to what is left —
-                // a dropdown spanning a wide row reads wrong (skill:
-                // width honesty). Air beside it is correct.
+                // Cap the actor dropdown width while leaving room for Recenter.
                 float dropdownWidth = MathF.Min(
                     160f * row.Scale,
                     MathF.Max(1f, row.ControlWidth - buttonWidth - gap));
@@ -722,12 +717,11 @@ public sealed class CameraPane
 
     // ── state ────────────────────────────────────────────────────────────
 
-    /// <summary>The selected camera and its id, or a null camera when the
-    /// selection is absent, stale, or already destroyed.</summary>
     /// <summary>The rail's camera for the rotation ball; null when the
     /// selection resolves to no camera.</summary>
     public CameraReading? BallCamera() => TargetCamera().Camera;
 
+    /// <summary>Resolves the selected camera; stale IDs return a null reading.</summary>
     private (CameraId Id, CameraReading? Camera) TargetCamera()
     {
         if (_selection.Primary is not

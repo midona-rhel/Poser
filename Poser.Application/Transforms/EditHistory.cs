@@ -11,8 +11,7 @@ namespace Poser.Application.Transforms;
 /// </summary>
 public sealed class EditHistory
 {
-    /// <summary>The depth used when no setting is supplied (tests, and the
-    /// parameterless construction the DI default would use).</summary>
+    /// <summary>History depth used when the caller supplies no setting.</summary>
     public const int DefaultCapacity = 500;
 
     private static readonly Func<int> FixedDefault = static () => DefaultCapacity;
@@ -359,13 +358,9 @@ public sealed class EditHistory
     /// equally by the undo-off branch of <see cref="Append"/>, which empties
     /// them just as thoroughly.
     ///
-    /// <para>A lifecycle entry closes over state its owner keeps beside the
-    /// stack — the slot that re-binds an entity across a destroy/respawn pair
-    /// — and that state is meaningless once the entries naming it are gone.
-    /// Announcing the emptying keeps the answer in ONE place: whoever put
-    /// state behind an entry drops it here, rather than every site that
-    /// empties the stacks having to remember a second sweep. This class's own
-    /// Append forgot exactly that, which is the point.</para>
+    /// <para>Lifecycle entries can refer to state stored outside the history
+    /// stacks, such as an entity slot retained for redo. This event lets the
+    /// owner release that state whenever both stacks become empty.</para>
     /// </summary>
     public event Action? Cleared;
 

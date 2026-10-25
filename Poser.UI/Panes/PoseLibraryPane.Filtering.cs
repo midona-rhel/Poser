@@ -110,8 +110,7 @@ public sealed partial class PoseLibraryPane
         RebuildAfterFilterChange();
     }
 
-    /// <summary>The portal's from-library rows: exactly one kind shown,
-    /// or none for the whole tab.</summary>
+    /// <summary>Shows one kind, or all kinds when the argument is null.</summary>
     public void SetOnlyKindFilter(PoseLibraryEntryKind? kind, WorldAssetKind? worldKind = null)
     {
         _worldKindFilters.Clear();
@@ -187,10 +186,9 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>
-    /// The visible list, refilled in place, and the groups it falls into. A
-    /// query searches the WHOLE library and ignores the folder tree — a name is
-    /// looked for, not a place — while Favorites and the tag chip are filters
-    /// and compose with it.
+    /// Rebuilds visible tiles and their groups. Search ignores folder selection
+    /// in scanned libraries, but autosaves remain limited to the selected range.
+    /// Favorites and tag filters apply alongside the query.
     ///
     /// <para>Grouping is free here: the tiles are already ordered by folder, so
     /// a group closes the moment the folder changes and its count is known
@@ -302,8 +300,7 @@ public sealed partial class PoseLibraryPane
             ClearTileSelection();
     }
 
-    /// <summary>The group row for a slot, reused in place: a refilter mints
-    /// only the count readouts, never the rows.</summary>
+    /// <summary>Reuses an existing group row or creates one when the list grows.</summary>
     private static PoseLibraryGroupRow GroupSlot(
         List<PoseLibraryGroupRow> groups, int index)
     {
@@ -365,13 +362,8 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>
-    /// Whether the footer belongs to a live character-file apply. Every
-    /// conjunct earns its place: the MCDF TAB is the only surface that
-    /// starts one, so no other tab may have its caption or its action row
-    /// taken over (a tab added later is excluded by construction); the
-    /// single-flight transaction must be an IMPORT rather than an export;
-    /// and its receipt must still be Pending, because a terminal outcome
-    /// reports through the note like every other result.
+    /// Shows import progress only on the character-file tab, while an import
+    /// is busy and its operation receipt is still pending.
     /// </summary>
     internal static bool ShowsImportCancel(
         LibraryType type,

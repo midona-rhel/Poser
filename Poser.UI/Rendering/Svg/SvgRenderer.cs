@@ -26,10 +26,8 @@ internal static class SvgRenderer
             SvgStrokeMask.Draw(
                 drawList, paths, svgToScreen, scale, tint,
                 strokeWidthOverride, groupOpacity, groupBackground);
-            // The mask IS the whole icon here: every path paints in the one
-            // composite colour, fills included, so the paint loop below has
-            // nothing left to emit. Returning skips its per-sub-path point
-            // buffers, which used to be built and thrown away every draw.
+            // The mask already contains every path and fill for a single-color
+            // icon, so the direct paint loop has nothing left to draw.
             return;
         }
 
@@ -72,13 +70,12 @@ internal static class SvgRenderer
     }
 
     /// <summary>
-    /// SINGLE-COLOR icons ALWAYS take the union mask — stroked, filled
+    /// Single-color icons use the union mask, whether stroked, filled,
     /// (Tabler's -filled twins) or both. The polyline fallback overdraws:
     /// its round caps/joins are filled circles blended ON TOP of the
     /// polyline body, so a translucent tint alpha-stacks wherever they
     /// overlap. And the direct triangulated fill carries NO anti-aliasing
-    /// at all — pin-filled and player-pause-filled shipped as jagged
-    /// nonsense through it (user-reported 2026-08-30). The mask emits each
+    /// at all. The mask emits each
     /// pixel once from a supersampled union, like the browser's analytic
     /// rasterizer. Multicolor SVGs keep the direct paint ordering.
     /// </summary>

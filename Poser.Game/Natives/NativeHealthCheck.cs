@@ -9,12 +9,9 @@ using Poser.Application.Diagnostics;
 namespace Poser.Game.Natives;
 
 /// <summary>
-/// Checks every entry of the generated native registry (patchcheck's
-/// poser-registry.tsv) against the running game: each function signature and patch
-/// site found (a patch site's bytes as expected), each global found, each field offset
-/// read from the game's own code and compared with the value Poser uses, each
-/// NativeFields constant against the offset it is derived from, and each hook Poser created, live from the <see cref="HookLedger"/>. The scan runs once off the
-/// framework thread; the summary and every problem go to the log.
+/// Checks generated signatures, patch sites, globals, offsets, and recorded hooks
+/// against the running game. Scanning runs off the framework thread and publishes
+/// an immutable report under the service lock.
 /// </summary>
 public sealed partial class NativeHealthCheck : INativeHealth
 {

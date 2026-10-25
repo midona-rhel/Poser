@@ -20,8 +20,8 @@ public interface ICustomizePlusPort
 
     IntegrationValue<Guid> ApplyTemporaryBodyProfile(ActorId actor, string profileJson);
 
-    /// <summary>Deletes Poser's temporary profile by its OWN id — the one
-    /// ownership-safe cleanup primitive. There is deliberately no
+    /// <summary>Deletes the temporary profile using the ID returned when Poser
+    /// created it. There is deliberately no
     /// delete-by-actor: that would remove whichever temporary profile is
     /// active, including another plugin's.</summary>
     IntegrationResult DeleteTemporaryBodyProfileById(Guid profile);

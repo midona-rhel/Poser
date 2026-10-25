@@ -26,9 +26,8 @@ using static Poser.Game.IkHeldTargets;
 namespace Poser.Game;
 
 /// <summary>Session IK state per exact endpoint: validated chain
-/// configuration, resolved native chain, and the Fixed-mode capture.
-/// Keyed by the exact skeleton instance, so a replacement never
-/// inherits configuration or targets.</summary>
+/// configuration, resolved native indices, and held target. The registry
+/// keys this state by actor-slot, partial index and bone index.</summary>
 internal sealed class IkChainState
 {
     public required Poser.Domain.Posing.IkChainConfig Config;
@@ -116,8 +115,7 @@ internal sealed unsafe partial class IkChainRegistry
         [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out IkChainState state) =>
         _ikChains.TryGetValue(key, out state);
 
-    /// <summary>A replacement never inherits configuration or fixed targets:
-    /// every chain of the purged skeleton goes, with its collision state.</summary>
+    /// <summary>Removes every chain and collision state under an actor-slot key.</summary>
     public void Purge(SkeletonKey key)
     {
         foreach (var chainKey in _ikChains.Keys
@@ -245,8 +243,8 @@ internal sealed unsafe partial class IkChainRegistry
             || previous.Config.Fabrik != config.Fabrik || previous.Config.SwivelDegrees != config.SwivelDegrees))
             state.CollisionState.Reset();
 
-        // Fixed-target lifecycle: capture on entering Fixed or enabling a
-        // Fixed chain; disabling retains tuning but clears the capture.
+        // Retake held targets when enabling or changing target mode.
+        // Disabling preserves tuning and clears the held capture.
         var mode = config.TargetMode;
         bool fresh = previous == null
             || previous.Config.TargetMode != mode

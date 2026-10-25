@@ -19,7 +19,7 @@ namespace Poser.Game.Animation;
 /// <summary>
 /// The native animation surface the four animation ports share: actor
 /// resolution, the signature-resolved entry points, timeline playback and
-/// the verified sequencer/scheduler layouts. Owns no per-actor policy.
+/// sequencer/scheduler field access. GPoseMotionRecords keeps captured motion records.
 /// </summary>
 public sealed unsafe partial class AnimationNativeState
 {
@@ -38,8 +38,7 @@ public sealed unsafe partial class AnimationNativeState
     private delegate bool SetTimelineIdDelegate(
         ActionTimelineSequencer* timeline, ushort id, nint context);
     private readonly SetTimelineIdDelegate? _setTimelineId;
-    // FUN_1408377F0(id): the in-memory ActionTimeline row, or 0. Pending a
-    // patchcheck entry; unique on the analysed build (sig.py, 1 hit).
+    // Returns the in-memory ActionTimeline row, or 0.
     private delegate nint ActionTimelineRowDelegate(uint id);
     private readonly ActionTimelineRowDelegate? _actionTimelineRow;
 
@@ -48,7 +47,6 @@ public sealed unsafe partial class AnimationNativeState
     // TimelineContainer::PlayActionTimeline 0x1408BED60(container, first, second, params):
     // queues first (an emote's intro) and second (its loop) and plays first; the
     // sequencer plays second itself when first ends (the game's own intro → loop).
-    // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit).
     private delegate void PlayActionTimelineDelegate(TimelineContainer* container, ushort first, ushort second, nint parameters);
     private readonly PlayActionTimelineDelegate? _playActionTimeline;
     // EmoteController::GetPosture 0x140616160 (patchcheck EmoteController.GetPosture):
@@ -158,7 +156,7 @@ public sealed unsafe partial class AnimationNativeState
     private static extern bool ReadProcessMemory(
         nint process, nint address, void* buffer, nint size, out nint read);
 
-    /// <summary>Whether a foreign region answers a guarded read.</summary>
+    /// <summary>Whether ReadProcessMemory can copy this range (up to 0x160 bytes).</summary>
     internal static bool RegionReadable(nint address, int size)
     {
         if (size > 0x160)
@@ -189,8 +187,8 @@ public sealed unsafe partial class AnimationNativeState
         _log = log;
         _bindings = bindings;
 
-        // A missing stance native degrades that one operation to an explicit
-        // failure; it never silently half-applies a transition.
+        // Resolve functions independently. Callers check the capabilities they require;
+        // optional helpers can be absent while another animation operation remains available.
         _setEmoteMode = ScanDelegate<SetEmoteModeDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetMode, "SetEmoteMode");
         _cancelTimeline = ScanDelegate<CancelTimelineDelegate>(
@@ -380,9 +378,9 @@ public sealed unsafe partial class AnimationNativeState
         return binding.ptr != null && binding.ptr->Animation.ptr != null;
     }
 
-    /// <summary>The live animation controls with a bound animation, and the token of
-    /// this skeleton and layout: a redraw moves the skeleton or changes the count, so
-    /// a scrub captured under the old token is refused rather than written blind.</summary>
+    /// <summary>Reads controls with bound animations and a token based on skeleton address
+    /// and control count. The token detects those changes, but cannot detect a
+    /// replacement or reordering that keeps the same address and count.</summary>
     internal static List<ScrubControlReading> CollectControls(Character* character, out ulong token)
     {
         var result = new List<ScrubControlReading>();

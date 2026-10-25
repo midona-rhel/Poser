@@ -36,10 +36,7 @@ public class Skeleton : EntityBase, ISkeleton
 
     private readonly List<IBone> _bones = new();
 
-    /// <summary>Live view over <c>_bones</c>, allocated once. Refresh() clears
-    /// and refills the SAME list, so the wrapper survives a rebuild; building a
-    /// fresh one per access charged an allocation to every <c>skeleton.Bones</c>
-    /// read, including the per-bone loops of the scene refresh.</summary>
+    /// <summary>One read-only wrapper around the bone list; rebuilds refill the same list.</summary>
     private readonly System.Collections.ObjectModel.ReadOnlyCollection<IBone> _bonesView;
 
     private readonly Dictionary<string, Bone> _bonesByName = new();
@@ -60,13 +57,8 @@ public class Skeleton : EntityBase, ISkeleton
     /// lifetime is exactly <c>_bonesByIndex</c>'s.</summary>
     private NativePartial[] _nativePartials = Array.Empty<NativePartial>();
 
-    /// <summary>
-    /// A VERIFIED view of one partial's native-index→bone map: handed out only
-    /// when the map was built from the same native <c>hkaSkeleton</c>, with the
-    /// same bone count, that the caller is iterating. Per-frame native passes
-    /// use it to resolve bones without marshaling a managed string per bone;
-    /// <see cref="IsValid"/> false means they must fall back to the name path.
-    /// </summary>
+    /// <summary>A cached native-index lookup accepted when the skeleton pointer
+    /// and bone count match. This does not detect in-place name changes.</summary>
     public readonly struct NativeBoneMap
     {
         private readonly Bone?[]? _bones;
@@ -92,14 +84,8 @@ public class Skeleton : EntityBase, ISkeleton
     /// re-run wrote. Empty when it did not run.</summary>
     internal HashSet<(int Partial, int Bone)> DrivenBones { get; } = new();
 
-    /// <summary>Monotonic counter across every skeleton (re)build in the
-    /// process. This — not any per-instance id — is the skeleton-change key:
-    /// it advances exactly when the cache invalidated and rebuilt the native
-    /// view, so the binding registry can tell a real skeleton change from
-    /// wrapper churn (issue #78). A fresh guid per instance was the banned
-    /// pattern it replaces: it advanced whenever an OBJECT was recreated,
-    /// which fed rebuild loops that never touched the native skeleton.
-    /// </summary>
+    /// <summary>Process-wide revision assigned on each rebuild attempt, including
+    /// attempts with no native skeleton. Wrapper rebinds do not advance it.</summary>
     public long BuildRevision { get; private set; }
 
     private static long _buildCounter;
@@ -117,9 +103,7 @@ public class Skeleton : EntityBase, ISkeleton
     // leaves the resolver reading a stale capture.
     private readonly Func<IActor, nint> _resolveCharacterBase;
 
-    // The id is DERIVED from (actor, slot) — stable across rebuilds and
-    // instance replacements, per issue #78: a skeleton has no identity of
-    // its own above the write layer, only an address.
+    // Actor and slot determine the entity id, so rebuilding preserves it.
     public Skeleton(
         IActor actor,
         Poser.Domain.Identity.PoseSlot slot,
@@ -163,15 +147,8 @@ public class Skeleton : EntityBase, ISkeleton
         return null;
     }
 
-    /// <summary>
-    /// The native-index→bone map for one partial, or an invalid handle when it
-    /// cannot be proven to describe <paramref name="pose"/>. The proof is the
-    /// pair (native <c>hkaSkeleton</c> pointer, bone count) captured when the
-    /// map was built: a partial that rebound to a different native skeleton, a
-    /// partial that did not exist at build time, and a partial whose bone array
-    /// changed length all fail it, and the caller resolves by name instead.
-    /// A wrong-bone write is pose corruption, so the map is never assumed.
-    /// </summary>
+    /// <summary>Returns the cached map when its skeleton pointer and bone count
+    /// match the pose. Otherwise callers must resolve bones by name.</summary>
     internal unsafe NativeBoneMap GetNativeBoneMap(int partialId, hkaPose* pose)
     {
         if (pose == null || (uint)partialId >= (uint)_nativePartials.Length)
@@ -333,16 +310,8 @@ public class Skeleton : EntityBase, ISkeleton
                     }
                 }
 
-                // Third pass: freeze what GetBoneByName(name, partialIdx) will
-                // answer for every native index of THIS pose. That method
-                // resolves the LOWEST-indexed bone of the partial carrying the
-                // name (its dictionary fast path stores the first bone built
-                // with a name, its linear fallback scans build order, and build
-                // order inside a partial is ascending bone index) — so filling
-                // the map ascending and keeping the first bone per name
-                // reproduces it exactly, duplicate names within the partial
-                // included. Names never cross partials here: the map is per
-                // partial, exactly as the name lookup's partialId argument is.
+                // Match name lookup: duplicate names within a partial resolve
+                // to the lowest bone index, even when accessed by native index.
                 var indexMap = new Bone?[boneCount];
                 var firstByName = new Dictionary<string, Bone>(
                     boneCount, StringComparer.Ordinal);
@@ -360,14 +329,8 @@ public class Skeleton : EntityBase, ISkeleton
                 break; // Only process the first valid pose
             }
 
-            // Connect non-root partials to partial 0. Brio's rule is
-            // either/or on the partial's root count (Brio Skeleton.cs:99-125):
-            // exactly ONE root -> link via ConnectedParentBoneIndex/
-            // ConnectedBoneIndex (Brio Skeleton.cs:101-110); MULTIPLE roots
-            // -> map EVERY root to its partial-0 namesake by name (Brio
-            // Skeleton.cs:111-124). The connected-index link is NOT applied
-            // in the multi-root case, and a root with no partial-0 namesake
-            // simply stays unlinked (Brio Skeleton.cs:117 null check).
+            // Match Brio: a single root uses the connected indices; multiple
+            // roots attach to partial-0 bones with matching names.
             if (partialIdx > 0 && partialBones[0].Count > 0)
             {
                 var rootBones = partialBones[partialIdx]
@@ -389,12 +352,7 @@ public class Skeleton : EntityBase, ISkeleton
                 }
                 else
                 {
-                    // Brio resolves the namesake with
-                    // PartialSkeleton.GetBone(string)
-                    // (Brio PartialSkeleton.cs:40-47): first ordinal match in
-                    // insertion order, and partial-0 bones are inserted in
-                    // ascending index order — i.e. the LOWEST-indexed
-                    // partial-0 bone carrying the raw havok name.
+                    // For duplicate names, use the lowest partial-0 bone index.
                     if (partial0FirstByName == null)
                     {
                         partial0FirstByName = new Dictionary<string, Bone>(
@@ -561,11 +519,8 @@ public class Skeleton : EntityBase, ISkeleton
     }
 
 
-    /// <summary>The draw-phase refresh: the display snapshot of the bones
-    /// someone read within two frames — the finalize hook's own contract —
-    /// walking the registered bones rather than every native index through
-    /// a tuple-keyed lookup. Traced at 0.46 ms a call on one actor before
-    /// (2026-09-02); an overlay shows dozens of bones of hundreds.</summary>
+    /// <summary>Refreshes display transforms only for bones recently requested
+    /// by a reader, as tracked by Bone.TransformWanted.</summary>
     private unsafe void RefreshWantedTransforms(GameSkeleton* gameSkeleton)
     {
         var partialCount = gameSkeleton->PartialSkeletonCount;
@@ -602,17 +557,12 @@ public class Skeleton : EntityBase, ISkeleton
             }
     }
 
-    /// <summary>What a draw surface needs each frame, off ONE resolve of the
-    /// slot's native base: the wanted bones' snapshots refreshed and the
-    /// model matrix. Resolving the base twice a frame per skeleton was a
-    /// third of the overlay's cost (traced 2026-09-03).</summary>
-    /// <summary>Ticks spent resolving the slot's native base in the draw
-    /// refresh, and the calls, for the bridge's profile: the sampler
-    /// charged the resolver a fifth of a millisecond a frame that its
-    /// few pointer reads cannot cost.</summary>
+    /// <summary>Accumulated native-base resolution time, in Stopwatch ticks.</summary>
     public static long ResolveTicks;
     public static long ResolveCalls;
 
+    /// <summary>Resolves the native base once, refreshes requested display transforms,
+    /// and returns the model matrix. Returns null when the slot is absent.</summary>
     public unsafe Matrix4x4? RefreshForDraw()
     {
         long started = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -629,22 +579,10 @@ public class Skeleton : EntityBase, ISkeleton
         return ModelMatrixOf(charaBase);
     }
 
-    /// <summary>
-    /// Ktisis' "Set to reference pose" source data (EntityPoseConverter.
-    /// LoadReferencePose: hkaPose::SetToReferencePose + SyncModelSpace per
-    /// partial) read WITHOUT mutating the live pose: each partial's
-    /// hkaSkeleton reference locals composed down the parent chain — havok
-    /// orders parents before children, so one forward pass suffices. A
-    /// non-zero partial has no place of its own: at runtime the game drives
-    /// its roots from partial 0 — a single-root partial through the
-    /// connected parent bone, a multi-root partial per-root through the
-    /// partial-0 NAMESAKE (the same either/or the entity linking above
-    /// mirrors from Brio) — so each root's anchor is that partial-0 bone's
-    /// composed reference and the root's own reference local is ignored.
-    /// Attach-driven partial roots are left out of the result
-    /// (CreatePoseFile's export rule); by name they are the partial-0 bone
-    /// the import's instance expansion already covers.
-    /// </summary>
+    /// <summary>Composes native reference locals without changing the live pose.
+    /// Parents must precede children. Roots of later partials first use a
+    /// partial-0 namesake, then the connected indices when no namesake exists.
+    /// Attached partial roots are omitted from the exported entries.</summary>
     public unsafe IReadOnlyList<(IBone Bone, Transform Reference)> CaptureReferencePose()
     {
         var result = new List<(IBone Bone, Transform Reference)>();

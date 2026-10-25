@@ -5,18 +5,17 @@ using Poser.Domain.Transforms;
 namespace Poser.Domain.Posing;
 
 /// <summary>
-/// Pure pose math shared by posing services. No game or Dalamud dependencies —
-/// live scenarios exercise these rules through the production pose pipeline.
+/// Shared pose and orientation calculations without game-memory access.
 /// </summary>
 public static class PoseMath
 {
     private const float RadiansToDegrees = 180f / MathF.PI;
     private const float DegreesToRadians = MathF.PI / 180f;
 
-    /// <summary>The rotation that maps local +Z onto the given world
-    /// direction — the axis game lights beam along, so "face that way" is
-    /// this and not a view-matrix rotation whose sign convention can flip.
-    /// Returns identity for a degenerate direction.</summary>
+    /// <summary>
+    /// Creates a rotation that points local +Z along the supplied direction.
+    /// Returns identity when the direction is nonfinite or shorter than 0.0001.
+    /// </summary>
     public static Quaternion AlignZTo(Vector3 direction)
     {
         float length = direction.Length();
@@ -34,7 +33,10 @@ public static class PoseMath
         return Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(m));
     }
 
-    /// <summary>model = parent COMPOSED WITH local (scale-then-rotate-then-translate).</summary>
+    /// <summary>
+    /// Combines parent and local position, rotation and scale. This component
+    /// representation does not preserve shear from arbitrary matrix composition.
+    /// </summary>
     public static Transform Compose(in Transform parent, in Transform local) => new()
     {
         Position = parent.Position + Vector3.Transform(local.Position * parent.Scale, parent.Rotation),
@@ -42,8 +44,10 @@ public static class PoseMath
         Scale = parent.Scale * local.Scale,
     };
 
-    /// <summary>Ktisis testing weights parent-local position/rotation and
-    /// multiplicative scale with signed, optionally extrapolated weights.</summary>
+    /// <summary>
+    /// Weights position and rotation changes. Scale is returned as an additive
+    /// change from one. Weights outside 0–1 extrapolate rather than clamp.
+    /// </summary>
     public static Transform WeightExpressionDelta(Transform delta, float weight) => new()
     {
         Position = delta.Position * weight,
@@ -59,8 +63,8 @@ public static class PoseMath
         Position = Vector3.Transform(delta.Position, parent),
     };
     /// <summary>
-    /// Returns the opposite-side bone name for left/right suffixed bones
-    /// (e.g. "j_te_l" → "j_te_r"), or null when the bone has no mirror partner.
+    /// Swaps an _l or _r suffix, or returns null for other names.
+    /// This computes a name; it does not check whether that bone exists.
     /// </summary>
     public static string? GetMirrorBoneName(string boneName)
     {

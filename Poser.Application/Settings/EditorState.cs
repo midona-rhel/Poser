@@ -4,18 +4,10 @@ using Poser.Documents.Config;
 namespace Poser.Application.Settings;
 
 /// <summary>
-/// Tracks editor-wide state: gizmo settings.
-/// UI components call methods directly.
-///
-/// NOTE: Selection is handled by the application SelectionSession, not here.
-/// This class only tracks editor tool settings.
-///
-/// <para>Two of these are NOT session state and are not held here: the shape
-/// the armature is drawn in and the selected-bones-only filter are standing
-/// preferences, so they live in <see cref="SkeletonConfiguration"/> and the
-/// properties below are views onto it. ONE store, so the settings page, the
-/// keybinds and the overlay can never disagree — and so a chord thrown at
-/// either of them outlives the session.</para>
+/// Editor tool settings shared by UI controls and shortcuts. The selected tool,
+/// skeleton view mode, and selected-bones filter persist through configuration.
+/// Orientation, symmetry, and rotation pivot are held in memory. Selection itself
+/// belongs to SelectionSession.
 /// </summary>
 public class EditorState
 {
@@ -53,8 +45,7 @@ public class EditorState
             if (skeleton.SkeletonViewMode == value)
                 return;
             skeleton.SkeletonViewMode = value;
-            // A write here is a keybind press or a settings row, never a
-            // frame, so saving on the spot is what makes the chord stick.
+            // Persist shortcut changes as well as changes from Settings.
             _configuration.ApplyChange();
         }
     }

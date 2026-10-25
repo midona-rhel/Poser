@@ -5,12 +5,9 @@ using Poser.Domain.Integration;
 namespace Poser.Application.Integration;
 
 /// <summary>
-/// The per-component appearance selectors — Penumbra collection, Glamourer
-/// design and wardrobe, Customize+ profile — and the history capture/replay
-/// of an actor's whole external look. Each selector captures the incoming
-/// state into <see cref="IntegrationOwnership"/> before its first change and
-/// keeps its own reset; every edit refuses while an MCDF operation runs or an
-/// imported character file owns the actor.
+/// Applies Penumbra collections, Glamourer appearance, and Customize+ profiles.
+/// Keeps original values in IntegrationOwnership for Reset and captures appearance
+/// for undo. Operations that call McdfGate refuse changes during an MCDF import.
 /// </summary>
 public sealed class IntegrationSelectors
 {
@@ -68,9 +65,11 @@ public sealed class IntegrationSelectors
 
     public IntegrationValue<Guid> ReadPlayerCollection() => _penumbra.GetPlayerCollection();
 
-    /// <summary>Destructive commands cannot silently turn a failed capture into empty state.
-    /// Only removal passes omitUnreadableLook: an actor Glamourer cannot read
-    /// at all must stay removable, so its look is left out and marked rather than refusing.</summary>
+    /// <summary>
+    /// Captures appearance for undo. By default an unreadable Glamourer state fails
+    /// the capture. Removal callers can instead omit unavailable appearance so the
+    /// actor remains removable; the snapshot records that omission.
+    /// </summary>
     public IntegrationValue<ActorAppearanceSnapshot> TryCaptureHistory(ActorId actor, bool captureCollection = true,
         bool omitUnreadableLook = false)
     {
@@ -269,8 +268,7 @@ public sealed class IntegrationSelectors
         var state = GetStateJson(actor);
         if (!state.Success || state.Value is null)
             return new(false, default, state.Detail, state.AppearanceRefusal);
-        // Recheck after capture: a save must not knowingly consume a look
-        // that became foreign-held while the name dialog was open.
+        // Recheck access after reading the state, before creating the saved design.
         access = AppearanceAccess(actor);
         return access.CanEdit ? _glamourer.AddDesign(state.Value, name) : IntegrationValue<Guid>.Refused(access);
     }
@@ -279,7 +277,9 @@ public sealed class IntegrationSelectors
 
     // ── Selectors ────────────────────────────────────────────────────────
 
-    /// <summary>A Penumbra redraw of the actor; nothing else changes.</summary>
+    /// <summary>
+    /// Requests a Penumbra redraw using the actor's current collection.
+    /// </summary>
     public IntegrationResult Redraw(ActorId actor)
     {
         var redraw = _penumbra.RequestRedraw(actor);
@@ -381,7 +381,7 @@ public sealed class IntegrationSelectors
         var state = current.Baseline.GlamourerState;
         if (state == null)
         {
-            // A state locked by another plugin fails HERE, before mutation.
+            // Capture must succeed before applying the new design.
             var incoming = _glamourer.CaptureGlamourerState(actor);
             if (!incoming.Success || incoming.Value is not { } captured)
                 return new(false, incoming.Detail ?? "The incoming Glamourer state could not be captured.", incoming.AppearanceRefusal);
@@ -403,11 +403,8 @@ public sealed class IntegrationSelectors
     }
 
     /// <summary>
-    /// Takes ownership of the actor's look before the first wardrobe or
-    /// customize write: the Glamourer state as it stands is captured once,
-    /// and the reset that runs on GPose exit, on Revert and on the actor
-    /// leaving the scene puts it back, as Brio and Ktisis put an actor
-    /// back (asked 2026-09-03). A look already owned is left as it is.
+    /// Saves the current Glamourer state once, before wardrobe or character edits.
+    /// Reset can restore that state instead of reverting to the game's appearance.
     /// </summary>
     public IntegrationResult OwnLook(ActorId actor)
     {
@@ -522,10 +519,8 @@ public sealed class IntegrationSelectors
         if (current.TemporaryBodyProfile is not { } owned)
             return IntegrationResult.Ok();
 
-        // Deleting ONLY Poser's temporary profile — by its OWN id — lets
-        // the underlying saved assignment resume naturally. Deleting by
-        // actor would remove whatever temporary profile is active now,
-        // which may belong to another plugin.
+        // Delete the profile Poser created by its ID. Deleting by actor could
+        // remove a replacement profile created by another plugin.
         var deleted = _customizePlus.DeleteTemporaryBodyProfileById(owned);
         if (!deleted.Success)
             return deleted;
@@ -540,9 +535,10 @@ public sealed class IntegrationSelectors
         return IntegrationResult.Ok();
     }
 
-    /// <summary>Whether an actor's active temporary profile belongs to a
-    /// plugin other than Poser — the state no C+ or MCDF operation may
-    /// displace.</summary>
+    /// <summary>
+    /// Checks whether applying a profile would replace another plugin's temporary
+    /// Customize+ profile. Returns an error when that profile cannot be preserved.
+    /// </summary>
     public IntegrationResult CheckBodyProfileDisplaceable(ActorId actor)
     {
         var probe = _customizePlus.ProbeBodyProfile(actor);

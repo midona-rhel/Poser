@@ -98,9 +98,8 @@ public sealed class UndoJournal
         return GiveUpOnRepeat(entry, _runner.Run(entry, true, entity));
     }
 
-    /// <summary>The entry the runner refused last; the same entry refused
-    /// again is dropped, so one dead step (a bake whose bones are gone, a
-    /// rollback that cannot land) never wedges every later undo.</summary>
+    /// <summary>The last refused entry using DropOnRepeat. A second refusal
+    /// of that same entry discards it; Keep entries remain retryable.</summary>
     private HistoryEntry? _refused;
 
     private GestureResult GiveUpOnRepeat(HistoryEntry entry, HistoryRunResult run)

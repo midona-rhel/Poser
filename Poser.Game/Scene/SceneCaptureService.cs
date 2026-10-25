@@ -19,25 +19,10 @@ namespace Poser.Game.Scene;
 
 
 /// <summary>
-/// Read-only, pointer-free whole-scene capture. Runs synchronously on the
-/// framework thread and produces the complete <see cref="SceneFile"/> in
-/// memory BEFORE any file work — no native handle, address, or entity
-/// reference survives into the document. Entity keys are the stable binding
-/// logical ids (fresh ids for unregistered entities), so relationships in the
-/// file are independent of any native binding generation.
-///
-/// Capture refuses while a pose import owns the caches for the same reason
-/// <see cref="IPoseImportCommands"/>'s copy capture does: the apply window pauses
-/// and rewinds the animation, and a snapshot landing inside it would persist
-/// a half-transitioned pose.
-///
-/// <para>The capture is ARMED, not called — see <see cref="BeginCapture"/>.
-/// The bone values a scene serializes come out of the same raw transform
-/// caches an ordinary pose export reads, and those caches are only refreshed
-/// for skeletons the per-frame rebuild qualified, so a never-posed actor's
-/// cache still holds its skeleton-build-time snapshot. Reading them
-/// synchronously is exactly the bug <see cref="PoseExportCapture"/> exists
-/// for.</para>
+/// Captures a scene document without native handles or entity references.
+/// BeginCapture first refreshes skeleton caches through PoseExportCapture, then
+/// builds the document on the framework thread. Pose imports block capture to
+/// avoid saving an intermediate pose. Document relationships use logical IDs.
 /// </summary>
 public sealed class SceneCaptureService
 {
@@ -122,26 +107,10 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// Arms one whole-scene capture and answers through
-    /// <paramref name="onCaptured"/> once the refresh has landed. Returns the
-    /// refusal detail, or null when armed. Framework thread only; the workflow
-    /// owns the marshal.
-    ///
-    /// <para>The arming registers the SAME no-op transitive batch a pose export
-    /// registers, on every posable slot skeleton in the scene at once, so ONE
-    /// update pass makes every actor's raw transform cache current before a
-    /// single bone is read. Without it a never-posed actor serializes the
-    /// values written when its skeleton was built — an actor standing in its
-    /// idle would come back in whatever it held at spawn, and nothing about the
-    /// saved file would say so. Brio needs no such arming because it refreshes
-    /// every capability-bearing skeleton's caches every frame
-    /// (Brio SkeletonService.cs:205-249, unconditional over
-    /// <c>_skeletonToPosingCapability</c>); Poser refreshes only the skeletons
-    /// the per-frame rebuild qualified, so the parity is restored per save.</para>
-    ///
-    /// <para>A scene with no posable skeleton at all has nothing to refresh and
-    /// captures inline — the answer still arrives through the callback, so the
-    /// caller has one path.</para>
+    /// Starts a framework-thread capture and reports its result through onCaptured.
+    /// Refreshes every available actor and companion skeleton before reading poses,
+    /// since unedited skeleton caches may still contain their initial values.
+    /// With no skeletons, capture runs immediately. Returns a reason if it cannot start.
     /// </summary>
     public string? BeginCapture(
         Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured, bool includeAnimation = false)
@@ -184,9 +153,8 @@ public sealed class SceneCaptureService
             : begun.Detail ?? "The scene capture could not be armed.";
     }
 
-    /// <summary>The capture itself, run only from inside the armed refresh
-    /// above so the caches it reads are current. <paramref name="sceneId"/>
-    /// keeps a re-saved scene's identity stable across saves.</summary>
+    /// <summary>Builds the document after cache refresh, or directly when there
+    /// are no skeletons. sceneId preserves identity when saving an existing scene.</summary>
     private SceneCaptureOutcome Capture(Guid sceneId, string? description, bool includeAnimation)
     {
         if (!_framework.IsInFrameworkUpdateThread)
@@ -241,12 +209,8 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// Where the capture ran. The id is the durable machine fact; the NAME is
-    /// persisted beside it, because the listing that groups scenes by place
-    /// runs in Poser.Core, which has no game data to resolve an id with. The
-    /// resolution itself lives in <see cref="IPlaceService"/>, which pose
-    /// auto-save stamps from too — a place must mean the same thing in both
-    /// documents.
+    /// Saves territory ID, display name, and local-player origin. The library can
+    /// display the saved place without querying game data.
     /// </summary>
     private void CaptureTerritory(SceneFile scene)
     {
@@ -397,15 +361,8 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// WHICH character file the actor is wearing, as a reference — the path
-    /// and a name, never the package. Appearance itself stays with its owners
-    /// (Glamourer/Penumbra/Customize+); this is the ONE appearance fact a
-    /// scene records, because it is the one Poser itself put on the actor and
-    /// therefore the one it can put back.
-    ///
-    /// <para>An MCDF that Poser owns but whose source path was never recorded —
-    /// ownership committed by a build before this — records nothing, with a
-    /// note. Guessing at a path would be worse than saying so.</para>
+    /// Records the path and name of the actor's current MCDF package. Portable
+    /// scene saving can later embed that package. Missing source paths are reported.
     /// </summary>
     private SceneActorMcdf? CaptureMcdf(
         Poser.Domain.Identity.ActorId id, List<string> notes)
@@ -427,15 +384,8 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// The attached companion's own pose, read off the companion's own
-    /// skeletons. A minion, mount or ornament is a posable body: restoring the
-    /// attachment alone brings it back idling, which is what a scene saved
-    /// before this did. Brio captures the same document
-    /// (ActorDTO.cs:130-138).
-    ///
-    /// <para>An attachment whose body has not drawn yet, or has no skeleton,
-    /// records NO pose with a note — an empty pose document would restore as a
-    /// pose import that resets the companion to nothing.</para>
+    /// Captures the attached companion's skeletons separately from its owner.
+    /// Missing bodies or skeletons omit the companion pose and add a note.
     /// </summary>
     private PoseFile? CaptureCompanionPose(IActor owner, List<string> notes)
     {
@@ -604,15 +554,9 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// The map's own objects the scene has BORROWED. Each is written by the
-    /// identity that outlives the session — the model path, plus the point the
-    /// MAP stands it at, which is the claim's captured placement and therefore
-    /// does not move when the user drags the object — and beside that, the
-    /// placement the user actually gave it.
-    ///
-    /// <para>The list is left ABSENT when nothing was borrowed, so a scene that
-    /// borrowed nothing writes exactly the file it wrote before this existed.
-    /// </para>
+    /// Captures both borrowed and spawned world objects, including their current
+    /// appearance and placement. MapPosition retains the original placement for
+    /// compatibility; scene loading creates a new object from the saved path.
     /// </summary>
     private void CaptureWorldObjects(SceneFile scene, List<string> notes)
     {

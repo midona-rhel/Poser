@@ -15,8 +15,7 @@ internal static class CameraDocument
         return file;
     }
 
-    /// <summary>The ONE IVirtualCamera → CameraFile mapping; scene capture
-    /// reuses it so a scene camera and a .xivc are the same document.</summary>
+    /// <summary>Maps a virtual camera to the document format shared by scenes and .xivc files.</summary>
     internal static CameraFile Capture(IVirtualCamera camera) => new()
     {
         Name = camera.Name,
@@ -41,8 +40,7 @@ internal static class CameraDocument
         OrthographicZoom = camera.OrthographicZoom,
     };
 
-    /// <summary>The ONE CameraFile → IVirtualCamera property application;
-    /// scene load reuses it.</summary>
+    /// <summary>Applies the camera document format used by both file and scene loads.</summary>
     internal static void Apply(CameraFile file, IVirtualCamera camera)
     {
         camera.Name = file.Name;
@@ -69,8 +67,7 @@ internal static class CameraDocument
         camera.DelimitAngle = file.DelimitAngle;
         camera.Orthographic = file.Orthographic;
         camera.OrthographicZoom = file.OrthographicZoom;
-        // A file apply is an ownership moment: what arrived becomes the
-        // reset baseline.
+        // Reset should restore the values that were just loaded.
         camera.CaptureOwnedDefaults();
     }
 }

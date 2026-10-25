@@ -9,13 +9,10 @@ using Poser.Domain.Identity;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// THE RESET WATCH — a safe, read-only diagnostic for the "plays to the old
-/// end and resets" bug. Armed on an actor, it logs every clock in the
-/// animation cycle each frame for a bounded window: the havok control
-/// LocalTimes, the scheduler CurrentTimestamp (frames), and the completion
-/// cursor mirrored at the track-controller / track / clip levels (seconds).
-/// The frame a clock jumps BACKWARD names the schedule that still counts on
-/// the old position despite the scrub. No hooks, no breakpoints.
+/// Debug-only logging for animation clocks that jump backward after scrubbing.
+/// Reads selected Havok, scheduler, track, and clip fields for a bounded number
+/// of updates. Some reads are raw pointer dereferences; this is not a general
+/// memory-safety check. Logged matches are clues to inspect, not proof of a cause.
 /// </summary>
 public sealed unsafe partial class AnimationNativeState
 {
@@ -23,7 +20,7 @@ public sealed unsafe partial class AnimationNativeState
     private int _resetWatchTicks;
     private readonly float[] _resetWatchPrev = new float[32];
 
-    /// <summary>Arms the per-frame clock log on this actor for ~60 seconds.</summary>
+    /// <summary>Arms the clock log for 3600 updates (about 60 seconds at 60 updates/second).</summary>
     public void ProbeWatchReset(ActorId actor)
     {
         _resetWatchActor = actor;
@@ -108,8 +105,8 @@ public sealed unsafe partial class AnimationNativeState
         bool dropped = false;
         int watchIndex = 0;
 
-        // EVERY partial's control for this slot: LocalTime and the control's
-        // second time field (+0x190, seen advancing in the hunt).
+        // Read the control at this index in each partial skeleton: LocalTime and
+        // the second time field at +0x190. Index order is assumed by this probe.
         var draw = character->GameObject.DrawObject;
         if (draw != null && draw->Object.GetObjectType() == ObjectType.CharacterBase
             && ((CharacterBase*)draw)->Skeleton != null)
@@ -202,17 +199,10 @@ public sealed unsafe partial class AnimationNativeState
         if (dropped || _resetWatchTicks % 5 == 0)
             _log.Information(line.ToString());
 
-        // The per-actor clock hunt: any float in the TimelineContainer that
-        // moves each tick (no delta windows — the old hunts had a hole at
-        // 0.3/tick, exactly a 30fps clock at ~100 ticks/s). Once found, the
-        // scheduler's CONSTANT fields near that value are the start
-        // reference the old schedule is measured from.
+        // Log changing container fields and nearby scheduler values as clock candidates.
         WatchContainerClock(character, n >= 1 ? (nint)cursorsBuffer[0] - SchedulerTimestampOffset : 0);
 
-        // ARM-TIME CONSTANTS: everything on the scheduler chain that looks
-        // like a duration, position or deadline. Armed after a scrub to zero
-        // but before Play, a field still holding the OLD position is the
-        // stale reference the end is judged from.
+        // Dump candidate durations and positions once after arming.
         if (!_resetConstantsDumped && n >= 1)
         {
             _resetConstantsDumped = true;
@@ -354,9 +344,8 @@ public sealed unsafe partial class AnimationNativeState
     private bool _resetConstantsDumped;
     private readonly byte[] _guardBuffer = new byte[0x400];
 
-    /// <summary>A guarded copy of a foreign region: a dead or short object
-    /// fails the read instead of faulting the game (the 21:42 crash was an
-    /// unguarded 0x160 read of a smaller clip).</summary>
+    /// <summary>Copies readable memory through ReadProcessMemory. Success says the bytes
+    /// are readable, not that they belong to the expected object or object size.</summary>
     private bool TryCopyRegion(nint address, int size)
     {
         if (address == 0 || size > _guardBuffer.Length)
@@ -372,9 +361,8 @@ public sealed unsafe partial class AnimationNativeState
     private int _staleScanCountdown;
 
     /// <summary>After a scrub (a backward jump of the scheduler clock) the
-    /// pre-scrub position is the value to hunt: any field on the Character or
-    /// its timeline container still holding it — as frames, seconds, or an
-    /// int — is the reference the old schedule is judged from.</summary>
+    /// pre-scrub position is compared with fields on the character and timeline
+    /// container. A match is a candidate stale reference, not proof of one.</summary>
     private void ScanForStalePosition(Character* character)
     {
         if (float.IsNaN(_oldPositionFrames) || _staleScansLeft <= 0)
@@ -451,7 +439,7 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>Prints the plausible durations/positions on one object:
-    /// floats in [0.5, 5000] and ints in [1, 100000] that are not pointers.</summary>
+    /// floats in [0.5, 5000] and ints in [1, 100000]. No field-type check is made.</summary>
     private void DumpConstants(string name, nint address, int size)
     {
         if (!TryCopyRegion(address, size))
@@ -517,7 +505,7 @@ public sealed unsafe partial class AnimationNativeState
             _log.Information(line.ToString());
     }
 
-    /// <summary>Appends one clock and flags a BACKWARD jump as the reset.</summary>
+    /// <summary>Appends one clock and labels a backward jump as a possible reset.</summary>
     private void Track(StringBuilder line, ref bool dropped, ref int index, string name, float value)
     {
         if (index >= _resetWatchPrev.Length)

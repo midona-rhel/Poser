@@ -15,9 +15,10 @@ public sealed record GlamourerAccess(GlamourerAccessKind Kind, string? Detail = 
         "Poser's imported character file holds this actor's appearance. Reset MCDF first.");
 }
 
-/// <summary>An <see cref="Outcome"/> for external integration commands, at
-/// the runtime port and the session alike, that also names an appearance
-/// refusal so surfaces can offer the matching release.</summary>
+/// <summary>
+/// Result of an external-plugin command. AppearanceRefusal identifies a lock
+/// so the UI can explain which appearance state must be released before retrying.
+/// </summary>
 public readonly record struct IntegrationResult(bool Success, string? Detail = null, GlamourerAccessKind? AppearanceRefusal = null)
 {
     public static IntegrationResult Ok() => new(true);
@@ -25,9 +26,10 @@ public readonly record struct IntegrationResult(bool Success, string? Detail = n
     public static IntegrationResult Refused(GlamourerAccess access) => new(false, access.Detail, access.Kind);
     public static IntegrationResult From(Outcome outcome) => new(outcome.Success, outcome.Detail);
 
-    /// <summary>The plain outcome. A Glamourer hold (another plugin's lock,
-    /// or Poser's own imported character file) is released by the user, so
-    /// that refusal is transient; every other refusal is permanent.</summary>
+    /// <summary>
+    /// Converts to the common result type. Appearance locks are marked retryable;
+    /// other failures are not marked retryable by this conversion.
+    /// </summary>
     public Outcome Outcome => new(Success, Detail)
     {
         Transient = !Success
@@ -35,7 +37,9 @@ public readonly record struct IntegrationResult(bool Success, string? Detail = n
     };
 }
 
-/// <summary>Runtime-port result carrying a value.</summary>
+/// <summary>
+/// Result of an external-plugin call that returns data.
+/// </summary>
 public sealed record IntegrationValue<T>(bool Success, T? Value, string? Detail, GlamourerAccessKind? AppearanceRefusal = null)
 {
     public static IntegrationValue<T> Ok(T value) => new(true, value, null);
@@ -44,15 +48,16 @@ public sealed record IntegrationValue<T>(bool Success, T? Value, string? Detail,
 }
 
 /// <summary>
-/// Truthful availability of one external plugin API. The detail doubles as
-/// the reason a disabled action shows, so it is always populated.
+/// Whether an external-plugin API can be used, with an explanation for the UI.
 /// </summary>
 public sealed record IntegrationAvailability(bool Available, string Detail);
 
 /// <summary>One pickable external entity (collection, design, profile).</summary>
 public sealed record ExternalItem(Guid Id, string Name);
 
-/// <summary>Detached redirects and meta for a Poser-owned duplicate collection.</summary>
+/// <summary>
+/// File redirects and metadata changes captured for a duplicate actor's Penumbra collection.
+/// </summary>
 public sealed record SpawnCollectionSnapshot(IReadOnlyDictionary<string, string> Paths, string Manipulations);
 
 /// <summary>The effective collection and whether it is individually assigned.</summary>
@@ -71,18 +76,14 @@ public sealed record CollectionBaseline(
 }
 
 /// <summary>
-/// The observable Customize+ situation of an actor: the active profile id
-/// when one exists, and whether that profile is a readable saved profile.
-/// An active profile absent from the saved list is a temporary profile,
-/// whose data the current API cannot read back.
+/// The actor's active Customize+ profile and whether it appears in the saved-profile list.
+/// Temporary profiles absent from that list cannot be read back through the integration.
 /// </summary>
 public sealed record BodyProfileProbe(Guid? ActiveProfile, bool ActiveIsSaved);
 
 /// <summary>
-/// The incoming external state captured once per actor, per component,
-/// before Poser's first change to that component. MCDF import reuses an
-/// already-captured component baseline instead of re-capturing, so the
-/// restore target is always the ORIGINAL pre-integration state.
+/// External-plugin settings saved before Poser first changes each component.
+/// Reusing these values lets Reset restore the state before Poser's edits.
 /// </summary>
 public sealed record IntegrationBaseline
 {
@@ -102,22 +103,12 @@ public sealed record IntegrationBaseline
     public static readonly IntegrationBaseline None = new();
 }
 
-/// <summary>Everything the active MCDF import owns on one actor. The
-/// temporary collection is null for a package with no embedded resources;
-/// the operation directory is null once its extracted payloads are
-/// actually gone — it outlives the import because the live temporary
-/// collection references the files.
-///
-/// <see cref="ActorName"/> is the character name read while the exact
-/// generation still resolved. Every other owned piece releases by its own
-/// id after the actor is gone, but a LOCKED Glamourer state has no id — it
-/// belongs to the character's identity — so the name is the only handle a
-/// teardown that runs after the GPose clone is destroyed can use.
-///
-/// <see cref="SourcePath"/> is the package the import READ, kept beside the
-/// display name because a name alone cannot be re-imported. It is what lets a
-/// saved scene state which character file an actor is wearing; nothing in the
-/// import, rollback or teardown consults it.</summary>
+/// <summary>
+/// Resources and recovery data retained for an actor's MCDF import.
+/// Extracted files must remain until the collection and draw object stop using them.
+/// ActorName allows Glamourer cleanup after the game object disappears.
+/// SourcePath identifies the file for scene saving and later re-import.
+/// </summary>
 public sealed record McdfOwnership(
     string FileName,
     Guid? TemporaryCollection,
@@ -135,9 +126,8 @@ public sealed record McdfOwnership(
     bool DrawResourcesLoaded = false);
 
 /// <summary>
-/// Poser-owned external state for one exact actor generation. Ownership is
-/// per component: only components Poser actually changed are restored, and
-/// a failed restore keeps that component owned so Reset can retry.
+/// External-plugin changes Poser must undo for an actor.
+/// Keep a component recorded here until its restoration succeeds, so Reset can retry.
 /// </summary>
 public sealed record IntegrationOverrides
 {
@@ -163,9 +153,10 @@ public sealed record IntegrationOverrides
 
     public McdfOwnership? Mcdf { get; init; }
 
-    /// <summary>Extraction directories whose deletion failed BEFORE an
-    /// import ever mutated the actor — standalone cleanup obligations that
-    /// every reset path retries; never a replacement MCDF.</summary>
+    /// <summary>
+    /// Extraction folders that could not be deleted before any actor changes were made.
+    /// Keep them for a later cleanup attempt; they are separate from the active MCDF import.
+    /// </summary>
     public IReadOnlyList<string> PendingDirectories { get; init; } = Array.Empty<string>();
 
     public bool HasAny =>

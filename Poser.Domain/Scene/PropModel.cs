@@ -1,8 +1,7 @@
 namespace Poser.Domain.Scene;
 
-/// <summary>One spawnable prop model: a display name over the weapon model
-/// triple the native spawn takes (Ktisis's props library row, minus the
-/// unsupported wield/sheathe columns).</summary>
+/// <summary>A prop's display name, weapon-model identifiers, dyes and
+/// animation variant used when spawning it.</summary>
 public readonly record struct PropModel(
     string Name,
     ushort Model,

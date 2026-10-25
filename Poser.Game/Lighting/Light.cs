@@ -6,9 +6,9 @@ using PoserTransform = Poser.Domain.Transforms.Transform;
 namespace Poser.Game.Lighting;
 
 /// <summary>
-/// Plugin-side handle for one native scene light. Every accessor guards on
-/// pointer validity: a getter falls back to the spawn default, a setter is a
-/// silent no-op. Name is plugin state — the native light carries none.
+/// Handle for a native scene light. Native access checks the stored pointer and
+/// an optional current-object callback. Unavailable native values use fallback
+/// defaults; writes are ignored. Name and other bookkeeping remain managed state.
 /// </summary>
 internal sealed unsafe class Light : ILight
 {
@@ -42,9 +42,7 @@ internal sealed unsafe class Light : ILight
     /// <summary>GPose camera-light slot; -1 when not a GPose light.</summary>
     internal int GPoseSlot { get; set; } = -1;
 
-    /// <summary>Gobo bookkeeping is the lighting service's alone — the entity
-    /// exposes the path read-only so no caller can desync it from the native
-    /// texture handle.</summary>
+    /// <summary>Updates the recorded texture path after native texture operations.</summary>
     internal void SetGoboPath(string? path) => GoboPath = path;
 
     public bool IsValid => _native != null && (_isCurrent?.Invoke() ?? true);
@@ -170,9 +168,7 @@ internal sealed unsafe class Light : ILight
 
     public Vector2 AreaAngle
     {
-        // The native field is RADIANS — both references drive it with
-        // ImGui.SliderAngle and Ktisis multiplies by Rad2Deg before display.
-        // The contract speaks degrees, so this boundary converts.
+        // Convert between native radians and the public degree values.
         get => HasRender
             ? new Vector2(
                 float.RadiansToDegrees(

@@ -16,19 +16,9 @@ using static Poser.UI.Widgets.PageForm;
 namespace Poser.UI;
 
 /// <summary>
-/// The selected world object's editor — the pane behind the "Object" tab that
-/// stands while an adopted BG/layout object is selected. The sidebar owns the
-/// list and the eye; this pane owns one object: what it is, whether it is
-/// drawn, and the one act that ends the claim.
-///
-/// <para>The verb is RELEASE, never delete. The object belongs to the map: the
-/// scene borrowed it, and giving it back puts it exactly where the map stood
-/// it. The pane says so in as many words, because the difference between this
-/// button and a prop's Delete is the whole reason the two are separate
-/// entities.</para>
-///
-/// <para>Release clicks are DEFERRED to the end of the frame: releasing
-/// republishes the scene mid-walk otherwise — the prop pane's rule.</para>
+/// Edits the selected map object or spawned object, including furniture and effects.
+/// Borrowed map objects can be released; spawned copies can be destroyed or remodelled.
+/// Removal is deferred until the page has finished drawing.
 /// </summary>
 public sealed class WorldObjectsPane
 {

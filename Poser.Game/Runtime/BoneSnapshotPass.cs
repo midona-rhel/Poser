@@ -50,7 +50,7 @@ internal sealed unsafe class BoneSnapshotPass : IDisposable
     /// in BOTH live sets, which would throw mid-enumeration inside the
     /// FinalizeSkeletons native frame. (Skeleton changes found here are
     /// published on the next framework update, never in this frame.)
-    /// Single-threaded (render detour), never nested.</summary>
+    /// These reused buffers require serialized, non-reentrant calls.</summary>
     private readonly List<SkeletonKey> _finalizePassBuffer = new();
     private readonly List<SkeletonKey> _finalizeCachePassBuffer = new();
 
@@ -104,15 +104,14 @@ internal sealed unsafe class BoneSnapshotPass : IDisposable
     public void ClearCacheRequests() => _skeletonsToUpdateCache.Clear();
 
     /// <summary>
-    /// FinalizeSkeletonsDetour - matches Brio's FinalizeSkeletonUpdate exactly.
-    /// STEP 5: Final update for ALL modified skeletons after engine is done.
+    /// Refreshes requested display caches after the original render callback.
     /// </summary>
     private void FinalizeSkeletonsDetour(nint a1)
     {
         _finalizeSkeletonsHook!.Original(a1);
 
-        // Never fault the native render frame (CharacterFinalizeDetour
-        // standard): everything after Original is managed bookkeeping.
+        // Contain managed exceptions from the snapshot pass. The original
+        // native call above and invalid-memory faults are outside this guard.
         try
         {
             FinalizeSkeletons();
@@ -140,7 +139,7 @@ internal sealed unsafe class BoneSnapshotPass : IDisposable
 
         // The snapshot exists FOR its readers: the overlay, the inspector,
         // the matrix. No fresh reader, no walk — a hidden UI stops paying a
-        // third of a core for transforms nobody looks at.
+        // transform copies when there are no recent readers.
         if (!BoneSnapshotDemand.Wanted())
             return;
 

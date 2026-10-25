@@ -22,27 +22,25 @@ public sealed class SceneGroup
 
     public bool Locked { get; set; }
 
-    /// <summary>The visibility GATE: closed hides everything beneath and
-    /// remembers each member's own flag; open gives every member its own
-    /// flag back. A closed gate anywhere up the chain keeps a member
-    /// hidden.</summary>
+    /// <summary>When true, hides all descendants while preserving their individual
+    /// visibility settings. A hidden ancestor keeps its descendants hidden.</summary>
     public bool Hidden { get; set; }
     public readonly Dictionary<SelectionId, bool> RememberedVisible = new();
 
-    /// <summary>The play gate, actors only: closed pauses everything
-    /// beneath, open lets each actor play whatever it was playing.</summary>
+    /// <summary>When true, pauses descendants that support playback while preserving their individual
+    /// playback settings for restoration.</summary>
     public bool Paused { get; set; }
     public readonly Dictionary<SelectionId, bool> RememberedPlaying = new();
 
-    /// <summary>The night gate, scenery only: closed puts everything
-    /// beneath in its night dressing, open gives each its own back.</summary>
+    /// <summary>When true, applies night appearance to descendant scenery while
+    /// preserving each object's individual setting.</summary>
     public bool Night { get; set; }
     public readonly Dictionary<SelectionId, bool> RememberedNight = new();
 
     public int ItemCount => Members.Count + Children.Count;
 }
 
-/// <summary>One seat in the root order: an entity or a root-level group.</summary>
+/// <summary>One entry in the root order: an entity or a root-level group.</summary>
 public readonly record struct RootSlot(SelectionId? Entity, Guid GroupId)
 {
     public static RootSlot For(SelectionId entity) => new(entity, Guid.Empty);
@@ -51,7 +49,7 @@ public readonly record struct RootSlot(SelectionId? Entity, Guid GroupId)
 }
 
 /// <summary>The scene's groups and the root order. Groups nest to
-/// <see cref="MaxDepth"/> levels; a drop past that is refused by name.</summary>
+/// <see cref="MaxDepth"/> levels; CanNest explains why a proposed move is refused.</summary>
 public sealed class SceneGroups
 {
     /// <summary>Root groups are depth 1; a group at depth 4 holds no groups.</summary>
@@ -59,7 +57,7 @@ public sealed class SceneGroups
 
     private readonly List<SceneGroup> _groups = new();
 
-    /// <summary>The root list in the USER'S order, kinds interleaved:
+    /// <summary>The root list in the user's order, with both
     /// entities and root-level groups.</summary>
     private readonly List<RootSlot> _order = new();
 
@@ -72,8 +70,7 @@ public sealed class SceneGroups
 
     public Guid? ActiveGroupId { get; set; }
 
-    /// <summary>Marks a change made on a group object directly (an
-    /// override), so the sidebar rebuilds.</summary>
+    /// <summary>Marks a direct change to a group object so readers can rebuild their view.</summary>
     public void Touch() => Revision++;
 
     /// <summary>Forgets every group and the root order.</summary>
@@ -90,8 +87,8 @@ public sealed class SceneGroups
     // ── creation and dissolution ─────────────────────────────────────────
 
     /// <summary>Groups the entities. When every member already shares one
-    /// parent group the new group nests inside it; otherwise it is a root
-    /// group seated where its first member sat.</summary>
+    /// parent group with room for another level, the new group nests inside it;
+    /// otherwise it becomes a root group.</summary>
     public SceneGroup? Create(
         string name, IReadOnlyList<SelectionId> members, bool allowThin = false, Guid? restoredId = null)
     {
@@ -102,8 +99,8 @@ public sealed class SceneGroups
             if (Selection.EntitySelection.IsEntity(member.Kind)
                 && !kept.Contains(member))
                 kept.Add(member);
-        // A group being assembled from copies may start thin: its
-        // subgroups nest into it right after.
+        // Copying a hierarchy can create a group with fewer than two members
+        // before its subgroups are attached.
         if (kept.Count < 2 && !allowThin)
             return null;
 
@@ -117,9 +114,8 @@ public sealed class SceneGroups
         if (sharedParent != null && Depth(sharedParent.Id) >= MaxDepth)
             sharedParent = null;
 
-        // One home per entity: joining this group leaves any other — and
-        // leaves it for good, never re-seated into the old parent on the
-        // way (that listed a member twice, 2026-09-02).
+        // Moving members must not also insert them into their former group's
+        // parent; that would list the same entity in two groups.
         foreach (var member in kept)
         {
             RemoveMemberCore(member, reseat: false);
@@ -140,8 +136,7 @@ public sealed class SceneGroups
         }
         else
         {
-            // The group takes its first member's seat in the root order;
-            // the members' own slots fold into it.
+            // Remove any remaining member entries before inserting the root group.
             int at = _order.Count;
             for (int i = _order.Count - 1; i >= 0; i--)
                 if (_order[i] is { IsGroup: false, Entity: { } slotted }
@@ -165,9 +160,9 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>Ungroups: members and subgroups reclaim the group's seat
-    /// in its parent (or the root order), in their order — ungrouping
-    /// never scatters rows.</summary>
+    /// <summary>Removes an unlocked group. At the root, its members and subgroups
+    /// replace its entry. In a parent group, members append to the parent's member
+    /// list and subgroups replace the removed group in the child list.</summary>
     public void Dissolve(Guid id)
     {
         if (Find(id) is not { Locked: false } group)
@@ -413,9 +408,7 @@ public sealed class SceneGroups
             bool keep = slot.IsGroup
                 ? Find(slot.GroupId) is { ParentId: null }
                 : slot.Entity is { } id && ContainsEntity(rootEntities, id);
-            // A slot also leaves when an earlier copy already holds the
-            // seat — the structural verbs guess positions and this sweep
-            // is their garbage collector.
+            // Keep only the first occurrence of each entry after structural edits.
             if (!keep || _order.IndexOf(slot) < i)
                 _order.RemoveAt(i);
         }
@@ -554,9 +547,7 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>Locked itself or under a locked group. A lock means one
-    /// thing: nothing beneath transforms in the scene. Sidebar moves,
-    /// nesting, renaming and dissolving ignore it.</summary>
+    /// <summary>Whether this group or any ancestor is locked.</summary>
     public bool IsLocked(SceneGroup group)
     {
         if (group.Locked)
@@ -602,8 +593,8 @@ public sealed class SceneGroups
                     changed = true;
                 }
         }
-        // Thinned groups dissolve deepest first, so a parent counts what
-        // its children left behind.
+        // Restart after each dissolution because releasing a group's contents
+        // can change whether its parent still has enough items.
         bool thinned;
         do
         {
@@ -632,8 +623,8 @@ public sealed class SceneGroups
                 continue;
             if (reseat)
             {
-                // The freed entity lands beside its old group: in the
-                // parent, or in the root order.
+                // Append to the parent's members, or insert after the old group
+                // when that group is at the root.
                 if (group.ParentId is { } parentId && Find(parentId) is { } parent)
                 {
                     parent.Members.Add(member);
@@ -685,8 +676,8 @@ public sealed class SceneGroups
         return false;
     }
 
-    /// <summary>The whole model, frozen. The journal keeps one before and
-    /// one after every group verb.</summary>
+    /// <summary>Copies the group hierarchy, root order, and remembered settings
+    /// into a snapshot for history and restoration.</summary>
     public GroupsSnapshot Capture()
     {
         var groups = new List<GroupRecord>(_groups.Count);
@@ -701,7 +692,7 @@ public sealed class SceneGroups
         return new GroupsSnapshot(groups, _order.ToArray(), ActiveGroupId);
     }
 
-    /// <summary>Puts a frozen model back, ids and all.</summary>
+    /// <summary>Restores a captured hierarchy, including its original group IDs.</summary>
     public void Restore(GroupsSnapshot snapshot)
     {
         _groups.Clear();

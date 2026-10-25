@@ -49,8 +49,7 @@ internal sealed class ActorRemoval
     {
         if (actor.Address == nint.Zero)
             return false;
-        // An adopted body is the world's: Destroy seats it back where it
-        // was taken and lets it go.
+        // Restore and release adopted actors instead of deleting their native objects.
         if (_actorManager.IsAdopted(actor))
         {
             _actorManager.ReleaseWorldActor(actor.Address);
@@ -87,28 +86,12 @@ internal sealed class ActorRemoval
     }
 
     /// <summary>
-    /// Removes exactly one actor from the temporary GPose object table.
-    ///
-    /// <para>An actor Poser owns keeps the stronger create-time identity and
-    /// collection-release contract — it routes to <see cref="DestroyActor"/>
-    /// rather than being downgraded to a scene scan because the caller used
-    /// the general verb.</para>
-    ///
-    /// <para>THE GATE, and where it lives. Brio range-checks the OBJECT TABLE
-    /// index at the enumeration site and never range-checks the
-    /// ClientObjectManager slot it ultimately deletes by
-    /// (<c>com-&gt;GetIndexByObject</c> → <c>DeleteObjectByIndex</c>, guarded
-    /// only against the 0xFFFFFFFF sentinel). Those are two DIFFERENT index
-    /// spaces, so a 201-439 test on the manager slot would be checking the
-    /// wrong number and refusing valid deletes. This states the real gate in
-    /// the real space: the actor must still be standing in the GPose table
-    /// range right now. It does not lean on the fact that
-    /// <c>ActorManager</c> happens to scan the same range — a gate inherited
-    /// by assumption widens silently the day that scan changes.</para>
-    ///
-    /// <para>Refuses the local/GPose primary, companion bodies, stale or
-    /// non-root wrappers, and anything whose typed descriptor no longer
-    /// resolves.</para>
+    /// Removes an adopted actor by releasing it, or a spawned actor through
+    /// its saved descriptor. Other actors must pass the current-wrapper and
+    /// GPose object-table range checks before deletion.
+    /// The range check uses the global object table, not the separate
+    /// ClientObjectManager slot used by DeleteExact. The GPose player copy is
+    /// allowed; companion bodies and the UI-copy slot are excluded.
     /// </summary>
     public bool RemoveActorFromScene(IActor actor)
     {
@@ -117,8 +100,7 @@ internal sealed class ActorRemoval
 
         try
         {
-            // An adopted body is released: seated back where it was taken
-            // and forgotten by the scene; the world keeps it.
+            // Restore the adopted actor and remove it from the scene listing.
             if (_actorManager.IsAdopted(actor))
             {
                 _actorManager.ReleaseWorldActor(actor.Address);

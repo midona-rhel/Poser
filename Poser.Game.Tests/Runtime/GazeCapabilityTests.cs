@@ -78,8 +78,8 @@ public sealed class GazeCapabilityTests
     {
         using var scene = GazeScene.Create();
 
-        // The twin carries the source's GameObjectId, as every player-seeded
-        // spawn does; it is still another actor, so A -> B is accepted.
+        // The twin shares the source's GameObjectId but has its own stable actor ID.
+        // It must remain a valid target for the source actor.
         Assert.True(scene.Service.SetGazeTarget(scene.Actor, scene.Twin).Success);
         Assert.True(scene.Service.SetGazeMode(scene.Twin, GazeTargetMode.Camera).Success);
 
@@ -112,14 +112,9 @@ public sealed class GazeCapabilityTests
     }
 
     /// <summary>
-    /// A resolvable GPose scene, keyed by OBJECT INDEX because that is the
-    /// distinction that matters: the source actor exists twice — as the
-    /// overworld original at index 3 and as the GPose clone at index 201 —
-    /// sharing one GameObjectId at two different addresses, which is the
-    /// collision every native gaze write has to survive. Addresses are real
-    /// zeroed allocations, because the service reads the native GameObject for
-    /// its Position/Rotation seeds; every native CALL goes through the
-    /// injected factory.
+    /// Simulates an overworld actor and its GPose clone with the same GameObjectId
+    /// but different object-table indices and addresses. Zeroed native storage
+    /// supports direct field reads; the injected factory records target writes.
     /// </summary>
     private sealed class GazeScene : IDisposable
     {
@@ -135,14 +130,14 @@ public sealed class GazeCapabilityTests
 
         private readonly List<nint> _blocks = new();
 
-        /// <summary>The SAME dictionary instance the object-table proxy reads,
+        /// <summary>The dictionary instance the object-table proxy reads,
         /// so removing a row here is what the service observes.</summary>
         private Dictionary<int, FakeGameObject> _slots = new();
 
         public required GazeService Service { get; init; }
         public required TestNativeFactory Factory { get; init; }
 
-        /// <summary>The source actor, addressed at its GPose CLONE.</summary>
+        /// <summary>The source actor at its GPose clone address.</summary>
         public required IActor Actor { get; init; }
         public required IActor Target { get; init; }
         public required IActor Second { get; init; }
@@ -150,8 +145,7 @@ public sealed class GazeCapabilityTests
         public required StableActorId ActorKey { get; init; }
         public required StableActorId TwinKey { get; init; }
 
-        /// <summary>The table itself, so a test can prove the collision trap is
-        /// live rather than asserting against a harness that never had one.</summary>
+        /// <summary>The fake table, exposed to verify that the two actors share a game ID.</summary>
         public required IObjectTable ObjectTable { get; init; }
 
         public nint CloneAddress => _slots[CloneIndex].Address;
@@ -194,8 +188,7 @@ public sealed class GazeCapabilityTests
         /// <summary>The channels the detour would enforce on its next pass.</summary>
         public GazeTargetType Written() => Service.WrittenParts(ActorKey);
 
-        /// <summary>The channels owed a one-shot inactive write on that same
-        /// pass — the hand-back the detour is the only place to deliver.</summary>
+        /// <summary>The gaze channels waiting to be disabled by the detour.</summary>
         public GazeTargetType Released() => Service.PendingRelease(ActorKey);
 
         /// <summary>Every address a character-target write landed on.</summary>
@@ -205,17 +198,15 @@ public sealed class GazeCapabilityTests
         /// <summary>The pass the scene lifecycle runs after a binding commit.</summary>
         public void Reconcile() => Service.Reconcile();
 
-        /// <summary>Removes the chosen target and runs the reconciliation pass,
-        /// exactly as a despawn does.</summary>
+        /// <summary>Removes the target from the fake table, then checks saved targets.</summary>
         public void DespawnTarget()
         {
             _slots.Remove(TargetIndex);
             Reconcile();
         }
 
-        /// <summary>Puts a fresh object carrying the SAME GameObjectId back in
-        /// the target slot — id reuse, which must not resume anything. The
-        /// registry binds it under a new generation, so the old id stays gone.</summary>
+        /// <summary>Replaces the target row with a new object sharing its game ID.
+        /// The fake binding still points to the previous object and must fail.</summary>
         public void RespawnTargetUnderTheSameId()
         {
             _slots[TargetIndex] = new FakeGameObject(TargetId, TargetIndex, TargetBlock);
@@ -304,9 +295,8 @@ public sealed class GazeCapabilityTests
                 args?[0] is nint address && byAddress.TryGetValue(address, out var found)
                     ? found.Wrapper
                     : null;
-            // Dalamud's SearchById scans from index 0, so a shared id answers
-            // with the OVERWORLD ORIGINAL. Reproduced exactly, because the
-            // service must never take a write address from it.
+            // Return the lower-index overworld actor for this shared game ID.
+            // Gaze writes must resolve the intended clone through its stable binding.
             proxy.Handlers["SearchById"] = args =>
             {
                 if (args?[0] is not ulong id)
@@ -398,8 +388,7 @@ public sealed class GazeCapabilityTests
         public TestEventBus EventBus { get; } = new();
         public List<IGazeHook> Hooks { get; } = new();
 
-        /// <summary>Every character-target-id write, in order — the observable
-        /// form of Brio's set-at-:201 / clear-to-0-at-:218 pair.</summary>
+        /// <summary>Character-target ID writes in call order, including zero to clear.</summary>
         public List<(nint Address, ulong TargetId)> TargetWrites { get; } = new();
 
         public ulong[] WrittenTargetIds() =>
@@ -451,8 +440,7 @@ public sealed class GazeCapabilityTests
                 list.Remove(handler);
         }
 
-        // Real dispatch: GPose exit is only reachable by actually delivering
-        // GPoseStateChangedEvent.
+        // Deliver the event to exercise the service's GPose-exit subscription.
         public void Publish<T>(T evt) where T : IEvent
         {
             if (!_handlers.TryGetValue(typeof(T), out var list))

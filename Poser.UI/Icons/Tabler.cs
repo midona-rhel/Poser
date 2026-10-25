@@ -148,8 +148,7 @@ public static class Tabler
 
     private static readonly Dictionary<int, string> _names = new();
 
-    /// <summary>The registered name behind a parsed document, for
-    /// diagnostics — the icon-cache miss log speaks names, not ids.</summary>
+    /// <summary>Returns the registered name used in diagnostics.</summary>
     public static string NameOf(SvgDocument doc) =>
         _names.TryGetValue(doc.CacheId, out var name) ? name : $"#{doc.CacheId}";
 
@@ -248,8 +247,7 @@ public static class Tabler
         TablerIcon.ArrowsMaximize  => "arrows-maximize",
         TablerIcon.ArrowsDiagonal  => "arrows-diagonal",
         TablerIcon.PlayerPlay      => "player-play-filled",
-        // Pause and play resolve FILLED everywhere (ruled 2026-09-01):
-        // every pause button in the app is the solid glyph.
+        // Pause and play use their filled variants throughout the UI.
         TablerIcon.PlayerPause     => "player-pause-filled",
         TablerIcon.Camera          => "camera",
         TablerIcon.Bulb            => "bulb",

@@ -41,8 +41,8 @@ internal sealed class PoseImportTerminal
     }
 
     /// <summary>Raised once for each accepted operation's terminal receipt.
-    /// Delivery is framework-thread-only and synchronous refusals publish
-    /// nothing.</summary>
+    /// Notify invokes subscribers synchronously on its calling thread. Teardown
+    /// may call it off the framework thread.</summary>
     public event Action<OperationReceipt>? ReceiptPublished;
 
     /// <summary>The callback runs application code (the facade's speed

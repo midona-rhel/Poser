@@ -5,10 +5,8 @@ using Poser.Domain.Scene;
 namespace Poser.Application.Integration;
 
 /// <summary>
-/// The exit edges of Poser-owned external appearance: one actor's full
-/// reset (MCDF teardown first, then the Customize+ profile, the Glamourer
-/// state and the collection), every owned actor at once, the actors that
-/// left the exact scene, and unload.
+/// Restores external appearance when actors are reset, leave the scene, or the
+/// plugin unloads. Removes MCDF resources before restoring other appearance settings.
 /// </summary>
 public sealed class IntegrationReset : IDisposable
 {
@@ -37,7 +35,7 @@ public sealed class IntegrationReset : IDisposable
 
     public IntegrationResult ResetActor(ActorId actor)
     {
-        // A running import for this actor invalidates NOW; a running export
+        // Invalidate a running import for this actor; a running export
         // is read-only and merely cancels. See McdfTransaction.OnResetActor.
         _mcdf.OnResetActor(actor);
         var current = _ownership.OverridesFor(actor);
@@ -85,9 +83,8 @@ public sealed class IntegrationReset : IDisposable
         {
             if (!resolvable)
             {
-                // No exact object to write into: the body left GPose. The
-                // character name still names it, so the baseline goes back
-                // by name; without a name the state died with the object.
+                // The actor no longer resolves. Try Glamourer restoration by
+                // character name; without a saved name, this path forgets the state.
                 bool released = true;
                 if (current.Baseline.GlamourerState is { } byNameState
                     && current.DesignActorName is { } byName)
@@ -204,25 +201,9 @@ public sealed class IntegrationReset : IDisposable
     }
 
     /// <summary>
-    /// Unload is an exit edge, not merely a shutdown. The active MCDF task
-    /// drains first — admission closes permanently and the task is joined
-    /// inside its bound — and only then is COMMITTED ownership torn down,
-    /// so no imported character file can survive the plugin going away.
-    /// The drain must precede the teardown: a still-running import would
-    /// otherwise re-register ownership behind it.
-    ///
-    /// This repeats what the scene lifecycle's own exit reset already does
-    /// and is deliberately idempotent, because that reset runs through a
-    /// BOUNDED framework hop that a dead pump can abandon. Created after
-    /// the integration ports in composition, so container disposal runs this
-    /// BEFORE the ports and providers tear down.
-    ///
-    /// Disposal off the framework thread writes NOTHING rather than writing
-    /// unsafely, and says so: <see cref="IIntegrationResolutionPort.IsResolvable"/>
-    /// answers false off that thread, and the by-name fallbacks refuse on the
-    /// same check, so the teardown degrades to bookkeeping and its failures
-    /// stay owned as evidence. Dalamud disposes plugins ON the framework
-    /// thread, which is why the real path still releases.
+    /// Cancels MCDF work and waits up to its disposal timeout, then attempts to reset
+    /// all recorded appearance changes. The timeout does not prove the worker stopped;
+    /// provider and file cleanup can still fail.
     /// </summary>
     public void Dispose()
     {

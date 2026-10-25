@@ -62,8 +62,8 @@ public sealed partial class PoseLibraryPane
         ApplyTo(index, actor);
     }
 
-    /// <summary>The one apply: a tile onto an EXPLICIT actor — the picker's
-    /// choice or the double-click path's selection target.</summary>
+    /// <summary>Applies a tile to the actor chosen by the picker or supplied
+    /// by the activation path.</summary>
     private void ApplyTo(int index, ActorId actor)
     {
         if (index < 0 || index >= _vm.Tiles.Count)
@@ -79,7 +79,7 @@ public sealed partial class PoseLibraryPane
             return;
         }
         var path = _vm.Tiles[index].ThumbKey;
-        // Brio's expression-only .cmp gate: reported, and NOT imported.
+        // Expression-only CMP imports are refused before dispatch.
         _files.CmpImportOverride(path, out bool blocked, out var cmpNote);
         if (blocked)
         {
@@ -103,11 +103,9 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>
-    /// The MCDF apply: the SAME call the appearance pane's Import… dialog
-    /// makes (<c>AppearancePane.OpenMcdfImport</c>), so a character file picked
-    /// here travels the identical mods/appearance/body-scale pipeline. The
-    /// session reports progress and every failure on its own surface; the
-    /// notification only carries a refusal to start.
+    /// Applies an MCDF through the same character-file session used by the
+    /// appearance pane. The session reports progress and terminal failures;
+    /// the notification reports only admission failure.
     /// </summary>
     private void ApplyCharacterFile(int index, ActorId? requestedTarget = null)
     {

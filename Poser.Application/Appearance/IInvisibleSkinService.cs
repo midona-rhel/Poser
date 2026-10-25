@@ -10,7 +10,8 @@ public interface IInvisibleSkinService
     Task<string?> Apply(ActorId actor, System.Threading.CancellationToken cancellation);
 }
 
-/// <summary>Framework-aware native mechanism; command admission belongs to ClothingOnlyControl.</summary>
+/// <summary>Performs the game-side redraw for clothing-only mode.
+/// ClothingOnlyControl checks the session and coordinates concurrent requests.</summary>
 public interface IClothingOnlyRuntimePort
 {
     bool IsHuman(ActorId actor);

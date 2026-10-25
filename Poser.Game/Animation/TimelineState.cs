@@ -4,9 +4,9 @@ using Poser.Game.Natives;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// The game's own state of a slot's root SchedulerTimeline (0x280 bytes), every
-/// test read the way the game reads it (RE notes/poser-animation-model.md §3). For
-/// a C010 child timeline, read its root's state.
+/// Reads native fields from a slot's root SchedulerTimeline. Callers must supply
+/// a live pointer; a nonzero address does not prove the memory is valid. For a
+/// C010 child timeline, use its root's state.
 /// </summary>
 internal readonly unsafe struct TimelineState
 {
@@ -39,7 +39,7 @@ internal readonly unsafe struct TimelineState
     internal bool Dead => Exists && (_tl[Flags273] & 0x01) != 0;
 
     /// <summary>Torn down by its group (TimelineGroup.Teardown: +0x10 bit 7, +0x272
-    /// bit 2): its memory is still valid but it is no longer a live timeline.</summary>
+    /// bit 2): the flags mark it as no longer active; callers must still ensure memory is valid.</summary>
     internal bool TornDown => Exists && ((_tl[Flags10] & 0x80) != 0 || (_tl[Flags272] & 0x04) != 0);
 
     /// <summary>What identifies this timeline beyond its address, which a new
@@ -54,8 +54,8 @@ internal readonly unsafe struct TimelineState
     internal bool IntegerFrame => Exists && (_tl[Flags7C] & 0x20) != 0;
     internal bool Paused => Exists && PauseMask != 0;
 
-    /// <summary>Who holds the clock: bit 2 is UpdateBanner's own and the GPose motion
-    /// freeze; a tool takes a high bit.</summary>
+    /// <summary>Clock pause flags. Bit 2 is used by UpdateBanner and GPose motion freeze;
+    /// Poser uses a separate high bit.</summary>
     internal uint PauseMask => *(uint*)(_tl + PauseMaskOffset);
 
     internal bool OneShot => Exists && *(int*)(_tl + PlayModeOffset) == 1;

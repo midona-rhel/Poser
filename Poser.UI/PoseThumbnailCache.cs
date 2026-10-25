@@ -14,20 +14,17 @@ using Poser.Documents.Files;
 namespace Poser.UI;
 
 /// <summary>
-/// Bounded, asynchronous thumbnail store for the pose library grid.
+/// Asynchronous thumbnail store with a bounded texture budget for the pose library grid.
 /// <para>
 /// A .pose file may carry a top-level <c>Base64Image</c> string (see
 /// <c>Poser.Documents/Files/PoseFile.cs</c>). Decoding one costs a file read, a
-/// JSON parse, a base64 decode and a texture upload — Brio does all four on
-/// the render thread via <c>CreateFromImageAsync(data).Wait()</c>, which
-/// stalls the frame once per newly visible tile. Here the decode runs on a
-/// worker and the render thread only ever does a dictionary lookup.
+/// JSON parse, a base64 decode and a texture upload. Workers perform that
+/// work; Get looks up or schedules an entry, and Tick integrates completed textures.
 /// </para>
 /// <para>
-/// Threading contract: every field except <see cref="_completed"/>,
-/// <see cref="_decodeGate"/> and <see cref="_disposed"/> is main-thread-only.
-/// Finished decodes cross back through the queue and are integrated in
-/// <see cref="Tick"/>.
+/// The main thread manages slots and eviction. Workers use the texture provider,
+/// decode semaphore, disposal flag, and generation counter. Completed textures
+/// cross back through a queue; enqueue and discard share a lock.
 /// </para>
 /// </summary>
 public sealed class PoseThumbnailCache : IDisposable
@@ -96,8 +93,8 @@ public sealed class PoseThumbnailCache : IDisposable
     private long _frame;
 
     /// <summary>Distinct tiles asked for since the last <see cref="Tick"/>, and
-    /// the same count for the frame before it. The budget is derived from the
-    /// latter, so eviction can never drop a texture the grid is still drawing.</summary>
+    /// the same count for the frame before it. The previous frame's demand
+    /// increases the texture budget for larger visible grids.</summary>
     private int _touchedThisFrame;
     private int _touchedLastFrame;
 
@@ -351,8 +348,8 @@ public sealed class PoseThumbnailCache : IDisposable
 
     /// <summary>
     /// Worker body. Reads the pose file, pulls out the embedded image and
-    /// uploads it. Never throws: every failure path enqueues a null wrap,
-    /// which the main thread memoizes as a failure.
+    /// uploads it. Read and upload failures enqueue a null wrap unless the
+    /// request is stale or the cache is disposed.
     /// </summary>
     private async Task LoadAsync(string filePath, int generation)
     {

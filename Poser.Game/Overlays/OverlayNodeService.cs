@@ -12,11 +12,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Overlays;
 
 /// <summary>
-/// One spawned overlay node: a stable id and a live document over a native UI
-/// subtree. Every write goes through to the node — the handle keeps the
-/// document only so a read costs nothing and a removal has something to
-/// capture — and a handle whose node has been destroyed reads its last
-/// document and writes nothing, exactly as a destroyed prop's handle does.
+/// Holds overlay state and the token for its native UI node (or managed collider).
+/// Setters update the cached state before asking the port to draw it. An invalid
+/// handle retains and can update cached state, but has no native node to write.
 /// </summary>
 public sealed class OverlayNodeHandle : IOverlayNode
 {
@@ -41,8 +39,7 @@ public sealed class OverlayNodeHandle : IOverlayNode
 
     internal object? Node => _node;
 
-    /// <summary>The complete document. Assigning one re-states the whole node;
-    /// it is normalized first, so nothing out of range ever reaches the game.
+    /// <summary>Stores normalized state and asks the owner to update the node.
     /// </summary>
     public OverlayNodeState State
     {
@@ -166,27 +163,14 @@ public sealed class OverlayNodeHandle : IOverlayNode
     internal void AdoptDraggedPosition(Vector2 position) =>
         _state = (_state with { Position = position }).Normalized();
 
-    /// <summary>The node behind this handle is gone. Called by the service
-    /// AFTER the port has freed it, and never by anything else.</summary>
+    /// <summary>Forgets the node token after the service attempts destruction.</summary>
     internal void Invalidate() => _node = null;
 }
 
 /// <summary>
-/// Owns every overlay node Poser has put on the screen, and — the only reason
-/// this class exists rather than the port alone — owns their DEATH.
-///
-/// <para>A native UI node outlives its plugin unless something takes it back,
-/// and the game will happily draw a subtree whose managed owner has been
-/// collected. So the set is torn down at THREE edges, and the three are not
-/// alternatives: GPose exit (the session the nodes were staged for is over),
-/// an explicit scene clear (<see cref="DestroyAll"/>, the user's own act), and
-/// <see cref="Dispose"/> (plugin unload, which the DI container runs). Each is
-/// idempotent and each leaves the port holding nothing, so any two of them
-/// firing in either order is still correct.</para>
-///
-/// <para>Names never repeat within a session — a destroyed "Dialog 2" does not
-/// hand its name back — for the same reason a prop's does not: an undo that
-/// restores a node must not collide with one spawned since.</para>
+/// Tracks overlay handles and cleans them up on scene clear, GPose exit, or
+/// disposal. Generated names avoid the current list; removed names can be reused.
+/// Native failures are logged, so handle removal does not prove native cleanup.
 /// </summary>
 public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
 {
@@ -235,9 +219,8 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
 
     public int Count => _nodes.Count;
 
-    /// <summary>Whether the game's UI can host a node right now. A false here
-    /// is what makes the create affordances read as unavailable instead of
-    /// doing nothing.</summary>
+    /// <summary>Whether creation is permitted by the service and port state. Native
+    /// initialization is deferred, so true does not guarantee creation will succeed.</summary>
     public bool IsAvailable => !_disposed && _port.IsAvailable;
 
     /// <summary>Creates one node of the stated kind, named for the user, at

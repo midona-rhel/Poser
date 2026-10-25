@@ -70,22 +70,17 @@ public class PoseImportOptions
     public bool ResetBeforeImport { get; set; } = false;
 
     /// <summary>
-    /// Expression import — Brio's dance, ported LITERALLY after the
-    /// single-phase "skip j_kao" rewrite proved wrong for cross-character
-    /// files (the face is authored around the FILE's head; computing deltas
-    /// against the target's head baked the head offset into every face
-    /// position and flung the face). The plan applies Brio's ExpressionOptions
-    /// scope INCLUDING the head, every component forced; the import engine
-    /// then restores the head (+4 ticks, stack pop + position re-import) and
-    /// reconciles the face subtree (+4 more), exactly Brio's
-    /// PosingCapability phases.
+    /// Imports an expression with Brio-compatible staging. The file's face
+    /// positions are relative to its own head, so the first phase includes the
+    /// head and all transform components. The import engine then restores the
+    /// target head and reconciles the face subtree in Brio's later phases.
     /// </summary>
     public bool AsExpression { get; set; } = false;
 
     /// <summary>
     /// When set, only these slot-qualified bones are applied (selective
     /// import — Ktisis/Anamnesis parity). A filter entry names the bone's
-    /// EXACT slot; a name alone can never match across slots.
+    /// exact slot; a name alone does not match bones in another slot.
     /// </summary>
     public System.Collections.Generic.ISet<(Poser.Domain.Identity.PoseSlot Slot, string Name)>? BoneFilter { get; set; }
 
@@ -119,7 +114,7 @@ public class PoseImportOptions
     public System.Collections.Generic.ISet<string>? ExcludedBonePrefixes { get; set; }
 
     /// <summary>The bone-filter menu's "Other" row turned off: a Character
-    /// bone NO category claims is excluded (Brio BoneFilter._otherAllowed).</summary>
+    /// bone that no category claims is excluded (Brio BoneFilter._otherAllowed).</summary>
     public bool ExcludeUncategorizedBones { get; set; }
 
     /// <summary>

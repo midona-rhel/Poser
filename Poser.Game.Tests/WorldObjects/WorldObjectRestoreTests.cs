@@ -21,14 +21,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Tests.WorldObjects;
 
 /// <summary>
-/// THE RESTORE CONTRACT, proven edge by edge. An adopted world object belongs
-/// to the map, not to Poser: it is never created, never destroyed, and must
-/// never be left displaced. Every path that can end a claim writes the captured
-/// placement and flags back — an explicit release, a scene clear, GPose exit,
-/// and plugin unload — each idempotent, and any pair of them safe in either
-/// order. A claim whose address has stopped being a BG object is dropped
-/// without a write, because restoring onto whatever took its place is the one
-/// way this contract could do harm.
+/// Exercises borrowed-object restoration, replacement identity checks, and owned-object
+/// respawn using a fake native port. These tests check service behavior without
+/// proving the native port or the game's teardown ordering.
 /// </summary>
 public sealed class WorldObjectRestoreTests
 {
@@ -411,11 +406,8 @@ public sealed class WorldObjectRestoreTests
     }
 
     /// <summary>
-    /// The world's graph, faithfully: a flat set of addressable BG objects with
-    /// a placement, a flags byte and a drawn state; reads and writes that are
-    /// inert for an address the world no longer holds; and a kill that models
-    /// the one thing the real game can do behind Poser's back — stop an address
-    /// being a BG object.
+    /// Stores simulated world objects by address and generation. Tests can replace
+    /// or remove a row and inject loading, restoration, and destruction failures.
     /// </summary>
     private sealed class FakePort : IWorldObjectPort
     {

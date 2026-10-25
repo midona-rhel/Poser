@@ -5,10 +5,8 @@ using Poser.Application.AutoSave;
 namespace Poser.Application.Lifecycle;
 
 /// <summary>
-/// Truth about the synchronous final-capture boundary. A dispatch is not a
-/// write acknowledgement: the existing persistence worker remains separate.
-/// Terminal durability is represented by <see cref="AutoSaveTerminalStatus"/>;
-/// the host may attach the immutable autosave health record as evidence.
+/// Result of copying pose data before actors are removed. Accepting a writer
+/// job does not mean a file was saved; AutoSaveTerminalStatus reports that separately.
 /// </summary>
 public enum FinalCaptureStatus
 {
@@ -43,10 +41,8 @@ public readonly record struct FinalCaptureResult(
     public bool CaptureCompleted =>
         Status is FinalCaptureStatus.Captured or FinalCaptureStatus.DispatchStarted;
 
-    /// <summary>Additive persistence evidence (the autosave health record as
-    /// last observed); excluded from legacy positional equality and
-    /// deconstruction. Its own status/detail may be less terminal than
-    /// <see cref="Persistence"/>/<see cref="PersistenceDetail"/>.</summary>
+    /// <summary>Last observed autosave health record, which may predate Persistence.
+    /// Excluded from equality, hashing, and deconstruction.</summary>
     public AutoSaveHealthRecord? PersistenceEvidence { get; init; }
 
     public bool Equals(FinalCaptureResult other) =>

@@ -63,7 +63,7 @@ internal sealed unsafe class KineDriverRerun
     public bool IsAvailable => _updateModule != null;
 
     /// <summary>Runs the skeleton's drivers once against the current pose, and
-    /// lists the bones they wrote this frame, (partial, bone index), with the
+    /// lists bones selected by enabled weighted writer nodes, with the
     /// channels written. False when they didn't run: no module, a module for
     /// another skeleton, or a busy lock skip this frame rather than wait.</summary>
     public bool Run(GameSkeleton* skeleton, out IReadOnlyDictionary<(int Partial, int Bone), TransformComponents> driven)

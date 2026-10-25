@@ -4,24 +4,11 @@ using Poser.Domain.Integration;
 namespace Poser.Application.Integration;
 
 /// <summary>
-/// Stable-id ownership of Poser-driven EXTERNAL appearance state: the
-/// actor-targeted Penumbra collection, Glamourer design, Customize+
-/// temporary profile, and the active MCDF bundle. UI owns none of it — no
-/// IPC subscriber, object index, file task, cancellation source, extracted
-/// path, or restore snapshot ever leaves the integration owners.
-///
-/// The incoming state of each component is captured once, before Poser's
-/// first change to that component, and never overwritten afterwards — so
-/// MCDF import over a Poser-applied design still restores the ORIGINAL
-/// state. A failed restore keeps the component owned and retryable. An
-/// unresolvable actor is dropped without native writes, but Poser-created
-/// temporary resources (collection, profile, extracted files) are still
-/// deleted by their own ids.
-///
-/// This class owns the per-actor override store and answers which external
-/// state is Poser's. <see cref="IntegrationSelectors"/> edits it,
-/// <see cref="IntegrationReset"/> restores it, and
-/// <see cref="McdfTransaction"/> owns the MCDF workflow on top of it.
+/// Records external appearance changes made by Poser for each actor instance:
+/// Penumbra collections, Glamourer designs, Customize+ profiles, and MCDF
+/// imports. The original value is saved before the first change and retained
+/// until reset succeeds. Temporary resources created by Poser are tracked by
+/// their own IDs so they can still be deleted after the actor disappears.
 /// </summary>
 public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusPort customizePlus)
 {
@@ -70,10 +57,9 @@ public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusP
     }
 
     /// <summary>
-    /// A non-individual effective collection that is neither in Penumbra's
-    /// installed-collection list nor Poser's own temporary collection is a
-    /// temporary assignment from another plugin. Nothing displaces it: the
-    /// current API cannot capture it for restoration.
+    /// Rejects an effective collection absent from Penumbra's installed list, unless
+    /// it is Empty, individually assigned, or this actor's tracked MCDF collection.
+    /// Such an unrecognized temporary collection cannot be captured for Reset.
     /// </summary>
     internal string? ForeignTemporaryCollection(
         IntegrationOverrides current, CollectionAssignment assignment)
@@ -101,14 +87,14 @@ public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusP
         var refusal = ForeignTemporaryCollection(current, assignment);
         if (refusal == null) return null;
         // Spawn collections have a different native owner from MCDF, but are
-        // still ours. Require that owner's exact live assignment proof.
+        // still ours. Ask that owner to capture the current assignment.
         var inherited = penumbra.CaptureInheritedCollection(actor);
         return inherited.Success && inherited.Value != null ? null : inherited.Detail ?? refusal;
     }
 
-    /// <summary>Whether an actor's active temporary profile belongs to a
-    /// plugin other than Poser — the state no C+ or MCDF operation may
-    /// displace.</summary>
+    /// <summary>
+    /// Whether the active unsaved profile has neither of Poser's tracked profile IDs.
+    /// </summary>
     internal static bool ForeignTemporaryBody(IntegrationOverrides current, BodyProfileProbe probe) =>
         probe.ActiveProfile is { } active
         && !probe.ActiveIsSaved

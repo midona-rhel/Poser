@@ -7,7 +7,7 @@ using Poser.UI.Widgets;
 namespace Poser.UI;
 
 /// <summary>
-/// The ONE keyed animation store. Components own no transition
+/// Keyed animation store. Components keep no transition
 /// dictionaries: they hand Motion the stable ImGui identity of the thing
 /// being animated and read the current value back, so keying, the
 /// per-frame advance and eviction all live in one place.
@@ -21,11 +21,11 @@ namespace Poser.UI;
 /// <item><b>Elapsed-clock</b> (<see cref="Toward"/>) — a retargeting
 /// clock: every target change captures the current value as the new
 /// origin and replays a full duration from it. All channels under one
-/// identity share ONE clock, so a multi-channel state (background +
+/// identity share one clock, so a multi-channel state (background +
 /// opacity) restarts as one element when any single channel retargets,
 /// the way a CSS transition list on one element does.</item>
 /// </list>
-/// Both stores hold exactly ONE record per identity, so a group cannot
+/// Both stores hold one record per identity, so a group cannot
 /// desynchronise against itself and eviction counts controls, not
 /// channels.
 /// </summary>
@@ -121,8 +121,8 @@ internal static class Motion
 
     /// <summary>
     /// Elapsed-clock retarget for a whole group of channels under one
-    /// identity: the caller writes each channel's TARGET into
-    /// <paramref name="channels"/> and Motion writes the CURRENT value
+    /// identity: the caller writes each channel's target into
+    /// <paramref name="channels"/> and Motion writes the current value
     /// back into the same slots.
     ///
     /// Every target is inspected before any value moves, because the
@@ -137,7 +137,7 @@ internal static class Motion
     /// straight onto their targets, so controls appear in — and arrive
     /// at — their resting state instead of freezing part-way.
     ///
-    /// An identity must be handed the SAME channel set, in the same
+    /// An identity must be handed the same channel set, in the same
     /// order, on every call, and never the same channel twice: the clock
     /// only stays shared while every channel advances together.
     /// </summary>

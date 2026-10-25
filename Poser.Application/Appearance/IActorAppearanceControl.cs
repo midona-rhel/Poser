@@ -5,7 +5,8 @@ using Poser.Application.Presentation;
 
 namespace Poser.Application.Appearance;
 
-/// <summary>Actor appearance actions and readouts; history and ownership stay behind this boundary.</summary>
+/// <summary>Appearance controls used by the UI. Implementations handle undo
+/// and restoration of the actor's previous appearance.</summary>
 public interface IActorAppearanceControl
 {
     IntegrationAvailability Penumbra { get; }

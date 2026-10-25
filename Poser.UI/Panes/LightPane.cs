@@ -115,8 +115,7 @@ public sealed class LightPane
         _entityActions = entityActions;
         _placement = placement;
         _cleanTransforms = cleanTransforms;
-        // The load dialog carries the ONE choice that changes where the
-        // light lands, decided beside the file it applies to.
+        // Placement is selected in the load dialog beside the chosen file.
         _loadBrowser.BottomPanel =
             new FileSidePanel(PlacementBandHeight, DrawPlacementBand);
         _viewport = viewport;
@@ -180,9 +179,7 @@ public sealed class LightPane
     }
 
     /// <summary>
-    /// The Light tab: what the light IS and what is done with it as a whole —
-    /// emission, the mask it projects through, its file, and the two
-    /// lifetime actions.
+    /// Draws emission, gobo, file, and lifetime controls for the light.
     /// </summary>
     public void DrawLight(Vector2 origin, Vector2 size) =>
         DrawTab("light", origin, size, (page, lightId, light) =>
@@ -418,9 +415,9 @@ public sealed class LightPane
     }
 
     /// <summary>
-    /// One gobo texture, answered for the current frame. The provider THROWS
+    /// Resolves one gobo texture for the current frame. The provider throws
     /// for a path the game does not have, so a failure is remembered; a null
-    /// wrap with no error is merely "still loading". The WRAP is never
+    /// wrap with no error means "still loading". The wrap is never
     /// cached: shared textures must be re-resolved each frame.
     /// </summary>
     private TextureProbe GoboPreview(

@@ -40,14 +40,9 @@ internal sealed unsafe class BgObjectNative
         return resource != null && (byte)resource->LoadState == 7;
     }
 
-    /// <summary>Dyes a BG object through the game's stain buffer —
-    /// Stagehand's LiveBgObject mechanism whole. Returns FALSE while the
-    /// buffer does not exist yet (it appears only after the model loads),
-    /// so the service retries on its framework tick. Null clears to
-    /// white, the game's own leave-it-alone dye. The colour squares into
-    /// the game's linear space via sqrt-sRGB bytes (their conversion;
-    /// their alpha-from-blue slip is not copied — alpha states full).
-    /// </summary>
+    /// <summary>Writes the stain buffer; false means the buffer is unavailable.
+    /// Converts each normalized channel to a square-root byte value as used by
+    /// Stagehand, with full alpha. Null writes white to clear the tint.</summary>
     public bool WriteBgTint(nint address, System.Numerics.Vector3? tint)
     {
         if (_furniture.Contains(address)) return _furniture.SetTint(address, tint);
@@ -79,18 +74,12 @@ internal sealed unsafe class BgObjectNative
             && RenderReady((BgObject*)node);
     }
 
-    /// <summary>The instance's DAY/NIGHT state byte at 0xCD — found by
-    /// the twin-diff hunt (2026-09-01): the zone's layout writes 0x00 on
-    /// its own objects by day and a raw spawn ships 0xFF, which is why
-    /// spawned lamps always glowed. No reference plugin knows this byte.
-    /// </summary>
+    /// <summary>Observed day/night byte at 0xCD: zero selects day; raw spawned
+    /// models begin at 0xFF. Keep this separate from layout and light fields.</summary>
     private const int BgNightStateOffset = NativeFields.BgObject_NightState;
 
-    /// <summary>Whether this BG model can take dye at all. The stain
-    /// buffer exists only on models BUILT for staining (housing-style
-    /// dyeable parts) — on anything else TrySetStainColor can never land
-    /// (both lamp twins carried a null buffer, 2026-09-01). Null while
-    /// the model is still streaming.</summary>
+    /// <summary>Reports stain-buffer availability once the model has loaded.
+    /// Models without a stain buffer cannot take this dye; null means still loading.</summary>
     public bool? CanDyeBg(nint address)
     {
         if (_furniture.Contains(address)) return _furniture.Ready(address) ? true : null;
@@ -166,14 +155,10 @@ internal sealed unsafe class BgObjectNative
         for (int i = 0; i < 0x20; i++)
         {
             int offset = 0xC0 + i;
-            // Never held: the game's own words. 0xC0..0xC3 is the draw
-            // state — a tail captured the frame a file's object was spawned
-            // held it at 0 and the paused object never drew (Crystal group,
-            // 2026-09-02). 0xC4..0xC7 is an index the cascade-shadow pass
-            // dereferences and 0xCC its state byte — a tail captured before
-            // the model loaded held 0xC4 at its 0xFFFF sentinel and the pass
-            // crashed the client on it (dump 2026-09-02 02:34,
-            // ffxiv_dx11+453EE1).
+            // Leave draw state (0xC0..0xC3), shadow index (0xC4..0xC7), and
+            // shadow state (0xCC) under game control. Restoring unloaded sentinel
+            // values here has hidden objects and crashed the shadow pass. Also
+            // preserve editable night, intensity, and colour fields.
             if (offset is (>= 0xC0 and <= 0xC7) or 0xCC or 0xCD or 0xCE or (>= 0xD0 and <= 0xD3))
                 continue;
             *((byte*)node + offset) = values[i];

@@ -164,10 +164,8 @@ internal sealed partial class EntityContextMenus
 
     public void OpenFor(ShellSidebarRow row)
     {
-            // A right-click on a row that RIDES the multi-entity selection
-            // opens the selection's own menu — the verbs speak for the
-            // whole carry, exactly as a drag does. An unselected row keeps
-            // its single menu.
+            // A selected row uses the multi-selection menu; an unselected row
+            // uses its entity-specific menu.
             if (row.Tag is SelectionId ctxMember
                 && global::Poser.Application.Selection.EntitySelection
                     .IsEntity(ctxMember.Kind)

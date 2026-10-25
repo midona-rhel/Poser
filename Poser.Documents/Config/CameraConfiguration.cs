@@ -3,18 +3,13 @@ using Poser.Domain.Cameras;
 namespace Poser.Documents.Config;
 
 /// <summary>
-/// The camera decisions that are the USER's rather than any one camera's:
-/// what a newly created free camera starts out flying like, how much the
-/// speed modifiers are worth, and how much of the game's own input Poser
-/// takes off the table while a camera is live.
-///
-/// <para>Free-camera defaults preserve existing behavior. Native orbit
-/// synchronization follows Ktisis's default-on preference.</para>
+/// Defaults for newly created free cameras and options that control how
+/// camera input interacts with the game.
 /// </summary>
 public class CameraConfiguration
 {
-    /// <summary>Ktisis's default-on native GPose pivot synchronization.
-    /// Independent of Poser actor/bone follow; deferred while dragging or locked.</summary>
+    /// <summary>Updates the game's GPose orbit point when the selected actor moves.
+    /// This is deferred while the camera is locked or being dragged.</summary>
     public bool UpdateOrbitWithActorPosition { get; set; } = true;
 
     /// <summary>The fly speed a new free camera is created with — Brio's
@@ -35,21 +30,15 @@ public class CameraConfiguration
     public float SlowMultiplier { get; set; } = 0.3f;
 
     /// <summary>
-    /// Whether Space, Shift, Ctrl and Alt are eaten while a live free camera
-    /// is flying — Brio's <c>EnableKeyHandlingOnKeyMod</c>, on by default in
-    /// both tools. Off hands them back to the game, which is what a user who
-    /// wants to jump or sprint between shots is asking for; the cost is that
-    /// descending also holds a modifier down for the game.
+    /// Whether Poser prevents the game from receiving Space, Shift, Ctrl, and
+    /// Alt while a free camera is active. When disabled, the game may respond
+    /// to a modifier that is also being used to move the camera.
     /// </summary>
     public bool ConsumeModifiersWhileFlying { get; set; } = true;
 
     /// <summary>
-    /// Whether a chord Poser binds is taken from the game at its key
-    /// message, so the game's own keybind on the same key never runs
-    /// (Ctrl+Z undid in Poser and reset the game's camera). On by default.
-    /// Eating every key, Brio's <c>EnableConsumeAllInput</c>, was retired
-    /// 2026-09-03: it took the WASD pan and the game's UI shortcuts, which
-    /// interfere with nothing.
+    /// Whether the game is prevented from receiving a key combination that
+    /// Poser handles. This avoids both applications acting on the same chord.
     /// </summary>
     public bool KeepBoundKeysFromGame { get; set; } = true;
 
@@ -62,7 +51,6 @@ public class CameraConfiguration
     /// </summary>
     public bool FlipBindsPastNinety { get; set; }
 
-    /// <summary>Selecting a camera switches the view to it — the selection
-    /// IS the look-through, when asked.</summary>
+    /// <summary>Whether selecting a camera also switches the game view to it.</summary>
     public bool LookThroughSelectedCamera { get; set; }
 }

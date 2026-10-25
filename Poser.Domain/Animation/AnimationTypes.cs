@@ -18,7 +18,9 @@ public enum AnimationSlot
     Overlay = 12,
 }
 
-/// <summary>Source identity retained for the entry's native play route.</summary>
+/// <summary>
+/// Source of an animation entry, used to choose how the game plays it.
+/// </summary>
 public enum AnimationKind
 {
     Action,
@@ -53,7 +55,9 @@ public static class AnimationSlots
         AnimationSlot.Parts4, AnimationSlot.Overlay,
     };
 
-    /// <summary>Layers with verified selection and speed routes.</summary>
+    /// <summary>
+    /// Layers available in the animation picker.
+    /// </summary>
     public static IReadOnlyList<AnimationSlot> Selectable { get; } = new[]
     {
         AnimationSlot.Base,
@@ -99,7 +103,7 @@ public static class AnimationTimelines
 }
 
 /// <summary>
-/// One catalog row with native routing and searchable sheet metadata.
+/// Animation picker entry with game IDs and searchable display information.
 /// </summary>
 public sealed record TimelineEntry(
     uint TimelineId,
@@ -112,18 +116,17 @@ public sealed record TimelineEntry(
     bool? DrawsWeapon = null,
     string? Key = null)
 {
-    /// <summary>Emote index 0 is the only one the game can play "from the
-    /// start" through its own emote entry point (intro then loop).</summary>
+    /// <summary>
+    /// Whether Poser can request this emote's intro followed by its loop.
+    /// </summary>
     public bool CanPlayFromStart => Kind is AnimationKind.Emote or AnimationKind.Expression &&
         EmoteIndex == 0 && EmoteId != 0;
 }
 
 /// <summary>
-/// One layer of an <see cref="AnimationSnapshot"/>. <paramref name="Applied"/> is the
-/// animation Poser played there (a pick waiting in the picker is not state);
-/// <paramref name="Live"/> whether it still plays (not ended, not replaced). A frame
-/// (<paramref name="HeldSeconds"/>) only for a held layer: a running layer has no
-/// position to go back to, and restoring it plays it from its start.
+/// Saved state of an animation layer. Applied is the animation Poser started;
+/// Live says whether it is still playing. HeldSeconds records a paused position;
+/// running animations are restored from their start.
 /// </summary>
 public readonly record struct LayerSnapshot(
     ushort? Applied, bool Live, bool Loop, float? Speed, float Weight, float? HeldSeconds, float? EndedSeconds);
@@ -158,9 +161,10 @@ public readonly record struct BaseAnimationCapture(
     ushort BaseTimeline,
     ushort BaseSlotTimeline = 0);
 
-/// <summary>Identity of one Havok animation control, by position. Paired
-/// with the skeleton generation it was enumerated under so a scrub can be
-/// invalidated instead of writing through a replaced skeleton.</summary>
+/// <summary>
+/// Indices identifying an animation control. Callers must also check the
+/// skeleton version before using them, since a replacement can reuse the indices.
+/// </summary>
 public readonly record struct ScrubControlId(int Partial, int Control)
 {
     /// <summary>A layer scrubbed by its slot timeline's own clock (no fixed
@@ -183,8 +187,8 @@ public sealed record AnimationSlotReading(
     float Speed);
 
 /// <summary>
-/// One frame's live native read for an actor. Immutable; valid for the
-/// frame it was taken. Poser-owned override state lives in the session.
+/// Animation values read from the game for one frame.
+/// These are observations, separate from the overrides Poser records for restoration.
 /// </summary>
 public sealed record ActorAnimationReading(
     ushort BaseTimeline,
@@ -221,8 +225,7 @@ public sealed record ActorAnimationReading(
 }
 
 /// <summary>
-/// Everything Poser authored for one actor. Anything absent here was never
-/// Poser's to restore.
+/// Stance and pose index captured before Poser changes them.
 /// </summary>
 public readonly record struct StanceCapture(AnimationStance Stance, int Pose);
 
@@ -236,7 +239,9 @@ public sealed record AnimationOverrides
     public IReadOnlyDictionary<AnimationSlot, ushort> AppliedSlots { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
     public float? OverallSpeed { get; init; }
-    /// <summary>Slots with active Poser repeat arms.</summary>
+    /// <summary>
+    /// Layers whose animations Poser is currently set up to repeat.
+    /// </summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> LoopedSlots { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
     public IReadOnlySet<AnimationSlot> LoopWantedSlots { get; init; } =
@@ -262,9 +267,9 @@ public sealed record AnimationOverrides
     public BaseAnimationCapture? BaseCapture { get; init; }
     /// <summary>The held facial expression.</summary>
     public ushort? HeldExpression { get; init; }
-    /// <summary>Layers whose animation ran out (not looped) and that the game
-    /// ended, with the animation's length in seconds: the row stays, and its play
-    /// or scrub plays it again.</summary>
+    /// <summary>
+    /// Finished animations and their durations, kept so Play or scrubbing can restart them.
+    /// </summary>
     public IReadOnlyDictionary<AnimationSlot, float> EndedSlots { get; init; } = new Dictionary<AnimationSlot, float>();
     /// <summary>Lips timeline before the first override. Selecting None
     /// restores this value rather than writing native "no speech" zero.</summary>

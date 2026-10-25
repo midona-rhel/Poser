@@ -125,10 +125,7 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>The root slot a drop row stands for: a group head or a
-    /// grouped member answers its group's slot, an ungrouped entity its
-    /// own. Rows with no root stake — bones, categories, reference
-    /// images, attached rows — answer null and the drop is a no-op.</summary>
+    /// <summary>Formats a sidebar row for drag-and-drop diagnostics.</summary>
     private string DescribeRow(ShellSidebarRow row) => row.Tag switch
     {
         GroupRowTag tag => $"group '{row.Label}' ({tag.Id.ToString()[..8]}, depth {row.Depth})",
@@ -229,6 +226,8 @@ public partial class MainWindow
         return null;
     }
 
+    /// <summary>Finds the row's top-level group or entity for root-list ordering.
+    /// Returns null for rows that do not represent a scene entity or group.</summary>
     private RootSlot? RootSlotOf(ShellSidebarRow row)
     {
         if (row.Tag is GroupRowTag tag)
@@ -244,8 +243,7 @@ public partial class MainWindow
         return RootSlot.For(id);
     }
 
-    /// <summary>The drag ghost's text: a dragged row that rides with the
-    /// entity multiselect announces the whole cargo, not just itself.</summary>
+    /// <summary>Shows the number of selected entities when the drag moves more than one.</summary>
     private string DragGhostFor(ShellSidebarRow row)
     {
         if (row.Tag is not SelectionId id

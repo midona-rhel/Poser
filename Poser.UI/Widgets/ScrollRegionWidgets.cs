@@ -40,10 +40,8 @@ public static class ScrollRegionWidgets
         // rewrite below to those few vertices instead of the whole child (a
         // library grid runs to thousands, every frame).
         int decorationVertices = CurrentVertexCount();
-        // The unwind is unconditional: this child hosts every shell tab's
-        // content, so a throw inside any pane must still end the child and
-        // pop all seven style entries — a skipped pop here corrupts the
-        // global style stack for every window drawn after (PBI-013 class).
+        // Always end the child and restore its three style variables and four
+        // colours, even if content throws, so later windows keep the correct style.
         try
         {
             if (visible)
@@ -92,9 +90,7 @@ public static class ScrollRegionWidgets
             float? labelSize = null,
             bool centerLabel = false)
         {
-            // A list row is a depth-0 tree row that exposes no expander, so it
-            // reserves no chevron and selection is its only reachable outcome —
-            // the bool stays the whole truth here.
+            // Reuse a tree row without children; only its selection result matters here.
             return TreeRow(
                 id,
                 label,

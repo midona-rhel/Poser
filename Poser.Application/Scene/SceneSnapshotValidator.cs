@@ -412,11 +412,8 @@ internal static class SceneSnapshotValidator
         return true;
     }
 
-    /// <summary>Same shape as the prop index and for the same reason: one
-    /// lineage per borrowed object, one descriptor per id. A borrowed map
-    /// object is not spawned, but the scene addresses it exactly as it
-    /// addresses a prop — through an id the session must be able to answer
-    /// for, or every transform against it is refused as stale.</summary>
+    /// <summary>Validates world-object IDs and rejects duplicate logical IDs
+    /// before the candidate index can become the current scene.</summary>
     private static bool TryBuildWorldObjectIndexes(
         SceneSnapshot snapshot,
         EntityIndex<WorldObjectId, WorldObjectDescriptor>.Staged worldObjects,

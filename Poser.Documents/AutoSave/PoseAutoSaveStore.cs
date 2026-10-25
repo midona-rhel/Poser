@@ -73,8 +73,7 @@ public sealed class PoseAutoSaveStore
                         failurePhase ??= "ActorWrite";
                         failure ??= write.Failure?.Detail ?? $"export failed for actor '{entry.ActorName}'";
                         recoveryEvidence.AddRange(write.RecoveryEvidencePaths);
-                        // The typed atomic store carries the filesystem
-                        // evidence; this adds the auto-save actor context.
+                        // Add the actor name to the file-store failure.
                         _error(
                             $"Auto-save ({reason}): export failed for actor '{entry.ActorName}' -> {path}: {write.Failure?.Detail}");
                     }
@@ -118,8 +117,7 @@ public sealed class PoseAutoSaveStore
     }
 
     /// <summary>
-    /// Ktisis <c>FormatService.StripInvalidChars</c> parity, plus in-snapshot
-    /// de-duplication so two actors with the same name both survive.
+    /// Creates a valid, unique file name for each actor in the snapshot.
     /// </summary>
     public static string UniqueFileName(string actorName, HashSet<string> used)
     {
@@ -144,25 +142,14 @@ public sealed class PoseAutoSaveStore
     }
 
     /// <summary>
-    /// Disk-based retention: the newest <c>MaxAutoSaves</c> FILES by date are
-    /// kept, everything older is deleted — a file is what the auto-saves tab
-    /// lists and what the cap means to the user (a save of three actors is
-    /// three auto-saves). A whole folder of the old one-folder-per-save
-    /// layout counts as one, which is how pre-existing snapshots join the
-    /// same ordering and age out without a migration. Reading the disk
-    /// rather than a session queue is what makes retention hold across
-    /// restarts.
+    /// Keeps the newest configured number of pose files, using filesystem
+    /// last-write time. Each pose file counts separately. A directory from the
+    /// older one-directory-per-snapshot format counts as one item. Last-write
+    /// time is only a fallback save date and can change if a file is copied,
+    /// synchronized, or edited. Names break timestamp ties.
     ///
-    /// <para>Date, not name (Brio's semantic): a save is written once and never
-    /// touched again, so its last-write time IS the save date, and a folder or
-    /// file the user renamed keeps its true age instead of being sorted by
-    /// whatever it is now called. Ties break on key, descending, so the order
-    /// is total even at one-second stamp granularity. A day folder whose last
-    /// event was pruned goes with it.</para>
-    ///
-    /// <para>Only <c>*.pose</c> files are events: the hidden <c>.tmp</c>/<c>.bak</c>
-    /// recovery evidence a failed atomic write leaves on purpose is never
-    /// counted or deleted here, and its day folder stays while it remains.</para>
+    /// Only <c>*.pose</c> files count. Temporary and backup files left by a
+    /// failed atomic write are preserved for recovery.
     /// </summary>
     private bool Prune(int keep)
     {

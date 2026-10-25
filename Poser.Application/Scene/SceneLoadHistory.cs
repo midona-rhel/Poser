@@ -3,9 +3,8 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Scene;
 
-/// <summary>The load a history step currently stands for. Each redo is a new
-/// operation with new native entities, so the step follows the latest
-/// incarnation rather than the first load's emptied rollback lists.</summary>
+/// <summary>The most recent operation represented by a scene-load history
+/// step. Redo creates new entities, so undo must use the new operation.</summary>
 internal sealed class SceneLoadReplay(SceneOperation current)
 {
     public SceneOperation Current = current;
@@ -14,15 +13,11 @@ internal sealed class SceneLoadReplay(SceneOperation current)
 }
 
 /// <summary>
-/// A committed load — Applied, or Failed with named refusals — is one
-/// step. Its undo is the load's own rollback: every entity the load
-/// spawned goes, every link and group it imported goes, every baseline it
-/// overwrote comes back; what was there before the load is untouched. Its
-/// redo loads the file again ADDITIVELY — a redo never clears the session
-/// a second time — and completes on the replay's terminal: a replay that
-/// commits lands the step, one that rolls back leaves it to redo again.
-/// A load that cleared the scene first cannot bring the cleared entities
-/// back: the clear is not a step.
+/// A committed load is one history step even when individual entities report
+/// failures. Undo removes entities and relationships created by that load and
+/// restores baselines it replaced. Redo loads the file additively and never
+/// clears the session again. A clear performed before the original load is not
+/// recorded and cannot be undone by this step.
 /// </summary>
 internal sealed class SceneLoadHistory(
     EditHistory history, ISceneStatePort sceneState, ISceneHistoryPort historyPort,
@@ -56,7 +51,7 @@ internal sealed class SceneLoadHistory(
         });
     }
 
-    /// <summary>Reports a redo's REAL outcome once the replayed load is
+    /// <summary>Reports a redo's outcome once the replayed load is
     /// terminal, on the framework thread history is confined to.</summary>
     private async Task CompleteRedo(
         SceneOperation operation, Task running, Action<GestureResult> completed)

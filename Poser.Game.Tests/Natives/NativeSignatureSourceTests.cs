@@ -8,10 +8,9 @@ using Xunit;
 namespace Poser.Game.Tests.Natives;
 
 /// <summary>
-/// Every signature Poser scans and every game-memory offset it reads is a generated
-/// name from patchcheck (NativeSignatures.g.cs, NativeFields.g.cs), so the native check
-/// and patchcheck see it. A byte pattern or offset written into the code would be
-/// invisible to both.
+/// Checks common source spellings of hardcoded signatures, offsets, and native
+/// writes. Generated names keep signatures and offsets in patchcheck; these
+/// line-based checks catch likely violations but do not parse C# or prove coverage.
 /// </summary>
 public sealed class NativeSignatureSourceTests
 {

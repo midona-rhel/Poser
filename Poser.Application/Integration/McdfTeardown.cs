@@ -7,14 +7,11 @@ using Poser.Domain.Operations;
 namespace Poser.Application.Integration;
 
 /// <summary>
-/// Releases committed MCDF ownership and owns the extracted files it
-/// eventually deletes. File lifetime is the rule here: the extracted payload
-/// directory backs the live temporary collection AND the actor's current
-/// draw object, so it is released only after the temporary collection is
-/// definitely gone and a bounded exact-actor redraw-complete barrier has
-/// passed (or the actor itself is gone); a failed barrier retains the
-/// directory as retryable ownership evidence instead of deleting files the
-/// game may still read.
+/// Restores external state after an MCDF import and deletes its extracted
+/// files when they are no longer in use. The extracted directory remains
+/// available until the temporary collection is removed and the actor redraw
+/// completes, or until the actor is gone. Failed cleanup remains recorded so a
+/// later reset can retry it.
 /// </summary>
 internal sealed class McdfTeardown(
     IIntegrationResolutionPort actors,
@@ -37,8 +34,7 @@ internal sealed class McdfTeardown(
     private readonly Dictionary<string, HistoryPackage> _packages = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _historyDirectories = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The ownership proof for a directory an import generated;
-    /// registered before the boundary touches it.</summary>
+    /// <summary>Records an extracted directory before the import writes to it.</summary>
     internal void Register(McdfOperationDirectory directory) =>
         _directories[directory.Path] = directory;
 
@@ -91,9 +87,10 @@ internal sealed class McdfTeardown(
     internal static string? NonEmpty(string? value) =>
         string.IsNullOrEmpty(value) ? null : value;
 
-    /// <summary>Unlocks by the captured name, or refuses truthfully when no
-    /// name was ever captured — a lock Poser cannot address is evidence to
-    /// keep, never a flag to quietly drop.</summary>
+    /// <summary>
+    /// Unlocks Glamourer by the saved character name. Without a name, returns an
+    /// error so callers retain the lock for later cleanup.
+    /// </summary>
     internal IntegrationResult ByNameUnlock(string? name) =>
         name is { } addressable
             ? glamourer.UnlockGlamourerStateByName(addressable)
@@ -102,10 +99,9 @@ internal sealed class McdfTeardown(
                 + "import, so its locked Glamourer state cannot be released.");
 
     /// <summary>
-    /// Writes a captured Glamourer state back through whichever handle
-    /// still exists — the exact object, else the character name — and
-    /// answers null when NEITHER does, which is the one case where the
-    /// capture has nowhere to go and is dropped with the ownership.
+    /// Restores by actor when it resolves, otherwise by saved character name.
+    /// Returns null if neither address is available; it does not verify that the
+    /// provider has already discarded the state.
     /// </summary>
     internal IntegrationResult? RestoreEither(
         ActorId actor, bool resolvable, string? byName, string state) =>
@@ -118,14 +114,9 @@ internal sealed class McdfTeardown(
     // ── Teardown of committed ownership ──────────────────────────────────
 
     /// <summary>
-    /// Synchronous teardown stage for committed MCDF ownership: releases
-    /// the native pieces in reverse order and restores the captured
-    /// baseline/recovery states. The extracted directory is NOT released
-    /// here when a removed temporary collection leaves a redraw
-    /// outstanding on a live actor — it stays owned with a redraw-pending
-    /// mark, and <see cref="McdfTransaction.ScheduleDirectoryReleaseIfPending"/> (or the
-    /// re-importing task) runs the bounded exact-actor barrier that
-    /// deletes it. Failures stay owned so Reset MCDF retries.
+    /// Attempts to release the MCDF lock, profile, collection, and appearance changes.
+    /// Retains extracted files while a live actor still needs to redraw. The caller
+    /// schedules that redraw; failed cleanup remains in the returned state.
     /// </summary>
     internal IntegrationOverrides TearDown(
         ActorId actor,
@@ -157,17 +148,10 @@ internal sealed class McdfTeardown(
         }
         else if (locked)
         {
-            // THE exit path. Leaving GPose destroys the clone, so the exact
-            // generation stops resolving before this teardown runs — but
-            // Glamourer's locked state is scoped to the character's
-            // IDENTITY, not to the object, and outlives it. Dropping the
-            // flag here is what left an imported character file welded onto
-            // the actor after leaving Poser. Unlock by name instead, and let
-            // the restore below put the CAPTURED state back the same way: a
-            // revert to game state would be wrong here, because the clone
-            // and the player share that identity and the user's own design
-            // is what would be thrown away. A failure keeps the MCDF owned
-            // as retryable evidence.
+            // The game object may disappear before cleanup, while Glamourer still
+            // holds state for its character identity. Unlock by the saved name, then
+            // restore the captured appearance rather than reverting the player to
+            // game defaults. Keep failures recorded for Reset.
             var unlocked = ByNameUnlock(byName);
             if (unlocked.Success)
                 locked = false;
@@ -178,16 +162,9 @@ internal sealed class McdfTeardown(
             }
         }
 
-        // A pending working-recipe recovery (left by a failed import
-        // rollback) supersedes the durable-baseline restore: the actor
-        // returns to its pre-import recipe, released only on success, and
-        // the durable baseline stays captured for the selector resets.
-        // Without one, tearing down a committed MCDF reapplies the
-        // ORIGINAL captured state as before.
-        // Between the unlock above and either write below, Glamourer's own
-        // automation may briefly reassert itself on the character. That
-        // flicker is the price of never writing before the lock is released,
-        // which is what keeps Poser off another plugin's locked state.
+        // A failed import needs the appearance from immediately before that
+        // import. Otherwise restore the original baseline, unless a separate
+        // selector still owns it. Unlock before asking Glamourer to restore.
         string? pendingGlamourer = mcdf.PendingGlamourerRecovery;
         if (!locked && pendingGlamourer is { } recovery)
         {
@@ -236,9 +213,8 @@ internal sealed class McdfTeardown(
             }
         }
 
-        // The displaced working body profile comes back before ownership
-        // releases; the new id Customize+ returns lands in the selector's
-        // ownership so its Reset stays truthful.
+        // Reapply the pre-import body profile and remember its new temporary ID
+        // so a later Reset deletes the right profile.
         string? pendingBody = mcdf.PendingBodyRecoveryJson;
         if (temporaryProfile == null && pendingBody is { } bodyRecovery)
         {
@@ -282,15 +258,9 @@ internal sealed class McdfTeardown(
             }
         }
 
-        // Extracted payloads outlive everything that references them: the
-        // directory is deleted only once the temporary collection is
-        // definitely gone AND — on a live actor with removed Penumbra
-        // ownership — only after the exact actor's bounded
-        // redraw-complete barrier passes, because the current draw object
-        // may still read the files until it rebuilds. Until then the
-        // directory stays owned with a redraw-pending mark; the caller
-        // schedules the barrier, and a failed barrier keeps the ownership
-        // as retryable evidence for Reset MCDF.
+        // Keep files until their temporary collection is removed and the actor
+        // has redrawn. This method records the pending redraw; the caller starts
+        // the wait. Failed waits retain files for a later Reset.
         string? operationDirectory = mcdf.OperationDirectory;
         bool redrawPending = false;
         if (temporaryCollection == null && operationDirectory != null)
@@ -345,13 +315,9 @@ internal sealed class McdfTeardown(
     }
 
     /// <summary>
-    /// The bounded exact-actor redraw-complete barrier that releases a
-    /// retained extracted directory. Success — or an actor that no longer
-    /// resolves, whose draw object cannot reference the files — deletes
-    /// the directory and clears the retained ownership; a failed barrier
-    /// on a live actor leaves the ownership untouched as retryable
-    /// evidence and returns the detail. Reads and mutates only the
-    /// override store's retained state, so repeated runs are idempotent.
+    /// Waits for redraw before releasing the extracted files. If the actor no longer
+    /// resolves, cleanup can proceed even if redraw failed. History-retained files
+    /// remain on disk. Returns cleanup errors without discarding the pending state.
     /// </summary>
     internal async Task<string?> ReleaseRetainedDirectory(
         ActorId actor, CancellationToken cancellation)
@@ -397,14 +363,14 @@ internal sealed class McdfTeardown(
         }
         catch (Exception ex)
         {
-            // The framework thread is gone (shutdown teardown); the
-            // retained ownership stays as evidence.
+            // Dispatch, redraw, or cleanup failed. Leave any remaining state recorded.
             return ex.Message;
         }
     }
 
-    /// <summary>An ownership record whose every owned piece has been
-    /// released is no ownership at all.</summary>
+    /// <summary>
+    /// Returns null when no MCDF resources or pending restore actions remain.
+    /// </summary>
     private static McdfOwnership? Normalize(McdfOwnership mcdf) =>
         mcdf is
         {
@@ -420,8 +386,10 @@ internal sealed class McdfTeardown(
             ? null
             : mcdf;
 
-    /// <summary>Retries deletion of extraction directories orphaned by
-    /// pre-mutation import failures; whatever still fails stays owned.</summary>
+    /// <summary>
+    /// Deletes a registered extraction directory unless history still needs it.
+    /// An unregistered path is refused; successful deletion removes its registry entries.
+    /// </summary>
     internal IntegrationResult DeleteOperationDirectory(string path)
     {
         if (!_directories.TryGetValue(path, out var ownership))

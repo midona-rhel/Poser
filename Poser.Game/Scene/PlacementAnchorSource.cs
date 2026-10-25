@@ -10,10 +10,8 @@ using Poser.Documents.Files;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The ONE answer to "where does a placement anchor stand right now" — the
-/// camera and the anchor actor, yaw-flattened. Saves record these; placed
-/// loads resolve against them. One service so every surface that anchors
-/// (lights, cameras, actor entries, scene capture) reads the same facts.
+/// Reads the camera or actor position and horizontal heading used for relative
+/// placement. Saves record these anchors; loads compare them with current anchors.
 /// </summary>
 public sealed class PlacementAnchorSource : IPlacementAnchorSource
 {
@@ -45,10 +43,9 @@ public sealed class PlacementAnchorSource : IPlacementAnchorSource
         };
     }
 
-    /// <summary>Where the anchor actor stands right now, yaw-flattened: the
-    /// selected actor, else the scene's first — a save always carries an
-    /// actor anchor when any actor exists. Null only in an actorless scene
-    /// or when nothing can be read.</summary>
+    /// <summary>Reads the primary selected actor, or the first actor when the
+    /// primary selection is not an actor. Returns null if that actor's transform
+    /// cannot be read; it does not try other actors as a fallback.</summary>
     public PlacementAnchorData? ActorAnchorNow()
     {
         ActorId? anchor = _scene.Selection.Primary is
@@ -77,8 +74,8 @@ public sealed class PlacementAnchorSource : IPlacementAnchorSource
     }
 
     /// <summary>
-    /// The current pose the given mode measures against, or the named
-    /// refusal a load posts instead of guessing.
+    /// Resolves the current placement origin and heading for the requested mode,
+    /// or returns an explanation when the required camera or actor is unavailable.
     /// </summary>
     public bool TryCurrentFor(
         ObjectPlacementMode mode,

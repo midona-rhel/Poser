@@ -21,13 +21,13 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationNativeState _native;
-    // Authoritative, stable-id keyed.
+    // Requested overrides, keyed by stable actor id.
     private readonly Dictionary<ActorId, Enforcement> _enforcement = new();
-    // Derived index for the detours only; never a source of truth.
+    // Address lookup rebuilt from the requested overrides for native hooks.
     private readonly Dictionary<nint, Enforcement> _byAddress = new();
 
-    // A detour never throws into the game: a fault is logged once per
-    // detour and the game's own call still runs.
+    // Managed exceptions in Poser's override logic are logged once per hook.
+    // The original native calls run outside these catch blocks.
     private bool _speedFaultLogged;
     private bool _slotSpeedFaultLogged;
 
@@ -66,7 +66,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         _bindings = bindings;
         _native = native;
 #if DEBUG
-        // The field lies about a paused speed; the probe reads the truth here.
+        // Report the requested override; the native speed field may change between updates.
         native.ProbeEnforcedSpeeds = actor =>
         {
             if (!_enforcement.TryGetValue(actor, out var enforced))
@@ -312,11 +312,8 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     {
         if (_seek == null || !_seek.Available)
             return;
-        // Scheduler writes belong on the framework thread (the UI may call from
-        // its draw callback); RunOnFrameworkThread runs inline there, else in the
-        // next Framework.Update, which is still before the game's next Advance and
-        // container update, so the controls written by ApplySpeedNow and these
-        // timelines still change on the same game tick.
+        // Actor resolution requires the framework thread. RunOnFrameworkThread
+        // keeps these scheduler writes on that thread, alongside the control writes.
         var values = new (int Slot, float Value)[EdgeSlots.Length];
         for (int i = 0; i < EdgeSlots.Length; i++)
             values[i] = (EdgeSlots[i], enforcement.SlotSpeeds.TryGetValue(EdgeSlots[i], out var held) ? held * overall : overall);
@@ -401,8 +398,8 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         if (character == null)
             return Outcome.Fail(detail!);
 
-        // Restore before dropping enforcement so the next native frame starts
-        // from the value Poser originally observed.
+        // Remove Poser's override before restoring the supplied speed, so the hook
+        // does not replace the restoration value.
         if (!_enforcement.TryGetValue(actor, out var enforcement) ||
             !enforcement.SlotSpeeds.Remove((int)slot))
             return Outcome.Ok();

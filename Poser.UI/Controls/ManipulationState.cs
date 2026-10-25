@@ -5,10 +5,8 @@ using Dalamud.Bindings.ImGui;
 namespace Poser.UI.Controls;
 
 /// <summary>
-/// The frame-stamped manipulation state the shell windows, the overlays and
-/// the inspector rail share: who owns the pointer, whether a drag is held,
-/// and how far the shell has faded for it. One instance per plugin load,
-/// written by the gizmo surfaces and the UI root, read by every window.
+/// Frame-stamped pointer ownership, drag state, and shell fade shared by gizmo
+/// surfaces and windows.
 /// </summary>
 public sealed class ManipulationState
 {
@@ -43,10 +41,8 @@ public sealed class ManipulationState
     public bool DragHeld =>
         ImGui.GetFrameCount() <= _dragUntilFrame;
 
-    /// <summary>A drag held on a control INSIDE a shell window (the
-    /// inspector's rotation ball): the shell fades like it does for a
-    /// world drag, but the window keeps drawing at zero alpha so the
-    /// held item lives on, and the readout is handed to the overlay.</summary>
+    /// <summary>Marks a drag that began inside a shell window. The window
+    /// continues drawing while transparent so ImGui retains the active item.</summary>
     public void HoldDragFromShell(Vector2 readoutMin, string readout)
     {
         _shellUntilFrame = ImGui.GetFrameCount() + 1;
@@ -70,8 +66,8 @@ public sealed class ManipulationState
     /// <summary>Whether the shell windows hide this frame.</summary>
     public bool HideActive { get; set; }
 
-    /// <summary>The dependent option: the world gizmo's CHROME rides the
-    /// same fade — the drag's own sweep and readout never do.</summary>
+    /// <summary>Whether world-gizmo chrome follows the shell fade. The active
+    /// drag sweep and readout remain visible.</summary>
     public bool HideGizmo { get; set; }
 
     /// <summary>The shell's eased opacity: 1 shown, 0 hidden.</summary>

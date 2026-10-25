@@ -94,10 +94,8 @@ public sealed partial class PoseLibraryPane
         return [index];
     }
 
-    /// <summary>The information a selection wants — author, tags, status,
-    /// what a scene holds — is read from the file when the tile is
-    /// SELECTED, never at scan time. The read runs off the UI thread and
-    /// its answer is applied to the tile on the next frame.</summary>
+    /// <summary>Queues metadata read after a tile is selected. File reads run
+    /// in the background; PumpEnrichments applies their results on the UI thread.</summary>
     private readonly System.Collections.Concurrent.ConcurrentQueue<TileFacts> _enrichments = new();
 
     private readonly record struct TileFacts(

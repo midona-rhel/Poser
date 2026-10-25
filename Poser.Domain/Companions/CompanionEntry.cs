@@ -1,9 +1,8 @@
 namespace Poser.Domain.Companions;
 
 /// <summary>
-/// Which sheet a companion row came from; also the catalog's kind filter.
-/// Mirrors the native companion container kinds, minus None: a catalog row
-/// is always something attachable, so "nothing attached" has no row.
+/// The game-data category used to look up a companion. Empty attachment
+/// slots are represented by null, not by a category in this enum.
 /// </summary>
 public enum CompanionKind
 {
@@ -13,9 +12,8 @@ public enum CompanionKind
 }
 
 /// <summary>
-/// One catalog row: an attachable companion with the identity needed to
-/// find it, display it, and spawn it. <see cref="Id"/> is the sheet row id
-/// the native container takes, so a selected entry is directly attachable.
+/// Information for displaying and attaching a companion. Id is its row
+/// number within the game-data category given by Kind.
 /// </summary>
 public sealed record CompanionEntry(
     CompanionKind Kind,

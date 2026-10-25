@@ -4,7 +4,10 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Domain.Posing;
 
-/// <summary>Actor-model point, world point, or world offset from an exact anchor.</summary>
+/// <summary>
+/// A target whose Mode determines its coordinate system: actor space,
+/// world space, or an offset from the referenced bone or entity.
+/// </summary>
 public sealed record FabrikTarget(
     IkTargetMode Mode, Vector3 Position, Quaternion Rotation,
     Vector3 AuthoredPosition, Quaternion AuthoredRotation,
@@ -17,13 +20,17 @@ public sealed record FabrikBonePose(
 
 public sealed record FabrikReferenceBone(FabrikBonePose Pose, FabrikTarget Anchor);
 
-/// <summary>Root-first authored span, anchored at its far ends around one selected handle.</summary>
+/// <summary>
+/// A root-first chain with targets for its ends and selected drag handle.
+/// </summary>
 public sealed record FabrikControl(
     FabrikBonePose[] Bones, FabrikTarget Root, FabrikTarget Tip, float SwivelBaseline,
     int HandleIndex, FabrikTarget Handle)
 {
-    /// <summary>Bounded, unsolved capture of both potential spans. Depth changes
-    /// select from this reference, never from the previous solver output.</summary>
+    /// <summary>
+    /// Original bone poses and anchors used when changing chain depth.
+    /// Selecting a new span does not recapture the previously solved pose.
+    /// </summary>
     public FabrikReferenceBone[]? ReferenceBones { get; init; }
 
     public bool TrySelectSpan(IReadOnlyList<(string Name, int Partial)> members, int handleIndex, out FabrikControl selected)

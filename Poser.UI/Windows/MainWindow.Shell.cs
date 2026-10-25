@@ -153,8 +153,7 @@ public partial class MainWindow
     ];
 
 
-    /// <summary>What the active pane keeps in the content footer between
-    /// the two attach seats.</summary>
+    /// <summary>Draws the active properties pane's middle footer content.</summary>
     private void DrawFooterMiddle(Vector2 origin, Vector2 size)
         => _properties.DrawFooterMiddle(origin, size);
 
@@ -203,9 +202,7 @@ public partial class MainWindow
 
     internal void RequestDetachToggle() => OnDetachToggleRequested?.Invoke();
 
-    /// <summary>Runs one command. The skeleton is resolved at invocation, not
-    /// captured at build: the row array outlives every selection it was built
-    /// under.</summary>
+    /// <summary>Runs a top-level menu command using the current window state.</summary>
     private void InvokeShellCommand(ShellCommand command)
     {
         switch (command)

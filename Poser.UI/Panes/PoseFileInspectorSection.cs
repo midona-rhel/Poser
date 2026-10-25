@@ -211,11 +211,9 @@ public sealed class PoseFileInspectorSection : IDisposable
         _importMenuRequested = true;
     }
 
-    /// <summary>The library's OWN options menu — the same standing
-    /// settings the import flow reads (one state, retained), but options
-    /// only: none of the import dialog's actions belong in the library.
-    /// It opens to the LEFT of the seat so the preview stays visible
-    /// while the options are worked.</summary>
+    /// <summary>Opens the library options menu using the import flow's retained
+    /// settings. The menu excludes import actions and opens left of its anchor
+    /// to avoid covering the preview.</summary>
     public void RequestLibraryOptionsMenu(Vector2 seat)
     {
         _menuActor = null;
@@ -879,10 +877,8 @@ public sealed class PoseFileInspectorSection : IDisposable
             dense: dense,
             allowDisclosure: false);
 
-    /// <summary>The preview alone — the library window's plain right
-    /// column. Not a rail and not styled as one. With the seat, the
-    /// container lays out its OWN header: the options button at the
-    /// left, the Preview title moved right beside it.</summary>
+    /// <summary>Draws the library window's preview column with an options
+    /// button and Preview heading.</summary>
     public void DrawPreviewColumn(
         Vector2 origin, Vector2 size, bool optionsSeat = false)
     {

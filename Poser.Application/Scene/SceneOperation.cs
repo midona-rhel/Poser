@@ -35,8 +35,8 @@ internal sealed class SceneOperation : SingleFlightOperation
     public readonly List<SceneEntityHandle> SpawnedLights = new();
     public readonly List<SceneEntityHandle> CreatedCameras = new();
 
-    // Borrowed, not created — but rollback still has to undo the claim, and
-    // releasing one is the exact inverse of taking it.
+    // World-object handles returned by AdoptWorldObject, including spawned copies.
+    // Rollback releases them through the materializer.
     public readonly List<SceneEntityHandle> BorrowedWorldObjects = new();
     public readonly List<Guid> ImportedGroups = new();
     public IReadOnlyDictionary<Guid, Guid> HistoryGroups = new Dictionary<Guid, Guid>();

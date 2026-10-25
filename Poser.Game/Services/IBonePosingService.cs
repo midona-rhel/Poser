@@ -27,8 +27,7 @@ public readonly record struct IkConfiguredChain(
     IReadOnlyList<string> Bones);
 
 /// <summary>
-/// Service for manipulating bone transforms.
-/// Simple delta-based system like Brio - bones rotate around themselves.
+/// Stores and applies bone transform changes and inverse-kinematics configuration.
 /// </summary>
 public interface IBonePosingService : IDisposable
 {

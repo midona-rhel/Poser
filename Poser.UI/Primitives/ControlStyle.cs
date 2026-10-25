@@ -32,7 +32,7 @@ public readonly record struct UiWidth
     public static UiWidth Content => new(UiWidthKind.Content);
     public static UiWidth Fill => new(UiWidthKind.Fill);
 
-    /// <summary>An EXACT width, stated by a caller that knows it. Non-positive
+    /// <summary>An exact width, stated by a caller that knows it. Non-positive
     /// is a programming error here — derived widths go through
     /// <see cref="Region"/>.</summary>
     public static UiWidth Fixed(float width)
@@ -42,12 +42,12 @@ public readonly record struct UiWidth
     }
 
     /// <summary>
-    /// The width a layout REGION offers a control — a span DERIVED by
+    /// The width a layout region offers a control — a span derived by
     /// subtraction (a row's control column less its action strip, a pane less
     /// its gutter) rather than stated outright. A region that cannot state a
     /// positive width offers <see cref="Minimum"/>, so the control collapses
     /// to a hairline it can never paint over its neighbours with.
-    /// <para>Derived spans go through this factory and NEVER through
+    /// <para>Derived spans go through this factory instead of
     /// <see cref="Fixed"/>: a narrow pane, a collapsed child or a first-frame
     /// measure drives such a span to zero routinely, and <c>Fixed</c> answers
     /// that by throwing — out of layout math, mid-frame, which takes the whole
@@ -97,7 +97,7 @@ public readonly record struct ControlStyle
     /// span here; containment outranks any minimum the control would
     /// otherwise enforce.</summary>
     public float? MaxWidth { get; init; }
-    /// <summary>The LATCHED on-state. An icon button wearing it draws the
+    /// <summary>The latched on-state. An icon button using it draws the
     /// accent wash and its paired 1px accent edge — the app's one "this is
     /// on" convention — and is otherwise sized and hit-tested exactly as the
     /// same button off. Typed text buttons ignore it.</summary>
@@ -182,7 +182,7 @@ internal static class ControlSizing
 
     /// <summary>The style-aware width: what <see cref="Width(UiWidth,
     /// float, float)"/> resolves, held under the style's
-    /// <see cref="ControlStyle.MaxWidth"/>. Controls resolve through THIS
+    /// <see cref="ControlStyle.MaxWidth"/>. Controls resolve through this
     /// overload so a track cap governs every width kind.</summary>
     public static float Width(
         in ControlStyle style, float content, float available) =>

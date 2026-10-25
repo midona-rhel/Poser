@@ -49,13 +49,8 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     private long _nextWorldLightGeneration;
     private readonly object _worldGate = new();
 
-    /// <summary>Whether the world's existing lights have been walked for this
-    /// GPose session. The ctor hook only ever sees lights constructed AFTER it
-    /// was installed, so a zone that was already loaded — every dev hot-reload,
-    /// and every session entered without a territory change — contributes
-    /// nothing through it. The seed is what makes those lights exist to the
-    /// listing; this flag is what stops an empty listing re-walking the graph
-    /// on every frame.</summary>
+    /// <summary>Whether this session has attempted to discover pre-existing lights.
+    /// Prevents an empty list from triggering a graph walk every frame.</summary>
     private bool _worldLightsSeeded;
 
     /// <param name="nativeLightDied">Run on the next framework tick when a
@@ -209,23 +204,8 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     }
 
     /// <summary>
-    /// Walks the world's scene graph for the lights that already exist and adds
-    /// them to the tracked set.
-    ///
-    /// <para>WHY THIS EXISTS: <see cref="LightCtorDetour"/> is the only other
-    /// writer, and a hook sees nothing that was constructed before it was
-    /// installed. A light belonging to an already-loaded zone therefore never
-    /// entered the set, which made the world-light listing permanently empty
-    /// for exactly the case it is tested in. The hook is the LIVENESS half and
-    /// stays; this is the SEED half.</para>
-    ///
-    /// <para>Ktisis reaches the same lights the same way and no other way:
-    /// one recursion of <c>World.Instance()</c>'s object graph, partitioned by
-    /// <c>ObjectType.Light</c> (<c>Ktisis/Services/Game/WorldService.cs:39-42</c>),
-    /// rebuilt on its own GPose-enter event (<c>:27-30</c>), with the node's
-    /// address used as the light pointer directly
-    /// (<c>Scene/Entities/World/LightEntity.cs:114</c>). Overlap with the hook's
-    /// additions costs nothing — the set is a hash set.</para>
+    /// Adds existing scene-graph lights that were created before the constructor
+    /// hook was installed. The destructor hook is required before storing them.
     /// </summary>
     public void SeedWorldLights()
     {
@@ -330,8 +310,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
         return candidates;
     }
 
-    /// <summary>Disposes the destructor hook, then the constructor hook — the
-    /// order the service always tore them down in.</summary>
+    /// <summary>Disposes the destructor hook, then the constructor hook.</summary>
     public void Dispose()
     {
         _lightDtorHook?.Dispose();

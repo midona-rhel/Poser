@@ -176,10 +176,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     // ── world objects ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Restores one world-object entry by SPAWNING its path anew — any
-    /// zone, any position. A document never carries a borrow (ruled
-    /// 2026-09-01): borrowing is a live-session act, and the load owes
-    /// nothing to whatever the map may or may not be standing.
+    /// Creates a new object from the saved path and applies its saved properties.
+    /// Scene files do not reacquire a borrowed native map object.
     /// </summary>
     public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
     {

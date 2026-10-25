@@ -171,7 +171,7 @@ public sealed class EnvironmentControl
         return true;
     }
 
-    /// <summary>Clears every festival slot as one step.</summary>
+    /// <summary>Resets festivals to their pre-override state as one history step.</summary>
     public void ResetFestivals()
     {
         var before = _festivals.ActiveFestivals.ToArray();

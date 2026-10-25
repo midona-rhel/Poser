@@ -457,9 +457,8 @@ public sealed partial class AppearancePane
             help: "What this actor draws as");
     }
 
-    /// <summary>The whole model on one row: the name, the id under its
-    /// steppers (the texture-selector shape), and the verbs. A step or a
-    /// committed edit applies immediately — one click, one change.</summary>
+    /// <summary>Draws the model name, numeric id, steppers, and actions. A
+    /// step or committed edit applies immediately.</summary>
     private void DrawModelRow(
         FormRowScope row, ActorId id, int current)
     {
@@ -478,7 +477,7 @@ public sealed partial class AppearancePane
             0f, row.ControlWidth - trailW - gap - stepperW - gap);
         var square = ControlStyle.Square(theme.Controls.WorkspaceHeight);
 
-        // The picker IS the value display: the name opens the search.
+        // The displayed model name also opens the picker.
         ImGui.SetCursorScreenPos(new Vector2(row.ControlOrigin.X, top));
         Button(
             ModelDisplayName(current),

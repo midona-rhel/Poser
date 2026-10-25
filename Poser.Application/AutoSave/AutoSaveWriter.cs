@@ -6,7 +6,7 @@ using Poser.Documents.AutoSave;
 
 namespace Poser.Application.AutoSave;
 
-/// <summary>Immutable capture admitted to the autosave writer.</summary>
+/// <summary>Pose data and settings queued for the autosave writer.</summary>
 internal readonly record struct AutoSaveSnapshotJob(
     string OperationId,
     string Reason,
@@ -17,11 +17,9 @@ internal readonly record struct AutoSaveSnapshotJob(
     long HealthGeneration);
 
 /// <summary>
-/// The bounded autosave queue (one coalescing periodic slot plus one final
-/// slot) and its single owned worker. Every member suffixed <c>Locked</c>, and
-/// <see cref="Failure"/> / <see cref="TerminalResult"/>, require the caller to
-/// hold the admission gate shared with <see cref="AutoSaveService"/>, so
-/// admission checks and queue mutation stay one atomic step.
+/// Writes autosave jobs sequentially. The queue keeps at most one pending
+/// periodic job and one final-exit job. Callers must hold the shared lock when
+/// using members whose names end in <c>Locked</c> or reading mutable results.
 /// </summary>
 internal sealed class AutoSaveWriter
 {
@@ -108,8 +106,8 @@ internal sealed class AutoSaveWriter
                 return false;
             }
 
-            // The task is retained even when the test dispatcher invokes the
-            // callback synchronously; unload always owns the join boundary.
+            // Retain the task even if the dispatcher runs the callback
+            // synchronously, so shutdown can always wait through one path.
             _writerTask = completion.Task;
             TerminalResult = AutoSaveTerminalResult.PendingResult;
             return true;
@@ -182,10 +180,9 @@ internal sealed class AutoSaveWriter
     }
 
     /// <summary>
-    /// Worker half: serialization, folder creation, the writes and retention.
-    /// Touches nothing but the captured data and the disk. Failure semantics
-    /// are recorded in the operation health receipt and logged; one bad actor
-    /// never aborts the rest of the snapshot.
+    /// Writes captured data and applies retention without accessing live game
+    /// state. A failed actor file is reported, but the writer still attempts
+    /// the other actors in the snapshot.
     /// </summary>
     private Outcome WriteSnapshot(AutoSaveSnapshotJob job)
     {

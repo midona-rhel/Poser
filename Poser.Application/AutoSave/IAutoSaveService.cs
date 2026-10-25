@@ -50,9 +50,8 @@ public readonly record struct AutoSaveTerminalResult(
 }
 
 /// <summary>
-/// Result of one AutoSave capture attempt. Dispatch acceptance is not worker
-/// completion or durable write success. A partial failure is not complete even
-/// when some actor data was detached.
+/// Result of copying pose data out of the game and offering it to the disk
+/// writer. An accepted dispatch does not mean the files were written.
 /// </summary>
 public readonly record struct AutoSaveCaptureResult(
     AutoSaveCaptureStatus Status,
@@ -61,8 +60,7 @@ public readonly record struct AutoSaveCaptureResult(
     bool DispatchAccepted = false)
 {
     /// <summary>
-    /// True only when every eligible actor in the attempt was detached. A
-    /// partial failure remains false.
+    /// True only when pose data was copied for every eligible actor.
     /// </summary>
     public bool CaptureCompleted =>
         Status is AutoSaveCaptureStatus.Captured or AutoSaveCaptureStatus.DispatchStarted;
@@ -74,8 +72,8 @@ public readonly record struct AutoSaveCaptureResult(
         new(AutoSaveCaptureStatus.Captured, actors, detail);
 
     /// <summary>
-    /// Reports that the existing dispatcher accepted the detached snapshot;
-    /// the status name does not acknowledge worker execution or disk writing.
+    /// Reports that the writer accepted the captured data. It does not confirm
+    /// that writing started or completed.
     /// </summary>
     public static AutoSaveCaptureResult DispatchStarted(
         int actors,
@@ -90,25 +88,11 @@ public readonly record struct AutoSaveCaptureResult(
 }
 
 /// <summary>
-/// Timed pose auto-save. While GPose is active and
-/// <c>PoserConfiguration.AutoSave.Enabled</c> is set, every actor carrying
-/// Poser-authored (unnamed-layer) edits is synchronously detached through
-/// the native capture port into immutable pose data. An
-/// owned worker serializes and writes that data into a timestamped folder under
-/// <see cref="RootDirectory"/> on the configured interval, plus an applicable
-/// final capture when GPose is left through the application lifecycle
-/// coordinator. Disabled auto-save or no eligible actors may return
-/// <see cref="AutoSaveCaptureStatus.NotCaptured"/>; <c>CleanOnExit</c>
-/// drains and joins owned work before deleting without reserving a final pose.
-/// The exit operation therefore attempts/reserves one final capture and
-/// worker-drain edge only when applicable; capture or dispatch acceptance is
-/// not a durable-write acknowledgement.
-///
-    /// Snapshot folders older than <c>AutoSave.MaxAutoSaves</c> are pruned from disk
-    /// after each save, so retention survives a plugin restart. A bounded,
-    /// root-level <c>.autosave-health.json</c> record is atomically updated for
-    /// queued, dispatch, terminal, and recovery outcomes; it is not a snapshot
-    /// folder and is never counted by retention.
+/// Legacy timed pose autosave service. While enabled in GPose, it captures
+/// actors with Poser pose edits and writes timestamped snapshots in the
+/// background. Exit either queues one final capture or, when CleanOnExit is
+/// enabled, waits for pending work and deletes the snapshots. The health file
+/// records write and recovery status and is not counted as a snapshot.
 /// </summary>
 public interface IAutoSaveService : IDisposable
 {
@@ -120,34 +104,26 @@ public interface IAutoSaveService : IDisposable
     string RootDirectory { get; }
 
     /// <summary>
-    /// Terminal result of the most recent lifecycle drain. Pending means that
-    /// capture or periodic work has been admitted but not joined yet.
+    /// Result of the latest exit attempt. Pending means completion has not yet been recorded.
     /// </summary>
     AutoSaveTerminalResult LastTerminalResult { get; }
 
-    /// <summary>Most recent immutable durable health observation, when one
-    /// has been admitted or recovered.</summary>
+    /// <summary>
+    /// Latest saved or recovered health information, if available.
+    /// </summary>
     AutoSaveHealthRecord? LastHealthRecord { get; }
 
     /// <summary>
-    /// Attempts exactly one synchronous final capture when applicable for a
-    /// GPose exit edge. Authored state is read and detached synchronously
-    /// before this method returns. Disabled auto-save or no eligible actors
-    /// may return NotCaptured. With CleanOnExit, cleanup is selected instead
-    /// and no final pose is reserved. Otherwise the final reservation remains
-    /// independent of an active periodic write; its immutable job is
-    /// serialized behind that write. A duplicate call returns the original
-    /// compatibility result without recapturing live state.
-    /// Dispatch acceptance is not a write acknowledgement; call
-    /// <see cref="CompleteForExit"/> for terminal persistence truth.
+    /// Captures pose data once when leaving GPose, unless autosave is disabled,
+    /// no actor is eligible, or CleanOnExit selects deletion instead. Repeated
+    /// calls for the same exit do not capture again. Call
+    /// <see cref="CompleteForExit"/> to wait for writing or deletion to finish.
     /// </summary>
     AutoSaveCaptureResult CaptureForExit();
 
     /// <summary>
-    /// Closes periodic admission, joins owned worker work, and completes the
-    /// applicable final-write or clean-on-exit operation. Clean-on-exit
-    /// deletes only after the drain and does not reserve a final pose. It
-    /// never returns while a writer remains detached.
+    /// Stops accepting periodic saves, waits for the writer, and completes the
+    /// final write or CleanOnExit deletion before returning.
     /// </summary>
     AutoSaveTerminalResult CompleteForExit();
 }

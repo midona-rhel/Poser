@@ -35,7 +35,7 @@ internal sealed class SpawnFramePoller
     public void Stop() => IsStopped = true;
 
     /// <summary>
-    /// Bounded per-frame poll on the framework thread; logs on timeout. Never
+    /// Per-frame poll on the framework thread; an optional timeout is logged. Never
     /// runs without an exact descriptor, and refuses outright when the
     /// lifetime hook is absent: a delayed callback cannot prove its target is
     /// still the same object across frames without the authoritative

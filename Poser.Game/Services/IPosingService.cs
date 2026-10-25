@@ -4,17 +4,9 @@ using Poser.Game.Entities;
 
 namespace Poser.Game.Services;
 
-/// <summary>
-/// Service for applying transform overrides to actors.
-/// </summary>
+/// <summary>Reads and owns actor transform overrides.</summary>
 public interface IPosingService : IDisposable
 {
-    /// <summary>UI publishes left-mouse state once per frame; native camera
-    /// pivot updates wait until manipulation has ended.</summary>
-
-    /// <summary>
-    /// Gets the current transform override for an actor, if any.
-    /// </summary>
     Transform? GetTransformOverride(IActor actor);
 
     /// <summary>
@@ -42,8 +34,5 @@ public interface IPosingService : IDisposable
     /// </summary>
     void ClearAllOverrides();
 
-    /// <summary>
-    /// Checks if an actor has a transform override.
-    /// </summary>
     bool HasTransformOverride(IActor actor);
 }

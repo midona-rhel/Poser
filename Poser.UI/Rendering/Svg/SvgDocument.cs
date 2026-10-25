@@ -192,7 +192,7 @@ public sealed class SvgDocument
     {
         if (!Fits(min, max)) return;
 
-        // Icons draw on the WHOLE-PIXEL grid. The bake cache keys on the
+        // Icons draw on the whole-pixel grid. The bake cache keys on the
         // box's sub-pixel phase, and a dragged window slides that phase
         // continuously — every visible icon became a first-seen key every
         // frame (painted in software, then re-baked, then the full-cache
@@ -219,10 +219,9 @@ public sealed class SvgDocument
     /// <summary>
     /// The painter's own coverage for this exact draw, rasterized but not yet
     /// coloured — <c>SvgStrokeMask.Pack</c> finishes it on the main thread.
-    /// PURE CPU: no ImGui, no draw list, nothing thread affine anywhere in its
-    /// reach, so the icon cache runs it on a background worker. The style
-    /// alpha that the colour step folds in is a PARAMETER for exactly that
-    /// reason. <c>Paths</c> is immutable once <see cref="Parse"/> returns, so
+    /// This path is CPU-only and can run on a background worker. Style alpha
+    /// is supplied as a parameter. <c>Paths</c> is immutable once
+    /// <see cref="Parse"/> returns, so
     /// the worker only ever reads.
     ///
     /// <para>False means the document is not one the mask can express, so the

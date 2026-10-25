@@ -4,21 +4,11 @@ using Poser.Domain.Identity;
 namespace Poser.Game.Tests.Runtime;
 
 /// <summary>
-/// The actor identity has to be unique among actors that COEXIST, not merely
-/// derived from the game's own id.
-///
-/// <para>A GPose clone shares its source's GameObjectId, so cloning the local
-/// player produces an actor the game calls the same thing. Two actors sharing
-/// an identity share a binding lineage and the registry's per-actor bone keys,
-/// and the second one bound overwrites the first — leaving every bone of the
-/// loser resolving to a BoneId that binds to the winner's bone object. That is
-/// a bone-dead actor: no pose import, no overlay toggles.</para>
+/// GPose clones may share a GameObjectId, so actor identity also includes the
+/// object-table slot occupied by that incarnation.
 /// </summary>
 public sealed class ActorIdentityTests
 {
-    /// <summary>The identity formula's inputs, stated directly: the test
-    /// project has no game-object substitute, and the formula is a pure
-    /// function of these two values.</summary>
     private static EntityId Identity(ulong gameObjectId, ushort index) =>
         ActorManager.ActorIdentity.For(gameObjectId, index);
 

@@ -9,10 +9,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The one aggregate of entity history bindings the scene runtime uses: a
-/// redo's replacement is bound to the entity it replays, and a receipt
-/// resolves through that lifecycle alias. The rollback verbs read the same
-/// bindings so a destroy follows the alias too.
+/// Groups the history bindings for scene entities. When redo creates a
+/// replacement entity, later history operations resolve the replacement
+/// through the same binding.
 /// </summary>
 internal sealed class SceneHistoryBinder(
     SceneRuntimeHandles handles,

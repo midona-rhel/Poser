@@ -38,10 +38,7 @@ public partial class MainWindow
         // A click on the tree's open space drops the whole selection.
         _vm.OnEmptyClick = () => _selection.Clear();
         _vm.DragGhostText = DragGhostFor;
-        // Brio's Bullseye (CameraEditor.cs recenter_on_selected): the seat
-        // RETARGETS this camera's tracking onto the currently selected
-        // actor, aim offset corrected to the drawn body — it never merely
-        // swings the camera.
+        // Recenter by following the selected actor with this row's camera.
         _vm.OnCameraRecenter = row =>
         {
             if (row.Tag is not SelectionId
@@ -160,14 +157,7 @@ public partial class MainWindow
                 OnSpawnBrowserRequested?.Invoke(
                     anchor, SpawnBrowserTab.Overlays);
         };
-        // The library, scene and environment headers are the selectable ones,
-        // so no other index can arrive. The library and the scene workspace are
-        // modes over an untouched selection, and their openers already restate
-        // the layout, so those two branches do nothing else here. The
-        // environment is a scene entity, so its header selects exactly as a row
-        // does — leaving both modes first, because they are alternatives in one
-        // workspace and the environment's own tab strip cannot show through
-        // theirs — and it carries the one resync those exits do not make.
+        // Section-header selection currently has no action.
         _vm.OnSectionSelected = index =>
         {
         };
@@ -207,13 +197,7 @@ public partial class MainWindow
             else
                 _animation.Resume(actor);
         };
-        // The light's own on/off, reachable without selecting it first —
-        // the same reach the actor eye has. IsOn participates in the scene
-        // signature, so the toggle republishes the scene on the next refresh;
-        // the warm-frame flag restate lands the eye's new state immediately.
-        // The manip-handle toggle every entity row leads with: purely a
-        // presentation mask over the world overlay, read live like the
-        // overlay eyes.
+        // Handle toggles change only the overlay's presentation state.
         _vm.IsHandleShown = row => row.Tag switch
         {
             SelectionId handleId => _overlayPresentation.IsHandleShown(handleId),
@@ -227,8 +211,7 @@ public partial class MainWindow
             else if (row.Tag is GroupRowTag group)
                 _overlayPresentation.ToggleHandle(group.Id);
         };
-        // The effect row's pause seat: the same freeze the properties
-        // page states, reachable without selecting first.
+        // Pause effects directly from their row without selecting them first.
         _vm.OnRowPause = row =>
         {
             if (row.Tag is not SelectionId
@@ -241,8 +224,7 @@ public partial class MainWindow
             _objectControl.Set(pausedId, Application.Presentation.WorldObjectProperties.VfxPaused, !handle.VfxPaused);
             row.Paused = _objectControl.Read(pausedId)?.VfxPaused ?? row.Paused;
         };
-        // The scenery row's sun/moon seat: the same night state the
-        // properties page switches.
+        // Toggle the same night state shown in the properties page.
         _vm.OnRowNight = row =>
         {
             if (row.Tag is not SelectionId

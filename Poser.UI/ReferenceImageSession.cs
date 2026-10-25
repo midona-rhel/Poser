@@ -14,10 +14,8 @@ using Poser.Application.Settings;
 namespace Poser.UI;
 
 /// <summary>
-/// One pinned picture at runtime: the config entry it writes through, and the
-/// texture it draws. The wrap is OWNED — not a shared immediate texture — so
-/// the picture has a definite release point, which is what lets the window's
-/// close and the plugin's dispose both free it.
+/// Runtime state for one reference image. Its owned texture is released when
+/// the image closes or the plugin is disposed.
 /// </summary>
 public sealed class ReferenceImageInstance
 {
@@ -50,11 +48,11 @@ public sealed class ReferenceImageInstance
 }
 
 /// <summary>
-/// THE reference-image roster at runtime. Owns the config sync, the file
+/// Runtime reference-image roster. Owns config synchronization, the file
 /// dialog that adds pictures, every texture, and the add/remove events the
 /// window set turns into windows.
 ///
-/// <para>Config writes are DEBOUNCED to the end of a gesture: dragging a
+/// <para>Config writes are deferred to the end of a gesture: dragging a
 /// window or its opacity slider writes the entry every frame and saves the
 /// plugin config only once no mouse button is down, so a drag costs one file
 /// write rather than one per frame.</para>
@@ -170,10 +168,8 @@ public sealed class ReferenceImageSession : IDisposable
     }
 
     /// <summary>
-    /// Takes a picture off screen, or puts it back. The session is the ONE
-    /// owner of this answer: the window set reads it to decide whether the
-    /// window stands, and the sidebar row's eye restates it. Nothing else
-    /// holds a second copy, so the eye and the window cannot disagree.
+    /// Toggles whether the image is shown. The window set and sidebar read
+    /// this session state directly.
     ///
     /// <para>Saved on the spot rather than marked dirty: this is a click, not
     /// a drag, and the end-of-gesture save exists for gestures.</para>
@@ -196,9 +192,8 @@ public sealed class ReferenceImageSession : IDisposable
     }
 
     /// <summary>
-    /// A second placement of the SAME picture — the roster's own reason for
-    /// minting identity instead of deriving it from the path (two crops of one
-    /// sheet, two placements of one pose sheet). The copy carries the
+    /// Creates another placement of the same image. Identity is independent
+    /// of path so one file can have multiple placements. The copy carries the
     /// original's opacity and arrives visible, seating itself from the
     /// picture's own pixels rather than landing exactly under the original
     /// where it could not be told apart.
@@ -226,7 +221,7 @@ public sealed class ReferenceImageSession : IDisposable
     }
 
     /// <summary>
-    /// Records where a window ended up this frame. Placement is LOGICAL, so
+    /// Records where a window ended up this frame. Placement uses logical
     /// the stored roster is independent of the global UI scale.
     ///
     /// <para>Compared with a half-pixel tolerance rather than exactly: a size
@@ -349,9 +344,8 @@ public sealed class ReferenceImageSession : IDisposable
     }
 
     /// <summary>
-    /// A finished load, on the render thread. A refusal is stated ONCE, here —
-    /// naming the picture, because the roster can restore several at a time
-    /// and "a reference image is missing" would not say which.
+    /// Integrates a completed load on the render thread. Failures are reported
+    /// once and include the image name.
     /// </summary>
     private void Integrate(
         int id, int generation, IDalamudTextureWrap? wrap, string? failure)

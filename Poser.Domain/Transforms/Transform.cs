@@ -13,8 +13,7 @@ public struct Transform
     public Vector3 Scale;
 
     /// <summary>
-    /// Zero transform for additive deltas.
-    /// Scale is Zero because deltas are ADDED to existing scale.
+    /// No change when position and scale are added to an existing transform.
     /// </summary>
     public static readonly Transform Zero = new()
     {
@@ -24,8 +23,7 @@ public struct Transform
     };
 
     /// <summary>
-    /// True identity transform with Scale=1.
-    /// Use this for initializing transforms that represent actual positions.
+    /// No translation, no rotation, and unchanged size.
     /// </summary>
     public static readonly Transform Identity = new()
     {
@@ -34,7 +32,7 @@ public struct Transform
         Scale = Vector3.One
     };
 
-    /// <summary>The legacy shape of a domain pose transform.</summary>
+    /// <summary>Copies the pose's position, rotation, and scale.</summary>
     public static Transform FromPose(Poser.Domain.Transforms.PoseTransform value) =>
         new(value.Position, value.Rotation, value.Scale);
 
@@ -68,22 +66,21 @@ public struct Transform
     }
 
     /// <summary>
-    /// Decomposes a matrix into a transform (using Brio's robust method).
-    /// Extracts scale from column vector lengths, avoiding Matrix4x4.Decompose instability.
+    /// Estimates rotation and scale from a matrix's three basis rows.
+    /// This loses scale signs, replaces zero scale with 0.01, and cannot preserve shear.
     /// </summary>
     public static Transform FromMatrix(Matrix4x4 matrix)
     {
-        // Position is directly from translation
         Vector3 position = matrix.Translation;
 
-        // Scale is calculated from the length of each column vector
+        // Row lengths give magnitudes, not the original signed scale.
         Vector3 scale = new(
             new Vector3(matrix.M11, matrix.M12, matrix.M13).Length(),
             new Vector3(matrix.M21, matrix.M22, matrix.M23).Length(),
             new Vector3(matrix.M31, matrix.M32, matrix.M33).Length()
         );
 
-        // Avoid division by zero
+        // This also changes the scale returned to the caller.
         scale.X = MathF.Abs(scale.X) < float.Epsilon ? 0.01f : scale.X;
         scale.Y = MathF.Abs(scale.Y) < float.Epsilon ? 0.01f : scale.Y;
         scale.Z = MathF.Abs(scale.Z) < float.Epsilon ? 0.01f : scale.Z;
@@ -102,9 +99,7 @@ public struct Transform
     }
 
     /// <summary>
-    /// Calculates the difference between this transform and another (like Brio's CalculateDiff).
-    /// Returns a delta transform: this - other.
-    /// Rotation is normalized to prevent quaternion drift.
+    /// Subtracts the other position and scale and calculates the relative rotation.
     /// </summary>
     public Transform CalculateDiff(Transform other)
     {
@@ -119,10 +114,9 @@ public struct Transform
     private const float Epsilon = 0.0001f;
 
     /// <summary>
-    /// Compares transforms using epsilon tolerance to handle floating-point precision.
-    /// Rotations compare as orientations (q ≡ −q); the component-equality fallback keeps
-    /// Equals reflexive for non-unit quaternions (e.g. default(Transform)'s zero rotation,
-    /// where the dot-product test would otherwise fail).
+    /// Compares position and scale within a tolerance. The rotation comparison assumes
+    /// unit quaternions, treating q and -q as the same orientation. Exact component
+    /// equality also lets a default, zero quaternion compare equal to itself.
     /// </summary>
     public override bool Equals(object? obj)
     {
@@ -136,11 +130,11 @@ public struct Transform
     }
 
     /// <summary>
-    /// Hash code uses rounded values to maintain consistency with epsilon-based Equals.
+    /// Hashes quantized components. This does not guarantee equal hashes for values
+    /// that Equals accepts within its tolerance; avoid using Transform as a hash key.
     /// </summary>
     public override int GetHashCode()
     {
-        // Round to reduce hash collisions from near-equal transforms
         static int RoundComponent(float v) => (int)(v * 1000);
         return HashCode.Combine(
             RoundComponent(Position.X), RoundComponent(Position.Y), RoundComponent(Position.Z),

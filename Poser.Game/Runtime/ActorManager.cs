@@ -26,26 +26,11 @@ namespace Poser.Game;
 public class ActorManager : IActorManager
 {
     /// <summary>
-    /// THE actor identity formula, in one place because two call sites have to
-    /// agree exactly: this one, and the spawn service's fail-closed check that
-    /// a freshly bound wrapper is the one it asked for.
-    ///
-    /// <para>It is keyed on the GameObjectId AND the object-table index, and
-    /// the index is not decoration. A GPose clone SHARES its source's
-    /// GameObjectId — cloning the local player produces an actor whose id
-    /// equals the player's — so the id alone is not unique among actors that
-    /// coexist in the table. Two actors sharing an identity share a binding
-    /// lineage and, worse, share the registry's per-actor bone keys: the
-    /// second one bound overwrites the first, and every bone of the loser
-    /// resolves to a BoneId that binds to the winner's bone object. The
-    /// reference check then fails and the loser is bone-dead — no pose import,
-    /// no overlay toggles — until something reorders the table.</para>
-    ///
-    /// <para>The index is unique among coexisting objects and stable for as
-    /// long as an actor holds its slot, so it buys uniqueness without costing
-    /// the continuity the lineage depends on. A slot genuinely reused by a
-    /// different actor is a different actor, and the registry's own
-    /// address-change check ages the generation for it.</para>
+    /// Shared identity formula for discovery and spawn-wrapper validation.
+    /// Clones can share GameObjectId with their source, so ObjectIndex keeps
+    /// coexisting actors distinct. This is not a native lifetime stamp: an
+    /// object replaced at the same index with the same id needs separate
+    /// lifetime checks.
     /// </summary>
     internal static class ActorIdentity
     {
@@ -183,7 +168,7 @@ public class ActorManager : IActorManager
             return;
         }
 
-        // Check for actor changes by comparing addresses
+        // Compare addresses and logical ids to detect actor-list changes.
         var currentIdentities = GetGPoseCharacterIdentities();
         if (!currentIdentities.SetEquals(_lastActorIdentities))
         {
@@ -359,7 +344,7 @@ public class ActorManager : IActorManager
     {
         if (CurrentAdopted(address, adoption) is not { } current)
             return;
-        // The world gets its body back visible, as it was taken.
+        // If still hidden, restore the alpha recorded at adoption.
         if (adoption.HiddenAlpha != null && adoption.WorldAlpha is { } alpha && current is ICharacter)
             ((FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)address)->Alpha = alpha;
         if (adoption.Seat is not { } seat)
@@ -632,14 +617,8 @@ public class ActorManager : IActorManager
     }
 
     /// <summary>
-    /// The actor's plain game name; the object-table index names only the
-    /// nameless (a fresh spawn before the game assigns one). The index used
-    /// to be appended to EVERY name — a debugging crutch that leaked into
-    /// auto-save file names ("Midona Rhel (201).pose", 201 being the first
-    /// GPose slot) and forced every display surface to strip it back off.
-    /// Identity never rode on it: actors are tracked by address and
-    /// EntityId, and same-named clones are disambiguated where it matters
-    /// (auto-save's per-snapshot " (2)" suffixes, the sidebar's ids).
+    /// Uses the game name, falling back to the object-table index only when
+    /// unnamed. Identity is stored separately and never depends on this label.
     /// </summary>
     private static string GetActorName(IGameObject gameObject)
     {

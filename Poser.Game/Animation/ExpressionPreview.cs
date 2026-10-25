@@ -12,7 +12,7 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Owns the native lifetime of held-expression retries and bake admission.</summary>
+/// <summary>Retries held expressions on framework updates and starts facial pose capture.</summary>
 public sealed class ExpressionPreview : IExpressionPreview, IDisposable
 {
     private readonly IFramework _framework;
@@ -148,8 +148,8 @@ public sealed class ExpressionPreview : IExpressionPreview, IDisposable
         if (_clock.GetElapsedTime(pending.StartedAt).TotalMilliseconds < 500)
             return;
 
-        // The paused client sometimes needs a second evaluation edge. Replay
-        // once, only against the same native body; drawing a pane never drives it.
+        // The paused client sometimes needs the expression applied a second time.
+        // Retry once after checking the session, actor binding, and selected expression.
         _pending = null;
         var replayed = _animation.HoldExpression(pending.Actor, (ushort)pending.Entry.TimelineId);
         if (!replayed.Success)

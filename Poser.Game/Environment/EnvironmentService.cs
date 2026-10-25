@@ -19,9 +19,7 @@ internal unsafe delegate nint UpdateEnvironmentDelegate(CSEnvManager* manager, f
 
 internal unsafe delegate nint EnvStateCopyDelegate(EnvStateNative* dest, EnvStateNative* src);
 
-/// <summary>A hold switch over one native hook; the enabled state IS the
-/// hold. The narrow surface exists so the hold/release owner is testable
-/// without the game (the Gaze capability seam, same shape).</summary>
+/// <summary>Native hook lifecycle used by the environment controls and their test fakes.</summary>
 internal interface IEnvHook : IDisposable
 {
     bool IsEnabled { get; }
@@ -138,25 +136,11 @@ internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactor
 }
 
 /// <summary>
-/// Time, weather and per-section environment holds. Brio's TimeService and
-/// EnvironmentService merged into one native surface, with Brio's mediator
-/// replaced by the event bus and its configuration flags by plain properties.
-///
-/// Three independent mechanisms, each degrading on its own:
-///  · Time freeze — the Eorzean time update is hooked to a no-op. The clock
-///    value itself is written directly; nothing is restored on release,
-///    because the game reclaims the clock on its next update.
-///  · Weather hold — the authored byte is supplied before each native
-///    environment update, independently of the territory's usual weather list.
-///  · Section hold — the env-state copy is hooked; the destination is
-///    snapshotted BEFORE the original runs and the held sections are stamped
-///    back after (Ktisis' EnvModule mechanism, Brio's signature and hook
-///    shape). The live EnvState therefore IS the held state: a write into it
-///    perpetuates itself, and releasing a section needs no restore at all.
-///
-/// Every write is small and direct, on the caller's (main game) thread — the
-/// pattern both references validate. No address, pointer or native layout
-/// leaves this assembly.
+/// Controls time freeze, weather, environment-section holds, and interior brightness.
+/// Time freeze suppresses the native clock update. Weather is reapplied before
+/// the native environment update. Section holds restore selected destination
+/// fields after native copying; releasing a section lets the next game copy replace it.
+/// Callers are responsible for using the game thread for these native reads/writes.
 /// </summary>
 public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDisposable
 {
@@ -184,8 +168,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     private readonly IClientState _clientState;
     private readonly IPluginLog _log;
     private readonly IEventBus _events;
-    // A detour never throws into the game: a fault is logged once per
-    // detour and the game's own call still runs.
+    // Managed exceptions in Poser's detour logic are logged once.
+    // The original native calls run outside these catch blocks.
     private bool _weatherFaultLogged;
     private bool _envStateFaultLogged;
     private readonly IHousingBrightnessNative _housingBrightness;

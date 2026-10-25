@@ -1,8 +1,7 @@
 namespace Poser.Domain.Actors;
 
 /// <summary>
-/// The type of actor in the game world.
-/// This is a Poser-owned enum to avoid leaking Dalamud types through interfaces.
+/// Actor categories used by Poser without depending on Dalamud's types.
 /// </summary>
 public enum ActorKind
 {
@@ -16,10 +15,8 @@ public enum ActorKind
     Retainer,
 
     /// <summary>
-    /// A body Poser drives for rendering only — the CharaView preview at
-    /// object table slot 441. Never discovered by the GPose scan and never a
-    /// user-facing actor; it reaches the pose pipeline through
-    /// <see cref="Poser.Game.Services.IActorManager.AuxiliaryActors"/>.
+    /// An actor rendered in the preview window rather than the scene.
+    /// The runtime tracks it separately from the selectable GPose actors.
     /// </summary>
     Preview
 }

@@ -33,7 +33,9 @@ public readonly record struct PoseCaptureResult(
 }
 
 /// <summary>
-/// Stable-id pose edits with exhaustive rollback and typed recovery evidence.
+/// Applies pose edits to a specific actor instance. If the runtime reports a
+/// write or final capture failure, it attempts to restore all captured starting
+/// values and reports any that could not be restored.
 /// </summary>
 public sealed class PoseEditService
 {
@@ -101,10 +103,9 @@ public sealed class PoseEditService
     }
 
     /// <summary>
-    /// Bone-level authored-delta reflection (correction 3C): reflects only
-    /// the selected bone's Poser-authored adjustment through the sagittal
-    /// plane, rebased in its own frozen animated baseline. It never bakes
-    /// animation, and an untouched bone reports a clear no-edit result.
+    /// Mirrors only the selected bone's Poser edit across the body's left-right
+    /// plane. The current animation remains separate. If Poser has not edited
+    /// the bone, this method reports that there is nothing to mirror.
     /// </summary>
     public PoseEditResult Flip(
         TransformTargetId target,
@@ -138,28 +139,19 @@ public sealed class PoseEditService
     }
 
     /// <summary>
-    /// "Mirror edits" (correction 3A): the animation-safe actor operation.
-    /// Only Poser-authored layers move — left/right counterparts exchange
-    /// their authored adjustments (converted counterpart-frame-aware, 3B),
-    /// center/unpaired bones with authored adjustments mirror in place, and
-    /// bones without authored adjustments stay driven by their animation.
-    /// The current evaluated animation is never captured or baked; one
-    /// atomic history entry covers the whole actor.
+    /// Mirrors the actor's Poser edits without copying the current animation
+    /// into the pose. Left and right bones exchange their edits, while center
+    /// and unpaired bones mirror in place. Unedited bones remain controlled by
+    /// animation. The complete operation is one undo step.
     ///
-    /// <para>Weapons exchange HANDS. A main-hand bone's counterpart is the
+    /// <para>Weapons exchange hands. A main-hand bone's counterpart is the
     /// same bone in the off hand rather than a <c>_l</c>/<c>_r</c> sibling
     /// inside its own skeleton, because a weapon skeleton has no lateral
-    /// pairs — Brio moves the two dictionaries across wholesale for the same
-    /// reason (PosingCapability.cs:538-547). Prop and ornament keep pairing
-    /// within themselves; Brio leaves both as an explicit TODO and there is
-    /// no second slot to exchange them with.</para>
+    /// pairs. Props and ornaments have no opposite slot and therefore mirror
+    /// within their own skeleton.</para>
     ///
-    /// <para>An ACTOR target mirrors its authored model ROTATION in place.
-    /// Brio also reflects the model POSITION's X (MirrorModelTransform), which
-    /// reflects the actor across the world origin — a meaningless point on any
-    /// real map, and the one part of its mirror Brio annotates as not working
-    /// right. Mirroring which way the actor faces is the half that pairs with
-    /// mirroring its body; where it stands is not a left/right fact.</para>
+    /// <para>For the actor itself, the operation mirrors rotation but leaves
+    /// world position unchanged.</para>
     /// </summary>
     public PoseEditResult Mirror(
         IReadOnlyList<TransformTargetId> targets,
@@ -206,10 +198,8 @@ public sealed class PoseEditService
             TransformTargetState? partner = null;
             if (MirrorSlot(bone.Slot) is { } partnerSlot)
             {
-                // A hand's counterpart is the SAME bone in the other hand. A
-                // main-hand bone with no off hand present falls through to the
-                // in-place branch below rather than vanishing, which is where
-                // Brio's wholesale dictionary move loses it.
+                // Match weapon bones by name and partial in the opposite hand slot.
+                // Without a counterpart, mirror this bone's edits in place.
                 if (byKey.TryGetValue(
                         (partnerSlot, bone.PartialId, bone.CanonicalName),
                         out var handed))
@@ -400,14 +390,9 @@ public sealed class PoseEditService
             destinations.Add(destination);
         }
 
-        // AMBIGUITY still refuses wholesale: an entry matching several
-        // destinations has no safe answer, so writing any of them would be a
-        // guess. An UNMATCHED entry has an answer — this skeleton simply does
-        // not have that bone — so the intersection is applied and the skipped
-        // names are reported, which is what both references do (Brio
-        // PoseImporter.cs:33-37, Ktisis PoseContainer.cs:179). Refusing the
-        // whole paste made a pose captured on a richer skeleton (IVCS, tail,
-        // extra partials) unusable on a poorer one.
+        // Refuse an entry that matches more than one destination because its
+        // target is ambiguous. Missing bones are skipped and reported, allowing
+        // poses from a richer skeleton to apply to the bones both actors share.
         var match = pose.Match(destinations);
         if (match.Ambiguous.Count > 0)
             return PoseEditResult.Fail(DescribeMatchFailure(match)!);
@@ -445,10 +430,8 @@ public sealed class PoseEditService
             : applied;
     }
 
-    /// <summary>Every bone of every actor in the scene, by id. Built ONCE
-    /// per capture/apply pass and passed through the per-bone loop —
-    /// rebuilding it per bone made portable capture O(bones²) on the
-    /// framework thread.</summary>
+    /// <summary>Index of scene bones by ID, built once per capture or apply pass
+    /// to avoid scanning all bones again for each entry.</summary>
     private Dictionary<BoneId, BoneDescriptor> SceneBonesById() =>
         _scene.Snapshot.Actors
             .SelectMany(actor => actor.Skeletons)
@@ -514,14 +497,13 @@ public sealed class PoseEditService
         return details.Count == 0 ? null : string.Join(" ", details);
     }
 
-    /// <summary>The success-side half of the refusal vocabulary: the paste
-    /// landed, and this names what it could not carry.</summary>
+    /// <summary>Reports bones skipped from an otherwise successful paste.</summary>
     private static string DescribeSkipped(
         IReadOnlyList<PortableBoneMatchFailure> unmatched) =>
         $"Skipped {unmatched.Count} bone(s) this skeleton does not have: {NameList(unmatched)}.";
 
-    /// <summary>Bone names, TRUNCATED — a paste from a much richer skeleton
-    /// can miss hundreds of bones and this text reaches a notification.</summary>
+    /// <summary>At most eight bone names, followed by the remaining count,
+    /// to keep failure notifications readable.</summary>
     private static string NameList(
         IReadOnlyList<PortableBoneMatchFailure> failures)
     {
@@ -623,8 +605,8 @@ public sealed class PoseEditService
     }
 
     /// <summary>
-    /// Read-only barrier projection for Application-owned pose workflows that
-    /// must reject before inspecting their own local state.
+    /// Retries pending transform recovery before a pose workflow proceeds.
+    /// Returns a refusal if recovery remains incomplete.
     /// </summary>
     internal PoseEditResult? RecoveryBarrier() =>
         !_gestures.TryCompleteRecovery() &&

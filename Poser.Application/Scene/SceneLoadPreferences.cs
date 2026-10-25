@@ -1,20 +1,8 @@
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// What the user has told the next scene load to do, held ONCE for the whole
-/// session. It is a preference and not state of any operation, which is why it
-/// does not live on <see cref="ISceneWorkflow"/>; it is shared and not per-pane,
-/// because Poser starts a load from more than one surface — the scene
-/// workspace's dialogs and the library's scene tiles — and a preference the
-/// user set on one of them that the other quietly ignored would be worse than
-/// having no preference at all.
-///
-/// <para>Both references hold it the same way: Brio's import options are
-/// configuration (<c>SceneDestoryActorsBeforeImport</c>), read by the import
-/// wherever it starts, and Ktisis's per-category checkboxes live on the one
-/// scene editor that owns every load it has. The band that EDITS this stands
-/// under the load dialog, which is the only surface that shows a listing to
-/// choose from.</para>
+/// Session-wide save and load choices shared by scene dialogs and library entries.
+/// Placement choices are stored per path; ForLoad creates options for one operation.
 /// </summary>
 public sealed class SceneLoadPreferences
 {
@@ -53,18 +41,12 @@ public sealed class SceneLoadPreferences
             ? options with { Placement = Poser.Domain.Scene.ObjectPlacementMode.AsSaved, PlaceRelativeToCurrentOrigin = false, DefaultPlacementTerritory = 0 }
             : options with { DefaultPlacementTerritory = 0 };
 
-    /// <summary>Defaults to the load Poser had before options existed.
-    /// </summary>
+    /// <summary>Options used as the starting point for the next load.</summary>
     public SceneLoadOptions Options { get; set; } = SceneLoadOptions.Default;
 
-    /// <summary>What the NEXT save is asked to include. It lives beside the
-    /// load's answer for the same reason: the Inspector and the save dialog
-    /// are two mounts of ONE answer, not two answers.
-    ///
-    /// <para>Deliberately session-scoped and never written to configuration.
-    /// The appearance switch is consent to package somebody's mods, and a
-    /// switch remembered across sessions is consent inferred from a previous
-    /// scene, which the issue forbids by name.</para>
+    /// <summary>Options shared by the Inspector and save dialog for the next save.
+    /// These are not persisted to configuration, so permission to package modded
+    /// appearance is not carried into a later session.
     /// </summary>
     public SceneSaveOptions SaveOptions { get; set; } = SceneSaveOptions.Default;
 }

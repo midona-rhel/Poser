@@ -10,8 +10,7 @@ namespace Poser.Game.Cameras;
 
 /// <summary>
 /// The game's orbit camera with the fields FFXIVClientStructs does not map.
-/// Offsets are Brio's BrioCamera (main, 2026-08) plus Ktisis's two vertical
-/// clamp fields; both projects run these against the live client.
+/// Field locations come from the generated NativeFields registry.
 /// </summary>
 [StructLayout(LayoutKind.Explicit, Size = 0x2B0)]
 public struct NativeCamera
@@ -54,7 +53,7 @@ public struct NativeCamera
         _skipOrbitCorrection = 1;
     }
 
-    /// <summary>Brio's view rotation for seeding a free cam from the orbit
+    /// <summary>View rotation for seeding a free camera from the orbit
     /// state: yaw from angle minus pan, pitch negated.</summary>
     public readonly Vector3 RotationAsVector3 =>
         new(Angle.X - Pan.X, -Angle.Y - Pan.Y, 0f);
@@ -86,11 +85,9 @@ public struct NativeCamera
         return true;
     }
 
-    /// <summary>Brio's RealPosition (CameraExtensions.GetPosition): the eye
-    /// the frame is RENDERED from, inverted out of the view matrix. The
-    /// scene camera's Position field is not it — a free camera replaces the
-    /// view matrix and never writes that field, which the game goes on
-    /// orbiting under the native input a free camera leaves to it.</summary>
+    /// <summary>Reads the rendered eye position by inverting the view matrix.
+    /// Free cameras replace that matrix without updating the scene Position field.
+    /// Falls back to that field if the matrix cannot be inverted.</summary>
     public readonly Vector3 GetPosition()
     {
         var view = Camera.CameraBase.SceneCamera.ViewMatrix;
@@ -102,7 +99,7 @@ public struct NativeCamera
 }
 
 /// <summary>
-/// The render camera with Ktisis's orthographic fields mapped past the
+/// The render camera with orthographic fields mapped past the
 /// FFXIVClientStructs coverage.
 /// </summary>
 [StructLayout(LayoutKind.Explicit)]
@@ -120,7 +117,7 @@ public struct RenderCameraEx
 }
 
 /// <summary>One frame of mouse state as the game's input handler sees it.
-/// Brio's layout; the delta fields are writable so a consumer can eat the
+/// The delta fields are writable so a consumer can consume the
 /// look-drag before the game orbits with it.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct MouseFrame
@@ -157,7 +154,7 @@ public enum MouseState
 }
 
 /// <summary>One frame of keyboard state as the game's input handler sees it.
-/// Brio's layout: one uint per virtual key, non-zero while held; zeroing an
+/// One uint per virtual key, non-zero while held; zeroing an
 /// entry consumes the key for the rest of the frame.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct KeyboardFrame

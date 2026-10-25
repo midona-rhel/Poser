@@ -36,18 +36,10 @@ internal sealed record FakeActor(IActor Actor, IReadOnlyList<ISkeleton> Skeleton
 }
 
 /// <summary>
-/// Builds an <see cref="AutoSaveService"/> over substituted collaborators, a
-/// real (empty) <see cref="ConfigurationService"/>, a controllable UTC clock,
-/// and a throwaway temp root.
-///
-/// <para>The framework is deliberately null: the service then never subscribes
-/// to the game tick and the test drives <c>Tick(nowUtc)</c> itself, which is the
-/// only way to make interval behaviour deterministic.</para>
-///
-/// <para>THE SERVICE IS SPLIT ACROSS TWO THREADS. <c>SaveNow</c> only captures
-/// (<see cref="IPoseFileService.CreatePoseFile"/>) and returns; the folder, the
-/// files and the prune all happen on one owned worker. Every assertion about the
-/// disk therefore has to be preceded by <see cref="WaitForWrite"/>.</para>
+/// Builds autosave tests with substitute game services, an in-memory configuration,
+/// a controllable clock, and a temporary output directory.
+/// Tests call Tick directly. Capture runs on the calling thread; the default
+/// dispatcher writes files in the background. Call WaitForWrite before checking files.
 /// </summary>
 internal sealed class AutoSaveHarness : IDisposable
 {
@@ -69,7 +61,7 @@ internal sealed class AutoSaveHarness : IDisposable
     /// <summary>Value returned by the injected clock; mutate freely mid-test.</summary>
     public DateTime NowUtc { get; set; } = new(2026, 3, 4, 6, 0, 0, DateTimeKind.Utc);
 
-    /// <summary>Worker boundary; override to test capture without dispatch.</summary>
+    /// <summary>Starts background work; replace this to control when writes run.</summary>
     public Func<Action, bool> Dispatch { get; set; } = work =>
     {
         _ = Task.Run(work);
@@ -80,9 +72,7 @@ internal sealed class AutoSaveHarness : IDisposable
 
     public AutoSaveHarness()
     {
-        // Deliberately the machine temp dir, never anything under the repo: the
-        // snapshots are real files and a synced folder would both slow the run
-        // down and hold handles the prune tests need released.
+        // Keep test files outside the repository to avoid interference from folder syncing.
         Root = Path.Combine(
             Path.GetTempPath(), "poser-autosave-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Root);
@@ -100,9 +90,7 @@ internal sealed class AutoSaveHarness : IDisposable
         BonePosing = Substitute.For<IBonePosingService>();
 
         PoseFiles = Substitute.For<IPoseFileService>();
-        // A REAL PoseFile per capture, not a substitute: the worker calls
-        // PoseFile.Save on whatever it was handed, so a stub would leave the
-        // tests asserting against files that were never actually serialized.
+        // Return real pose documents so the background writer exercises serialization.
         PoseFiles
             .CreatePoseFile(Arg.Any<IReadOnlyList<ISkeleton>>())
             .Returns(_ => NewPoseFile());
@@ -123,8 +111,7 @@ internal sealed class AutoSaveHarness : IDisposable
         () => NowUtc, Dispatch);
 
     /// <summary>
-    /// A minimal but genuine pose: two bones, so <c>PoseFile.Save</c> produces
-    /// real JSON that <c>PoseFile.Load</c> reads back.
+    /// A two-bone pose for tests that write and read actual pose files.
     /// </summary>
     public static PoseFile NewPoseFile() => new()
     {
@@ -157,10 +144,8 @@ internal sealed class AutoSaveHarness : IDisposable
     }
 
     /// <summary>
-    /// Advances the injected clock, drives one tick with the same instant (so
-    /// the interval decision and the snapshot folder name never disagree), and
-    /// waits out any write the tick dispatched — otherwise the next tick's save
-    /// would be dropped as "previous snapshot still in flight".
+    /// Sets the clock and ticks the service at the same instant, then waits for
+    /// background writes so the next test action starts with an idle writer.
     /// </summary>
     public void TickAt(DateTime nowUtc)
     {
@@ -170,15 +155,8 @@ internal sealed class AutoSaveHarness : IDisposable
     }
 
     /// <summary>
-    /// Makes the WRITE half fail for one actor, by capturing a pose the worker
-    /// cannot serialize. The actor is still captured (so it still counts
-    /// towards <c>SaveNow</c>'s return), but its file never lands.
-    ///
-    /// <para>A null capture is the only failure a test can inject from outside
-    /// the service: <c>PoseFile.Save</c> swallows its own IO errors, and the
-    /// destination path lives inside a folder the worker creates itself, so
-    /// there is nothing to lock or pre-occupy. The service's contract for this
-    /// is what matters — one bad entry must not abort the snapshot.</para>
+    /// Returns a null pose for one actor. The capture port includes that entry,
+    /// allowing tests to exercise the writer's handling of an invalid document.
     /// </summary>
     public void FailWriteFor(FakeActor actor) =>
         PoseFiles.CreatePoseFile(actor.Skeletons).Returns((PoseFile)null!);
@@ -282,8 +260,7 @@ internal sealed class AutoSaveHarness : IDisposable
 
     public void Dispose()
     {
-        // The worker only touches the temp root, but deleting it out from under
-        // a live write would spray unrelated IO errors through the log.
+        // Wait for writes before deleting their output directory.
         if (_service is not null)
             _service.WaitForIdle(TimeSpan.FromSeconds(5));
 

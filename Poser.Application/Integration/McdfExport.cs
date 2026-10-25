@@ -6,8 +6,9 @@ using Poser.Domain.Operations;
 
 namespace Poser.Application.Integration;
 
-/// <summary>Every vendor read an export needs, frozen on the framework
-/// thread before the operation is admitted.</summary>
+/// <summary>
+/// Provider data collected on the framework thread before export starts.
+/// </summary>
 internal sealed record McdfExportCapture(
     string GlamourerState,
     string CustomizeData,
@@ -157,14 +158,9 @@ internal sealed class McdfExport(
     }
 
     /// <summary>
-    /// Turns Penumbra's actual-path → game-paths tree into MCDF content:
-    /// only real replacements, swap targets validated as game paths and
-    /// kept game-path to game-path, allowed extensions only, local files
-    /// only from under the CANONICAL Penumbra mod root, Brio's
-    /// compatibility filter applied, every skipped or missing resource
-    /// reported by name, and conflicting duplicate game-path mappings
-    /// rejected outright — a package that lies about a path is worse than
-    /// no package.
+    /// Builds package entries from inspected resource paths. Skips unchanged or
+    /// unsupported game paths, reports those skips, and rejects conflicting replacements.
+    /// Local file checks belong to InspectExportCandidates, which supplies this input.
     /// </summary>
     private static (McdfExportContent? Content, List<string> Skipped, string? Error)
         BuildExportContent(

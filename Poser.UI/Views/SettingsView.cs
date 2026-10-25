@@ -157,9 +157,8 @@ public sealed class SettingsViewModel
     public string? RebindingAction;
     public int RebindingSlot;
 
-    /// <summary>The GAME's key state — the same source the runtime
-    /// matcher fires from. ImGui key events do not reach an unfocused
-    /// widget, which is what killed the old ImGui-based capture.</summary>
+    /// <summary>The game's key state, matching the runtime keybinding source.
+    /// ImGui key events do not reach an unfocused widget.</summary>
     public Func<Dalamud.Game.ClientState.Keys.VirtualKey, bool> KeyDown =
         static _ => false;
 
@@ -169,9 +168,8 @@ public sealed class SettingsViewModel
     public readonly HashSet<Dalamud.Game.ClientState.Keys.VirtualKey>
         RebindHeld = new();
 
-    /// <summary>Diagnostics for the capture: a per-frame probe of both key
-    /// sources shown live in the page, and a throttled log line — added
-    /// after three blind fixes; the probe reports, nobody theorizes.</summary>
+    /// <summary>Per-frame key-source diagnostics shown on the page and written
+    /// to a throttled log.</summary>
     public Action<string>? DebugLog;
     public string RebindProbe = string.Empty;
     /// <summary>Transient label feedback; never adds a form row.</summary>
@@ -662,9 +660,8 @@ public static partial class SettingsView
                 "Leaving GPose normally clears scene backups; after a crash they stay so you can recover",
                 disabled: !saving);
         });
-        // The one diagnostic surface a photographer is ever pointed at, on the
-        // page they already open. It is a switch rather than a hidden command
-        // because a feature reachable only from a console is not shipped.
+        // Expose the profiler on the settings page instead of only through a
+        // debug command.
         page.Section("Diagnostics", form =>
         {
             form.Switch(
@@ -1597,8 +1594,8 @@ public static partial class SettingsView
                 io.KeyAlt || vm.KeyDown(
                     Dalamud.Game.ClientState.Keys.VirtualKey.MENU),
                 (KeyCode)(int)key).ToString();
-            // NO colliding binds: a chord already bound anywhere else is
-            // REFUSED — the capture stays armed and says who holds it.
+            // Refuse a chord already bound to another action and keep capture
+            // active so the user can choose another.
             string? holder = null;
             foreach (var (otherAction, otherSlots) in vm.Bindings)
                 for (int otherSlot = 0; otherSlot < 2; otherSlot++)

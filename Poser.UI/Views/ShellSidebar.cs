@@ -524,10 +524,9 @@ public sealed class ShellSidebar
 
         var row = _vm.Sections[entry.Section].Rows[entry.Row];
 
-        // While a drag is live, the row under the pointer is the drop
-        // candidate. Only a CONTAINER (a group head) takes an INTO drop,
-        // and never from another container — one depth, always. Every
-        // other row splits at its midline into before/after.
+        // Containers accept an Into drop in their middle half and insertions
+        // in their outer quarters. Other rows split into before/after halves.
+        // The caller validates nesting and the requested depth.
         if (_dragSource is { } self && ReferenceEquals(self, row))
         {
             // Over the row being dragged: nothing to do, and no caret —
@@ -621,9 +620,7 @@ public sealed class ShellSidebar
             DropTarget = ReferenceEquals(_paintDropTarget, row)
                 && _paintDropPosition == RowDropPosition.Into,
             SuppressHover = _dragSource != null,
-            // The game's target actor and the live camera wear the
-            // current-one outline; the flags are only ever set on their
-            // own row kinds.
+            // Highlight the icon of the game's target actor or live camera.
             Marked = row.ActorTargeted || row.CameraLive,
         };
 
@@ -697,7 +694,7 @@ public sealed class ShellSidebar
             Weight = FontWeight.Medium,
             Color = theme.TextMuted,
         };
-        // Center the title in the complete header slot.
+        // Vertically center the start-aligned title in the header.
         TextInBand(
             new Vector2(at.X + theme.Spacing.Two * scale, at.Y),
             new Vector2(width * scale, entry.Height * scale),

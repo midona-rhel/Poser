@@ -11,19 +11,16 @@ using Poser.Documents.Files;
 namespace Poser.Documents.Scene;
 
 /// <summary>
-/// The Stagehand Stage seam: a Stage definition (their plain-JSON world-dressing
-/// format) reads into a <see cref="SceneFile"/> and a scene writes back out as
-/// one, so both plugins dress the same sets. The vocabulary maps whole:
+/// Converts between Stagehand's JSON Stage format and <see cref="SceneFile"/>.
+/// The supported entity mappings are:
 /// BgObject ↔ spawned world object, VfxObject ↔ spawned effect, Weapon ↔ prop,
 /// Light ↔ light (field-for-field; their Ambient/Point/Spot/Flat shapes are
 /// Poser's Directional/Point/Spot/Area in the same ordinal order, and both
-/// contracts speak degrees). Sounds are out of scope by ruling; what a Stage
-/// cannot carry — actors, cameras, overlays, environment — is skipped with one
-/// honest note per direction.
+/// contracts use degrees). Sounds, actors, cameras, overlays, and environment
+/// have no supported mapping and are reported as skipped.
 ///
-/// <para>Rotation rides their own <c>RotationQuaternion</c> property in BOTH
-/// directions — it computes from and decomposes to their pitch/yaw/roll-degrees
-/// storage, so their Euler convention is never re-derived here.</para>
+/// <para>Both directions use Stagehand's <c>RotationQuaternion</c> property so
+/// this converter does not duplicate its Euler-angle convention.</para>
 /// </summary>
 public static class StageFile
 {
@@ -47,8 +44,8 @@ public static class StageFile
     // ── Read ─────────────────────────────────────────────────────────────
 
     /// <summary>Reads and translates one Stage into a validated scene
-    /// document. Operation-level facts (skipped sounds, named modpacks)
-    /// land in <paramref name="notes"/>.</summary>
+    /// document. <paramref name="notes"/> receives skipped sounds and named
+    /// modpacks that the scene format cannot reproduce.</summary>
     public static SceneReadOutcome Read(string path, List<string> notes)
     {
         ArgumentNullException.ThrowIfNull(notes);

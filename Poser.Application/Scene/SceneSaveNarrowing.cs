@@ -8,11 +8,9 @@ using Poser.Documents.Files;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// Narrows a captured document to an entry's keys and leaves it saying only
-/// what it can still say. A pruned actor takes every reference to it with it:
-/// a gaze or camera target is cleared, an attached light stays where it stood
-/// in the world. Each cleared reference is a named note, so an entry that
-/// saved with less than its source had says what it left behind.
+/// Restricts a capture to selected entity keys, applies its entry name, and
+/// clears actor references left dangling by filtering. DetachDangling records
+/// each cleared reference and preserves attached lights' world positions.
 /// </summary>
 internal static class SceneSaveNarrowing
 {
@@ -63,10 +61,8 @@ internal static class SceneSaveNarrowing
         return null;
     }
 
-    /// <summary>The entry's name IS the thing's name: Stone rail spawns a
-    /// Stone rail. A group entry names the GROUP and its children keep their
-    /// own saved names, so the group check leads; otherwise the name lands
-    /// only when the document holds exactly one entity.</summary>
+    /// <summary>Names the single saved group when present; otherwise names the
+    /// entity only if exactly one remains. Group members retain their names.</summary>
     public static void ApplyEntryName(SceneFile scene, string? entryName)
     {
         if (entryName is not { Length: > 0 })

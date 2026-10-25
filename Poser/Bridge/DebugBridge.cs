@@ -30,10 +30,8 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.Bridge;
 
 /// <summary>
-/// THE DEBUG BRIDGE — a Debug-build-only local HTTP control surface so the
-/// animation work can be driven and measured from outside the game (the MCP
-/// server in tools/ wraps it). Every game call is marshalled onto the
-/// framework thread; every answer is JSON. Not a feature: a test rig.
+/// Debug-build-only local HTTP control surface used by the test tooling.
+/// Game calls are dispatched to the framework thread and responses are JSON.
 /// </summary>
 public sealed partial class DebugBridge : IDisposable
 {
@@ -206,7 +204,7 @@ public sealed partial class DebugBridge : IDisposable
 
     private int _disposed;
 
-    /// <summary>Idempotent, and the listener stops BEFORE the token cancels:
+    /// <summary>Idempotent. The listener stops before token cancellation:
     /// cancelling a token with an accept pending on it threw on unload,
     /// which failed the unload and left the port held by a dead instance.</summary>
     public void Dispose()
@@ -841,9 +839,8 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/profile":
             {
-                // The frame profiler's own ledger — the instrument Midona reads
-                // — plus the GC counters, so a stopwatch cost the sampler
-                // cannot see (a collection pausing the render thread) shows.
+                // Include GC counters because collection pauses are not
+                // attributed to individual profiler scopes.
                 var profiler = (global::Poser.UI.FrameProfiler)_services.GetService(typeof(global::Poser.UI.FrameProfiler))!;
                 profiler.SetEnabled(true);
                 var samples = new global::Poser.UI.FrameProfiler.Sample[64];
@@ -1365,7 +1362,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/cancel":
             {
-                // Experiment: which cancel arguments stop ONE layer?
+                // Probe which cancellation arguments stop one layer.
                 nint a2 = query.TryGetValue("a2", out var x2) ? (nint)long.Parse(x2, CultureInfo.InvariantCulture) : 0;
                 nint a3 = query.TryGetValue("a3", out var x3) ? (nint)long.Parse(x3, CultureInfo.InvariantCulture) : 0;
                 var r = _port.ProbeCancel(id, a2, a3);
@@ -1676,9 +1673,8 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/setbone":
             {
-                // A JOURNALED bone write: the same absolute write a typed
-                // inspector well issues, so the step lands in the history the
-                // way a drag does. /rotatebone below writes the runtime directly.
+                // This absolute bone write uses the edit journal. /rotatebone
+                // below writes directly to the runtime for comparison.
                 string name = query["name"]; int part = query.TryGetValue("partial", out var sp) ? int.Parse(sp) : 0;
                 float deg = float.Parse(query.GetValueOrDefault("deg", "0"), CultureInfo.InvariantCulture);
                 var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;

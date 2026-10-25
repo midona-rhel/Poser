@@ -3,15 +3,20 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Domain.Posing;
 
-/// <summary>Target in the captured solve frame, carried by the first ancestor outside the chain.</summary>
+/// <summary>
+/// An IK target captured relative to the first parent outside the solved chain.
+/// Parent movement updates the target without treating the parent as part of the solve.
+/// </summary>
 public readonly record struct IkActorAnchor(Vector3 Position, Quaternion Rotation,
     Vector3 AuthoredPosition, Quaternion AuthoredRotation)
 {
     public string? ParentName { get; init; }
     public int ParentPartial { get; init; }
     public PoseTransform? ParentTransform { get; init; }
-    /// <summary>Captured from the displayed pose and not yet put onto the end
-    /// bone as the first solve sees it. Kept in history so a redo seats again.</summary>
+    /// <summary>
+    /// The target was captured from the displayed pose but has not yet been applied
+    /// to the end bone by a solve. History preserves this pending state.
+    /// </summary>
     public bool Unseated { get; init; }
     public bool IsValid => TransformMath.IsFinite(Position) && TransformMath.IsFinite(AuthoredPosition)
         && TransformMath.IsFinite(Rotation) && Rotation.LengthSquared() > 1e-8f

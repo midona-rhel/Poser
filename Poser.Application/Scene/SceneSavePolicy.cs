@@ -5,26 +5,15 @@ using Poser.Documents.Files;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// What the save OPTIONS do to a captured document, applied once between the
-/// capture and the write. The capture always takes everything it can see —
-/// there is one capture, not six — and this narrows it, so a category the user
-/// excluded is absent from the file rather than captured and ignored on load.
-///
-/// <para>Appearance is the case with teeth. With the consent switch off, every
-/// appearance entry is REMOVED, including the reference form: a scene that
-/// names another player's package path is appearance data whether or not it
-/// carries the bytes. With it on, only a PORTABLE entry survives — a reference
-/// the sealing step could not turn into bytes is dropped with a note, because
-/// "saved as portable" must not be a scene that only knows where the mods used
-/// to be.</para>
+/// Removes excluded categories from a captured document before writing it.
+/// Modded appearance is removed unless requested and packaged as embedded data;
+/// an unpackaged file reference is removed and reported in the save notes.
 /// </summary>
 internal static class SceneSavePolicy
 {
-    /// <summary>Applies the options, and answers how many actors asked for a
-    /// portable appearance and did not get one. A save that quietly drops what
-    /// the user explicitly asked for must not report plain success — that is
-    /// the shape of the defect where an oversized package vanished and the
-    /// load then had nothing to apply.</summary>
+    /// <summary>Applies category and appearance options. Returns the number of
+    /// requested appearance packages removed because they were not portable,
+    /// so the caller can report a partial save.</summary>
     public static int Apply(
         SceneFile scene,
         SceneSaveOptions options,

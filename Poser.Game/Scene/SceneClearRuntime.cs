@@ -39,25 +39,9 @@ internal sealed class SceneClearRuntime(
     Poser.Application.Selection.SelectionSession selection)
 {
     /// <summary>
-    /// Empties the session of everything it can empty, and NAMES what it
-    /// cannot.
-    ///
-    /// <para>EVERY kind comes out, actors included. An actor Poser spawned
-    /// goes through its ownership ledger; one that was already in the GPose
-    /// scene goes through the native scene-removal route, which deletes it
-    /// from the temporary GPose object table and never touches the overworld
-    /// actor. "Clear the session first" means the session, not the part of it
-    /// Poser happens to own.</para>
-    ///
-    /// <para>Props, overlays, lights and cameras each have a bulk verb that
-    /// already applies the same ownership rule (a borrowed world light is
-    /// released, the default camera cannot be destroyed), so their counts are
-    /// read before the sweep.</para>
-    ///
-    /// <para>Companion bodies are skipped: they leave with their owner. A
-    /// removal the native gates refuse — a stale wrapper, the GPose primary,
-    /// an actor no longer in the table — is named in the outcome. That is the
-    /// exception path now, not the design.</para>
+    /// Removes session entities and reports refused actor removals or cleanup.
+    /// Companions leave with their owners. Borrowed map objects are released,
+    /// and the default camera remains. Selection is cleared even after a partial clear.
     /// </summary>
     public SceneClearOutcome ClearScene()
     {
@@ -119,10 +103,8 @@ internal sealed class SceneClearRuntime(
         int worldObjectCount = worldObjects.Count;
         worldObjects.ReleaseAll();
 
-        // Everything this session pointed at is gone, so the selection is
-        // gone with it. The per-actor deselect above covers a partial clear;
-        // this covers the props, overlays, lights, cameras and borrowed
-        // objects that have no lineage of their own.
+        // Clear selection for all entity kinds, including actors whose removal
+        // was refused. Per-actor deselection above takes effect during removal.
         selection.Clear();
 
         foreach (var note in refusedCleanup)

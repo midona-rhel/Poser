@@ -10,8 +10,8 @@ using Poser.Game.Services;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// A user-adopted world object and the state needed to restore it. The handle
-/// borrows the game object; it does not own or destroy the native object.
+/// A borrowed or spawned world object. The owner restores borrowed objects
+/// on release and destroys objects Poser created.
 /// </summary>
 public sealed class AdoptedWorldObject : IWorldObject
 {
@@ -76,10 +76,8 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// stated path is how the model field edits.</summary>
     public string Path { get; internal set; }
 
-    /// <summary>The native address the object was adopted at — or, for a
-    /// spawned VFX, the CURRENT incarnation's address: the loop refresh
-    /// recreates the effect and swaps this in place, so the handle and
-    /// every id bound to it survive the churn.</summary>
+    /// <summary>The current native address. Model replacement updates it while
+    /// retaining this handle and its scene identity.</summary>
     public nint Address { get; internal set; }
 
     /// <summary>Identity of the native incarnation currently behind the
@@ -113,9 +111,7 @@ public sealed class AdoptedWorldObject : IWorldObject
     internal VfxPlaybackState VfxPlayback { get; set; } =
         VfxPlaybackState.Playing;
 
-    /// <summary>Whether the effect replays on the refresh interval. Most
-    /// world effects are one-shots the game retires; looping them is the
-    /// point of spawning one, so it starts on.</summary>
+    /// <summary>Whether an ended spawned effect should replay. Enabled by default.</summary>
     public bool LoopVfx { get; set; } = true;
 
     /// <summary>The effect's playback speed. Written through immediately;
@@ -204,15 +200,11 @@ public sealed class AdoptedWorldObject : IWorldObject
     public bool? Dyeable =>
         _released ? false : _owner.CanDye(this);
 
-    /// <summary>When the loop refresh next recreates this effect. Internal
-    /// to the service's tick.</summary>
+    /// <summary>Next time the service may check this effect for replay.</summary>
     internal DateTime NextVfxRefresh = DateTime.MaxValue;
 
-    /// <summary>The model's DAY or NIGHT dressing — lamps glow at
-    /// night. OFF (day) is the default everywhere a state is undefined
-    /// (ruled 2026-09-01): a fresh spawn is dressed for day even though
-    /// the raw native object ships lit, and a file without the field
-    /// reads day.</summary>
+    /// <summary>Day/night appearance for models. New spawns default to day;
+    /// borrowed objects are initialized from their captured native value.</summary>
     public bool NightState
     {
         get => _nightState;
@@ -297,9 +289,8 @@ public sealed class AdoptedWorldObject : IWorldObject
     /// GPose ends, and after unload.</summary>
     public bool IsValid => !_released && _owner.IsLive(this);
 
-    /// <summary>Whether the object is drawn. Toggling it writes the draw
-    /// flags' low bit and nothing else, so a release still puts the WHOLE
-    /// captured byte back.</summary>
+    /// <summary>Reads or changes visibility through the native owner. BG objects
+    /// use draw flags; effects use alpha; furniture controls its child layout.</summary>
     public bool Visible
     {
         get => !_released && _owner.ReadVisible(this, InitialVisible);
@@ -311,9 +302,9 @@ public sealed class AdoptedWorldObject : IWorldObject
         }
     }
 
-    /// <summary>The live placement. Reading answers what the object actually
-    /// stands at; assigning writes it through and re-states the render caches.
-    /// </summary>
+    /// <summary>Reads native placement, the authored animation anchor, or the
+    /// frozen placement according to animation state. Assigning updates the native
+    /// placement and the stored anchor after the write succeeds.</summary>
     public Transform Transform
     {
         // An ANCHORED object's stated transform is the user's BASE, and a

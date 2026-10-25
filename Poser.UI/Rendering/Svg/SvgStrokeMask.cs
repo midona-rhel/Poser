@@ -51,7 +51,7 @@ internal static class SvgStrokeMask
     }
 
     /// <summary>The colour one mask pixel is drawn in. The painter and the
-    /// baked texture MUST agree byte for byte, so both come from here.
+    /// baked texture must agree byte for byte, so both use this method.
     /// </summary>
     private static uint Packed(
         Vector4 color, byte coverage, Vector4 background, float groupOpacity,
@@ -62,7 +62,7 @@ internal static class SvgStrokeMask
                 styleAlpha));
 
     /// <summary>
-    /// <c>ColorEx.ApplyAlpha</c> with the style alpha PASSED IN rather than
+    /// <c>ColorEx.ApplyAlpha</c> with style alpha passed in rather than
     /// read live. A backgrounded bake packs its pixels a frame or more after
     /// the draw that asked for it, and the icon cache keys on the style alpha
     /// at request time — reading the live value at pack time would file a
@@ -124,7 +124,7 @@ internal static class SvgStrokeMask
     }
 
     /// <summary>
-    /// PURE CPU: rasterizes the coverage mask and resolves the paint inputs
+    /// Rasterizes the coverage mask and resolves paint inputs using CPU-only
     /// with no ImGui, draw-list, or otherwise thread-affine call anywhere in
     /// its reach. Safe to run off the main thread; <see cref="Cache"/> is the
     /// only shared state and it is gated.
@@ -161,7 +161,7 @@ internal static class SvgStrokeMask
     }
 
     /// <summary>
-    /// MAIN THREAD ONLY. Turns a resolved mask into the straight-alpha RGBA8
+    /// Runs on the main thread. Turns a resolved mask into the straight-alpha RGBA8
     /// bitmap the host uploads. Every pixel goes through <see cref="Packed"/>,
     /// which calls <c>ImGui.ColorConvertFloat4ToU32</c> — a native cimgui
     /// entry point whose thread affinity is not something this code can
@@ -269,7 +269,7 @@ internal static class SvgStrokeMask
                     maxX = MathF.Max(maxX, point.X + extent);
                     maxY = MathF.Max(maxY, point.Y + extent);
                 }
-                // Tabler authors DOTS as near-zero segments ("h.01"): the
+                // Tabler represents dots as near-zero segments ("h.01"): the
                 // dedupe above collapses them to one point, and the caps
                 // ARE the dot — a single-point round-capped subpath must
                 // survive as a cap disc, or every i-dot and keyboard dot
@@ -291,7 +291,7 @@ internal static class SvgStrokeMask
         widthPixels = Math.Max(1, (int)MathF.Ceiling(maxX) - (int)origin.X);
         heightPixels = Math.Max(1, (int)MathF.Ceiling(maxY) - (int)origin.Y);
         ulong key = Hash(strokes, fills, origin, widthPixels, heightPixels);
-        // The BUILD deliberately stays OUTSIDE the gate: it is the expensive
+        // Build outside the lock because it is the expensive
         // part (width x height x 16 coverage samples), and holding the lock
         // across it would let a background resolve stall the frame — the very
         // hitch this machinery exists to remove. Two threads racing the same
@@ -356,7 +356,7 @@ internal static class SvgStrokeMask
     }
 
     // Coverage is AREA-estimated over a 4x4 subsample grid per pixel. A
-    // single center sample makes brightness a function of distance LUCK:
+    // single center sample makes brightness sensitive to subpixel position:
     // a round cap or join disc landing near a pixel center produces a
     // full-brightness dot (the seam where Tabler's two circle arcs meet
     // read ~35% heavier than the ring), while mid-chord pixels ramp low.

@@ -10,8 +10,8 @@ using Poser.Game.Entities;
 namespace Poser.Game.Cameras;
 
 /// <summary>
-/// One virtual camera over the game's single orbit camera — Brio's model.
-/// While LIVE every orbit property routes straight to the native camera;
+/// One virtual camera over the game's active orbit camera.
+/// While live every orbit property routes straight to the native camera;
 /// while parked the same property is retained state, written back in one
 /// save/load exchange when the live camera switches. The service owns the
 /// native pointer and the delimit bookkeeping, because there is exactly one
@@ -21,7 +21,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 {
     private readonly VirtualCameraService _service;
 
-    // Parked state. While live these fields are STALE by design — the native
+    // Parked state. While live these fields can be stale — the native
     // camera is the truth, and SaveState refreshes them at deactivation.
     private Vector2 _angle;
     private Vector2 _pan;
@@ -173,9 +173,8 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
             var native = Live;
             if (native != null)
                 return native->GetPosition();
-            // Parked and pinned: the pin is where this camera WILL be, which
-            // is the only honest answer while the native camera is somebody
-            // else's. The offset rides on top exactly as the detour applies it.
+            // For an inactive pinned camera, report the pin plus the offsets
+            // that the update hook will apply when this camera becomes live.
             if (FixedPosition is { } pinned)
                 return pinned + PositionOffset + TargetOffset;
             return _lastWorldPosition;

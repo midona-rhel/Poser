@@ -55,7 +55,7 @@ public sealed class GlamourerAccessTests
         var port = DispatchProxy.Create<IIntegrationRuntimeFake, ReadRaceProxy>();
         var session = new IntegrationGraph(port, null!, new SessionSource()).Selectors;
         // A refusal must return before touching journal/bindings or invoking
-        // any mutation; the proxy throws for every unexpected native call.
+        // any mutation; the proxy throws for every unexpected integration call.
         var wardrobe = new WardrobeSession(null!, session, port, null!);
         var customize = new CustomizeSession(null!, session, port, null!);
         var actor = ActorId.New();

@@ -19,7 +19,7 @@ public enum AutoSaveHealthStatus
     Cancelled,
 }
 
-/// <summary>One independently attributable recovery obligation.</summary>
+/// <summary>Details of one interrupted autosave that may need recovery.</summary>
 public sealed class AutoSaveHealthRecoveryEntry
 {
     [JsonConstructor]
@@ -88,7 +88,7 @@ public sealed class AutoSaveHealthRecoveryEntry
             .ToArray());
 }
 
-/// <summary>Immutable bounded observation of one autosave operation.</summary>
+/// <summary>Size-limited record of one autosave operation and its recovery details.</summary>
 public sealed class AutoSaveHealthRecord
 {
     internal const int MaxRecoveryEntries = 4;
@@ -265,7 +265,7 @@ public sealed class AutoSaveHealthRecoveryResult
     public bool Succeeded => !PromotionAttempted || Write!.Succeeded;
 }
 
-/// <summary>Bounded atomic root-level autosave health storage.</summary>
+/// <summary>Reads and atomically replaces the autosave health file.</summary>
 public sealed class AutoSaveHealthStore
 {
     public const string FileName = ".autosave-health.json";

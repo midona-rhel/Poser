@@ -26,22 +26,19 @@ public sealed partial class PoseLibraryPane
 {
     private int _legacyAutoSavesStart = int.MaxValue;
     /// <summary>
-    /// Starts an enumeration and puts the tab in the shape its rows will land
-    /// in. The shape is not the worker's answer and cannot wait for one; the
-    /// ROWS are, so a refresh leaves the standing ones alone and only a first
-    /// entry — or an arrival from another type, whose rows are the wrong
-    /// library's — clears down to the scanning line.
+    /// Starts enumeration. A refresh retains published rows until replacement
+    /// rows arrive; first entry or a switch from another library type clears
+    /// the incompatible rows.
     /// </summary>
     private void KickAutoSaves()
     {
         _autoDirty = false;
-        // Captured at the KICK, exactly where the synchronous build captured
-        // it: the mint below reads this rather than a flag that crossed a
-        // thread, and a setting flipped mid-flight re-dirties on its own.
+        // Capture this input before dispatch so the worker does not read UI
+        // state across threads. A later setting change schedules another pass.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
 
-        // The rail is the auto-save tab's structure too now, with ONE head:
-        // a snapshot is not a curated entry, so there is no favourites row.
+        // Auto-saves use one rail root and omit the curated-library favourites
+        // row.
         _vm.ShowRail = true;
         _vm.RailHeads = 0;
         _vm.ShowNoSources = false;
@@ -103,18 +100,17 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>
-    /// The rows, from what the worker read. The tab's structure is its RAIL:
-    /// one head, then one row per DAY AND PLACE — "2026-08-14 – Limsa
+    /// Publishes worker results as one root followed by one row per day and
+    /// place — "2026-08-14 – Limsa
     /// Lominsa" — because a day folder spans a whole session and a session
     /// visits more than one zone. The grid keeps tiles only; selecting a rail
     /// row is what filters them.
     ///
     /// <para>Rows appear in FIRST-ENCOUNTER order, which is the scan's own
     /// newest-first order, so the newest day leads and the newest place inside
-    /// a day leads. Tiles stay in pure scan order — an auto-save browser is a
-    /// recovery tool, so "All auto-saves" must read newest-first rather than
-    /// in place blocks. A row's tiles are therefore NOT contiguous, which is
-    /// fine: the folder filter is a range test over the ROW index, never over
+    /// a day leads. Tiles stay in scan order so the combined view is
+    /// newest-first. A row's tiles need not be contiguous because folder
+    /// filtering tests the row index rather than
     /// tile positions.</para>
     ///
     /// <para>List writes, a favourites lookup and a dictionary probe only —
@@ -255,7 +251,7 @@ public sealed partial class PoseLibraryPane
 
     /// <summary>
     /// The tab's entries in the order the grid must receive them: scan order
-    /// for every kind whose sections ARE its folders, and SECTION order for
+    /// for kinds whose sections are folders, and section order for
     /// scenes, whose sections are place-and-day pairs no directory records.
     /// Newest day leads, places sort inside a day, and the newest file leads
     /// inside a place. Ordering here rather than in the grid is what keeps the

@@ -7,7 +7,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
 
-/// <summary>A facial expression applied and pinned at its frame, and its release.</summary>
+/// <summary>Applies and pauses a facial expression, then restores the previous
+/// facial animation and speed when the expression is released.</summary>
 internal sealed class HeldExpressionSession
 {
     private readonly AnimationOverrideStore _store;
@@ -136,8 +137,8 @@ internal sealed class HeldExpressionSession
                 straight.Detail ?? again.Detail ?? "Expression release failed.");
         if (!restored.Success)
         {
-            // Session ownership has not been cleared. Put the held expression
-            // back when possible so Reset remains a truthful retry.
+            // Keep the saved restore values and try to put the held expression
+            // back. A later Reset can then retry the failed restoration.
             var replayed = _base.BlendCore(actor, held, AnimationSlot.Facial);
             var repinned = replayed.Success
                 ? _speedPort.SetSlotSpeed(actor, AnimationSlot.Facial, 0f)

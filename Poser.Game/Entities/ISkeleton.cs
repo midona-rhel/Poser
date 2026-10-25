@@ -12,9 +12,6 @@ namespace Poser.Game.Entities;
 /// </summary>
 public interface ISkeleton : IEntity
 {
-    /// <summary>
-    /// The actor this skeleton belongs to.
-    /// </summary>
     IActor Actor { get; }
 
     /// <summary>The pose slot this skeleton occupies.</summary>
@@ -42,10 +39,8 @@ public interface ISkeleton : IEntity
     bool IsValid { get; }
 
     /// <summary>
-    /// Advances every time the skeleton's native view is (re)built — the
-    /// skeleton-change key consumers compare instead of any per-instance id
-    /// (issue #78). Two reads returning the same value have seen the same
-    /// build of the same native skeleton.
+    /// Advances whenever the skeleton's native view is rebuilt. Equal values
+    /// identify the same build of the same native skeleton.
     /// </summary>
     long BuildRevision { get; }
 

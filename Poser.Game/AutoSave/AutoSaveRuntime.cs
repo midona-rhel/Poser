@@ -4,7 +4,7 @@ using Poser.Application.Lifecycle;
 
 namespace Poser.Game.AutoSave;
 
-/// <summary>Owns framework subscriptions, preserving their host startup order.</summary>
+/// <summary>Owns the framework subscription that drives scene autosaves.</summary>
 public sealed class AutoSaveRuntime : IDisposable
 {
     private readonly IFramework _framework;

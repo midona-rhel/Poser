@@ -19,9 +19,9 @@ namespace Poser.Game.Integration;
 
 /// <summary>
 /// Penumbra's raw, version-gated call gates (no API package — raw Dalamud
-/// subscribers with enums as ints, matching the current provider). Endpoint
+/// subscribers with enums as ints). Endpoint
 /// labels are pinned against Penumbra.Api 874a377 (breaking 5, temporary
-/// collections at V6). Every actor-targeted call resolves the exact stable
+/// collections at V6). Stable-ID calls resolve the exact stable
 /// generation to an object index at the call boundary through
 /// <see cref="IntegrationActorResolution"/>; nothing native is retained.
 /// </summary>
@@ -199,7 +199,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
             // would also delete an existing temporary assignment — which
             // is why the session classifies the effective assignment in
             // the same framework action immediately before this call and
-            // refuses foreign temporaries there; nothing can interleave.
+            // refuses foreign temporary assignments there before this call.
             int assignEc = _assignTemporaryCollection.InvokeFunc(
                 collection, index, /*forceAssignment*/ true);
             if (assignEc == PenumbraEcSuccess
@@ -304,7 +304,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
     public Guid? DebugOwnedDuplicateCollection(nint actorAddress) =>
         _ledger.TryGetOwned(actorAddress, out var collection) ? collection : null;
 
-    /// <summary>Destructive exact-id cleanup oracle for the Debug bridge.
+    /// <summary>Deletes a collection by ID for the Debug bridge and reports the provider code.
     /// The bridge owns the allowlist; this method deliberately preserves the
     /// provider's raw distinction between absent and found resources.</summary>
     public DebugTemporaryCollectionDeleteProbe DebugDeleteTemporaryCollection(Guid collection)

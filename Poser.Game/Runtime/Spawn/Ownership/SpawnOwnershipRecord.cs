@@ -50,7 +50,7 @@ internal sealed class SpawnOwnershipRecord
 
     /// <summary>Adopts an identity resolved for <see cref="CreatedIndex"/>.
     /// The slot check is an invariant assertion, not a policy: the adapter
-    /// resolves BY that slot, so a differing slot means the descriptor was
+    /// resolves by that slot, so a differing slot means the descriptor was
     /// built in the wrong index space and nothing about it can be trusted.
     /// Returns false instead of throwing so the per-frame recovery tick can
     /// treat it as "outcome still unknown" without faulting every frame.</summary>

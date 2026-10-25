@@ -7,7 +7,7 @@ using Poser.Documents.Library;
 namespace Poser.Application.Tests.Library;
 
 /// <summary>
-/// The checksum index answers by CONTENT, remembers what it read, and forgets
+/// The checksum index answers by file content, remembers what it read, and forgets
 /// the moment the file it read changes underneath it.
 /// </summary>
 public sealed class McdfHashIndexTests : IDisposable

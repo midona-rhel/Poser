@@ -12,8 +12,8 @@ internal sealed class SessionAppearanceFiles(Action<string> delete) : IDisposabl
     internal static string TempDirectory { get; } =
         Path.Combine(Path.GetTempPath(), "Poser", "scene-appearance");
 
-    /// <summary>Packages left by a crash are older than any live session;
-    /// another game client running Poser keeps its own young files.</summary>
+    /// <summary>Age threshold for startup cleanup. This is a heuristic; file age
+    /// alone does not prove that another running client has stopped using it.</summary>
     internal static readonly TimeSpan StaleAge = TimeSpan.FromDays(1);
 
     private readonly Dictionary<string, SessionGeneration> _files = new();

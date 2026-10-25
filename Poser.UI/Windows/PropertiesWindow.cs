@@ -14,7 +14,7 @@ namespace Poser.UI;
 // units. The collapsible inspector adds its own width, never shrinking content.
 internal readonly record struct PropertiesWindowPlacement(Vector2 Position, Vector2 Size);
 
-/// <summary>A session-only pinned Properties host, with no workspace layout controls.</summary>
+/// <summary>A pinned properties window that lasts for this session and has its own selection.</summary>
 public sealed class PropertiesWindow : Window, IDisposable
 {
     private readonly PropertiesContentLease _lease;

@@ -11,7 +11,7 @@ using LegacyTransform = Poser.Domain.Transforms.Transform;
 namespace Poser.Game.Transforms;
 
 /// <summary>
-/// Runtime-owned native boundary for clean actor and bone transform commands.
+/// Resolves stable transform targets and applies or captures their runtime state.
 /// </summary>
 public sealed class TransformRuntimePort : ITransformRuntimePort
 {
@@ -329,9 +329,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
         if (!resolved.Success)
             return FromBinding(resolved.Status, resolved.Detail);
         var bone = resolved.Value!;
-        // A bone the game left with no usable rotation (a chain link frozen
-        // mid-blend at zero) is captured sane rather than refusing the
-        // whole edit: its undo puts back the sane value.
+        // If the live value is outside the transform domain, capture a finite
+        // fallback so the gesture can still establish a restorable baseline.
         var converted = FromLegacy(bone.LastTransform)
             ?? FromLegacy(Sanitized(bone.LastTransform));
         if (converted == null)

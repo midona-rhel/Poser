@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace Poser.Domain.Transforms;
 
@@ -16,12 +16,15 @@ public enum TransformOperation
     Universal,
 }
 
-/// <summary>Where a multi-target gesture rotates and scales ABOUT.</summary>
+/// <summary>
+/// Chooses the point around which selected targets rotate and scale.
+/// </summary>
 public enum PivotMode
 {
-    /// <summary>Each target about its own origin — the targets keep their
-    /// places and only turn.</summary>
-    PerTarget,
+    /// <summary>
+    /// Rotate or scale each target around its own origin without moving that origin.
+    /// </summary>
+        PerTarget,
 
     /// <summary>Every target about the first selected one.</summary>
     Primary,
@@ -31,15 +34,15 @@ public enum PivotMode
     /// <see cref="PerTarget"/>.</summary>
     Centroid,
 
-    /// <summary>Every target about a point the caller froze at Begin — a
-    /// bone's parent, say.</summary>
-    Custom,
+    /// <summary>
+    /// Use a point captured when the drag begins, such as a parent bone position.
+    /// </summary>
+        Custom,
 }
 
-/// <summary>What a scale gesture on a multi-selection does. Members'
-/// offsets from the pivot always scale with the gesture — that is the
-/// group growing or shrinking; whether each member's OWN size follows is
-/// the choice.</summary>
+/// <summary>
+/// Chooses whether scaling a group changes both object sizes and spacing, or only spacing.
+/// </summary>
 public enum GroupScaleMode
 {
     /// <summary>Sizes and spacing: every member grows and moves out.</summary>
@@ -55,16 +58,18 @@ public enum TransformDeltaMode
     Mirrored,
 }
 
-/// <summary>Absolute transform with finite-domain validation helpers.</summary>
+/// <summary>
+/// Position, rotation, and scale with validation used by pose editing.
+/// The scale limits below are application policy, not proof of the game's supported range.
+/// </summary>
 public readonly record struct PoseTransform(
     Vector3 Position,
     Quaternion Rotation,
     Vector3 Scale)
 {
     public const float MaxAbsoluteScale = 1000f;
-    // Appearance profiles hide bones with scales around 1e-6. Capture/import
-    // must admit those finite baselines (including float round-off), while
-    // still excluding zero and scales too small for useful reciprocal math.
+    // Appearance profiles can hide bones with scales around 1e-6.
+    // This lower bound permits those values but still rejects zero and smaller scales.
     public const float MinAbsoluteScale = 0.00000001f;
 
     public static PoseTransform Identity { get; } =
@@ -142,7 +147,9 @@ public readonly record struct PoseTransform(
     }
 }
 
-/// <summary>Gesture-space delta. Scale is multiplicative.</summary>
+/// <summary>
+/// Change applied during a drag. Position is added, rotation is composed, and scale is multiplied.
+/// </summary>
 public readonly record struct TransformDelta(
     Vector3 Translation,
     Quaternion Rotation,
@@ -174,8 +181,9 @@ public readonly record struct TransformDelta(
 
 public static class TransformMath
 {
-    /// <summary>Brio's <c>Transform.IsApproximatelySame</c> tolerance
-    /// (Core/Transform.cs:96-101), per component.</summary>
+    /// <summary>
+    /// Per-component tolerance for detecting an unchanged additive pose delta.
+    /// </summary>
     public const float ApproximateSameTolerance = 0.000001f;
 
     /// <summary>Squared-length bound on position and scale for
@@ -186,10 +194,10 @@ public static class TransformMath
     /// <see cref="IsIdentityDeltaByLength"/>.</summary>
     public const float IdentityDeltaMinRotationDot = 0.999999f;
 
-    /// <summary>Brio's <c>Transform.IsApproximatelySame(Transform.Identity)</c>
-    /// on an additive stack delta: position and scale are additive (zero is
-    /// identity), rotation multiplicative. Each component is tested on its
-    /// own, and |W| must lie within <paramref name="tolerance"/> of 1.</summary>
+    /// <summary>
+    /// Checks whether additive position and scale changes are near zero and rotation W is near 1 or -1.
+    /// This assumes a normalized rotation; it does not validate that assumption.
+    /// </summary>
     public static bool IsApproximatelyIdentityDelta(
         Transform delta,
         float tolerance = ApproximateSameTolerance) =>
@@ -201,11 +209,10 @@ public static class TransformMath
         MathF.Abs(delta.Scale.Z) < tolerance &&
         MathF.Abs(MathF.Abs(delta.Rotation.W) - 1f) < tolerance;
 
-    /// <summary>Length-based identity test on an additive stack delta (the
-    /// expression blender's rule): squared position and scale lengths below
-    /// <see cref="IdentityDeltaLengthSquaredTolerance"/>, and |dot(rotation,
-    /// identity)| above <see cref="IdentityDeltaMinRotationDot"/>. Unlike
-    /// <see cref="IsApproximatelyIdentityDelta"/> it accepts |W| above 1.</summary>
+    /// <summary>
+    /// Checks the total position and scale changes against squared-length tolerances.
+    /// The rotation test assumes a unit quaternion and also accepts W magnitudes above 1.
+    /// </summary>
     public static bool IsIdentityDeltaByLength(Transform delta) =>
         delta.Position.LengthSquared() < IdentityDeltaLengthSquaredTolerance &&
         delta.Scale.LengthSquared() < IdentityDeltaLengthSquaredTolerance &&
@@ -226,11 +233,8 @@ public static class TransformMath
     }
 
     /// <summary>
-    /// Counterpart-frame-aware mirror for LOCAL-space symmetry deltas:
-    /// the delta is reflected relative to the
-    /// frozen primary baseline and rebased onto the partner's frozen
-    /// baseline, so a partner whose bind orientation differs by ~180° still
-    /// receives the anatomical mirror instead of a backward rotation.
+    /// Mirrors a rotation while accounting for the two bones' different starting orientations.
+    /// Translation flips across X; scale factors remain unchanged.
     /// </summary>
     public static TransformDelta MirrorRebased(
         TransformDelta delta,
@@ -257,11 +261,8 @@ public static class TransformMath
     }
 
     /// <summary>
-    /// Same-local-motion transfer for Link symmetry partners: a world-frame
-    /// rotation delta is carried into the source bone's local frame and
-    /// re-expressed in the partner's, so the partner repeats the motion
-    /// about its OWN axes instead of the primary's world axes. Translation
-    /// and scale copy directly.
+    /// Copies a rotation onto the partner bone's own axes using both starting orientations.
+    /// Translation and scale copy unchanged.
     /// </summary>
     public static TransformDelta LinkRebased(
         TransformDelta delta,
@@ -281,13 +282,8 @@ public static class TransformMath
     }
 
     /// <summary>
-    /// A secondary target keeps the angle it held to the primary instead of
-    /// receiving the primary's raw world-frame rotation. Conjugate the delta
-    /// by the target-to-primary rotation offset.
-    ///
-    /// <para>Translation and scale copy unchanged: the relative claim is about
-    /// ANGLE, and turning a group translate into a per-target one would
-    /// scatter the selection rather than move it.</para>
+    /// Adjusts the rotation delta for the target's starting orientation relative to the primary target.
+    /// Translation and scale copy unchanged.
     /// </summary>
     public static TransformDelta RelativeToPrimary(
         TransformDelta delta,
@@ -316,10 +312,11 @@ public static class TransformMath
         bool rotatePosition) =>
         Apply(baseline, delta, space, pivot, rotatePosition, scalePosition: false, scaleOwn: true);
 
-    /// <summary>With a shared pivot the offset from it rotates with the
-    /// delta and, when <paramref name="scalePosition"/>, scales with it —
-    /// a group grows about its pivot instead of fattening in place.
-    /// <paramref name="scaleOwn"/> is whether the target's own size follows.</summary>
+    /// <summary>
+    /// Applies a drag to the starting transform. rotatePosition moves the origin around the pivot;
+    /// scalePosition also scales that offset, but only when rotatePosition is enabled.
+    /// scaleOwn separately controls whether the object itself changes size.
+    /// </summary>
     public static PoseTransform Apply(
         PoseTransform baseline,
         TransformDelta delta,
@@ -407,8 +404,8 @@ public static class TransformMath
         if (!float.IsFinite(scaledLength) || scaledLength <= 0f)
             return false;
 
-        // Keep the existing minimum-length safety bound without allowing a
-        // large finite quaternion to overflow while it is normalized.
+        // Reject quaternion lengths below 0.001. Scaling before the length
+        // calculation avoids overflow for large finite components.
         if (largest < 0.001f / scaledLength)
             return false;
 

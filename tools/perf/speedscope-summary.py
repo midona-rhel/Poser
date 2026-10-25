@@ -7,15 +7,15 @@ Capture and convert:
 Then:
     python tools/perf/speedscope-summary.py t.speedscope.json [substring ...]
 
-With no substrings: the top Poser frames by inclusive time and
-the frame count (UIManager.DrawUI invocations) so totals read as ms per
-frame. With substrings: for each frame name containing one, its total,
-its per-frame cost and its direct children by time — that is where the
-cost actually is, because self time lands in UNMANAGED leaves.
+With no substrings, print the top Poser frames by inclusive time and the
+number of outermost UIManager.DrawUI openings in the trace, which is used
+as the frame count. This script assumes millisecond event timestamps and a
+45-second recording when printing FPS. With substrings, print matching frames and their immediate child
+frames. Sampled native work is commonly attributed to UNMANAGED child frames,
+so inspect the children when locating a cost.
 
-Traces name assemblies: a hook chained behind Poser's Original() call
-(LivePose's finalize hook, for one) shows under Poser's detour frame.
-Read the children before blaming Poser.
+Inclusive time includes child calls. Work in another plugin's hook can therefore
+appear beneath Poser's detour frame; that time is not necessarily spent in Poser.
 """
 import collections
 import json

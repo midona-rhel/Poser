@@ -22,47 +22,29 @@ namespace Poser.UI;
 public sealed partial class PoseLibraryPane
 {
     /// <summary>
-    /// The inspector rail's live preview. The service owns the hidden actor,
-    /// the camera and the render, and the inspector section draws it; this only
-    /// says WHEN it is wanted, WHICH pose it shows and WHOSE appearance it
-    /// borrows. Every gate is here rather than in either drawing surface:
-    /// neither has any idea what an MCDF entry is.
+    /// Chooses the pose and source actor for the inspector's preview.
+    /// The preview service manages the hidden actor, camera, and rendered image.
     /// </summary>
     private void SyncPreview()
     {
-        // A WHITELIST, stated as one: every tab whose entries are pose files —
-        // auto-saves included, whose tiles key on the .pose path exactly as
-        // the library's do. Written as an exclusion this silently admitted the
-        // next tab added; scenes did exactly that, feeding .xivs scene paths
-        // into the pose preview binder. Character files never travel the
-        // import pipeline, and a scene is not a pose file at all: it has no
-        // single skeleton to stand on a preview body.
+        // Only pose files can be applied to the preview actor. Check supported
+        // tabs explicitly so a new library type does not accidentally enter this path.
         _vm.PreviewAvailable = (_type is LibraryType.Poses or LibraryType.AutoSaves) && !IsSceneTile(_vm.Selected);
         SyncCharacterFile();
-        // No eye anymore (user 2026-08-11): the preview is always live on a
-        // tab that can preview, so availability alone gates it.
+        // Preview follows the selected tile automatically on supported tabs.
         bool wanted = _vm.PreviewAvailable
             && _vm.Selected >= 0
             && _vm.Selected < _vm.Tiles.Count;
         var source = wanted ? PreviewSource() : null;
 
-        // The claim is stated whether or not this pane gets to act on it: the
-        // import dialog drives the SAME service while it is open, and what it
-        // does with the seat when it closes depends on whether anyone else
-        // still wants it.
+        // Tell the import dialog whether the library still needs the shared
+        // preview, so closing the dialog can return control to the library.
         _files.SetPreviewClaim(source is not null);
         if (_files.IsImportPreviewActive)
         {
-            // Stood down, NOT closed — the dialog is driving. The pose it put
-            // there is not this pane's to remember, so the binder forgets it
-            // and re-states the frame the seat comes back. The rail's preview
-            // block STAYS UP as a read-only mirror of what the dialog shows
-            // (user 2026-08-10: it vanished for the whole dialog session) —
-            // same service, same texture, camera commands included — gated on
-            // the user's own preview eye so a switched-off preview does not
-            // reappear just because the dialog previews for itself. A tile
-            // selection is deliberately NOT required: the dialog's highlight
-            // is the subject, not this pane's.
+            // Let the dialog control the shared preview without closing it.
+            // Forget the library binding so it is reapplied after the dialog closes.
+            // The inspector can display the dialog's preview without a selected tile.
             _previewBinder.StandDown();
             _files.SetPreviewVisible(_vm.PreviewAvailable);
             return;
@@ -70,10 +52,8 @@ public sealed partial class PoseLibraryPane
 
         if (source is null)
         {
-            // The seat STAYS on a preview-capable tab: the empty well and its
-            // reason are the affordance that a preview exists at all (user
-            // 2026-08-11: nothing indicated one until a tile was clicked).
-            // Only the MCDF tab, which can never preview, drops the section.
+            // Keep the empty preview area visible on supported tabs and explain
+            // whether the user needs to select a pose or provide a target actor.
             _previewBinder.Close();
             _files.SetPreviewVisible(
                 _vm.PreviewAvailable,
@@ -103,8 +83,7 @@ public sealed partial class PoseLibraryPane
             _previewBinder.Pose(
                 path, PosePreviewController.Trim(BuildImportOptions(path)));
 
-        // The seat is the inspector rail's, so the section is told to show it;
-        // the render and its status are read there, straight off the service.
+        // The inspector reads the rendered image and status from the preview service.
         _files.SetPreviewVisible(true);
     }
 
@@ -171,10 +150,8 @@ public sealed partial class PoseLibraryPane
             ? actor
             : null;
 
-    /// <summary>Tears the preview down and takes its seat back off the
-    /// inspector rail. Idempotent — the frame after a close must not close
-    /// again, and the seat is withdrawn either way so the section never draws
-    /// a preview this pane has stopped feeding.</summary>
+    /// <summary>Closes the library preview and hides its inspector section.
+    /// Safe to call again when the preview is already closed.</summary>
     private void ClosePreview()
     {
         _previewBinder.Close();

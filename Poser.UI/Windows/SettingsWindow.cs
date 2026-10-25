@@ -81,15 +81,12 @@ public class SettingsWindow : Window
         RespectCloseHotkey = false;
     }
 
-    /// <summary>Delegates the vm needs at RUNTIME — re-wired after every
-    /// vm rebuild, because LoadFromConfig REPLACES the whole vm and the
-    /// constructor's wiring silently died with it: the capture read a
-    /// stubbed key source through four fixes (2026-08-30).</summary>
+    /// <summary>Connects shortcut capture to the game's key state and logger.
+    /// These delegates belong to the current view model; replacing it drops them.</summary>
     private void WireRuntime()
     {
-        // Guarded: the indexer THROWS for virtual keys the game does not
-        // track (several OEM punctuation codes), and one bad key would
-        // kill the whole capture loop with an exception per frame.
+        // The indexer throws for untracked keys, including some punctuation
+        // codes. Check validity before reading each key during capture.
         _vm.KeyDown = key =>
             _keyState.IsVirtualKeyValid(key) && _keyState[key];
         _vm.DebugLog = message => _log.Debug(message);

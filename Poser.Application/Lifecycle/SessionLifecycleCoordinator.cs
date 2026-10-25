@@ -3,10 +3,8 @@ using Poser.Domain.Operations;
 namespace Poser.Application.Lifecycle;
 
 /// <summary>
-/// Host-provided bridge for the one lifecycle operation currently migrated:
-/// synchronously reserve/capture the final immutable snapshot and join its
-/// persistence worker before legacy GPose teardown runs. The result preserves
-/// the capture compatibility fields and separately reports terminal persistence.
+/// Finishes the final snapshot work before the caller begins GPose teardown.
+/// The result distinguishes capture from completed persistence.
 /// </summary>
 public interface IFinalCapturePort
 {
@@ -24,9 +22,8 @@ public interface ISessionGenerationSource
 }
 
 /// <summary>
-/// Point-in-time result for the pre-publish phase. Legacy teardown remains
-/// owned by the existing GPose event subscribers; <see
-/// cref="LegacyTeardownPending"/> is a phase snapshot, not teardown completion.
+/// Result of final capture before the exit event is sent.
+/// LegacyTeardownPending does not mean teardown has finished.
 /// </summary>
 public readonly record struct SessionExitResult(
     FinalCaptureResult Capture,
@@ -40,12 +37,9 @@ public readonly record struct SessionExitResult(
 }
 
 /// <summary>
-/// Exactly-once, reentrancy-safe owner of one final-capture attempt per
-/// accepted GPose exit edge. It deliberately does not own cancellation,
-/// restoration, native teardown, persistence joining, or detached-fact
-/// publication yet. Legacy teardown remains behind the existing GPose event
-/// and is reported as pending here. The host invokes this synchronously from
-/// its framework update callback; no cross-thread scheduling is performed.
+/// Starts session IDs and requests final capture at most once per exit.
+/// The host calls it on the framework thread before publishing the teardown event.
+/// Cancellation and native cleanup remain the responsibility of that event's subscribers.
 /// </summary>
 public sealed class SessionLifecycleCoordinator : ISessionGenerationSource
 {
@@ -128,8 +122,8 @@ public sealed class SessionLifecycleCoordinator : ISessionGenerationSource
                 return SessionExitResult.Reentrant;
 
             _state = ExitState.Running;
-            // Publish no token to capture, worker, or legacy observers after
-            // this point: the exit edge owns the active token's lifetime.
+            // New operations must see the session as inactive before final capture
+            // and teardown begin.
             _activeSessionGeneration = null;
         }
 

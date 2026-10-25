@@ -6,20 +6,18 @@ using Poser.Documents.AutoSave;
 namespace Poser.Application.AutoSave;
 
 /// <summary>
-/// Serial owner of the single autosave health record: admission generations,
-/// stale-evidence suppression, retained recovery obligations and the terminal
-/// exit publication.
+/// Serializes updates to the autosave health record. Generation numbers stop
+/// an older worker from replacing the status of a newer operation. Failed
+/// recovery information is retained until a terminal update records it.
 /// </summary>
 internal sealed class AutoSaveHealthLedger
 {
     private readonly AutoSaveHealthStore _store;
     private readonly Action<string> _error;
 
-    // Health transitions have their own serial owner.  Admission obtains a
-    // monotonically increasing generation before the job becomes visible to
-    // the queue; older worker terminal evidence can therefore never replace a
-    // newer admitted operation.  No queue lock is held while this gate does
-    // filesystem I/O, so the worker can always reach its next queue item.
+    // Assign a generation before queueing each job. An older worker may finish
+    // later, but cannot replace the current record. Filesystem I/O under this
+    // lock does not hold the queue lock.
     private readonly object _gate = new();
     private AutoSaveHealthRecord? _lastRecord;
     private AutoSaveHealthRecord? _pendingRecovery;
@@ -61,7 +59,8 @@ internal sealed class AutoSaveHealthLedger
         }
     }
 
-    /// <summary>Set once at construction when stale recovery could not be persisted; closes admission.</summary>
+    /// <summary>Set when startup cannot save an interrupted operation as
+    /// recovery-required. New autosaves are then refused.</summary>
     public string? StartupFailure { get; }
 
     public AutoSaveHealthRecord? LastRecord
@@ -118,8 +117,8 @@ internal sealed class AutoSaveHealthLedger
     }
 
     /// <summary>
-    /// Folds the exit result into the current health record together with any
-    /// retained recovery obligations, and returns the possibly downgraded result.
+    /// Saves the exit result with any unresolved recovery entries. Returns a
+    /// failure result if that health update cannot be written.
     /// </summary>
     public AutoSaveTerminalResult PublishExit(AutoSaveTerminalResult result, bool clean)
     {

@@ -51,9 +51,8 @@ public sealed class SceneDuplication(
     }
 
     // ── duplicating groups ───────────────────────────────────────────────
-    // The copies spawn at once; their bindings land on the scene's own
-    // refresh, so the group is assembled from the pump once every copy
-    // has an id (or patience runs out and what did bind is grouped).
+    // Request all copies first. Tick assembles the group once all handles
+    // resolve, or after 120 ticks using only the copies that are available.
 
     private sealed class GroupCopy
     {

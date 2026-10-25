@@ -15,20 +15,16 @@ using Poser.Domain.Identity;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// THE ANIMATION OWNERSHIP PROBE — a debug harness, not a feature. The
-/// hunt: which write strategy makes an actor adopt a captured animation
-/// mid-flight (the clone-identical test), and which seam tells game-authored
-/// timeline writes apart from rebuild noise (the yield rule). Everything
-/// here logs loudly and ships behind the Animation pane's Debug section;
-/// it is torn out once the ownership design lands.
+/// Debug-only animation logging and exploratory clock probes. Reads selected
+/// native fields and can hook timeline, cancellation, and weapon-load calls.
+/// Pointer scans identify candidates for investigation, not verified field types.
 /// </summary>
 public sealed unsafe partial class AnimationNativeState
 {
     internal delegate void PropControlVisitor(
         FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* control);
 
-    /// <summary>Visits every animation control on every attached weapon/prop
-    /// draw object.</summary>
+    /// <summary>Visits animated-skeleton index 0 on the three DrawData weapon slots.</summary>
     internal static void ForEachPropControl(Character* character, PropControlVisitor visit)
     {
         for (int slotIndex = 0; slotIndex < 3; slotIndex++)
@@ -59,16 +55,12 @@ public sealed unsafe partial class AnimationNativeState
     private static readonly int TimelineSequencerOffset = (int)System.Runtime.InteropServices.Marshal.OffsetOf<TimelineContainer>(
         nameof(TimelineContainer.TimelineSequencer));
     private static readonly int TimelineContainerSize = sizeof(TimelineContainer);
-    /// <summary>Everything the sequencer and its havok controls say about
-    /// one actor at one instant, raw enough to write back verbatim.</summary>
+    /// <summary>Selected actor, timeline, control, and weapon readings for diagnostics.</summary>
     public sealed class RawTimelineCapture
     {
         public byte Mode;
         public byte ModeParam;
-        // Run two: a looping game emote (/hum) lives in the
-        // EmoteController; the sequencer slots only flicker derived ids.
-        // Cloning the slots clones the flicker — the emote id is the
-        // identity that must carry.
+        // Capture the emote controller id as well as the individual timeline rows.
         public uint EmoteId;
         public ushort BaseOverride;
         public ushort Forced;
@@ -352,9 +344,8 @@ public sealed unsafe partial class AnimationNativeState
                 prop->hkaAnimationControl.LocalTime,
                 prop->PlaybackSpeed));
         });
-        // The FIELD lies about paused speed: Poser's pause is the speed
-        // hook rewriting the value after the game's calculation, so a
-        // read here catches the game's x1. The enforcement is the truth.
+        // Prefer Poser's requested speed overrides; native fields can temporarily
+        // contain the game's calculated speed before the hook reapplies them.
         if (ProbeEnforcedSpeeds?.Invoke(actor) is { } enforced)
         {
             if (enforced.Overall is { } overall)
@@ -365,8 +356,7 @@ public sealed unsafe partial class AnimationNativeState
         return capture;
     }
 
-    /// <summary>One loud structured dump of everything the probe knows how
-    /// to read, for eyeballing and twin-diffing in the log.</summary>
+    /// <summary>Logs selected animation, gaze, and weapon readings for manual comparison.</summary>
     public void ProbeDump(ActorId actor)
     {
         var capture = ProbeCapture(actor);
@@ -393,9 +383,8 @@ public sealed unsafe partial class AnimationNativeState
                 if (offset % 4 == 3)
                     hex.Append(' ');
             }
-            // The prop hunt: emote props (held bread) ride the weapon
-            // slots; each attached draw object carries its OWN skeleton
-            // and animation clocks, which the actor's scrub never touches.
+            // Weapon draw objects have separate skeletons and animation clocks.
+            // Include them when comparing body and prop timing.
             var weapons = new StringBuilder(128);
             for (int slotIndex = 0; slotIndex < 3; slotIndex++)
             {
@@ -503,9 +492,8 @@ public sealed unsafe partial class AnimationNativeState
     private const int ClockPtrMax = 64;
     private readonly float[] _clockPtrBuffer = new float[ClockPtrBytes / 4];
 
-    /// <summary>Reads a chased pointer's region through ReadProcessMemory
-    /// so a freed or unmapped object fails the read instead of faulting
-    /// the game — the 20:11 crash was a raw dereference here.</summary>
+    /// <summary>Copies a candidate region through ReadProcessMemory. Readability does not
+    /// establish object identity or guarantee a later raw dereference is valid.</summary>
     private bool TryReadClockRegion(nint address)
     {
         fixed (float* buffer = _clockPtrBuffer)
@@ -516,14 +504,9 @@ public sealed unsafe partial class AnimationNativeState
         }
     }
 
-    /// <summary>The clock hunt: watches every float in the actor's
-    /// TimelineContainer for ~3 seconds and reports the offsets that
-    /// advance like a clock each tick. The scheduler's elapsed time — the
-    /// second clock a real scrub must move — lives at one of them.</summary>
-    /// <summary>Logs every scheduler clip per slot, recursing into child
-    /// timelines: type, track/clip start and length in frames (Ktisis
-    /// BaseClip +0x50/+0x54/+0x64/+0x68). The pap's embedded TMLB matches
-    /// this tree one for one (C031 attach = type 23, C094 fade = 78).</summary>
+    /// <summary>Logs selected clip fields for each slot and up to four child levels.
+    /// Traversal limits keep the diagnostic output bounded; type ids and offsets
+    /// here are exploratory constants rather than the runtime seek layout.</summary>
     public void ProbeClips(ActorId actor)
     {
         var character = Resolve(actor, out var detail);
@@ -599,19 +582,16 @@ public sealed unsafe partial class AnimationNativeState
         _log.Information($"[AnimProbe] clock hunt armed on {actor}.");
     }
 
-    /// <summary>A per-tick advance that reads as a clock in any unit:
-    /// seconds (~dt), frames (~1), or milliseconds (~16).</summary>
+    /// <summary>Heuristic ranges for clock-like changes in seconds, frames, or milliseconds.</summary>
     private static bool ClockLikeDelta(float delta)
     {
-        // A COUNTDOWN decrements clock-like — the completion timer that
-        // survived three hunts scored only positive deltas (hunt four).
+        // Use magnitude so decreasing countdowns can also match.
         float size = Math.Abs(delta);
         return size is (> 0.004f and < 0.12f) or (> 0.4f and < 2.5f)
             or (> 6f and < 40f);
     }
 
-    /// <summary>An INTEGER counter advancing 1-3 per tick — invisible to
-    /// the float scan (hunt three).</summary>
+    /// <summary>Heuristic for an integer counter increasing by one to three per update.</summary>
     private static bool ClockLikeIntDelta(int delta) => delta is >= 1 and <= 3;
 
     private void ProbeClockHuntTick()
@@ -644,10 +624,7 @@ public sealed unsafe partial class AnimationNativeState
                     _clockLabels.Add($"qword{q * 8:x}");
                 }
             }
-            // The per-slot SchedulerTimeline objects come FIRST, then
-            // their track controllers, tracks, and CLIPS (Ktisis
-            // Structs/Animation layout): the completion cursor lives in
-            // the clip layer if nowhere shallower.
+            // Add slot timelines, track controllers, tracks, and clips as scan candidates.
             foreach (int huntSlot in new[] { 1, 0, 2, 3 })
             {
                 var stamp = SchedulerTimestamp(
@@ -696,11 +673,8 @@ public sealed unsafe partial class AnimationNativeState
                         _clockLabels.Add(
                             $"clip{huntSlot}.{trackIndex}.{clipIndex}"
                             + $"t{clipType}");
-                        // A child clip (type 7) references its child
-                        // controller somewhere in 0x98..0x160: chase every
-                        // pointer-looking qword there, guarded. The hidden
-                        // child clock that gates completion lives behind
-                        // one of them (forward-scrub stall, 22:18).
+                        // For a type-7 child clip, scan pointer-looking values in
+                        // 0x98..0x160 as possible child-controller references.
                         if (clipType == 7 && TryReadClockRegion(clip))
                         {
                             for (int off = 0x98; off + 8 <= 0x160

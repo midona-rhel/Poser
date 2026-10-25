@@ -37,10 +37,8 @@ public sealed class ActorStateSnapshots(
     ActorModelIdSession models, GazeSession gaze, IExpressionRuntimePort expressions,
     IIntegrationResolutionPort runtime, IPenumbraPort penumbra) : IActorStateSnapshots
 {
-    // The last pose/IK each actor was captured with, per GPose session. While a
-    // redraw is still settling (redraws mashed every few frames) the skeleton is
-    // not posable, so the capture comes back empty; nothing can have posed the
-    // actor since its last successful capture, so that one is still its state.
+    // Cache the last successful authored pose/IK capture for this actor and session.
+    // Capture reuses it when the runtime returns no pose, such as during a redraw.
     private readonly Dictionary<ActorId, (SessionGeneration Session, ActorSnapshot Pose)> _lastPose = new();
 
     public IntegrationValue<ActorPropertiesSnapshot> CaptureProperties(ActorId actor, bool captureCollection = true,
@@ -128,7 +126,7 @@ public sealed class ActorStateSnapshots(
     }
 
     /// <summary>Redraws through Penumbra and waits for the actor to be ready;
-    /// succeeds at once when Penumbra is unavailable (nothing to redraw).</summary>
+    /// skips the redraw when Penumbra is unavailable.</summary>
     private async Task<IntegrationResult> RedrawIfPenumbra(ActorId actor, CancellationToken cancellation) =>
         await runtime.OnFrameworkThread(() => penumbra.Penumbra.Available)
             ? await penumbra.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation)

@@ -3,45 +3,29 @@ using System;
 namespace Poser.Domain.Cameras;
 
 /// <summary>
-/// The free camera's fly speed as the mouse wheel drives it. Pure
-/// arithmetic on purpose: the input detour owns the wheel and the overlay
-/// owns the ink, and neither of them owns the curve.
-///
-/// Neither reference project steers the fly speed with the wheel. Brio steps
-/// the SAME MovementSpeed off held modifiers instead (Ctrl ×3, Alt ×0.3 —
-/// VirtualCameraManager.Update) and edits it on a 0.005..0.3 slider
-/// (CameraEditor); Ktisis multiplies its WorkcamMoveSpeed by Shift/Ctrl
-/// factors (WorkCamera.UpdateKeyboard). Those Brio slider ends are the clamp
-/// here — a wheel must not take the speed anywhere the Speed row cannot show
-/// it back — and the step is geometric so every notch is worth the same
-/// PROPORTION of the speed it started from, at 0.03 as at 0.3.
+/// Calculates free-camera speed changes and their display text. Each wheel
+/// notch changes speed by the same proportion, within the editable range.
 /// </summary>
 public static class FreeCameraSpeed
 {
-    /// <summary>Brio's DefaultFreeCameraMovementSpeed. Also the unit the
-    /// readout counts in: a camera at this speed reads 1×.</summary>
+    /// <summary>The default speed, displayed as 1×.</summary>
     public const float Default = 0.03f;
 
-    /// <summary>Brio's movement-speed slider floor.</summary>
+    /// <summary>Minimum editable movement speed.</summary>
     public const float Minimum = 0.005f;
 
-    /// <summary>Brio's movement-speed slider ceiling.</summary>
+    /// <summary>Maximum editable movement speed.</summary>
     public const float Maximum = 0.3f;
 
-    /// <summary>What one notch is worth.</summary>
+    /// <summary>Speed multiplier for one upward wheel notch.</summary>
     public const float NotchFactor = 1.15f;
 
     /// <summary>Windows' WHEEL_DELTA: one detent of a standard wheel.</summary>
     public const int WheelDelta = 120;
 
     /// <summary>
-    /// How many detents a frame's raw scroll value carries. The game's input
-    /// frame reports the wheel in the units its device handed over, which is
-    /// WHEEL_DELTA per detent on every ordinary mouse — but a frame that
-    /// reports a plain ±1 must still count as a notch rather than round away,
-    /// so the whole-detent division falls back to the sign. Dividing (rather
-    /// than signing outright) keeps a frame that batched several detents
-    /// worth all of them.
+    /// Converts raw wheel input to whole notches. A nonzero value smaller
+    /// than 120 counts as one notch; larger values can contain several.
     /// </summary>
     public static int Notches(int scrollValue)
     {
@@ -52,11 +36,8 @@ public static class FreeCameraSpeed
     }
 
     /// <summary>
-    /// The speed after <paramref name="notches"/> detents, clamped to the
-    /// editable range. The clamp applies at zero notches too: a speed that
-    /// arrived out of range (an old scene document, a hand-edited value) is
-    /// pulled back the first time the wheel touches it rather than being
-    /// stepped further out.
+    /// Changes speed by the requested number of notches and clamps it to the
+    /// editable range, even for zero notches. Nonfinite input uses Default.
     /// </summary>
     public static float Step(float speed, int notches)
     {
@@ -68,24 +49,18 @@ public static class FreeCameraSpeed
         return Math.Clamp(stepped, Minimum, Maximum);
     }
 
-    /// <summary>The speed as a multiple of the default — what the readout
-    /// says.</summary>
+    /// <summary>Returns speed as a multiple of Default.</summary>
     public static float Multiplier(float speed) => speed / Default;
 
-    /// <summary>The readout itself: the multiplier, two decimals at most,
-    /// with no trailing zeroes to read past.</summary>
+    /// <summary>Formats the multiplier with up to two decimal places.</summary>
     public static string Format(float speed) =>
         Multiplier(speed).ToString(
             "0.##×", System.Globalization.CultureInfo.InvariantCulture);
 }
 
 /// <summary>
-/// What the last wheel notch left on screen: the speed it produced and the
-/// moment it happened. The readout is a NOTICE rather than a live gauge —
-/// it answers a change the user just made, holds long enough to be read, and
-/// leaves. Times are milliseconds on any monotonic clock; the input detour
-/// stamps <see cref="Environment.TickCount64"/> and the overlay asks with
-/// the same clock.
+/// A temporary speed-change notification. ChangedAtMs and Opacity's nowMs
+/// must use the same monotonic clock, measured in milliseconds.
 /// </summary>
 public readonly record struct FreeCameraSpeedNotice(float Speed, long ChangedAtMs)
 {
@@ -95,14 +70,12 @@ public readonly record struct FreeCameraSpeedNotice(float Speed, long ChangedAtM
     /// <summary>Then this long to fade out — one second in total.</summary>
     public const long FadeMs = 300;
 
-    /// <summary>What the notice reads.</summary>
+    /// <summary>The formatted speed multiplier.</summary>
     public string Text => FreeCameraSpeed.Format(Speed);
 
     /// <summary>
-    /// The notice's opacity now, 0 once it has gone. A time BEFORE the stamp
-    /// reads as fresh rather than expired: the alternative is a readout that
-    /// blinks out on any clock the caller reads out of order, and a notice
-    /// that lingers one frame too long is the harmless failure.
+    /// Returns full opacity during the hold period, then fades to zero.
+    /// A timestamp earlier than ChangedAtMs also returns full opacity.
     /// </summary>
     public float Opacity(long nowMs)
     {
@@ -113,6 +86,6 @@ public readonly record struct FreeCameraSpeedNotice(float Speed, long ChangedAtM
         return faded >= FadeMs ? 0f : 1f - (float)faded / FadeMs;
     }
 
-    /// <summary>Whether the notice still puts anything on screen.</summary>
+    /// <summary>Whether the notification has any opacity left.</summary>
     public bool IsVisible(long nowMs) => Opacity(nowMs) > 0f;
 }

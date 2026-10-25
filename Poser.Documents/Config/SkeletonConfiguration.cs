@@ -56,13 +56,8 @@ public class SkeletonConfiguration
     public bool ShowSkeletonLines { get; set; } = true;
 
     /// <summary>
-    /// The shape the whole armature is drawn in. It lives HERE, and
-    /// <c>EditorState</c> reads and writes it rather than holding its own copy,
-    /// because it is a standing preference about how the overlay LOOKS — not
-    /// about what is being edited right now — and the user put it in Settings
-    /// rather than on the toolbar (user 2026-08-14). The default is the value
-    /// the editor carried while it was session state, so an existing config
-    /// keeps drawing exactly what it drew.
+    /// The shape used to draw the armature. This is persisted as a display
+    /// preference rather than held in the current editor session.
     /// </summary>
     public SkeletonViewMode SkeletonViewMode { get; set; } =
         SkeletonViewMode.Default;
@@ -140,9 +135,8 @@ public class SkeletonConfiguration
 
 /// <summary>
 /// How the pick list behaves when several bone dots overlap under the cursor.
-/// The two references disagree about ONE thing — whether the wheel moves a
-/// highlight or moves the selection itself — and both hands are in the user
-/// base, so the surface is shared and only that rule differs.
+/// The modes differ in whether the mouse wheel changes only the highlighted
+/// candidate or immediately changes the selection.
 /// </summary>
 public enum BonePickBehavior
 {

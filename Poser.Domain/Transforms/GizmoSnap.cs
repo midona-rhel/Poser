@@ -4,18 +4,18 @@ using System.Numerics;
 namespace Poser.Domain.Transforms;
 
 /// <summary>
-/// Snap helpers for the total accumulated by a gesture. Quantising the total
-/// avoids rounding drift between frames.
+/// Rounds the total change since a drag began, rather than rounding each frame's
+/// change separately. This avoids accumulating rounding error during the drag.
 /// </summary>
 public static class GizmoSnap
 {
     /// <summary>Divisor used by the precise snap modifier.</summary>
     public const float PrecisionDivisor = 10f;
 
-    /// <summary>The live increment for a step and its precision state. A
-    /// non-positive configured step means "no grid", and quantising against it
-    /// would be a division by zero, so it reports zero and every Snap overload
-    /// below passes the value through.</summary>
+    /// <summary>
+    /// Returns the configured step, divided by ten in precise mode.
+    /// Nonpositive or nonfinite steps return zero, which disables snapping.
+    /// </summary>
     public static float Increment(float step, bool precise)
     {
         if (!float.IsFinite(step) || step <= 0f)
@@ -23,9 +23,10 @@ public static class GizmoSnap
         return precise ? step / PrecisionDivisor : step;
     }
 
-    /// <summary>Rounds to the nearest multiple of <paramref name="increment"/>,
-    /// halves away from zero. A zero or non-finite increment is no grid at
-    /// all.</summary>
+    /// <summary>
+    /// Rounds to the nearest step, with halfway values rounded away from zero.
+    /// Invalid steps or nonfinite input are returned unchanged.
+    /// </summary>
     public static float Snap(float value, float increment)
     {
         if (increment <= 0f || !float.IsFinite(increment) || !float.IsFinite(value))
@@ -34,17 +35,18 @@ public static class GizmoSnap
             * increment;
     }
 
-    /// <summary>Per-component quantisation — a translate total lands on the
-    /// grid one axis at a time, exactly as ImGuizmo's per-axis snap
-    /// vector does.</summary>
+    /// <summary>
+    /// Snaps each vector component independently.
+    /// </summary>
     public static Vector3 Snap(Vector3 value, float increment) => new(
         Snap(value.X, increment),
         Snap(value.Y, increment),
         Snap(value.Z, increment));
 
-    /// <summary>An angle in RADIANS quantised to a DEGREE increment — the two
-    /// units the rotate path actually holds: the gesture accumulates radians,
-    /// the configured step reads 5°.</summary>
+    /// <summary>
+    /// Snaps an angle expressed in radians to a step expressed in degrees,
+    /// then returns the result in radians.
+    /// </summary>
     public static float SnapRadiansToDegrees(float radians, float degreeStep)
     {
         if (degreeStep <= 0f || !float.IsFinite(degreeStep))

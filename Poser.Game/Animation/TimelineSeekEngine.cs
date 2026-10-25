@@ -5,13 +5,10 @@ using Poser.Game.Natives;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Same-frame seek of one live slot timeline through the game's own scheduler
-/// (#533). Forward is one Advance in place. Backward is a manual loop wrap: stop
-/// the clips, rewind, re-activate frame 0 and Advance 0 → T, so every clip
-/// enters and leaves exactly as in natural playback (props spawn, VFX pre-warm by
-/// their local time, the weapon-request counts stay balanced). Proven live with
-/// the probe ops (reverse-engineering notes/timeline-restore.md).
-/// Framework thread only.
+/// Moves a live animation timeline using the game's scheduler on the framework
+/// thread. Forward seeks advance it; backward seeks stop and restart clips before
+/// advancing to the target. Native clip ordering matters for props and effects.
+/// TimelineSeekWork finishes clips and props that need later updates.
 /// </summary>
 internal sealed unsafe partial class TimelineSeekEngine
 {
@@ -273,8 +270,8 @@ internal sealed unsafe partial class TimelineSeekEngine
         return instance != 0 && *(nint*)(instance + NativeFields.ClipAnimation_Holder) != 0 && LengthKnown(c009);
     }
 
-    /// <summary>Syncs every guarded C009 inside a root speed window; returns the
-    /// ones that are not ready yet (they activated inside the step).</summary>
+    /// <summary>Synchronizes eligible C009 animation clips at root speed 1. Returns the
+    /// number synchronized; adds clips that are not ready to pending.</summary>
     public int SyncHavok(nint root, IEnumerable<nint> clips, HashSet<nint>? pending, bool immediate = false)
     {
         float speed = OpenWindow(root);
@@ -458,7 +455,7 @@ internal sealed unsafe partial class TimelineSeekEngine
         float saved = overall;
         overall = 1f;
         // In frames: a crossfade the play started (its blend has a length) needs
-        // more than one; a second covers every blend the game uses.
+        // more than one. This uses a fixed 30-frame step to finish the blend.
         try { _n.UpdatePool(control, 30f, 0); }
         finally { overall = saved; }
     }
@@ -652,7 +649,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     }
 
     /// <summary>
-    /// The manual loop wrap (Mac): event 9 through each non-C010 clip's own
+    /// The manual loop wrap: event 9 through each non-C010 clip's own
     /// ProcessEvent (vtbl slot 9), children first and deepest first; never to a
     /// C010 (its Stop marks the child finished and the parent ENDS). Then
     /// un-finish children of inactive finished C010s, rewind, and run the start's
@@ -777,10 +774,10 @@ internal sealed unsafe partial class TimelineSeekEngine
     }
 
     /// <summary>
-    /// The frames the root's C009s have left, as the sequencer's pre-end notify
-    /// reads them (FUN_1418FF650, which can't be called: it may send the notify
-    /// itself): the max of each C009's vfunc 0x98 (read-only; it resolves the
-    /// length if needed), skipping clips marked +0x10 bit 7; 0 once the root is
+    /// The frames the root's C009s have left, using the same remaining-length query as the
+    /// sequencer's pre-end notification. Calling that notification routine directly
+    /// could send an end event. This takes the maximum C009 vfunc 0x98 result
+    /// (the query can initialize the cached length), skipping clips marked +0x10 bit 7; 0 once the root is
     /// torn down (+0x273 bit 0); −1 without C009s. In the clip's own units: a
     /// stretched clip (an expression's 1-frame face at 1/150) counts down slower
     /// than the timeline, so callers measure its rate rather than assume it.

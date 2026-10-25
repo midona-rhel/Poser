@@ -22,8 +22,8 @@ namespace Poser.Game.Animation;
 /// for stable readings, and applies a delta against the restored layer.
 /// Pending operations are bound to the current session, actor, skeleton, and
 /// bindings; callbacks revalidate those identities before writing or restoring.
-/// The result is exact for the captured facial output and can drift while a
-/// running animation continues to change that output.
+/// The patch uses the captured facial output. Running animation can later
+/// change the result; settling also has a fixed timeout.
 /// </summary>
 public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 {
@@ -123,7 +123,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         name.Equals("j_kao", StringComparison.Ordinal) ||
         name.StartsWith("j_ago", StringComparison.Ordinal);
 
-    /// <summary>Arms capture and returns the operation's success or failure.</summary>
+    /// <summary>Starts capture. Success here means it was accepted; receipts report completion.</summary>
     public GestureResult Begin(ActorId actor, ActorDescriptor descriptor)
     {
         if (_disposed || DisposeRequested)
@@ -305,9 +305,9 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
     }
 
     /// <summary>
-    /// Temporarily drives the facial slot at speed 1 so the layer can settle
-    /// even when the actor's overall speed is paused. Released before the patch
-    /// is written so the patch is measured against the final frame.
+    /// Temporarily requests facial slot speed 1 while waiting for readings. The
+    /// native speed port still multiplies this by overall actor speed. Releases
+    /// the override before measuring the baseline for the transform patch.
     /// </summary>
     private void TakeFacialDrive(PendingBake pending)
     {
@@ -335,11 +335,9 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
     }
 
     /// <summary>
-    /// Runs one of the bake's OWN animation steps. The bake holds the command
-    /// barrier from the button press onward, and the barrier exists to refuse
-    /// everyone else — its owner's teardown is not "another command". The lift
-    /// spans a single statement on the framework thread, so nothing can enter
-    /// through the gap.
+    /// Temporarily lifts the animation command barrier for one capture-owned step,
+    /// then restores it. The call is synchronous on the framework thread; callbacks
+    /// made by the step can still reenter other code while the barrier is lifted.
     /// </summary>
     private T WithBarrierLifted<T>(Func<T> step)
     {
@@ -562,7 +560,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         }
     }
 
-    /// <summary>Releases the facial drive and command barrier owned by the bake.</summary>
+    /// <summary>Attempts to release the facial drive and resumes animation commands.</summary>
     private (bool Success, string? Detail) FinishOwnedState(PendingBake pending)
     {
         try

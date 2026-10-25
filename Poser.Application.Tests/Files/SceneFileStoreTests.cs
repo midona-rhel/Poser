@@ -117,8 +117,8 @@ public sealed class SceneFileStoreTests
         Assert.Null(read.Scene.WorldObjects);
     }
 
-    /// <summary>Writes a raw document into a scene CONTAINER, which is what a
-    /// .xivs is: the payload entries are what let a scene carry hundreds of
+    /// <summary>Writes a raw document into a scene container. A <c>.xivs</c>
+    /// file stores payloads as separate entries, allowing a scene to carry
     /// megabytes of appearance without the document growing at all.</summary>
     internal static void WriteContainer(string path, string documentJson)
     {

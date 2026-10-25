@@ -49,12 +49,9 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
         _native.PoseCount(PoseKind(stance, weaponDrawn)) ?? 1;
 
     /// <summary>
-    /// Changes the actor stance with the game's own pose step (RE
-    /// notes/poser-animation-model.md §1, stance pose): a sit or sleep enters its
-    /// EmoteMode; a standing pose holds EmoteLoop with no EmoteMode, since in Normal mode
-    /// the base-idle pick replaces a standing pose emote every frame; the base pose is
-    /// Normal mode, where that pick plays the idle. A loop is left through EmoteLoop 0,
-    /// so no stand-up plays and the pending emote cancel stays clear.
+    /// Changes stance and pose through the game's emote controller. Sitting and
+    /// sleeping use their emote modes. Standing poses use EmoteLoop so the game's
+    /// normal idle selection does not replace them; pose zero returns to normal idle.
     /// </summary>
     public Outcome SetStance(ActorId actor, AnimationStance stance, int pose)
     {
@@ -78,8 +75,8 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
             _ => EmoteModeNormal,
         };
 
-        // SetEmoteMode checks nothing: the game's own answer comes first. A mounted
-        // rider put in a sit kept the mount idle restarting under it every frame.
+        // Check whether the current state permits this emote mode before setting it.
+        // Forcing a mounted rider to sit can repeatedly restart the mount idle.
         if (emoteMode != EmoteModeNormal && _native.CanStartEmoteMode(character, emoteMode) == false)
             return Outcome.Fail(
                 $"The game doesn't allow {StanceName(stance)} for how the actor is now (mounted, swimming or diving).");

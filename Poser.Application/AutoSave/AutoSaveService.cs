@@ -10,9 +10,8 @@ using Poser.Application.Settings;
 namespace Poser.Application.AutoSave;
 
 /// <summary>
-/// Pose autosave cadence, admission and the exit/final-capture state machine.
-/// Disk writes belong to <see cref="AutoSaveWriter"/>; the health record
-/// belongs to <see cref="AutoSaveHealthLedger"/>.
+/// Legacy pose-autosave scheduling and exit handling. AutoSaveWriter writes files;
+/// AutoSaveHealthLedger records progress and recovery information.
 /// </summary>
 public class AutoSaveService : IAutoSaveService
 {
@@ -145,9 +144,8 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Interval logic. Idle (not enabled, or not in GPose) disarms the timer;
-    /// the first tick after arming schedules one full interval out, so entering
-    /// GPose never saves immediately (parity with both references).
+    /// Schedules periodic saves while enabled in GPose. The first save waits
+    /// one full interval; disabling autosave or leaving GPose clears the timer.
     /// </summary>
     public void Tick(DateTime nowUtc, bool isGposing)
     {
@@ -194,10 +192,8 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Reserves exactly one final-capture attempt for this exit edge. The
-    /// reservation is independent of an active periodic write; the immutable
-    /// final job waits behind that write. A duplicate call returns the original
-    /// compatibility result without recapturing live state.
+    /// Requests one final capture for an exit, or selects cleanup instead.
+    /// A running write can finish first. Repeated calls return the saved capture result.
     /// </summary>
     public AutoSaveCaptureResult CaptureForExit()
     {
@@ -264,12 +260,9 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Takes a periodic snapshot immediately, regardless of the interval. The
-    /// interval tick and tests drive this; it is not part of the service port.
-    /// Returns the number of actors CAPTURED, not the number of files that
-    /// landed: the writes outlive this call. Zero therefore also covers
-    /// "nothing had authored edits" and "a periodic item was coalesced into the
-    /// bounded pending slot", both of which may produce zero.
+    /// Requests a periodic capture without waiting for the interval. Returns the
+    /// number of actors captured, not the number of files written. Zero alone does
+    /// not distinguish no eligible actors from a refused or failed capture.
     /// </summary>
     internal int SaveNow(string reason) =>
         CaptureAndDispatch(reason, isFinal: false).CapturedActors;
@@ -422,8 +415,8 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Closes admission, joins every owned writer, then performs clean-on-exit
-    /// cleanup if requested. No timeout path releases ownership of the writer.
+    /// Stops new saves, waits for the writer, and performs requested cleanup.
+    /// This wait has no timeout; write or cleanup failures are reported in the result.
     /// </summary>
     public AutoSaveTerminalResult CompleteForExit()
     {
@@ -469,9 +462,8 @@ public class AutoSaveService : IAutoSaveService
         {
             if (_writer.HasOutstandingWorkLocked)
             {
-                // A callback can only reach here if a custom dispatcher violated
-                // its ownership contract. Keep the service in recovery rather
-                // than claiming that unload is safe.
+                // The task returned but work is still recorded. Report recovery
+                // instead of treating the writer as successfully finished.
                 _writer.Failure ??= "Auto-save worker did not reach a terminal state.";
             }
 
@@ -514,7 +506,9 @@ public class AutoSaveService : IAutoSaveService
 
     internal bool WaitForIdle(TimeSpan timeout) => _writer.WaitForIdle(timeout);
 
-    /// <summary>Close admission and join the owned worker before disposal.</summary>
+    /// <summary>
+    /// Stops new saves and waits for the writer before disposal.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed)

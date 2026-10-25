@@ -155,8 +155,8 @@ internal sealed unsafe class LightGoboController
         light.SetGoboPath(null);
     }
 
-    /// <summary>Adopts the original's projected texture path when it has one,
-    /// matched against the embedded library so the UI can name it.</summary>
+    /// <summary>Records the original projected texture path for a supported light kind.
+    /// The path need not appear in the embedded library.</summary>
     public void AdoptGobo(Light light, GameLight* original)
     {
         if (!AreGobosAvailable || original->ProjectedCubemapTexture == null)

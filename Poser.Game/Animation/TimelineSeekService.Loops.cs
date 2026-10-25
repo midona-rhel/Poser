@@ -18,7 +18,7 @@ public sealed unsafe partial class TimelineSeekService
 
     /// <summary>Arms a loop for one layer: just before the slot timeline would
     /// run out, it is wrapped back to its begin (the seek's wrap: clips stop and
-    /// re-fire, effects re-spawn), so it never ends and is never replayed.</summary>
+    /// restart, effects respawn). Unsupported or missed wraps can still need replay.</summary>
     internal void SetLoop(ActorId actor, AnimationSlot slot, ushort timeline)
     {
         lock (_targetLock)

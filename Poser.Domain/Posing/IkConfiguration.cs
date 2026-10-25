@@ -6,9 +6,9 @@ public enum IkSolver
 {
     TwoJoint,
     Ccd,
-    /// <summary>Forward-and-backward reaching: a managed chain solver
-    /// that converges in a few passes on long chains where CCD curls the
-    /// tail first.</summary>
+    /// <summary>
+    /// Solves a chain by repeatedly reaching from its tip toward its root and back.
+    /// </summary>
     Fabrik,
     /// <summary>A rope: both ends known, the links' total length fixed,
     /// the slack hanging as a catenary in the vertical plane through the
@@ -18,16 +18,17 @@ public enum IkSolver
 
 public enum IkTargetMode
 {
-    /// <summary>A captured actor-model point. Actor movement carries it;
-    /// animation and ancestor-bone edits do not. A drag moves the point.</summary>
+    /// <summary>
+    /// Keeps the target relative to the actor, with ActorAnchor recording how parent motion carries it.
+    /// </summary>
     Actor,
 
-    /// <summary>The target holds a WORLD point captured when the mode was
-    /// entered or the chain enabled; the actor moving or animating leaves
-    /// the tip where it was. A drag moves the point.</summary>
+    /// <summary>
+    /// Keeps the target at a world position while the actor moves. Dragging changes that position.
+    /// </summary>
     World,
 
-    /// <summary>The target follows another bone — any actor's — keeping
+    /// <summary>The target follows another bone, on any actor, keeping
     /// the offset the tip had from it when the bone was picked. A drag
     /// changes the offset.</summary>
     Bone,
@@ -37,9 +38,8 @@ public enum IkTargetMode
 }
 
 /// <summary>
-/// Per-chain IK configuration carrying both solver settings so switching
-/// solver never discards tuning. FABRIK endpoint state is authored configuration;
-/// history retains it exactly and scene files remap its portable references.
+/// Settings and saved targets for one IK chain. Settings for inactive solvers
+/// are retained so switching solvers does not discard their tuning.
 /// </summary>
 public sealed record IkChainConfig(
     bool Enabled,
@@ -67,16 +67,18 @@ public sealed record IkChainConfig(
     /// switch. Null until the first switch.</summary>
     public IkEndRotationAnchor? EndAnchor { get; init; }
     public bool Collisions { get; init; }
-    /// <summary>Two Joint has one rotation authority: End rotation. A saved
-    /// Keep rotation value belongs to other solvers and must not override it.</summary>
+    /// <summary>
+    /// Two Joint uses EnforceEndRotation; the other solvers use HoldRotation.
+    /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool HoldsEndRotation => Solver == IkSolver.TwoJoint ? EnforceEndRotation : HoldRotation;
     /// <summary>World-space segment radius in yalms, independent of actor scale.</summary>
     public float CollisionRadius { get; init; } = .02f;
     public const int MinDepth = 1;
-    /// <summary>The game's CCD solver writes NaN through the chain past
-    /// about twenty bones (measured at 40, 2026-09-02); FABRIK, being
-    /// ours, takes the full depth.</summary>
+    /// <summary>
+    /// CCD depth limit. A historical test reported nonfinite results at 40 bones;
+    /// that observation does not establish the precise failing depth.
+    /// </summary>
     public const int MaxCcdDepth = 20;
     public const int MaxDepth = 50;
 
@@ -86,8 +88,10 @@ public sealed record IkChainConfig(
     public const int MinIterations = 1;
     public const int MaxIterations = 60;
 
-    /// <summary>Null when valid, else the rejection reason. Invalid values
-    /// never reach the native boundary.</summary>
+    /// <summary>
+    /// Returns the first configuration error, or null if these checks pass.
+    /// Callers must perform this validation before using the settings.
+    /// </summary>
     public string? Validate()
     {
         if (!float.IsFinite(CollisionRadius) || CollisionRadius is < 0 or > 5)
@@ -125,13 +129,8 @@ public sealed record IkChainConfig(
     }
 
     /// <summary>
-    /// Why this configuration cannot be armed on a bone that heads no declared
-    /// chain; null when it can. Two Joint needs a definition's named joints and
-    /// twists, so an undeclared bone is CCD only — Brio's rule exactly, where
-    /// every bone gets CCD options and Two Joint is offered additionally for
-    /// <c>j_te*</c> / <c>j_asi_d*</c> (<c>Brio/Game/Posing/PoseInfo.cs:249-283</c>).
-    /// CCD needs no definition at all: the solver walks the endpoint's own
-    /// parents to <see cref="CcdDepth"/>.
+    /// Rejects Two Joint for bones without a declared arm or leg chain.
+    /// The other solvers can walk the bone hierarchy without named limb joints.
     /// </summary>
     public string? ValidateUndeclared() =>
         Solver == IkSolver.TwoJoint
@@ -180,9 +179,9 @@ public sealed record IkChainConfig(
         return scaled / scaledLength;
     }
 
-    /// <summary>Defaults preserving current Live IK behavior: Two Joint,
-    /// Relative, constraints on, unit gains, full hinge range, end rotation
-    /// off; CCD depth 3, iterations 8, gain 0.5.</summary>
+    /// <summary>
+    /// Default arm or leg settings, including Two Joint and enabled end rotation.
+    /// </summary>
     public static IkChainConfig DefaultsFor(bool isArm, bool enabled = false) => new(
         Enabled: enabled,
         EnforceConstraints: true,
@@ -197,22 +196,18 @@ public sealed record IkChainConfig(
         HingeMinDegrees: 0f,
         HingeMaxDegrees: 180f,
         HingeAxis: isArm ? Vector3.UnitZ : -Vector3.UnitZ,
-        // The hand or foot keeps its rotation until End rotation is turned on.
         EnforceEndRotation: true);
 
-    /// <summary>Defaults for a bone with no declared chain: CCD, at Brio's
-    /// depth 3 and iterations 8 (<c>Brio/Game/Posing/PoseInfo.cs:291-295</c>).
-    /// The Two Joint fields keep their harmless values so switching back to a
-    /// declared chain never meets an unvalidatable hinge.</summary>
-    /// <summary>A bone with no declared limb solves as a chain up the
-    /// hierarchy; FABRIK is the default there.</summary>
+    /// <summary>
+    /// Uses FABRIK by default for a bone without a declared arm or leg chain.
+    /// </summary>
     public static IkChainConfig DefaultsForChain(bool enabled = false) =>
         DefaultsFor(isArm: true, enabled) with { Solver = IkSolver.Fabrik };
 }
 
 /// <summary>
-/// The four supported chain definitions. Every member resolves inside the
-/// endpoint's exact skeleton and partial — never another slot.
+/// Named joints and optional twist bones for an arm or leg.
+/// The resolver must find them within the endpoint's skeleton and partial skeleton.
 /// </summary>
 public sealed record IkChainDefinition
 {
@@ -254,14 +249,16 @@ public static class IkChains
 {
     // Arm: j_ude_a (twist n_hkata), j_ude_b (twist n_hhiji), end j_te
     // (Ktisis-compatible alias j_hand). Leg: j_asi_a, j_asi_b (twist
-    // j_asi_c), end j_asi_d (alias j_foot) — the Ktisis Categories chains.
+    // j_asi_c), end j_asi_d (alias j_foot): the Ktisis Categories chains.
     private static readonly IReadOnlyList<IkChainDefinition> Definitions =
         Array.AsReadOnly(new[]
         {
             Arm("l"), Arm("r"), Leg("l"), Leg("r"),
         });
 
-    /// <summary>Read-only endpoint projection of the fixed definitions.</summary>
+    /// <summary>
+    /// Primary endpoint names from the built-in limb definitions, excluding aliases.
+    /// </summary>
     public static IReadOnlyList<string> SupportedEndpoints { get; } =
         Array.AsReadOnly(Definitions.Select(definition => definition.Endpoint).ToArray());
 
@@ -297,7 +294,9 @@ public static class IkChains
     }
 }
 
-/// <summary>Target, configuration, resolved chain, and optional live collision continuation.</summary>
+/// <summary>
+/// Target and solver settings, resolved joint indices, and optional collision state reused between solves.
+/// </summary>
 public readonly record struct IkSolveRequest(
     Vector3 Target,
     Quaternion TargetRotation,

@@ -166,12 +166,6 @@ public sealed partial class PoseLibraryPane
     private readonly HashSet<PoseLibraryEntryKind> _kindFilter =
         new(Enum.GetValues<PoseLibraryEntryKind>());
 
-    /// <summary>The action row's import components, one set per tab. SESSION
-    /// state like the FILES section's own toggles. The poses tab starts
-    /// rotation-only — the pose import default; the auto-save tab starts with
-    /// all three, because a restore reproduces what was saved. The MCDF tab
-    /// has no set: character files never travel the pose import pipeline.
-    /// </summary>
     /// <summary>Collapsed group keys. Session state, cleared on entry; poses
     /// and character files share a folder's key deliberately — it is the same
     /// folder either way.</summary>
@@ -215,8 +209,7 @@ public sealed partial class PoseLibraryPane
     /// decide which recovery verbs an entry qualifies for.</summary>
     private readonly List<PoseLibraryMetadataStatus> _tileStatus = [];
 
-    /// <summary>Each tile's entry kind, parallel to the tiles — the Objects
-    /// tab holds three kinds and its activation dispatches on this.</summary>
+    /// <summary>Entry kinds parallel to the tiles, used to choose their activation behavior.</summary>
     private readonly List<PoseLibraryEntryKind> _tileKinds = [];
 
     /// <summary>The snapshot revision the rows were built from. A type switch
@@ -254,8 +247,8 @@ public sealed partial class PoseLibraryPane
 
     private bool _stepping;
 
-    /// <summary>Whether the standing tiles were minted with extensions on
-    /// their labels; a Settings flip forces a remint.</summary>
+    /// <summary>Whether the current tiles were built with extensions on
+    /// their labels; changing Settings rebuilds them.</summary>
     private bool _builtExtensions;
 
     private int _lastAppliedTile = -1;
@@ -530,10 +523,7 @@ public sealed partial class PoseLibraryPane
 
     // ── the tile menu ────────────────────────────────────────────────────
 
-    /// <summary>The footer's LEFT cluster: configuring sources belongs on
-    /// every tab (left-aligned, user rule), the Objects tab's placement
-    /// choice sits at the bottom where the spawn happens, and the status
-    /// stays last.</summary>
+    /// <summary>Shows Add source and scan status at the left of the footer.</summary>
     private void DrawFooterLead(ActionBarScope scope)
     {
         scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
@@ -564,10 +554,6 @@ public sealed partial class PoseLibraryPane
         _placementChoiceLabels.Add(PlacementModeLabels[2]);
     }
 
-    /// <summary>What this spawn actually uses: the preference when the
-    /// entry can honour it, else as-saved — the same fallback the dropdown
-    /// displays, so the shown choice and the spawn can never disagree.
-    /// </summary>
     private readonly SceneLoadPreferences _scenePreferences;
     private readonly Application.World.IPlaceService _place;
     private readonly SceneAutoSaveService _sceneAutoSave;
@@ -591,12 +577,6 @@ public sealed partial class PoseLibraryPane
         return _placement.Mode;
     }
 
-    /// <summary>
-    /// The Objects tab's INSPECTOR rail — the same right column every other
-    /// library tab fills. One plain run of rows: where a load lands, then
-    /// what the selected entry IS — the properties a person recognizes it
-    /// by, never raw coordinates.
-    /// </summary>
     /// <summary>Per-tile stamps for the info rail, parallel to the tile
     /// list like the tag and author lists above.</summary>
     private readonly List<string> _tileModified = [];
@@ -713,14 +693,14 @@ public sealed partial class PoseLibraryPane
         _rangeEnd = -1;
     }
 
-    /// <summary>The active library type as an index (Poses/Auto-saves/MCDF).
+    /// <summary>The active LibraryType value as an index.
     /// The shell's tab strip states it while the mode is on.</summary>
     public int SelectedType => (int)_type;
     public bool ShowsPosePreview => (_type is LibraryType.Poses or LibraryType.AutoSaves)
         && !IsSceneTile(_vm.Selected);
 
     /// <summary>The selected tile's file path, or null — the library
-    /// window's footer and preview state their content off it.</summary>
+    /// window uses it to choose preview and details content.</summary>
     public string? SelectedPath
         => _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count
             ? _vm.Tiles[_vm.Selected].ThumbKey
@@ -987,9 +967,8 @@ public sealed partial class PoseLibraryPane
     // every file and formatting every string is disk work no frame may do, so
     // a worker produces a detached result and the draw thread only writes rows.
 
-    /// <summary>Resolves a tile's thumbnail. The view asks only for tiles that
-    /// carry one, and a shared wrap must be re-resolved each frame, so this is
-    /// a dictionary hit and nothing more.</summary>
+    /// <summary>Requests the current thumbnail handle and size from the cache.
+    /// A cache miss can queue decoding and returns no handle yet.</summary>
     private PoseThumbnail ResolveThumbnail(string path)
     {
         var handle = _thumbs.Get(path, out var size);

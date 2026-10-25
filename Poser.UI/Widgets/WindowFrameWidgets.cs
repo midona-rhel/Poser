@@ -11,20 +11,9 @@ namespace Poser.UI.Widgets;
 public static class WindowFrameWidgets
 {
     /// <summary>
-    /// THE WINDOW FRAME, and there is one. Every floating Poser window is this
-    /// frame told different slots: the glass chrome, the title bar with its
-    /// close affordance, an optional band under it, an optional left rail, the
-    /// body, and the footer band.
-    ///
-    /// <para>THE ROTATED-H IS THE GEOMETRY: full-width rules under the title
-    /// bar and over the footer, bridged by the rail's 1px vertical rule. The
-    /// rules run WINDOW EDGE to WINDOW EDGE — past the header inset the bars
-    /// pad their items to — so the frame draws them itself rather than letting
-    /// <see cref="ActionBar"/> draw them at its own narrower box.</para>
-    ///
-    /// <para>The frame paints chrome and bars only. The rail band and the body
-    /// come back as rectangles: their owner fills them, and owns any scrolling
-    /// and any content inset inside them.</para>
+    /// Draws a floating window's background, title bar, optional sidebar, and
+    /// footer. Separators extend beyond the bars' content padding to the window edges.
+    /// Returns rectangles for the caller to fill with content and scrolling.
     /// </summary>
     public static WindowFrameRects WindowFrame(
         string id,
@@ -102,8 +91,7 @@ public static class WindowFrameWidgets
                 railRect.Min,
                 railRect.Max,
                 ImGui.ColorConvertFloat4ToU32(theme.Chrome.RailFill));
-            // The H's bridge: it belongs to the rail, so a frame without a
-            // rail has none.
+            // Separate the sidebar from the body only when a sidebar is present.
             drawList.AddRectFilled(
                 new Vector2(railRect.Max.X, bodyTop),
                 new Vector2(railRect.Max.X + rule, bodyBottom),
@@ -111,8 +99,7 @@ public static class WindowFrameWidgets
             bodyLeft = min.X + railWidth;
         }
 
-        // The bottom band's own opening rule — the mirror of the top band's
-        // closing one, full width like every rule the frame draws.
+        // Separate the bottom band, respecting its optional right inset.
         if (bottomBand > 0f)
             ControlPaint.Separator(
                 drawList,

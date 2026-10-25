@@ -995,11 +995,9 @@ public sealed class SceneWorkflowTests
     }
 
     /// <summary>
-    /// THE RESTORE CONTRACT. A scene is a picture, not a performance: it
-    /// carries pose data and no animation, because a timeline id resolves
-    /// against the loading client's own game and mods and would show something
-    /// different — or nothing — on someone else's machine. So every restored
-    /// actor is stopped first and the pose lands on a held frame.
+    /// When a scene includes animation, restoration starts that animation and
+    /// then reapplies only the saved pose edits. Without usable animation,
+    /// restoration freezes the actor before applying the saved pose.
     /// </summary>
     [Fact]
     public async Task A_scene_saved_with_its_animation_plays_it_again_and_puts_only_the_edits_back()
@@ -1358,7 +1356,7 @@ public sealed class SceneWorkflowTests
     }
 
     /// <summary>A whole scene: one of every entity kind the load restores, so
-    /// a per-phase failure can be asserted to keep everything the OTHER phases
+    /// a per-phase failure can be asserted to keep everything the other phases
     /// produced.</summary>
     private static SceneFile WholeScene()
     {
@@ -1408,9 +1406,9 @@ public sealed class SceneWorkflowTests
 
     /// <summary>One named entity-level failure mode per load phase, driven
     /// through the seam the way the real refusals arrive. Every one of them
-    /// must land the SAME shape — the operation ends Failed rather than rolled
-    /// back, the refused entity is named with its kind, a reason and a next
-    /// step, nothing this load created is destroyed, and the outcome says the
+    /// must produce the same result shape: the operation ends Failed rather
+    /// than rolled back, the refused entity is named with its kind, a reason
+    /// and a next step, nothing this load created is destroyed, and the outcome says the
     /// successes were kept — because that shape is what the result list and
     /// the operation log both read.</summary>
     public static TheoryData<string, string, Action<object>> PhaseFailures()

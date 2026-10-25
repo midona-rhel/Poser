@@ -33,11 +33,8 @@ public sealed class PoseAutoSaveCapturePort : IPoseAutoSaveCapture
             var captured = new List<CapturedAutoSavePose>();
             string? captureFailure = null;
 
-            // Read ONCE, here: every file a snapshot writes was taken in the
-            // same place, and this is the capture thread — the worker half
-            // never touches game state. A composition with no place service
-            // leaves both members unset, which is the "no place recorded"
-            // shape a pre-2026-08-14 auto-save already has.
+            // Read the place once so every actor in this snapshot carries the
+            // same location. The background writer never reads game state.
             var place = _place?.Current ?? default;
 
             foreach (var actor in _actors().Actors)
@@ -47,8 +44,7 @@ public sealed class PoseAutoSaveCapturePort : IPoseAutoSaveCapture
                     if (!HasAuthoredEdits(actor))
                         continue;
 
-                    // Both halves of the capture read live game state, so both
-                    // stay here; only the resulting PoseFile crosses over.
+                    // Only the completed document crosses to the writer.
                     var pose = _poseFiles().CreatePoseFile(_skeletons().GetSkeletons(actor));
                     Stamp(pose, place);
                     captured.Add(new CapturedAutoSavePose(
