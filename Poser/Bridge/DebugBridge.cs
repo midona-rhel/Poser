@@ -947,24 +947,39 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/movediag":
             {
-                // Debug: why an actor move doesn't land. ?dx= moves actor 0's override.
-                var actorManager = (global::Poser.Game.Services.IActorManager)_services.GetService(typeof(global::Poser.Game.Services.IActorManager))!;
-                var gpose = _gpose;
-                var target = actorManager.Actors.FirstOrDefault();
-                if (target == null) return Json(new { error = "no actors" });
-                var before = _posing.GetTransformOverride(target);
-                var original = _posing.GetOriginalTransform(target);
-                if (query.TryGetValue("dx", out var dxText))
+                var target = FindActor(query.GetValueOrDefault("actor", "0"));
+                if (target == null || _bindings.GetActorId(target) is not { } targetId)
+                    return Json(new { error = "actor is unavailable" });
+                var before = _posing.GetEffectiveTransform(target);
+                global::Poser.Domain.Transforms.GestureResult? result = null;
+                if (query.ContainsKey("dx") || query.ContainsKey("sx") || query.ContainsKey("sy") || query.ContainsKey("sz"))
                 {
-                    var t = before ?? original;
-                    t.Position = t.Position + new System.Numerics.Vector3(float.Parse(dxText, CultureInfo.InvariantCulture), 0, 0);
-                    _posing.SetTransformOverride(target, t);
+                    float Value(string name, float fallback) => query.TryGetValue(name, out var value)
+                        ? float.Parse(value, CultureInfo.InvariantCulture) : fallback;
+                    var desired = new global::Poser.Domain.Transforms.PoseTransform(
+                        before.Position + new System.Numerics.Vector3(Value("dx", 0), 0, 0),
+                        before.Rotation,
+                        new(Value("sx", before.Scale.X), Value("sy", before.Scale.Y), Value("sz", before.Scale.Z)));
+                    result = _transforms.SetAbsolute(TransformTargetId.ForActor(targetId), desired, "Bridge actor transform");
                 }
-                var after = _posing.GetTransformOverride(target);
+                var after = _posing.GetEffectiveTransform(target);
+                float[]? nativeScale;
+                unsafe
+                {
+                    var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)target.Address;
+                    nativeScale = native->DrawObject == null ? null : new[]
+                    {
+                        native->DrawObject->Object.Scale.X,
+                        native->DrawObject->Object.Scale.Y,
+                        native->DrawObject->Object.Scale.Z,
+                    };
+                }
                 return Json(new
                 {
-                    target.Name, gposing = gpose.IsGPosing, available = actorManager.IsAvailable(target),
-                    before = before?.Position.ToString(), after = after?.Position.ToString(), original = original.Position.ToString(),
+                    target.Name, ok = result?.Success, detail = result?.Detail,
+                    position = new[] { after.Position.X, after.Position.Y, after.Position.Z },
+                    scale = new[] { after.Scale.X, after.Scale.Y, after.Scale.Z },
+                    nativeScale, history = History(),
                 });
             }
             case "/gameui":
