@@ -17,6 +17,7 @@ public sealed class IntegrationSelectors
     private readonly ICustomizePlusPort _customizePlus;
     private readonly IntegrationOwnership _ownership;
     private readonly McdfTransaction _mcdf;
+    private readonly IntegrationReset _reset;
 
     public IntegrationSelectors(
         IIntegrationResolutionPort actors,
@@ -24,7 +25,8 @@ public sealed class IntegrationSelectors
         IGlamourerPort glamourer,
         ICustomizePlusPort customizePlus,
         IntegrationOwnership ownership,
-        McdfTransaction mcdf)
+        McdfTransaction mcdf,
+        IntegrationReset reset)
     {
         _actors = actors;
         _penumbra = penumbra;
@@ -32,6 +34,7 @@ public sealed class IntegrationSelectors
         _customizePlus = customizePlus;
         _ownership = ownership;
         _mcdf = mcdf;
+        _reset = reset;
     }
 
     public IntegrationAvailability Penumbra => _penumbra.Penumbra;
@@ -349,19 +352,14 @@ public sealed class IntegrationSelectors
         var current = OverridesFor(actor);
         if (!current.CollectionOwned)
             return IntegrationResult.Ok();
-        if (current.Baseline.Collection is not { } baseline)
+        if (current.Baseline.Collection == null)
             return IntegrationResult.Fail("No captured collection baseline exists.");
 
-        var restored = _penumbra.RestoreCollection(actor, baseline);
+        var restored = _reset.RestoreCollection(actor, ref current, resolvable: true, out _);
         if (!restored.Success)
             return restored;
 
-        _ownership.Mutate(actor, current with
-        {
-            Baseline = current.Baseline with { Collection = null },
-            CollectionOwned = false,
-            CollectionName = null,
-        });
+        _ownership.Mutate(actor, current);
         var redraw = _penumbra.RequestRedraw(actor);
         return redraw.Success
             ? IntegrationResult.Ok()
@@ -450,21 +448,14 @@ public sealed class IntegrationSelectors
         var current = OverridesFor(actor);
         if (!current.DesignOwned)
             return IntegrationResult.Ok();
-        if (current.Baseline.GlamourerState is not { } state)
+        if (current.Baseline.GlamourerState == null)
             return IntegrationResult.Fail("No captured Glamourer state exists.");
 
-        // Reapply the captured incoming state exactly — not a revert to the
-        // game's own appearance.
-        var restored = _glamourer.RestoreGlamourerState(actor, state);
+        var restored = _reset.RestoreDesign(actor, ref current, resolvable: true);
         if (!restored.Success)
             return restored;
 
-        _ownership.Mutate(actor, current with
-        {
-            Baseline = current.Baseline with { GlamourerState = null },
-            DesignOwned = false,
-            DesignName = null,
-        });
+        _ownership.Mutate(actor, current);
         return IntegrationResult.Ok();
     }
 
@@ -516,22 +507,11 @@ public sealed class IntegrationSelectors
     public IntegrationResult ResetBodyProfile(ActorId actor)
     {
         var current = OverridesFor(actor);
-        if (current.TemporaryBodyProfile is not { } owned)
-            return IntegrationResult.Ok();
+        var restored = _reset.RestoreBodyProfile(ref current);
+        if (!restored.Success)
+            return restored;
 
-        // Delete the profile Poser created by its ID. Deleting by actor could
-        // remove a replacement profile created by another plugin.
-        var deleted = _customizePlus.DeleteTemporaryBodyProfileById(owned);
-        if (!deleted.Success)
-            return deleted;
-
-        _ownership.Mutate(actor, current with
-        {
-            Baseline = current.Baseline with { SavedBodyProfile = null, BodyProfileCaptured = false },
-            TemporaryBodyProfile = null,
-            BodyProfileName = null,
-            BodyProfileJson = null,
-        });
+        _ownership.Mutate(actor, current);
         return IntegrationResult.Ok();
     }
 

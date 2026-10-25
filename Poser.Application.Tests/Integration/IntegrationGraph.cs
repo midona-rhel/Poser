@@ -18,8 +18,8 @@ internal sealed class IntegrationGraph : IDisposable
     {
         Ownership = new IntegrationOwnership(port, port);
         Mcdf = new McdfTransaction(port, port, port, port, files, sessions, Ownership);
-        Selectors = new IntegrationSelectors(port, port, port, port, Ownership, Mcdf);
         Reset = new IntegrationReset(port, port, port, port, Ownership, Mcdf);
+        Selectors = new IntegrationSelectors(port, port, port, port, Ownership, Mcdf, Reset);
     }
 
     public IntegrationOwnership Ownership { get; }

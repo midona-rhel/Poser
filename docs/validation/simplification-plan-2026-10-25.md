@@ -658,3 +658,19 @@ Glamourer refusal tests. Extend an existing relevant test for the captured-name
 case while another component keeps ownership alive; add no cases just to increase
 coverage counts. Then check normal apply/reset and actor cleanup locally. Remaining
 apply/restore caller review stays under #640; this audit does not finish that issue.
+
+### Appearance reset implementation #658
+
+IntegrationReset now owns body-profile removal, design restoration and collection
+restoration. IntegrationSelectors keeps existing admission checks and delegates
+the restoration work; ActorAppearanceControl remains the history boundary.
+Whole-actor cleanup keeps MCDF-first ordering, one combined redraw and one final
+ownership update. Helpers update only their supplied record, preserving failures
+without writing stale intermediate state back to the store.
+
+Successful design reset now clears DesignActorName. The existing provider-refusal
+test also keeps a body profile alive, resets the design, changes the actor name,
+and verifies a new design capture uses the new name. No test cases added or removed.
+Release build and all 906 existing tests pass. Sol found no actionable findings
+after checking ordering, gates, failure behavior, gone-actor cleanup and DI wiring.
+Production diff: +112/-140 lines (net -28). Local deployment results follow.
