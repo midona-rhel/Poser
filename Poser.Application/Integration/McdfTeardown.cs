@@ -125,6 +125,25 @@ internal sealed class McdfTeardown(
         string.IsNullOrEmpty(value) ? null : value;
 
     /// <summary>
+    /// Releases a recorded collection by ID, including after the actor is gone.
+    /// Clears its ID and records that loaded files need a redraw before deletion.
+    /// Returns an error without changing either value if release fails.
+    /// </summary>
+    internal string? ReleaseTemporaryCollection(ref Guid? collection, ref bool removedPenumbra)
+    {
+        if (collection is not { } id)
+            return null;
+
+        var result = penumbra.DeleteTemporaryCollection(id);
+        if (!result.Success)
+            return result.Detail;
+
+        collection = null;
+        removedPenumbra = true;
+        return null;
+    }
+
+    /// <summary>
     /// Releases Poser's MCDF lock using the actor or its saved character name.
     /// Returns whether the lock still needs releasing and records any error.
     /// </summary>
@@ -183,8 +202,8 @@ internal sealed class McdfTeardown(
         List<string> failures)
     {
         bool complete = true;
-        // A redraw is owed whenever temporary Penumbra ownership was
-        // removed — now or, still pending, by an earlier partial teardown.
+        // Files loaded by Penumbra stay in use until the actor redraws, even
+        // when the temporary collection was removed earlier.
         bool removedPenumbra = mcdf.RedrawPending || mcdf.DrawResourcesLoaded;
         // Glamourer can retain appearance state after the actor leaves the scene.
         // Use its captured character name when the live actor is no longer available.
@@ -241,22 +260,11 @@ internal sealed class McdfTeardown(
         if (temporaryProfile != null || pendingBody != null)
             complete = false;
 
-        // The temporary collection deletes by its own id even after the
-        // actor is gone, removing Poser's temporary mods and assignment.
         Guid? temporaryCollection = mcdf.TemporaryCollection;
-        if (temporaryCollection is { } tempCollection)
+        if (ReleaseTemporaryCollection(ref temporaryCollection, ref removedPenumbra) is { } collectionError)
         {
-            var collectionDeleted = penumbra.DeleteTemporaryCollection(tempCollection);
-            if (collectionDeleted.Success)
-            {
-                temporaryCollection = null;
-                removedPenumbra = true;
-            }
-            else
-            {
-                failures.Add(collectionDeleted.Detail!);
-                complete = false;
-            }
+            failures.Add(collectionError);
+            complete = false;
         }
 
         // Keep files until their temporary collection is removed and the actor

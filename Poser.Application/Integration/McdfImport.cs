@@ -311,7 +311,7 @@ internal sealed class McdfImport(
                     failure = redraw.Detail;
             }
 
-            if (failure == null && operation.TemporaryCollection is { } loadedCollection)
+            if (failure == null && operation.TemporaryCollection != null)
             {
                 failure = await actors.OnFrameworkThread(() =>
                 {
@@ -320,12 +320,8 @@ internal sealed class McdfImport(
                     // Brio releases the load-only assignment after redraw so
                     // subsequent animations resolve against the normal collection.
                     // The loaded draw object still owns references to our files.
-                    var released = penumbra.DeleteTemporaryCollection(loadedCollection);
-                    if (!released.Success)
-                        return released.Detail;
-                    operation.TemporaryCollection = null;
-                    operation.RedrawPending = true;
-                    return null;
+                    return teardown.ReleaseTemporaryCollection(
+                        ref operation.TemporaryCollection, ref operation.RedrawPending);
                 });
             }
 
@@ -500,11 +496,8 @@ internal sealed class McdfImport(
         // Glamourer can retain appearance state after the actor leaves the scene.
         // Use its captured character name when the live actor is no longer available.
         string? byName = resolvable ? null : McdfTeardown.NonEmpty(operation.ActorName);
-        // A Penumbra redraw belongs to Penumbra changes only: Glamourer
-        // and Customize+ apply their own updates, and Penumbra is
-        // legitimately optional for packages without resources — tying a
-        // redraw to them would leave a Glamourer-only rollback pending
-        // forever when Penumbra is absent.
+        // Only Penumbra changes need this redraw. Glamourer and Customize+
+        // update the actor themselves; resource-free MCDFs do not need Penumbra.
         bool removedPenumbra = operation.RedrawPending;
         var failures = new List<string>();
 
@@ -552,19 +545,9 @@ internal sealed class McdfImport(
             }
         }
 
-        if (operation.TemporaryCollection is { } collection)
-        {
-            var deleted = penumbra.DeleteTemporaryCollection(collection);
-            if (deleted.Success)
-            {
-                operation.TemporaryCollection = null;
-                removedPenumbra = true;
-            }
-            else
-            {
-                failures.Add(deleted.Detail!);
-            }
-        }
+        if (teardown.ReleaseTemporaryCollection(
+                ref operation.TemporaryCollection, ref removedPenumbra) is { } collectionError)
+            failures.Add(collectionError);
 
         // A live actor may still use extracted files after its collection is
         // removed. Retain those files until redraw completes. If the actor no

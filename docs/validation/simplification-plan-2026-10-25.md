@@ -543,3 +543,22 @@ from Editable to PoserHeld and back to Editable, and wardrobe/customization
 matched the pre-import values exactly. See [results](audit-2026-10-25/654-live-mcdf.json).
 Actor-disappearance and post-application cancellation were not reproduced.
 Broader MCDF file and appearance-restoration consolidation remains under #640.
+
+### MCDF collection release #655
+
+Successful import, rollback and Reset now share temporary collection release
+in `McdfTeardown`. The helper clears the collection ID and marks the need to
+redraw only after the adapter succeeds. Extracted-file lifetime and inherited
+duplicate-collection restoration remain unchanged. Production diff: +32/-41
+lines (net -9); no added state or tests.
+
+Penumbra's `TemporaryApi.DeleteTemporaryCollection` returns Success or
+CollectionMissing, both accepted by the existing adapter. Adapter failures
+can also come from restoring a duplicate actor's inherited collection; this
+change preserves that work rather than inventing a provider deletion failure.
+All actual failure returns contain a message, so the shared nullable-error
+return needs no extra guard for a fabricated empty failure result.
+
+Sol reviewed all three callers and the provider/adapter contract, with no
+actionable findings. Release build and all 906 existing tests pass. Normal
+live import/reset validation will use the existing 45-resource MCDF fixture.
