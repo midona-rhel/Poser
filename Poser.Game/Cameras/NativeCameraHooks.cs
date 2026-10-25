@@ -184,6 +184,9 @@ internal sealed unsafe class NativeCameraHooks
 
             if (live.Kind != CameraKind.Free)
             {
+                // Resolve the saved eye against the native orbit only once. Keeping
+                // an eye pin here would cancel every subsequent zoom movement.
+                live.RestoreOrbitPosition(camera->Camera.CameraBase.SceneCamera.Position);
                 var offset = live.PositionOffset + live.TargetOffset;
                 // Ktisis's WritePosition: a pinned camera measures its offset
                 // from the PIN instead of from wherever the game's update

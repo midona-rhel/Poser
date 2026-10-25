@@ -817,7 +817,9 @@ public sealed partial class DebugBridge : IDisposable
             {
                 if (query.TryGetValue("create", out var kind))
                     return Json(_creation.CreateCamera(Enum.Parse<Domain.Scene.CameraKind>(kind, true)));
-                var selected = _cameras.Cameras.FirstOrDefault(c => c.Name == query.GetValueOrDefault("camera"));
+                var selected = _cameras.Cameras.FirstOrDefault(c =>
+                    _bindings.GetCameraId(c)?.ToString() == query.GetValueOrDefault("camera"))
+                    ?? _cameras.Cameras.FirstOrDefault(c => c.Name == query.GetValueOrDefault("camera"));
                 if (selected == null || _bindings.GetCameraId(selected) is not { } cameraId)
                     return Json(new { error = "No such camera." });
                 float Number(string key) => float.Parse(query.GetValueOrDefault(key, "0"), CultureInfo.InvariantCulture);
@@ -831,6 +833,7 @@ public sealed partial class DebugBridge : IDisposable
                     "pan" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Pan, new(Number("x"), Number("y"))),
                     "roll" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Roll, Number("x")),
                     "fov" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.FoV, Number("x")),
+                    "zoom" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Zoom, Number("x")),
                     _ => new Domain.Outcome(false, "Unknown camera command."),
                 };
                 _cameraControl.Seal();

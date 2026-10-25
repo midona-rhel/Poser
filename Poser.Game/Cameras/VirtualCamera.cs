@@ -184,6 +184,17 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     public Vector3? FixedPosition { get; set; }
 
+    internal Vector3? PendingOrbitPosition { get; set; }
+
+    internal void RestoreOrbitPosition(Vector3 nativePosition)
+    {
+        if (PendingOrbitPosition is not { } saved)
+            return;
+        PendingOrbitPosition = null;
+        if (FixedPosition is null)
+            PositionOffset = saved - nativePosition - TargetOffset;
+    }
+
     public bool DisableCollision { get; set; }
 
     private bool _delimit;
@@ -341,6 +352,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
     {
         PositionOffset = Vector3.Zero;
         FixedPosition = null;
+        PendingOrbitPosition = null;
         TargetOffset = Vector3.Zero;
         TargetActorName = string.Empty;
         TargetActor = null;

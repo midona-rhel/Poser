@@ -9,10 +9,9 @@ internal static class CameraDocument
     internal static CameraFile CaptureScene(IVirtualCamera camera)
     {
         var file = Capture(camera);
-        // Main camera's free-camera Position is not its rendered orbit position.
-        // Store the pin base: the runtime adds these offsets once when rendering.
-        if (camera.IsDefault)
-            file.FixedPosition = camera.WorldPosition - camera.PositionOffset - camera.TargetOffset;
+        // An orbit shot is a one-time placement, not a permanent eye pin.
+        if (camera.Kind != Poser.Domain.Scene.CameraKind.Free && camera.FixedPosition is null)
+            file.OrbitPosition = camera.WorldPosition;
         return file;
     }
 
@@ -54,6 +53,8 @@ internal static class CameraDocument
         camera.FoV = file.FoV;
         camera.PositionOffset = file.PositionOffset;
         camera.FixedPosition = file.FixedPosition;
+        if (camera is VirtualCamera orbit)
+            orbit.PendingOrbitPosition = file.OrbitPosition;
         camera.DisableCollision = file.DisableCollision;
         camera.DelimitCamera = file.DelimitCamera;
         // A free camera keeps the position it spawned at unless the file

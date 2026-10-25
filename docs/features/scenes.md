@@ -250,8 +250,9 @@ Autosave writes one `.xivs` scene per changed snapshot under
 atomic file writer. It includes actors and poses, scene objects, lights, cameras,
 environment and relationships. Appearance references follow ordinary scene
 capture; autosave does not repeatedly export portable mod packages.
-The main camera is included, with its rendered orbit position stored as a pin
-base so offsets are applied exactly once. Loading a saved main camera creates
+Orbit cameras include their rendered position, restored once as a translation
+of the native orbit so zoom and rotation remain interactive. Explicit position
+pins remain pins. Loading a saved main camera creates
 a separate camera; it never applies the saved document to the session's main
 camera. Its saved live flag, target and scene relationships refer to that new
 camera, which is removed by load undo. This also applies to manual scene loads.

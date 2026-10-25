@@ -725,6 +725,7 @@ public static class SceneFileValidation
             // all — but a present one is held to the same finiteness as every
             // other coordinate in the document.
             (document.FixedPosition is { } pinned && !TransformMath.IsFinite(pinned)) ||
+            (document.OrbitPosition is { } orbit && !TransformMath.IsFinite(orbit)) ||
             !TransformMath.IsFinite(document.Position) ||
             !TransformMath.IsFinite(document.Rotation))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,

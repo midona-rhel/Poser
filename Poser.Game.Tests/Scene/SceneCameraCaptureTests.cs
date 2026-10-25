@@ -17,7 +17,8 @@ public sealed class SceneCameraCaptureTests
         camera.TargetOffset.Returns(new Vector3(4, 0, -2));
         camera.Position.Returns(Vector3.Zero);
         var saved = CameraDocument.CaptureScene(camera);
-        Assert.Equal(camera.WorldPosition, saved.FixedPosition!.Value + saved.PositionOffset + camera.TargetOffset);
+        Assert.Equal(camera.WorldPosition, saved.OrbitPosition);
+        Assert.Null(saved.FixedPosition);
         Assert.Null(camera.FixedPosition);
     }
 }

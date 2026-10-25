@@ -108,6 +108,28 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         Assert.Equal(calls, gate.Calls);
     }
 
+    [Fact]
+    public void Restored_orbit_translates_once_and_preserves_subsequent_native_zoom()
+    {
+        var setup = NewService(new NativeGate(), false);
+        var camera = new VirtualCamera(setup.Service, Poser.Domain.Scene.CameraKind.Game, false)
+        {
+            PendingOrbitPosition = new System.Numerics.Vector3(20, 5, 10),
+            PositionOffset = System.Numerics.Vector3.One,
+            TargetOffset = new System.Numerics.Vector3(2, 0, 0),
+        };
+        var nativeEye = new System.Numerics.Vector3(3, 4, 5);
+        camera.RestoreOrbitPosition(nativeEye);
+        Assert.Equal(new System.Numerics.Vector3(20, 5, 10),
+            nativeEye + camera.PositionOffset + camera.TargetOffset);
+        var zoomDelta = new System.Numerics.Vector3(0, 0, 2);
+        camera.RestoreOrbitPosition(nativeEye + zoomDelta);
+        Assert.Equal(new System.Numerics.Vector3(20, 5, 12),
+            nativeEye + zoomDelta + camera.PositionOffset + camera.TargetOffset);
+        Assert.Null(camera.FixedPosition);
+        Assert.Null(camera.PendingOrbitPosition);
+    }
+
     private sealed record Setup(
         VirtualCameraService Service,
         FakeFramework Framework,
