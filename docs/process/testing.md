@@ -1,5 +1,30 @@
 # Testing
 
+## Unit-test budget and relevance
+
+Effective 2026-10-25: for every new unit test, remove at least three existing
+unit tests in the same change. Prefer extending a relevant existing test over
+adding another. If no justified removals are available, do not add a new test.
+
+Remove redundant checks, tests of deleted behavior, assertions that merely
+repeat implementation, and scenarios with no reachable supported caller.
+Explain what each removed test covered and why that check is unnecessary or
+already covered. Do not remove a distinct useful regression check just to pay
+for an unrelated new test, or combine unrelated tests merely to hide the count.
+Count added parameterized cases as additions rather than using them to evade
+the budget. Report added, removed and net discovered test counts.
+
+A retained or new test must check a meaningful behavior or concrete correctness
+requirement. Fake ports are useful when they exercise a real failure boundary;
+an invented rapid-click sequence alone does not establish that boundary.
+Use live acceptance for UI behavior and native effects that unit tests cannot
+establish. A larger passing suite is not a substitute for relevant evidence.
+
+The user is considering a 200-test cap; that cap is not yet an instruction to
+delete tests down to 200. The three-removals-per-addition rule applies now.
+
+## Runtime validation and deployment
+
 - Debug bridge `/lifetimetrace?path=<new-absolute-file>` opts into a bounded
   120-second read-only native skeleton-list trace; `stop=1` ends it early.
   It uses safe process-memory reads and flushes changed owner/header rows

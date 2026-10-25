@@ -9,6 +9,9 @@
   new file only when no home fits, and keep it around 10–40 lines.
 - One normative home per contract; other documents link instead of
   restating. Delete superseded prose — Git preserves history.
+- Follow the unit-test budget and relevance rules in
+  [testing](docs/process/testing.md#unit-test-budget-and-relevance). Increasing
+  the passing test count is not evidence of better coverage.
 - Consult Brio for native/backend behavior and Ktisis for posing
   interaction (Brio: robust backend, horrid UI; Ktisis: the reverse). Keep a
   reference citation in docs only when it explains an intentional
