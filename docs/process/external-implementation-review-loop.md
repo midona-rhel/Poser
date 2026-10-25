@@ -25,10 +25,6 @@ and what that means when using the app. Use short, ordinary sentences. Read the
 text aloud: if it sounds like a lab report or an agent talking to another agent,
 rewrite it.
 
-Describe what a method does and what its result means. Include a limitation
-only when it changes how a caller must use that result. Avoid adding hypothetical
-misuses to otherwise straightforward comments.
-
 Link to the code that demonstrates the problem. Use GitHub permalinks to a
 published commit and the relevant lines, with a short label explaining what the
 reader will find. Check that the commit exists on GitHub. Do not substitute a
@@ -49,6 +45,18 @@ For example: “Reset now removes the profile Poser created. I tried applying a
 profile, resetting it, and undoing the reset; all three worked.” Only say this
 when those checks were actually performed. An issue update should help someone
 understand the change without making them follow the whole development session.
+
+## Comment review
+
+Review comments alongside the code. Explain the behavior where it is implemented
+and a check where it is performed. A method comment should describe its purpose
+and result. Put a necessary explanation of an exception beside the decision it
+explains, rather than repeating it across unrelated methods.
+
+Check whether each comment helps someone find and understand the relevant code.
+Searching for a behavior should lead to its implementation. Remove comments that
+only mention where that behavior does not happen, restate obvious code, or carry
+old investigation notes. Verify factual claims against the implementation.
 
 ## Guard review
 
