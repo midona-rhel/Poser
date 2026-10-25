@@ -127,8 +127,8 @@ public sealed class ActorAppearanceControlTests
                     return (Guid)args![0]! == SavedProfile
                         ? IntegrationValue<string>.Ok("body contents")
                         : IntegrationValue<string>.Fail("Temporary id is not a saved profile");
-                case nameof(IIntegrationRuntimeFake.ProbeBodyProfile):
-                    return IntegrationValue<BodyProfileProbe>.Ok(new(ActiveProfile, false));
+                case nameof(IIntegrationRuntimeFake.GetActiveSavedBodyProfile):
+                    return IntegrationValue<Guid?>.Ok(null);
                 case nameof(IIntegrationRuntimeFake.ApplyTemporaryBodyProfile):
                     ProfileJson = (string)args![1]!;
                     ActiveProfile = Guid.NewGuid();

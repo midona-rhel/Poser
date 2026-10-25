@@ -140,8 +140,6 @@ public sealed partial class AppearancePane
     private DateTime _readoutAt = DateTime.MinValue;
     private string _collectionReadout = "—";
     private string? _collectionKey;
-    private bool _bodyBlocked;
-    private string _bodyBlockedDetail = string.Empty;
 
     private readonly FileDialog _mcdfImportBrowser =
         new("Import Character File", new[] { ".mcdf", ".chara" }, isSaveMode: false);
@@ -927,7 +925,7 @@ public sealed partial class AppearancePane
                 : "Automatic",
             () => OpenPicker(actor, "Body profile", _integration.ListBodyProfiles),
             () => ReportExternal(_integration.ResetBodyProfile(actor), "Reset Body profile"),
-            available: customize.Available && !mcdfOwned && !_bodyBlocked,
+            available: customize.Available && !mcdfOwned,
             owned: external.TemporaryBodyProfile != null,
             disruptive: true,
             help: "Apply a saved Customize+ profile to this actor only. "
@@ -936,9 +934,7 @@ public sealed partial class AppearancePane
                 ? customize.Detail
                 : mcdfOwned
                     ? mcdfReason
-                    : _bodyBlocked
-                        ? _bodyBlockedDetail
-                        : "Apply a saved Customize+ profile to this actor only");
+                    : "Apply a saved Customize+ profile to this actor only");
 
         form.Actions("Look", actions =>
         {
@@ -1157,19 +1153,6 @@ public sealed partial class AppearancePane
             collection.Success && collection.Value is { } selectedCollection
                 ? selectedCollection.EffectiveId.ToString("N")
                 : null;
-
-        _bodyBlocked = false;
-        _bodyBlockedDetail = string.Empty;
-        if (_integration.CustomizePlus.Available)
-        {
-            var displaceable = _integration.CheckBodyProfileDisplaceable(actor);
-            if (!displaceable.Success)
-            {
-                _bodyBlocked = true;
-                _bodyBlockedDetail = displaceable.Detail
-                    ?? "The Customize+ state could not be read.";
-            }
-        }
     }
 
     /// <summary>Returns the shared label for an MCDF phase.</summary>

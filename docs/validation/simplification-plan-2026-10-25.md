@@ -735,3 +735,25 @@ Sol reviewed callers, adapter behavior, removed guards and the final diff agains
 create no design and successful reads save the exact appearance and name.
 Release build and all 906 tests pass; no test cases added or removed. Production
 code shrank by six lines. UI behavior and native actor writes are unchanged.
+
+### #659: remove misleading Customize+ checks
+
+Customize+ GetActiveProfileIdOnCharacter calls GetActiveProfileByActor, whose
+query excludes temporary profiles. GetByUniqueId also excludes them. The old
+second read could only confirm a saved profile or mislabel a read failure as
+foreign temporary ownership. AddTemporaryProfile already replaces any previous
+temporary profile for the actor; this check never prevented that replacement.
+
+Replaced BodyProfileProbe with GetActiveSavedBodyProfile returning a nullable
+ID, and removed the false apply/MCDF/UI checks. Removed SavedBodyProfile and
+BodyProfileCaptured: neither value was used by restoration. Reset continues
+deleting only the temporary ID Poser created. Retained JSON still supports
+export and undo. Query failures now propagate even when their ID is null;
+ProfileNotFound alone means no saved profile. Actual JSON/apply failures remain.
+Removed the success-with-empty-ID check after tracing Customize+'s generated ID.
+
+Sol reviewed actual Customize+ creation/query/deletion and every affected caller,
+then the final diff against 8e58f3c6, with no findings. Release build and all 906
+tests pass. No test cases added or removed; existing fakes now model the actual
+saved-only query. Production changes are +28/-123 (net -95), excluding tests,
+documentation, and four unrelated pre-existing comment edits.

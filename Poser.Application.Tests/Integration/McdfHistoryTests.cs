@@ -236,8 +236,8 @@ public sealed class McdfHistoryTests
                 "get_Penumbra" => new IntegrationAvailability(Resources, "Unavailable"),
                 "get_Glamourer" => new IntegrationAvailability(false, "Unavailable"),
                 "get_CustomizePlus" => new IntegrationAvailability(true, ""),
-                nameof(IIntegrationRuntimeFake.ProbeBodyProfile) =>
-                    IntegrationValue<BodyProfileProbe>.Ok(new(null, false)),
+                nameof(IIntegrationRuntimeFake.GetActiveSavedBodyProfile) =>
+                    IntegrationValue<Guid?>.Ok(null),
                 nameof(IIntegrationRuntimeFake.GetCollectionAssignment) =>
                     IntegrationValue<CollectionAssignment>.Ok(new(_collection, "Temporary", false)),
                 nameof(IIntegrationRuntimeFake.GetCollections) =>

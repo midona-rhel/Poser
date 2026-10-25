@@ -458,35 +458,19 @@ public sealed class IntegrationSelectors
             : IntegrationResult.Fail(json.Detail ?? "The profile could not be read.");
     }
 
-    /// <summary>Replays the captured profile contents, not a mutable saved-profile selection.</summary>
+    /// <summary>Applies the saved profile contents so undo does not depend on later edits to the original profile.</summary>
     public IntegrationResult ApplyBodyProfileJson(ActorId actor, string profileJson, string name)
     {
         if (McdfGate(actor) is { } gate)
             return gate;
         var current = OverridesFor(actor);
 
-        var probe = _customizePlus.ProbeBodyProfile(actor);
-        if (!probe.Success || probe.Value is not { } bodyState)
-            return IntegrationResult.Fail(probe.Detail ?? "The Customize+ state could not be read.");
-        if (IntegrationOwnership.ForeignTemporaryBody(current, bodyState))
-            return IntegrationResult.Fail(
-                "This actor has a temporary Customize+ profile from another plugin; Poser will not displace it.");
-
-        var baseline = current.Baseline;
-        if (!baseline.BodyProfileCaptured)
-            baseline = baseline with
-            {
-                SavedBodyProfile = bodyState.ActiveIsSaved ? bodyState.ActiveProfile : null,
-                BodyProfileCaptured = true,
-            };
-
         var applied = _customizePlus.ApplyTemporaryBodyProfile(actor, profileJson);
-        if (!applied.Success || applied.Value == default)
+        if (!applied.Success)
             return IntegrationResult.Fail(applied.Detail ?? "The temporary profile could not be applied.");
 
         _ownership.Mutate(actor, current with
         {
-            Baseline = baseline,
             TemporaryBodyProfile = applied.Value,
             BodyProfileName = name,
             BodyProfileJson = profileJson,
@@ -503,21 +487,6 @@ public sealed class IntegrationSelectors
 
         _ownership.Mutate(actor, current);
         return IntegrationResult.Ok();
-    }
-
-    /// <summary>
-    /// Checks whether applying a profile would replace another plugin's temporary
-    /// Customize+ profile. Returns an error when that profile cannot be preserved.
-    /// </summary>
-    public IntegrationResult CheckBodyProfileDisplaceable(ActorId actor)
-    {
-        var probe = _customizePlus.ProbeBodyProfile(actor);
-        if (!probe.Success || probe.Value is not { } bodyState)
-            return IntegrationResult.Fail(probe.Detail ?? "The Customize+ state could not be read.");
-        return IntegrationOwnership.ForeignTemporaryBody(OverridesFor(actor), bodyState)
-            ? IntegrationResult.Fail(
-                "This actor has a temporary Customize+ profile from another plugin; Poser will not displace it.")
-            : IntegrationResult.Ok();
     }
 
     private IntegrationResult? McdfGate(ActorId actor)

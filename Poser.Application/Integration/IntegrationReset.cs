@@ -48,7 +48,6 @@ public sealed class IntegrationReset : IDisposable
 
         current = current with
         {
-            Baseline = current.Baseline with { SavedBodyProfile = null, BodyProfileCaptured = false },
             TemporaryBodyProfile = null,
             BodyProfileName = null,
             BodyProfileJson = null,

@@ -76,12 +76,6 @@ public sealed record CollectionBaseline(
 }
 
 /// <summary>
-/// The actor's active Customize+ profile and whether it appears in the saved-profile list.
-/// Temporary profiles absent from that list cannot be read back through the integration.
-/// </summary>
-public sealed record BodyProfileProbe(Guid? ActiveProfile, bool ActiveIsSaved);
-
-/// <summary>
 /// External-plugin settings saved before Poser first changes each component.
 /// Reusing these values lets Reset restore the state before Poser's edits.
 /// </summary>
@@ -93,12 +87,6 @@ public sealed record IntegrationBaseline
     /// <summary>Complete serialized Glamourer actor state, captured before
     /// the first design or MCDF change.</summary>
     public string? GlamourerState { get; init; }
-
-    /// <summary>The active saved profile at the first body-profile or MCDF
-    /// change (null when none was active). Restoration deletes only Poser's
-    /// temporary profile so this saved assignment resumes naturally.</summary>
-    public Guid? SavedBodyProfile { get; init; }
-    public bool BodyProfileCaptured { get; init; }
 
     public static readonly IntegrationBaseline None = new();
 }

@@ -43,13 +43,11 @@ public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusP
             return IntegrationValue<string?>.Ok(retained);
         if (!customizePlus.CustomizePlus.Available)
             return IntegrationValue<string?>.Ok(null);
-        var probe = customizePlus.ProbeBodyProfile(actor);
-        if (!probe.Success || probe.Value is not { } state)
-            return IntegrationValue<string?>.Fail(probe.Detail ?? "The Customize+ profile could not be read.");
-        if (state.ActiveProfile is not { } active)
+        var profileId = customizePlus.GetActiveSavedBodyProfile(actor);
+        if (!profileId.Success)
+            return IntegrationValue<string?>.Fail(profileId.Detail ?? "The Customize+ profile could not be read.");
+        if (profileId.Value is not { } active)
             return IntegrationValue<string?>.Ok(null);
-        if (!state.ActiveIsSaved)
-            return IntegrationValue<string?>.Fail("The source has an unreadable temporary Customize+ profile from another plugin.");
         var profile = customizePlus.GetBodyProfileJson(active);
         return profile.Success && profile.Value is { } json
             ? IntegrationValue<string?>.Ok(json)
@@ -91,13 +89,4 @@ public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusP
         var inherited = penumbra.CaptureInheritedCollection(actor);
         return inherited.Success && inherited.Value != null ? null : inherited.Detail ?? refusal;
     }
-
-    /// <summary>
-    /// Whether the active unsaved profile has neither of Poser's tracked profile IDs.
-    /// </summary>
-    internal static bool ForeignTemporaryBody(IntegrationOverrides current, BodyProfileProbe probe) =>
-        probe.ActiveProfile is { } active
-        && !probe.ActiveIsSaved
-        && active != current.TemporaryBodyProfile
-        && active != current.Mcdf?.TemporaryProfile;
 }

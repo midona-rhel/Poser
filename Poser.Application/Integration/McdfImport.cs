@@ -461,17 +461,6 @@ internal sealed class McdfImport(
         }
         if (package.CustomizePlusData.Length > 0)
         {
-            var probe = customizePlus.ProbeBodyProfile(actor);
-            if (!probe.Success || probe.Value is not { } bodyState)
-                return (null, probe.Detail ?? "The Customize+ state could not be read.");
-            if (IntegrationOwnership.ForeignTemporaryBody(current, bodyState))
-                return (null, "This actor has a temporary Customize+ profile from another plugin; Poser will not displace it.");
-            if (!baseline.BodyProfileCaptured)
-                baseline = baseline with
-                {
-                    SavedBodyProfile = bodyState.ActiveIsSaved ? bodyState.ActiveProfile : null,
-                    BodyProfileCaptured = true,
-                };
             // The MCDF profile replaces Poser's current temporary profile. Keep its
             // JSON so a failed import can recreate it.
             if (current.TemporaryBodyProfile != null

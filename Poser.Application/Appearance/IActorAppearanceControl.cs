@@ -15,7 +15,6 @@ public interface IActorAppearanceControl
     GlamourerAccess AppearanceAccess(ActorId actor);
     IntegrationOverrides OverridesFor(ActorId actor);
     IntegrationValue<CollectionAssignment> ReadCollection(ActorId actor);
-    IntegrationResult CheckBodyProfileDisplaceable(ActorId actor);
     IntegrationValue<IReadOnlyList<ExternalItem>> ListCollections();
     IntegrationValue<IReadOnlyList<ExternalItem>> ListDesigns();
     IntegrationValue<IReadOnlyList<ExternalItem>> ListBodyProfiles();

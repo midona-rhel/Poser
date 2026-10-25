@@ -2133,13 +2133,13 @@ public sealed partial class DebugBridge : IDisposable
 
     private object BodyProfile(ActorId id)
     {
-        var probe = _customizePlus.ProbeBodyProfile(id);
+        var probe = _customizePlus.GetActiveSavedBodyProfile(id);
         return new
         {
             ok = probe.Success,
             detail = probe.Detail,
-            active = probe.Value?.ActiveProfile?.ToString(),
-            saved = probe.Value?.ActiveIsSaved,
+            active = probe.Value?.ToString(),
+            saved = probe.Success ? probe.Value.HasValue : (bool?)null,
         };
     }
 

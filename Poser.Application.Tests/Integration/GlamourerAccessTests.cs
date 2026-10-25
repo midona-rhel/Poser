@@ -140,8 +140,8 @@ public sealed class GlamourerAccessTests
                 return new IntegrationAvailability(true, "Available");
             if (name == nameof(IIntegrationRuntimeFake.ApplyTemporaryBodyProfile))
                 return IntegrationValue<Guid>.Ok(Guid.NewGuid());
-            if (name == nameof(IIntegrationRuntimeFake.ProbeBodyProfile))
-                return IntegrationValue<BodyProfileProbe>.Ok(new(null, false));
+            if (name == nameof(IIntegrationRuntimeFake.GetActiveSavedBodyProfile))
+                return IntegrationValue<Guid?>.Ok(null);
             if (name == nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess))
                 return Access((ActorId)args![0]!);
             if (name == nameof(IIntegrationRuntimeFake.IsResolvable))
