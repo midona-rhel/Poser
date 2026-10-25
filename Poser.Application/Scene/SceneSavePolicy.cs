@@ -51,15 +51,12 @@ internal static class SceneSavePolicy
             }
             if (appearance.IsPortable)
                 continue;
-            // Consent was given and the payload could not be sealed. The
-            // sealing step already said WHY, by actor; dropping the leftover
-            // reference here is what stops a "portable" save from shipping a
-            // path to a machine that has never seen it.
+            // Remove the file reference when its appearance package could not be built.
             actor.Mcdf = null;
             unsealed++;
         }
 
-        // Settled only now that it is known which packages survived.
+        // Update each actor's appearance status after filtering the packages.
         foreach (var actor in scene.Actors)
         {
             if (actor.Mcdf is not null)
@@ -86,8 +83,7 @@ internal static class SceneSavePolicy
         return unsealed;
     }
 
-    /// <summary>The one wording for an actor saved without its own look, used
-    /// by the save that drops it and by every load of the file.</summary>
+    /// <summary>Explains the appearance fallback when saving and loading an actor.</summary>
     public static string AppearanceNotSavedNote(string actor) =>
         $"Actor '{actor}''s appearance was not saved, so it loads wearing your character's appearance.";
 }

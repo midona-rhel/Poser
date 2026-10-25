@@ -14,8 +14,7 @@ namespace Poser.Application.Scene;
 /// </summary>
 internal static class SceneSaveNarrowing
 {
-    /// <summary>Keeps only the keyed entities. Returns the refusal when
-    /// nothing the entry names survived the capture.</summary>
+    /// <summary>Keeps the selected entities. Returns an error if none were captured.</summary>
     public static string? Narrow(
         SceneFile scene,
         IReadOnlyCollection<Guid>? onlyKeys,
@@ -25,8 +24,7 @@ internal static class SceneSaveNarrowing
             return null;
 
         var keep = new HashSet<Guid>(onlyKeys);
-        // Actor entries key by capture key, not logical id — admit the
-        // capture keys of every kept logical id.
+        // Translate selected actor IDs to their keys in the captured scene.
         foreach (var pair in actorIdentities)
             if (keep.Contains(pair.Value.LogicalId))
                 keep.Add(pair.Key);
@@ -39,14 +37,13 @@ internal static class SceneSaveNarrowing
         scene.Groups?.RemoveAll(group =>
             !(group.Transform?.Members.Select(member => member.Member) ?? group.Members)
                 .All(member => keep.Contains(member.Key)));
-        // A parent that fell out takes its nesting with it.
+        // Make a group top-level when its parent was excluded.
         if (scene.Groups is { } remaining)
             foreach (var group in remaining)
                 if (group.Parent is { } parentKey
                     && !remaining.Any(candidate => candidate.Key == parentKey))
                     group.Parent = null;
-        // An entry has no sidebar order of its own: its entities seat where
-        // the load lands them.
+        // The destination scene determines the entry's sidebar position.
         scene.RootOrder = null;
         if (scene.Actors.Count + scene.Props.Count
             + scene.Lights.Count + scene.Cameras.Count
@@ -91,10 +88,8 @@ internal static class SceneSaveNarrowing
             scene.Actors[0].Name = entryName;
     }
 
-    /// <summary>Clears every reference to an actor the document no longer
-    /// holds — the actor twin of <see cref="SceneParenting.Prune"/> — and
-    /// hands the live flag to a kept camera when the live one was left out.
-    /// </summary>
+    /// <summary>Clears references to excluded actors and chooses a live camera
+    /// from those included in the save.</summary>
     public static void DetachDangling(SceneFile scene, List<string> notes)
     {
         var actorKeys = scene.Actors.Select(actor => actor.Key).ToHashSet();
@@ -114,9 +109,7 @@ internal static class SceneSaveNarrowing
             if (light.Attachment is not { } attachment
                 || actorKeys.Contains(attachment.ActorKey))
                 continue;
-            // The captured transform is the light's world transform (the
-            // attachment copies the bone's onto it each frame), so dropping
-            // the attachment leaves the light exactly where it stood.
+            // The captured world transform keeps the light in place after detaching.
             light.Attachment = null;
             notes.Add($"Light '{light.Light?.Name}' is attached to an actor this "
                 + "save left out; it is saved at its current world placement.");
@@ -134,9 +127,8 @@ internal static class SceneSaveNarrowing
                 + "left out; it is saved without a target.");
         }
 
-        // A document with cameras names exactly one live camera. When the live
-        // one was left out, a kept camera goes live — the default when it was
-        // kept — so a single-camera entry loads as the camera it names.
+        // Choose the default camera, or the first remaining camera, when the
+        // live camera was excluded.
         if (scene.Cameras.Count > 0 && !scene.Cameras.Any(camera => camera.IsLive))
             (scene.Cameras.FirstOrDefault(camera => camera.IsDefault)
                 ?? scene.Cameras[0]).IsLive = true;
