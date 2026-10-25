@@ -260,7 +260,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // NoChange: exact ids/generations are still checked by the registry
             // against the admitted structural snapshot before map publication.
             _bindings.CommitCandidate(staged, _scene.Snapshot);
-            // Clothing-only checks native bodies, so bindings must be published first.
+            // Retire clothing-only requests against the newly published actor list.
             _clothingOnly.Reconcile(actor => _scene.Snapshot.FindActor(actor) != null);
             _groupCoordinator?.BindingsPublished();
             admitted = true;

@@ -5,7 +5,7 @@ namespace Poser.Application.Appearance;
 /// <summary>Hiding a human body under its clothing.</summary>
 public interface IInvisibleSkinService
 {
-    /// <summary>Retires state for actors absent from the published scene. Call on the framework thread.</summary>
+    /// <summary>Cancels requests and forgets clothing-only state for actors that left the scene. Call on the framework thread.</summary>
     void Reconcile(Func<ActorId, bool> isCurrent);
     bool IsHuman(ActorId actor);
     bool IsApplied(ActorId actor);
@@ -16,7 +16,7 @@ public interface IInvisibleSkinService
 /// ClothingOnlyControl checks the session and coordinates concurrent requests.</summary>
 public interface IClothingOnlyRuntimePort
 {
-    /// <summary>Retires state for actors absent from the published scene. Call on the framework thread.</summary>
+    /// <summary>Forgets clothing-only state for actors that left the scene. Call on the framework thread.</summary>
     void Reconcile(Func<ActorId, bool> isCurrent);
     bool IsHuman(ActorId actor);
     bool IsApplied(ActorId actor);

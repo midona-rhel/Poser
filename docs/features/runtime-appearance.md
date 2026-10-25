@@ -12,16 +12,17 @@ embedded appearance resources. Load reapplies it after appearance redraws and
 before the pose/readiness barrier. Ordinary redraw restores the body and clears
 the effective clothing-only state. Older scenes omit the flag and load normally;
 their former clothing-only intent cannot be inferred reliably from an MCDF.
-UI, bridge and scene requests share ClothingOnlyControl. It tracks each request
-by ActorId and cancels it when that actor leaves or GPose ends. Scene refresh
-reconciles this state after publishing the new native bindings. Applied-body
-addresses are observation markers; retiring a marker never frees a model.
-Only CharacterModelNative releases the removed model slots.
+UI, bridge and scene requests share ClothingOnlyControl. It tracks requests by
+actor and cancels them when that actor leaves or GPose ends. After publishing
+a refreshed actor list, it forgets clothing-only state for departed actors.
+When queried, clothing-only state is checked against the current model so a
+redraw is reflected immediately. Forgetting state does not free a game model;
+CharacterModelNative alone releases the hidden hair, face and tail slots.
 
 The native port removes temporary collection materials after each redraw,
-including cancellation. Unexpected removal failures are reported without a retry queue. A deleted
-collection needs no cleanup. Cancelling
-a request does not mean its asynchronous cleanup has already finished.
+including cancellation. Unexpected removal failures are reported without a
+retry queue. A deleted collection needs no cleanup. Cancelling a request does
+not mean its asynchronous cleanup has already finished.
 
 For each field, Poser captures the incoming value once before its first
 successful edit. Restore gives the field back only after native success. A

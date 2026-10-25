@@ -10,7 +10,8 @@ public interface IPosingService : IDisposable
     Transform? GetTransformOverride(IActor actor);
 
     /// <summary>
-    /// Writes and retains an actor transform. Returns false if no write occurred.
+    /// Applies the actor's transform, then keeps it in place until the override
+    /// is cleared. Returns false if the change could not be applied.
     /// </summary>
     bool SetTransformOverride(IActor actor, Transform transform);
 

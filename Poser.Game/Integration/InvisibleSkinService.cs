@@ -53,7 +53,7 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
     public void Reconcile(Func<ActorId, bool> isCurrent)
     {
         foreach (var actor in new List<ActorId>(_appliedBodies.Keys))
-            if (!isCurrent(actor) || !StillApplied(actor, _appliedBodies[actor]))
+            if (!isCurrent(actor))
                 _appliedBodies.Remove(actor);
     }
 

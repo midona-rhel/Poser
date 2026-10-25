@@ -677,8 +677,9 @@ public class Skeleton : EntityBase, ISkeleton
         if (charaBase == null || charaBase->Skeleton == null)
             return Transform.Identity;
 
-        // DrawObject.Scale can change after the skeleton update. Use the completed
-        // renderer transform so overlays and IK share the mesh's frame.
+        // Use the transform that the game used to draw this model.
+        // Customize+ can change DrawObject.Scale afterward, so reading that value
+        // could make the skeleton overlay and IK targets miss the visible character.
         var rendered = charaBase->Skeleton->Transform;
         return new(rendered.Position, rendered.Rotation, rendered.Scale);
     }

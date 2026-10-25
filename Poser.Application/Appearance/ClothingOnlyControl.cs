@@ -5,7 +5,7 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Appearance;
 
 /// <summary>Runs clothing-only redraw requests from the UI, scene loader, and
-/// debug bridge, and cancels active requests when the GPose session ends.</summary>
+/// debug bridge. Cancels requests when their actor leaves or GPose ends.</summary>
 public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
 {
     private readonly IClothingOnlyRuntimePort _runtime;
