@@ -137,9 +137,9 @@ internal sealed unsafe partial class IkChainRegistry
         if (mode == IkTargetMode.Actor)
             return new(mode, model.Position, model.Rotation, authored.Position, authored.Rotation);
         if (source.Skeleton is not Skeleton skeleton) return null;
-        var frame = skeleton.GetModelMatrix();
-        var position = Vector3.Transform(model.Position, frame);
-        var rotation = Quaternion.Normalize(Transform.FromMatrix(frame).Rotation * model.Rotation);
+        var frame = skeleton.GetModelTransform();
+        var position = Vector3.Transform(model.Position, frame.ToMatrix());
+        var rotation = Quaternion.Normalize(frame.Rotation * model.Rotation);
         Transform? anchor = mode switch
         {
             IkTargetMode.Bone when bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } live }
@@ -176,11 +176,11 @@ internal sealed unsafe partial class IkChainRegistry
                 position += followed.Position;
                 rotation = Quaternion.Normalize(followed.Rotation * rotation);
             }
-            if (bone.Skeleton is not Skeleton skeleton
-                || !Matrix4x4.Invert(skeleton.GetModelMatrix(), out var inverse)) return null;
+            if (bone.Skeleton is not Skeleton skeleton) return null;
+            var frame = skeleton.GetModelTransform();
+            if (!Matrix4x4.Invert(frame.ToMatrix(), out var inverse)) return null;
             position = Vector3.Transform(position, inverse);
-            rotation = Quaternion.Normalize(Quaternion.Inverse(
-                Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation) * rotation);
+            rotation = Quaternion.Normalize(Quaternion.Inverse(frame.Rotation) * rotation);
         }
         var applied = _stacks.ToApplySpace(bone, new Transform(position, rotation, Vector3.One));
         position = applied.Position;
@@ -273,9 +273,9 @@ internal sealed unsafe partial class IkChainRegistry
             var rotation = visible.Rotation;
             if (!modelSpace && target.Mode != IkTargetMode.Actor)
             {
-                var frame = skeleton.GetModelMatrix();
-                position = Vector3.Transform(position, frame);
-                rotation = Quaternion.Normalize(Transform.FromMatrix(frame).Rotation * rotation);
+                var frame = skeleton.GetModelTransform();
+                position = Vector3.Transform(position, frame.ToMatrix());
+                rotation = Quaternion.Normalize(frame.Rotation * rotation);
                 Transform? anchor = target.Mode switch
                 {
                     IkTargetMode.Bone when target.Bone is { } id && _bindings.Resolve(id)

@@ -952,13 +952,14 @@ public sealed partial class DebugBridge : IDisposable
                     return Json(new { error = "actor is unavailable" });
                 var before = _posing.GetEffectiveTransform(target);
                 global::Poser.Domain.Transforms.GestureResult? result = null;
-                if (query.ContainsKey("dx") || query.ContainsKey("sx") || query.ContainsKey("sy") || query.ContainsKey("sz"))
+                if (query.ContainsKey("dx") || query.ContainsKey("sx") || query.ContainsKey("sy") || query.ContainsKey("sz") || query.ContainsKey("yaw"))
                 {
                     float Value(string name, float fallback) => query.TryGetValue(name, out var value)
                         ? float.Parse(value, CultureInfo.InvariantCulture) : fallback;
                     var desired = new global::Poser.Domain.Transforms.PoseTransform(
                         before.Position + new System.Numerics.Vector3(Value("dx", 0), 0, 0),
-                        before.Rotation,
+                        System.Numerics.Quaternion.Normalize(before.Rotation * System.Numerics.Quaternion.CreateFromAxisAngle(
+                            System.Numerics.Vector3.UnitY, Value("yaw", 0) * MathF.PI / 180)),
                         new(Value("sx", before.Scale.X), Value("sy", before.Scale.Y), Value("sz", before.Scale.Z)));
                     result = _transforms.SetAbsolute(TransformTargetId.ForActor(targetId), desired, "Bridge actor transform");
                 }
@@ -974,12 +975,16 @@ public sealed partial class DebugBridge : IDisposable
                         native->DrawObject->Object.Scale.Z,
                     };
                 }
+                var rendered = (_skeletons.GetSkeletons(target).FirstOrDefault(s => s.Slot == PoseSlot.Character)
+                    as global::Poser.Game.Entities.Skeleton)?.GetModelTransform();
                 return Json(new
                 {
                     target.Name, ok = result?.Success, detail = result?.Detail,
                     position = new[] { after.Position.X, after.Position.Y, after.Position.Z },
                     scale = new[] { after.Scale.X, after.Scale.Y, after.Scale.Z },
-                    nativeScale, history = History(),
+                    nativeScale,
+                    renderedRotation = rendered is { } r ? new[] { r.Rotation.X, r.Rotation.Y, r.Rotation.Z, r.Rotation.W } : null,
+                    history = History(),
                 });
             }
             case "/gameui":

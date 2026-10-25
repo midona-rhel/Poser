@@ -576,7 +576,7 @@ public class Skeleton : EntityBase, ISkeleton
         var gameSkeleton = charaBase->Skeleton;
         if (gameSkeleton != null)
             RefreshWantedTransforms(gameSkeleton);
-        return ModelMatrixOf(charaBase);
+        return ModelTransformOf(charaBase).ToMatrix();
     }
 
     /// <summary>Composes native reference locals without changing the live pose.
@@ -662,31 +662,24 @@ public class Skeleton : EntityBase, ISkeleton
     internal static Transform ComposeReference(in Transform parent, in Transform local) =>
         Transform.FromMatrix(local.ToMatrix() * parent.ToMatrix());
 
-    /// <summary>
-    /// Gets the model matrix for transforming bone positions to world space.
-    /// Uses the native skeleton transform shared by the rendered mesh.
-    /// </summary>
-    public unsafe Matrix4x4 GetModelMatrix()
+    /// <summary>The rendered slot transform, including native height and Customize+ scale.</summary>
+    public unsafe Transform GetModelTransform()
     {
-        // The matrix comes from THIS slot's skeleton: a weapon's model
-        // moves with the hand, not with the actor origin.
         var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
             _resolveCharacterBase(Actor);
-        return ModelMatrixOf(charaBase);
+        return ModelTransformOf(charaBase);
     }
 
-    private unsafe Matrix4x4 ModelMatrixOf(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase* charaBase)
+    public Matrix4x4 GetModelMatrix() => GetModelTransform().ToMatrix();
+
+    private static unsafe Transform ModelTransformOf(FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase* charaBase)
     {
         if (charaBase == null || charaBase->Skeleton == null)
-            return Matrix4x4.Identity;
+            return Transform.Identity;
 
-        // Customize+ can overwrite DrawObject.Scale after native skeleton update.
-        // Reconstructing from that value puts overlays/IK in a different frame
-        // from the mesh. Like Ktisis BoneNode.CalcMatrixWorld, use the renderer's
-        // completed transform; its scale already includes the native height factors.
+        // DrawObject.Scale can change after the skeleton update. Use the completed
+        // renderer transform so overlays and IK share the mesh's frame.
         var rendered = charaBase->Skeleton->Transform;
-        return Matrix4x4.CreateScale(rendered.Scale) *
-               Matrix4x4.CreateFromQuaternion(rendered.Rotation) *
-               Matrix4x4.CreateTranslation(rendered.Position);
+        return new(rendered.Position, rendered.Rotation, rendered.Scale);
     }
 }
