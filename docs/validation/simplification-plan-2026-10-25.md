@@ -585,3 +585,24 @@ or state was introduced. No new live cancellation reproduction is claimed.
 
 Candidate `0d665fe6` was deployed to canonical output with matching hashes.
 No additional live cancellation test was run; the accepted scope is unchanged.
+
+### MCDF file retention #657
+
+Removed two repeated directory-registration checks from history lookup. The
+registry relationship is established by production callers: import registers
+the destination before ReadPackage or CopyPackage; both return that destination
+path; Commit records the package afterward. DeleteOperationDirectory is the
+only remover and removes the package and directory records together. Failed
+deletion and history retention keep both. Session and retained-history checks
+remain because they answer different questions.
+
+After redraw, one ownership update now handles successful and failed deletion.
+A failed deletion keeps its path and clears only the redraw requirement.
+Rollback reuses its existing outstanding-work calculation instead of repeating
+the same conditions. No new helpers, guards or tests. Production diff is
++19/-34 lines, net -15.
+
+Release build and all 906 existing tests pass, including MCDF history restoration
+when the source file is unavailable. Sol verified the registry relationship and
+state transitions; its comment-only lifetime finding was corrected and confirmed.
+No new live failure scenario was induced.

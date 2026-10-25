@@ -560,32 +560,24 @@ internal sealed class McdfImport(
         if (ReferenceEquals(_inFlight, operation))
             _inFlight = null;
 
-        bool clean = operation.TemporaryCollection == null
-            && !operation.GlamourerLocked
-            && operation.TemporaryProfile == null
-            && operation.OperationDirectory == null
-            && !operation.RedrawPending
-            && operation.PendingGlamourerRecovery == null
-            && operation.PendingBodyRecoveryJson == null;
-        if (clean && failures.Count == 0)
-            return null;
-
-        var current = ownership.OverridesFor(actor);
         bool nativeOutstanding = operation.TemporaryCollection != null
             || operation.GlamourerLocked
             || operation.TemporaryProfile != null
             || operation.RedrawPending
             || operation.PendingGlamourerRecovery != null
             || operation.PendingBodyRecoveryJson != null;
+        if (!nativeOutstanding && operation.OperationDirectory == null && failures.Count == 0)
+            return null;
+
+        var current = ownership.OverridesFor(actor);
         if (!nativeOutstanding)
         {
             // No native cleanup remains. Keep an undeletable extraction directory
             // separately without replacing any existing appearance restore state.
             if (operation.OperationDirectory is { } orphan)
             {
-                // Transferred, not dropped: clearing the record makes a
-                // second rollback pass idempotent, and the dedupe keeps a
-                // repeated transfer from appending the same path twice.
+                // Move the directory to the actor's pending cleanup list, then
+                // clear it here so another rollback does not transfer it again.
                 operation.OperationDirectory = null;
                 if (!current.PendingDirectories.Contains(orphan.Path))
                     ownership.Mutate(actor, current with

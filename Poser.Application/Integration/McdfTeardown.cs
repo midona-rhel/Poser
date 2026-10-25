@@ -77,18 +77,21 @@ internal sealed class McdfTeardown(
 
     internal McdfOperationDirectory Directory(string path) => _directories[path];
 
-    /// <summary>A committed import's package, kept for history.</summary>
+    /// <summary>
+    /// Keeps a completed import available for undo. Its directory was registered
+    /// before extraction; deleting that directory also removes this package.
+    /// </summary>
     internal void Commit(McdfPackage package, SessionGeneration session) =>
         _packages[package.OperationDirectory] = new(Guid.NewGuid(), session, package);
 
     // ── History retention ────────────────────────────────────────────────
 
-    // Session ownership is deliberate: clearing/evicting one history entry must
-    // not release a package another actor or inverse still references.
+    // Keep files even if one history entry is discarded: other undo or redo
+    // entries can still need the same imported files.
     internal IntegrationValue<Guid> RetainHistory(string directory)
     {
         if (!_packages.TryGetValue(directory, out var package)
-            || package.Session != sessions.ActiveSessionGeneration || !_directories.ContainsKey(directory))
+            || package.Session != sessions.ActiveSessionGeneration)
             return IntegrationValue<Guid>.Fail("The imported appearance resources are no longer available.");
         _historyDirectories.Add(directory);
         return IntegrationValue<Guid>.Ok(package.Id);
@@ -101,9 +104,7 @@ internal sealed class McdfTeardown(
         var retained = _packages.Values.FirstOrDefault(p => p.Id == resource
             && p.Session == sessions.ActiveSessionGeneration
             && _historyDirectories.Contains(p.Package.OperationDirectory));
-        return retained == null || !_directories.ContainsKey(retained.Package.OperationDirectory)
-            ? null
-            : retained.Package;
+        return retained?.Package;
     }
 
     internal string? ReleaseHistoryResources(string? inFlightDirectory)
@@ -356,25 +357,17 @@ internal sealed class McdfTeardown(
                     return "The extracted files stay owned until the actor's redraw "
                         + $"completes: {wait.Detail}";
                 var deleted = DeleteOperationDirectory(path);
-                if (!deleted.Success)
-                {
-                    // The redraw completed; only the deletion remains, and
-                    // Reset MCDF retries it without another barrier.
-                    ownership.Mutate(actor, current with
-                    {
-                        Mcdf = mcdf with { RedrawPending = false },
-                    });
-                    return deleted.Detail;
-                }
+                // Redraw finished or the actor left the scene. If deletion failed,
+                // keep the directory pending without requesting another redraw.
                 ownership.Mutate(actor, current with
                 {
                     Mcdf = Normalize(mcdf with
                     {
                         RedrawPending = false,
-                        OperationDirectory = null,
+                        OperationDirectory = deleted.Success ? null : path,
                     }),
                 });
-                return null;
+                return deleted.Success ? null : deleted.Detail;
             });
         }
         catch (Exception ex)
@@ -410,7 +403,7 @@ internal sealed class McdfTeardown(
     {
         if (!_directories.TryGetValue(path, out var ownership))
             return IntegrationResult.Fail(
-                "The extraction directory ownership proof is unavailable; cleanup was refused.");
+                "The extraction directory is not registered with Poser; cleanup was refused.");
         if (_historyDirectories.Contains(path)) return IntegrationResult.Ok();
         var result = files.DeleteOperationDirectory(ownership);
         if (result.Success)
