@@ -20,7 +20,7 @@ public readonly record struct PoseCaptureResult(
     public static PoseCaptureResult Fail(string detail) =>
         new(false, null, detail);
 
-    /// <summary>Additive evidence, excluded from legacy positional equality.</summary>
+    /// <summary>Records any transforms still waiting to be restored after a failed edit.</summary>
     public TransformRecoveryReceipt? Recovery { get; init; }
 
     public bool Equals(PoseCaptureResult other) =>
@@ -72,8 +72,7 @@ public sealed class PoseEditService
         return ResetWithinTransition(targets, region, description, recordHistory: true);
     }
 
-    // The whole-actor reset and history replay already own the transition and
-    // their inverse. Reuse the same pose write/rollback without nesting either.
+    // Whole-actor Reset and undo call this while holding the edit transition.
     internal PoseEditResult ResetWithinTransition(
         IReadOnlyList<TransformTargetId> targets, PoseRegion region,
         string description, bool recordHistory = false)
@@ -85,8 +84,7 @@ public sealed class PoseEditService
         var before = prepared.States!
             .Where(state =>
                 state.Target.Bone is { } bone &&
-                // Body/Face/Hair regions are Character-only by contract; a
-                // region reset can never touch a same-named auxiliary bone.
+                // Body, Face, and Hair reset bones in the character skeleton.
                 (region == PoseRegion.All ||
                  bone.Slot == PoseSlot.Character) &&
                 MatchesRegion(bone.CanonicalName, region) &&
@@ -103,9 +101,7 @@ public sealed class PoseEditService
     }
 
     /// <summary>
-    /// Mirrors only the selected bone's Poser edit across the body's left-right
-    /// plane. The current animation remains separate. If Poser has not edited
-    /// the bone, this method reports that there is nothing to mirror.
+    /// Mirrors the selected bone's pose edits across the body's left-right plane.
     /// </summary>
     public PoseEditResult Flip(
         TransformTargetId target,
@@ -139,19 +135,9 @@ public sealed class PoseEditService
     }
 
     /// <summary>
-    /// Mirrors the actor's Poser edits without copying the current animation
-    /// into the pose. Left and right bones exchange their edits, while center
-    /// and unpaired bones mirror in place. Unedited bones remain controlled by
-    /// animation. The complete operation is one undo step.
-    ///
-    /// <para>Weapons exchange hands. A main-hand bone's counterpart is the
-    /// same bone in the off hand rather than a <c>_l</c>/<c>_r</c> sibling
-    /// inside its own skeleton, because a weapon skeleton has no lateral
-    /// pairs. Props and ornaments have no opposite slot and therefore mirror
-    /// within their own skeleton.</para>
-    ///
-    /// <para>For the actor itself, the operation mirrors rotation but leaves
-    /// world position unchanged.</para>
+    /// Mirrors pose edits as one undo step. Left and right bones exchange edits;
+    /// center and unpaired bones mirror in place. The actor's rotation is mirrored
+    /// around its current position. Unedited bones keep following animation.
     /// </summary>
     public PoseEditResult Mirror(
         IReadOnlyList<TransformTargetId> targets,
@@ -198,8 +184,7 @@ public sealed class PoseEditService
             TransformTargetState? partner = null;
             if (MirrorSlot(bone.Slot) is { } partnerSlot)
             {
-                // Match weapon bones by name and partial in the opposite hand slot.
-                // Without a counterpart, mirror this bone's edits in place.
+                // Match weapon bones by name and partial in the opposite hand.
                 if (byKey.TryGetValue(
                         (partnerSlot, bone.PartialId, bone.CanonicalName),
                         out var handed))
@@ -236,8 +221,7 @@ public sealed class PoseEditService
             }
             else if (state.Pose.Layers.Count > 0)
             {
-                // Center or unpaired bone: mirror its own authored
-                // adjustment in place.
+                // Mirror center and unpaired bones in place.
                 desired.Add(state with
                 {
                     Pose = PoseOperations.MirrorRebased(
@@ -269,8 +253,7 @@ public sealed class PoseEditService
                 return PoseEditResult.Fail(
                     captured.Detail ?? $"Could not capture {target}.");
             var state = captured.State;
-            // Authored edits only, the same contract the bones keep: an actor
-            // the user has never moved keeps whatever the game placed it at.
+            // Preserve the game's placement until the actor has been moved in Poser.
             if (!state.HasOverride)
                 continue;
             changedBefore.Add(state);
@@ -289,8 +272,7 @@ public sealed class PoseEditService
         return Apply(description, changedBefore, desired);
     }
 
-    /// <summary>The slot a bone's mirror counterpart lives in when it is not
-    /// this bone's own — the two weapon hands, and nothing else.</summary>
+    /// <summary>Pairs the two weapon hands for mirroring.</summary>
     private static PoseSlot? MirrorSlot(PoseSlot slot) => slot switch
     {
         PoseSlot.MainHand => PoseSlot.OffHand,

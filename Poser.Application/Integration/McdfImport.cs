@@ -524,9 +524,7 @@ internal sealed class McdfImport(
                 ref operation.TemporaryCollection, ref removedPenumbra) is { } collectionError)
             failures.Add(collectionError);
 
-        // A live actor may still use extracted files after its collection is
-        // removed. Retain those files until redraw completes. If the actor no
-        // longer resolves, no new redraw wait is added here.
+        // A live actor must redraw before extracted files can be released.
         if (removedPenumbra && resolvable)
             operation.RedrawPending = true;
 

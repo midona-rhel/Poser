@@ -22,9 +22,7 @@ internal sealed class McdfTeardown(
     ISessionGenerationSource sessions,
     IntegrationOwnership ownership)
 {
-    /// <summary>Same bound the import apply phase uses; a redraw that has
-    /// not completed within this window is a failure, never an unbounded
-    /// wait.</summary>
+    /// <summary>Maximum wait for import and cleanup redraws.</summary>
     internal static readonly TimeSpan RedrawBarrierTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
@@ -194,9 +192,8 @@ internal sealed class McdfTeardown(
     }
 
     /// <summary>
-    /// Restores by actor when it resolves, otherwise by saved character name.
-    /// Returns null if neither address is available; it does not verify that the
-    /// provider has already discarded the state.
+    /// Restores through the live actor, or its saved name after removal.
+    /// Returns null when neither is available.
     /// </summary>
     private IntegrationResult? RestoreEither(
         ActorId actor, bool resolvable, string? byName, string state) =>
