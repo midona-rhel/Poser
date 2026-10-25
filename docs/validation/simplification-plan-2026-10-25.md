@@ -847,3 +847,14 @@ those callers and remain. Rewrote EditHistory's comments, removing repeated
 warnings and old development history. Release build and all 906 tests passed.
 No test cases added or removed. The camera ordering was tested through history
 callbacks, not through native camera movement in the game.
+
+
+The history fix is deployed as e8f12dc4. Canonical output hashes matched and
+Poser reloaded successfully at 19:59:47 local. The live check is to move the
+main camera, delete multiple selected entities within five seconds, then undo
+twice: entity restoration first, camera restoration second. Report whether
+those stay separate, and any difference in redo. User acceptance is pending.
+
+The follow-up comment pass covers HistoryEntry and LifecycleHistoryBatch,
+including step identity through redraw, grouped replay order, and what happens
+after a failed undo. These edits change comments only.

@@ -2,8 +2,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>One removal command's already-recorded inverses, with per-child
-/// progress so a refused retry never repeats a sibling that already landed.</summary>
+/// <summary>Combines a command affecting several entities into one undo action.
+/// Remembers completed steps so another attempt resumes where the previous one stopped.</summary>
 internal sealed class LifecycleHistoryBatch(string description)
 {
     private readonly int _thread = Environment.CurrentManagedThreadId;
@@ -18,9 +18,8 @@ internal sealed class LifecycleHistoryBatch(string description)
         return true;
     }
 
-    /// <summary>Seats <paramref name="entry"/> before every sibling: redone
-    /// first, undone last — after the siblings have put their entities back.
-    /// A batch of prologues alone records nothing.</summary>
+    /// <summary>Runs this step first on redo and last on undo, after the entities
+    /// have been recreated. Build includes it when the batch has entity changes.</summary>
     public void AddPrologue(HistoryEntry entry)
     {
         if (entry is not InverseEntry)
@@ -48,8 +47,8 @@ internal sealed class LifecycleHistoryBatch(string description)
         var entities = new HashSet<SelectionId>();
         foreach (var child in _children)
         {
-            // Resolve on each lookup: lifecycle restoration can replace IDs.
-            // One unknown child makes the entire batch an ordering barrier.
+            // Undo can recreate entities with new IDs. If a step's entities are
+            // unknown, the whole batch uses global undo.
             var affected = EditHistory.EntitiesOf(child.Entry);
             if (affected is null || affected.Count == 0) return null;
             entities.UnionWith(affected);
@@ -83,8 +82,8 @@ internal sealed class LifecycleHistoryBatch(string description)
                 || (action == RefusalAction.DropOnRepeat && child.Refused);
             child.Refused = action == RefusalAction.DropOnRepeat;
             _failure = detail ?? $"Could not {(undo ? "undo" : "redo")} {child.Entry.Description.ToLowerInvariant()}.";
-            // Stop at the first refusal to preserve inverse ordering. A retry
-            // resumes here (or after a permanently discarded child).
+            // Keep the step order. Another attempt starts here, or at the next
+            // step if this one was permanently removed.
             return false;
         }
         return true;
