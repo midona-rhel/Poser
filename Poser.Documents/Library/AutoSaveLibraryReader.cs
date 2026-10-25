@@ -81,7 +81,7 @@ public sealed class AutoSaveLibraryReader
     private Dictionary<string, FileFacts> _known = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, FileFacts> _seen = new(StringComparer.OrdinalIgnoreCase);
 
-    public List<AutoSaveFolder> Read(string root)
+    public List<AutoSaveFolder> Read(string root, string? sceneRoot = null)
     {
         var snapshots = new List<(DirectoryInfo Directory, DateTime At)>();
         try
@@ -94,6 +94,16 @@ public sealed class AutoSaveLibraryReader
         catch (Exception)
         {
             // A missing or unreadable root is an empty tab, not a failure.
+        }
+
+        if (sceneRoot is not null)
+        {
+            try
+            {
+                foreach (var directory in new DirectoryInfo(sceneRoot).EnumerateDirectories())
+                    snapshots.Add((directory, directory.LastWriteTimeUtc));
+            }
+            catch (Exception) { }
         }
 
         // Newest first, ties on name descending: the order the service's own
@@ -115,7 +125,8 @@ public sealed class AutoSaveLibraryReader
             {
                 foreach (var file in directory.EnumerateFiles())
                     if (System.IO.Path.GetExtension(file.Name).Equals(
-                            PoseExtension, StringComparison.OrdinalIgnoreCase))
+                            PoseExtension, StringComparison.OrdinalIgnoreCase)
+                        || file.Extension.Equals(SceneFile.Extension, StringComparison.OrdinalIgnoreCase))
                         files.Add(file);
             }
             catch (Exception)
@@ -212,6 +223,13 @@ public sealed class AutoSaveLibraryReader
             return held;
         }
 
+        if (file.Extension.Equals(SceneFile.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            var scene = SceneFileStore.Default.ReadMetadata(path);
+            var sceneFacts = new FileFacts(stamp, scene.PlaceName ?? string.Empty, false);
+            if (scene.Succeeded) _seen[path] = sceneFacts;
+            return sceneFacts;
+        }
         var metadata = AtomicPoseFileStore.Default.ReadMetadata(path);
         if (!metadata.Succeeded)
             return new FileFacts(stamp, string.Empty, false);

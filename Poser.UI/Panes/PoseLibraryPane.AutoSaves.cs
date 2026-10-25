@@ -205,7 +205,7 @@ public sealed partial class PoseLibraryPane
                 {
                     Id = entry.FilePath,
                     Label = _builtExtensions
-                        ? entry.Name + PoseExtension
+                        ? entry.Name + Path.GetExtension(entry.FilePath)
                         : entry.Name,
                     LabelLower = entry.NameLower,
                     Sub = entry.Stamp,

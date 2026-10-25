@@ -633,12 +633,11 @@ public static partial class SettingsView
         page.Section("Auto-save", form =>
         {
             bool saving = vm.AutoSaveEnabled;
-            bool scenes = saving && vm.SceneSnapshotsEnabled;
             form.Switch(
-                "Auto-save poses",
+                "Auto-save scenes",
                 vm.AutoSaveEnabled,
                 next => vm.AutoSaveEnabled = next,
-                "While you are in GPose, every actor you have posed is saved to a backup folder on a timer");
+                "While you are in GPose, saves actors, lights, cameras and the rest of the scene together");
             form.Slider(
                 "Every",
                 vm.AutoSaveIntervalSeconds,
@@ -650,31 +649,17 @@ public static partial class SettingsView
                 disabled: !saving);
             form.Number(
                 "Backups kept",
-                ParseCount(vm.AutoSaveMaxKept, 10),
-                next => vm.AutoSaveMaxKept = CountText(next),
+                ParseCount(vm.SceneSnapshotsMaxKept, 5),
+                next => vm.SceneSnapshotsMaxKept = CountText(next),
                 perPixel: 0.1f,
                 format: "0",
                 help: "Older backups are deleted once there are more than this",
                 disabled: !saving);
             form.Switch(
-                "Auto-save the scene too",
-                vm.SceneSnapshotsEnabled,
-                next => vm.SceneSnapshotsEnabled = next,
-                "The whole scene, everything in the sidebar, is saved on the same timer into its own folder",
-                disabled: !saving);
-            form.Number(
-                "Scene backups kept",
-                ParseCount(vm.SceneSnapshotsMaxKept, 5),
-                next => vm.SceneSnapshotsMaxKept = CountText(next),
-                perPixel: 0.1f,
-                format: "0",
-                help: "Older scene backups are deleted once there are more than this",
-                disabled: !scenes);
-            form.Switch(
                 "Delete backups on exit",
                 vm.AutoSaveCleanOnExit,
                 next => vm.AutoSaveCleanOnExit = next,
-                "Leaving GPose normally clears the backups; after a crash they stay so you can recover",
+                "Leaving GPose normally clears scene backups; after a crash they stay so you can recover",
                 disabled: !saving);
         });
         // The one diagnostic surface a photographer is ever pointed at, on the

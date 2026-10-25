@@ -17,14 +17,12 @@ public interface ILibrarySceneActions
 /// <summary>Shared library/spawn entry policy, independent of selection and window lifetime.</summary>
 public sealed class LibrarySceneActions(
     ISceneWorkflow scenes, SceneLoadPreferences preferences, IPlacementAnchorSource anchors,
-    ISceneCreation creation, IPendingSceneCreation pending) : ILibrarySceneActions
+    ISceneCreation creation, IPendingSceneCreation pending,
+    Poser.Application.World.IPlaceService? place = null) : ILibrarySceneActions
 {
     public Outcome LoadScene(string path, ObjectPlacementMode placement)
     {
-        var options = preferences.Options;
-        if (placement != ObjectPlacementMode.AsSaved
-            && anchors.TryCurrentFor(placement, out var position, out var yaw, out _))
-            options = options with { Placement = placement, PlacementPosition = position, PlacementYaw = yaw };
+        var options = preferences.ForLoad(path, place?.Current.TerritoryId ?? 0, placement, anchors);
         return scenes.BeginLoad(path, options);
     }
 

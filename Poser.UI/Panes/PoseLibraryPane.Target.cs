@@ -54,13 +54,13 @@ public sealed partial class PoseLibraryPane
 
         // A character file is applied to an actor that already exists; there is
         // no "spawn and dress" path in v1.
-        _vm.CanSpawn = _type != LibraryType.Mcdf && _type != LibraryType.Scenes;
+        _vm.CanSpawn = _type != LibraryType.Mcdf && !IsSceneTile(_vm.Selected);
 
         // A scene has no target to pick: it IS the session. Its primary needs
         // a highlighted file and nothing else, and it names the transaction it
         // starts rather than the picker it does not open.
         _vm.ApplyDisruptive = false;
-        if (_type == LibraryType.Scenes)
+        if (IsSceneTile(_vm.Selected))
         {
             _vm.CanApply = true;
             _vm.ApplyLabel = "Load scene";

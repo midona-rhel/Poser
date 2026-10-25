@@ -37,12 +37,10 @@ public sealed partial class PoseLibraryPane
         // A scene is not spawned as an actor, and saving one belongs where
         // scenes are found rather than behind a menu.
         _vm.ShowSpawn =
-            _type is not LibraryType.Scenes and not LibraryType.Objects;
-        // Scenes and objects both choose WHERE a load lands (ruled
-        // 2026-08-31): the same four-mode dropdown, the same preference.
-        // No probe here any more — nothing gates on saved anchors since
-        // the centroid fallback made every mode honourable.
-        if (_type is LibraryType.Objects or LibraryType.Scenes)
+            !IsSceneTile(_vm.Selected) && _type != LibraryType.Objects;
+        // Object placement is shared; scenes additionally resolve the map default
+        // and retain an explicit choice for the selected file.
+        if (_type == LibraryType.Objects || IsSceneTile(_vm.Selected))
         {
             BuildPlacementChoices();
             _vm.PlacementOptions = _placementChoiceLabels.ToArray();
@@ -51,7 +49,11 @@ public sealed partial class PoseLibraryPane
             _vm.OnPlacement = next =>
             {
                 if (next >= 0 && next < _placementChoices.Count)
-                    _placement.Mode = _placementChoices[next];
+                {
+                    if (IsSceneTile(_vm.Selected) && _vm.Selected >= 0)
+                        _scenePreferences.SetPlacement(_vm.Tiles[_vm.Selected].Id, _placementChoices[next]);
+                    else _placement.Mode = _placementChoices[next];
+                }
             };
         }
         else

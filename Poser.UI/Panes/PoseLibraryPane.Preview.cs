@@ -37,7 +37,7 @@ public sealed partial class PoseLibraryPane
         // into the pose preview binder. Character files never travel the
         // import pipeline, and a scene is not a pose file at all: it has no
         // single skeleton to stand on a preview body.
-        _vm.PreviewAvailable = _type is LibraryType.Poses or LibraryType.AutoSaves;
+        _vm.PreviewAvailable = (_type is LibraryType.Poses or LibraryType.AutoSaves) && !IsSceneTile(_vm.Selected);
         SyncCharacterFile();
         // No eye anymore (user 2026-08-11): the preview is always live on a
         // tab that can preview, so availability alone gates it.

@@ -757,6 +757,7 @@ public sealed class ScenePane
     /// </summary>
     private void DrawLoadOptionsBand(Vector2 origin, Vector2 size, string? path)
     {
+        _loadPath = path;
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         float inset = theme.Page.Inset;
@@ -812,7 +813,12 @@ public sealed class ScenePane
     /// in — and they are drawn from here in both mounts, so the workspace and
     /// the dialog cannot drift into two wordings of one option.
     /// </summary>
-    private void DrawSessionOptions(FormScope form, bool disabled) =>
+    private string? _loadPath;
+    private static readonly string[] ScenePlacementLabels =
+        ["As saved", "Relative to camera", "Relative to selected actor", "In front of camera"];
+
+    private void DrawSessionOptions(FormScope form, bool disabled)
+    {
         form.Checkboxes(
             "Session",
             disabled,
@@ -821,13 +827,17 @@ public sealed class ScenePane
                 "Clear the session first",
                 Options.ClearExistingScene,
                 next => Options = Options with { ClearExistingScene = next },
-                "Removes everything first"),
-            new CheckItem(
-                "Place relative to me",
-                Options.PlaceRelativeToCurrentOrigin,
-                next => Options =
-                    Options with { PlaceRelativeToCurrentOrigin = next },
-                "Places it where you stand"));
+                "Removes everything first"));
+        uint savedTerritory = 0;
+        if (_loadPath is { } path && TryVerdict(path, out var metadata))
+            savedTerritory = metadata?.TerritoryId ?? 0;
+        var mode = _preferences.PlacementFor(_loadPath ?? string.Empty, savedTerritory,
+            _place.Current.TerritoryId, _config.Config.DefaultSpawnPlacement);
+        form.Dropdown("Placement", ScenePlacementLabels, (int)mode,
+            next => { if (_loadPath is { } selected) _preferences.SetPlacement(selected, (ObjectPlacementMode)next); },
+            help: "Defaults to As saved when this scene was saved on the current map",
+            disabled: disabled || _loadPath is null);
+    }
 
     /// <summary>The seven INCLUSION filters, one group, in the order the load
     /// restores them. Only the three whose scope is not obvious from the word
@@ -1210,7 +1220,9 @@ public sealed class ScenePane
 
     private void BeginLoad(string path)
     {
-        var started = _workflow.BeginLoad(path, Options);
+        var options = _preferences.ForLoad(path, _place.Current.TerritoryId,
+            _config.Config.DefaultSpawnPlacement, _anchors);
+        var started = _workflow.BeginLoad(path, options);
         if (!started.Success)
             _notices.Failed(started.Detail ?? "The scene could not be loaded.");
     }

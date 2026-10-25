@@ -66,7 +66,7 @@ public sealed partial class PoseLibraryPane
         _menuItems.Clear();
         _menuActionRows.Clear();
         var tile = _vm.Tiles[index];
-        bool scenes = _type == LibraryType.Scenes;
+        bool scenes = IsSceneTile(index);
         bool objects = _type == LibraryType.Objects;
         int count = VerbTargets(index).Count;
         string many = count > 1 ? " " + count.ToString(CultureInfo.InvariantCulture) : string.Empty;
@@ -175,7 +175,7 @@ public sealed partial class PoseLibraryPane
     private void ActivateTile(int index)
     {
         Select(index);
-        if (_type == LibraryType.Scenes)
+        if (IsSceneTile(index))
         {
             LoadScene(index);
             return;

@@ -9,15 +9,12 @@ public sealed class AutoSaveRuntime : IDisposable
 {
     private readonly IFramework _framework;
     private readonly IGPoseService _gpose;
-    private readonly AutoSaveService _poses;
     private SceneAutoSaveService? _scenes;
 
-    public AutoSaveRuntime(IFramework framework, IGPoseService gpose, AutoSaveService poses)
+    public AutoSaveRuntime(IFramework framework, IGPoseService gpose)
     {
         _framework = framework;
         _gpose = gpose;
-        _poses = poses;
-        _framework.Update += TickPoses;
     }
 
     public void StartSceneSnapshots(SceneAutoSaveService scenes)
@@ -28,12 +25,10 @@ public sealed class AutoSaveRuntime : IDisposable
         _framework.Update += TickScenes;
     }
 
-    private void TickPoses(IFramework _) => _poses.Tick(DateTime.UtcNow, _gpose.IsGPosing);
     private void TickScenes(IFramework _) => _scenes?.Tick(DateTime.UtcNow, _gpose.IsGPosing);
 
     public void Dispose()
     {
-        _framework.Update -= TickPoses;
         _framework.Update -= TickScenes;
     }
 }

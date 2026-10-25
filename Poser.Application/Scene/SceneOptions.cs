@@ -149,6 +149,10 @@ public sealed record SceneLoadOptions
     /// so content lands once.</summary>
     public ObjectPlacementMode Placement { get; init; }
 
+    /// <summary>Known current map for a UI default, resolved against the loaded document before placement.
+    /// Zero means explicit placement; history retains the resolved result.</summary>
+    public uint DefaultPlacementTerritory { get; init; }
+
     /// <summary>The current anchor pose the placement measures against,
     /// resolved by the caller at load start.</summary>
     public System.Numerics.Vector3 PlacementPosition { get; init; }

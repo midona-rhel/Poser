@@ -364,9 +364,15 @@ public sealed partial class PoseLibraryPane
         UserNotices notices,
         ICharacterFiles characterFiles,
         Application.Library.ILibraryFileOperations fileOperations,
-        Application.Library.AutoSaveLibrary autoLibrary)
+        Application.Library.AutoSaveLibrary autoLibrary,
+        SceneLoadPreferences scenePreferences,
+        Application.World.IPlaceService place,
+        SceneAutoSaveService sceneAutoSave)
     {
         _autoLibrary = autoLibrary;
+        _scenePreferences = scenePreferences;
+        _place = place;
+        _sceneAutoSave = sceneAutoSave;
         _fileOperations = fileOperations;
         _metadataEditor = new(fileOperations, thumbs, notices);
         _characterFiles = characterFiles;
@@ -417,7 +423,7 @@ public sealed partial class PoseLibraryPane
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {
-            if (_type == LibraryType.Scenes)
+            if (IsSceneTile(_vm.Selected))
             {
                 LoadScene(_vm.Selected);
                 return;
@@ -562,10 +568,26 @@ public sealed partial class PoseLibraryPane
     /// entry can honour it, else as-saved — the same fallback the dropdown
     /// displays, so the shown choice and the spawn can never disagree.
     /// </summary>
-    private ObjectPlacementMode EffectiveMode() =>
-        _placementChoices.Contains(_placement.Mode)
-            ? _placement.Mode
-            : ObjectPlacementMode.AsSaved;
+    private readonly SceneLoadPreferences _scenePreferences;
+    private readonly Application.World.IPlaceService _place;
+    private readonly SceneAutoSaveService _sceneAutoSave;
+    private readonly Dictionary<string, uint> _sceneTerritories = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool IsSceneTile(int index) => _type == LibraryType.Scenes ||
+        (_type == LibraryType.AutoSaves && index >= 0 && index < _vm.Tiles.Count &&
+         _vm.Tiles[index].Id.EndsWith(SceneFile.Extension, StringComparison.OrdinalIgnoreCase));
+
+    private ObjectPlacementMode EffectiveMode(int index = -1)
+    {
+        if (index < 0) index = _vm.Selected;
+        if (IsSceneTile(index) && index >= 0 && index < _vm.Tiles.Count)
+        {
+            var path = _vm.Tiles[index].Id;
+            return _scenePreferences.PlacementFor(path, _sceneTerritories.GetValueOrDefault(path),
+                _place.Current.TerritoryId, _placement.Mode);
+        }
+        return _placement.Mode;
+    }
 
     /// <summary>
     /// The Objects tab's INSPECTOR rail — the same right column every other

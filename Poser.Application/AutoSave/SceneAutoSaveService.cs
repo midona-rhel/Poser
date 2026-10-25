@@ -27,6 +27,23 @@ public sealed class SceneAutoSaveService : IDisposable
     private readonly Func<DateTime> _clock;
     private readonly Func<Action, bool> _dispatch;
     private readonly object _gate = new();
+    private readonly object _diskGate = new();
+    private Guid? _cleanedSession;
+
+    /// <summary>Stop deferred captures before actor teardown. Retain the last completed
+    /// scene snapshot, or clear snapshots after any in-flight disk write has finished.</summary>
+    public void CompleteForExit()
+    {
+        _wasGPosing = false;
+        _nextDueUtc = null;
+        if (!Settings.Enabled || !Settings.CleanOnExit) return;
+        lock (_diskGate)
+        {
+            _cleanedSession = _sceneId;
+            _store.Prune(0);
+            lock (_gate) _writtenIdentity = null;
+        }
+    }
 
     /// <summary>The document identity every snapshot of this session reuses,
     /// so successive snapshots are versions of ONE scene rather than
@@ -70,7 +87,7 @@ public sealed class SceneAutoSaveService : IDisposable
     public string RootDirectory { get; }
 
     /// <summary>Latest published outcome; tests observe the cadence through it.</summary>
-    internal SceneAutoSaveResult LastResult
+    public SceneAutoSaveResult LastResult
     {
         get
         {
@@ -102,7 +119,7 @@ public sealed class SceneAutoSaveService : IDisposable
         _wasGPosing = gposing;
 
         var settings = Settings;
-        if (_disposed || !settings.Enabled || !settings.SceneSnapshots || !gposing)
+        if (_disposed || !settings.Enabled || !gposing)
         {
             _nextDueUtc = null;
             return;
@@ -202,7 +219,19 @@ public sealed class SceneAutoSaveService : IDisposable
         string? dispatchFailure = null;
         try
         {
-            if (!_dispatch(() => WriteAndPrune(scene, localNow, keep)))
+            var session = _sceneId;
+            if (!_dispatch(() =>
+            {
+                lock (_diskGate)
+                {
+                    if (_cleanedSession == session)
+                    {
+                        lock (_gate) _writing = false;
+                        return;
+                    }
+                    WriteAndPrune(scene, localNow, keep);
+                }
+            }))
                 dispatchFailure = "The snapshot writer could not be dispatched.";
         }
         catch (Exception ex)

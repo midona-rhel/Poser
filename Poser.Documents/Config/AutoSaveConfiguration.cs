@@ -1,10 +1,8 @@
 namespace Poser.Documents.Config;
 
 /// <summary>
-/// Timed pose auto-save (Ktisis <c>PoseAutoSave</c> / Brio <c>AutoSaveService</c>
-/// parity). While GPose is active every actor carrying Poser-authored edits is
-/// exported to <c>&lt;configDir&gt;/AutoSaves/&lt;timestamp&gt;/&lt;actor&gt;.pose</c>
-/// on the interval, and once more when GPose is left.
+/// Whole-scene autosave settings. Legacy pose settings remain readable for
+/// compatibility, but the production timer writes only scene snapshots.
 /// </summary>
 public class AutoSaveConfiguration
 {
@@ -32,12 +30,8 @@ public class AutoSaveConfiguration
     public bool CleanOnExit { get; set; } = false;
 
     /// <summary>
-    /// Whether the same timer also snapshots the WHOLE scene — actors, props,
-    /// lights, cameras and environment — beside the per-actor poses. A scene
-    /// snapshot is one large document rather than a file per actor, so it
-    /// keeps its own retention count; it shares <see cref="Enabled"/> and
-    /// <see cref="IntervalSeconds"/> because it is the same auto-save
-    /// cadence, not a second feature.
+    /// Legacy setting retained for configuration compatibility. Whole-scene
+    /// autosave now follows Enabled regardless of this value.
     /// </summary>
     public bool SceneSnapshots { get; set; } = true;
 

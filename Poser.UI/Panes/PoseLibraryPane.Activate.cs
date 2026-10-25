@@ -34,7 +34,7 @@ public sealed partial class PoseLibraryPane
     private void LoadScene(int index)
     {
         if (index < 0 || index >= _vm.Tiles.Count) return;
-        var result = _libraryScene.LoadScene(_vm.Tiles[index].ThumbKey, EffectiveMode());
+        var result = _libraryScene.LoadScene(_vm.Tiles[index].ThumbKey, EffectiveMode(index));
         if (!result.Success) _notices.Failed(result.Detail ?? "The scene could not be loaded.");
     }
 

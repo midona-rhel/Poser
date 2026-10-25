@@ -6,7 +6,7 @@ namespace Poser.Application.Library;
 /// <summary>Coalesces directory reads independently of library-panel lifetime.
 /// The reader it owns remembers what each file said between passes, and the
 /// coalescing is what keeps it to one pass at a time.</summary>
-public sealed class AutoSaveLibrary(IAutoSaveService saves)
+public sealed class AutoSaveLibrary(IAutoSaveService saves, SceneAutoSaveService scenes)
 {
     private readonly AutoSaveLibraryReader _reader = new();
     private readonly object _sync = new();
@@ -26,7 +26,7 @@ public sealed class AutoSaveLibrary(IAutoSaveService saves)
             while (true)
             {
                 List<AutoSaveFolder> result;
-                try { result = _reader.Read(root); }
+                try { result = _reader.Read(root, scenes.RootDirectory); }
                 catch { result = []; }
                 Volatile.Write(ref _latest, result);
                 lock (_sync)

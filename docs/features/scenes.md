@@ -243,7 +243,34 @@ Free, locked, pinned, unavailable, stale, hidden, and undrawn actors are
 refused before any camera write; the action is available from the actor menu
 and the Inspector's Actor → Camera section.
 
+## Autosave
+
+Autosave writes one `.xivs` scene per changed snapshot under
+`<configDir>/SceneAutoSaves/<yyyy-MM-dd>`, using the normal scene capture and
+atomic file writer. It includes actors and poses, scene objects, lights, cameras,
+environment and relationships. Appearance references follow ordinary scene
+capture; autosave does not repeatedly export portable mod packages.
+The first save waits one interval. Empty or unchanged scenes create no backup;
+a scene save/load in progress defers the attempt. The existing scene retention
+count is the single visible backup count. The old optional-scene toggle is
+ignored: Enabled now governs scene autosave.
+
+The Autosaves library loads scene backups without an actor target and retains
+access to legacy pose backups. On GPose exit, deferred captures are invalidated;
+the last completed snapshot is retained rather than starting a capture while
+actors are being torn down. Delete backups on exit clears scene snapshots after
+any active disk write; an already queued writer cannot recreate them afterward.
+Failures remain visible in the Autosaves footer and log. A queued write is not
+proof of a durable backup.
+
 ## Loading a scene
+
+The library and scene file dialog default to **As saved** when a scene's
+nonzero territory ID matches the current map. Other or unknown maps use the
+configured spawn placement. An explicit placement choice is held for that file
+for the session and wins over this default. The load resolves the default
+against the actual document before placing anything; history stores the resolved
+choice, not a rule that could move the scene differently on redo.
 
 Poser runs one scene load at a time for the current GPose session. The phases
 are:

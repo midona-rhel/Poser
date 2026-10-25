@@ -417,7 +417,9 @@ public sealed partial class PoseLibraryPane
         // tab's footer reads exactly like every other tab's.
         if (_type == LibraryType.AutoSaves && !scanning)
         {
-            _vm.Status = AutoSaveRecoveryText();
+            var result = _sceneAutoSave.LastResult;
+            _vm.Status = result.Status is SceneAutoSaveStatus.Failed or SceneAutoSaveStatus.RecoveryRequired
+                ? result.Detail : AutoSaveRecoveryText();
             return;
         }
 

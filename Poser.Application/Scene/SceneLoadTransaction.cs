@@ -228,6 +228,7 @@ internal sealed class SceneLoadTransaction(
             return Task.FromResult<Stop?>(Stop.Refused(read.Failure!.Detail));
         }
         _scene = scene;
+        options = SceneLoadPreferences.ResolveDefault(options, scene.TerritoryId);
 
         // Entities whose own data is invalid were left out of the
         // document by name; the rest of the scene loads beside them. A

@@ -158,7 +158,7 @@ internal static class ServiceRegistration
         // coordinator owns this port. The port resolves auto-save at exit.
         services.AddSingleton<IFinalCapturePort>(sp =>
             new AutoSaveFinalCapturePort(
-                () => sp.GetRequiredService<IAutoSaveService>()));
+                () => sp.GetRequiredService<SceneAutoSaveService>()));
         services.AddSingleton<SessionLifecycleCoordinator>();
         services.AddSingleton<ISessionGenerationSource>(sp =>
             sp.GetRequiredService<SessionLifecycleCoordinator>());
