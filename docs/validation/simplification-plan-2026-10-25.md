@@ -396,3 +396,11 @@ transform apply/restore, scene placement and position lock use it. Removed
 post-write checks that only established whether any older override existed.
 Release build and all 913 existing tests pass. No unit tests added or removed;
 native scale/readback and UI acceptance remain live checks.
+
+Live verification on 2026-10-25, deployed probe head `409edac9`: ran
+`tools/live_actor_scale_check.py` against actor 0 through the normal transform
+facade. All 12 checks passed: 0.005, 0.000001 and negative X scale each matched
+both stored and native draw-object readback after apply and redo; undo restored
+the original scale. The actor ended at (1, 1, 1). Evidence:
+[audit-2026-10-25/631-live-scale.json](audit-2026-10-25/631-live-scale.json).
+This verifies native scale/history behavior; it does not claim UI acceptance.
