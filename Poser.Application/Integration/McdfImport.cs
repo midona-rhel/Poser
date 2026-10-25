@@ -497,9 +497,8 @@ internal sealed class McdfImport(
     {
         var actor = operation.Target;
         bool resolvable = actors.IsResolvable(actor);
-        // The captured character name, and only while the object itself is
-        // unreachable: Glamourer's state is keyed to the identity, so it is
-        // still addressable when the exact generation is not.
+        // Glamourer can retain appearance state after the actor leaves the scene.
+        // Use its captured character name when the live actor is no longer available.
         string? byName = resolvable ? null : McdfTeardown.NonEmpty(operation.ActorName);
         // A Penumbra redraw belongs to Penumbra changes only: Glamourer
         // and Customize+ apply their own updates, and Penumbra is
@@ -526,35 +525,12 @@ internal sealed class McdfImport(
         if (body.Overrides != owned)
             ownership.Mutate(actor, body.Overrides);
 
-        if (operation.GlamourerLocked && resolvable)
+        if (operation.GlamourerLocked)
         {
-            var unlocked = glamourer.UnlockGlamourerState(actor);
-            if (unlocked.Success)
-            {
-                operation.GlamourerLocked = false;
-                // Remember the pre-import state until restoration succeeds.
-                // The original baseline is still reserved for Reset.
+            operation.GlamourerLocked = teardown.ReleaseGlamourerLock(
+                actor, resolvable, byName, operation.GlamourerLocked, failures);
+            if (!operation.GlamourerLocked)
                 operation.PendingGlamourerRecovery = operation.WorkingGlamourerState;
-            }
-            else
-            {
-                failures.Add(unlocked.Detail!);
-            }
-        }
-        else if (operation.GlamourerLocked)
-        {
-            // Glamourer can retain its lock after the game object disappears.
-            // Unlock by character name, keeping failures recorded for a retry.
-            var unlocked = teardown.ByNameUnlock(byName);
-            if (unlocked.Success)
-            {
-                operation.GlamourerLocked = false;
-                operation.PendingGlamourerRecovery = operation.WorkingGlamourerState;
-            }
-            else
-            {
-                failures.Add(unlocked.Detail!);
-            }
         }
 
         if (!operation.GlamourerLocked

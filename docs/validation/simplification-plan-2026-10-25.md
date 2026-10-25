@@ -522,3 +522,20 @@ temporary profiles, so a read returning ProfileNotFound is not deletion proof.
 Post-body-application cancellation was not reproduced and is not claimed as
 live-tested. See [live results](audit-2026-10-25/653-live-mcdf.json).
 Production code: 53 lines added, 79 removed (net -26).
+
+### Glamourer lock release #654
+
+Rollback and Reset now use `McdfTeardown.ReleaseGlamourerLock` to choose the
+live actor or captured character name and record the result. Appearance
+restoration remains explicit at each caller: rollback uses pre-import state,
+while Reset uses the original baseline unless a selector still owns it.
+Production change: +33/-61 lines, net -28. No new states or test cases.
+
+Sol reviewed #653 (`7e42005c`) and this bounded diff independently, finding no
+actionable issues. Reviews checked source/provider behavior, cleanup ordering,
+state retention, comments and net removal. User accepted #653 without requiring
+a live post-application cancellation reproduction.
+
+Release build and all 906 existing tests pass for #654. Deployment and normal
+live import/reset results will be recorded separately. Broader MCDF file and
+appearance-restoration consolidation remains under #640.

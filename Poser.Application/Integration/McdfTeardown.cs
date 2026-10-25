@@ -125,10 +125,30 @@ internal sealed class McdfTeardown(
         string.IsNullOrEmpty(value) ? null : value;
 
     /// <summary>
+    /// Releases Poser's MCDF lock using the actor or its saved character name.
+    /// Returns whether the lock still needs releasing and records any error.
+    /// </summary>
+    internal bool ReleaseGlamourerLock(
+        ActorId actor, bool resolvable, string? byName, bool locked, List<string> failures)
+    {
+        if (!locked)
+            return false;
+
+        var result = resolvable
+            ? glamourer.UnlockGlamourerState(actor)
+            : ByNameUnlock(byName);
+        if (result.Success)
+            return false;
+
+        failures.Add(result.Detail!);
+        return true;
+    }
+
+    /// <summary>
     /// Unlocks Glamourer by the saved character name. Without a name, returns an
     /// error so callers retain the lock for later cleanup.
     /// </summary>
-    internal IntegrationResult ByNameUnlock(string? name) =>
+    private IntegrationResult ByNameUnlock(string? name) =>
         name is { } addressable
             ? glamourer.UnlockGlamourerStateByName(addressable)
             : IntegrationResult.Fail(
@@ -166,38 +186,14 @@ internal sealed class McdfTeardown(
         // A redraw is owed whenever temporary Penumbra ownership was
         // removed — now or, still pending, by an earlier partial teardown.
         bool removedPenumbra = mcdf.RedrawPending || mcdf.DrawResourcesLoaded;
-        // The captured character name, and only while the object itself is
-        // unreachable: Glamourer's state is keyed to the identity, so it is
-        // still addressable when the exact generation is not.
+        // Glamourer can retain appearance state after the actor leaves the scene.
+        // Use its captured character name when the live actor is no longer available.
         string? byName = resolvable ? null : NonEmpty(mcdf.ActorName);
 
-        bool locked = mcdf.GlamourerLocked;
-        if (locked && resolvable)
-        {
-            var unlocked = glamourer.UnlockGlamourerState(actor);
-            if (unlocked.Success)
-                locked = false;
-            else
-            {
-                failures.Add(unlocked.Detail!);
-                complete = false;
-            }
-        }
-        else if (locked)
-        {
-            // The game object may disappear before cleanup, while Glamourer still
-            // holds state for its character identity. Unlock by the saved name, then
-            // restore the captured appearance rather than reverting the player to
-            // game defaults. Keep failures recorded for Reset.
-            var unlocked = ByNameUnlock(byName);
-            if (unlocked.Success)
-                locked = false;
-            else
-            {
-                failures.Add(unlocked.Detail!);
-                complete = false;
-            }
-        }
+        bool locked = ReleaseGlamourerLock(actor, resolvable, byName,
+            mcdf.GlamourerLocked, failures);
+        if (locked)
+            complete = false;
 
         // A failed import needs the appearance from immediately before that
         // import. Otherwise restore the original baseline, unless a separate
