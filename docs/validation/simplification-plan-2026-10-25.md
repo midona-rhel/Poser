@@ -478,5 +478,8 @@ successful reload. Live camera/light save-load checks through the shared
 Library action passed: exactly one added entry each, existing entries retained,
 and zero position difference with AsSaved. Evidence:
 [636-live-entry.json](audit-2026-10-25/636-live-entry.json).
-File-pane invocation and missing-anchor behavior remain user acceptance checks;
-the latter was traced in source but was not reproduced live.
+Then exercised both actual pane Load buttons and file dialogs through bridge
+pointer/keyboard input. Each added exactly one entry and retained existing IDs.
+Camera position, rotation, FoV and roll matched exactly; the light's world
+transform matched exactly. See [636-live-pane-import.json](audit-2026-10-25/636-live-pane-import.json).
+Missing-anchor fallback was traced in source but was not reproduced live.
