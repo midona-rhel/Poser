@@ -560,5 +560,11 @@ All actual failure returns contain a message, so the shared nullable-error
 return needs no extra guard for a fabricated empty failure result.
 
 Sol reviewed all three callers and the provider/adapter contract, with no
-actionable findings. Release build and all 906 existing tests pass. Normal
-live import/reset validation will use the existing 45-resource MCDF fixture.
+actionable findings. Release build and all 906 existing tests pass.
+Candidate `43d1f9e3` deployed with matching canonical hashes and reloaded at
+18:29:53 local. Live import of 45 resources (257,247,504 uncompressed bytes)
+passed; the temporary load collection was released and the previous collection
+was restored. Reset cleared MCDF ownership and preserved the original
+collection, wardrobe, customization and edit access. See
+[live evidence](audit-2026-10-25/655-live-mcdf.json). No actor-disappearance,
+post-application cancellation or inherited-assignment failure was induced.
