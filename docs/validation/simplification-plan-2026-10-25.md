@@ -364,9 +364,19 @@ The documentation pass in `3b543112` changed 504 C# files with no executable-tok
 Requests now carry their actor identity; the existing post-publication scene
 refresh cancels work for removed actors and retires body markers. GPose exit
 uses the same retirement route. Native slot release is unchanged. Temporary
-material cleanup failures are reported and retained by collection for retry.
+material cleanup failures are reported without retaining retry state.
 Release build and all 913 existing tests passed before deployment. The existing
 cancellation test now also covers actor removal without cancelling another
 actor's request: 0 added, 0 removed, net 0 test cases. Live acceptance remains
 apply/redraw, removal, GPose re-entry and scene save/load of clothing-only.
 The broader asynchronous shutdown ordering work remains under #436.
+
+### Evidence correction: Penumbra cleanup
+
+Inspected Penumbra commit ce54aa5d: TemporaryApi.RemoveTemporaryMod delegates
+synchronously to TempModManager.Unregister, whose normal results are Success
+and NotRegistered. Collection deletion removes its temporary-mod records.
+No demonstrated failure leaves an override requiring a later retry. Removed
+the speculative collection retry store, retry loop and helper added in #652.
+Keep finally-based removal, missing-collection success and unexpected-error
+reporting. API error categories alone do not justify recovery machinery.

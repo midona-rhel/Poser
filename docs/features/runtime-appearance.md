@@ -19,9 +19,8 @@ addresses are observation markers; retiring a marker never frees a model.
 Only CharacterModelNative releases the removed model slots.
 
 The native port removes temporary collection materials after each redraw,
-including cancellation. Failed removal is reported and its collection ID is
-retained for retry before another apply. A deleted collection needs no cleanup.
-This retry record lasts for the plugin instance; it is not persisted. Cancelling
+including cancellation. Unexpected removal failures are reported without a retry queue. A deleted
+collection needs no cleanup. Cancelling
 a request does not mean its asynchronous cleanup has already finished.
 
 For each field, Poser captures the incoming value once before its first
