@@ -1,0 +1,66 @@
+{
+  "deployedHead": "4a6aca5a",
+  "checks": [
+    {
+      "solver": "Fabrik",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "angularErrorDegrees": 9.80911239371096e-06,
+      "passed": true
+    },
+    {
+      "solver": "Fabrik",
+      "scale": [
+        0.005,
+        0.005,
+        0.005
+      ],
+      "angularErrorDegrees": 1.3872179782028061e-05,
+      "passed": true
+    },
+    {
+      "solver": "Fabrik",
+      "scale": [
+        -1,
+        1.5,
+        0.75
+      ],
+      "angularErrorDegrees": 9.956626120759429e-06,
+      "passed": true
+    },
+    {
+      "solver": "Rope",
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "angularErrorDegrees": 2.4148365394514667e-06,
+      "passed": true
+    },
+    {
+      "solver": "Rope",
+      "scale": [
+        0.005,
+        0.005,
+        0.005
+      ],
+      "angularErrorDegrees": 5.915117333884393e-06,
+      "passed": true
+    },
+    {
+      "solver": "Rope",
+      "scale": [
+        -1,
+        1.5,
+        0.75
+      ],
+      "angularErrorDegrees": 1.5080649355333733e-05,
+      "passed": true
+    }
+  ],
+  "passed": true
+}

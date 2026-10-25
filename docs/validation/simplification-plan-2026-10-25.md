@@ -404,3 +404,25 @@ both stored and native draw-object readback after apply and redo; undo restored
 the original scale. The actor ended at (1, 1, 1). Evidence:
 [audit-2026-10-25/631-live-scale.json](audit-2026-10-25/631-live-scale.json).
 This verifies native scale/history behavior; it does not claim UI acceptance.
+
+### Transform conversion #632 - rendered IK frame slice
+
+At `4a6aca5a`, Skeleton exposes the renderer's existing position, rotation and
+scale before matrix construction. Four IK conversions now use that rotation
+directly instead of attempting to recover it from a scaled matrix. Position
+conversion still uses the matrix and requires an inverse where appropriate.
+No replacement decomposition algorithm or fallback was added. Net six
+production lines removed, excluding Debug probe instrumentation.
+
+Release build and 913 existing tests passed; no unit cases added or removed.
+Ran `tools/live_ik_frame_check.py` on the deployed candidate: FABRIK and Rope,
+world target with end rotation, actor rotated 45 degrees, scales (1,1,1),
+(0.005,0.005,0.005), and (-1,1.5,0.75). All six comparisons passed; maximum
+world-target versus renderer-composed hand rotation error was below 0.00002
+degrees. Restored actor scale/rotation and disabled test IK. See
+[audit-2026-10-25/632-live-ik-frame.json](audit-2026-10-25/632-live-ik-frame.json).
+
+#632 remains open: FromMatrix is still used by reference-pose composition,
+BoneWorld's cached/live composition, and collider parent-frame capture. Those
+combine transforms and can introduce shear; this slice does not claim to fix
+them or to validate every TwoJoint/bone-target interaction.
