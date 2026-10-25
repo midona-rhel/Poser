@@ -858,3 +858,21 @@ those stay separate, and any difference in redo. User acceptance is pending.
 The follow-up comment pass covers HistoryEntry and LifecycleHistoryBatch,
 including step identity through redraw, grouped replay order, and what happens
 after a failed undo. These edits change comments only.
+
+
+### Live checks for #662 and #663
+
+The bridge test passed both checks against e8f12dc4's behavior with a Debug-only
+native camera-pan probe. Moving native pan, deleting two lights, undoing twice
+and redoing twice kept the camera and deletion separate. The test verified the
+camera values and light presence after each operation and restored the camera.
+
+Whole-actor Pause held the native animation clock; Play advanced it. Undo held
+it again and Redo resumed it. The restart-error and partial-change cases remain
+covered by the existing automated test; those failures were not induced live.
+An initial exact-frame check used an already-running game idle rather than an
+animation applied by Poser, so it did not establish layer frame restoration.
+
+Evidence and the repeatable script: `audit-2026-10-25/662-663-live.json` and
+`audit-2026-10-25/662-663-live.py`. The script exits nonzero on a failed check.
+Native pan was used because Windows automation could not activate the game.

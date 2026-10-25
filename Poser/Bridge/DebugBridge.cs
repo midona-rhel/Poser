@@ -352,6 +352,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
+                        "/camera?camera=NAME&action=probe-native-pan&x=NUMBER&y=NUMBER (Debug: native pan for camera-rest recording tests)",
                         "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera&clear=true|false&relativeToOrigin=true|false",
                         "/groups", "/group?action=create&name=NAME&members=SELECTION_ID,SELECTION_ID|add&group=ID&member=SELECTION_ID|nest&parent=ID&child=ID|remove&group=ID",
                         "/catalogmodels?actor=NAME|INDEX&limit=20", "/actormodel?actor=NAME|INDEX&model=ID|reset=true or ?spawn=MODEL_ID",
@@ -821,6 +822,12 @@ public sealed partial class DebugBridge : IDisposable
                 if (selected == null || _bindings.GetCameraId(selected) is not { } cameraId)
                     return Json(new { error = "No such camera." });
                 float Number(string key) => float.Parse(query.GetValueOrDefault(key, "0"), CultureInfo.InvariantCulture);
+                if (query.GetValueOrDefault("action") == "probe-native-pan")
+                {
+                    // Exercise CameraRestRecorder with a native change, like the game's pan controls.
+                    selected.Pan = new(Number("x"), Number("y"));
+                    return Json(Domain.Outcome.Ok());
+                }
                 var result = query.GetValueOrDefault("action") switch
                 {
                     "live" => _cameraControl.SetLive(cameraId, true),

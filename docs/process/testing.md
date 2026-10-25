@@ -25,6 +25,11 @@ delete tests down to 200. The three-removals-per-addition rule applies now.
 
 ## Runtime validation and deployment
 
+- Debug bridge `/camera?camera=NAME&action=probe-native-pan&x=VALUE&y=VALUE`
+  changes the native camera pan so CameraRestRecorder can observe a pending move.
+  Use it to test the five-second resting window and ordering before another edit.
+  Ordinary `/camera` actions use the undoable camera controls instead.
+
 - Debug bridge `/lifetimetrace?path=<new-absolute-file>` opts into a bounded
   120-second read-only native skeleton-list trace; `stop=1` ends it early.
   It uses safe process-memory reads and flushes changed owner/header rows
