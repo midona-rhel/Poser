@@ -62,17 +62,14 @@ internal sealed class SpeedAnimationSession
         return SetSpeed(actor, 0f);
     }
 
-    /// <summary>Resumes paused layers except a held facial expression, then
-    /// removes the whole-actor speed override. Layer resume failures are not
-    /// returned here; the result comes from clearing the whole-actor override.</summary>
+    /// <summary>Resumes paused animation layers and clears the whole-actor speed override.
+    /// A held facial expression stays in place until the Facial controls release it.</summary>
     public Outcome Resume(ActorId actor)
     {
         _store.Trace?.Invoke($"Resume(all) {actor}");
         var current = _store.For(actor);
         foreach (var (slot, speed) in current.SlotSpeeds)
         {
-            // A held expression (the Pose tab's static face) is not an animation
-            // the sidebar plays; only the Animation tab's Facial layer converts it.
             if (slot == AnimationSlot.Facial && current.HeldExpression != null)
                 continue;
             if (speed == 0f)

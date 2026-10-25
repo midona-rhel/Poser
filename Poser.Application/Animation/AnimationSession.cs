@@ -496,7 +496,11 @@ public sealed class AnimationSession : IAnimationPlayback
     private Outcome ResumeUntracked(ActorId actor)
     {
         foreach (var slot in _store.For(actor).EndedSlots.Keys.ToList())
-            RestartIfEnded(actor, slot);
+        {
+            var restarted = RestartIfEnded(actor, slot);
+            if (!restarted.Success)
+                return restarted;
+        }
         return _speed.Resume(actor);
     }
 
@@ -616,7 +620,11 @@ public sealed class AnimationSession : IAnimationPlayback
         var before = _timeline.Read(actor)?.TimelineFor(slot);
         // Playing the animation that ran out plays it again from its start.
         if (resume && before != null && SelectedFor(actor, slot) == before)
-            RestartIfEnded(actor, slot);
+        {
+            var restarted = RestartIfEnded(actor, slot);
+            if (!restarted.Success)
+                return restarted;
+        }
         var outcome = PlaySelectedSlotTraced(actor, slot, entry, playFromStart, resume);
         if (outcome.Success)
         {

@@ -8,7 +8,7 @@ namespace Poser.Application.Animation;
 
 /// <summary>
 /// Connects animation actions to undo history using before/after snapshots.
-/// Only successful actions for actors present in the scene are recorded.
+/// Changes remain undoable when an action completes only some of its steps.
 /// Grouped actions share one history step; sliders are grouped by their caller.
 /// </summary>
 public sealed class AnimationSteps : IAnimationActions
@@ -35,8 +35,6 @@ public sealed class AnimationSteps : IAnimationActions
             return action();
         var before = _animation.Capture(actor);
         var result = action();
-        if (!result.Success)
-            return result;
         var after = _animation.Capture(actor);
         _journal.Record((actor, "Animation", description), description, before, after,
             snapshot => _animation.Restore(actor, snapshot), () => Alive(actor));

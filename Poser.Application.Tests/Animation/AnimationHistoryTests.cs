@@ -1,12 +1,16 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using NSubstitute;
 using Poser.Application.Animation;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
 using Poser.Application.Transforms;
 using Poser.Application.World;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
 using static Poser.Application.Tests.Fixtures.JournalUndo;
 
 namespace Poser.Application.Tests.Animation;
@@ -45,16 +49,9 @@ public sealed class AnimationHistoryTests
             Scrub.SetControlTime(Actor, Arg.Any<ScrubControlId>(), Arg.Any<float>(), Arg.Any<ulong>()).Returns(Outcome.Ok());
             Session = new AnimationSession(Timeline, Speed, Substitute.For<IAnimationStancePort>(),
                 Scrub, Substitute.For<IWorldRenderingRuntimePort>());
-            // Match the journal callback installed by AnimationSteps in production.
-            Session.Journal = (actor, description, action) =>
-            {
-                var before = Session.Capture(actor);
-                var result = action();
-                if (result.Success)
-                    Journal.Record((actor, "Animation", description), description, before, Session.Capture(actor),
-                        snapshot => Session.Restore(actor, snapshot));
-                return result;
-            };
+            var scene = new SceneSession(new SelectionSession());
+            scene.TryRefresh(new SceneSnapshot(1, [new ActorDescriptor(Actor, "actor", [])], [], [], []));
+            _ = new AnimationSteps(Session, Journal, scene, Substitute.For<IExpressionPreview>());
             Assert.True(Session.ChooseSlot(Actor, AnimationSlot.UpperBody, EatAppleUpper).Success);
             Assert.True(Session.PlaySelectedSlot(Actor, AnimationSlot.UpperBody, null, false).Success);
         }
@@ -82,8 +79,41 @@ public sealed class AnimationHistoryTests
             Assert.True(rig.Session.ResumeSlot(rig.Actor, AnimationSlot.UpperBody).Success);
         }
 
-        // The initial apply plus six pause/resume clicks.
+        rig.Timeline.LayerEnded += Raise.Event<Action<ActorId, AnimationSlot, float>>(
+            rig.Actor, AnimationSlot.UpperBody, 12f);
+        rig.Timeline.Blend(rig.Actor, EatAppleUpper, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
+            .Returns(Outcome.Fail("Timeline playback is unavailable."));
+        rig.Speed.ClearReceivedCalls();
+
+        Assert.Equal("Timeline playback is unavailable.", rig.Session.Resume(rig.Actor).Detail);
+        Assert.Equal("Timeline playback is unavailable.",
+            rig.Session.PlaySelectedSlot(rig.Actor, AnimationSlot.UpperBody, null, false).Detail);
+        Assert.Equal(12f, rig.Session.EndedLength(rig.Actor, AnimationSlot.UpperBody));
+        rig.Speed.DidNotReceive().ClearOverallSpeed(rig.Actor);
+
+        // Failed restarts leave the initial apply and six pause/resume steps unchanged.
         Assert.Equal(7, rig.Steps());
+
+        var partial = new Rig();
+        const ushort additive = 8009;
+        partial.Timeline.TimelineSlot(additive).Returns(AnimationSlot.Additive);
+        partial.Timeline.Blend(partial.Actor, additive, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
+            .Returns(Outcome.Ok());
+        Assert.True(partial.Session.ChooseSlot(partial.Actor, AnimationSlot.Additive, additive).Success);
+        Assert.True(partial.Session.PlaySelectedSlot(partial.Actor, AnimationSlot.Additive, null, false).Success);
+        foreach (var slot in new[] { AnimationSlot.UpperBody, AnimationSlot.Additive })
+            partial.Timeline.LayerEnded += Raise.Event<Action<ActorId, AnimationSlot, float>>(partial.Actor, slot, 12f);
+        partial.Timeline.Blend(partial.Actor, additive, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
+            .Returns(Outcome.Fail("Timeline playback is unavailable."));
+
+        Assert.Equal("Timeline playback is unavailable.", partial.Session.Resume(partial.Actor).Detail);
+        Assert.Null(partial.Session.EndedLength(partial.Actor, AnimationSlot.UpperBody));
+        Assert.Equal(12f, partial.Session.EndedLength(partial.Actor, AnimationSlot.Additive));
+        partial.Timeline.ClearSlotTimeline(partial.Actor, AnimationSlot.UpperBody)
+            .Returns(_ => { partial.Live = 0; return Outcome.Ok(); });
+        Assert.True(Undo(partial.History));
+        Assert.Equal(12f, partial.Session.EndedLength(partial.Actor, AnimationSlot.UpperBody));
+        Assert.Equal(12f, partial.Session.EndedLength(partial.Actor, AnimationSlot.Additive));
     }
 
     [Fact]

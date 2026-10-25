@@ -644,15 +644,10 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>
-    /// An emote from its start with the game's own emote start (RE
-    /// notes/poser-animation-model.md §1.1): EmoteController::PlayEmote picks the
-    /// posture's rows, plays the intro and hands over to the loop, enters the emote's
-    /// EmoteMode and clears the pending emote cancel. A pose emote or a loop with no
-    /// EmoteMode holds EmoteLoop 0 first, since the Normal-mode base-idle pick replaces
-    /// it; the start is refused above priority 1, so a higher row Poser played is
-    /// cleared first. The real player only plays its rows: PlayEmote starts nothing
-    /// for the local actor, and Poser changes no mode on it. Expression emotes take
-    /// another path. True when slot 0 was given the emote's row.
+    /// Starts an emote through the game's emote controller, which chooses the
+    /// animation for the actor's posture and plays its intro and loop.
+    /// The local player uses PlayEmoteRows instead. Returns true once the game
+    /// has accepted one of this emote's animations in the full-body slot.
     /// </summary>
     internal bool PlayEmoteFromStart(Character* character, uint emoteId, ushort loop)
     {
@@ -670,9 +665,12 @@ public sealed unsafe partial class AnimationNativeState
         var sequencer = &character->Timeline.TimelineSequencer;
         _gposeMotion.TakeOver(character);
         LeaveForFullBody(character);
+        // Pose emotes and paused loops without an EmoteMode need EmoteLoop mode
+        // so the normal idle animation leaves them playing.
         if (emote.EmoteMode.RowId == 0
             && (IsPoseEmote(emoteId) || _timelineSheet?.GetRowOrDefault(standingLoop)?.Pause == true))
             _characterSetMode(character, (int)CharacterModes.EmoteLoop, 0);
+        // The game refuses an emote while a higher-priority animation occupies this slot.
         if (*(int*)((byte*)sequencer + Slot0PriorityOffset) > 1)
             _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
         var option = stackalloc EmoteController.PlayEmoteOption[1];
@@ -688,9 +686,8 @@ public sealed unsafe partial class AnimationNativeState
             && emote.ActionTimeline.Any(t => t.RowId == row);
     }
 
-    /// <summary>The real player's emote from its start: its intro and loop rows
-    /// queued on its own timeline (TimelineContainer::PlayActionTimeline), the loop
-    /// the caller's posture row.</summary>
+    /// <summary>Queues the intro and the selected posture's loop directly on
+    /// the local player's timeline through PlayActionTimeline.</summary>
     private bool PlayEmoteRows(Character* character, Lumina.Excel.Sheets.Emote emote, ushort loop)
     {
         if (_playActionTimeline == null)

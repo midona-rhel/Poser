@@ -808,3 +808,25 @@ An attempted partial-save assertion was removed because it passed with the old
 implementation and modeled a temporary file the real failed export would have
 already deleted. The cleanup change was checked against actual producer and
 writer lifetimes. In-game cancellation at this point has not been reproduced.
+
+
+### #662: report refused animation restarts
+
+Play now returns a failed restart instead of continuing and reporting success.
+This affects both the actor-wide and individual-layer controls. An emote can
+start through the game's emote controller even when the separately resolved
+timeline restart function is unavailable; this path was traced in the source,
+not reproduced in the running game.
+
+Animation history now records changes already made before a later step fails.
+Its existing snapshot comparison skips failures that leave the actor unchanged.
+The existing history test uses AnimationSteps itself and checks both refused
+restarts and undo after a partly completed restart. No tests were added or
+removed. The Release build and 906 tests passed; after extending the partial
+restart check, all 284 Application tests passed again.
+
+Reviewed the remaining speed-resume checks against their native implementation.
+A stored pause was created through the same startup-resolved speed hook used to
+resume it. No separate reachable failure was established there, so that path
+was left alone. Rewrote the nearby emote and speed comments to explain what the
+controls do and why the native mode and priority changes are needed.
