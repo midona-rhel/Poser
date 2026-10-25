@@ -582,3 +582,6 @@ with no actionable findings. Release build and all 906 existing tests pass;
 no tests were added. Changed comments now explain the captured appearance and
 apply-once flags plainly. Production diff: +28/-37 lines, net -9. No new guard
 or state was introduced. No new live cancellation reproduction is claimed.
+
+Candidate `0d665fe6` was deployed to canonical output with matching hashes.
+No additional live cancellation test was run; the accepted scope is unchanged.
