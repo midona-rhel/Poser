@@ -18,6 +18,15 @@ Consult Brio for native behavior and Ktisis for posing interaction. Review
 the actual patch for identity, runtime ordering, product scope, and existing
 UI conventions. Keep durable contracts in their existing documentation home.
 
+## Writing issues and pull requests
+
+Explain the concrete problem and resulting behavior before implementation details.
+Use ordinary sentences that a reader unfamiliar with the code can follow.
+Summarize relevant validation; keep commit hashes, timestamps, raw test output,
+and detailed evidence in the linked validation record. Mention limitations when
+needed to assess the change, not as a routine list of everything not tested.
+Issue updates should explain progress, not reproduce the agent's work log.
+
 ## Validation and acceptance
 
 Follow the [testing and deployment contract](testing.md): Release is the

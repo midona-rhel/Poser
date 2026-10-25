@@ -208,11 +208,9 @@ public sealed class GlamourerIpc : IGlamourerPort, ISpawnAppearancePort
     public IntegrationResult RestoreGlamourerStateByName(string name, string state) =>
         GuardedByName(name, "Restore state by name", () =>
         {
-            // The by-index restore's exact flags: Once maps to IpcManual, no
-            // Lock flag, so nothing of Poser's survives. This writes the
-            // CAPTURED pre-import state back — never a revert to game state,
-            // which on a shared clone/player identity would discard the
-            // design the user actually had.
+            // Apply the captured appearance once without locking it again,
+            // using the same flags as restoration by actor index. Reverting to
+            // game defaults here would lose the user's original appearance.
             int ec = _applyStateName.InvokeFunc(
                 state, name, LockKey, ApplyOnce | ApplyEquipment | ApplyCustomization);
             return ec is GlamourerEcSuccess or GlamourerEcNothingDone

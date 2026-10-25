@@ -568,3 +568,17 @@ was restored. Reset cleared MCDF ownership and preserved the original
 collection, wardrobe, customization and edit access. See
 [live evidence](audit-2026-10-25/655-live-mcdf.json). No actor-disappearance,
 post-application cancellation or inherited-assignment failure was induced.
+
+### Pre-import appearance restoration #656
+
+`McdfTeardown.RestorePreImportAppearance` now handles pending appearance
+restoration for rollback and later Reset. Provider success clears the pending
+state; provider failure records its message and retains the state. Existing
+handling of an unavailable actor/name is unchanged. Original-baseline Reset
+stays separate because its selector ownership and baseline clearing differ.
+
+Sol reviewed successful, failed and unaddressable paths and unlock ordering
+with no actionable findings. Release build and all 906 existing tests pass;
+no tests were added. Changed comments now explain the captured appearance and
+apply-once flags plainly. Production diff: +28/-37 lines, net -9. No new guard
+or state was introduced. No new live cancellation reproduction is claimed.

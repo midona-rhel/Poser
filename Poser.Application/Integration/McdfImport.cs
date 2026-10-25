@@ -528,22 +528,8 @@ internal sealed class McdfImport(
 
         if (!operation.GlamourerLocked
             && operation.PendingGlamourerRecovery is { } recovery)
-        {
-            // Restore only after releasing our Glamourer lock. The provider may
-            // reapply automation between these calls.
-            if (teardown.RestoreEither(actor, resolvable, byName, recovery) is { } restored)
-            {
-                if (restored.Success)
-                    operation.PendingGlamourerRecovery = null;
-                else
-                    failures.Add(restored.Detail!);
-            }
-            else
-            {
-                // Neither the object nor a name is addressable.
-                operation.PendingGlamourerRecovery = null;
-            }
-        }
+            operation.PendingGlamourerRecovery = teardown.RestorePreImportAppearance(
+                actor, resolvable, byName, recovery, failures);
 
         if (teardown.ReleaseTemporaryCollection(
                 ref operation.TemporaryCollection, ref removedPenumbra) is { } collectionError)

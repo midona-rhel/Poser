@@ -175,11 +175,29 @@ internal sealed class McdfTeardown(
                 + "import, so its locked Glamourer state cannot be released.");
 
     /// <summary>
+    /// Restores the appearance captured immediately before a failed import.
+    /// Returns the state only if Glamourer reports a failure, so Reset can try
+    /// again. With neither an actor nor a name, there is no target to restore.
+    /// Call only after releasing the MCDF lock.
+    /// </summary>
+    internal string? RestorePreImportAppearance(
+        ActorId actor, bool resolvable, string? byName, string state, List<string> failures)
+    {
+        if (RestoreEither(actor, resolvable, byName, state) is { Success: false } result)
+        {
+            failures.Add(result.Detail!);
+            return state;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Restores by actor when it resolves, otherwise by saved character name.
     /// Returns null if neither address is available; it does not verify that the
     /// provider has already discarded the state.
     /// </summary>
-    internal IntegrationResult? RestoreEither(
+    private IntegrationResult? RestoreEither(
         ActorId actor, bool resolvable, string? byName, string state) =>
         resolvable
             ? glamourer.RestoreGlamourerState(actor, state)
@@ -220,21 +238,10 @@ internal sealed class McdfTeardown(
         string? pendingGlamourer = mcdf.PendingGlamourerRecovery;
         if (!locked && pendingGlamourer is { } recovery)
         {
-            if (RestoreEither(actor, resolvable, byName, recovery) is { } recovered)
-            {
-                if (recovered.Success)
-                    pendingGlamourer = null;
-                else
-                {
-                    failures.Add(recovered.Detail!);
-                    complete = false;
-                }
-            }
-            else
-            {
-                // Neither the object nor a name is addressable.
-                pendingGlamourer = null;
-            }
+            pendingGlamourer = RestorePreImportAppearance(
+                actor, resolvable, byName, recovery, failures);
+            if (pendingGlamourer != null)
+                complete = false;
         }
         else if (!locked && !current.DesignOwned
             && current.Baseline.GlamourerState is { } state
