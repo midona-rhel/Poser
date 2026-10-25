@@ -25,6 +25,10 @@ and what that means when using the app. Use short, ordinary sentences. Read the
 text aloud: if it sounds like a lab report or an agent talking to another agent,
 rewrite it.
 
+Describe what a method does and what its result means. Include a limitation
+only when it changes how a caller must use that result. Avoid adding hypothetical
+misuses to otherwise straightforward comments.
+
 Link to the code that demonstrates the problem. Use GitHub permalinks to a
 published commit and the relevant lines, with a short label explaining what the
 reader will find. Check that the commit exists on GitHub. Do not substitute a

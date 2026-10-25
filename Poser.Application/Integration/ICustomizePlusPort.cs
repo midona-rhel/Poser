@@ -11,8 +11,7 @@ public interface ICustomizePlusPort
     /// <summary>Saved (normal) profiles only.</summary>
     IntegrationValue<IReadOnlyList<ExternalItem>> GetBodyProfiles();
 
-    /// <summary>Returns the actor's normal saved profile. Customize+ excludes temporary
-    /// profiles, so this cannot tell whether another plugin applied one.</summary>
+    /// <summary>Returns the actor's selected saved Customize+ profile.</summary>
     IntegrationValue<Guid?> GetActiveSavedBodyProfile(ActorId actor);
 
     IntegrationValue<string> GetBodyProfileJson(Guid profile);
