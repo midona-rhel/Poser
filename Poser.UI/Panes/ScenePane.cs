@@ -30,20 +30,13 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>
-/// Scene save, load, progress, and recovery workspace.
-///
-/// <para>File dialogs provide save/load destinations, and the load dialog
-/// shows codec metadata and validation for the highlighted file.</para>
-///
-/// <para>The pane owns no scene state. Progress, the terminal receipt and the
-/// snapshot result are read from their owners' immutable read models every
-/// frame.</para>
+/// Shows scene save/load dialogs, file previews, progress and results.
+/// The scene workflow owns the operation; this pane displays its state.
 /// </summary>
 public sealed class ScenePane
 {
     private readonly ISceneWorkflow _workflow;
     private readonly ILibrarySceneActions _libraryScene;
-    private readonly IPlacementAnchorSource _anchors;
     private readonly ConfigurationService _config;
     private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
@@ -56,8 +49,7 @@ public sealed class ScenePane
     private readonly FileDialog _snapshotBrowser =
         new("Load Snapshot", new[] { SceneFile.Extension });
 
-    // The Stagehand seam: a Stage is a plain .json in Documents\Stages,
-    // and both dialogs open there so the two plugins read one folder.
+    // Stagehand uses JSON files in Documents\Stages; both dialogs use that folder.
     private readonly FileDialog _stageSaveBrowser =
         new("Export Stage", new[] { global::Poser.Documents.Scene.StageFile.Extension },
             isSaveMode: true);
@@ -80,46 +72,45 @@ public sealed class ScenePane
         });
 
     /// <summary>
-    /// Where the browsers open. It starts at the library's SCENES root — the
-    /// one folder the Scenes tab is guaranteed to be scanning — so a saved
-    /// scene appears in the tab the user went looking for it in without them
-    /// having to navigate anywhere. Choosing another folder is still allowed
-    /// and sticks for the rest of the session.
+    /// Starts the file dialogs in the Library scenes folder, then remembers
+    /// the last chosen folder for this session.
     /// </summary>
     private readonly global::Poser.UI.Controls.RememberedFolder _folder;
 
     private string _description = string.Empty;
 
-    /// <summary>How many probed paths the verdict column remembers. Highlighting
-    /// walks a folder one row at a time, so the answers must survive a walk back
-    /// up it; the cap is what stops a long folder from retaining every document
-    /// it ever previewed.</summary>
+    /// <summary>
+    /// Maximum number of file previews kept in memory.
+    /// </summary>
     private const int VerdictCacheLimit = 64;
 
-    /// <summary>File write time and size used to invalidate cached metadata.
-    /// A file that cannot be statted receives the default stamp.</summary>
+    /// <summary>
+    /// File modification time and size used to detect changes to a cached preview.
+    /// </summary>
     private readonly record struct FileStamp(long WriteTicks, long Length);
 
     /// <summary>
-    /// The load dialog's verdict per probed path. A probe reads, parses and
-    /// validates a bounded document, so it runs off the render thread. The
-    /// panel shows a pending line while the read resolves and caches by path and
-    /// the stamp it was read from. A cached null is a probe that could not
-    /// produce an outcome at all.
+    /// Cached file previews, including read failures. Each result is paired
+    /// with the file modification time and size observed before the read.
     /// </summary>
-    private readonly Dictionary<string, (FileStamp Stamp, SceneMetadataReadOutcome? Outcome)>
+    private readonly Dictionary<string, (FileStamp Stamp, SceneMetadataReadOutcome Outcome)>
         _verdicts = new(StringComparer.Ordinal);
 
-    /// <summary>Probe insertion order, for evicting the oldest past the cap.</summary>
+    /// <summary>
+    /// Paths in insertion order, used to remove the oldest cached preview.
+    /// </summary>
     private readonly Queue<string> _verdictOrder = new();
 
-    /// <summary>Paths whose background probe has not answered yet — the guard
-    /// that keeps one highlighted row from starting a read per frame.</summary>
+    /// <summary>
+    /// Files currently being read. Drawing the same preview each frame
+    /// must not start another read while the first is running.
+    /// </summary>
     private readonly HashSet<string> _verdictsInFlight = new(StringComparer.Ordinal);
 
-    /// <summary>Finished probes, handed back from the worker and drained into
-    /// the cache by the drawing thread that owns it.</summary>
-    private readonly ConcurrentQueue<(string Path, FileStamp Stamp, SceneMetadataReadOutcome? Outcome)>
+    /// <summary>
+    /// Background read results waiting for the UI thread to update the cache.
+    /// </summary>
+    private readonly ConcurrentQueue<(string Path, FileStamp Stamp, SceneMetadataReadOutcome Outcome)>
         _verdictInbox = new();
 
     private readonly UserNotices _notices;
@@ -146,23 +137,21 @@ public sealed class ScenePane
     }
 
     /// <summary>
-    /// The appearance switch's hover, in one place so both mounts say the same
-    /// thing. A few WORDS: what the scene actually contains — a copy of the
-    /// files the mods supply, which is what an MCDF is — belongs in
-    /// docs/features/scenes.md, not in a tooltip.
+    /// Shared tooltip for the appearance option in the page and save dialog.
     /// </summary>
     private const string AppearanceHelp = "Embeds appearance files";
     private const string AnimationHelp =
         "Saves what each actor (and its mount or minion) is playing and only your bone edits, so a load plays on from there instead of a baked pose";
 
-    /// <summary>The operation that has already been notified, so a finished
-    /// result is announced ONCE rather than every frame the page draws it.
+    /// <summary>
+    /// The last operation reported in a notification. The result remains
+    /// available across frames, but its notification should appear only once.
     /// </summary>
     private Guid? _notifiedOperation;
 
-    /// <summary>The options band's logical height, corrected by its first
-    /// draw — the self-measure idiom the import dialog's band uses, so every
-    /// open after the first fits its rows exactly.</summary>
+    /// <summary>
+    /// Height of the load options panel, updated after measuring its contents.
+    /// </summary>
     private float _optionsBandHeight = 92f;
 
     public bool SaveEntry(SelectionId target, string displayName) =>
@@ -206,10 +195,8 @@ public sealed class ScenePane
         IPlaceService place,
         SceneLoadPreferences preferences,
         UserNotices notices,
-        IPlacementAnchorSource anchors,
         Poser.Application.Library.ILibrarySceneSave librarySave)
     {
-        _anchors = anchors;
         _config = config;
         _preferences = preferences;
         _workflow = workflow;
@@ -226,9 +213,7 @@ public sealed class ScenePane
         var verdict = new FileSidePanel(220f, DrawVerdictPanel);
         _loadBrowser.SidePanels.Add(verdict);
         _snapshotBrowser.SidePanels.Add(verdict);
-        // The same band under both loading dialogs: a snapshot is a scene, and
-        // recovering one into a session that must be cleared first is exactly
-        // the case the option exists for.
+        // Autosaves are scene files and use the same load options.
         var band = new FileSidePanel(_optionsBandHeight, DrawLoadOptionsBand);
         _loadBrowser.BottomPanel = band;
         _snapshotBrowser.BottomPanel = band;
@@ -240,9 +225,8 @@ public sealed class ScenePane
     private bool _librarySaveOpen;
     private string _librarySaveName = string.Empty;
 
-    /// <summary>The library's save flow: one modal — the name and the one
-    /// choice that changes what the file contains — then the save lands in
-    /// the scenes home the tab is already scanning. No file dialog detour.
+    /// <summary>
+    /// Dialog identity for saving a named scene directly into the Library.
     /// </summary>
     private readonly string _librarySaveWindowId = $"##scene-library-save-{Guid.NewGuid():N}";
 
@@ -270,9 +254,7 @@ public sealed class ScenePane
                 placeholder: "Scene name");
             ImGui.Dummy(new Vector2(0f, 8f *
                 Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale));
-            // Label first, control after — the form convention, even in a
-            // modal: the label owns the left, the switch sits at the row's
-            // right edge.
+            // Align each label left and its switch at the right edge.
             float rowScale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
             var rowStart = ImGui.GetCursorScreenPos();
             float rowWidth = ImGui.GetContentRegionAvail().X;
@@ -347,9 +329,9 @@ public sealed class ScenePane
         });
     }
 
-    /// <summary>Pumped every frame by the window: a dialog must survive the
-    /// frames in which this pane's mode is not the one being drawn. Deferred
-    /// opens run HERE, at the root pump, before anything claims the frame.
+    /// <summary>
+    /// Draws dialogs and reports completed operations even when the Scene tab
+    /// is not selected.
     /// </summary>
     public void DrawBrowsers()
     {
@@ -361,39 +343,25 @@ public sealed class ScenePane
         _stageLoadBrowser.Draw();
         _entryBrowser.Draw();
 
-        // The notification is pumped HERE, not from the page, for the same
-        // reason the dialogs are: a scene load finishes while the user is on
-        // another tab as often as not, and a completion announced only by the
-        // surface that happened to be drawing is not an announcement.
+        // Loads can finish while another tab is selected.
         if (!_workflow.Busy &&
             _workflow.Progress is { Outcome: { } outcome } progress &&
             _workflow.Receipt is { } receipt)
             NotifyTerminal(progress, outcome, receipt);
     }
 
-    /// <summary>Refreshes the library scan when the scene workspace is opened:
-    /// the recent list is read from the shared snapshot, and a scene saved
-    /// since the last pass is exactly what the user is looking for.</summary>
+    /// <summary>
+    /// Refreshes the Library when the Scene workspace opens so newly saved files appear.
+    /// </summary>
     public void OnShown() => _library.RequestScan();
 
-    /// <summary>
-    /// Draws save options, load options, current progress, the previous result,
-    /// and scene sources as separate sections.
-    ///
-    /// <para>Both option sets are HERE as well as in their dialogs, and both
-    /// mounts read and write the same shared preference: an option only
-    /// reachable through a file browser is an option the user has to open a
-    /// browser to find out about.</para>
-    /// </summary>
-    /// <summary>The inspector's Scene panel — the whole scene workspace
-    /// in rail form, plus the way into the library.</summary>
-    /// <summary>Set by the shell: the Scene panel's way into the
-    /// library workspace.</summary>
+    /// <summary>Opens the Library window; supplied by the application shell.</summary>
     public Action? OpenLibrary;
 
-    /// <summary>The Scene page — the whole scene workspace plus the way
-    /// into the library. Shown in the CONTENT area by the workspace-band
-    /// selector; the inspector stays the selected object.</summary>
+    /// <summary>
+    /// Draws scene options and results in the main content area.
+    /// The inspector continues to show the selected object.
+    /// </summary>
     public void DrawPage(Vector2 origin, Vector2 size)
     {
         var progress = _workflow.Progress;
@@ -447,9 +415,7 @@ public sealed class ScenePane
                         OpenLoad,
                         disabled: busy,
                         help: busy ? BusyHelp : null);
-                    // A snapshot IS a scene, so loading one is a load and
-                    // belongs in the same group. The automatic-snapshot
-                    // STATUS is a library concern and has left this page.
+                    // Open autosaves with the same scene-loading controls.
                     bool snapshots = Directory.Exists(_snapshots.RootDirectory);
                     actions.Button(
                         "Snapshots…",
@@ -459,9 +425,7 @@ public sealed class ScenePane
                             : snapshots ? "Automatic snapshots"
                             : "None taken yet");
                 });
-                // The Stagehand seam: their Stage .json, both ways. Objects,
-                // props, effects and lights travel; the receipt names what
-                // cannot.
+                // Import/export Stagehand files; results report unsupported content.
                 form.Actions("Stage", actions =>
                 {
                     actions.Button(
@@ -497,11 +461,7 @@ public sealed class ScenePane
     private const string BusyHelp = "Scene operation running";
 
     /// <summary>
-    /// What the next save will weigh, live. The appearance payloads are the
-    /// only part big enough to matter and their sizes are REAL file lengths —
-    /// the container stores them raw, so this is a sum and not a guess. With
-    /// the switch off it says so rather than showing a number the save would
-    /// not produce.
+    /// Shows the estimated appearance payload size, not the total scene file size.
     /// </summary>
     private string SaveSizeText()
     {
@@ -513,10 +473,10 @@ public sealed class ScenePane
             : $"About {FormatBytes(appearance)} of appearance data";
     }
 
-    /// <summary>Publishes one finished operation through the ordinary Dalamud
-    /// notification channel, once. It stays a HEADLINE — the per-entity
-    /// detail is the result section's job, and repeating it in a toast would
-    /// be the same prose in two places.</summary>
+    /// <summary>
+    /// Shows one completion notification per operation. Detailed results
+    /// remain available in the Scene tab.
+    /// </summary>
     private void NotifyTerminal(
         SceneProgress progress,
         SceneOutcome outcome,
@@ -579,8 +539,8 @@ public sealed class ScenePane
         });
     }
 
-    /// <summary>The phase vocabulary in the user's words. One case per
-    /// <see cref="ScenePhase"/>, so a new phase cannot slip through unnamed.
+    /// <summary>
+    /// Display labels for scene operation progress.
     /// </summary>
     private static string PhaseLabel(ScenePhase phase) => phase switch
     {
@@ -625,18 +585,10 @@ public sealed class ScenePane
                 help: receipt is null
                     ? null
                     : $"Operation {receipt.OperationId:D}, epoch {receipt.OperationEpoch}.");
-            // The primary reason wraps. It is the one line the user needs
-            // whole, so it is never cut to a count or an ellipsis.
+            // Keep the full explanation readable instead of truncating it.
             form.Paragraph(outcome.Detail, warning: !outcome.Success);
 
-            // Named refusals beside restored entities: this is the partial
-            // recovery, so every one of them is a row rather than a count.
-            //
-            // Three lines each, deliberately: WHAT did not come back, WHY,
-            // and WHAT TO DO. The reason and the next step wrap instead of
-            // truncating — a row that cuts its own reason off is the defect
-            // issue #41 reported, where the only thing a failed actor row
-            // said was the actor's name back at the user.
+            // Show each failed item, its reason and any suggested action.
             foreach (var refusal in refusals)
             {
                 form.ReadOnly(refusal.Kind.Label(), refusal.Name, unavailable: true);
@@ -647,9 +599,7 @@ public sealed class ScenePane
                     form.Paragraph(remedy);
             }
 
-            // Restored with a caveat: in the scene, and the caveat is the
-            // whole point of the row, so it is shown rather than folded into
-            // the successes.
+            // Explain which restored items differ from what the file requested.
             foreach (var entity in degraded)
             {
                 form.ReadOnly(entity.Kind.Label(), $"{entity.Name} (restored)");
@@ -659,8 +609,7 @@ public sealed class ScenePane
             foreach (var note in outcome.Notes)
                 form.Status(note);
 
-            // Bytes that survived an uncertain commit. They are named so the
-            // user can recover them by hand; nothing here deletes them.
+            // Show files retained after a save failure or cleanup error.
             foreach (var evidence in outcome.RecoveryEvidencePaths)
             {
                 form.ReadOnlyWithActions(
@@ -699,27 +648,21 @@ public sealed class ScenePane
 
     // ── the load dialog's options band ───────────────────────────────────
 
-    /// <summary>The band's label column, logical px — the dense form's, as
-    /// the import dialog's own option columns use.</summary>
+    /// <summary>
+    /// Label width in logical pixels for the compact option forms.
+    /// </summary>
     private const float OptionsLabelColumn = 64f;
 
-    /// <summary>The band may not grow past this, logical px; past it each
-    /// column scrolls inside its own box.</summary>
+    /// <summary>
+    /// Maximum load options height in logical pixels; larger contents scroll.
+    /// </summary>
     private const float OptionsBandMaxHeight = 160f;
 
     private const string OptionsBandId = "##scene-load-options";
 
     /// <summary>
-    /// What the load will DO, stated under the listing it is about: the
-    /// destroy-first choice and the placement choice in one column, the six
-    /// category toggles in the other. Every default is today's load, so a user
-    /// who never opens this band gets the load they have always had.
-    ///
-    /// <para>Composed exactly as the pose import dialog's own options band is —
-    /// equal scroll regions past the left inset, each holding one headerless
-    /// DENSE section, each region's gutter its own trailing inset — because it
-    /// is the same thing in the same place, and a second layout for it would be
-    /// a second grammar for "options under a file listing".</para>
+    /// Draws placement and session options beside category filters.
+    /// Both columns scroll, and the panel grows only up to OptionsBandMaxHeight.
     /// </summary>
     private void DrawLoadOptionsBand(Vector2 origin, Vector2 size, string? path)
     {
@@ -774,10 +717,7 @@ public sealed class ScenePane
             form => DrawIncludeOptions(form, disabled: false));
 
     /// <summary>
-    /// The two LOAD BEHAVIOUR choices, one group. They stay together because
-    /// they are the same question — what happens to the session the file lands
-    /// in — and they are drawn from here in both mounts, so the workspace and
-    /// the dialog cannot drift into two wordings of one option.
+    /// File currently highlighted in a load dialog, used for its placement choice.
     /// </summary>
     private string? _loadPath;
     private static readonly string[] ScenePlacementLabels =
@@ -805,9 +745,9 @@ public sealed class ScenePane
             disabled: disabled || _loadPath is null);
     }
 
-    /// <summary>The seven INCLUSION filters, one group, in the order the load
-    /// restores them. Only the three whose scope is not obvious from the word
-    /// carry help — a tooltip that repeats its own label is noise.</summary>
+    /// <summary>
+    /// Category filters shared by the Scene page and load dialogs.
+    /// </summary>
     private void DrawIncludeOptions(FormScope form, bool disabled) =>
         form.Checkboxes(
             "Include",
@@ -840,14 +780,13 @@ public sealed class ScenePane
 
     // ── the save dialog's options band ───────────────────────────────────
 
-    /// <summary>The save band holds one switch row plus its inset.</summary>
+    /// <summary>
+    /// Height of the save options panel in logical pixels.
+    /// </summary>
     private const float SaveBandHeight = 52f;
 
     /// <summary>
-    /// The one save choice that changes what the file CONTAINS, under the
-    /// destination it is about. Same shared answer as the workspace's SAVE
-    /// section and the same sentence explaining it — this is a second mount,
-    /// not a second option.
+    /// Draws the shared appearance and animation save options below the file list.
     /// </summary>
     private void DrawSaveOptionsBand(Vector2 origin, Vector2 size, string? path)
     {
@@ -879,7 +818,8 @@ public sealed class ScenePane
                     AnimationHelp)));
     }
 
-    /// <summary>One headerless dense option section, the band's only shape.
+    /// <summary>
+    /// Draws a compact option form without a section heading.
     /// </summary>
     private static float Section(
         string id, Vector2 origin, float width, Action<FormScope> rows) =>
@@ -898,10 +838,7 @@ public sealed class ScenePane
     // ── the load dialog's verdict column ─────────────────────────────────
 
     /// <summary>
-    /// Reads highlighted-file metadata through the scene codec used for load.
-    ///
-    /// <para>The side-panel callback receives an origin and size, not two
-    /// corners.</para>
+    /// Shows the highlighted file's metadata and validation result.
     /// </summary>
     private void DrawVerdictPanel(Vector2 origin, Vector2 size, string? path)
     {
@@ -912,10 +849,7 @@ public sealed class ScenePane
         if (!(width > 0f))
             return;
 
-        // The column reserves space, so it must never BE space. With nothing
-        // highlighted it says so, centred in the whole column — an empty state
-        // is the one thing that is centred here; every stated fact below is
-        // left-aligned on the same start edge.
+        // Centre the prompt when no file is selected.
         if (path is null)
         {
             TextInBand(
@@ -954,12 +888,7 @@ public sealed class ScenePane
             return;
         }
 
-        if (probed is not { } metadata)
-        {
-            Line("Cannot be read", theme.TextDim, theme.Typography.LabelSize);
-            return;
-        }
-
+        var metadata = probed!;
         bool valid = metadata.Status == SceneEntryStatus.Valid;
         Line(
             valid ? "Valid scene" : StatusWordFor(metadata.Status),
@@ -978,11 +907,7 @@ public sealed class ScenePane
         if (!string.IsNullOrWhiteSpace(metadata.Description))
             Line(metadata.Description!, theme.FormHint, theme.Typography.CaptionSize);
 
-        // Where it was taken, and whether that is where you are. The scene
-        // loads either way — every placement in it is a world position, and
-        // nothing about a territory refuses one — so this is a WARNING, not a
-        // gate: the file's own words for the place, dimmed to the refusal
-        // colour when the territory is not this one.
+        // A different map is a warning, not a reason to block loading.
         if (metadata.TerritoryId != 0)
         {
             bool elsewhere = metadata.TerritoryId != _place.Current.TerritoryId;
@@ -1000,9 +925,7 @@ public sealed class ScenePane
         Line($"{metadata.LightCount} lights", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.CameraCount} cameras", theme.FormHint, theme.Typography.CaptionSize);
 
-        // Format identity and size, from the document itself. A versioned
-        // format the user cannot see the version of is not a versioned format,
-        // and the size is what the appearance payload shows up in.
+        // Show the stored format version and the file size.
         Line(
             $"{metadata.TypeName ?? "Scene"} v{metadata.FileVersion} · " +
             FormatBytes(StampOf(path).Length),
@@ -1020,8 +943,8 @@ public sealed class ScenePane
         }
     }
 
-    /// <summary>Binary-prefix file size for the dialog's compact inspector.
-    /// A stamp that could not be taken reads as unknown rather than as zero.
+    /// <summary>
+    /// Formats file sizes using binary units; unavailable sizes display as unknown.
     /// </summary>
     private static string FormatBytes(long bytes) => bytes switch
     {
@@ -1033,19 +956,16 @@ public sealed class ScenePane
     };
 
     /// <summary>
-    /// The probe for one path, never blocking the frame. Answers false while a
-    /// read is outstanding — the panel states that as its pending line — and
-    /// true once an answer exists, whose null is a probe that failed outright.
-    /// The worker only ever hands its result back through the inbox; the cache,
-    /// the order queue and the in-flight set belong to the drawing thread.
+    /// Starts a background metadata read when the file is not cached or has changed.
+    /// Returns false while reading. Only the UI thread updates the cache;
+    /// background tasks return results through the queue.
     /// </summary>
     private bool TryVerdict(string path, out SceneMetadataReadOutcome? verdict)
     {
         while (_verdictInbox.TryDequeue(out var done))
         {
             _verdictsInFlight.Remove(done.Path);
-            // A re-probe REPLACES its stale answer; the order queue holds one
-            // entry per path, so only a first insert enqueues.
+            // Replacing a cached result must not add another eviction entry.
             if (!_verdicts.ContainsKey(done.Path))
                 _verdictOrder.Enqueue(done.Path);
             _verdicts[done.Path] = (done.Stamp, done.Outcome);
@@ -1069,31 +989,17 @@ public sealed class ScenePane
             var requestedStamp = stamp;
             _ = Task.Run(() =>
             {
-                SceneMetadataReadOutcome? outcome = null;
-                try
-                {
-                    outcome = SceneFileStore.Default.ReadMetadata(requested);
-                }
-                catch
-                {
-                    // The codec answers with a typed failure rather than
-                    // throwing; a throw that escapes it anyway must still
-                    // retire the in-flight path, or the column would state
-                    // "Reading…" for the rest of the session.
-                }
-                // The stamp the RENDER thread saw. A file rewritten between
-                // the stat and the read stores an answer against a stamp the
-                // next frame's stat no longer matches, so it re-probes rather
-                // than serving a document it did not read.
+                var outcome = SceneFileStore.Default.ReadMetadata(requested);
+                // Keep the pre-read stamp so a later file change invalidates this result.
                 _verdictInbox.Enqueue((requested, requestedStamp, outcome));
             });
         }
         return false;
     }
 
-    /// <summary>The file's identity for cache purposes. A path that cannot be
-    /// stat'd stamps as default, which never equals a real file's stamp, so a
-    /// disappearing file re-probes rather than serving its last answer.
+    /// <summary>
+    /// Reads the file modification time and size. Missing or inaccessible
+    /// files use an empty stamp; ReadMetadata supplies the error shown to the user.
     /// </summary>
     private static FileStamp StampOf(string path)
     {
@@ -1138,9 +1044,10 @@ public sealed class ScenePane
         BeginLoad(path);
     });
 
-    /// <summary>Both Stage dialogs start in Stagehand's own folder, so the
-    /// two plugins read and write one place. It is created on export so the
-    /// dialog has somewhere to land.</summary>
+    /// <summary>
+    /// Opens Stagehand's shared folder, creating it if needed. Falls back
+    /// to Documents if that folder cannot be created.
+    /// </summary>
     private static string StageFolder()
     {
         string folder = global::Poser.Documents.Scene.StageFile.DefaultFolder;
@@ -1180,9 +1087,7 @@ public sealed class ScenePane
 
     private void BeginLoad(string path)
     {
-        var options = _preferences.ForLoad(path, _place.Current.TerritoryId,
-            _config.Config.DefaultSpawnPlacement, _anchors);
-        var started = _workflow.BeginLoad(path, options);
+        var started = _libraryScene.LoadScene(path, _config.Config.DefaultSpawnPlacement);
         if (!started.Success)
             _notices.Failed(started.Detail ?? "The scene could not be loaded.");
     }

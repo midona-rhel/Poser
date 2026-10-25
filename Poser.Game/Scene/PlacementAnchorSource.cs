@@ -29,8 +29,8 @@ public sealed class PlacementAnchorSource : IPlacementAnchorSource
         _viewport = viewport;
     }
 
-    /// <summary>Where the camera stands right now, yaw-flattened; null when
-    /// the camera cannot be read.</summary>
+    /// <summary>Reads the camera position and horizontal heading, ignoring tilt.
+    /// Returns null when the camera has no usable viewing direction.</summary>
     public PlacementAnchorData? CameraAnchorNow()
     {
         var forward = _camera.GetLookDirection();

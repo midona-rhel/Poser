@@ -14,7 +14,10 @@ public interface ILibrarySceneActions
     Outcome SpawnPose(string path, PoseImportOptions options);
 }
 
-/// <summary>Shared library/spawn entry policy, independent of selection and window lifetime.</summary>
+/// <summary>
+/// Loads scenes and saved entries for the Library, file dialogs and spawn browser.
+/// Placement uses the current camera or actor when the load starts.
+/// </summary>
 public sealed class LibrarySceneActions(
     ISceneWorkflow scenes, SceneLoadPreferences preferences, IPlacementAnchorSource anchors,
     ISceneCreation creation, IPendingSceneCreation pending,
@@ -29,7 +32,8 @@ public sealed class LibrarySceneActions(
     public Outcome SpawnEntry(string path, PoseLibraryEntryKind kind, ObjectPlacementMode placement,
         bool fallbackToSaved = false)
     {
-        // Entries are additive: a scene's clear-first preference never applies.
+        // Adding a saved entry must not clear the scene, even if the user enabled
+        // that option for full-scene loads. Overlays and environment need no anchor.
         var options = new SceneLoadOptions();
         if (kind == PoseLibraryEntryKind.Overlay)
             options = SceneLoadOptions.Only(SceneCategories.Overlays);
