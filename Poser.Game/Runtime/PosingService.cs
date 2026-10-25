@@ -115,8 +115,7 @@ public unsafe class PosingService : IPosingService
                 _transformOverrides.TryGetValue((nint)gameObject, out var transform))
             {
                 // Reapply our override instead of game's reset
-                ApplyTransformToActor((nint)gameObject, transform);
-                return; // Don't call original - we override completely
+                if (ApplyTransformToActor((nint)gameObject, transform)) return;
             }
         }
         catch (Exception ex)
@@ -193,23 +192,24 @@ public unsafe class PosingService : IPosingService
         // The caller reapplies the authored draw transform after SetPosition.
     }
 
-    private void ApplyTransformToActor(nint actorAddress, Transform transform)
+    private bool ApplyTransformToActor(nint actorAddress, Transform transform)
     {
         if (!IsAvailable(actorAddress))
-            return;
+            return false;
 
         var gameObject = (GameObject*)actorAddress;
         if (gameObject == null)
-            return;
+            return false;
 
         var drawObject = gameObject->DrawObject;
         if (drawObject == null)
-            return;
+            return false;
 
         // Write transform directly to the draw object
         drawObject->Object.Position = transform.Position;
         drawObject->Object.Rotation = transform.Rotation;
         drawObject->Object.Scale = transform.Scale;
+        return true;
     }
 
     public Transform? GetTransformOverride(IActor actor)
@@ -217,19 +217,20 @@ public unsafe class PosingService : IPosingService
         return _transformOverrides.TryGetValue(actor.Address, out var transform) ? transform : (Transform?)null;
     }
 
-    public void SetTransformOverride(IActor actor, Transform transform)
+    public bool SetTransformOverride(IActor actor, Transform transform)
     {
         if (!_gPoseService.IsGPosing ||
             !_actors.IsAvailable(actor) ||
             !TrySanitizeTransform(transform, out transform))
-        {
-            return;
-        }
+            return false;
 
-        // Store original if we haven't already
+        var original = GetOriginalTransform(actor);
+        if (!ApplyTransformToActor(actor.Address, transform)) return false;
+
+        // Capture the initial placement once, before the first successful edit.
         if (!_originalTransforms.ContainsKey(actor.Address))
         {
-            _originalTransforms[actor.Address] = GetOriginalTransform(actor);
+            _originalTransforms[actor.Address] = original;
             var native = (GameObject*)actor.Address;
             _orbitPositions[actor.Address] = new(native->Position, native->DefaultPosition);
         }
@@ -237,9 +238,7 @@ public unsafe class PosingService : IPosingService
         _transformOverrides[actor.Address] = transform;
         _orbitPositions[actor.Address].Schedule(transform.Position,
             _configuration.Config.Camera.UpdateOrbitWithActorPosition);
-
-        // Apply immediately for responsive feedback
-        ApplyTransformToActor(actor.Address, transform);
+        return true;
     }
 
     private void OnActorListChanged(ActorListChangedEvent e)
@@ -270,7 +269,6 @@ public unsafe class PosingService : IPosingService
         sanitized = input with
         {
             Rotation = Quaternion.Normalize(input.Rotation),
-            Scale = Vector3.Clamp(input.Scale, new Vector3(0.01f), new Vector3(100f)),
         };
         return true;
     }

@@ -74,10 +74,9 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             var resolved = _bindings.Resolve(actorId);
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
-            _actors.SetTransformOverride(
-                resolved.Value!,
-                LegacyTransform.FromPose(desired));
-            return TransformPortResult.Ok();
+            return _actors.SetTransformOverride(resolved.Value!, LegacyTransform.FromPose(desired))
+                ? TransformPortResult.Ok()
+                : TransformPortResult.Fail(TransformPortStatus.Rejected, "The actor transform could not be written.");
         }
 
         if (baseline.Target.Kind == TransformTargetKind.Bone &&
@@ -158,9 +157,9 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
             if (state.HasOverride)
-                _actors.SetTransformOverride(
-                    resolved.Value!,
-                    LegacyTransform.FromPose(state.Transform));
+                return _actors.SetTransformOverride(resolved.Value!, LegacyTransform.FromPose(state.Transform))
+                    ? TransformPortResult.Ok()
+                    : TransformPortResult.Fail(TransformPortStatus.Rejected, "The actor transform could not be restored.");
             else
                 _actors.ClearTransformOverride(resolved.Value!);
             return TransformPortResult.Ok();

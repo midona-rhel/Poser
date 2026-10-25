@@ -159,7 +159,8 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
                 return Outcome.Ok();
             }
             var held = _posing.GetEffectiveTransform(legacy);
-            _posing.SetTransformOverride(legacy, held);
+            if (!_posing.SetTransformOverride(legacy, held))
+                return Outcome.Fail("The actor position could not be held.");
             _positionLocks.Lock(actor, held);
             return Outcome.Ok();
         }

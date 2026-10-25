@@ -10,9 +10,9 @@ public interface IPosingService : IDisposable
     Transform? GetTransformOverride(IActor actor);
 
     /// <summary>
-    /// Sets a transform override for an actor.
+    /// Writes and retains an actor transform. Returns false if no write occurred.
     /// </summary>
-    void SetTransformOverride(IActor actor, Transform transform);
+    bool SetTransformOverride(IActor actor, Transform transform);
 
     /// <summary>
     /// Gets the original (game-controlled) transform of an actor.

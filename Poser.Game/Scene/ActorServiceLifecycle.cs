@@ -480,8 +480,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             return;
         }
 
-        _posing.SetTransformOverride(actor, state.Placement);
-        if (_posing.GetTransformOverride(actor) is null)
+        if (!_posing.SetTransformOverride(actor, state.Placement))
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its placement was refused by the transform owner.");
 

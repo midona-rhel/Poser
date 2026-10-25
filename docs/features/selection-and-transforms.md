@@ -307,3 +307,9 @@ whole batch a barrier. Any new history append cancels a pending deferred replay,
 even when the new edit belongs to a different entity.
 
 The depth is 500 steps by default (Settings › Undo steps).
+
+Actor placement writes preserve the supplied scale; the native writer does not
+clamp it to a second range. PosingService reports whether the draw-object write
+succeeded. Parenting, scene restoration, position lock and transform history
+use that result rather than treating an existing override as proof of a new
+write. An unavailable draw object does not create a new stored override.

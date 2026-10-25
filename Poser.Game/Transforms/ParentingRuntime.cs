@@ -56,7 +56,7 @@ public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService po
         switch (id)
         {
             case { Actor: { } actor } when bindings.Resolve(actor).Value is { } live:
-                posing.SetTransformOverride(live, transform); return true;
+                return posing.SetTransformOverride(live, transform);
             case { Light: { } light } when bindings.Resolve(light).Value is { } live:
                 live.Transform = transform; return true;
             case { Prop: { } prop } when bindings.Resolve(prop).Value is { } live:

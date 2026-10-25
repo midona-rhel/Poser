@@ -380,3 +380,19 @@ No demonstrated failure leaves an override requiring a later retry. Removed
 the speculative collection retry store, retry loop and helper added in #652.
 Keep finally-based removal, missing-collection success and unexpected-error
 reporting. API error categories alone do not justify recovery machinery.
+
+### Actor transform slice #631 - implementation checks
+
+Confirmed the conflicting scale clamp by tracing TransformRuntimePort through
+PosingService to DrawObject.Object.Scale. The domain accepts signed and small
+scales; this writer replaced them with values in 0.01-100. Brio's
+Game/Posing/ModelTransformService writes the supplied transform directly, with
+no corresponding clamp. Removed the second range policy, preserving finite
+value and rotation validation. This is not a claim that every finite scale is
+supported by every downstream calculation.
+
+SetTransformOverride now returns the actual native write result. Parenting,
+transform apply/restore, scene placement and position lock use it. Removed
+post-write checks that only established whether any older override existed.
+Release build and all 913 existing tests pass. No unit tests added or removed;
+native scale/readback and UI acceptance remain live checks.

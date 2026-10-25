@@ -305,11 +305,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
             scale == System.Numerics.Vector3.Zero
                 ? System.Numerics.Vector3.One
                 : scale);
-        _posing.SetTransformOverride(target, placement);
-
-        // The setter can refuse without returning a result. Check that an
-        // override exists before reporting successful placement.
-        if (_posing.GetTransformOverride(target) is null)
+        if (!_posing.SetTransformOverride(target, placement))
             return "The actor's placement was refused by the transform owner.";
         return null;
     }
