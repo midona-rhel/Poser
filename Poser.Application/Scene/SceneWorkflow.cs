@@ -284,8 +284,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         SceneSaveOptions options,
         CancellationToken cancellation)
     {
-        // A save never mutates the session, so its only terminal states are
-        // Applied, Cancelled, and Failed — there is nothing to roll back.
+        IReadOnlyList<string> sealTemporaries = Array.Empty<string>();
         void Finish(
             bool success,
             string detail,
@@ -381,9 +380,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
             var notes = captured.Notes.ToList();
 
-            // An entry save narrows to its keys BEFORE sealing: sealing reads
-            // and packages appearance per actor, and an entry save must pay
-            // for exactly the actors it keeps.
+            // Package appearance only for the actors included in this save.
             var actorIdentities = captured.ActorIdentities;
             if (SceneSaveNarrowing.Narrow(scene, options.OnlyEntityKeys, ref actorIdentities)
                 is { } narrowRefusal)
@@ -400,11 +397,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
             SceneSaveNarrowing.ApplyEntryName(scene, options.EntryName);
 
-            // Appearance is sealed BEFORE the policy narrows the document:
-            // the policy's job is to drop what could not be sealed, so it has
-            // to run second. Only a save that asked for appearance pays for
-            // this — it packages mods and reads tens of megabytes.
-            IReadOnlyList<string> sealTemporaries = Array.Empty<string>();
+            // Build appearance packages before the policy removes failed packages.
             if (options.IncludeModdedAppearance)
             {
                 PublishStep(operation, new SceneProgress(
@@ -430,16 +423,11 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 return;
             }
 
-            // Character-file references are hashed HERE, off the framework
-            // thread, between the capture that produced them and the write:
-            // hashing a package is file work the frame the capture ran on may
-            // not spend.
+            // Hash the packages on this worker before writing the scene.
             if (_capture.StampMcdfHashes(scene) is { Count: > 0 } stamped)
                 notes.AddRange(stamped);
 
-            // The narrowed, sealed document is what gets written, so its own
-            // limits — the per-actor and whole-document appearance caps — are
-            // enforced against what is actually going to disk.
+            // Validate the final contents, including appearance package sizes.
             var validated = SceneFileValidation.Validate(scene);
             if (!validated.Succeeded)
             {
@@ -454,11 +442,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             var stored = _documents.Write(scene, path);
             notes.AddRange(stored.Notes);
             var written = stored.Outcome;
-            // The writer has streamed every payload into the container, so the
-            // packages sealing created are the caller's to drop now — and only
-            // now: deleting them earlier would delete the bytes being saved.
-            foreach (var temporary in sealTemporaries)
-                _capture.DeleteTemporary(temporary);
             if (!written.Succeeded)
             {
                 Finish(
@@ -499,13 +482,18 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             }
 
             Finish(true, summary, notes);
-            // The file exists NOW: tell the index, so the entry lists in
-            // the library and the portal without a hand-driven refresh.
+            // Refresh the Library after saving.
             _observer.Saved();
         }
         catch (Exception ex)
         {
             Finish(false, $"The save failed unexpectedly: {ex.Message}");
+        }
+        finally
+        {
+            // Release packages when the save finishes, including early exits.
+            foreach (var temporary in sealTemporaries)
+                _capture.DeleteTemporary(temporary);
         }
     }
 

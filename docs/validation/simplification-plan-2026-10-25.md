@@ -781,3 +781,30 @@ and all 906 tests pass. No tests were added or removed. Cancellation, current
 actor/session checks, import completion checks, and provider errors remain in
 the production path. Comments in the touched selector code and snapshot type
 were shortened or removed where the code already explained the operation.
+
+### MCDF cleanup and pose-edit review
+
+Reviewed McdfTeardown and import rollback again. The remaining state separates
+resources still applied, appearance waiting to be restored, and files waiting
+for redraw or deletion. Kept those checks and shortened three repetitive
+comments. Also shortened PoseEditService comments about mirroring and reset.
+The proposed thrown-write recovery change remains unproven: the inspected bone
+restore path resolves the bone and restores its pose stacks. No extra catch or
+retry mechanism was added without a demonstrated failure path.
+
+### #661: release scene-save temporary packages on every exit
+
+Moved the cleanup of packages returned by SealAppearance into RunSave's finally
+block. Cancellation after packaging and validation failure previously returned
+before reaching deletion. Writing is synchronous, so cleanup starts after the
+writer returns. Only newly exported, completed packages reach this list;
+unfinished exports retain their own deferred cleanup and imported files remain
+with their owner. The production deletion method catches file deletion errors.
+
+The Release build and all 906 existing tests pass. No new cases were added.
+There is no focused test for cancellation after packaging: no three redundant
+scene-save tests could be removed without losing coverage under the test budget.
+An attempted partial-save assertion was removed because it passed with the old
+implementation and modeled a temporary file the real failed export would have
+already deleted. The cleanup change was checked against actual producer and
+writer lifetimes. In-game cancellation at this point has not been reproduced.
