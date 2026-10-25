@@ -830,3 +830,20 @@ A stored pause was created through the same startup-resolved speed hook used to
 resume it. No separate reachable failure was established there, so that path
 was left alone. Rewrote the nearby emote and speed comments to explain what the
 controls do and why the native mode and priority changes are needed.
+
+
+### #663: keep camera edits outside grouped undo
+
+A pending camera move was recorded after lifecycle batch collection had started,
+so it became part of the group's undo step. Pending-edit listeners now run before
+collection starts. The existing grouped-history test checks that the camera edit
+stays separate and that group members still undo and redo in the right order.
+
+Removed the duplicate post-append event; UndoJournal now uses the same event as
+the camera and action recorders. Each listener still receives notification even
+if another throws. Reviewed the actual subscribers and redraw/deletion callers;
+the remaining history clearing, pending-target and replacement checks serve
+those callers and remain. Rewrote EditHistory's comments, removing repeated
+warnings and old development history. Release build and all 906 tests passed.
+No test cases added or removed. The camera ordering was tested through history
+callbacks, not through native camera movement in the game.

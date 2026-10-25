@@ -7,12 +7,19 @@ namespace Poser.Application.Tests.Transforms;
 public sealed class LifecycleHistoryBatchTests
 {
     [Fact]
-    public void Mixed_removals_publish_once_and_replay_reverse_then_forward()
+    public void Mixed_removals_follow_pending_edits_and_replay_reverse_then_forward()
     {
         var history = new EditHistory();
         var calls = new List<string>();
         var published = new List<HistoryEntry>();
         history.Appended += published.Add;
+        var cameraMoved = true;
+        history.Appending += () =>
+        {
+            if (!cameraMoved) return;
+            cameraMoved = false;
+            history.Append(new JournalStep("Move camera", () => Add("undo camera"), () => Add("redo camera")));
+        };
         history.RecordLifecycleBatch("Remove selection", () =>
         {
             history.Append(new SceneLifecyclePatch("Remove prop", () => Add("undo prop"), () => Add("redo prop")));
@@ -20,11 +27,11 @@ public sealed class LifecycleHistoryBatchTests
         });
         bool Add(string value) { calls.Add(value); return true; }
 
-        Assert.Equal("Remove selection", Assert.Single(published).Description);
+        Assert.Equal(new[] { "Move camera", "Remove selection" }, published.Select(step => step.Description));
         var entry = Assert.IsType<SceneLifecyclePatch>(history.PeekUndo());
         Assert.True(entry.Undo());
         history.CommitUndo(entry);
-        Assert.False(history.CanUndo);
+        Assert.Equal("Move camera", history.PeekUndo()!.Description);
         Assert.Equal(new[] { "undo actor", "undo prop" }, calls);
         Assert.True(entry.Redo());
         history.CommitRedo(entry);

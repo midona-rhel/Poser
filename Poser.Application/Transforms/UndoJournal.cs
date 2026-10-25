@@ -55,7 +55,7 @@ public sealed class UndoJournal
         _runner = runner;
         _assetExists = assetExists;
         _notices = notices;
-        _history.PatchAppended += () =>
+        _history.Appended += _ =>
         {
             _historyRevision++;
             _replayCancellation?.Cancel();
