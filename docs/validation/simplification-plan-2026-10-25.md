@@ -483,3 +483,11 @@ pointer/keyboard input. Each added exactly one entry and retained existing IDs.
 Camera position, rotation, FoV and roll matched exactly; the light's world
 transform matched exactly. See [636-live-pane-import.json](audit-2026-10-25/636-live-pane-import.json).
 Missing-anchor fallback was traced in source but was not reproduced live.
+
+Follow-up guard/comment audit implemented in ba934e5f, deployed and live-checked.
+Read the whole ScenePane and traced adjacent entry/scene load owners; removed
+its duplicate full-scene setup and redundant metadata catch/null-result state.
+Rewrote misleading comments, with retained-guard reasons and remaining audit
+boundaries in [636-guard-comment-audit.md](audit-2026-10-25/636-guard-comment-audit.md).
+Release and 906 existing tests passed; valid/invalid previews and an actual
+file-dialog scene load passed after deployment. No new tests.
