@@ -25,6 +25,16 @@ and what that means when using the app. Use short, ordinary sentences. Read the
 text aloud: if it sounds like a lab report or an agent talking to another agent,
 rewrite it.
 
+Link to the code that demonstrates the problem. Use GitHub permalinks to a
+published commit and the relevant lines, with a short label explaining what the
+reader will find. Check that the commit exists on GitHub. Do not substitute a
+list of variable names for a useful source link, or link an unpublished commit.
+
+Leave line counts, local deployment status, reviewer names, and development
+chronology out of issue and PR prose. Answer those questions in chat when asked.
+An issue describes the problem and intended change; an update explains what
+changed. Neither is a diary of our conversation.
+
 For testing, say what you tried and whether it worked. Mention a limitation when
 it leaves a real question about the fix. Keep script troubleshooting, reviewer
 names, model names, commit hashes, and raw output in the validation record. Do

@@ -15,8 +15,8 @@ and priority label. Search existing issues and link related work below. -->
 
 ## Evidence
 
-<!-- Record the reviewed commit and relevant working-tree changes. Link exact
-source or observations. Distinguish reproduced behavior, source-verified
+<!-- Link the relevant lines of code using a published commit permalink.
+Explain what those lines show. Distinguish reproduced behavior, source-verified
 findings, and hypotheses. State checks actually run and their limits.
 Documentation may be stale; a mismatch alone does not prove a code defect. -->
 
@@ -43,8 +43,8 @@ actual versus expected behavior, and unresolved limitations. -->
 ## Implementation boundary
 
 <!-- Define scope and exclusions. Identify the owner and existing mechanisms
-to reuse. For simplification, name superseded paths to delete and report net
-production-code changes separately from tests/docs; justify necessary growth.
+to reuse. For simplification, link the duplicate or unnecessary code to remove and
+explain why it is no longer needed.
 Update the existing normative documentation home instead of duplicating it.
 Follow docs/process/testing.md: Release validates; Debug deploys. -->
 
