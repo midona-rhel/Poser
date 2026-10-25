@@ -46,7 +46,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private readonly SceneSession _scene;
     private readonly SelectionScope _selection;
     private readonly Application.Settings.ConfigurationService _config;
-    private readonly IAutoSaveService _autoSave;
+    private readonly Poser.Application.Library.AutoSaveLibrary _autoSave;
     private readonly IPosePreview _preview;
     private readonly ITextureProvider _textures;
     private readonly IPoseLibraryService _library;
@@ -106,7 +106,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         IPosePreviewRuntime previewRuntime,
         PropertiesContext properties,
         Application.Settings.ConfigurationService config,
-        IAutoSaveService autoSave,
+        Poser.Application.Library.AutoSaveLibrary autoSave,
         IPosePreview preview,
         ITextureProvider textures,
         IPoseLibraryService library,

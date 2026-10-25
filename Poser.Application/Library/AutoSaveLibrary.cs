@@ -1,5 +1,6 @@
 using Poser.Documents.Library;
 using Poser.Application.AutoSave;
+using Poser.Documents.AutoSave;
 
 namespace Poser.Application.Library;
 
@@ -7,8 +8,14 @@ namespace Poser.Application.Library;
 /// Scans autosave folders in the background. Concurrent requests schedule at most
 /// one additional pass, and TakeLatest transfers the latest result to the caller.
 /// </summary>
-public sealed class AutoSaveLibrary(IAutoSaveService saves, SceneAutoSaveService scenes)
+public sealed class AutoSaveLibrary(string rootDirectory, SceneAutoSaveService scenes)
 {
+    public string RootDirectory { get; } = rootDirectory;
+    // Old recovery records remain readable; browsing never rewrites old backups.
+    public AutoSaveHealthRecord? LastHealthRecord { get; } = new AutoSaveHealthStore(rootDirectory).Read();
+    public bool NeedsRecovery => LastHealthRecord is
+        { Status: AutoSaveHealthStatus.RecoveryRequired or AutoSaveHealthStatus.Pending
+            or AutoSaveHealthStatus.Queued or AutoSaveHealthStatus.DispatchAccepted };
     private readonly AutoSaveLibraryReader _reader = new();
     private readonly object _sync = new();
     private bool _scanning, _queued;
@@ -16,7 +23,7 @@ public sealed class AutoSaveLibrary(IAutoSaveService saves, SceneAutoSaveService
 
     public void RequestScan()
     {
-        var root = saves.RootDirectory;
+        var root = RootDirectory;
         lock (_sync)
         {
             if (_scanning) { _queued = true; return; }

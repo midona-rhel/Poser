@@ -423,28 +423,18 @@ public sealed partial class PoseLibraryPane
         _vm.Status = scanning ? ScanningText : string.Empty;
     }
 
-    /// <summary>The auto-save tab's ONE caption, minted once per observation
-    /// CHANGE: the recovery-required detail, or nothing. Health narration —
-    /// the last-success stamp, the off state, the empty-session line — was
-    /// removed (user 2026-08-14): a cadence that is working is not news, and
-    /// stating it gave this tab a bar of chrome no other tab carries. A
-    /// recovery obligation stays, because a tab whose source has stopped
-    /// filling must not look merely empty.</summary>
+    /// <summary>Shows an unfinished or failed legacy pose backup without changing its saved record.</summary>
     private string AutoSaveRecoveryText()
     {
-        var record = _autoSave.LastHealthRecord;
-        var terminal = _autoSave.LastTerminalResult;
-        var key = (record?.UpdatedUtc, record?.Status, terminal.Status);
+        var record = _autoLibrary.LastHealthRecord;
+        var key = (record?.UpdatedUtc, record?.Status);
         if (key == _autoStatusKey)
             return _autoStatusText;
         _autoStatusKey = key;
 
         string text;
-        if (terminal.Status == AutoSaveTerminalStatus.RecoveryRequired)
-            text = "Auto-save needs recovery: "
-                + Trim(terminal.Detail, "see the health record.");
-        else if (record is { Status: AutoSaveHealthStatus.RecoveryRequired })
-            text = "Auto-save needs recovery: "
+        if (_autoLibrary.NeedsRecovery && record != null)
+            text = "Legacy pose backup needs recovery: "
                 + Trim(record.Detail ?? record.FailurePhase, "see the health record.");
         else
             text = string.Empty;

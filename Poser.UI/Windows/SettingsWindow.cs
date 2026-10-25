@@ -34,7 +34,7 @@ public class SettingsWindow : Window
     private readonly SettingsView.SearchSettle _search = new();
     public bool IsRebindingShortcut => IsOpen && _vm.RebindingAction != null;
     private bool _saving;
-    private readonly IAutoSaveService _autoSave;
+    private readonly Poser.Application.Library.AutoSaveLibrary _autoSave;
     private readonly IPenumbraPort _penumbra;
     private readonly IGlamourerPort _glamourer;
     private readonly ICustomizePlusPort _customizePlus;
@@ -51,7 +51,7 @@ public class SettingsWindow : Window
 
     public SettingsWindow(
         global::Poser.Application.Settings.ConfigurationService configuration,
-        IAutoSaveService autoSave,
+        Poser.Application.Library.AutoSaveLibrary autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,
         IPenumbraPort penumbra,

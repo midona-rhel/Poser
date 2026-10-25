@@ -384,7 +384,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/gazetarget?actor=NAME|INDEX|SELECTION_ID&target=NAME|INDEX|SELECTION_ID",
                         "/cameratarget?camera=CAMERA_SELECTION_ID (read) or &actor=NAME|INDEX|SELECTION_ID (follow)",
                         "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
-                        "/autosavestatus (read-only pose-autosave terminal and health state)",
+                        "/autosavestatus (legacy pose-backup folder and saved health record)",
                         "/autosavelibrary?action=refresh|read|delete&path=DISPOSABLE_POSE_FILE",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
                         "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",

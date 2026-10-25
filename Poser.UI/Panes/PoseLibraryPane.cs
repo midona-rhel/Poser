@@ -141,7 +141,6 @@ public sealed partial class PoseLibraryPane
 
     private readonly McdfTransaction _mcdf;
 
-    private readonly IAutoSaveService _autoSave;
 
     private readonly PoseFileInspectorSection _files;
 
@@ -307,12 +306,10 @@ public sealed partial class PoseLibraryPane
 
     private string _deleteName = string.Empty;
 
-    /// <summary>The auto-save tab's minted recovery line and the observation
-    /// key it was minted from — one format per CHANGE, not per frame.</summary>
+    /// <summary>Cached recovery message, rebuilt only when the saved status changes.</summary>
     private string _autoStatusText = string.Empty;
 
-    private (DateTime? Updated, AutoSaveHealthStatus? Health,
-        AutoSaveTerminalStatus Terminal) _autoStatusKey;
+    private (DateTime? Updated, AutoSaveHealthStatus? Health) _autoStatusKey;
 
     /// <summary>This pane's drive of the ONE shared preview: whose appearance,
     /// which file, which options, and the compare that re-poses it when any of
@@ -348,7 +345,6 @@ public sealed partial class PoseLibraryPane
         SelectionSession selection,
         SceneSession scene,
         McdfTransaction mcdf,
-        IAutoSaveService autoSave,
         PropertiesContent properties,
         IPosePreview preview,
         ISceneWorkflow scenes,
@@ -380,7 +376,6 @@ public sealed partial class PoseLibraryPane
         _selection = selection;
         _scene = scene;
         _mcdf = mcdf;
-        _autoSave = autoSave;
         _files = properties.PoseFiles;
         _notices = notices;
         _previewBinder = new PosePreviewController(previewRuntime, capture);
@@ -961,11 +956,7 @@ public sealed partial class PoseLibraryPane
     }
 
     // ── the auto-save tab ────────────────────────────────────────────────
-    // Read straight off IAutoSaveService.RootDirectory — retention, naming and
-    // the write path all stay where they are; this only reads what the service
-    // left. The read is SPLIT from the mint: enumerating a cold root, stamping
-    // every file and formatting every string is disk work no frame may do, so
-    // a worker produces a detached result and the draw thread only writes rows.
+    // Scan backup files on a worker; drawing the library only consumes the results.
 
     /// <summary>Requests the current thumbnail handle and size from the cache.
     /// A cache miss can queue decoding and returns no handle yet.</summary>

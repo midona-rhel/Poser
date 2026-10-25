@@ -264,7 +264,11 @@ count is the single visible backup count. The old optional-scene toggle is
 ignored: Enabled now governs scene autosave.
 
 The Autosaves library opens on Scene autosaves and loads them without an actor
-target. Legacy poses is a separate section; searches stay within the selected
+target. Legacy poses is a separate read-only source of old backups: its inactive
+capture and writer services have been removed. Existing recovery records are
+read without rewriting them; unfinished writes are still shown as needing
+recovery. The debug status exposes that interpretation as `needsRecovery`
+alongside the unchanged saved record. Searches stay within the selected
 autosave subtree. On GPose exit, deferred captures are invalidated;
 the last completed snapshot is retained rather than starting a capture while
 actors are being torn down. Delete backups on exit clears scene snapshots after
