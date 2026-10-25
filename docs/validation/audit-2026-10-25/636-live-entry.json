@@ -1,0 +1,50 @@
+{
+  "head": "9ce23896",
+  "scope": "Shared LibrarySceneActions loader; file-pane UI invocation not exercised",
+  "results": [
+    {
+      "kind": "Camera",
+      "status": "PASS",
+      "positionError": 0.0,
+      "source": {
+        "id": "camera:a89b3aa9d2a64bc19274082382343d0e@0",
+        "position": {
+          "X": 69.06498,
+          "Y": 2.1925604,
+          "Z": -126.778984
+        }
+      },
+      "added": {
+        "id": "camera:1b1739d4f21a43b29d668c9d2369c58e@0",
+        "position": {
+          "X": 69.06498,
+          "Y": 2.1925604,
+          "Z": -126.778984
+        }
+      },
+      "fixture": "C:\\Users\\Midona\\OneDrive\\Dokument\\GitHub\\Poser\\.worktrees\\scene-autosaves\\.tmp\\636-1792946692129812600.xivc"
+    },
+    {
+      "kind": "Light",
+      "status": "PASS",
+      "positionError": 0.0,
+      "source": {
+        "id": "light:2013804268294ec4a1f602989b77bf38@0",
+        "position": {
+          "X": 69.54332,
+          "Y": 1.6047027,
+          "Z": -126.12659
+        }
+      },
+      "added": {
+        "id": "light:cd24c1fa4cb6499ab3683a5c81fa6ca8@0",
+        "position": {
+          "X": 69.54332,
+          "Y": 1.6047027,
+          "Z": -126.12659
+        }
+      },
+      "fixture": "C:\\Users\\Midona\\OneDrive\\Dokument\\GitHub\\Poser\\.worktrees\\scene-autosaves\\.tmp\\636-1792946692683083200.xivl"
+    }
+  ]
+}

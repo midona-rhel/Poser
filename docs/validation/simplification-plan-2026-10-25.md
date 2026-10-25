@@ -473,4 +473,10 @@ CameraPane and LightPane retain their existing placement choices and failure
 notice. Removed the duplicate option construction and anchor lookup; no new
 service, guard, or test case. Source change: 8 lines added, 16 removed.
 Release build passed; all 906 existing tests passed (0 added, 0 removed).
-Live deployment and file-pane import verification remain pending.
+Deployed 9ce23896; all copied file hashes matched and the plugin logged a
+successful reload. Live camera/light save-load checks through the shared
+Library action passed: exactly one added entry each, existing entries retained,
+and zero position difference with AsSaved. Evidence:
+[636-live-entry.json](audit-2026-10-25/636-live-entry.json).
+File-pane invocation and missing-anchor behavior remain user acceptance checks;
+the latter was traced in source but was not reproduced live.
