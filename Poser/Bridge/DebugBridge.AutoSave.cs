@@ -161,9 +161,6 @@ public sealed partial class DebugBridge
         return new
         {
             root = Path.GetFullPath(service.RootDirectory),
-            // Keep the saved record intact; unfinished old writes still need attention.
-            health = service.LastHealthRecord,
-            needsRecovery = service.NeedsRecovery,
             // Isolation is selected by /sceneautosaveconfig and takes effect
             // only after reload; this endpoint never swaps the running store.
             sceneRootIsolationSupported = true,

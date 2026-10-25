@@ -21,7 +21,6 @@ using Poser.Domain.Integration;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
 using Poser.Domain.Library;
-using Poser.Documents.AutoSave;
 using Poser.Documents.Files;
 using Poser.Application.AutoSave;
 using Poser.Application.Library;
@@ -305,11 +304,6 @@ public sealed partial class PoseLibraryPane
     private string _deletePath = string.Empty;
 
     private string _deleteName = string.Empty;
-
-    /// <summary>Cached recovery message, rebuilt only when the saved status changes.</summary>
-    private string _autoStatusText = string.Empty;
-
-    private (DateTime? Updated, AutoSaveHealthStatus? Health) _autoStatusKey;
 
     /// <summary>This pane's drive of the ONE shared preview: whose appearance,
     /// which file, which options, and the compare that re-poses it when any of

@@ -1,6 +1,5 @@
 using Poser.Documents.Library;
 using Poser.Application.AutoSave;
-using Poser.Documents.AutoSave;
 
 namespace Poser.Application.Library;
 
@@ -11,11 +10,6 @@ namespace Poser.Application.Library;
 public sealed class AutoSaveLibrary(string rootDirectory, SceneAutoSaveService scenes)
 {
     public string RootDirectory { get; } = rootDirectory;
-    // Old recovery records remain readable; browsing never rewrites old backups.
-    public AutoSaveHealthRecord? LastHealthRecord { get; } = new AutoSaveHealthStore(rootDirectory).Read();
-    public bool NeedsRecovery => LastHealthRecord is
-        { Status: AutoSaveHealthStatus.RecoveryRequired or AutoSaveHealthStatus.Pending
-            or AutoSaveHealthStatus.Queued or AutoSaveHealthStatus.DispatchAccepted };
     private readonly AutoSaveLibraryReader _reader = new();
     private readonly object _sync = new();
     private bool _scanning, _queued;

@@ -405,49 +405,18 @@ public sealed partial class PoseLibraryPane
             return;
         }
 
-        // The auto-save tab's idle caption is a REFUSAL channel, nothing
-        // more: it speaks only when auto-save needs recovery, because that is
-        // the one state where a silent footer would hide that the tab's own
-        // source has stopped filling. A healthy cadence says nothing, so this
-        // tab's footer reads exactly like every other tab's.
+        // Show failures from the current scene-autosave service.
         if (_type == LibraryType.AutoSaves && !scanning)
         {
             var result = _sceneAutoSave.LastResult;
             _vm.Status = result.Status is SceneAutoSaveStatus.Failed or SceneAutoSaveStatus.RecoveryRequired
-                ? result.Detail : AutoSaveRecoveryText();
+                ? result.Detail : string.Empty;
             return;
         }
 
         // No counter (user: pointless beside the single action row). Source
         // failures are presented beside their saved folders in Settings.
         _vm.Status = scanning ? ScanningText : string.Empty;
-    }
-
-    /// <summary>Shows an unfinished or failed legacy pose backup without changing its saved record.</summary>
-    private string AutoSaveRecoveryText()
-    {
-        var record = _autoLibrary.LastHealthRecord;
-        var key = (record?.UpdatedUtc, record?.Status);
-        if (key == _autoStatusKey)
-            return _autoStatusText;
-        _autoStatusKey = key;
-
-        string text;
-        if (_autoLibrary.NeedsRecovery && record != null)
-            text = "Legacy pose backup needs recovery: "
-                + Trim(record.Detail ?? record.FailurePhase, "see the health record.");
-        else
-            text = string.Empty;
-        return _autoStatusText = text;
-
-        // The health record's detail is bounded at 4096; the footer is one
-        // caption line.
-        static string Trim(string? detail, string fallback)
-        {
-            if (string.IsNullOrWhiteSpace(detail))
-                return fallback;
-            return detail.Length <= 160 ? detail : detail[..160] + "…";
-        }
     }
 
     // ── the target actor ─────────────────────────────────────────────────

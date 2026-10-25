@@ -1,5 +1,4 @@
 using System;
-using Poser.Documents.AutoSave;
 using Poser.Application.AutoSave;
 
 namespace Poser.Application.Lifecycle;
@@ -40,21 +39,6 @@ public readonly record struct FinalCaptureResult(
     /// </summary>
     public bool CaptureCompleted =>
         Status is FinalCaptureStatus.Captured or FinalCaptureStatus.DispatchStarted;
-
-    /// <summary>Last observed autosave health record, which may predate Persistence.
-    /// Excluded from equality, hashing, and deconstruction.</summary>
-    public AutoSaveHealthRecord? PersistenceEvidence { get; init; }
-
-    public bool Equals(FinalCaptureResult other) =>
-        Status == other.Status &&
-        CapturedActors == other.CapturedActors &&
-        Detail == other.Detail &&
-        DispatchAccepted == other.DispatchAccepted &&
-        Persistence == other.Persistence &&
-        PersistenceDetail == other.PersistenceDetail;
-
-    public override int GetHashCode() =>
-        HashCode.Combine(Status, CapturedActors, Detail, DispatchAccepted, Persistence, PersistenceDetail);
 
     public static FinalCaptureResult NotCaptured(string? detail = null) =>
         new(FinalCaptureStatus.NotCaptured, 0, detail);

@@ -432,9 +432,8 @@ them or to validate every TwoJoint/bone-target interaction.
 Sol traced the production callers and confirmed that the old Tick,
 CaptureForExit and CompleteForExit methods were no longer called. Removed the
 old capture adapter, scheduler, queue, writer, health ledger and pose store.
-The existing AutoSaveLibrary now reads the configured legacy root and saved
-health record. UI and bridge share its NeedsRecovery interpretation; browsing
-does not rewrite old records. SceneAutoSaveService and its runtime/store remain
+The existing AutoSaveLibrary reads the configured legacy root. Old status
+records no longer produce a persistent recovery warning. SceneAutoSaveService and its runtime/store remain
 unchanged. Existing backup files are not deleted by this change.
 
 Removed five tests of the deleted scheduler, pose snapshots and pose retention,
@@ -442,4 +441,6 @@ plus their harness. Scene-autosave and legacy-reader tests remain. Added zero
 unit tests; net minus five, with all 908 remaining tests passing. Release build
 passed. Read-only Sol reviews also covered the preceding clothing, transform
 and IK changes; their supported scan removal and comment corrections are in
-7eaf1e37. No speculative recovery mechanisms were added from review questions.
+7eaf1e37. The initial review led to preserving a legacy recovery warning without a
+justified user action. That decision was corrected: the warning, status store
+and its two tests were removed. Existing files remain untouched.
