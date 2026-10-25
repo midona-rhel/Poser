@@ -10,7 +10,7 @@ namespace Poser.Application.Tests.Integration;
 public sealed class GlamourerAccessTests
 {
     [Fact]
-    public void History_restores_captured_appearance_and_collection_after_source_changes()
+    public async Task History_restores_captured_appearance_and_collection_after_source_changes()
     {
         var (session, port) = Create();
         var actor = ActorId.New();
@@ -19,7 +19,7 @@ public sealed class GlamourerAccessTests
         var saved = session.TryCaptureHistory(actor).Value!;
         port.StateResult = IntegrationValue<string>.Ok("{}");
         var replacement = ActorId.New();
-        Assert.True(session.RestoreHistory(replacement, saved).Success);
+        Assert.True((await session.RestoreHistoryAndWait(replacement, saved, () => true, CancellationToken.None)).Success);
         Assert.Equal(authored, port.AppliedState);
         Assert.Equal(replacement, port.AppliedActor);
         Assert.Contains(nameof(IIntegrationRuntimeFake.SetIndividualCollection), port.Calls);
@@ -30,7 +30,7 @@ public sealed class GlamourerAccessTests
     }
 
     [Fact]
-    public void Removal_capture_omits_an_unreadable_look_but_keeps_a_foreign_hold_refusal()
+    public async Task Removal_capture_omits_an_unreadable_look_but_keeps_a_foreign_hold_refusal()
     {
         var (session, port) = Create();
         var actor = ActorId.New();
@@ -41,7 +41,7 @@ public sealed class GlamourerAccessTests
         Assert.True(removal.Value!.LookOmitted);
         Assert.Null(removal.Value.StateJson);
         port.Access = _ => GlamourerAccess.Editable;
-        Assert.True(session.RestoreHistory(ActorId.New(), removal.Value).Success);
+        Assert.True((await session.RestoreHistoryAndWait(ActorId.New(), removal.Value, () => true, CancellationToken.None)).Success);
         Assert.DoesNotContain(nameof(IIntegrationRuntimeFake.ApplyGlamourerStateJson), port.Calls);
         port.Access = _ => GlamourerAccess.ForeignHeld;
         Assert.False(session.TryCaptureHistory(actor, omitUnreadableLook: true).Success);
@@ -134,6 +134,12 @@ public sealed class GlamourerAccessTests
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == nameof(IIntegrationRuntimeFake.OnFrameworkThread))
+            {
+                var value = ((Delegate)args![0]!).DynamicInvoke();
+                return typeof(Task).GetMethod(nameof(Task.FromResult))!
+                    .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
+            }
             string name = method!.Name;
             Calls.Add(name);
             if (name is "get_CustomizePlus" or "get_Penumbra" or "get_Glamourer")

@@ -10,7 +10,7 @@ namespace Poser.Application.Tests.Integration;
 public sealed class InheritedCollectionHistoryTests
 {
     [Fact]
-    public void Switching_duplicate_collection_retains_original_resources_for_reset_and_history()
+    public async Task Switching_duplicate_collection_retains_original_resources_for_reset_and_history()
     {
         var (session, runtime) = Create();
         var actor = ActorId.New();
@@ -22,9 +22,9 @@ public sealed class InheritedCollectionHistoryTests
         Assert.Equal(original, session.OverridesFor(actor).Baseline.Collection!.InheritedCollection);
         var after = session.TryCaptureHistory(actor).Value!;
         Assert.Null(after.InheritedCollection);
-        Assert.True(session.RestoreHistory(actor, before).Success);
+        Assert.True((await session.RestoreHistoryAndWait(actor, before, () => true, CancellationToken.None)).Success);
         Assert.Equal(original, runtime.Owned);
-        Assert.True(session.RestoreHistory(actor, after).Success);
+        Assert.True((await session.RestoreHistoryAndWait(actor, after, () => true, CancellationToken.None)).Success);
         Assert.Null(runtime.Owned);
         Assert.Equal(runtime.Installed, session.ReadCollection(actor).Value!.EffectiveId);
         Assert.True(session.ResetCollection(actor).Success);
@@ -65,6 +65,12 @@ public sealed class InheritedCollectionHistoryTests
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == nameof(IIntegrationRuntimeFake.OnFrameworkThread))
+            {
+                var value = ((Delegate)args![0]!).DynamicInvoke();
+                return typeof(Task).GetMethod(nameof(Task.FromResult))!
+                    .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
+            }
             switch (method!.Name)
             {
                 case "get_Penumbra": return new IntegrationAvailability(true, "");

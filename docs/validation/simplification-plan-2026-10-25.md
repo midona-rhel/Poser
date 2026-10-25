@@ -766,3 +766,18 @@ by the existing automated tests rather than a live UI run. The first script
 incorrectly assumed repeated provider exports have identical JSON lengths;
 that assertion failed. The evidence records this limitation and does not claim
 exact live JSON equality. No additional product change was made for that result.
+
+### #660: appearance history uses one restore entry point
+
+Removed the synchronous restore method used only by tests. The game already
+used RestoreHistoryAndWait through ActorStateSnapshots. Tests now call that same
+entry point; the ordinary appearance helper has no separate import or redraw
+branch. ActorStateSnapshots still redraws after restoring the model, then
+restores the pose and other actor settings.
+
+The existing tests cover retained MCDF files, collection restoration, body
+profile Reset/undo, Glamourer appearance, and redraw/pose ordering. Release build
+and all 906 tests pass. No tests were added or removed. Cancellation, current
+actor/session checks, import completion checks, and provider errors remain in
+the production path. Comments in the touched selector code and snapshot type
+were shortened or removed where the code already explained the operation.

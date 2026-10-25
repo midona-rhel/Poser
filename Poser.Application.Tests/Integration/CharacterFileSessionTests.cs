@@ -98,7 +98,7 @@ public sealed class CharacterFileSessionTests
         public void Restore(ActorStateSnapshot snapshot, Func<bool> current, CancellationToken cancellation,
             Action<GestureResult> completed)
         {
-            var result = _integration.RestoreHistory(snapshot.Actor, snapshot.Properties.Appearance);
+            var result = _integration.RestoreHistoryAndWait(snapshot.Actor, snapshot.Properties.Appearance, current, cancellation).GetAwaiter().GetResult();
             completed(result.Success ? GestureResult.Ok() : GestureResult.Fail(result.Detail!));
         }
         public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
@@ -147,6 +147,12 @@ public sealed class CharacterFileSessionTests
         public List<ActorId> Writes = new();
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == nameof(IIntegrationRuntimeFake.OnFrameworkThread))
+            {
+                var value = ((Delegate)args![0]!).DynamicInvoke();
+                return typeof(Task).GetMethod(nameof(Task.FromResult))!
+                    .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
+            }
             switch (method!.Name)
             {
                 case nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess): return GlamourerAccess.Editable;

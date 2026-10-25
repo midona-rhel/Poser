@@ -95,7 +95,7 @@ public sealed class ActorAppearanceControlTests
         public void Restore(ActorStateSnapshot snapshot, Func<bool> current, CancellationToken cancellation,
             Action<GestureResult> completed)
         {
-            var result = _integration.RestoreHistory(snapshot.Actor, snapshot.Properties.Appearance);
+            var result = _integration.RestoreHistoryAndWait(snapshot.Actor, snapshot.Properties.Appearance, current, cancellation).GetAwaiter().GetResult();
             if (result.Success) _models.Apply(snapshot.Actor, snapshot.Properties.ModelId);
             completed(result.Success ? GestureResult.Ok() : GestureResult.Fail(result.Detail!));
         }
@@ -118,6 +118,12 @@ public sealed class ActorAppearanceControlTests
         public CollectionAssignment Collection = new(Guid.Empty, "Inherited", false);
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == nameof(IIntegrationRuntimeFake.OnFrameworkThread))
+            {
+                var value = ((Delegate)args![0]!).DynamicInvoke();
+                return typeof(Task).GetMethod(nameof(Task.FromResult))!
+                    .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
+            }
             switch (method!.Name)
             {
                 case "get_Penumbra":

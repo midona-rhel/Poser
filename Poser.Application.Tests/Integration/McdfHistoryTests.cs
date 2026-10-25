@@ -41,7 +41,7 @@ public sealed class McdfHistoryTests
         Assert.Equal(2, files.Deleted.Count);
         Assert.Equal(2, runtime.AppliedProfiles.Count);
         Assert.Equal(runtime.AppliedProfiles, runtime.DeletedProfiles);
-        Assert.False(integration.Selectors.RestoreHistory(actor, captured.Value).Success);
+        Assert.False((await integration.Selectors.RestoreHistoryAndWait(actor, captured.Value, () => true, CancellationToken.None)).Success);
     }
 
     [Fact]

@@ -6,8 +6,7 @@ namespace Poser.Application.Integration;
 
 /// <summary>
 /// Applies Penumbra collections, Glamourer appearance, and Customize+ profiles.
-/// Keeps original values in IntegrationOwnership for Reset and captures appearance
-/// for undo. Operations that call McdfGate refuse changes during an MCDF import.
+/// Saves the previous appearance for Reset and undo.
 /// </summary>
 public sealed class IntegrationSelectors
 {
@@ -53,16 +52,14 @@ public sealed class IntegrationSelectors
 
     public IntegrationOverrides OverridesFor(ActorId actor) => _ownership.OverridesFor(actor);
 
-    /// <summary>The body profile the actor wears, Poser-owned contents first.</summary>
+    /// <summary>Captures profile contents for export and undo.</summary>
     public IntegrationValue<string?> CaptureBodyProfile(ActorId actor) => _ownership.CaptureBodyProfile(actor);
 
-    /// <summary>Loads the pickable lists; each picker calls this on open.</summary>
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListCollections() => _penumbra.GetCollections();
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListDesigns() => _glamourer.GetDesigns();
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListBodyProfiles() => _customizePlus.GetBodyProfiles();
 
-    /// <summary>The collection currently affecting the actor (for the
-    /// trigger readout).</summary>
+    /// <summary>Returns the collection currently applied to the actor.</summary>
     public IntegrationValue<CollectionAssignment> ReadCollection(ActorId actor) =>
         _penumbra.GetCollectionAssignment(actor);
 
@@ -131,8 +128,7 @@ public sealed class IntegrationSelectors
         Func<bool> stillCurrent, CancellationToken cancellation)
     {
         await _mcdf.CurrentCompletion.WaitAsync(cancellation);
-        // Ordinary state cannot be applied while an imported package owns the
-        // actor. Release it through its existing transaction and await cleanup.
+        // Release the imported appearance before restoring the saved appearance.
         if (snapshot.McdfPath == null)
         {
             var reset = await _actors.OnFrameworkThread(() =>
@@ -156,7 +152,7 @@ public sealed class IntegrationSelectors
                 operation = _mcdf.Receipt?.OperationId;
             }
             else
-                result = RestoreHistory(actor, snapshot, redraw: false);
+                result = RestoreCapturedAppearance(actor, snapshot);
             pending = _mcdf.CurrentCompletion;
             return result;
         });
@@ -179,15 +175,8 @@ public sealed class IntegrationSelectors
         });
     }
 
-    /// <summary>MCDF packages restore through BeginImport first; ordinary looks replay these captured values.</summary>
-    public IntegrationResult RestoreHistory(ActorId actor, ActorAppearanceSnapshot snapshot)
-        => RestoreHistory(actor, snapshot, redraw: true);
-
-    private IntegrationResult RestoreHistory(ActorId actor, ActorAppearanceSnapshot snapshot, bool redraw)
+    private IntegrationResult RestoreCapturedAppearance(ActorId actor, ActorAppearanceSnapshot snapshot)
     {
-        if (snapshot.McdfPath is not null)
-            return snapshot.McdfResources is { } resources
-                ? _mcdf.RestoreHistory(actor, resources, snapshot.McdfPath) : _mcdf.BeginImport(actor, snapshot.McdfPath);
         var failures = new List<string>();
         void Check(IntegrationResult result)
         {
@@ -197,12 +186,11 @@ public sealed class IntegrationSelectors
         {
             var restored = _penumbra.RestoreInheritedCollection(actor, inherited);
             if (!restored.Success) return restored;
-            if (redraw) Check(_penumbra.RequestRedraw(actor));
         }
         else if (snapshot.Collection is { } collection)
         {
             if (collection.HasIndividualAssignment)
-                Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName, redraw));
+                Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName, redraw: false));
             else
             {
                 var restored = _penumbra.RestoreCollection(actor, new(false, null));
@@ -216,7 +204,6 @@ public sealed class IntegrationSelectors
                         CollectionOwned = false,
                         CollectionName = null,
                     });
-                    if (redraw) Check(_penumbra.RequestRedraw(actor));
                 }
             }
         }
@@ -330,9 +317,7 @@ public sealed class IntegrationSelectors
             CollectionOwned = true,
             CollectionName = name,
         });
-        // Penumbra applies a changed assignment on the next redraw; a
-        // failed request is reported, not swallowed — the assignment
-        // itself stands and stays owned either way.
+        // Keep the original collection for Reset even if the redraw fails.
         if (!redraw) return IntegrationResult.Ok();
         var request = _penumbra.RequestRedraw(actor);
         return request.Success
