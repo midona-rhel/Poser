@@ -609,3 +609,52 @@ No new live failure scenario was induced.
 
 Candidate `c46aed66` deployed with matching canonical output hashes; plugin
 reload succeeded at 18:54:07 local. No new in-game failure test was run.
+
+### Broader appearance review and next implementation #658
+
+Reviewed at `dc926461`: IntegrationSelectors, IntegrationReset, IntegrationOwnership,
+ActorAppearanceControl, CharacterFileSession, clothing-only control/runtime, scene
+appearance integration and their reset/history callers. Sol independently reviewed
+the proposed reset consolidation. This is a source audit, not a new live test pass.
+
+**Next change:** make IntegrationReset own the component reset mechanics used by
+individual Reset buttons and whole-actor cleanup. IntegrationSelectors currently
+repeats body-profile deletion, collection restoration and design restoration found
+in ResetActor. The UI reaches selectors through ActorAppearanceControl's existing
+history wrapper; RestoreHistory also calls ResetBodyProfile directly. Removal and
+scene reconciliation reach IntegrationReset.ResetActor.
+
+**Concrete drift:** selector ResetDesign clears the design baseline/ownership/name
+but leaves DesignActorName; ResetActor clears it. When another appearance component
+keeps the record alive, later ApplyDesign/OwnLook can reuse that name through `??`.
+Clear it as part of the shared successful design reset. This is source-confirmed
+state drift, not a reproduced visible or native failure.
+
+Implementation order within #658:
+1. Share profile removal by the tracked ID and clear its related state on success.
+2. Share collection restoration, returning whether redraw is needed. Keep the
+   selector's immediate redraw and ResetActor's combined redraw in their callers.
+3. Share design restoration, including captured-name cleanup for a gone actor.
+   Keep selector MCDF/edit restrictions outside the shared mechanics.
+4. Remove the superseded bodies and wire selectors to the existing reset owner.
+   The shared methods return updated state; they must not independently mutate
+   ownership while ResetActor is carrying post-MCDF state through cleanup.
+
+Preserve real differences: ResetDesign has MCDF/edit admission checks; body and
+collection reset currently do not. Whole-actor cleanup invalidates MCDF first,
+releases its resources, handles missing actors, and schedules directory cleanup.
+Do not turn these into one method full of optional flags or add new gates.
+
+**Retain:** IntegrationOwnership already stores immutable appearance state by exact
+ActorId. Keep it as the authority rather than copying state into an actor facade.
+ClothingOnlyControl owns pending requests; its runtime tracks the applied draw
+object, which has a different lifetime. Retained MCDF files can serve multiple
+history entries. These are distinct responsibilities, not redundant state stores.
+The two unawaited calls inspected in SceneAppearanceRuntime schedule temporary-file
+cleanup; they are not alternative appearance-apply implementations.
+
+Validation for #658: reuse body reset/undo, collection assignment/inheritance, and
+Glamourer refusal tests. Extend an existing relevant test for the captured-name
+case while another component keeps ownership alive; add no cases just to increase
+coverage counts. Then check normal apply/reset and actor cleanup locally. Remaining
+apply/restore caller review stays under #640; this audit does not finish that issue.
