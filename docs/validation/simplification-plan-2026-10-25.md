@@ -716,3 +716,6 @@ failures retain valid captured state. MCDF/edit restrictions and no-owned-state
 checks correspond to supported user and lifecycle operations. No replacement
 guards, assertions or tests were added. All 906 existing tests and Release build
 pass. The ownership fields now explain the captured-baseline relationship.
+
+Guard correction `10f37dc1` deployed with matching canonical output hashes.
+The follow-up did not add or run artificial missing-baseline scenarios.
