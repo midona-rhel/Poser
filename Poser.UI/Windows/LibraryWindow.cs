@@ -206,8 +206,7 @@ public sealed class LibraryWindow : Window
             var pane = _main.LibraryPane;
             var type = (PoseLibraryPane.LibraryType)pane.SelectedType;
 
-            bool preview = type is PoseLibraryPane.LibraryType.Poses
-                or PoseLibraryPane.LibraryType.AutoSaves;
+            bool preview = pane.ShowsPosePreview;
             float inset = theme.Page.Inset * s;
             float columnSpan = (PreviewColumnWidth * s) + inset * 2f;
             float navigatorRight = max.X - columnSpan;

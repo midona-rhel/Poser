@@ -716,6 +716,8 @@ public sealed partial class PoseLibraryPane
     /// <summary>The active library type as an index (Poses/Auto-saves/MCDF).
     /// The shell's tab strip states it while the mode is on.</summary>
     public int SelectedType => (int)_type;
+    public bool ShowsPosePreview => (_type is LibraryType.Poses or LibraryType.AutoSaves)
+        && !IsSceneTile(_vm.Selected);
 
     /// <summary>The selected tile's file path, or null — the library
     /// window's footer and preview state their content off it.</summary>

@@ -211,6 +211,7 @@ public sealed partial class PoseLibraryPane
                 tiles.Add(new PoseLibraryTileRow
                 {
                     Id = entry.FilePath,
+                    Fallback = isScene ? TablerIcon.Movie : TablerIcon.Armature,
                     Label = _builtExtensions
                         ? entry.Name + Path.GetExtension(entry.FilePath)
                         : entry.Name,
