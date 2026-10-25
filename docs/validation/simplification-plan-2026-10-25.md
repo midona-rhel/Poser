@@ -444,3 +444,20 @@ and IK changes; their supported scan removal and comment corrections are in
 7eaf1e37. The initial review led to preserving a legacy recovery warning without a
 justified user action. That decision was corrected: the warning, status store
 and its two tests were removed. Existing files remain untouched.
+
+#635 live checks on 990a0f62: legacy scan returned all 305 entries in three
+folders. Temporarily shortened the active scene autosave interval; a real
+snapshot completed containing one actor and one camera. Its ZIP passed the
+archive integrity check. Original autosave settings were restored and read
+back. Evidence: [audit-2026-10-25/635-live-autosave.json](audit-2026-10-25/635-live-autosave.json).
+
+### Import options #634
+
+The existing PoseFileInspectorSection now owns one definition for import type,
+components, scope, Freeze, Smart and bone-filter eligibility/help. Menu and
+file-dialog layouts still choose their own rows. Sol traced both callers and
+confirmed item order, state changes, callbacks and disabled conditions remain
+equivalent. Corrected the specific Smart-only tooltip that previously blamed
+Expression mode. Net 110 UI source lines removed; no new tests or abstractions
+outside the existing owner. Release compilation is the automated UI gate;
+visual acceptance is separate.
