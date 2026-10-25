@@ -512,5 +512,13 @@ This slice does not establish that every existing MCDF recovery field is needed;
 Glamourer, file release, and their remaining duplication are still under #640.
 
 The existing MCDF history reset/restore test now verifies deletion of both
-imported Customize+ profile IDs. Test count is unchanged. Live results follow
-after deployment; no live rollback claim is made from the fake-provider test.
+imported Customize+ profile IDs. All 906 tests pass; no cases were added or
+removed. Release build passed. Candidate `7e42005c` was deployed to canonical
+output with matching hashes; reload succeeded at 18:17:51 local.
+
+Live MCDF export, import with a body profile, and Reset succeeded. Ownership
+cleared and Customize+ logged removal at 18:18:48. Its read API excludes
+temporary profiles, so a read returning ProfileNotFound is not deletion proof.
+Post-body-application cancellation was not reproduced and is not claimed as
+live-tested. See [live results](audit-2026-10-25/653-live-mcdf.json).
+Production code: 53 lines added, 79 removed (net -26).
