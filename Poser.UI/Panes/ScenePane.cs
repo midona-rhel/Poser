@@ -42,6 +42,7 @@ namespace Poser.UI;
 public sealed class ScenePane
 {
     private readonly ISceneWorkflow _workflow;
+    private readonly ILibrarySceneActions _libraryScene;
     private readonly IPlacementAnchorSource _anchors;
     private readonly ConfigurationService _config;
     private readonly SceneAutoSaveService _snapshots;
@@ -181,34 +182,24 @@ public sealed class ScenePane
         return result.Success;
     }
 
-    /// <summary>The portal's "from file" rows: pick ANY entry file and
-    /// load it through the standing placement rule — the same
-    /// anchored BeginLoad a library activation runs.</summary>
+    /// <summary>Opens an entry file using the configured spawn placement.</summary>
     public void OpenEntryLoad() =>
         _folder.Open(_entryBrowser,
             path => LoadEntry(path, _config.Config.DefaultSpawnPlacement));
 
-    /// <summary>Loads one entry file through the anchored BeginLoad. An
-    /// anchor that cannot be resolved loads the entry as saved.</summary>
+    /// <summary>Uses the Library's entry loader and reports errors in this pane.
+    /// File imports keep their saved position when the requested anchor is unavailable.</summary>
     public void LoadEntry(string path, global::Poser.Domain.Scene.ObjectPlacementMode mode)
     {
-        var options = new SceneLoadOptions();
-        if (mode != global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved
-            && _anchors.TryCurrentFor(
-                mode, out var position, out var yaw, out _))
-            options = options with
-            {
-                Placement = mode,
-                PlacementPosition = position,
-                PlacementYaw = yaw,
-            };
-        var result = _workflow.BeginLoad(path, options);
+        var result = _libraryScene.SpawnEntry(path,
+            Poser.Documents.Library.LibraryScanner.KindOf(path), mode, fallbackToSaved: true);
         if (!result.Success)
             _notices.Refused(result.Detail ?? "The entry could not be loaded.");
     }
 
     public ScenePane(
         ISceneWorkflow workflow,
+        ILibrarySceneActions libraryScene,
         SceneAutoSaveService snapshots,
         IPoseLibraryService library,
         ConfigurationService config,
@@ -222,6 +213,7 @@ public sealed class ScenePane
         _config = config;
         _preferences = preferences;
         _workflow = workflow;
+        _libraryScene = libraryScene;
         _snapshots = snapshots;
         _library = library;
         _place = place;

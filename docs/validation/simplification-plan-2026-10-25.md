@@ -461,3 +461,16 @@ equivalent. Corrected the specific Smart-only tooltip that previously blamed
 Expression mode. Net 110 UI source lines removed; no new tests or abstractions
 outside the existing owner. Release compilation is the automated UI gate;
 visual acceptance is separate.
+
+User accepted #634 after live inspection of the deployed menu and file dialog;
+see [the inspection record](audit-2026-10-25/634-live-ui.md).
+
+### Entry placement #636
+
+ScenePane's file-import adapter now calls ILibrarySceneActions.SpawnEntry,
+using the existing extension classifier and explicit saved-position fallback.
+CameraPane and LightPane retain their existing placement choices and failure
+notice. Removed the duplicate option construction and anchor lookup; no new
+service, guard, or test case. Source change: 8 lines added, 16 removed.
+Release build passed; all 906 existing tests passed (0 added, 0 removed).
+Live deployment and file-pane import verification remain pending.

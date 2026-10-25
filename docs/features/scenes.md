@@ -185,6 +185,11 @@ world placement. A camera entry without the session default creates a new
 camera on load. `.xivl` and `.xivc` files written as bare JSON by older builds
 are still read, as a one-light or one-camera entry; nothing writes that form.
 
+File-pane and Library entry imports use the same additive loader. File-pane
+imports fall back to saved coordinates if their chosen placement anchor is
+unavailable; Library imports report the unavailable anchor instead. Neither
+inherits the full-scene option to clear the existing scene.
+
 `.xivs` is the only scene format Poser has; anything else is not a scene and is
 not listed, opened or migrated. The file viewer states the format, the version
 and the size before a load, and the size includes the appearance payloads.
