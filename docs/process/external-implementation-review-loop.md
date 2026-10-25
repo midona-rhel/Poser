@@ -20,12 +20,21 @@ UI conventions. Keep durable contracts in their existing documentation home.
 
 ## Writing issues and pull requests
 
-Explain the concrete problem and resulting behavior before implementation details.
-Use ordinary sentences that a reader unfamiliar with the code can follow.
-Summarize relevant validation; keep commit hashes, timestamps, raw test output,
-and detailed evidence in the linked validation record. Mention limitations when
-needed to assess the change, not as a routine list of everything not tested.
-Issue updates should explain progress, not reproduce the agent's work log.
+Write for Midona and other people using Poser. Say what was wrong, what changed,
+and what that means when using the app. Use short, ordinary sentences. Read the
+text aloud: if it sounds like a lab report or an agent talking to another agent,
+rewrite it.
+
+For testing, say what you tried and whether it worked. Mention a limitation when
+it leaves a real question about the fix. Keep script troubleshooting, reviewer
+names, model names, commit hashes, and raw output in the validation record. Do
+not use “Sol reviewed” as a stamp of quality in an issue, PR, or routine update.
+Explain any useful finding from the review instead.
+
+For example: “Reset now removes the profile Poser created. I tried applying a
+profile, resetting it, and undoing the reset; all three worked.” Only say this
+when those checks were actually performed. An issue update should help someone
+understand the change without making them follow the whole development session.
 
 ## Guard review
 
