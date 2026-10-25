@@ -265,18 +265,12 @@ public sealed class IntegrationSelectors
 
     public IntegrationValue<Guid> SaveActorDesign(ActorId actor, string name)
     {
-        var access = AppearanceAccess(actor);
-        if (!access.CanEdit)
-            return IntegrationValue<Guid>.Refused(access);
         var state = GetStateJson(actor);
         if (!state.Success || state.Value is null)
             return new(false, default, state.Detail, state.AppearanceRefusal);
-        // Recheck access after reading the state, before creating the saved design.
-        access = AppearanceAccess(actor);
-        return access.CanEdit ? _glamourer.AddDesign(state.Value, name) : IntegrationValue<Guid>.Refused(access);
+        // Save the captured appearance; this does not change the actor.
+        return _glamourer.AddDesign(state.Value, name);
     }
-
-    public IntegrationValue<Guid> SaveDesign(string stateJson, string name) => _glamourer.AddDesign(stateJson, name);
 
     // ── Selectors ────────────────────────────────────────────────────────
 

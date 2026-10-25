@@ -68,6 +68,16 @@ public sealed class GlamourerAccessTests
         Assert.All(port.Calls, call => Assert.Equal(nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess), call));
         Assert.True(session.OpenGlamourer(actor).Success);
         Assert.False(session.OverridesFor(actor).HasAny);
+
+        port.Access = _ => GlamourerAccess.Editable;
+        port.StateResult = IntegrationValue<string>.Fail("Appearance unavailable");
+        Assert.False(session.SaveActorDesign(actor, "My design").Success);
+        Assert.Null(port.SavedDesign);
+        const string appearance = "{\"Customize\":{\"Hair\":17}}";
+        port.StateResult = IntegrationValue<string>.Ok(appearance);
+        Assert.True(session.SaveActorDesign(actor, "My design").Success);
+        Assert.Equal((appearance, "My design"), port.SavedDesign);
+
     }
 
     [Fact]
@@ -118,6 +128,7 @@ public sealed class GlamourerAccessTests
         public IntegrationValue<string> StateResult = IntegrationValue<string>.Ok("{}");
         public string ActorName = "Actor";
         public string? AppliedState;
+        public (string State, string Name)? SavedDesign;
         public ActorId? AppliedActor;
         public List<string> Calls { get; } = new();
 
@@ -149,7 +160,10 @@ public sealed class GlamourerAccessTests
                 AppliedState = (string)args[1]!;
             }
             if (name == nameof(IIntegrationRuntimeFake.AddDesign))
+            {
+                SavedDesign = ((string)args![0]!, (string)args[1]!);
                 return IntegrationValue<Guid>.Ok(Guid.NewGuid());
+            }
             if (method.ReturnType == typeof(IntegrationResult))
                 return IntegrationResult.Ok();
             throw new NotSupportedException(name);

@@ -719,3 +719,19 @@ pass. The ownership fields now explain the captured-baseline relationship.
 
 Guard correction `10f37dc1` deployed with matching canonical output hashes.
 The follow-up did not add or run artificial missing-baseline scenarios.
+
+### Saving a captured appearance (#640)
+
+Removed two duplicate actor-access probes from SaveActorDesign and the unused
+raw SaveDesign method. GetStateJson already checks access, and its adapter
+performs an unkeyed provider read which reports actual refusal or failure.
+AddDesign takes only the captured JSON and name, without an actor reference.
+A later actor-access check therefore protects no actor change. Actual provider
+read/save failures remain. The comment now explains this boundary directly:
+“Save the captured appearance; this does not change the actor.”
+
+Sol reviewed callers, adapter behavior, removed guards and the final diff against
+4a58f119 without findings. Extended the existing access test to check failed reads
+create no design and successful reads save the exact appearance and name.
+Release build and all 906 tests pass; no test cases added or removed. Production
+code shrank by six lines. UI behavior and native actor writes are unchanged.
