@@ -310,6 +310,26 @@ W01, W02 and W08 are continuous obligations across waves. Independent correctnes
 
 ## Tracking and whole-program completion
 
+Issue mapping created 2026-10-25. These package trackers do not replace the smaller implementation issues. #637 is implemented locally in `349627d1`: Release build and 913 tests passed; review/finalization remains. W03/W04 tracing starts in [#652](https://github.com/midona-rhel/Poser/issues/652), with its clothing-only ownership table. No deployment or whole-package completion is implied.
+
+| Package | Issue | Initial status |
+|---|---|---|
+| W01 | [#633](https://github.com/midona-rhel/Poser/issues/633) | Continuing readability review |
+| W02 | [#638](https://github.com/midona-rhel/Poser/issues/638) | Not started |
+| W03 | [#639](https://github.com/midona-rhel/Poser/issues/639) | Tracing clothing-only, #652 |
+| W04 | [#640](https://github.com/midona-rhel/Poser/issues/640) | Tracing clothing-only, #652 |
+| W05 | [#641](https://github.com/midona-rhel/Poser/issues/641) | Not started |
+| W06 | [#642](https://github.com/midona-rhel/Poser/issues/642) | Not started |
+| W07 | [#643](https://github.com/midona-rhel/Poser/issues/643) | Not started |
+| W08 | [#644](https://github.com/midona-rhel/Poser/issues/644) | Not started |
+| W09 | [#645](https://github.com/midona-rhel/Poser/issues/645) | Not started |
+| W10 | [#646](https://github.com/midona-rhel/Poser/issues/646) | Not started |
+| W11 | [#647](https://github.com/midona-rhel/Poser/issues/647) | Not started |
+| W12 | [#648](https://github.com/midona-rhel/Poser/issues/648) | Not started |
+| W13 | [#649](https://github.com/midona-rhel/Poser/issues/649) | Not started |
+| W14 | [#650](https://github.com/midona-rhel/Poser/issues/650) | Not started |
+| W15 | [#651](https://github.com/midona-rhel/Poser/issues/651) | Not started |
+
 Track each package under #610 and create/link a small implementation issue for each concrete slice before coding it. Use #631–#637 where already applicable rather than duplicating them. The area evidence remains linked below; this document is the single source of implementation order.
 
 Each slice records: current owner/callers, proposed owner, actual code to remove, supported behavior preserved or intentionally changed, guard decisions, verification and acceptance, and the commit that removed the old route. Its status is **not started**, **tracing**, **implementing**, **review/testing**, or **complete**. An unresolved evidence question is stated explicitly, not reported as a completed fix. At this plan revision, all W01–W15 are planned or continuing review; none is declared runtime-complete by the documentation audit.
