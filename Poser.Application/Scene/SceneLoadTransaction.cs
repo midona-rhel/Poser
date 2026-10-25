@@ -812,9 +812,8 @@ internal sealed class SceneLoadTransaction(
 
     private async Task<Stop?> ApplyCameras()
     {
-        // The default camera takes the saved default document, additional
-        // cameras are created, targets re-resolve against the RESTORED actors,
-        // and exactly one camera goes live.
+        // Every saved camera becomes a new camera. Targets re-resolve against
+        // restored actors, and the saved live view becomes live.
         Step(ScenePhase.ApplyingCameras);
         var cameraFailure = await sceneState.OnFramework(() =>
         {
@@ -822,29 +821,15 @@ internal sealed class SceneLoadTransaction(
                 return stop;
 
             SceneEntityHandle? liveCamera = null;
-            bool liveIsDefault = false;
             foreach (var camera in _cameras)
             {
-                SceneEntityHandle? token = null;
-                string? detail;
-                if (camera.IsDefault)
+                // A saved Main camera is a shot to restore, not authority to
+                // overwrite the current session's Main camera.
+                var token = materializer.CreateCamera(camera, out var detail);
+                if (token != null)
                 {
-                    detail = materializer.ApplyDefaultCamera(camera);
-                    // The default camera mints a structure token too:
-                    // without one, a saved group that held the Main
-                    // Camera silently lost it on every load.
-                    if (detail == null
-                        && materializer.DefaultCameraToken() is { } main)
-                        _cameraTokens[camera.Key] = main;
-                }
-                else
-                {
-                    token = materializer.CreateCamera(camera, out detail);
-                    if (token != null)
-                    {
-                        operation.CreatedCameras.Add(token);
-                        _cameraTokens[camera.Key] = token;
-                    }
+                    operation.CreatedCameras.Add(token);
+                    _cameraTokens[camera.Key] = token;
                 }
 
                 if (detail != null)
@@ -886,7 +871,6 @@ internal sealed class SceneLoadTransaction(
                 if (camera.IsLive)
                 {
                     liveCamera = token;
-                    liveIsDefault = camera.IsDefault;
                 }
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.Camera, camera.Camera!.Name, true));
@@ -896,7 +880,7 @@ internal sealed class SceneLoadTransaction(
             if (_cameras.Count > 0)
             {
                 var liveDetail = materializer.SetLiveCamera(
-                    liveIsDefault ? null : liveCamera);
+                    liveCamera);
                 if (liveDetail != null)
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.LiveCamera, "Live camera", false, liveDetail));

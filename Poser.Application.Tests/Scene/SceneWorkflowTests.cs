@@ -23,6 +23,25 @@ namespace Poser.Application.Tests.Scene;
 /// </summary>
 public sealed class SceneWorkflowTests
 {
+    [Fact]
+    public async Task Saved_main_camera_is_created_as_a_new_camera()
+    {
+        var scene = new SceneFile { SceneId = Guid.NewGuid() };
+        scene.Cameras.Add(new SceneCamera
+        {
+            Key = Guid.NewGuid(), IsDefault = true, IsLive = true,
+            Camera = new CameraFile { Name = "Main Camera", FixedPosition = new Vector3(12, 4, -9) },
+        });
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("autosave.xivs").Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        Assert.Contains("CreateCamera", runtime.Calls);
+        Assert.DoesNotContain("ApplyDefaultCamera", runtime.Calls);
+        Assert.NotNull(runtime.LastLiveCamera);
+    }
+
     private sealed class ParentRuntime : IParentingRuntime
     {
         public Dictionary<SelectionId, PoseTransform> Values = new();
@@ -623,8 +642,10 @@ public sealed class SceneWorkflowTests
             return null;
         }
 
+        public SceneEntityHandle? LastLiveCamera;
         public string? SetLiveCamera(SceneEntityHandle? camera)
         {
+            LastLiveCamera = camera;
             Record("SetLiveCamera");
             return null;
         }
@@ -880,7 +901,7 @@ public sealed class SceneWorkflowTests
 
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         Assert.True(step.Undo());
-        Assert.Equal(new[] { "light", "overlay:Line", "prop:Chair", "actor:Lead" }, runtime.Destroyed.ToArray());
+        Assert.Equal(new[] { "camera", "light", "overlay:Line", "prop:Chair", "actor:Lead" }, runtime.Destroyed.ToArray());
         Assert.Contains("ReleaseWorldObject:world:bg/example.mdl", runtime.Calls);
         Assert.Contains("RestoreDefaultCamera", runtime.Calls);
     }

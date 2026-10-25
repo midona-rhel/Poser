@@ -710,7 +710,7 @@ public sealed class SceneCaptureService
                 continue;
             }
 
-            var document = Cameras.CameraDocument.Capture(camera);
+            var document = Cameras.CameraDocument.CaptureScene(camera);
             document.Name = Bounded(document.Name, "Camera");
 
             Guid? targetKey = null;

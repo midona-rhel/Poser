@@ -6,6 +6,16 @@ namespace Poser.Game.Cameras;
 /// <summary>One native camera mapping for files, scene capture and lifecycle history.</summary>
 internal static class CameraDocument
 {
+    internal static CameraFile CaptureScene(IVirtualCamera camera)
+    {
+        var file = Capture(camera);
+        // Main camera's free-camera Position is not its rendered orbit position.
+        // Store the pin base: the runtime adds these offsets once when rendering.
+        if (camera.IsDefault)
+            file.FixedPosition = camera.WorldPosition - camera.PositionOffset - camera.TargetOffset;
+        return file;
+    }
+
     /// <summary>The ONE IVirtualCamera → CameraFile mapping; scene capture
     /// reuses it so a scene camera and a .xivc are the same document.</summary>
     internal static CameraFile Capture(IVirtualCamera camera) => new()
