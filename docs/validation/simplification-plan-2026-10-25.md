@@ -757,3 +757,12 @@ then the final diff against 8e58f3c6, with no findings. Release build and all 90
 tests pass. No test cases added or removed; existing fakes now model the actual
 saved-only query. Production changes are +28/-123 (net -95), excluding tests,
 documentation, and four unrelated pre-existing comment edits.
+
+Candidate 707174e5 deployed with matching canonical output hashes and successful
+reload at 19:24:07 local. Live checks passed for saved profile apply/replacement,
+MCDF import containing body profile JSON, MCDF Reset, and actor deletion.
+Evidence: `audit-2026-10-25/659-live-customize.json`. Undo/redo remains covered
+by the existing automated tests rather than a live UI run. The first script
+incorrectly assumed repeated provider exports have identical JSON lengths;
+that assertion failed. The evidence records this limitation and does not claim
+exact live JSON equality. No additional product change was made for that result.
