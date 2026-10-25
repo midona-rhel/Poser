@@ -606,3 +606,6 @@ Release build and all 906 existing tests pass, including MCDF history restoratio
 when the source file is unavailable. Sol verified the registry relationship and
 state transitions; its comment-only lifetime finding was corrected and confirmed.
 No new live failure scenario was induced.
+
+Candidate `c46aed66` deployed with matching canonical output hashes; plugin
+reload succeeded at 18:54:07 local. No new in-game failure test was run.
