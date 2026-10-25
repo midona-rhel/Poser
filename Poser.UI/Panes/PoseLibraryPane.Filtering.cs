@@ -223,6 +223,9 @@ public sealed partial class PoseLibraryPane
         for (int i = 0; i < tiles.Count; i++)
         {
             var tile = tiles[i];
+            if (_type == LibraryType.AutoSaves &&
+                (tile.Folder < _rangeStart || tile.Folder >= _rangeEnd))
+                continue;
             if (heads > 1 && folder == 1 && !tile.Favorite)
                 continue;
             if (query)
@@ -473,6 +476,7 @@ public sealed partial class PoseLibraryPane
             || index == _vm.SelectedFolder)
             return;
         _vm.SelectedFolder = index;
+        if (_type == LibraryType.AutoSaves) ClearTileSelection();
         SyncFolderRange();
         _refilter = true;
     }

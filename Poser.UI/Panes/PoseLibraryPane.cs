@@ -574,8 +574,10 @@ public sealed partial class PoseLibraryPane
     private readonly Dictionary<string, uint> _sceneTerritories = new(StringComparer.OrdinalIgnoreCase);
 
     private bool IsSceneTile(int index) => _type == LibraryType.Scenes ||
-        (_type == LibraryType.AutoSaves && index >= 0 && index < _vm.Tiles.Count &&
-         _vm.Tiles[index].Id.EndsWith(SceneFile.Extension, StringComparison.OrdinalIgnoreCase));
+        (_type == LibraryType.AutoSaves &&
+         (index >= 0 && index < _vm.Tiles.Count
+            ? _vm.Tiles[index].Id.EndsWith(SceneFile.Extension, StringComparison.OrdinalIgnoreCase)
+            : _vm.SelectedFolder < _legacyAutoSavesStart));
 
     private ObjectPlacementMode EffectiveMode(int index = -1)
     {

@@ -262,8 +262,9 @@ a scene save/load in progress defers the attempt. The existing scene retention
 count is the single visible backup count. The old optional-scene toggle is
 ignored: Enabled now governs scene autosave.
 
-The Autosaves library loads scene backups without an actor target and retains
-access to legacy pose backups. On GPose exit, deferred captures are invalidated;
+The Autosaves library opens on Scene autosaves and loads them without an actor
+target. Legacy poses is a separate section; searches stay within the selected
+autosave subtree. On GPose exit, deferred captures are invalidated;
 the last completed snapshot is retained rather than starting a capture while
 actors are being torn down. Delete backups on exit clears scene snapshots after
 any active disk write; an already queued writer cannot recreate them afterward.
