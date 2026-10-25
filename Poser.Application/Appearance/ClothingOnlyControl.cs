@@ -13,7 +13,7 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
     private readonly IEventBus _events;
     private readonly SemaphoreSlim _applyGate = new(1, 1);
     private readonly object _gate = new();
-    private readonly HashSet<CancellationTokenSource> _pending = new();
+    private readonly Dictionary<CancellationTokenSource, ActorId> _pending = new();
     private bool _closed;
 
     public ClothingOnlyControl(IClothingOnlyRuntimePort runtime, ISessionGenerationSource sessions, IEventBus events)
@@ -37,7 +37,7 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
         lock (_gate)
         {
             if (_closed) return "Clothing-only is shutting down.";
-            _pending.Add(operation);
+            _pending.Add(operation, actor);
         }
         bool entered = false;
         try
@@ -60,21 +60,22 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
         }
     }
 
-    // The session has already stopped accepting new work. Cancel requests that
-    // were still running when the session ended.
-    private void OnExit(GPoseExitingEvent _) => CancelPending();
-
-    private void CancelPending()
+    public void Reconcile(Func<ActorId, bool> isCurrent)
     {
-        // Each operation disposes its cancellation source after native cleanup.
+        // Cancelling an actor's work leaves requests for other actors alone.
+        // Each operation removes and disposes its token after native cleanup.
         lock (_gate)
-            foreach (var operation in _pending.ToArray()) operation.Cancel();
+            foreach (var (operation, actor) in _pending.ToArray())
+                if (!isCurrent(actor)) operation.Cancel();
+        _runtime.Reconcile(isCurrent);
     }
+
+    private void OnExit(GPoseExitingEvent _) => Reconcile(_ => false);
 
     public void Dispose()
     {
         lock (_gate) _closed = true;
         _events.Unsubscribe<GPoseExitingEvent>(OnExit);
-        CancelPending();
+        Reconcile(_ => false);
     }
 }

@@ -32,6 +32,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly Poser.Game.Animation.AnimationSpeedRuntimePort _animationPort;
     private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
     private readonly GazeService _gaze;
+    private readonly Poser.Application.Appearance.IInvisibleSkinService _clothingOnly;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
     private readonly Application.Settings.ConfigurationService _configuration;
@@ -74,6 +75,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         Poser.Game.Animation.AnimationSpeedRuntimePort animationPort,
         Poser.Game.Animation.FacialPoseCapture facialCapture,
         GazeService gaze,
+        Poser.Application.Appearance.IInvisibleSkinService clothingOnly,
         IEventBus events,
         IFramework framework,
         Application.Settings.ConfigurationService configuration,
@@ -99,6 +101,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _animationPort = animationPort;
         _facialCapture = facialCapture;
         _gaze = gaze;
+        _clothingOnly = clothingOnly;
         _events = events;
         _framework = framework;
         _configuration = configuration;
@@ -257,6 +260,8 @@ public sealed class CleanSceneLifecycle : IDisposable
             // NoChange: exact ids/generations are still checked by the registry
             // against the admitted structural snapshot before map publication.
             _bindings.CommitCandidate(staged, _scene.Snapshot);
+            // Clothing-only checks native bodies, so bindings must be published first.
+            _clothingOnly.Reconcile(actor => _scene.Snapshot.FindActor(actor) != null);
             _groupCoordinator?.BindingsPublished();
             admitted = true;
             _log?.Debug(

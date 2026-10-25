@@ -12,11 +12,17 @@ embedded appearance resources. Load reapplies it after appearance redraws and
 before the pose/readiness barrier. Ordinary redraw restores the body and clears
 the effective clothing-only state. Older scenes omit the flag and load normally;
 their former clothing-only intent cannot be inferred reliably from an MCDF.
-Temporary material overrides are serialized and removed even on cancellation.
-UI, bridge and scene requests share one clothing-only operation owner. It
-serializes native work, cancels queued and active requests on GPose exit, and
-refuses new work for the exiting session. The native port owns only the
-framework-thread mechanism and cleanup; callers await the same result.
+UI, bridge and scene requests share ClothingOnlyControl. It tracks each request
+by ActorId and cancels it when that actor leaves or GPose ends. Scene refresh
+reconciles this state after publishing the new native bindings. Applied-body
+addresses are observation markers; retiring a marker never frees a model.
+Only CharacterModelNative releases the removed model slots.
+
+The native port removes temporary collection materials after each redraw,
+including cancellation. Failed removal is reported and its collection ID is
+retained for retry before another apply. A deleted collection needs no cleanup.
+This retry record lasts for the plugin instance; it is not persisted. Cancelling
+a request does not mean its asynchronous cleanup has already finished.
 
 For each field, Poser captures the incoming value once before its first
 successful edit. Restore gives the field back only after native success. A

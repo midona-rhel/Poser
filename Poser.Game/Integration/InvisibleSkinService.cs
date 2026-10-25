@@ -31,6 +31,8 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
     /// the assets are missing, which refuses cleanly.</summary>
     private Dictionary<string, string>? _paths;
     private bool _pathsLoaded;
+    // Failed removals still belong to the collection, even if its actor is gone.
+    private readonly HashSet<Guid> _temporaryCollections = new();
     // Bound to the rendered body, not just an actor/slot: an ordinary redraw
     // restores skin and must not be saved as still clothing-only.
     private readonly Dictionary<ActorId, nint> _appliedBodies = new();
@@ -50,11 +52,19 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
         return true;
     }
 
+    public void Reconcile(Func<ActorId, bool> isCurrent)
+    {
+        foreach (var actor in new List<ActorId>(_appliedBodies.Keys))
+            if (!isCurrent(actor) || !StillApplied(actor, _appliedBodies[actor]))
+                _appliedBodies.Remove(actor);
+    }
+
     public bool IsApplied(ActorId actor)
     {
-        foreach (var key in new List<ActorId>(_appliedBodies.Keys))
-            if (!StillApplied(key, _appliedBodies[key])) _appliedBodies.Remove(key);
-        return _appliedBodies.ContainsKey(actor);
+        if (!_appliedBodies.TryGetValue(actor, out var body)) return false;
+        if (StillApplied(actor, body)) return true;
+        _appliedBodies.Remove(actor);
+        return false;
     }
 
     public InvisibleSkinService(
@@ -97,6 +107,17 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
             return "The invisible-skin files are missing from the plugin "
                 + "folder.";
 
+        var previousCleanup = await _framework.RunOnFrameworkThread(() =>
+        {
+            foreach (var pending in new List<Guid>(_temporaryCollections))
+            {
+                var failure = RemoveTemporaryMaterials(pending);
+                if (failure != null) return failure;
+            }
+            return (string?)null;
+        }).ConfigureAwait(false);
+        if (previousCleanup != null) return previousCleanup;
+
         var collection = await _framework.RunOnFrameworkThread(
             () => _port.GetEffectiveCollection(actor)).ConfigureAwait(false);
         if (!collection.Success)
@@ -105,14 +126,16 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
         var added = await _framework.RunOnFrameworkThread(() =>
             {
                 cancellation.ThrowIfCancellationRequested();
-                return _port.AddInvisibleSkinMods(collection.Value, paths);
+                var result = _port.AddInvisibleSkinMods(collection.Value, paths);
+                if (result.Success) _temporaryCollections.Add(collection.Value);
+                return result;
             })
             .ConfigureAwait(false);
         if (!added.Success)
             return added.Detail;
 
-        // Redraw loads the remapped materials. Always request temporary-mod removal
-        // afterward; the result of that cleanup is currently not propagated.
+        // Redraw loads the remapped materials. Remove the collection override even
+        // when the actor disappears or the redraw is cancelled.
         try
         {
             var redraw = await _port.RedrawAndWait(
@@ -128,9 +151,23 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
         }
         finally
         {
-            await _framework.RunOnFrameworkThread(
-                () => _port.RemoveInvisibleSkinMods(collection.Value)).ConfigureAwait(false);
+            var failure = await _framework.RunOnFrameworkThread(
+                () => RemoveTemporaryMaterials(collection.Value)).ConfigureAwait(false);
+            if (failure != null) throw new InvalidOperationException(failure);
         }
+    }
+
+    private string? RemoveTemporaryMaterials(Guid collection)
+    {
+        var cleanup = _port.RemoveInvisibleSkinMods(collection);
+        if (cleanup.Success)
+        {
+            _temporaryCollections.Remove(collection);
+            return null;
+        }
+        var failure = $"Could not remove the clothing-only material override from collection {collection}: {cleanup.Detail}";
+        _log.Error(failure);
+        return failure;
     }
 
     /// <summary>Nulls the hair, face and tail model slots on the redrawn

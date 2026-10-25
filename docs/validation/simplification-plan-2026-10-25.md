@@ -316,8 +316,8 @@ Issue mapping created 2026-10-25. These package trackers do not replace the smal
 |---|---|---|
 | W01 | [#633](https://github.com/midona-rhel/Poser/issues/633) | Continuing readability review |
 | W02 | [#638](https://github.com/midona-rhel/Poser/issues/638) | Not started |
-| W03 | [#639](https://github.com/midona-rhel/Poser/issues/639) | Tracing clothing-only, #652 |
-| W04 | [#640](https://github.com/midona-rhel/Poser/issues/640) | Tracing clothing-only, #652 |
+| W03 | [#639](https://github.com/midona-rhel/Poser/issues/639) | Implemented #652; awaiting live acceptance |
+| W04 | [#640](https://github.com/midona-rhel/Poser/issues/640) | Implemented #652; awaiting live acceptance |
 | W05 | [#641](https://github.com/midona-rhel/Poser/issues/641) | Not started |
 | W06 | [#642](https://github.com/midona-rhel/Poser/issues/642) | Not started |
 | W07 | [#643](https://github.com/midona-rhel/Poser/issues/643) | Not started |
@@ -358,3 +358,15 @@ The area plans supply evidence for the packages above. Their findings are mapped
 Before implementing a suspected timing problem, establish a reachable caller and outcome. Do not promote hypothetical fast-click, malformed-input or concurrency stories to requirements without that evidence. Preserve deliberate differences such as owned-object destruction versus borrowed-object restoration.
 
 The documentation pass in `3b543112` changed 504 C# files with no executable-token/directive differences in normal or DEBUG parsing. Release compilation and 911 existing tests passed. That validates the patch, not the correctness of every behavior described in the audit. [#633](https://github.com/midona-rhel/Poser/issues/633) remains the readability work across these steps; comments must be reviewed for ordinary human comprehension, not just factual consistency.
+
+### Clothing-only slice #652 - implementation checks
+
+Requests now carry their actor identity; the existing post-publication scene
+refresh cancels work for removed actors and retires body markers. GPose exit
+uses the same retirement route. Native slot release is unchanged. Temporary
+material cleanup failures are reported and retained by collection for retry.
+Release build and all 913 existing tests passed before deployment. The existing
+cancellation test now also covers actor removal without cancelling another
+actor's request: 0 added, 0 removed, net 0 test cases. Live acceptance remains
+apply/redraw, removal, GPose re-entry and scene save/load of clothing-only.
+The broader asynchronous shutdown ordering work remains under #436.

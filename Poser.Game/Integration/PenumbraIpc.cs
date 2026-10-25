@@ -263,7 +263,11 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
         {
             int ec = _removeTemporaryMod.InvokeFunc(
                 InvisibleSkinTag, collection, InvisibleSkinPriority);
-            return PenumbraResult(ec, "removing the invisible-skin mod");
+            // Removing the actor can also remove its temporary collection.
+            // In that case there is no material override left to clean up.
+            return ec == PenumbraEcCollectionMissing
+                ? IntegrationResult.Ok()
+                : PenumbraResult(ec, "removing the invisible-skin mod");
         });
 
     public IntegrationResult DeleteTemporaryCollection(Guid collection) =>
