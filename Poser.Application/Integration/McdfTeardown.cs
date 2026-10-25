@@ -27,6 +27,43 @@ internal sealed class McdfTeardown(
     /// wait.</summary>
     internal static readonly TimeSpan RedrawBarrierTimeout = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// Removes the imported body profile. If an import failed after replacing
+    /// a working profile, reapplies that profile and tracks its new ID for Reset.
+    /// </summary>
+    internal (IntegrationOverrides Overrides, Guid? Profile, string? RestoreJson) ReleaseBodyProfile(
+        ActorId actor, IntegrationOverrides current, Guid? profile, string? restoreJson,
+        bool resolvable, List<string> failures)
+    {
+        if (profile is { } id)
+        {
+            var deleted = customizePlus.DeleteTemporaryBodyProfileById(id);
+            if (!deleted.Success)
+            {
+                failures.Add(deleted.Detail!);
+                return (current, profile, restoreJson);
+            }
+        }
+
+        // An actor that has left the scene has nothing to restore. Deletion
+        // above still uses the profile ID and does not need a live actor.
+        if (restoreJson == null || !resolvable)
+            return (current, null, null);
+
+        var restored = customizePlus.ApplyTemporaryBodyProfile(actor, restoreJson);
+        if (!restored.Success)
+        {
+            failures.Add(restored.Detail ?? "The previous Customize+ profile could not be reapplied.");
+            return (current, null, restoreJson);
+        }
+
+        // A failed import can replace the appearance selector's profile. Update
+        // its ID so Reset removes the restored profile, not the deleted one.
+        if (current.TemporaryBodyProfile != null)
+            current = current with { TemporaryBodyProfile = restored.Value };
+        return (current, null, null);
+    }
+
     private sealed record HistoryPackage(Guid Id, SessionGeneration Session, McdfPackage Package);
 
     private readonly Dictionary<string, McdfOperationDirectory> _directories =
@@ -200,45 +237,13 @@ internal sealed class McdfTeardown(
             }
         }
 
-        Guid? temporaryProfile = mcdf.TemporaryProfile;
-        if (temporaryProfile is { } profile)
-        {
-            var deleted = customizePlus.DeleteTemporaryBodyProfileById(profile);
-            if (deleted.Success)
-                temporaryProfile = null;
-            else
-            {
-                failures.Add(deleted.Detail!);
-                complete = false;
-            }
-        }
-
-        // Reapply the pre-import body profile and remember its new temporary ID
-        // so a later Reset deletes the right profile.
-        string? pendingBody = mcdf.PendingBodyRecoveryJson;
-        if (temporaryProfile == null && pendingBody is { } bodyRecovery)
-        {
-            if (resolvable)
-            {
-                var reapplied = customizePlus.ApplyTemporaryBodyProfile(actor, bodyRecovery);
-                if (reapplied.Success && reapplied.Value != default)
-                {
-                    if (current.TemporaryBodyProfile != null)
-                        current = current with { TemporaryBodyProfile = reapplied.Value };
-                    pendingBody = null;
-                }
-                else
-                {
-                    failures.Add(reapplied.Detail
-                        ?? "The previous Customize+ profile could not be reapplied.");
-                    complete = false;
-                }
-            }
-            else
-            {
-                pendingBody = null;
-            }
-        }
+        var body = ReleaseBodyProfile(actor, current, mcdf.TemporaryProfile,
+            mcdf.PendingBodyRecoveryJson, resolvable, failures);
+        current = body.Overrides;
+        Guid? temporaryProfile = body.Profile;
+        string? pendingBody = body.RestoreJson;
+        if (temporaryProfile != null || pendingBody != null)
+            complete = false;
 
         // The temporary collection deletes by its own id even after the
         // actor is gone, removing Poser's temporary mods and assignment.

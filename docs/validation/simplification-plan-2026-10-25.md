@@ -491,3 +491,26 @@ Rewrote misleading comments, with retained-guard reasons and remaining audit
 boundaries in [636-guard-comment-audit.md](audit-2026-10-25/636-guard-comment-audit.md).
 Release and 906 existing tests passed; valid/invalid previews and an actual
 file-dialog scene load passed after deployment. No new tests.
+
+### Customize+ MCDF cleanup #653
+
+The first bounded #640 cleanup shares temporary body-profile deletion and
+pre-import profile restoration through `McdfTeardown.ReleaseBodyProfile`.
+Rollback still restores the working appearance; successful-import Reset keeps
+its original baseline. No new state or retry mechanism was added.
+
+Provider inspection: Customize+ `ProfileManager.RemoveTemporaryProfile(Guid)`
+removes the matching temporary profile or reports it absent. Poser already
+treats that absence as success. `IPCCharacterProfile.ToFullProfile` creates a
+new GUID; the IPC adapter requires a successful response with an ID. Removed
+the redundant empty-GUID rejection in this shared application path.
+
+Retained checks cover actual states: no imported profile, no pre-import profile
+to restore, an actor removed from the scene, and a provider call that reports
+failure. Pending restoration is in-memory state, not recovery of a damaged file.
+This slice does not establish that every existing MCDF recovery field is needed;
+Glamourer, file release, and their remaining duplication are still under #640.
+
+The existing MCDF history reset/restore test now verifies deletion of both
+imported Customize+ profile IDs. Test count is unchanged. Live results follow
+after deployment; no live rollback claim is made from the fake-provider test.

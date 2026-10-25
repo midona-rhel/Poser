@@ -509,9 +509,8 @@ internal sealed class McdfImport(
         bool removedPenumbra = operation.RedrawPending;
         var failures = new List<string>();
 
-        // Only an applied MCDF profile displaced the old profile. Record the old
-        // JSON before deleting the replacement, so a failed deletion does not
-        // lose the information needed for a later retry.
+        // Restore the pre-import profile only if this import replaced it.
+        // Keep its JSON until Customize+ has accepted the replacement.
         if (operation.ReplacedWorkingBodyProfile)
         {
             if (operation.TemporaryProfile != null)
@@ -519,43 +518,13 @@ internal sealed class McdfImport(
             operation.ReplacedWorkingBodyProfile = false;
         }
 
-        if (operation.TemporaryProfile is { } profile)
-        {
-            var deleted = customizePlus.DeleteTemporaryBodyProfileById(profile);
-            if (deleted.Success)
-                operation.TemporaryProfile = null;
-            else
-                failures.Add(deleted.Detail!);
-        }
-
-        if (operation.TemporaryProfile == null
-            && operation.PendingBodyRecoveryJson is { } workingJson)
-        {
-            if (resolvable)
-            {
-                // Put the working recipe back and record the NEW id
-                // Customize+ returns, preserving selector ownership.
-                var reapplied = customizePlus.ApplyTemporaryBodyProfile(actor, workingJson);
-                if (reapplied.Success && reapplied.Value != default)
-                {
-                    var owned = ownership.OverridesFor(actor);
-                    if (owned.TemporaryBodyProfile != null)
-                        ownership.Mutate(
-                            actor, owned with { TemporaryBodyProfile = reapplied.Value });
-                    operation.PendingBodyRecoveryJson = null;
-                }
-                else
-                {
-                    failures.Add(reapplied.Detail
-                        ?? "The previous Customize+ profile could not be reapplied.");
-                }
-            }
-            else
-            {
-                // Nothing left to restore into.
-                operation.PendingBodyRecoveryJson = null;
-            }
-        }
+        var owned = ownership.OverridesFor(actor);
+        var body = teardown.ReleaseBodyProfile(actor, owned, operation.TemporaryProfile,
+            operation.PendingBodyRecoveryJson, resolvable, failures);
+        operation.TemporaryProfile = body.Profile;
+        operation.PendingBodyRecoveryJson = body.RestoreJson;
+        if (body.Overrides != owned)
+            ownership.Mutate(actor, body.Overrides);
 
         if (operation.GlamourerLocked && resolvable)
         {
