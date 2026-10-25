@@ -1,0 +1,17 @@
+{
+  "candidate": "62291c8e",
+  "checks": {
+    "import_succeeded": true,
+    "reset_succeeded": true,
+    "mcdf_ownership_cleared": true,
+    "wardrobe_restored": true,
+    "customize_restored": true,
+    "access_restored": true
+  },
+  "access_before": "Editable",
+  "access_imported": "PoserHeld",
+  "access_reset": "Editable",
+  "limitations": [
+    "Actor-disappearance and post-application cancellation not reproduced."
+  ]
+}

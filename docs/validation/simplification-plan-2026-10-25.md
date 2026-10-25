@@ -536,6 +536,10 @@ actionable issues. Reviews checked source/provider behavior, cleanup ordering,
 state retention, comments and net removal. User accepted #653 without requiring
 a live post-application cancellation reproduction.
 
-Release build and all 906 existing tests pass for #654. Deployment and normal
-live import/reset results will be recorded separately. Broader MCDF file and
-appearance-restoration consolidation remains under #640.
+Release build and all 906 existing tests pass for #654. Candidate `62291c8e`
+was deployed to canonical output with matching hashes; reload succeeded at
+18:23:27 local. Normal live MCDF import/reset passed: Glamourer access changed
+from Editable to PoserHeld and back to Editable, and wardrobe/customization
+matched the pre-import values exactly. See [results](audit-2026-10-25/654-live-mcdf.json).
+Actor-disappearance and post-application cancellation were not reproduced.
+Broader MCDF file and appearance-restoration consolidation remains under #640.
