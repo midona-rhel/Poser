@@ -2,6 +2,7 @@ using Poser.Application.Selection;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
@@ -151,6 +152,10 @@ public sealed partial class AppearancePane
     private readonly Application.Settings.ConfigurationService _configuration;
     private readonly PoseFileInspectorSection _poseFiles;
     private readonly IFramework _framework;
+    private readonly Application.Library.ICharacterFileLibrary _characterLibrary;
+
+    /// <summary>The import dialog's "Add to library" choice, kept for the session.</summary>
+    private bool _addMcdfToLibrary;
 
     public AppearancePane(
         ActorPresentationSession presentation,
@@ -175,8 +180,11 @@ public sealed partial class AppearancePane
         IAppearanceColorControl colors,
         ICharacterFiles characterFiles,
         PoseFileInspectorSection poseFiles,
-        IFramework framework)
+        IFramework framework,
+        Application.Library.ICharacterFileLibrary characterLibrary)
     {
+        _characterLibrary = characterLibrary;
+        _mcdfImportBrowser.BottomPanel = new FileSidePanel(52f, DrawMcdfImportOptions);
         _poseFiles = poseFiles;
         _framework = framework;
         _configuration = config;
@@ -1078,6 +1086,7 @@ public sealed partial class AppearancePane
             var result = _characterFiles.Spawn(chosen);
             if (result.Handle is { } body) select(body);
             else _notices.Failed(result.Detail ?? "The actor could not be spawned.");
+            if (result.Handle is not null) AddToLibraryIfChosen(chosen);
         });
     }
 
@@ -1086,8 +1095,48 @@ public sealed partial class AppearancePane
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
-            ReportExternal(_characterFiles.Import(actor, chosen), "Import");
+            var imported = _characterFiles.Import(actor, chosen);
+            ReportExternal(imported, "Import");
+            if (imported.Success) AddToLibraryIfChosen(chosen);
         });
+    }
+
+    /// <summary>Copies the chosen character file into the MCDF library when the
+    /// import dialog's option is on. The copy never affects the import itself.</summary>
+    private void AddToLibraryIfChosen(string path)
+    {
+        if (!_addMcdfToLibrary)
+            return;
+        _characterLibrary.AddAsync(path).ContinueWith(task =>
+        {
+            var added = task.IsCompletedSuccessfully
+                ? task.Result
+                : Outcome.Fail("The character file could not be added to your library.");
+            _framework.RunOnFrameworkThread(() =>
+            {
+                if (added.Success) _notices.Note(added.Detail ?? "Added to your library.");
+                else _notices.Failed(added.Detail ?? "The character file could not be added to your library.");
+            });
+        }, TaskScheduler.Default);
+    }
+
+    private void DrawMcdfImportOptions(Vector2 origin, Vector2 size, string? path)
+    {
+        float inset = ActiveTheme.Page.Inset * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        PageForm.Section(
+            "##mcdf-import-options", string.Empty,
+            origin + new Vector2(inset, inset),
+            MathF.Max(1f, size.X - inset * 2f),
+            true, null,
+            form => form.Checkboxes(
+                "Library",
+                new CheckItem(
+                    "Also add to library",
+                    _addMcdfToLibrary,
+                    next => _addMcdfToLibrary = next,
+                    "Copies the file into your MCDF library folder after it is applied. "
+                    + "A file the library already has is not copied twice.")),
+            divider: false, labelColumnWidth: 64f, dense: true);
     }
 
     private void OpenMcdfExport(ActorId actor)
