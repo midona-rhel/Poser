@@ -76,10 +76,9 @@ internal sealed class BaseAnimationSession
             var armed = _timeline.SetForceLoop(actor, timeline);
             if (!armed.Success)
             {
-                var baseline = rollbackCapture ?? captured ?? before.BaseCapture;
-                var rolledBack = baseline is { } restore
-                    ? _timeline.RestoreBase(actor, restore)
-                    : Outcome.Fail("The base restore point is unavailable.");
+                // PlayBase captures when nothing was captured before, so one is set.
+                var rolledBack = _timeline.RestoreBase(
+                    actor, (rollbackCapture ?? captured ?? before.BaseCapture).Value);
                 if (rolledBack.Success)
                     return armed;
 
@@ -135,14 +134,10 @@ internal sealed class BaseAnimationSession
         bool captureSlot = landing is { } slot &&
             slot != AnimationSlot.Base &&
             !current.SlotCaptures.ContainsKey(slot);
-        ushort incoming = 0;
-        if (captureSlot)
-        {
-            var reading = _timeline.Read(actor);
-            if (reading == null)
-                return Outcome.Fail("The layer restore point is unavailable.");
-            incoming = reading.TimelineFor(landing!.Value);
-        }
+        // Without a reading the actor is gone, and the writes below fail too.
+        ushort incoming = captureSlot
+            ? _timeline.Read(actor)?.TimelineFor(landing!.Value) ?? 0
+            : (ushort)0;
 
         // SetTimelineId clears the global force while routing by native slot.
         // Release it for the layer write, then restore the same Base force.
@@ -213,10 +208,6 @@ internal sealed class BaseAnimationSession
 
     /// <summary>Sets repeat intent for one slot.</summary>
     public Outcome SetSlotLoop(
-        ActorId actor, AnimationSlot slot, ushort timeline, bool on) =>
-        SetSlotLoopCore(actor, slot, timeline, on);
-
-    private Outcome SetSlotLoopCore(
         ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
         if (_store.Suspended() is { } blocked) return blocked;
@@ -278,11 +269,8 @@ internal sealed class BaseAnimationSession
         ushort target = timeline != 0 ? timeline : current.BaseTimeline ?? 0;
         if (target == 0)
             return Outcome.Ok();
-        if (!SupportsForceLoop)
-            return Outcome.Fail("Full-body repeat is unavailable for this client layout.");
+        // Without a capture the actor is gone, and arming repeat fails too.
         var captured = current.BaseCapture == null ? _timeline.CaptureBase(actor) : null;
-        if (current.BaseCapture == null && captured == null)
-            return Outcome.Fail("The base restore point is unavailable.");
         var armed = _timeline.SetForceLoop(actor, target);
         if (!armed.Success)
             return armed;
@@ -297,8 +285,6 @@ internal sealed class BaseAnimationSession
         return Outcome.Ok();
     }
 
-    /// <summary>Whether full-body repeat is available.</summary>
-    public bool SupportsForceLoop => _timeline.SupportsForceLoop;
 
     public Outcome ApplySelectedSlotCore(
         ActorId actor, AnimationSlot slot, TimelineEntry? entry = null)
@@ -355,9 +341,8 @@ internal sealed class BaseAnimationSession
     {
         if (_store.Suspended() is { } blocked) return blocked;
         bool armRepeat = before.LoopWantedSlots.Contains(AnimationSlot.Base);
+        // Without a capture the actor is gone, and both play routes below fail too.
         var firstCapture = before.BaseCapture ?? _timeline.CaptureBase(actor);
-        if (firstCapture == null)
-            return Outcome.Fail("The base restore point is unavailable.");
         var rollbackCapture = before.BaseCapture != null
             ? _timeline.CaptureBase(actor)
             : firstCapture;
@@ -370,10 +355,9 @@ internal sealed class BaseAnimationSession
             var armed = _timeline.SetForceLoop(actor, (ushort)entry.TimelineId);
             if (!armed.Success)
             {
-                var baseline = rollbackCapture ?? before.BaseCapture;
-                var rolledBack = baseline is { } restore
-                    ? _timeline.RestoreBase(actor, restore)
-                    : Outcome.Fail("The base restore point is unavailable.");
+                // The emote played, so the actor resolved and both captures are set.
+                var baseline = (rollbackCapture ?? before.BaseCapture).Value;
+                var rolledBack = _timeline.RestoreBase(actor, baseline);
                 if (rolledBack.Success)
                     return armed;
                 _store.Mutate(actor, o => o with
@@ -544,26 +528,25 @@ internal sealed class BaseAnimationSession
         ActorId actor, AnimationSlot slot, AnimationOverrides current)
     {
         var reading = _timeline.Read(actor);
-        if (reading == null)
-            return Outcome.Fail("The actor is no longer available.");
         var immediateBase = _timeline.CaptureBase(actor);
         // Zero the slot's own id entries first: a bare cancel left them and
-        // the base restore below re-scheduled the layer from them.
+        // the base restore below re-scheduled the layer from them. This fails
+        // when the actor is gone, which is the only case without a reading.
         var cancelled = _timeline.ClearSlotTimeline(actor, slot);
         if (!cancelled.Success)
             return cancelled;
 
         // Replaying surviving layers would restart them. Read back after the
         // cancel and replay only layers whose timeline is no longer present.
-        var after = _timeline.Read(actor);
+        var after = _timeline.Read(actor)!;
         var failures = new List<string>();
         var retrySlots = new Dictionary<AnimationSlot, ushort>();
-        foreach (var survivor in reading.Slots)
+        foreach (var survivor in reading!.Slots)
         {
             if (survivor.Slot is AnimationSlot.Base || survivor.Slot == slot ||
                 survivor.TimelineId == 0)
                 continue;
-            if (after != null && after.TimelineFor(survivor.Slot) == survivor.TimelineId)
+            if (after.TimelineFor(survivor.Slot) == survivor.TimelineId)
                 continue;
             var replayed = survivor.Slot == AnimationSlot.Lips && reading.LipsOverride != 0
                 ? _timeline.SetLips(actor, reading.LipsOverride)
@@ -575,7 +558,7 @@ internal sealed class BaseAnimationSession
             }
         }
         if (immediateBase is { } baseline &&
-            (after == null || after.TimelineFor(AnimationSlot.Base) != reading.TimelineFor(AnimationSlot.Base)))
+            after.TimelineFor(AnimationSlot.Base) != reading.TimelineFor(AnimationSlot.Base))
         {
             var baseRestored = _timeline.RestoreBase(actor, baseline);
             if (!baseRestored.Success)
@@ -617,14 +600,10 @@ internal sealed class BaseAnimationSession
     {
         if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
-        ushort? captured = null;
-        if (current.LipsCapture == null)
-        {
-            var reading = _timeline.Read(actor);
-            if (reading == null)
-                return Outcome.Fail("The lips restore point is unavailable.");
-            captured = reading.LipsOverride;
-        }
+        // Without a reading the actor is gone, and the write below fails too.
+        ushort? captured = current.LipsCapture == null
+            ? _timeline.Read(actor)?.LipsOverride
+            : null;
         var result = _timeline.SetLips(actor, timeline);
         if (!result.Success)
             return result;

@@ -191,7 +191,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     /// </summary>
     internal bool Supports(Character* character, int slot)
     {
-        if (!Available || character == null)
+        if (!Available)
             return false;
         // Scheduler-driven actors (event/cutscene: +0x1CE8 bit 4) run their
         // timelines from a scheduler instance; leave them to the clock writes.
@@ -235,9 +235,8 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     /// timeline clock: seconds from the timeline's begin.</summary>
     internal void RequestTimeline(ActorId actor, Character* character, AnimationSlot slot, float seconds)
     {
+        // Callers check Supports first, so the slot has a loaded timeline.
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
-        if (root == 0)
-            return;
         if (TimelineState.Of(root).ClampedAtEnd)
         {
             lock (_targetLock)
@@ -321,9 +320,8 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     {
         int index = (int)slot;
         var key = (actor, index);
+        // Callers check Supports first, so the slot has a loaded timeline.
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, index);
-        if (root == 0)
-            return;
         // Clamped at its end: the control's own seconds are the target.
         if (TimelineState.Of(root).ClampedAtEnd)
         {
@@ -440,8 +438,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
         _weaponSpeedHook?.Disable();
         _applyRequestsHook?.Disable();
         _fadeMaskHook?.Disable();
-        if (_disableDrawHook != null)
-            _disableDrawHook.Disable();
+        _disableDrawHook?.Disable();
         if (_disableDrawHook != null || _weaponSpeedHook != null || _applyRequestsHook != null || _fadeMaskHook != null)
             System.Threading.Thread.Sleep(100);
         _disableDrawHook?.Dispose();

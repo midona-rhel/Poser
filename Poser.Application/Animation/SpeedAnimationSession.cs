@@ -25,10 +25,7 @@ internal sealed class SpeedAnimationSession
         _port = port;
     }
 
-    public Outcome SetSpeed(ActorId actor, float speed) =>
-        SetSpeedCore(actor, speed);
-
-    private Outcome SetSpeedCore(ActorId actor, float speed)
+    public Outcome SetSpeed(ActorId actor, float speed)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         var result = _port.SetOverallSpeed(actor, speed);
@@ -38,9 +35,7 @@ internal sealed class SpeedAnimationSession
         return Outcome.Ok();
     }
 
-    public Outcome ClearSpeed(ActorId actor) => ClearSpeedCore(actor);
-
-    private Outcome ClearSpeedCore(ActorId actor)
+    public Outcome ClearSpeed(ActorId actor)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         var result = _port.ClearOverallSpeed(actor);
@@ -109,7 +104,7 @@ internal sealed class SpeedAnimationSession
                     || slotReading.Slot == playing
                     || current.SlotSpeeds.ContainsKey(slotReading.Slot))
                     continue;
-                var held = SetSlotSpeedCore(actor, slotReading.Slot, 0f);
+                var held = SetSlotSpeed(actor, slotReading.Slot, 0f);
                 _store.Trace?.Invoke(
                     $"  hold slot={slotReading.Slot} (tl {slotReading.TimelineId})"
                     + $" -> {(held.Success ? "ok" : held.Detail)}");
@@ -118,7 +113,7 @@ internal sealed class SpeedAnimationSession
             }
         }
         _store.Trace?.Invoke($"  lift overall for {playing}");
-        return ClearSpeedCore(actor);
+        return ClearSpeed(actor);
     }
 
     /// <summary>Rewinds paused animation controls.</summary>
@@ -129,26 +124,14 @@ internal sealed class SpeedAnimationSession
     }
 
     public Outcome SetSlotSpeed(
-        ActorId actor, AnimationSlot slot, float speed)
-    {
-        return SetSlotSpeedCore(actor, slot, speed);
-    }
-
-    public Outcome SetSlotSpeedCore(
         ActorId actor, AnimationSlot slot, float speed, float? firstCapture = null)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
-        float live;
-        if (current.SlotSpeeds.TryGetValue(slot, out var ownedSpeed))
-            live = ownedSpeed;
-        else
-        {
-            var reading = _timeline.Read(actor);
-            if (reading == null)
-                return Outcome.Fail("The layer speed restore point is unavailable.");
-            live = reading.SpeedFor(slot);
-        }
+        // Without a reading the actor is gone, and the port write below fails too.
+        float live = current.SlotSpeeds.TryGetValue(slot, out var ownedSpeed)
+            ? ownedSpeed
+            : _timeline.Read(actor)?.SpeedFor(slot) ?? 1f;
         var result = _port.SetSlotSpeed(actor, slot, speed);
         if (!result.Success)
             return result;
@@ -157,13 +140,11 @@ internal sealed class SpeedAnimationSession
             var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds) { [slot] = speed };
             var captures = new Dictionary<AnimationSlot, float>(o.SlotSpeedCaptures);
             if (!captures.ContainsKey(slot))
-                captures[slot] = firstCapture is { } original && float.IsFinite(original)
-                    ? original
-                    : float.IsFinite(live) ? live : 1f;
+                captures[slot] = firstCapture ?? live;
             var resume = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
             if (speed > 0f)
                 resume[slot] = speed;
-            else if (live > 0f && float.IsFinite(live))
+            else if (live > 0f)
                 resume[slot] = live;
             return o with
             {
@@ -175,10 +156,7 @@ internal sealed class SpeedAnimationSession
         return Outcome.Ok();
     }
 
-    public Outcome ClearSlotSpeed(ActorId actor, AnimationSlot slot) =>
-        ClearSlotSpeedCore(actor, slot);
-
-    public Outcome ClearSlotSpeedCore(ActorId actor, AnimationSlot slot)
+    public Outcome ClearSlotSpeed(ActorId actor, AnimationSlot slot)
     {
         if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
@@ -210,7 +188,7 @@ internal sealed class SpeedAnimationSession
     {
         // Pause only this layer. Pausing the whole actor here would also freeze
         // any animation the user starts on another layer afterwards.
-        return SetSlotSpeedCore(actor, slot, 0f);
+        return SetSlotSpeed(actor, slot, 0f);
     }
 
     public Outcome ResumeSlotSpeedCore(ActorId actor, AnimationSlot slot)
@@ -218,14 +196,12 @@ internal sealed class SpeedAnimationSession
         var current = _store.For(actor);
         if (!current.SlotSpeeds.TryGetValue(slot, out var speed) || speed != 0f)
             return Outcome.Ok();
-        // A layer paused while resuming another layer may have no remembered
+        // A layer that was already still when Poser paused it has no remembered
         // resume speed. Use its original positive speed, or normal speed (1).
-        if (!current.SlotResumeSpeeds.TryGetValue(slot, out var resume) ||
-            !float.IsFinite(resume) || resume <= 0f)
-            resume = current.SlotSpeedCaptures.TryGetValue(slot, out var captured)
-                && float.IsFinite(captured) && captured > 0f
+        if (!current.SlotResumeSpeeds.TryGetValue(slot, out var resume))
+            resume = current.SlotSpeedCaptures.TryGetValue(slot, out var captured) && captured > 0f
                 ? captured
                 : 1f;
-        return SetSlotSpeedCore(actor, slot, resume);
+        return SetSlotSpeed(actor, slot, resume);
     }
 }
