@@ -59,3 +59,28 @@ jobs:
         if: failure()
         shell: pwsh
         run: ./tools/Report-TestFailures.ps1
+  debug-build:
+    # Test branches only: builds the Debug plugin output for manual deployment.
+    if: github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'test/')
+    runs-on: windows-latest
+    env:
+      DALAMUD_HOME: ${{ github.workspace }}\dalamud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud.zip
+          Expand-Archive dalamud.zip -DestinationPath $env:DALAMUD_HOME -Force
+      - name: Build plugin (Debug)
+        shell: pwsh
+        run: |
+          dotnet build Poser/Poser.csproj -c Debug --nologo
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poser-debug
+          path: Poser/bin/Debug
