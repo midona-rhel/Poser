@@ -81,7 +81,7 @@ internal sealed class HeldExpressionSession
         if (!played.Success)
             return played;
 
-        var held = _speed.SetSlotSpeedCore(
+        var held = _speed.SetSlotSpeed(
             actor, AnimationSlot.Facial, 0f, speedCapture);
         if (!held.Success)
         {
@@ -175,7 +175,7 @@ internal sealed class HeldExpressionSession
     {
         if (_store.For(actor).SlotSpeedCaptures.ContainsKey(slot))
         {
-            var speed = _speed.ClearSlotSpeedCore(actor, slot);
+            var speed = _speed.ClearSlotSpeed(actor, slot);
             if (!speed.Success)
                 return speed;
         }
