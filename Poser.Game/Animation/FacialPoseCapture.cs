@@ -420,26 +420,10 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
             return;
         if (pending.Completing)
             return;
-        if (!IsCurrentToken(pending))
-        {
-            InvalidatePending(
-                pending,
-                "Facial capture was cancelled because its token became stale.");
-            return;
-        }
-
+        // Revalidate checks the session token first, right before the transform write.
         if (Revalidate(pending) is { } problem)
         {
             InvalidatePending(pending, $"Facial capture cancelled: {problem}");
-            return;
-        }
-
-        // Revalidate before the atomic transform write.
-        if (!IsCurrentToken(pending))
-        {
-            InvalidatePending(
-                pending,
-                "Facial capture was cancelled because its token became stale.");
             return;
         }
 
@@ -482,8 +466,6 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         if (_disposed || !ReferenceEquals(_pending, pending))
             return;
         var teardown = FinishOwnedState(pending);
-        if (_disposed || !ReferenceEquals(_pending, pending))
-            return;
         if (!applied.Success)
         {
             var state = applied.Recovery is { Complete: false }

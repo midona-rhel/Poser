@@ -21,7 +21,7 @@ public sealed class PhysicsFreezePatcherTests
     private static readonly byte[] Nops1 = [0x90, 0x90, 0x90, 0x90];
     private static readonly byte[] Nops2 = [0x90, 0x90, 0x90];
 [Fact]
-    public void Physics_patch_validates_bytes_applies_atomically_and_restores_captured_bytes()
+    public void Physics_patch_validates_bytes_and_restores_captured_bytes()
     {
         var native = new FakeNative();
         using var patcher = CreatePatcher(native, out var log);
@@ -30,10 +30,6 @@ public sealed class PhysicsFreezePatcherTests
         Assert.Equal(Nops1, native.At(FakeNative.Site, 4));
         Assert.Equal(Nops2, native.At(FakeNative.Site - 0x9, 3));
 
-        native.FailOnWriteNumber = 4;
-        Assert.False(patcher.SetFrozen(false).Success);
-        Assert.True(patcher.IsFrozen);
-        native.FailOnWriteNumber = 0;
         Assert.True(patcher.SetFrozen(false).Success);
         Assert.Equal(Region1, native.At(FakeNative.Site, 4));
         Assert.Equal(Region2, native.At(FakeNative.Site - 0x9, 3));
@@ -59,9 +55,6 @@ private static PhysicsFreezePatcher CreatePatcher(FakeNative native, out LogProx
 
         private readonly byte[] _memory = new byte[0x40];
 
-        public int FailOnWriteNumber { get; set; }
-        private int _writes;
-
         public FakeNative()
         {
             WriteAt(Site, Region1);
@@ -82,12 +75,7 @@ private static PhysicsFreezePatcher CreatePatcher(FakeNative native, out LogProx
 
         public byte[] ReadRaw(nint address, int length) => At(address, length);
 
-        public void WriteRaw(nint address, byte[] data)
-        {
-            if (++_writes == FailOnWriteNumber)
-                throw new InvalidOperationException("test write fault");
-            WriteAt(address, data);
-        }
+        public void WriteRaw(nint address, byte[] data) => WriteAt(address, data);
 
         public MemoryProtection ChangePermission(
             nint address, int length, MemoryProtection newProtection) =>

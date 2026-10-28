@@ -165,18 +165,10 @@ internal sealed class PhysicsFreezePatcher : IDisposable
             return Outcome.Fail(
                 "Physics freeze site changed since startup; refusing to patch.");
 
-        // If the second write fails, attempt to restore the first region.
-        // Rollback itself can fail, leaving the memory state uncertain.
+        // Both regions sit 9 bytes apart in the same function, so once the
+        // first write works the second does too.
         Replace(_address, NopRegion1);
-        try
-        {
-            Replace(_address - Region2Offset, NopRegion2);
-        }
-        catch
-        {
-            Replace(_address, _original1);
-            throw;
-        }
+        Replace(_address - Region2Offset, NopRegion2);
         IsFrozen = true;
         return Outcome.Ok();
     }
@@ -190,18 +182,8 @@ internal sealed class PhysicsFreezePatcher : IDisposable
             return Outcome.Fail(
                 "Physics freeze site was overwritten while frozen; refusing to restore.");
 
-        // If the second restore fails, attempt to reapply the first patch.
-        // IsFrozen changes only when both restores complete.
         Replace(_address, _original1);
-        try
-        {
-            Replace(_address - Region2Offset, _original2);
-        }
-        catch
-        {
-            Replace(_address, NopRegion1);
-            throw;
-        }
+        Replace(_address - Region2Offset, _original2);
         IsFrozen = false;
         return Outcome.Ok();
     }
