@@ -2,6 +2,7 @@ using System.Numerics;
 using Poser.Documents.Mcdf;
 using System.Reflection;
 using Poser.Application.Animation;
+using Poser.Application.Appearance;
 using Poser.Application.Gaze;
 using Poser.Application.Integration;
 using Poser.Application.Tests.Integration;
@@ -42,10 +43,13 @@ public sealed class PoseCommandTests
         var original = f.Live.ToDictionary();
         var older = new JournalStep("earlier edit", () => true, () => true);
         f.History.Append(older);
+        Assert.True(f.Models.Apply(f.Actor, 2430).Success);
         Assert.True(f.ResetAll.ResetAll(f.Actor).Success);
         Assert.Empty(f.Live[f.Character].Pose.Layers);
         Assert.Empty(f.Live[f.Weapon].Pose.Layers);
         Assert.Equal(original[f.Model], f.Live[f.Model]);
+        Assert.Equal(0, f.ModelId);
+        Assert.False(f.Models.IsOwned(f.Actor));
         Assert.True(f.Journal.Undo().Success);
         Assert.Equal(original[f.Character], f.Live[f.Character]);
         Assert.Same(older, f.History.PeekUndo());
@@ -97,7 +101,7 @@ public sealed class PoseCommandTests
     }
 
     private sealed class Fixture : ITransformRuntimePort, IPoseEditReads,
-        IActorPoseResetRuntime, IPoseSnapshotPort, IActorStateSnapshots, IDisposable
+        IActorPoseResetRuntime, IPoseSnapshotPort, IActorStateSnapshots, IModelIdRuntimePort, IDisposable
     {
         public readonly ActorId Actor = ActorId.New();
         public readonly SceneSession Scene = new(new SelectionSession());
@@ -108,6 +112,8 @@ public sealed class PoseCommandTests
         public readonly UndoJournal Journal;
         public readonly IPoseCommands Commands;
         public readonly IActorResetControl ResetAll;
+        public readonly ActorModelIdSession Models;
+        public int ModelId;
         private readonly IntegrationGraph _integration;
         public int Captures;
         public int IkClears;
@@ -135,12 +141,20 @@ public sealed class PoseCommandTests
             Commands = new PoseCommands(Scene, edits, new(edits), this);
             _integration = new(Idle<IIntegrationRuntimeFake>(), Idle<IMcdfFileBoundary>(),
                 Idle<ISessionGenerationSource>());
+            Models = new ActorModelIdSession(this);
             ResetAll = new ActorResetControl(Scene, Gestures, edits, this,
                 Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationTimelinePort>(),
                     Idle<IAnimationSpeedPort>(), Idle<IAnimationStancePort>(),
                     Idle<IAnimationScrubPort>(), Idle<IWorldRenderingRuntimePort>()),
-                new ActorPresentationSession(Idle<IPresentationRuntimePort>()), _integration.Reset,
+                new ActorPresentationSession(Idle<IPresentationRuntimePort>()), Models, _integration.Reset,
                 History, new ValueJournal(History), this);
+        }
+
+        int? IModelIdRuntimePort.Read(ActorId actor) => ModelId;
+        Outcome IModelIdRuntimePort.Write(ActorId actor, int modelCharaId)
+        {
+            ModelId = modelCharaId;
+            return Outcome.Ok();
         }
 
         public PoseEditResult CanReset(ActorId actor) => PoseEditResult.Ok(0);
