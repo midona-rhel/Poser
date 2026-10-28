@@ -53,15 +53,15 @@ internal static class McdfWriter
         // Each file is read once here, several at a time, for the MCDF payload
         // hash. The writer reuses that hash for the header and checks it again
         // while copying, so it never has to read a file just to hash it.
-        var entries = resources.ToArray();
-        var results = new InspectedResource[entries.Length];
+        var listed = resources.ToArray();
+        var results = new InspectedResource[listed.Length];
         try
         {
-            Parallel.For(0, entries.Length, new ParallelOptions
+            Parallel.For(0, listed.Length, new ParallelOptions
             {
                 CancellationToken = cancellation,
                 MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 1, 4),
-            }, i => results[i] = InspectResource(realRoot, entries[i].Key, entries[i].Value, cancellation));
+            }, i => results[i] = InspectResource(realRoot, listed[i].Key, listed[i].Value, cancellation));
         }
         catch (OperationCanceledException)
         {
