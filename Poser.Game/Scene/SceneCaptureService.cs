@@ -265,10 +265,10 @@ public sealed class SceneCaptureService
             var entry = new SceneActor
             {
                 Key = key,
-                // Save the authored nickname, not a transient anonymous UI mask
-                // or the generated native name needed by appearance providers.
-                Name = Bounded((id is { } named ? _configuration.GetNickname(named.LogicalId) : null)
-                    ?? Poser.Application.Settings.ConfigurationService.StripObjectIndex(actor.Name), $"Actor {key:N}"),
+                // Save the name the user sees: their nickname, or the anonymous
+                // name while Anonymous mode is on, so a shared scene never
+                // carries a character's real name.
+                Name = Bounded(_configuration.GetDisplayName(key, actor.Name), $"Actor {key:N}"),
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
                 SpawnedKind = spawnedKind,
                 // Every loaded character is a clone of the local player, so
@@ -666,7 +666,9 @@ public sealed class SceneCaptureService
                 if (target is { } resolved)
                 {
                     targetKey = resolved;
-                    targetName = Bounded(camera.TargetActorName, "Camera target");
+                    // The followed actor's saved name, so Anonymous mode covers it too.
+                    targetName = scene.Actors.FirstOrDefault(entry => entry.Key == resolved)?.Name
+                        ?? Bounded(camera.TargetActorName, "Camera target");
                     targetOffset = camera.TargetOffset;
                 }
                 else
