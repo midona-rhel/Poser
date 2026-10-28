@@ -125,11 +125,13 @@ public sealed record TimelineEntry(
 
 /// <summary>
 /// Saved state of an animation layer. Applied is the animation Poser started;
-/// Live says whether it is still playing. HeldSeconds records a paused position;
-/// running animations are restored from their start.
+/// Live says whether it is still playing. HeldSeconds records a paused position.
+/// PlayedSeconds records how far a running animation had got; only scene saves
+/// set it, so undo still restarts a running animation from its start.
 /// </summary>
 public readonly record struct LayerSnapshot(
-    ushort? Applied, bool Live, bool Loop, float? Speed, float Weight, float? HeldSeconds, float? EndedSeconds);
+    ushort? Applied, bool Live, bool Loop, float? Speed, float Weight, float? HeldSeconds, float? EndedSeconds,
+    float? PlayedSeconds = null);
 
 /// <summary>
 /// An actor's whole animation state, as an undo/redo step stores it: every
