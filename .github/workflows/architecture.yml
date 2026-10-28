@@ -63,6 +63,8 @@ jobs:
     # Test branches only: builds the Debug plugin output for manual deployment.
     if: github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'test/')
     runs-on: windows-latest
+    permissions:
+      contents: write
     env:
       DALAMUD_HOME: ${{ github.workspace }}\dalamud
     steps:
@@ -80,7 +82,15 @@ jobs:
         run: |
           dotnet build Poser/Poser.csproj -c Debug --nologo
           exit $LASTEXITCODE
-      - uses: actions/upload-artifact@v4
-        with:
-          name: poser-debug
-          path: Poser/bin/Debug
+      - name: Publish the output to a build branch
+        # Artifact storage is unreachable from the test sessions; git is not.
+        shell: pwsh
+        run: |
+          $branch = "build/$($env:GITHUB_REF_NAME -replace '/', '-')"
+          Set-Location Poser/bin/Debug
+          git init -q -b $branch
+          git config user.name Midona
+          git config user.email midona.rhel@gmail.com
+          git add -A
+          git commit -q -m "Debug build of $($env:GITHUB_REF_NAME) at $($env:GITHUB_SHA)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/$branch"
