@@ -78,8 +78,8 @@ public sealed class ActorResetControl(
             return (r.Success, r.Detail);
         });
         Run("IK", () => { var r = runtime.ClearIk(actor); return (r.Success, r.Detail); });
-        // Release animation, appearance and the model after pose writes. External
-        // integration is last because restoring its collection may redraw the native model.
+        // Release animation/presentation after pose writes. External integration
+        // is last because restoring its collection may redraw the native model.
         Run("Animation", () => { var r = animation.ResetActor(actor); return (r.Success, r.Detail); });
         Run("Appearance", () => { var r = presentation.ResetActor(actor); return (r.Success, r.Detail); });
         Run("Model", () => { var r = models.Reset(actor); return (r.Success, r.Detail); });
