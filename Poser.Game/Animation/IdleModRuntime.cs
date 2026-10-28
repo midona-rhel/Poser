@@ -22,7 +22,7 @@ public sealed class IdleModRuntime(
     StableBindingRegistry bindings, ISkeletonService skeletons, PoseExportCapture capture,
     IPoseImportCommands imports, IPenumbraPort integration) : IIdleModRuntime
 {
-    private readonly IdleHavokEncoder _encoder = new(framework, scanner);
+    private readonly IdleHavokEncoder _encoder = new(scanner);
 
     private static readonly string[] RaceNames = ["Midlander", "Highlander", "Elezen", "Miqo'te", "Roegadyn", "Lalafell", "Au Ra", "Hrothgar", "Viera"];
     public Task<IdleModChoices> DescribeAsync(ActorId actorId) => framework.RunOnFrameworkThread(() =>
@@ -117,7 +117,6 @@ public sealed class IdleModRuntime(
         string facePath = facePaths[0];
         string face = facePath.Split('/')[5];
         string basePath = $"chara/human/{raceName}/skeleton/base/b0001/skl_{raceName}b0001.sklb";
-        byte[] Read(string path) => data.GetFile(path)?.Data ?? throw new FileNotFoundException("Unsupported idle resource: " + path);
         var bodySkeleton = Read(basePath);
         var faceSkeleton = Read(facePath);
         byte[] ReadLoaded(string path)
@@ -154,17 +153,13 @@ public sealed class IdleModRuntime(
             var tracks = ImmutableArray.CreateBuilder<IdleBoneTrack>(layout.Bones.Length);
             for (short i = 0; i < layout.Bones.Length; i++)
             {
-                if (!source.TryGetValue(layout.Bones[i], out var bone))
-                    throw new InvalidOperationException("The actor is missing required bone " + layout.Bones[i]);
+                // The bone sets match (checked above), so every layout bone and parent is present.
+                var bone = source[layout.Bones[i]];
                 // LastRawTransform is the refreshed update-phase pose BEFORE
                 // render-phase Customize+ changes; reusing it avoids baking C+ twice.
                 Transform? parentTransform = null;
                 if (layout.Parents[i] >= 0)
-                {
-                    if (!source.TryGetValue(layout.Bones[layout.Parents[i]], out var parent))
-                        throw new InvalidOperationException($"Idle export: missing parent of bone '{bone.BoneName}'.");
-                    parentTransform = parent.LastRawTransform;
-                }
+                    parentTransform = source[layout.Bones[layout.Parents[i]]].LastRawTransform;
                 else if (partial != 0)
                 {
                     // Facial partial roots are attached by the game, not independent

@@ -9,7 +9,7 @@ namespace Poser.Game.Animation;
 // Read-only native diagnostics for exported files; no actor or animation state is touched.
 public static class IdleModDiagnostics
 {
-    public static object Repackage(string path, string destination, string race, string face, IFramework framework, IDataManager data, ISigScanner scanner)
+    public static object Repackage(string path, string destination, string race, string face, IDataManager data, ISigScanner scanner)
     {
         using var zip = ZipFile.OpenRead(path);
         PapAnimationDocument ReadEntry(string name)
@@ -20,7 +20,7 @@ public static class IdleModDiagnostics
         }
         var entry = ReadEntry("files/idle-0.pap");
         var hold = ReadEntry("files/idle-1.pap");
-        var encoder = new IdleHavokEncoder(framework, scanner);
+        var encoder = new IdleHavokEncoder(scanner);
         PapAnimationDocument ReadGame(string gamePath) => new(data.GetFile(gamePath)!.Data);
         string prefix = $"chara/human/{race}/animation/a0001/bt_common/emote/pose01_";
         var files = IdlePapBuilder.Files(race, face, ReadGame(prefix + "start.pap"), ReadGame(prefix + "loop.pap"),
@@ -31,13 +31,13 @@ public static class IdleModDiagnostics
         return new { ok = true, destination };
     }
 
-    public static object Inspect(string path, string race, string face, IFramework framework, IDataManager data, ISigScanner scanner)
+    public static object Inspect(string path, string race, string face, IDataManager data, ISigScanner scanner)
     {
         using var zip = ZipFile.OpenRead(path);
         using var file = (zip.GetEntry("files/idle-3.pap") ?? zip.GetEntry("files/idle-1.pap"))!.Open();
         using var memory = new MemoryStream(); file.CopyTo(memory);
         var pap = new PapAnimationDocument(memory.ToArray());
-        var encoder = new IdleHavokEncoder(framework, scanner);
+        var encoder = new IdleHavokEncoder(scanner);
         var sklb = data.GetFile($"chara/human/{race}/skeleton/face/{face}/skl_{race}{face}.sklb")!.Data;
         var neutral = new PapAnimationDocument(data.GetFile($"chara/human/{race}/animation/{face}/resident/face.pap")!.Data);
         var layout = encoder.ReadSkeleton(sklb);
