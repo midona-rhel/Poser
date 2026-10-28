@@ -46,6 +46,7 @@ internal sealed partial class EntityContextMenus
         [
             () => _poseFileSection.RequestImportMenu(withPresets: true, target: actorId),
             () => _poseFileSection.OpenImportFromFile(actorId),
+            () => _poseFileSection.ImportFromClipboard(actorId),
             null,
             () => _cleanPose.Stash(actorId, sourceLabel),
         ];
@@ -53,6 +54,7 @@ internal sealed partial class EntityContextMenus
         {
             new("Import", TablerIcon.Download),
             new("Import from file", TablerIcon.FileText),
+            new("Import from clipboard", TablerIcon.Copy),
             new("Export", TablerIcon.Upload,
                 submenuItems: _poseFileSection.BuildExportSubmenu(actorId)),
             new("Stash", TablerIcon.Stack2),
