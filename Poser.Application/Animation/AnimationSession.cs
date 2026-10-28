@@ -283,9 +283,9 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     /// <summary>
-    /// Also captures paused game animations that Poser did not select.
-    /// Scene loading can then recreate those layers; ordinary undo capture leaves
-    /// them under game control.
+    /// Also captures paused game animations that Poser did not select, and how
+    /// far each running animation has played. Scene loading can then recreate
+    /// those layers where they were; ordinary undo capture leaves them as they are.
     /// </summary>
     public AnimationSnapshot CaptureForScene(ActorId actor)
     {
@@ -294,6 +294,9 @@ public sealed class AnimationSession : IAnimationPlayback
         var reading = _timeline.Read(actor) ?? ActorAnimationReading.Empty;
         LayerSnapshot Layer(AnimationSlot slot, LayerSnapshot layer)
         {
+            if (layer is { Applied: not null, Live: true, HeldSeconds: null }
+                && _scrub.FindSlotControl(actor, slot) is { } running)
+                return layer with { PlayedSeconds = running.Time };
             if (layer.Applied is not null || layer.EndedSeconds is not null)
                 return layer;
             // A Pose-tab expression is saved as itself.
@@ -317,9 +320,9 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>
     /// Restores the saved layers and controls without recording another undo step.
-    /// Paused layers seek to their saved time. A paused-to-playing transition seeks
-    /// to the start because running snapshots do not store a frame. Failures are
-    /// collected; successful changes are not rolled back.
+    /// Paused layers seek to their saved time. A running layer goes back to how far
+    /// it had played when the snapshot holds that (scene saves), else to its start.
+    /// Failures are collected; successful changes are not rolled back.
     /// </summary>
     public Outcome Restore(ActorId actor, AnimationSnapshot target)
     {
@@ -357,6 +360,8 @@ public sealed class AnimationSession : IAnimationPlayback
         foreach (var slot in AnimationSnapshot.Layers)
             if (target.For(slot) is { HeldSeconds: { } seconds, Live: true })
                 Note(SeekLayer(actor, slot, seconds), $"{AnimationSlots.DisplayName(slot)} frame");
+            else if (target.For(slot) is { PlayedSeconds: { } played, Live: true })
+                Note(SeekLayer(actor, slot, played), $"{AnimationSlots.DisplayName(slot)} position");
         if (now.HeldExpression != target.HeldExpression)
             Note(target.HeldExpression is { } expression ? HoldExpression(actor, expression) : ReleaseExpression(actor),
                 "expression");

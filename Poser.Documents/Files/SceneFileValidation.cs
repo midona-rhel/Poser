@@ -927,6 +927,8 @@ public static class SceneFileValidation
                 return "layer frame out of range";
             if (layer.EndedSeconds is { } ended && !(float.IsFinite(ended) && ended >= 0f))
                 return "layer length out of range";
+            if (layer.PlayedSeconds is { } played && !(float.IsFinite(played) && played >= 0f))
+                return "layer position out of range";
         }
         return null;
     }

@@ -77,7 +77,7 @@ state follows the owner's pose. Lifecycle history restores authored bone-transfo
 stacks directly, like Brio's pose history, rather than exporting and re-importing
 the evaluated animation frame. Untouched bones remain untouched. Animation is not
 recovered: no timeline, frame, speed or loop restoration, and no added freeze policy.
-The user handles animation after undo/redo. Scene files remain pictures, as described
+The user handles animation after undo/redo. Scene files keep animation, as described
 below. A repeated removal captures the latest edits again. An actor whose
 appearance Glamourer cannot read at all (for example `ActorNotFound`) is still
 removed: the entry is recorded without its Glamourer state, the removal notice
@@ -565,35 +565,31 @@ the framework thread before the original body is destroyed; rejecting only
 the later history callback is not sufficient. Failed replay still completes
 its journal callback so subsequent undo/redo is not left waiting.
 
-## A scene is a picture, unless it is saved with its animation
+## A scene keeps its animation unless the save turns it off
 
-By default a scene records no animation: no timeline id, no playback position,
-no speed, no paused/playing distinction. A timeline id resolves against the
-LOADING client's own game and mod list, so the same file would play something
-different on another machine, or nothing. Pose data is self-contained and is
-what a scene carries instead.
-
-Every restored actor is therefore stopped at speed 0 before its pose is
-applied, and the pose lands on a held frame. Expressions come back as part of
-the pose, on the frozen face. The same file produces the same picture on every
-client, which is the definition of a successful load.
-
-The save dialog's **Animation** option (also in the library save and the Scene
-page; scene snapshots follow it) saves more, per actor and per attached mount,
+A scene saves what each actor is doing by default: the save dialog's
+**Animation** option (also in the library save and the Scene page; scene
+snapshots follow it) starts on. It saves, per actor and per attached mount,
 minion or ornament:
-- `Animation`: the animation state an undo step restores. Each layer Poser
-  played (timeline, playing or ended, loop, speed, weight, and the frame of a
-  held layer), plus the whole-actor speed, the held expression, lips, stance,
+- `Animation`: each layer Poser played (timeline, playing or ended, loop,
+  speed, weight, the frame of a paused layer and how far a running one had
+  played), plus the whole-actor speed, the held expression, lips, stance,
   weapon, position lock and the advanced mode.
 - `PoseEdits`: only the user's own bone edits, as the offsets the animation's
   frame is moved by (the authored pose stacks), never the frame underneath.
 
-Such an actor loads by playing that state again in place of the freeze (held
-layers land on their frame, running ones play from their start), then its edits
-go back on top in place of the baked pose import, so it can keep playing and
-the edits ride the animation. The baked `Pose` is still written, as the picture
-for an actor whose animation can't be restored. The timeline-id caveat above
-applies: another client's mods change what those timelines look like.
+Such an actor loads by playing that state again: paused layers land on their
+frame, running ones carry on from where they were (files saved before this was
+recorded restart them), and paused actors stay paused. Its edits then go back on
+top in place of the baked pose import, so it keeps playing and the edits ride
+the animation. The baked `Pose` is still written, as the picture for an actor
+whose animation can't be restored.
+
+A timeline id resolves against the LOADING client's own game and mod list, so
+the same file can play something different on another machine. Turning the
+option off saves only the picture: every restored actor is then stopped at
+speed 0 before its pose is applied, and the pose lands on a held frame, so the
+same file gives the same picture on every client.
 
 A saved Detached gaze is restored before pose import samples its native basis;
 detaching afterward changes the chest/neck baseline beneath the imported deltas

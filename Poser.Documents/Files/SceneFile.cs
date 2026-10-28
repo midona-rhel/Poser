@@ -475,6 +475,11 @@ public class SceneAnimationLayer
     public float? HeldSeconds { get; set; }
     /// <summary>It ran out (its row stays): the animation's length.</summary>
     public float? EndedSeconds { get; set; }
+
+    /// <summary>How far a running animation had played, in seconds; a load
+    /// carries on from there. Absent in older files, which restart it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public float? PlayedSeconds { get; set; }
 }
 
 /// <summary>One bone's own edits: offsets the animation's frame is moved by.</summary>

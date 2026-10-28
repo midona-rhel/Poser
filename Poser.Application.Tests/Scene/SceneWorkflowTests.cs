@@ -1051,11 +1051,12 @@ public sealed class SceneWorkflowTests
         Assert.True(workflow.BeginLoad("shot.xivs").Success);
         await workflow.Drain;
 
-        Assert.True(workflow.BeginSave("with.xivs", null, new SceneSaveOptions { IncludeAnimation = true }).Success);
+        // Animation is saved unless the save turns it off.
+        Assert.True(workflow.BeginSave("with.xivs").Success);
         await workflow.Drain;
         Assert.True(runtime.LastCaptureIncludedAnimation);
 
-        Assert.True(workflow.BeginSave("without.xivs").Success);
+        Assert.True(workflow.BeginSave("without.xivs", null, new SceneSaveOptions { IncludeAnimation = false }).Success);
         await workflow.Drain;
         Assert.False(runtime.LastCaptureIncludedAnimation);
     }
