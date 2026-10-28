@@ -177,8 +177,8 @@ Only mirror includes authored actor facing; transfer never includes placement.
 Game provides the cheap authored-layer read and native transform mechanisms.
 Whole-actor Reset All uses `IActorResetControl`: Application owns admission,
 reset order and the single history entry; replay retains only the exact actor ID.
-Expression/gaze release precedes pose/IK, animation and presentation follow,
-and external integrations run last because their restoration may redraw.
+Expression/gaze release precedes pose/IK, animation, presentation and the model
+ID follow, and external integrations run last because their restoration may redraw.
 Its inverse captures authored pose/IK plus supported appearance, model,
 presentation, gaze, expression and Customize+ state before mutation; failed
 capture refuses the reset. Lifecycle restoration shares those state owners.

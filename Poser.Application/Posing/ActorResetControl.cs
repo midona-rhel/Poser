@@ -1,4 +1,5 @@
 using Poser.Application.Animation;
+using Poser.Application.Appearance;
 using Poser.Application.Gaze;
 using Poser.Application.Integration;
 using Poser.Application.Presentation;
@@ -13,7 +14,7 @@ namespace Poser.Application.Posing;
 public sealed class ActorResetControl(
     SceneSession scene, TransformGestureService gestures, PoseEditService poses,
     IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, AnimationSession animation,
-    ActorPresentationSession presentation, IntegrationReset integration,
+    ActorPresentationSession presentation, ActorModelIdSession models, IntegrationReset integration,
     EditHistory history, ValueJournal values, IActorStateSnapshots snapshots)
     : IActorResetControl
 {
@@ -81,6 +82,7 @@ public sealed class ActorResetControl(
         // is last because restoring its collection may redraw the native model.
         Run("Animation", () => { var r = animation.ResetActor(actor); return (r.Success, r.Detail); });
         Run("Appearance", () => { var r = presentation.ResetActor(actor); return (r.Success, r.Detail); });
+        Run("Model", () => { var r = models.Reset(actor); return (r.Success, r.Detail); });
         Run("External appearance", () => { var r = integration.ResetActor(actor); return (r.Success, r.Detail); });
         return failures.Count == 0 ? PoseEditResult.Ok(1)
             : PoseEditResult.Fail(string.Join(" | ", failures));
