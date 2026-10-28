@@ -63,7 +63,9 @@ internal sealed class SpeedAnimationSession
     }
 
     /// <summary>Resumes paused animation layers and clears the whole-actor speed override.
-    /// A held facial expression stays in place until the Facial controls release it.</summary>
+    /// A held facial expression stays in place until the Facial controls release it.
+    /// Stops at the first layer that can't resume and leaves the actor paused;
+    /// layers resumed before it stay resumed.</summary>
     public Outcome Resume(ActorId actor)
     {
         _store.Trace?.Invoke($"Resume(all) {actor}");
@@ -72,8 +74,11 @@ internal sealed class SpeedAnimationSession
         {
             if (slot == AnimationSlot.Facial && current.HeldExpression != null)
                 continue;
-            if (speed == 0f)
-                ResumeSlotSpeedCore(actor, slot);
+            if (speed != 0f)
+                continue;
+            var resumed = ResumeSlotSpeedCore(actor, slot);
+            if (!resumed.Success)
+                return resumed;
         }
         return ClearSpeed(actor);
     }

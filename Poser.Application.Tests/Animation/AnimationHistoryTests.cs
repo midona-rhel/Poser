@@ -114,6 +114,15 @@ public sealed class AnimationHistoryTests
         Assert.True(Undo(partial.History));
         Assert.Equal(12f, partial.Session.EndedLength(partial.Actor, AnimationSlot.UpperBody));
         Assert.Equal(12f, partial.Session.EndedLength(partial.Actor, AnimationSlot.Additive));
+
+        // A paused layer that can't resume is reported, and the actor stays paused.
+        var held = new Rig();
+        Assert.True(held.Session.PauseSlot(held.Actor, AnimationSlot.UpperBody).Success);
+        held.Speed.SetSlotSpeed(held.Actor, AnimationSlot.UpperBody, Arg.Is<float>(s => s > 0f))
+            .Returns(Outcome.Fail("Layer speed is unavailable."));
+        held.Speed.ClearReceivedCalls();
+        Assert.Equal("Layer speed is unavailable.", held.Session.Resume(held.Actor).Detail);
+        held.Speed.DidNotReceive().ClearOverallSpeed(held.Actor);
     }
 
     [Fact]
