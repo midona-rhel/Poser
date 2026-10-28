@@ -40,11 +40,12 @@ public static class SceneAnimationCodec
                 Weight = layer.Weight,
                 HeldSeconds = layer.HeldSeconds,
                 EndedSeconds = layer.EndedSeconds,
+                PlayedSeconds = layer.PlayedSeconds,
             };
 
     private static LayerSnapshot Layer(SceneAnimationLayer? layer) =>
         layer is null
             ? new LayerSnapshot(null, false, false, null, 1f, null, null)
             : new LayerSnapshot(layer.Timeline, layer.Playing, layer.Loop, layer.Speed, layer.Weight,
-                layer.HeldSeconds, layer.EndedSeconds);
+                layer.HeldSeconds, layer.EndedSeconds, layer.PlayedSeconds);
 }

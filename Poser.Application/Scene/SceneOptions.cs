@@ -42,8 +42,8 @@ public sealed record SceneSaveOptions
 
     /// <summary>Saves each actor's (and attached companion's) animation and
     /// only the user's own bone edits, so a load plays on from that state,
-    /// instead of only the baked pose. Off by default; chosen per save.</summary>
-    public bool IncludeAnimation { get; init; }
+    /// instead of only the baked pose. On by default; the save dialog can turn it off.</summary>
+    public bool IncludeAnimation { get; init; } = true;
 
     /// <summary>Whether the document carries the sidebar's structure —
     /// named groups and the user's root order. On for whole-scene saves;
