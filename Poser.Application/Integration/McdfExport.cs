@@ -102,6 +102,7 @@ internal sealed class McdfExport(
             flight.PublishTerminal(operation, progress, receipt);
         }
 
+        var timer = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var inspected = files.InspectExportCandidates(root, tree, cancellation);
@@ -134,9 +135,11 @@ internal sealed class McdfExport(
                 FinishFailure(written.Detail ?? "The package could not be written.");
                 return;
             }
+            // The time is shown so a slow save can be compared with a later one.
+            string took = $"{timer.Elapsed.TotalSeconds:0.0} s";
             string detail = skipped.Count == 0
-                ? $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes)."
-                : $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes); {skipped.Count} resources skipped.";
+                ? $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes) in {took}."
+                : $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes) in {took}; {skipped.Count} resources skipped.";
             flight.PublishTerminal(
                 operation,
                 new McdfProgress(actor, fileName, McdfOperationKind.Export,

@@ -113,8 +113,9 @@ public sealed record McdfSummary(
     bool HasManipulations);
 
 /// <summary>
-/// File path, size, hash, and optional filesystem identity captured during export preparation.
-/// These let the file writer check that the source has not changed before reading it.
+/// File path, size, MCDF payload hash and optional filesystem identity captured
+/// when the export checks its files. The writer puts the hash in the package
+/// header and checks the path, size and identity again before copying the file.
 /// </summary>
 public sealed record McdfExportSourceObservation
 {
