@@ -680,11 +680,16 @@ public sealed class SceneWorkflowTests
         public string? Preflight;
         public string? LoadPreflight(int actors) => Preflight;
 
-        public SceneClearOutcome ClearScene()
+        public bool KeptLocalPlayer;
+
+        public SceneClearOutcome ClearScene(bool keepLocalPlayer = false)
         {
             Record("ClearScene");
+            KeptLocalPlayer = keepLocalPlayer;
             return new(2, 1, 0, 3, 1);
         }
+
+        public SceneEntityHandle? FindLocalPlayer() => Token("actor:player");
 
         public void DestroyActor(SceneEntityHandle actor) => Destroy(actor);
         public void DestroyProp(SceneEntityHandle prop) => Destroy(prop);
@@ -860,9 +865,13 @@ public sealed class SceneWorkflowTests
             Assert.False(refused.Progress!.Outcome!.SessionCleared);
         }
 
+        // The user's own character is kept through the clear and reused, and the
+        // rollback never removes it.
+        var me = Actor("Me", out _);
+        me.LocalPlayer = true;
         var runtime = new FakeRuntime
         {
-            ReadResult = SceneWith(Actor("Lead", out _)),
+            ReadResult = SceneWith(me, Actor("Lead", out _)),
             ActorSpawnFailure = _ => "The game has no free GPose actor slot (the actor table is full).",
         };
         using var load = Workflow(runtime);
@@ -870,6 +879,9 @@ public sealed class SceneWorkflowTests
         await load.Drain;
         Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
         Assert.Contains("ClearScene", runtime.Calls);
+        Assert.True(runtime.KeptLocalPlayer);
+        Assert.DoesNotContain("SpawnActor:Me", runtime.Calls);
+        Assert.DoesNotContain("actor:player", runtime.Destroyed);
         Assert.True(load.Progress!.Outcome!.SessionCleared);
         Assert.Contains("actor table is full", load.Progress.Outcome.Detail);
     }

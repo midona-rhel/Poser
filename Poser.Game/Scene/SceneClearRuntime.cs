@@ -42,8 +42,10 @@ internal sealed class SceneClearRuntime(
     /// Removes session entities and reports refused actor removals or cleanup.
     /// Companions leave with their owners. Borrowed map objects are released,
     /// and the default camera remains. Selection is cleared even after a partial clear.
+    /// With keepLocalPlayer, the user's own character stays, for a load that puts
+    /// it back where the scene had it.
     /// </summary>
-    public SceneClearOutcome ClearScene()
+    public SceneClearOutcome ClearScene(bool keepLocalPlayer = false)
     {
         int actorCount = 0;
         var refused = new List<string>();
@@ -55,6 +57,8 @@ internal sealed class SceneClearRuntime(
             // snapshot: neither is a refusal worth naming.
             if (actor.ActorKind is ActorKind.Companion or ActorKind.Mount or ActorKind.Ornament
                 || actor.Address == nint.Zero || !actors.Actors.Contains(actor))
+                continue;
+            if (keepLocalPlayer && actors.IsLocalPlayer(actor))
                 continue;
             // Gaze and appearance are released BEFORE the delete, while the
             // actor still exists to release them against; Brio does the same

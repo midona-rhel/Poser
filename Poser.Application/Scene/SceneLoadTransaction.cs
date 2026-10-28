@@ -339,7 +339,10 @@ internal sealed class SceneLoadTransaction(
                     return $"{preflight} The session was not cleared.";
                 }
                 operation.SessionCleared = true;
-                if (sceneState.ClearScene().Summary() is { } cleared)
+                // A scene that holds the user's own character keeps it, so the
+                // load can put it back instead of spawning a copy.
+                if (sceneState.ClearScene(keepLocalPlayer: _actors.Any(actor => actor.LocalPlayer))
+                    .Summary() is { } cleared)
                     _notes.Add(cleared);
             }
 
@@ -362,6 +365,13 @@ internal sealed class SceneLoadTransaction(
 
             foreach (var actor in _actors)
             {
+                // The user's own character is reused, never spawned or removed by
+                // a rollback; a copy is spawned only when it is not in the scene.
+                if (actor.LocalPlayer && materializer.FindLocalPlayer() is { } player)
+                {
+                    _actorTokens[actor.Key] = player;
+                    continue;
+                }
                 var token = materializer.SpawnActor(actor, out var detail);
                 if (token is null)
                     return $"Actor '{actor.Name}' could not be spawned: " +

@@ -95,7 +95,7 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
             ? "There is no local player to spawn the scene's actors from."
             : null;
 
-    public SceneClearOutcome ClearScene() => _clear.ClearScene();
+    public SceneClearOutcome ClearScene(bool keepLocalPlayer = false) => _clear.ClearScene(keepLocalPlayer);
 
     // ── environment ──────────────────────────────────────────────────────
 
