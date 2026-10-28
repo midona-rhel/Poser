@@ -20,6 +20,7 @@ using Poser.Domain.Scene;
 using Poser.Documents.Files;
 using Poser.Game.Entities;
 using Poser.Game.Services;
+using Poser.Domain.Actors;
 
 namespace Poser.Game.Scene;
 
@@ -115,6 +116,13 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         detail = null;
         return _handles.Track(SceneEntityKind.Actor, actor);
     }
+
+    public SceneEntityHandle? FindLocalPlayer() =>
+        _actors.Actors.FirstOrDefault(actor =>
+            actor.ActorKind is not (ActorKind.Companion or ActorKind.Mount or ActorKind.Ornament)
+            && actor.Address != nint.Zero && _actors.IsLocalPlayer(actor)) is { } player
+            ? _handles.Track(SceneEntityKind.Actor, player)
+            : null;
 
     // ── props and overlays ───────────────────────────────────────────────
 

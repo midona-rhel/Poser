@@ -22,6 +22,10 @@ public interface ISceneMaterializer
     /// spawn's own refusal on failure.</summary>
     SceneEntityHandle? SpawnActor(SceneActor data, out string? detail);
 
+    /// <summary>The user's own character in the scene, for a saved entry marked
+    /// as theirs. Null when it is not in the scene; the load then spawns a copy.</summary>
+    SceneEntityHandle? FindLocalPlayer();
+
     /// <summary>Spawns one prop with its transform and visibility.</summary>
     SceneEntityHandle? SpawnProp(SceneProp data, out string? detail);
 

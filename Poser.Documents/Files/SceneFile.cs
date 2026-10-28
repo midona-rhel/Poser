@@ -307,6 +307,12 @@ public class SceneActor
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CompanionKind? SpawnedKind { get; set; }
 
+    /// <summary>The actor was the user's own character. A load puts the saved
+    /// state back on the user's live character instead of spawning a copy.
+    /// Absent in older files, which spawn every actor.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LocalPlayer { get; set; }
+
     /// <summary>The actor wore an appearance of its own that this file does
     /// not carry, so it loads wearing the local player's.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

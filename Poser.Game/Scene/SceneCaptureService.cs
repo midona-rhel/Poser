@@ -276,6 +276,7 @@ public sealed class SceneCaptureService
                 // Marked here and settled by the save policy, which is the
                 // step that knows whether a package survived.
                 AppearanceNotSaved = spawnedKind is null && !_actors.IsLocalPlayer(actor),
+                LocalPlayer = spawnedKind is null && _actors.IsLocalPlayer(actor),
                 NameIsDisplayName = true,
                 PenumbraCollection = id is { } collectionActor ? CaptureCollection(collectionActor) : null,
                 Visible = _spawns.IsVisible(actor),

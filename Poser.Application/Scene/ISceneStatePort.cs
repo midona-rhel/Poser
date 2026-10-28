@@ -59,7 +59,7 @@ public interface ISceneStatePort
     /// Clearing a scene is one of the four ways a claim ends, and the count
     /// comes back so the outcome can say so in its own words.</para>
     /// </summary>
-    SceneClearOutcome ClearScene();
+    SceneClearOutcome ClearScene(bool keepLocalPlayer = false);
 
     /// <summary>Snapshot of the current environment for rollback.</summary>
     SceneEnvironment CaptureEnvironmentState();
