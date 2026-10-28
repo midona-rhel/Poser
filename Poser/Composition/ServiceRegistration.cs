@@ -579,6 +579,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Application.Library.ILibraryFileOperations, Application.Library.LibraryFileOperations>();
+        services.AddSingleton<Application.Library.ICharacterFileLibrary, Application.Library.CharacterFileLibrary>();
         services.AddSingleton(sp => new Application.Library.AutoSaveLibrary(
             sp.GetRequiredService<ConfigurationService>().Config.AutoSave.EnsureRoot(System.IO.Path.Combine(
                 sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "AutoSaves")),
