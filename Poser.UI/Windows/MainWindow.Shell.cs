@@ -78,7 +78,7 @@ public partial class MainWindow
             _contentHidden,
             uiConfig.SplitInspector,
             inspectorOpen);
-        _shellMenuItems[(int)ShellCommand.Pose].SubmenuItems![1].SubmenuItems =
+        _shellMenuItems[(int)ShellCommand.Pose].SubmenuItems![2].SubmenuItems =
             _poseFileSection.BuildExportSubmenu(poseActor);
     }
 
@@ -102,6 +102,7 @@ public partial class MainWindow
                 submenuItems:
                 [
                     new ContextMenuItem("Import", TablerIcon.Download),
+                    new ContextMenuItem("Import from clipboard", TablerIcon.Copy),
                     new ContextMenuItem("Export", TablerIcon.Upload),
                     new ContextMenuItem("Auto-saves", TablerIcon.DeviceFloppy),
                 ]);
@@ -170,7 +171,10 @@ public partial class MainWindow
                     case 0:
                         _poseFileSection.RequestImportMenu(withPresets: true, target: actorId);
                         break;
-                    case 2:
+                    case 1:
+                        _poseFileSection.ImportFromClipboard(actorId);
+                        break;
+                    case 3:
                         _poseFileSection.OpenAutoSaves(actorId);
                         break;
                 }
