@@ -2,6 +2,8 @@ using System.Numerics;
 using Poser.Documents.Mcdf;
 using System.Reflection;
 using Poser.Application.Animation;
+using Poser.Application.Appearance;
+using NSubstitute;
 using Poser.Application.Gaze;
 using Poser.Application.Integration;
 using Poser.Application.Tests.Integration;
@@ -42,10 +44,13 @@ public sealed class PoseCommandTests
         var original = f.Live.ToDictionary();
         var older = new JournalStep("earlier edit", () => true, () => true);
         f.History.Append(older);
+        f.ModelPort.Write(f.Actor, Arg.Any<int>()).Returns(Outcome.Ok());
+        Assert.True(f.Models.Apply(f.Actor, 2430).Success);
         Assert.True(f.ResetAll.ResetAll(f.Actor).Success);
         Assert.Empty(f.Live[f.Character].Pose.Layers);
         Assert.Empty(f.Live[f.Weapon].Pose.Layers);
         Assert.Equal(original[f.Model], f.Live[f.Model]);
+        f.ModelPort.Received().Write(f.Actor, 0);
         Assert.True(f.Journal.Undo().Success);
         Assert.Equal(original[f.Character], f.Live[f.Character]);
         Assert.Same(older, f.History.PeekUndo());
@@ -108,6 +113,8 @@ public sealed class PoseCommandTests
         public readonly UndoJournal Journal;
         public readonly IPoseCommands Commands;
         public readonly IActorResetControl ResetAll;
+        public readonly IModelIdRuntimePort ModelPort = Substitute.For<IModelIdRuntimePort>();
+        public readonly ActorModelIdSession Models;
         private readonly IntegrationGraph _integration;
         public int Captures;
         public int IkClears;
@@ -135,11 +142,13 @@ public sealed class PoseCommandTests
             Commands = new PoseCommands(Scene, edits, new(edits), this);
             _integration = new(Idle<IIntegrationRuntimeFake>(), Idle<IMcdfFileBoundary>(),
                 Idle<ISessionGenerationSource>());
+            ModelPort.Read(Actor).Returns(0);
+            Models = new ActorModelIdSession(ModelPort);
             ResetAll = new ActorResetControl(Scene, Gestures, edits, this,
                 Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationTimelinePort>(),
                     Idle<IAnimationSpeedPort>(), Idle<IAnimationStancePort>(),
                     Idle<IAnimationScrubPort>(), Idle<IWorldRenderingRuntimePort>()),
-                new ActorPresentationSession(Idle<IPresentationRuntimePort>()), _integration.Reset,
+                new ActorPresentationSession(Idle<IPresentationRuntimePort>()), Models, _integration.Reset,
                 History, new ValueJournal(History), this);
         }
 
