@@ -113,8 +113,7 @@ internal sealed class SpawnOwnershipLedger
         record.Descriptor is { } descriptor
             && TryRetire(record.Token, descriptor);
 
-    /// <summary>Retires a create that never gained an identity: only legal
-    /// while the record is still PendingCreate (nothing native to clean).</summary>
+    /// <summary>Removes a pending record after the caller proves its created object is gone.</summary>
     public bool RetirePendingCreate(Guid token)
     {
         if (!_records.TryGetValue(token, out var record)
@@ -124,10 +123,7 @@ internal sealed class SpawnOwnershipLedger
         return true;
     }
 
-    /// <summary>Drops a readout the caller has proven is about nothing: only
-    /// legal for a NonRecoverable record, and the caller owes the proof that
-    /// its created slot is vacated (the record never had a descriptor, so
-    /// there is nothing native to clean either way).</summary>
+    /// <summary>Removes an unresolved failure record after the caller proves the slot is vacant.</summary>
     public bool RetireNonRecoverable(Guid token)
     {
         if (!_records.TryGetValue(token, out var record)

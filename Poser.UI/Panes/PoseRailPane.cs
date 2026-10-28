@@ -18,13 +18,8 @@ using static Poser.UI.Widgets.ValueEdits;
 namespace Poser.UI;
 
 /// <summary>
-/// The inspector RAIL: lives in the
-/// shell's 280px right column. Crumb, the group verbs while more than one
-/// entity is selected, the compact oriented rotation gizmo,
-/// then the sections the PRIMARY SELECTION owns — TRANSLATION always, IK for a
-/// bone with a chain, GAZE / EXPRESSION / POSE for an actor. Pose FILES is a
-/// property of the actor rather than of the selection and lives on the
-/// workspace Actor tab instead.
+/// Inspector rail for the shell's right column. It draws selection context,
+/// group actions, the compact gizmo, and sections for the primary selection.
 /// </summary>
 public class PoseRailPane
 {
@@ -101,9 +96,8 @@ public class PoseRailPane
         var cursor = origin;
         float width = size.X;
 
-        // The ANONYMOUS GROUP's rail: the count, the whole-selection
-        // verbs, and the SAME rotation ball every selection wears —
-        // wired to rotate everything about the centroid in world axes.
+        // The anonymous group rail rotates the full selection about its
+        // centroid in world axes.
         if (_inspector.IsMultiEntitySelection)
         {
             var (multiWho, multiSub) = _inspector.MultiselectHeader();
@@ -301,7 +295,7 @@ public class PoseRailPane
     /// world — but its own direction-only projection, which is why the
     /// widget keeps one shape and radius while the world gizmo obeys
     /// perspective.
-    /// Inspector presentation keeps the approved grammar: dark plate, pastel
+    /// Inspector presentation uses a dark plate, pastel
     /// palette, subdued rear arcs, hover/active ring emphasis, wide outer
     /// camera-roll ring. No cursor circle and no drag-origin dot are
     /// drawn. Returns consumed height.
@@ -458,11 +452,8 @@ public class PoseRailPane
     }
 
     // ── The overlay pad ──────────────────────────────────────────────
-    // Same footprint as the rotation ball. The whole DISC is a
-    // ONE-TO-ONE pad: drag a hundred pixels left and the overlay moves a
-    // hundred pixels left — a screen thing moves in screen pixels, no
-    // joystick rate. No ring: overlays do not rotate (dropped
-    // 2026-08-31 — the game cannot draw rotated text).
+    // Same footprint as the rotation ball. The disc maps pointer deltas
+    // directly to overlay screen-pixel movement. Overlays do not rotate.
 
     private Vector2 _padOffset;
 
@@ -497,7 +488,7 @@ public class PoseRailPane
         if (active && _padOverlayId is { } id && _overlayValues.Read(id) is not null)
         {
             _manipulation.HoldPointer();
-            // ONE-TO-ONE: this frame's pointer delta IS the move.
+            // Apply this frame's pointer delta directly.
             var step = ImGui.GetIO().MouseDelta;
             if (step != Vector2.Zero)
                 ChangeValue("##rail-overlay-pad",

@@ -44,7 +44,7 @@ internal sealed class SvgIconTextureCache(
 
     private readonly Dictionary<ulong, Entry> _cache = new();
 
-    /// <summary>The last size that BAKED per icon variant (the full key
+    /// <summary>The last baked size per icon variant (the full key
     /// minus size). During a tile-size drag every exact size is a fresh
     /// cache miss, and misses fall back to per-frame vector tessellation —
     /// the library-resize hitch. The stale texture draws stretched instead
@@ -192,9 +192,8 @@ internal sealed class SvgIconTextureCache(
         TablerIcon.Movie,
     ];
 
-    /// <summary>The spawn portal's first screen: row glyphs (including
-    /// the derived from-file badges), measured as cold-open sync paints
-    /// on 2026-09-01 — 14 of them ate a 200ms first frame.</summary>
+    /// <summary>Row glyphs and derived from-file badges warmed for the spawn
+    /// portal's first screen.</summary>
     private static readonly TablerIcon[] SpawnPortalRowIcons =
     [
         TablerIcon.User,
@@ -226,8 +225,7 @@ internal sealed class SvgIconTextureCache(
         TablerIcon.Folder,
     ];
 
-    /// <summary>The portal's mixed tab strip, drawn at 14px (measured
-    /// 2026-09-01).</summary>
+    /// <summary>The portal's mixed tab-strip icons at 14px.</summary>
     private static readonly TablerIcon[] SpawnPortalTabIcons =
     [
         TablerIcon.User,
@@ -697,11 +695,8 @@ internal sealed class SvgIconTextureCache(
     /// surface degrades to the async path instead of a hitch.</summary>
     private const int SyncPaintBudget = 12;
 
-    /// <summary>The sync path's TIME box, per frame. The count budget
-    /// assumed sub-millisecond bakes; measured cold paints run 10–27ms
-    /// each (spawn portal, 2026-09-01), so twelve of them froze the
-    /// open for 200ms. Once a frame has spent this much painting, the
-    /// rest go async and pop in a frame late instead.</summary>
+    /// <summary>Per-frame time budget for synchronous painting. Once spent,
+    /// remaining misses use the asynchronous path.</summary>
     private const double SyncPaintBudgetMs = 3.0;
     private double _syncPaintMs;
 
@@ -737,10 +732,8 @@ internal sealed class SvgIconTextureCache(
         Vector4 groupBackground)
     {
         float styleAlpha = ImGui.GetStyle().Alpha;
-        // The fade lands HERE, on the quad, never in the bake: a fading
-        // shell reuses the standing textures instead of re-baking every
-        // icon every frame — which starved the paint budget and killed
-        // the rest outright while their bakes were pending.
+        // Apply fade to the quad so cached textures remain reusable across
+        // animation frames.
         uint quadTint = styleAlpha >= 1f
             ? White
             : ImGui.ColorConvertFloat4ToU32(
@@ -771,10 +764,8 @@ internal sealed class SvgIconTextureCache(
             && !_pending.Contains(key)
             && (max - min).Y <= SyncPaintMaxSide)
         {
-            // FIRST USE PAINTS NOW, inside the frame's time box: the frame
-            // they are first asked for when the box allows, the async path
-            // (one frame of pop-in) when it does not. The startup warm
-            // remains an optimization rather than a correctness mechanism.
+            // Paint first use synchronously within the frame budget; otherwise
+            // queue it. Startup warming is an optimization only.
             _syncPaints++;
             var paintClock = System.Diagnostics.Stopwatch.StartNew();
             try
@@ -899,9 +890,7 @@ internal sealed class SvgIconTextureCache(
             hash = Mix(hash, color);
         hash = Mix(hash, Bits(groupOpacity));
         hash = Mix(hash, background);
-        // Style alpha is a DRAW-TIME quad tint, never a bake input: a
-        // fading shell must reuse the standing textures, not mint a new
-        // key per frame of the fade.
+        // Style alpha is a draw-time quad tint and is excluded from cache keys.
         _ = styleAlpha;
         return hash;
     }

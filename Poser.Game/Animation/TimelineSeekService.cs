@@ -12,11 +12,11 @@ using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Runs native timeline seeks (#533) on the framework tick. The scrub UI calls
+/// Runs native timeline seeks on the framework tick. The scrub UI calls
 /// from the ImGui draw callback; it only records the latest target per
 /// actor/slot, and the seek runs once on the next tick (coalesced), followed by
 /// that seek's deferred frames. It also corrects newly born prop timelines and
-/// brings a redrawn actor back on the frame it was on.
+/// attempts to restore selected animation clocks after an actor redraw.
 /// </summary>
 public sealed unsafe partial class TimelineSeekService : IDisposable
 {
@@ -64,8 +64,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
 
     // FUN_1418CAB50(ActionTimelineManager*, Weapon* W, float speed): the container
     // update's per-frame push of the overall speed into W's prop group (every
-    // drawn character, main thread; also its dirty and init paths). Pending a
-    // patchcheck entry; unique on the analysed build (sig.py, 1 hit).
+    // drawn character, main thread; also its dirty and init paths).
     private const string ActionTimelineManager_SetWeaponSpeed =
         Poser.Game.Natives.NativeSignatures.ActionTimelineManager_SetPropSpeed;
     private delegate void WeaponSpeedFn(nint manager, nint weapon, float speed);
@@ -79,8 +78,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
 
     // FUN_141900F50(actorControl): the single consumer of the actor control's
     // weapon-request cells (+0x6D0 state, +0x718 count, model per group at
-    // +0xF8), run after the timeline step for every control with +0x6CC set. Pending
-    // a patchcheck entry; unique on the analysed build (sig.py, 1 hit).
+    // +0xF8), run after the timeline step for every control with +0x6CC set.
     private const string ActorControl_ApplyWeaponRequests =
         Poser.Game.Natives.NativeSignatures.ActorControl_ApplyWeaponRequests;
     private delegate void ApplyWeaponRequestsFn(nint actorControl);
@@ -277,7 +275,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     }
 
     /// <summary>A scrub target for a slot timeline that is still loading: it runs
-    /// once the timeline can be seeked (dropped after ~5 s). False when the slot
+    /// once the timeline can be seeked (dropped after 300 updates). False when the slot
     /// has no timeline or it is already loaded.</summary>
     internal bool RequestTimelineWhenLoaded(ActorId actor, Character* character, AnimationSlot slot, float seconds)
     {
@@ -437,8 +435,8 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     public void Dispose()
     {
         _framework.Update -= OnUpdate;
-        // Unload is not guaranteed to run on the framework thread: let an
-        // in-flight DisableDraw leave the detour before freeing it.
+        // Disable hooks before disposing them. The delay gives in-flight calls time
+        // to return but does not establish that all detours have completed.
         _weaponSpeedHook?.Disable();
         _applyRequestsHook?.Disable();
         _fadeMaskHook?.Disable();

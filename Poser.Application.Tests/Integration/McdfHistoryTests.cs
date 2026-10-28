@@ -14,9 +14,10 @@ public sealed class McdfHistoryTests
     public async Task Reset_and_restore_use_retained_resources_without_rereading_the_original_file()
     {
         var sessions = new Sessions();
-        var files = new Files();
-        using var integration = new IntegrationGraph(
-            DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>(), files, sessions);
+        var files = new Files { Body = true };
+        var port = DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>();
+        var runtime = (Runtime)(object)port;
+        using var integration = new IntegrationGraph(port, files, sessions);
         var actor = ActorId.New();
         Assert.True(integration.Mcdf.BeginImport(actor, "original.mcdf").Success);
         await integration.Mcdf.CurrentCompletion;
@@ -28,6 +29,8 @@ public sealed class McdfHistoryTests
         Assert.True(integration.Reset.ResetActor(actor).Success);
         await integration.Mcdf.CurrentCompletion;
         Assert.Empty(files.Deleted);
+        Assert.Single(runtime.AppliedProfiles);
+        Assert.Equal(runtime.AppliedProfiles, runtime.DeletedProfiles);
         files.OriginalAvailable = false;
         var restored = await integration.Selectors.RestoreHistoryAndWait(actor, captured.Value, () => true, CancellationToken.None);
         Assert.True(restored.Success, restored.Detail);
@@ -36,7 +39,9 @@ public sealed class McdfHistoryTests
 
         Assert.True(integration.Reset.ResetAll().Success);
         Assert.Equal(2, files.Deleted.Count);
-        Assert.False(integration.Selectors.RestoreHistory(actor, captured.Value).Success);
+        Assert.Equal(2, runtime.AppliedProfiles.Count);
+        Assert.Equal(runtime.AppliedProfiles, runtime.DeletedProfiles);
+        Assert.False((await integration.Selectors.RestoreHistoryAndWait(actor, captured.Value, () => true, CancellationToken.None)).Success);
     }
 
     [Fact]
@@ -190,6 +195,8 @@ public sealed class McdfHistoryTests
         /// <summary>A framework thread blocked in Dispose: hops never run.</summary>
         public volatile bool FrameworkBlocked;
         public int Assignments;
+        public List<Guid> AppliedProfiles { get; } = [];
+        public List<Guid> DeletedProfiles { get; } = [];
         private readonly Guid _collection = Guid.NewGuid();
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
@@ -213,10 +220,24 @@ public sealed class McdfHistoryTests
             }
             if (method.Name == nameof(IIntegrationRuntimeFake.RedrawAndWait))
                 return Task.FromResult(IntegrationResult.Ok());
+            if (method.Name == nameof(IIntegrationRuntimeFake.ApplyTemporaryBodyProfile))
+            {
+                var id = Guid.NewGuid();
+                AppliedProfiles.Add(id);
+                return IntegrationValue<Guid>.Ok(id);
+            }
+            if (method.Name == nameof(IIntegrationRuntimeFake.DeleteTemporaryBodyProfileById))
+            {
+                DeletedProfiles.Add((Guid)args![0]!);
+                return IntegrationResult.Ok();
+            }
             return method.Name switch
             {
                 "get_Penumbra" => new IntegrationAvailability(Resources, "Unavailable"),
-                "get_Glamourer" or "get_CustomizePlus" => new IntegrationAvailability(false, "Unavailable"),
+                "get_Glamourer" => new IntegrationAvailability(false, "Unavailable"),
+                "get_CustomizePlus" => new IntegrationAvailability(true, ""),
+                nameof(IIntegrationRuntimeFake.GetActiveSavedBodyProfile) =>
+                    IntegrationValue<Guid?>.Ok(null),
                 nameof(IIntegrationRuntimeFake.GetCollectionAssignment) =>
                     IntegrationValue<CollectionAssignment>.Ok(new(_collection, "Temporary", false)),
                 nameof(IIntegrationRuntimeFake.GetCollections) =>
@@ -238,7 +259,7 @@ public sealed class McdfHistoryTests
     private sealed class Files : IMcdfFileBoundary
     {
         public int Reads, Copies;
-        public bool OriginalAvailable = true, FailCopy, Resources;
+        public bool OriginalAvailable = true, FailCopy, Resources, Body;
         private int _directories;
         public HashSet<string> Deleted { get; } = [];
         public string GetFileName(string path) => path;
@@ -265,7 +286,7 @@ public sealed class McdfHistoryTests
             if (InputExists is { } exists)
                 InputPresentAtRead.Add(exists(path));
             return OriginalAvailable
-                ? IntegrationValue<McdfPackage>.Ok(new(path, "", "", "", "", Resources ? new Dictionary<string,string> { ["model"] = "mod/model" } : new Dictionary<string,string>(),
+                ? IntegrationValue<McdfPackage>.Ok(new(path, "", "", Body ? Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("{}")) : "", "", Resources ? new Dictionary<string,string> { ["model"] = "mod/model" } : new Dictionary<string,string>(),
                     new Dictionary<string,string>(), directory.Path, 0, 0))
                 : IntegrationValue<McdfPackage>.Fail("Original file removed");
         }

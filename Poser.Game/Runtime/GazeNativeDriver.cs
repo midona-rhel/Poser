@@ -15,11 +15,8 @@ using static Poser.Game.GazeEntryStore;
 namespace Poser.Game;
 
 /// <summary>
-/// The native half of gaze: the hooked actor look-at loop and the
-/// <c>_updateLookAt</c> writes it makes for every entry, plus the GPose-range
-/// gate every native gaze write passes. Runs on the game's thread; it reads
-/// the entries only under the store's lock and makes its native calls outside
-/// it.
+/// Applies stored gaze settings before the native look-at loop. Copies entries under
+/// the store lock, then performs native calls after releasing it.
 /// </summary>
 internal sealed unsafe class GazeNativeDriver
 {
@@ -76,10 +73,8 @@ internal sealed unsafe class GazeNativeDriver
     }
 
     /// <summary>
-    /// Whether this object may receive a native gaze write at all. The GPose
-    /// index range IS the gate: a GPose clone SHARES its GameObjectId with the
-    /// overworld original, so an object outside 201..439 named by an id is the
-    /// wrong body and writing to it lands on the real actor.
+    /// Accepts live objects in the GPose actor slots. GPose copies can share GameObjectId
+    /// with the original actor, so that ID alone cannot restrict writes to a GPose copy.
     /// </summary>
     internal static bool CanWriteCharacter([NotNullWhen(true)] IGameObject? character) =>
         character is { Address: not 0 }
@@ -87,12 +82,9 @@ internal sealed unsafe class GazeNativeDriver
         && GPoseObjectTable.IsActorIndex(character.ObjectIndex);
 
     /// <summary>
-    /// Computes the character-target-id write this transition owes, and books
-    /// it as applied. Null when the native id already matches, when the caller
-    /// is off the owner thread, or when the character is not writable — in each
-    /// case nothing is booked, so a later transition still sees
-    /// desired != applied and retries. Callers hold the store lock; the
-    /// write itself happens outside it.
+    /// Selects a changed target ID and records it before the native write. Returns null
+    /// when the source cannot be written or the caller is off the framework thread.
+    /// Callers hold the store lock; WriteCharacterTarget performs the later write.
     /// </summary>
     public ulong? PendingTargetWrite(GazeEntry entry, bool writable)
     {
@@ -106,15 +98,8 @@ internal sealed unsafe class GazeNativeDriver
     }
 
     /// <summary>
-    /// Keeps the character's own game target id in step with the effective
-    /// Entity target. Brio drives this BOTH ways — set when an actor is picked,
-    /// and written back to 0 by its "Reset Selected Actor" path — and the clear
-    /// is what actually hands the channel back: an imposed target left behind
-    /// keeps the game's own look-at pointing at it.
-    ///
-    /// This is the ONE gate site for the native call. Every caller funnels
-    /// through here precisely so the GPose-index gate cannot be skipped by
-    /// adding another one.
+    /// Writes or clears the character target ID after checking the live GPose object.
+    /// A cleared ID stops the native controller following the previously selected actor.
     /// </summary>
     public void WriteCharacterTarget(IGameObject? character, ulong? pending)
     {
@@ -125,8 +110,8 @@ internal sealed unsafe class GazeNativeDriver
 
     internal nint ActorLookAtDetour(ContainerInterface* args)
     {
-        // Never throw into the game's look-at loop: a fault skips this pass's
-        // writes, is logged once, and the game's own loop still runs.
+        // Catch managed failures in our update and log the first one. Writes already
+        // made are not rolled back; the original loop runs afterwards.
         try
         {
             if (_isAvailable())
@@ -158,9 +143,7 @@ internal sealed unsafe class GazeNativeDriver
             if (any)
             {
                 var targetActor = _objectTable.CreateObjectReference((nint)args->OwnerObject);
-                // Same predicate as every other native gaze write, so the gate
-                // is spelled exactly once in this file (Brio ActorTableHelpers
-                // 201..439).
+                // Restrict this update to live GPose actor objects.
                 if (CanWriteCharacter(targetActor))
                 {
                     GazeTargetMode mode = GazeTargetMode.None;
@@ -179,8 +162,7 @@ internal sealed unsafe class GazeNativeDriver
                             poseAware = entry.PoseAware;
                             parts = entry.Parts;
                             pendingRelease = entry.PendingRelease;
-                            // Copy to locals (like Brio) — the native calls
-                            // below run outside the lock.
+                            // Native calls below use this snapshot outside the lock.
                             lookAt = entry.Target;
                             eyesLocked = entry.EyesLocked;
                             headLocked = entry.HeadLocked;
@@ -188,17 +170,15 @@ internal sealed unsafe class GazeNativeDriver
                         }
                     }
 
-                    // An actor Poser has never touched is the game's alone.
+                    // Leave actors without a Poser gaze entry unchanged.
                     if (!known)
                         return;
 
                     var lookAtController =
                         &((Character*)targetActor.Address)->LookAt.Controller;
 
-                    // The hand-back: one INACTIVE write per released channel,
-                    // on the native thread, before this pass's own writes.
-                    // Without it the controller keeps the last target Poser
-                    // gave the channel and the actor stays frozen mid-gaze.
+                    // Disable released parts before applying active targets. Otherwise the
+                    // native controller retains the last target written for each part.
                     if (pendingRelease != GazeTargetType.None)
                     {
                         var release = new LookAtTarget { LookMode = LookMode.None };
@@ -210,8 +190,7 @@ internal sealed unsafe class GazeNativeDriver
                             _updateLookAt(lookAtController, &release, LookAtIndex_Eyes, 0);
                         lock (_store.Sync)
                         {
-                            // Only what this pass delivered is settled; a debt
-                            // booked meanwhile is still owed.
+                            // Clear the part bits written by this pass.
                             if (_store.TryGetByAddress(targetActor.Address, out var entry))
                                 entry.PendingRelease &= ~pendingRelease;
                         }
@@ -219,8 +198,7 @@ internal sealed unsafe class GazeNativeDriver
 
                     bool compensate = poseAware && mode is GazeTargetMode.Camera or GazeTargetMode.Position;
                     _gazeFrames.Request(targetActor.Address, compensate);
-                    // Off performs no further write: every channel has been
-                    // handed back and the game's own update owns them again.
+                    // Disabled mode has no active target writes.
                     if (mode == GazeTargetMode.None)
                         return;
 
@@ -236,11 +214,8 @@ internal sealed unsafe class GazeNativeDriver
                         return;
                     }
 
-                    // Camera and Forward are position sources refreshed each
-                    // loop for unlocked parts; Entity carries the target id in
-                    // the union and needs no per-loop position poll; Position
-                    // carries stored fixed world points, likewise needing no
-                    // per-loop poll — they are written through as-is.
+                    // Refresh moving position targets. Entity uses a native object ID;
+                    // Position uses the stored point, with optional pose compensation.
                     if (mode == GazeTargetMode.Camera)
                     {
                         var cameraPos = _cameraService.GetCameraPosition();

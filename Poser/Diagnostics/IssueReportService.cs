@@ -14,13 +14,9 @@ using Poser.Application.Settings;
 namespace Poser.Diagnostics;
 
 /// <summary>
-/// Writes the issue report: one zip in the plugin's own folder holding a
-/// JSON with the recorded actions and their values, the notices, the
-/// caught exceptions, the versions, the loaded plugins, the settings and
-/// the plugin's own log lines — and, when asked, the scene as scene data
-/// only. Nothing leaves the machine; the user attaches the file. Names
-/// are tokens throughout: the recorder scrubbed them as they were
-/// written, and the scene file is scrubbed before it is packed.
+/// Writes a local issue-report archive containing diagnostics, settings,
+/// Poser log lines, and optionally scrubbed scene data. The recorder tokenizes
+/// names as they are captured, and the scene is scrubbed before packaging.
 /// </summary>
 public sealed class IssueReportService : IIssueReports, IDisposable
 {

@@ -6,10 +6,8 @@ using Poser.Game.Entities;
 namespace Poser.Game.Services;
 
 /// <summary>
-/// Manages the lifecycle of actors in GPose.
-///
-/// NOTE: Selection is handled by the application SelectionSession, not here.
-/// This interface only tracks actor lifecycle (discovery, refresh).
+/// Tracks actors available to Poser during GPose. Selection belongs to the
+/// application layer; this interface handles discovery and lifecycle only.
 /// </summary>
 public interface IActorManager : IDisposable
 {
@@ -19,11 +17,10 @@ public interface IActorManager : IDisposable
     IReadOnlyList<IActor> Actors { get; }
 
     /// <summary>
-    /// Bodies Poser drives outside the GPose object-table range (201-439) —
-    /// currently only the CharaView preview at slot 441. They are minted the
-    /// same way as <see cref="Actors"/> so the pose pipeline can reach them,
-    /// but they are NEVER part of <see cref="Actors"/>: every picker, pane,
-    /// scene snapshot, and auto-save reads that list and must not see them.
+    /// Bodies Poser drives outside the GPose object-table range (201-439),
+    /// currently the CharaView preview at slot 441. They use ordinary actor
+    /// wrappers so the pose pipeline can reach them, but are excluded from
+    /// <see cref="Actors"/> and therefore from pickers, scenes, and autosaves.
     /// </summary>
     IReadOnlyList<IActor> AuxiliaryActors { get; }
 
@@ -37,9 +34,9 @@ public interface IActorManager : IDisposable
     /// spawned the actor; nothing else may be exported or saved.</summary>
     bool IsLocalPlayer(IActor actor);
 
-    /// <summary>Takes an overworld actor into the scene BY REFERENCE —
-    /// Brio's AddFromWorld: the same body, registered with GPose, listed
-    /// beside the GPose set until GPose ends. No copy is made.</summary>
+    /// <summary>Adds the existing overworld actor to the GPose scene without
+    /// copying it. The same body remains registered until it is released or
+    /// GPose ends.</summary>
     void AdoptWorldActor(nint address);
 
     /// <summary>Whether the actor is an adopted overworld body.</summary>
@@ -77,9 +74,8 @@ public interface IActorManager : IDisposable
     /// </summary>
     IActor? GetGPoseTarget();
 
-    /// <summary>Make an actor the current GPose target (Brio Target action).</summary>
+    /// <summary>Makes an actor the current GPose target.</summary>
     void SetGPoseTarget(IActor actor);
 
-    // Events are published via EventBus:
-    // - ActorListChangedEvent when actor list changes
+    // Actor-list changes are published through ActorListChangedEvent.
 }

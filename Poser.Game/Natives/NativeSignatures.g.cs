@@ -7,7 +7,8 @@ using Dalamud.Plugin.Services;
 
 namespace Poser.Game.Natives;
 
-/// <summary>Function signatures for natives found by the static analysis (see findings.md).</summary>
+/// <summary>Function patterns from the external reverse-engineer-ffxiv analysis.
+/// Recorded addresses refer to the build hash in this file's header.</summary>
 internal static class NativeSignatures
 {
     /// <summary>SchedulerTimeline.Advance (0x141BFF5F0 on the analysed build).</summary>
@@ -933,9 +934,9 @@ internal static class NativeOffsets
     public static readonly OffsetPattern KineDriverTargetTranslate_SegmentScale = new("KineDriverTargetTranslate.SegmentScale", "80 7B ?? 00 0F 84 ?? ?? ?? ?? 48 83 7B 28 00", 2, 1, 0x30);
     public static readonly OffsetPattern KineDriverTargetTranslate_SegmentScaleSource = new("KineDriverTargetTranslate.SegmentScaleSource", "48 83 7B ?? 00 0F 84 ?? ?? ?? ?? 0F 10 83 A0 00 00 00", 3, 1, 0x28);
 
-    /// <summary>Reads the displacement from the matched instruction. Returns false when the pattern is
-    /// missing; a value different from <see cref="OffsetPattern.Analysed"/> is valid (the game patched)
-    /// and should be logged, not rejected.</summary>
+    /// <summary>Reads a signed one-byte or four-byte displacement from the matched
+    /// instruction. Returns false for a missing or zero-address match. This method
+    /// does not compare with Analysed or establish that a changed offset is compatible.</summary>
     public static unsafe bool TryResolve(ISigScanner scanner, OffsetPattern pattern, out int offset)
     {
         offset = 0;

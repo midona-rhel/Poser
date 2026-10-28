@@ -35,19 +35,15 @@ public sealed class SceneAutoSaveStore
     }
 
     /// <summary>
-    /// Content identity of one captured scene, with the capture stamp set
-    /// aside: two ticks over an untouched scene differ only in when they ran,
-    /// and that is not a change worth a file.
+    /// Computes a content identity for a captured scene while ignoring its
+    /// capture timestamp, so an unchanged scene does not create another file.
     ///
-    /// <para>It hashes the WHOLE document, embedded poses included, rather
-    /// than a summary of it: a summary that missed a moved bone would drop
-    /// the user's work, which is far worse than a duplicate file. A document
-    /// this cannot describe answers null, and a null signature never matches
-    /// anything — an unreadable scene is written, not skipped.</para>
+    /// <para>The hash covers the serialized document, including embedded poses.
+    /// If hashing fails, null is returned and the caller writes the snapshot
+    /// instead of treating it as unchanged.</para>
     ///
-    /// <para>It hashes with the document's own wire options: without the
-    /// numerics converters every vector serializes as <c>{}</c>, so a moved
-    /// bone or prop would hash the same as before.</para>
+    /// <para>Serialization uses the scene file's JSON options, including the
+    /// numeric converters required to include vector components.</para>
     /// </summary>
     public static string? Signature(SceneFile scene)
     {

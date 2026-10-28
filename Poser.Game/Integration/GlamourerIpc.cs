@@ -20,8 +20,8 @@ namespace Poser.Game.Integration;
 /// Glamourer's raw, version-gated call gates, pinned against Glamourer.Api
 /// 51c15bb (ApiVersion.V2 1.8+, the verified floor carrying the Open*
 /// endpoints). Glamourer flag words: Once 0x1, Equipment 0x2,
-/// Customization 0x4, Lock 0x8. Every actor-targeted call resolves the exact
-/// stable generation to an object index at the call boundary.
+/// Customization 0x4, Lock 0x8. Calls taking ActorId resolve its stable
+/// generation at the call boundary; spawn and cleanup calls use addresses or names.
 /// </summary>
 public sealed class GlamourerIpc : IGlamourerPort, ISpawnAppearancePort
 {
@@ -208,11 +208,9 @@ public sealed class GlamourerIpc : IGlamourerPort, ISpawnAppearancePort
     public IntegrationResult RestoreGlamourerStateByName(string name, string state) =>
         GuardedByName(name, "Restore state by name", () =>
         {
-            // The by-index restore's exact flags: Once maps to IpcManual, no
-            // Lock flag, so nothing of Poser's survives. This writes the
-            // CAPTURED pre-import state back — never a revert to game state,
-            // which on a shared clone/player identity would discard the
-            // design the user actually had.
+            // Apply the captured appearance once without locking it again,
+            // using the same flags as restoration by actor index. Reverting to
+            // game defaults here would lose the user's original appearance.
             int ec = _applyStateName.InvokeFunc(
                 state, name, LockKey, ApplyOnce | ApplyEquipment | ApplyCustomization);
             return ec is GlamourerEcSuccess or GlamourerEcNothingDone
@@ -362,8 +360,8 @@ public sealed class GlamourerIpc : IGlamourerPort, ISpawnAppearancePort
             return IntegrationValue<CustomizeState>.Ok(ParseCustomize(state));
         });
 
-    /// <summary>The customization out of the state JSON: every key under
-    /// Customize as a plain number (a bool reads as 0 or 1).</summary>
+    /// <summary>Reads recognized CustomizeKey values and ModelId from the state JSON.
+    /// Boolean values become 0 or 1; unrecognized keys are ignored.</summary>
     internal static CustomizeState ParseCustomize(Newtonsoft.Json.Linq.JObject state)
     {
         var values = new Dictionary<CustomizeKey, int>();
@@ -504,7 +502,7 @@ public sealed class GlamourerIpc : IGlamourerPort, ISpawnAppearancePort
 
     public IntegrationResult ResetSpawnAppearance(nint address)
     {
-        // A missing optional provider has no retained state to clear.
+        // Treat an unavailable optional provider as requiring no spawn initialization.
         if (!Glamourer.Available) return IntegrationResult.Ok();
         return Guarded(Glamourer, "Initialize spawn appearance", () =>
         {

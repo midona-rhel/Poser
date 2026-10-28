@@ -7,12 +7,9 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// The animation history. Every animation action is one step, scoped to its
-/// actor (Ctrl+Z / Alt+Z): the session runs each through its <c>Journal</c>
-/// hook, which stores the actor's snapshot before and after; undo and redo
-/// restore a snapshot (AnimationSession.Restore). A slider's drag is one step on
-/// release; every play or pause click is its own. A held layer keeps its exact
-/// frame, a running one plays again from its start.
+/// Connects animation actions to undo history using before/after snapshots.
+/// Changes remain undoable when an action completes only some of its steps.
+/// Grouped actions share one history step; sliders are grouped by their caller.
 /// </summary>
 public sealed class AnimationSteps : IAnimationActions
 {
@@ -38,8 +35,6 @@ public sealed class AnimationSteps : IAnimationActions
             return action();
         var before = _animation.Capture(actor);
         var result = action();
-        if (!result.Success)
-            return result;
         var after = _animation.Capture(actor);
         _journal.Record((actor, "Animation", description), description, before, after,
             snapshot => _animation.Restore(actor, snapshot), () => Alive(actor));
@@ -77,7 +72,7 @@ public sealed class AnimationSteps : IAnimationActions
             if (!reset.Success) return reset;
         }
         // Entering only exposes the existing layers. Leaving keeps the prior
-        // non-atomic restore policy, and publishes Basic only after success.
+        // layer changes if a later reset fails; Basic is selected only after success.
         _animation.SetAdvanced(actor, enabled);
         return Outcome.Ok();
     }

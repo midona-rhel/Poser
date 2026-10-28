@@ -4,15 +4,9 @@ using Poser.Game.Natives;
 
 namespace Poser.Game.Environment;
 
-// The game's environment state, laid out exactly as Ktisis mapped it and Brio
-// re-verified (Ktisis Structs/Env/EnvState.cs + Structs/Env/Weather/*.cs;
-// Brio Game/World/BrioEnvManager.cs). ClientStructs names the containing field
-// — EnvManager.EnvState at 0x058, struct size 0x2F8 — but not its members, so
-// the members live here and the CONTAINER is always reached through the
-// ClientStructs symbol, never through a hand-counted offset.
-//
-// These types are internal on purpose: pointers and layouts stay inside
-// Poser.Game, and the service converts to the plain records the interface uses.
+// Environment-state fields not exposed by ClientStructs. Locations come from
+// NativeFields; the containing EnvManager.EnvState is accessed through ClientStructs.
+// Keep these layouts inside Game and expose plain records from the service.
 
 [StructLayout(LayoutKind.Explicit, Size = 0x2F8)]
 internal struct EnvStateNative

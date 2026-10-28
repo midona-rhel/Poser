@@ -5,12 +5,11 @@ using System.Numerics;
 namespace Poser.UI;
 
 /// <summary>
-/// Derives the FROM-FILE badge from any glyph: every stroke is clipped out
+/// Derives the from-file badge from any glyph: strokes are clipped out
 /// of the bottom-right badge box — the plus's extent grown by one stroke
 /// width of margin — and the plus itself is appended. Tabler's own "-plus"
-/// convention (user-plus, message-plus), computed for glyphs Tabler never
-/// shipped a plus twin for, so all from-file rows derive instead of seven
-/// hand-forged icons drifting apart (ruled 2026-08-31).
+/// convention (user-plus, message-plus), computed for glyphs without a
+/// shipped plus variant.
 /// </summary>
 internal static class SvgCornerPlus
 {

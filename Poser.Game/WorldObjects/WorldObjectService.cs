@@ -15,9 +15,9 @@ using Poser.Game.Services;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// Tracks adopted map objects. Adoption captures placement and draw state;
-/// every release path restores that state and drops the claim. A missing or
-/// replaced native address is ignored rather than written blindly.
+/// Tracks borrowed and spawned world objects. Release restores captured state
+/// for borrowed objects and destroys owned objects. Failed cleanup retains the
+/// claim for retry; stale native identities are not written through.
 /// </summary>
 public sealed class WorldObjectService : IDisposable
 {
@@ -60,9 +60,8 @@ public sealed class WorldObjectService : IDisposable
             _framework.Update += OnFrameworkUpdate;
     }
 
-    /// <summary>The loop refresh: each looping spawned VFX past its
-    /// interval is recreated in place. One per frame at most — churning
-    /// several effects in one frame stutters for nothing.</summary>
+    /// <summary>Advances loading, replacement, cleanup, and deferred property
+    /// writes, then checks eligible spawned effects for replay.</summary>
     private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework frame)
     {
         if (_disposed)
@@ -259,9 +258,8 @@ public sealed class WorldObjectService : IDisposable
     public IReadOnlyList<WorldObjectCandidate> GetCandidates() =>
         Candidates(effects: false);
 
-    /// <summary>The world's playing EFFECTS, listed apart — effects are
-    /// their own class everywhere (portal tab, sidebar mark, footer
-    /// glyph), never filed under the map's objects.</summary>
+    /// <summary>Lists unadopted effect nodes separately from background models.
+    /// Enumeration does not filter by playback state.</summary>
     public IReadOnlyList<WorldObjectCandidate> GetEffectCandidates() =>
         Candidates(effects: true);
 
@@ -328,17 +326,9 @@ public sealed class WorldObjectService : IDisposable
     }
 
     /// <summary>
-    /// Takes one BG object into the scene. The object is NOT written: adoption
-    /// reads its placement and flags and records them, and that is the whole
-    /// act. Null when the address is not an addressable BG object, and the
-    /// existing claim when it is already adopted — adopting twice is one claim,
-    /// never two captures of a value the first one may already have changed.
+    /// Creates an owned model, furniture layout, or effect from a resource path.
+    /// Release destroys it. Returns null and a reason when creation fails.
     /// </summary>
-    /// <summary>Creates a NEW BG object from a model path — Poser's own,
-    /// destroyed on release rather than restored. This is how a saved
-    /// world object comes back in another zone: by path, standing where
-    /// the caller says. Null with a stated <paramref name="detail"/> on
-    /// every refusal.</summary>
     public AdoptedWorldObject? Spawn(
         string path, Transform placement, bool visible, out string? detail)
     {
@@ -567,21 +557,15 @@ public sealed class WorldObjectService : IDisposable
             ? current == expected
             : current.SameAllocation(expected);
 
-    /// <summary>How far a saved map position may sit from a live one and still
-    /// be the same object. It absorbs the codec — a float that has been through
-    /// a decimal string is not the float that went in — and nothing more: two
-    /// BG objects of one model standing five centimetres apart is not a map
-    /// anyone builds, while a rounding error of that size is every one of
-    /// them.</summary>
+    /// <summary>Legacy position-match tolerance of 0.05 world units. Current
+    /// borrowed-object restoration matches native identity instead.</summary>
     public const float IdentityToleranceYalms = 0.05f;
 
 
     /// <summary>
-    /// Gives one object back to the map: its captured placement and flags are
-    /// written back and the claim is forgotten. Returns false only when there
-    /// was no such claim — a claim whose address has gone is still released
-    /// (there is nothing left to restore onto), because leaving it in the list
-    /// would leave the user holding a row that can never be given back.
+    /// Releases a tracked object after cancelling any pending replacement.
+    /// Returns false for an unknown handle or when native cleanup fails; failed
+    /// cleanup keeps the claim so it can be retried.
     /// </summary>
     public bool Release(AdoptedWorldObject? handle)
     {
@@ -689,15 +673,8 @@ public sealed class WorldObjectService : IDisposable
     }
 
     /// <summary>
-    /// The row label: the model file's own name without its folder or
-    /// extension.
-    ///
-    /// <para>The path is an opaque asset code, so the display name removes
-    /// only its folder and extension and leaves the stem unchanged.</para>
-    ///
-    /// <para>The stem is left unchanged because asset codes are opaque and
-    /// users may search for the original path. The full path remains available
-    /// in the object pane.</para>
+    /// Uses the catalog label, including user overrides and decoded asset tokens.
+    /// Empty paths receive the generic world-object label.
     /// </summary>
     public static string DisplayName(string path)
     {
@@ -762,9 +739,8 @@ public sealed class WorldObjectService : IDisposable
             _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         _teardownOnly = true;
-        // Released BEFORE the disposed flag goes up: the restore writes go
-        // through the same guarded path every other release does, and a
-        // service that has already said it is disposed refuses them.
+        // Try cleanup before marking disposal complete. Failed releases retain
+        // their claims for another attempt.
         ReleaseAll();
         _respawner.RetryPendingTeardowns();
         // Keep the service recoverable when native teardown refused. The

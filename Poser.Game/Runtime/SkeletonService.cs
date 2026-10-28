@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
@@ -68,18 +68,10 @@ public class SkeletonService : ISkeletonService
     public ISkeleton? GetSkeleton(IActor actor) =>
         GetSkeleton(actor, PoseSlot.Character);
 
-    /// <summary>
-    /// One cache entry per (actor id, slot), guarded on NATIVE facts only:
-    /// validity and the slot's current CharacterBase. Which wrapper OBJECT
-    /// asks is irrelevant — a caller holding a different wrapper for the
-    /// same logical actor gets the same skeleton, with the entry re-pointed
-    /// at the live wrapper. A guard failure rebuilds the SAME instance in
-    /// place instead of releasing and recreating it. Together these make
-    /// the historical refresh storm structurally impossible: no call path
-    /// can release an entry another caller's identical request just built,
-    /// and no rebuild mints a new instance for an unchanged native skeleton
-    /// (issue #78).
-    /// </summary>
+    /// <summary>Reuses the actor-slot cache when the native base and recorded
+    /// partial layout match. Wrapper replacement rebinds the cached entity.
+    /// A layout mismatch attempts an in-place rebuild; missing or invalid
+    /// skeletons are released.</summary>
     public unsafe ISkeleton? GetSkeleton(IActor actor, PoseSlot slot)
     {
         if (!_actors.IsAvailable(actor) || slot == PoseSlot.Unknown)

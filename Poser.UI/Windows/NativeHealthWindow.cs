@@ -19,7 +19,8 @@ namespace Poser.UI;
 /// <summary>
 /// The game function check: every function, hook, patch site, global and field offset
 /// Poser depends on, and whether this game version still has it as Poser expects.
-/// Problems first. Up exactly while its setting is on, like the frame profiler.
+/// Lists unhealthy native functions before healthy ones. Its open state follows
+/// the setting, like the frame profiler.
 /// </summary>
 public sealed class NativeHealthWindow : Window
 {

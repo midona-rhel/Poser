@@ -76,4 +76,19 @@ public sealed class AutoSaveLibraryReaderTests : IDisposable
 
     private AutoSaveEntry Single(AutoSaveLibraryReader reader) =>
         Assert.Single(Assert.Single(reader.Read(_root)).Entries);
+
+    [Fact]
+    public void Scene_backups_are_listed_even_without_a_legacy_pose_directory()
+    {
+        var scenes = Path.Combine(_root, "scenes");
+        var store = new Poser.Documents.AutoSave.SceneAutoSaveStore(scenes, _ => { });
+        var scene = new SceneFile { SceneId = Guid.NewGuid(), TerritoryId = 10, PlaceName = "Test map" };
+        var (path, result) = store.Write(scene, DateTime.Now);
+        Assert.True(result.Succeeded);
+        var entry = Assert.Single(Assert.Single(new AutoSaveLibraryReader().Read(
+            Path.Combine(_root, "missing-legacy"), scenes)).Entries);
+        Assert.Equal(path, entry.FilePath);
+        Assert.Equal("Test map", entry.Place);
+        Assert.False(entry.HasThumbnail);
+    }
 }

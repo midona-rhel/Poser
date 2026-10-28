@@ -17,7 +17,10 @@ public interface ILibrarySceneSave
     Outcome SaveScene(string name, SceneSaveOptions options);
 }
 
-/// <summary>One library-save admission policy; Documents allocates paths and SceneWorkflow owns capture/write.</summary>
+/// <summary>
+/// Chooses what an entry save contains and where to save it.
+/// SceneWorkflow performs the capture and write.
+/// </summary>
 public sealed class LibrarySceneSave(ISceneWorkflow workflow, SceneSession scene,
     ConfigurationService config, IPoseLibraryService library, Presentation.IUserNotices notices) : ILibrarySceneSave
 {

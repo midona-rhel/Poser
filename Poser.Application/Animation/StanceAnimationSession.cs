@@ -7,7 +7,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
 
-/// <summary>Stance, weapon-draw and position-lock ownership.</summary>
+/// <summary>Changes stance, weapon visibility, and position lock, recording
+/// the values needed to restore stance and weapon visibility.</summary>
 internal sealed class StanceAnimationSession
 {
     private readonly AnimationOverrideStore _store;
@@ -36,7 +37,8 @@ internal sealed class StanceAnimationSession
         if (capture == null && _timeline.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
 
-        // Stance playback stops repeat arms but keeps General repeat intent.
+        // Stop active loops before changing stance, but remember whether the
+        // user wants the next General animation to repeat.
         var owned = _store.For(actor);
         bool wantsBaseLoop = owned.LoopWantedSlots.Contains(AnimationSlot.Base);
         if (owned.LoopedSlots.Count > 0 || owned.LoopWantedSlots.Count > 0)

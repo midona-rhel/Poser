@@ -5,20 +5,18 @@ using Poser.Domain.Presentation;
 namespace Poser.Game.Overlays;
 
 /// <summary>
-/// The NATIVE seam under <see cref="OverlayNodeService"/>: everything that
-/// touches the game's own UI node tree, and nothing else.
+/// Native UI-node operations used by <see cref="OverlayNodeService"/>.
 ///
 /// <para>An overlay node is a real <c>AtkResNode</c> subtree the plugin
 /// builds, hands to the game's UI to draw, and must take back before the game
 /// tears that UI down. Every one of those acts is behind this interface for
-/// the reason every other native seam in Poser.Game is: the OWNERSHIP rules —
+/// the reason every other native boundary exists: its ownership rules —
 /// one create per node, exactly one destroy, nothing touched after the
 /// destroy — are provable against a fake, and a leaked or double-freed native
 /// node is a crash in the game's renderer rather than a failed assertion.
 /// </para>
 ///
-/// <para>THE TEARDOWN CONTRACT, which every implementation owes and every
-/// caller may rely on:</para>
+/// <para>Every implementation follows this teardown contract:</para>
 /// <list type="number">
 /// <item><description><see cref="Create"/> either returns a token that must
 /// later be destroyed exactly once, or returns null having created
@@ -38,7 +36,7 @@ public interface IOverlayNodePort : IDisposable
     bool IsAvailable { get; }
 
     /// <summary>Builds one node in the stated state and attaches it. Null when
-    /// the node could not be built, in which case NOTHING was attached.
+    /// the node could not be built, in which case no node was attached.
     /// </summary>
     object? Create(OverlayNodeState state);
 
@@ -52,7 +50,7 @@ public interface IOverlayNodePort : IDisposable
 
     /// <summary>
     /// The pointer itself finished dragging a node, told the node's token and
-    /// where it now sits. The one INBOUND edge of this port: a drag is the only
+    /// where it now sits. A drag is the only inbound event on this port:
     /// way a node's state changes without a caller asking for it, and a
     /// document that does not hear about it re-states the old position on the
     /// next write of any field.

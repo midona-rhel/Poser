@@ -3,8 +3,7 @@ using System.Numerics;
 namespace Poser.Application.Viewport;
 
 /// <summary>The camera's view-projection and the display centre for one
-/// frame: a surface fetches it once and projects every point with pure
-/// math, instead of two interop calls per point (traced 2026-09-03).</summary>
+/// frame. Reuse it to project many points without repeated native reads.</summary>
 public readonly record struct ScreenProjection(Matrix4x4 ViewProjection, Vector2 Center)
 {
     /// <summary>Projects a world point; false behind the camera.</summary>

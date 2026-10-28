@@ -4,34 +4,26 @@ using Poser.Documents.Files;
 
 namespace Poser.Documents.Library;
 
-/// <summary>One snapshot folder as the worker read it. Every string a mint
-/// reads is already formatted here, so the pass on the draw thread writes
-/// rows and looks favourites up and touches no file.</summary>
+/// <summary>Contents of one autosave folder, prepared for display by a
+/// background scan.</summary>
 public sealed class AutoSaveFolder
 {
-    /// <summary>The snapshot folder itself — the row's provenance, and
-    /// what the newest-first ordering broke its ties on.</summary>
+    /// <summary>Full folder path, also used to break equal-date ties.</summary>
     public required string Directory { get; init; }
 
-    /// <summary>The day this snapshot's files were taken on — half of the
-    /// rail row they fall under.</summary>
+    /// <summary>Display date used to group this snapshot.</summary>
     public required string Day { get; init; }
 
-    /// <summary>Its <c>.pose</c> files, already ordered. Never empty: a
-    /// snapshot holding none is dropped by the worker, exactly as the
-    /// synchronous build skipped it.</summary>
+    /// <summary>Pose files in display order. Empty folders are omitted.</summary>
     public required List<AutoSaveEntry> Entries { get; init; }
 }
 
-/// <summary>One auto-saved pose, read and formatted off the draw thread.
-/// </summary>
+/// <summary>Display metadata for one autosaved pose, read on a background thread.</summary>
 public sealed class AutoSaveEntry
 {
     public required string FilePath { get; init; }
 
-    /// <summary>The bare file name. The label takes the extension back on
-    /// only when the setting asks for it, and the search keeps matching
-    /// this either way.</summary>
+    /// <summary>File name without its extension.</summary>
     public required string Name { get; init; }
 
     public required string NameLower { get; init; }
@@ -39,29 +31,19 @@ public sealed class AutoSaveEntry
     /// <summary>The modified stamp, already formatted.</summary>
     public required string Stamp { get; init; }
 
-    /// <summary>Where the file says it was captured, or empty when it
-    /// records no place. Read per FILE rather than per folder because a
-    /// day folder spans a whole session: a snapshot taken in Limsa and one
-    /// taken in Gridania land in the same folder and must not share a row.
-    /// Empty is legacy — every auto-save written before 2026-08-14, and
-    /// any file whose document no longer reads — and gathers under its day
-    /// alone. No place is ever inferred.</summary>
+    /// <summary>Place recorded in the pose file. Empty means the file has no
+    /// readable place metadata; no location is inferred from its folder.</summary>
     public required string Place { get; init; }
 
-    /// <summary>Whether the document embeds a preview image. Auto-saves are
-    /// written without one, so a tile that claimed one by default sent the
-    /// thumbnail cache to open and parse every visible file to learn that.
-    /// </summary>
+    /// <summary>Whether the pose file contains a preview image.</summary>
     public required bool HasThumbnail { get; init; }
 }
 
 
 /// <summary>
 /// Reads current and legacy autosave directories without application or game
-/// access. The listing is redone every pass, but what a FILE says about itself
-/// is remembered against the length and write time the listing reported, so a
-/// pass only opens the files written since the last one. One pass at a time:
-/// the owner serializes calls.
+/// access. Each scan lists every entry, but cached metadata is reused while a
+/// file's length and last-write time are unchanged. The caller serializes scans.
 /// </summary>
 public sealed class AutoSaveLibraryReader
 {
@@ -81,7 +63,7 @@ public sealed class AutoSaveLibraryReader
     private Dictionary<string, FileFacts> _known = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, FileFacts> _seen = new(StringComparer.OrdinalIgnoreCase);
 
-    public List<AutoSaveFolder> Read(string root)
+    public List<AutoSaveFolder> Read(string root, string? sceneRoot = null)
     {
         var snapshots = new List<(DirectoryInfo Directory, DateTime At)>();
         try
@@ -94,6 +76,16 @@ public sealed class AutoSaveLibraryReader
         catch (Exception)
         {
             // A missing or unreadable root is an empty tab, not a failure.
+        }
+
+        if (sceneRoot is not null)
+        {
+            try
+            {
+                foreach (var directory in new DirectoryInfo(sceneRoot).EnumerateDirectories())
+                    snapshots.Add((directory, directory.LastWriteTimeUtc));
+            }
+            catch (Exception) { }
         }
 
         // Newest first, ties on name descending: the order the service's own
@@ -115,7 +107,8 @@ public sealed class AutoSaveLibraryReader
             {
                 foreach (var file in directory.EnumerateFiles())
                     if (System.IO.Path.GetExtension(file.Name).Equals(
-                            PoseExtension, StringComparison.OrdinalIgnoreCase))
+                            PoseExtension, StringComparison.OrdinalIgnoreCase)
+                        || file.Extension.Equals(SceneFile.Extension, StringComparison.OrdinalIgnoreCase))
                         files.Add(file);
             }
             catch (Exception)
@@ -212,6 +205,13 @@ public sealed class AutoSaveLibraryReader
             return held;
         }
 
+        if (file.Extension.Equals(SceneFile.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            var scene = SceneFileStore.Default.ReadMetadata(path);
+            var sceneFacts = new FileFacts(stamp, scene.PlaceName ?? string.Empty, false);
+            if (scene.Succeeded) _seen[path] = sceneFacts;
+            return sceneFacts;
+        }
         var metadata = AtomicPoseFileStore.Default.ReadMetadata(path);
         if (!metadata.Succeeded)
             return new FileFacts(stamp, string.Empty, false);

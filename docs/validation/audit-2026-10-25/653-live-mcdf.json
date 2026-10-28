@@ -1,0 +1,27 @@
+{
+  "candidate": "7e42005c",
+  "reload": "2026-10-25 18:17:51.363 +01:00",
+  "checks": {
+    "export_succeeded": true,
+    "import_succeeded_with_body_profile": true,
+    "reset_succeeded": true,
+    "ownership_cleared": true
+  },
+  "importedProfile": "71f3f3ee-8433-432b-bed5-c4869957a81b",
+  "importBodyJsonLength": 9802,
+  "resetOwnership": {
+    "CollectionOwned": false,
+    "CollectionName": null,
+    "DesignOwned": false,
+    "tempBody": null,
+    "bodyJson": null,
+    "mcdf": null,
+    "mcdfBody": null,
+    "mcdfCollection": null
+  },
+  "providerLog": "2026-10-25 18:18:48.841 +01:00 [DBG] [CustomizePlus] Removed temporary profile for M. R.",
+  "limitations": [
+    "Customize+ excludes temporary profiles from its read API; ProfileNotFound from that API cannot verify deletion.",
+    "No live post-body-application cancellation was reproduced."
+  ]
+}

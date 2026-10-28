@@ -1,0 +1,33 @@
+{
+  "candidate": "43d1f9e3",
+  "checks": {
+    "import_45_resources": true,
+    "load_collection_released": true,
+    "collection_restored_after_import": true,
+    "reset_succeeded": true,
+    "mcdf_ownership_cleared": true,
+    "collection_restored_after_reset": true,
+    "wardrobe_restored": true,
+    "customize_restored": true,
+    "access_restored": true
+  },
+  "resource_bytes": 257247504,
+  "collection_before": {
+    "EffectiveId": "9a5c2554-4222-4069-823f-62cef811bb7d",
+    "EffectiveName": "Female Silver",
+    "HasIndividualAssignment": true
+  },
+  "collection_imported": {
+    "EffectiveId": "9a5c2554-4222-4069-823f-62cef811bb7d",
+    "EffectiveName": "Female Silver",
+    "HasIndividualAssignment": true
+  },
+  "collection_reset": {
+    "EffectiveId": "9a5c2554-4222-4069-823f-62cef811bb7d",
+    "EffectiveName": "Female Silver",
+    "HasIndividualAssignment": true
+  },
+  "limitations": [
+    "Actor-disappearance, inherited duplicate-collection restoration failure, and post-application cancellation not reproduced."
+  ]
+}

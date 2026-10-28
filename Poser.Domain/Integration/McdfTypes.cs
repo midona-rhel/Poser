@@ -43,8 +43,8 @@ public sealed record McdfOutcome(
     IReadOnlyList<string> SkippedResources);
 
 /// <summary>
-/// Immutable progress snapshot of the single running (or last finished)
-/// MCDF operation. UI reads this every frame; it never mutates.
+/// Progress displayed for the current or last MCDF operation.
+/// A null Outcome means the operation is still running.
 /// </summary>
 public sealed record McdfProgress(
     ActorId Target,
@@ -61,12 +61,16 @@ public sealed record McdfProgress(
     public bool Running => Outcome == null;
 }
 
-/// <summary>File-boundary progress callback payload.</summary>
+/// <summary>
+/// Progress update from reading, extracting, or writing a package.
+/// </summary>
 public readonly record struct McdfProgressStep(
     McdfPhase Phase, int FilesDone, int FilesTotal, long BytesDone, long BytesTotal);
 
-/// <summary>An extraction directory together with the immutable proof that
-/// this boundary exclusively created that exact directory.</summary>
+/// <summary>
+/// Extraction folder and ownership marker used to check that cleanup deletes
+/// the folder created for this operation, rather than an unrelated replacement.
+/// </summary>
 public sealed record McdfOperationDirectory(
     string Path,
     string OwnerToken,
@@ -74,9 +78,8 @@ public sealed record McdfOperationDirectory(
     string? MarkerIdentity);
 
 /// <summary>
-/// A validated, fully extracted MCDF package. Payloads live as generated
-/// file names inside <see cref="OperationDirectory"/>; game paths are
-/// normalized lower-case relative paths.
+/// Contents of an extracted MCDF package. ReplacedGamePaths maps game paths
+/// to extracted files; SwappedGamePaths maps one game path to another.
 /// </summary>
 public sealed record McdfPackage(
     string FileName,
@@ -96,18 +99,8 @@ public sealed record McdfPackage(
 }
 
 /// <summary>
-/// Everything an MCDF states about ITSELF, read from the header alone — no
-/// extraction, no operation directory, no actor, no ownership. The format
-/// carries no character name and no thumbnail, so
-/// <see cref="Description"/> is the only free text in it and the rest is an
-/// inventory of what the package would apply.
-///
-/// <para>This is what the library inspector shows beside a character file.
-/// It shows an inventory rather than a rendered body because applying an
-/// MCDF is a scene-ownership transaction — a Penumbra collection, a locked
-/// Glamourer state and a redraw, all in the ONE slot
-/// <see cref="McdfProgress"/> describes — and none of that may be spent on a
-/// highlight.</para>
+/// Header information for the Library preview. Reading it does not extract files
+/// or apply appearance to an actor. MCDF headers do not contain a thumbnail.
 /// </summary>
 public sealed record McdfSummary(
     string FileName,
@@ -120,9 +113,9 @@ public sealed record McdfSummary(
     bool HasManipulations);
 
 /// <summary>
-/// Immutable source observation captured by the file boundary. The
-/// application carries this through unchanged; it never reopens or validates
-/// the source path itself.
+/// File path, size, MCDF payload hash and optional filesystem identity captured
+/// when the export checks its files. The writer puts the hash in the package
+/// header and checks the path, size and identity again before copying the file.
 /// </summary>
 public sealed record McdfExportSourceObservation
 {
@@ -184,10 +177,8 @@ public enum McdfExportCandidateKind
 }
 
 /// <summary>
-/// Immutable filesystem observation supplied by the MCDF boundary. Local
-/// paths are canonical real paths proven readable and contained by the mod
-/// root; game-path observations retain their source text for application
-/// semantic filtering and swap decisions.
+/// An inspected file replacement or game-path swap considered for export.
+/// This record stores the inspection result; its constructor does not check the filesystem.
 /// </summary>
 public sealed record McdfExportCandidate
 {
@@ -216,8 +207,10 @@ public sealed record McdfExportCandidate
     }
 }
 
-/// <summary>Validated export candidates plus deterministic per-resource
-/// skips. The application owns only MCDF path semantics after this point.</summary>
+/// <summary>
+/// Inspected export candidates and explanations for resources already skipped.
+/// The application still decides which game paths belong in the package.
+/// </summary>
 public sealed record McdfExportInspection
 {
     public IReadOnlyList<McdfExportCandidate> Candidates { get; }
@@ -234,8 +227,10 @@ public sealed record McdfExportInspection
     }
 }
 
-/// <summary>Everything an MCDF export writes. Capture is complete before
-/// writing starts; writing never touches the actor.</summary>
+/// <summary>
+/// Captured appearance, file references, and swaps supplied to the MCDF writer.
+/// The writer can use these without reading the actor again.
+/// </summary>
 public sealed record McdfExportContent
 {
     public string Description { get; }

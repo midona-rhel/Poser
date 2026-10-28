@@ -22,7 +22,7 @@ public sealed class PartialPoseFrameTests
     private static readonly Transform AnimatedRoot = new(
         new Vector3(0, 1.5f, 0), Quaternion.Identity, Vector3.One);
 
-    // The moved head from the user's 2026-09-07 report.
+    // A nontrivial moved and rotated head root used by the repeated-bake case.
     private static readonly Transform PosedRoot = new(
         new Vector3(-.29528597f, 1.0887794f, .52169573f),
         Quaternion.Normalize(new Quaternion(.20728698f, .12671688f, .9455419f, .21662301f)),

@@ -8,8 +8,8 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// Base and layered timeline ownership: selection, playback, repeat arms,
-/// lips, and the restore points each first write records.
+/// Selects and plays animation timelines, manages repeat, and saves original
+/// values for Reset. Selecting a timeline alone does not start playback.
 /// </summary>
 internal sealed class BaseAnimationSession
 {
@@ -63,8 +63,8 @@ internal sealed class BaseAnimationSession
     {
         if (_store.Suspended() is { } blocked) return blocked;
         bool armRepeat = loopWanted;
-        // A retarget needs the immediate native state, not the session's
-        // original restore point, if repeat arming has to be rolled back.
+        // If enabling repeat fails, roll back to the animation playing now,
+        // rather than the one captured at the session's first change.
         var rollbackCapture = armRepeat && before.BaseCapture != null
             ? _timeline.CaptureBase(actor)
             : null;
@@ -83,7 +83,7 @@ internal sealed class BaseAnimationSession
                 if (rolledBack.Success)
                     return armed;
 
-                // The play landed but rollback did not. Keep the original
+                // Playback changed, but restoring it failed. Keep the original
                 // restore point so Reset can retry instead of abandoning it.
                 var ownedCapture = before.BaseCapture ?? captured ?? rollbackCapture;
                 _store.Mutate(actor, o =>
@@ -131,7 +131,7 @@ internal sealed class BaseAnimationSession
             ? current.LoopedSlots[AnimationSlot.Base]
             : (ushort)0;
 
-        // Read the immutable slot baseline before any force-clear or play write.
+        // Capture the previous layer before changing repeat or playback.
         bool captureSlot = landing is { } slot &&
             slot != AnimationSlot.Base &&
             !current.SlotCaptures.ContainsKey(slot);
@@ -174,7 +174,7 @@ internal sealed class BaseAnimationSession
             }
             return result;
         }
-        // The layer write has landed. Record its restore points before the
+        // The layer changed. Save its original values before the
         // independent Base-force rearm can fail.
         if (captured is { } taken)
             _store.Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
@@ -273,8 +273,8 @@ internal sealed class BaseAnimationSession
             return Outcome.Ok();
         }
 
-        // Zero means sticky intent. Only a Poser selection or an explicit
-        // timeline may establish native base ownership.
+        // With no timeline, remember the repeat preference without starting one.
+        // Otherwise use the explicit timeline or the Base animation Poser applied.
         ushort target = timeline != 0 ? timeline : current.BaseTimeline ?? 0;
         if (target == 0)
             return Outcome.Ok();
@@ -362,8 +362,7 @@ internal sealed class BaseAnimationSession
             ? _timeline.CaptureBase(actor)
             : firstCapture;
         var played = _timeline.PlayEmote(actor, entry.EmoteId, (ushort)entry.TimelineId);
-        // A refused emote start plays the timeline itself, without its intro, so
-        // Apply never silently does nothing.
+        // If the emote call fails, try its timeline directly, without the intro.
         if (!played.Success)
             return PlayBaseCore(actor, (ushort)entry.TimelineId, before, armRepeat);
         if (armRepeat)
@@ -554,10 +553,8 @@ internal sealed class BaseAnimationSession
         if (!cancelled.Success)
             return cancelled;
 
-        // The slot cancel leaves the other layers and the base running on their
-        // own timelines (measured on Upper, Facial and Additive cancels: same
-        // objects, clocks still counting). Replaying them restarted them from
-        // frame 0, so only a layer the cancel actually took is played again.
+        // Replaying surviving layers would restart them. Read back after the
+        // cancel and replay only layers whose timeline is no longer present.
         var after = _timeline.Read(actor);
         var failures = new List<string>();
         var retrySlots = new Dictionary<AnimationSlot, ushort>();

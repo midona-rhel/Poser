@@ -5,9 +5,8 @@ using System.IO;
 namespace Poser.Documents.Config;
 
 /// <summary>
-/// One pinned reference picture, as the config stores it. Placement is
-/// LOGICAL (unscaled) screen space, so a stored window survives a change of
-/// global UI scale the way every other stated size in the codebase does.
+/// Persisted settings for one reference image. Position and size use unscaled
+/// screen coordinates so changing the global UI scale does not move it.
 ///
 /// <para>A zero <see cref="Width"/> means "never placed": the window seats
 /// itself from the picture's own pixels the first frame the texture arrives,
@@ -15,13 +14,8 @@ namespace Poser.Documents.Config;
 /// </summary>
 public class ReferenceImageEntry
 {
-    /// <summary>Identity, MINTED — never derived from the path. Brio derives
-    /// its entity id from <c>path.GetHashCode()</c>
-    /// (<c>Brio/Entities/ReferenceImageEntity.cs:31-35</c>), so the same file
-    /// added twice collides and the second add silently replaces the first.
-    /// The same picture is a legitimate second reference (two crops of one
-    /// sheet, two placements of one pose sheet), so identity is a counter.
-    /// </summary>
+    /// <summary>A generated identity, independent of the file path, so the
+    /// same image can be added more than once.</summary>
     public int Id { get; set; }
 
     public string FilePath { get; set; } = string.Empty;
@@ -44,31 +38,14 @@ public class ReferenceImageEntry
 
     public float Height { get; set; }
 
-    /// <summary>Taken off screen without being given up. This is the sidebar
-    /// eye's state, and it is STORED for the same reason the placement is: a
-    /// picture set aside stays set aside across a session, or the eye would
-    /// silently undo itself the next time the roster restored.
-    ///
-    /// <para>Hidden is not closed. Closing removes the entry; hiding keeps the
-    /// entry, its placement and its opacity, and only takes the window down —
-    /// which is what makes the eye a toggle rather than a delete.</para>
-    /// </summary>
+    /// <summary>Whether the image window is hidden. Hiding preserves the
+    /// entry, placement, and opacity; closing removes the entry.</summary>
     public bool Hidden { get; set; }
 }
 
 /// <summary>
-/// The reference-image roster and its two invariants: minted identity and the
-/// opacity floor.
-///
-/// <para>PERSISTENCE SCOPE follows Ktisis, not Brio: the roster is CONFIG, so
-/// pictures survive leaving GPose, re-entering it, and reloading the plugin
-/// (<c>Ktisis/Data/Config/Sections/EditorConfig.cs:44</c>, rebuilt at
-/// <c>Ktisis/Scene/SceneManager.cs:87-93</c>). Brio keeps its images in the
-/// entity container and drops every one of them on GPose exit
-/// (<c>Brio/Services/ReferenceImageService.cs:29-39</c>). Placement is stored
-/// here too — Ktisis leaves it to ImGui's own ini and therefore loses it on a
-/// window-id change — because a reference picture whose position resets is
-/// worthless.</para>
+/// Stores reference images across GPose sessions and plugin reloads. Each
+/// entry has a generated identity and a minimum visible opacity.
 /// </summary>
 public class ReferenceImageConfiguration
 {
@@ -131,9 +108,8 @@ public class ReferenceImageConfiguration
         return false;
     }
 
-    /// <summary>THE opacity gate. Every write goes through it — the slider's
-    /// own range states the same floor, and this is what makes a config
-    /// written by hand or by an older build obey it too.</summary>
+    /// <summary>Clamps opacity from every source, including edited or older
+    /// configuration files.</summary>
     public static float ClampOpacity(float value) =>
         float.IsNaN(value)
             ? 1f

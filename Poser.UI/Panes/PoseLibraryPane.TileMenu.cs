@@ -26,9 +26,8 @@ public sealed partial class PoseLibraryPane
 {
     /// <summary>The tile context menu: the apply/spawn/favorite verbs every
     /// tile always had, plus the authoring verbs (edit metadata, rename,
-    /// move) and — on a flagged entry — the recovery verbs (retry,
-    /// quarantine). Rows are decided HERE because they depend on the tab and
-    /// the entry's typed status; the view only reports the right-click.
+    /// move) and, for flagged entries, recovery actions. This controller
+    /// chooses rows from the active tab and typed entry status.
     /// </summary>
     private void DrawTileMenu()
     {
@@ -66,12 +65,11 @@ public sealed partial class PoseLibraryPane
         _menuItems.Clear();
         _menuActionRows.Clear();
         var tile = _vm.Tiles[index];
-        bool scenes = _type == LibraryType.Scenes;
+        bool scenes = IsSceneTile(index);
         bool objects = _type == LibraryType.Objects;
         int count = VerbTargets(index).Count;
         string many = count > 1 ? " " + count.ToString(CultureInfo.InvariantCulture) : string.Empty;
-        // The verb says what the file IS: a scene loads, an object spawns,
-        // a pose or a character file applies. One file at a time.
+        // Scenes load, objects spawn, and poses or character files apply.
         if (count == 1)
         {
             Row(TileMenuAction.Apply, new ContextMenuItem(
@@ -154,8 +152,8 @@ public sealed partial class PoseLibraryPane
         _metadataEditor.Open(_vm.Tiles[index]);
     }
 
-    /// <summary>Whether the highlighted tile is an editable document: the ONE
-    /// gate, read by the context menu and the action row alike.</summary>
+    /// <summary>Whether the highlighted tile is editable. The context menu
+    /// and action row share this gate.</summary>
     private bool CanEditMetadata(int index) =>
         _type == LibraryType.Poses
         && index >= 0
@@ -175,7 +173,7 @@ public sealed partial class PoseLibraryPane
     private void ActivateTile(int index)
     {
         Select(index);
-        if (_type == LibraryType.Scenes)
+        if (IsSceneTile(index))
         {
             LoadScene(index);
             return;

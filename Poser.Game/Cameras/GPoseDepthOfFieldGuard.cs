@@ -6,13 +6,9 @@ using Poser.Application.Settings;
 namespace Poser.Game.Cameras;
 
 /// <summary>
-/// Entering GPose switches depth of field on, whatever the System Config says:
-/// GPose start calls GPoseEnv.SetDepthOfField(env, remembered, force 1). With
-/// "Start GPose without depth of field" that call still runs as the game made it
-/// (its forced call also resets the DoF parameters), and DoF is then switched off
-/// the way GPose's own menu toggle does it (unforced). The idle camera forces it
-/// on too and is left alone, as is every unforced call. Never throws into the
-/// game.
+/// Lets GPose perform its forced depth-of-field reset, then disables depth of
+/// field through the same unforced call used by the GPose menu. Forced calls
+/// from the idle camera and all unforced calls pass through unchanged.
 /// </summary>
 public sealed class GPoseDepthOfFieldGuard : IDisposable
 {
@@ -33,7 +29,7 @@ public sealed class GPoseDepthOfFieldGuard : IDisposable
             if (!scanner.TryScanText(Poser.Game.Natives.NativeSignatures.EventIdleCamController_IsActive, out var idle)
                 || idle == 0)
             {
-                // Without it the idle camera couldn't be told apart: leave DoF to the game.
+                // Without this check, a forced idle-camera call cannot be distinguished from GPose entry.
                 log.Warning("GPose depth of field: the idle camera check was not found; GPose keeps turning it on at entry.");
                 return;
             }

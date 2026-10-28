@@ -23,14 +23,19 @@ public readonly record struct PoseEditResult(
     public static PoseEditResult Fail(string detail) =>
         new(false, 0, detail);
 
-    /// <summary>The plain outcome, without the count and its evidence.</summary>
+    /// <summary>
+    /// Returns success and detail without the affected-bone count or recovery data.
+    /// </summary>
     public Outcome Outcome => new(Success, Detail);
 
-    /// <summary>Additive evidence, excluded from legacy positional equality.</summary>
+    /// <summary>
+    /// Details needed to retry an incomplete rollback. Not included in equality or hashing.
+    /// </summary>
     public TransformRecoveryReceipt? Recovery { get; init; }
 
-    /// <summary>Additive operation evidence, excluded from legacy positional
-    /// equality, hashing, and deconstruction.</summary>
+    /// <summary>
+    /// Per-target operation results. Not included in equality, hashing, or deconstruction.
+    /// </summary>
     public OperationReceipt? OperationReceipt { get; init; }
 
     public bool Equals(PoseEditResult other) =>

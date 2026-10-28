@@ -138,16 +138,17 @@ internal sealed unsafe class IkHeldTargets
             default:
                 return null;
         }
-        if (endpoint.Skeleton is not global::Poser.Game.Entities.Skeleton skeleton || !skeleton.IsValid
-            || !Matrix4x4.Invert(skeleton.GetModelMatrix(), out var toModel))
+        if (endpoint.Skeleton is not global::Poser.Game.Entities.Skeleton skeleton || !skeleton.IsValid)
             return null;
+        var modelFrame = skeleton.GetModelTransform();
+        if (!Matrix4x4.Invert(modelFrame.ToMatrix(), out var toModel)) return null;
         var position = Vector3.Transform(worldPosition, toModel)
             + (authoredPosition - capture.Translation);
-        // System.Numerics multiplies right-to-left: the world rotation is
+        // System.Numerics quaternion products apply rotations right-to-left: the world rotation is
         // frame * model (model first, then the actor's frame), so model =
         // frame⁻¹ * world. The authored turn since capture rides on the
         // end, where the delta stack puts it.
-        var frame = global::Poser.Domain.Transforms.Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation;
+        var frame = modelFrame.Rotation;
         if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(frame) || frame.LengthSquared() < 1e-6f)
             return null;
         var rotation = Quaternion.Normalize(
@@ -212,7 +213,8 @@ internal sealed unsafe class IkHeldTargets
     }
 
     /// <summary>A bone the apply pass never visits (no stack) keeps a
-    /// stale cached transform; a capture reads the live pose.</summary>
+    /// stale cached transform. Refreshes bones already marked as wanted; callers
+    /// must read LastTransform first when the requested bone may be unmarked.</summary>
     internal static void RefreshCache(IBone bone)
     {
         if (bone.Skeleton is global::Poser.Game.Entities.Skeleton skeleton && skeleton.IsValid)

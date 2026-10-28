@@ -56,7 +56,7 @@ public sealed class IdleModExportDialog(IdleModExport export, UserNotices notice
 
     public void Draw()
     {
-        // Open the browser after the options modal has relinquished its surface.
+        // Wait until the options modal closes before opening the file browser.
         if (_choosePath && _folder != null)
         {
             _choosePath = false;

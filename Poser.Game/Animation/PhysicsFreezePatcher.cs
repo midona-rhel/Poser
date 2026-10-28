@@ -46,21 +46,11 @@ internal sealed class DalamudPhysicsPatchNative : IPhysicsPatchNative
 }
 
 /// <summary>
-/// The process-global physics-freeze code patch (Anamnesis' SkeletonFreezePhysics
-/// site, via Brio's PhysicsService). This is a CODE patch, not a hook: two xmm
-/// store instructions inside the physics update are overwritten with NOPs, so it
-/// is inherently process-global and lives here rather than in any per-actor
-/// owner.
-///
-/// Fail-closed contract: the capability is available only when the signature
-/// resolves AND both instruction spans hold the expected store opcodes at
-/// startup. Every patch and every restore re-reads the site first and refuses
-/// to write over bytes it does not recognize (a foreign tool patching the same
-/// site), so the saved originals can never be replaced by — or written over —
-/// foreign bytes. A failed second write rolls the first back, so the site is
-/// always fully patched or fully original and <see cref="IsFrozen"/> stays
-/// truthful. A failed restore during dispose is reported explicitly as an
-/// error log; it is never swallowed.
+/// Freezes physics for the whole process by replacing two native store instructions
+/// with NOPs. Uses the same patch site as Anamnesis and Brio.
+/// Checks both instruction spans before changing them and attempts to undo the first
+/// write if the second fails. A write, rollback, or page-protection change can fail;
+/// IsFrozen records the last completed transition, not an independent memory check.
 /// </summary>
 internal sealed class PhysicsFreezePatcher : IDisposable
 {
@@ -175,9 +165,8 @@ internal sealed class PhysicsFreezePatcher : IDisposable
             return Outcome.Fail(
                 "Physics freeze site changed since startup; refusing to patch.");
 
-        // Both regions or neither: a fault after the first write rolls it
-        // back, so a half-frozen simulation can never survive behind
-        // IsFrozen == false.
+        // If the second write fails, attempt to restore the first region.
+        // Rollback itself can fail, leaving the memory state uncertain.
         Replace(_address, NopRegion1);
         try
         {
@@ -201,10 +190,8 @@ internal sealed class PhysicsFreezePatcher : IDisposable
             return Outcome.Fail(
                 "Physics freeze site was overwritten while frozen; refusing to restore.");
 
-        // A failed unpatch returns to the FULLY frozen state, so
-        // IsFrozen == true stays truthful: if the second restore faults after
-        // the first landed, the first region is re-patched before the failure
-        // propagates.
+        // If the second restore fails, attempt to reapply the first patch.
+        // IsFrozen changes only when both restores complete.
         Replace(_address, _original1);
         try
         {
@@ -233,7 +220,7 @@ internal sealed class PhysicsFreezePatcher : IDisposable
         }
         finally
         {
-            // Page protection goes back even when the write faults.
+            // Attempt to restore page protection even if the write throws.
             _native.ChangePermission(address, data.Length, protection);
         }
     }

@@ -13,16 +13,10 @@ using Poser.Game.Services;
 namespace Poser.Game.Viewport;
 
 /// <summary>
-/// Frame-scoped stable-id spatial reads for presentation surfaces
-/// (docs/architecture/posing-runtime.md). Every query resolves a stable id
-/// through <see cref="StableBindingRegistry"/> for exactly one read and
-/// returns an immutable value; pointers and legacy entities never leave the
-/// runtime boundary, and stale generations yield no result instead of a value
-/// read from a reused address.
-///
-/// <para>Results are valid for the current frame only. Gestures freeze their
-/// baselines through <c>TransformGestureService.Begin</c> capture — never
-/// through these reads.</para>
+/// Reads current-frame spatial values for overlays and controls. Native entities
+/// stay inside this adapter; returned values contain no pointers. Binding lookups
+/// reject stale ids and off-thread reads. Gesture baselines come from
+/// TransformGestureService.Begin rather than these display readings.
 /// </summary>
 public sealed class ViewportProjection : IViewportReads
 {
@@ -179,20 +173,11 @@ public sealed class ViewportProjection : IViewportReads
         return ToPoseTransform(parent.LastTransform);
     }
 
-    /// <summary>
-    /// Owning skeleton's model→world matrix for a bone target (folded into
-    /// the gizmo view matrix, Brio's convention). Refreshes the skeleton's
-    /// cached bone transforms and registers it for the runtime's post-frame
-    /// cache update — surfaces reading through this query never touch the
-    /// live skeleton themselves.
-    /// </summary>
-    /// <summary>The frame stamp each skeleton was last refreshed at. The
-    /// refresh walks every bone of the skeleton, and every overlay and
-    /// gizmo asked for it once per skeleton per frame — traced at 0.6 ms a
-    /// frame on one actor (2026-09-02). Once per frame is the whole need.</summary>
+    // Refresh each skeleton at most once per framework update.
     private readonly Dictionary<Skeleton, long> _refreshedAt = new();
     private readonly Dictionary<Skeleton, Matrix4x4> _lastModel = new();
 
+    /// <summary>Refreshes display caches and returns the skeleton's model-to-world matrix.</summary>
     public Matrix4x4? GetSkeletonModelMatrix(BoneId id)
     {
         var bone = _bindings.Resolve(id);

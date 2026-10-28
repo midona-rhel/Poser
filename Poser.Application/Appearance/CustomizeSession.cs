@@ -6,11 +6,10 @@ using Poser.Domain.Integration;
 namespace Poser.Application.Appearance;
 
 /// <summary>
-/// The actor's customization, through Glamourer, as journal steps. A
-/// single value folds while the same key keeps changing (a slider), so
-/// a drag is one step; a set of values (race with its clan and gender)
-/// lands as one step whose inverse is the values read before. A
-/// refused write is no step.
+/// Applies character customization through Glamourer and records successful
+/// changes for undo. Repeated changes to the same value, such as a slider
+/// drag, merge into one undo step. A related set of values is also one step.
+/// Failed writes are not added to history.
 /// </summary>
 public sealed class CustomizeSession : ICustomizeControl
 {
@@ -35,12 +34,12 @@ public sealed class CustomizeSession : ICustomizeControl
 
     public void Seal() => _journal.Seal();
 
-    /// <summary>One value as one step; consecutive sets on the same key
-    /// fold into the open step.</summary>
+    /// <summary>Changes one value. Consecutive changes to the same value merge
+    /// into the current undo step.</summary>
     public IntegrationResult Set(ActorId actor, CustomizeKey key, int value, string description)
     {
-        // The first write takes the look: its state as it stands is
-        // captured once and put back when the actor leaves or GPose ends.
+        // Capture the actor's original appearance before the first change so
+        // session cleanup can restore it.
         if (_integration.OwnLook(actor) is { Success: false } owned)
             return owned;
         var state = Read(actor);
@@ -64,7 +63,7 @@ public sealed class CustomizeSession : ICustomizeControl
     }
 
 #if DEBUG
-    /// <summary>Several values as one step. Debug bridge only.</summary>
+    /// <summary>Changes several related values as one undo step.</summary>
     public IntegrationResult SetMany(
         ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description) =>
         SetValues(actor, values, description, disruptive: false);
@@ -77,8 +76,8 @@ public sealed class CustomizeSession : ICustomizeControl
     private IntegrationResult SetValues(
         ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values, string description, bool disruptive)
     {
-        // The first write takes the look: its state as it stands is
-        // captured once and put back when the actor leaves or GPose ends.
+        // Capture the actor's original appearance before the first change so
+        // session cleanup can restore it.
         if (_integration.OwnLook(actor) is { Success: false } owned)
             return owned;
         var state = Read(actor);

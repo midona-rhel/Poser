@@ -6,8 +6,9 @@ using Poser.Domain.Operations;
 
 namespace Poser.Application.Integration;
 
-/// <summary>Every vendor read an export needs, frozen on the framework
-/// thread before the operation is admitted.</summary>
+/// <summary>
+/// Provider data collected on the framework thread before export starts.
+/// </summary>
 internal sealed record McdfExportCapture(
     string GlamourerState,
     string CustomizeData,
@@ -101,6 +102,7 @@ internal sealed class McdfExport(
             flight.PublishTerminal(operation, progress, receipt);
         }
 
+        var timer = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var inspected = files.InspectExportCandidates(root, tree, cancellation);
@@ -133,9 +135,11 @@ internal sealed class McdfExport(
                 FinishFailure(written.Detail ?? "The package could not be written.");
                 return;
             }
+            // The time is shown so a slow save can be compared with a later one.
+            string took = $"{timer.Elapsed.TotalSeconds:0.0} s";
             string detail = skipped.Count == 0
-                ? $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes)."
-                : $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes); {skipped.Count} resources skipped.";
+                ? $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes) in {took}."
+                : $"Exported {stats.Files} files ({stats.UncompressedBytes:N0} bytes) in {took}; {skipped.Count} resources skipped.";
             flight.PublishTerminal(
                 operation,
                 new McdfProgress(actor, fileName, McdfOperationKind.Export,
@@ -157,14 +161,9 @@ internal sealed class McdfExport(
     }
 
     /// <summary>
-    /// Turns Penumbra's actual-path → game-paths tree into MCDF content:
-    /// only real replacements, swap targets validated as game paths and
-    /// kept game-path to game-path, allowed extensions only, local files
-    /// only from under the CANONICAL Penumbra mod root, Brio's
-    /// compatibility filter applied, every skipped or missing resource
-    /// reported by name, and conflicting duplicate game-path mappings
-    /// rejected outright — a package that lies about a path is worse than
-    /// no package.
+    /// Builds package entries from inspected resource paths. Skips unchanged or
+    /// unsupported game paths, reports those skips, and rejects conflicting replacements.
+    /// Local file checks belong to InspectExportCandidates, which supplies this input.
     /// </summary>
     private static (McdfExportContent? Content, List<string> Skipped, string? Error)
         BuildExportContent(

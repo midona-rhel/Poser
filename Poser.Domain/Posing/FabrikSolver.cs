@@ -2,7 +2,11 @@ using System.Numerics;
 
 namespace Poser.Domain.Posing;
 
-/// <summary>Length-preserving single-chain solve; input and output are root first.</summary>
+/// <summary>
+/// Solves chain positions while preserving link lengths. Inputs and outputs
+/// are ordered from root to tip; the selected handle splits the chain into
+/// two spans solved from their respective fixed ends.
+/// </summary>
 public static class FabrikSolver
 {
     public static Vector3[] Solve(IReadOnlyList<Vector3> source, int handleIndex,

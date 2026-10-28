@@ -11,8 +11,8 @@ namespace Poser.Game;
 /// actor — Brio's <c>GetCharacterBases</c> discovery: Character from the
 /// actor draw object, MainHand/OffHand/Prop from the weapon draw-data
 /// entries, Ornament from the ornament object's draw object. A missing slot
-/// resolves to null and is normal. Slot-native discovery lives HERE, in the
-/// game layer; transitional entities receive only a resolver delegate.
+/// resolves to null and is normal. Native slot discovery remains in the game
+/// layer; transitional entities receive only a resolver delegate.
 /// </summary>
 public static unsafe class SlotCharacterBases
 {
@@ -51,8 +51,8 @@ public static unsafe class SlotCharacterBases
                 // DrawData is an INLINE struct at DrawObjectData+0x10 and its
                 // DrawObject sits at +0x08, so this reads the same +0x18 the
                 // obsolete DrawObjectData.DrawObject named: a pure rename, no
-                // behavior change. NOT DrawData.CharacterBase (+0x10) — that is
-                // a different field, and it would skip the GetObjectType()
+                // behavior change. DrawData.CharacterBase (+0x10) is a
+                // different field and would skip the GetObjectType()
                 // verification AsCharacterBase performs.
                 return AsCharacterBase(drawObjectData.DrawData.DrawObject);
             }

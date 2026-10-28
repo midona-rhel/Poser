@@ -4,7 +4,7 @@ using Poser.Documents.Library;
 namespace Poser.Documents.Config;
 
 /// <summary>
-/// Main configuration for Poser plugin.
+/// Root of Poser's persisted configuration.
 /// </summary>
 public class PoserConfiguration
 {
@@ -38,16 +38,11 @@ public class PoserConfiguration
     public bool OpenOnGPoseEnter { get; set; } = true;
     public bool CloseWithGPose { get; set; } = false;
 
-    // Import behavior. The FILES "Freeze actor" checkbox writes this back, so
-    // the persisted value IS the checkbox default — Brio's hidden
-    // Posing.FreezeActorOnPoseImport config and its popup checkbox collapse
-    // into the one visible surface. Default off, matching Brio's.
+    // The Files page writes this value and also uses it as the next import's default.
     public bool FreezeActorOnPoseImport { get; set; } = false;
 
-    // Target sync (Brio parity): the GPose target drives selection by default
-    // (Brio ships BrioTargetChangesWithGPose = true); the reverse defaults off
-    // exactly like Brio's GPoseTargetChangesWithBrio — the sidebar already has
-    // an explicit "Set game target" action.
+    // By default the GPose target updates Poser's selection, but selecting in
+    // Poser does not change the GPose target.
     public bool SelectionChangesGPoseTarget { get; set; } = false;
     public bool GPoseTargetChangesSelection { get; set; } = true;
     public bool BlockGPoseMouseTargeting { get; set; } = true;
@@ -85,19 +80,14 @@ public class PoserConfiguration
     public bool UnlockExpressionWeights { get; set; } = false;
 
     /// <summary>
-    /// The toolbar's Off | Link | Mirror remembers PER BONE: with this on,
-    /// clicking the toolbar while bones are selected states those bones'
-    /// own mode (clicking their stated value again clears it), and a bone
-    /// with no stated mode follows the toolbar as ever. Off is the
-    /// behaviour Poser has always had: one global mode.
+    /// Whether selected bones can store their own symmetry mode. A bone with
+    /// no stored override uses the toolbar's global mode.
     /// </summary>
     public bool PerBoneSymmetry { get; set; } = false;
 
     /// <summary>
-    /// Paired bones — the eyes and the Viera ear groups, the same trusted
-    /// catalog the link expansion uses — default to LINK without being
-    /// stated, unless the user states them otherwise. An option, as
-    /// ruled; the explicit per-bone statement always outranks it.
+    /// Whether catalogued pairs such as eyes and Viera ears default to Link.
+    /// An explicit per-bone override takes precedence.
     /// </summary>
     public bool AutoLinkPairedBones { get; set; } = true;
 

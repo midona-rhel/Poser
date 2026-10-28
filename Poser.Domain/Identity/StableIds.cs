@@ -1,6 +1,9 @@
 namespace Poser.Domain.Identity;
 
-/// <summary>One logical actor at one exact native binding generation.</summary>
+/// <summary>
+/// Identifies an actor and its current game-object version.
+/// The logical ID stays the same when the runtime replaces the object; Generation changes.
+/// </summary>
 public readonly record struct ActorId(Guid LogicalId, uint Generation)
 {
     public static ActorId New() => new(Guid.NewGuid(), 0);
@@ -20,9 +23,8 @@ public enum PoseSlot
 }
 
 /// <summary>
-/// One exact skeleton generation of one slot belonging to one exact actor
-/// generation. Slots are independently replaceable native skeletons of the
-/// SAME actor: replacing a weapon bumps only that slot's generation.
+/// Identifies a body, weapon, or other skeleton attached to an actor.
+/// Each slot has its own version, so replacing a weapon need not invalidate body bones.
 /// </summary>
 public readonly record struct SkeletonId(
     ActorId Actor,
@@ -36,9 +38,8 @@ public readonly record struct SkeletonId(
 }
 
 /// <summary>
-/// Stable bone identity. Partial/index is the native lookup key and canonical
-/// name is an independent mismatch guard. The slot lives ONLY on the owning
-/// skeleton id, so bone and skeleton slots can never disagree.
+/// Identifies a bone by skeleton version, partial skeleton, index, and game name.
+/// The runtime uses the indices to find it and the name to check the result.
 /// </summary>
 public readonly record struct BoneId(
     SkeletonId Skeleton,
@@ -64,7 +65,9 @@ public readonly record struct BoneId(
         $"{Skeleton}/{PartialId}:{BoneIndex}:{CanonicalName}";
 }
 
-/// <summary>One spawned scene light at one exact native binding generation.</summary>
+/// <summary>
+/// Identifies a scene light and its current runtime version.
+/// </summary>
 public readonly record struct LightId(Guid LogicalId, uint Generation)
 {
     public static LightId New() => new(Guid.NewGuid(), 0);
@@ -72,7 +75,9 @@ public readonly record struct LightId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
-/// <summary>One spawned scene prop at one exact native binding generation.</summary>
+/// <summary>
+/// Identifies a spawned prop and its current runtime version.
+/// </summary>
 public readonly record struct PropId(Guid LogicalId, uint Generation)
 {
     public static PropId New() => new(Guid.NewGuid(), 0);
@@ -80,11 +85,10 @@ public readonly record struct PropId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
-/// <summary>One ADOPTED world object — a BG/layout object the map placed and
-/// the user took into the scene — at one exact native binding generation. It is
-/// deliberately its own identity rather than a prop's: a prop is Poser's own
-/// object and is DESTROYED, while this one is borrowed and is RESTORED, and
-/// nothing that can act on both may confuse the two.</summary>
+/// <summary>
+/// Identifies a map object temporarily controlled by Poser.
+/// Unlike a spawned prop, it must be restored to the map when released, not destroyed.
+/// </summary>
 public readonly record struct WorldObjectId(Guid LogicalId, uint Generation)
 {
     public static WorldObjectId New() => new(Guid.NewGuid(), 0);
@@ -92,8 +96,9 @@ public readonly record struct WorldObjectId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
-/// <summary>One staged overlay node — a game-UI dialogue box, chat bubble or
-/// status line — at one exact native binding generation.</summary>
+/// <summary>
+/// Identifies a scene overlay and its current runtime version.
+/// </summary>
 public readonly record struct OverlayId(Guid LogicalId, uint Generation)
 {
     public static OverlayId New() => new(Guid.NewGuid(), 0);
@@ -101,7 +106,9 @@ public readonly record struct OverlayId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
-/// <summary>One virtual camera at one exact native binding generation.</summary>
+/// <summary>
+/// Identifies a virtual camera and its current runtime version.
+/// </summary>
 public readonly record struct CameraId(Guid LogicalId, uint Generation)
 {
     public static CameraId New() => new(Guid.NewGuid(), 0);
@@ -123,18 +130,20 @@ public enum SceneEntityKind
     /// IK colliders use world transforms and the normal transform history.</summary>
     Overlay,
 
-    /// <summary>An adopted BG/layout object: the map's own furniture, borrowed
-    /// into the scene. It transforms like a prop and is REMOVED like a borrowed
-    /// light — released back to where it stood, never destroyed.</summary>
-    WorldObject,
+    /// <summary>
+    /// A map object temporarily controlled by Poser and restored when released.
+    /// </summary>
+        WorldObject,
 }
 
-/// <summary>Which gaze point a gaze-target selection addresses. Anchor is the
-/// shared point every enabled unlocked part follows; the parts are the
-/// individually divergeable per-part points.</summary>
+/// <summary>
+/// Selects the shared gaze point or an independent eyes, head, or body point.
+/// </summary>
 public enum GazePart { Anchor, Eyes, Head, Body }
 
-/// <summary>Stable selection identity for application state.</summary>
+/// <summary>
+/// Identifies the selected object or bone group without storing a game-memory pointer.
+/// </summary>
 public readonly record struct SelectionId
 {
     private SelectionId(
@@ -229,8 +238,9 @@ public readonly record struct SelectionId
     public static SelectionId ForEnvironment() =>
         new(SceneEntityKind.Environment, null, null, null);
 
-    /// <summary>The actor's gaze point in Position mode; selectable so the
-    /// world gizmo can own it.</summary>
+    /// <summary>
+    /// Makes a gaze point selectable for movement with the world gizmo.
+    /// </summary>
     public static SelectionId ForGazeTarget(ActorId actor, GazePart part = GazePart.Anchor) =>
         new(SceneEntityKind.GazeTarget, actor, null, null, null, gaze: part);
 
@@ -294,7 +304,9 @@ public enum TransformTargetKind
     Collider,
 }
 
-/// <summary>The subset of selection identities that can enter a transform gesture.</summary>
+/// <summary>
+/// Identifies an object that can be moved, rotated, or scaled by a transform gesture.
+/// </summary>
 public readonly record struct TransformTargetId
 {
     private TransformTargetId(

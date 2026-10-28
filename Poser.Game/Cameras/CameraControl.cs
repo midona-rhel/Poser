@@ -30,7 +30,7 @@ public sealed class CameraControl : ICameraControl
         _cameras = cameras;
         _journal = journal;
         _history = history;
-        // The lock stays reachable while controls are unavailable, as it always was.
+        // Allow changing the lock even when native camera controls are unavailable.
         _values = new(journal, new HandleValuePort<CameraId, IVirtualCamera>(Resolve, SelectionId.ForCamera,
             camera => camera.IsValid, history, CameraAccessors.Create(), Unavailable), Unavailable,
             (camera, property) => property != CameraProperties.IsLocked && !cameras.IsAvailable
@@ -103,7 +103,7 @@ public sealed class CameraControl : ICameraControl
         var before = ResetState.Read(camera);
         camera.ResetProperties();
         var after = ResetState.Read(camera);
-        // Keys led by the camera service name no entity: this step stays global.
+        // A service-based journal key keeps this entry in global history.
         _journal.Record((_cameras, camera), "Reset camera properties", before, after, state =>
         {
             if (Current(camera) is not { } live) return new(false, Unavailable);
@@ -165,7 +165,7 @@ public sealed class CameraControl : ICameraControl
         var before = _cameras.LiveCamera;
         if (ReferenceEquals(before, next)) return Outcome.Ok();
         _cameras.SetLive(next);
-        // Keys led by the camera service name no entity: this step stays global.
+        // A service-based journal key keeps this entry in global history.
         _journal.Record(_cameras, "Switch camera", before, next, ValueWrites.Unchecked<IVirtualCamera?>(target =>
         {
             if (target is not null && Current(target) is { } live)

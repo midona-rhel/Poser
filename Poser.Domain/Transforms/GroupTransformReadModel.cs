@@ -102,8 +102,10 @@ public sealed class GroupTransformBaseline
     }
 }
 
-/// <summary>Display controls are not a native pose: cumulative factors can
-/// exceed a member's native scale bound without violating that bound.</summary>
+/// <summary>
+/// Values shown in group controls. Scale is an accumulated factor, not a
+/// member's final scale, so the two can have different valid ranges.
+/// </summary>
 public readonly record struct GroupTransformDisplay(Vector3 Position, Quaternion Rotation, Vector3 Scale);
 
 public readonly record struct GroupTransformControls(
@@ -111,8 +113,8 @@ public readonly record struct GroupTransformControls(
 {
     public static GroupTransformControls Identity(Vector3 position) =>
         new(position, Quaternion.Identity, Vector3.One, Vector3.One);
-    // Any finite nonzero FLOAT factor is representable. Reject only values
-    // that would overflow or round to zero; native member bounds are separate.
+    // Accept finite, nonzero factors here. The resulting member transforms
+    // are validated separately after the factors have been applied.
     public static bool ValidFactors(Vector3 factors) =>
         TransformMath.IsFinite(factors) && factors.X != 0 && factors.Y != 0 && factors.Z != 0;
     public static bool ValidDelta(TransformDelta delta) =>
@@ -139,7 +141,10 @@ public readonly record struct GroupTransformControls(
     }
 }
 
-/// <summary>Immutable initial baseline, exact last output, and authored controls.</summary>
+/// <summary>
+/// Initial member transforms, the last expected member transforms and the
+/// group controls used to produce them.
+/// </summary>
 public sealed class GroupTransformSnapshot
 {
     public GroupTransformSnapshot(GroupTransformBaseline baseline,

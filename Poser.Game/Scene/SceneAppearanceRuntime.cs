@@ -78,8 +78,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         _mcdfHashes = mcdfHashes;
         _log = log;
         _framework.Update += SweepHistoryAppearance;
-        // Packages a crash left behind are never retained by any session.
-        // The legacy temp root held them before Poser had its own folder.
+        // Remove old packages from the current and legacy temp directories.
+        // File age is a heuristic; this does not inspect other running clients.
         _ = Task.Run(() =>
         {
             var cutoff = DateTime.UtcNow - SessionAppearanceFiles.StaleAge;
@@ -170,9 +170,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                         "appearance could not be packaged.");
                     continue;
                 }
-                // Only an owned actor's appearance is packaged: one Poser
-                // spawned, or the player's own character. Anyone else's is
-                // posed, never taken.
+                // New exports require a spawned actor, the local player,
+                // or an actor explicitly adopted into Poser.
                 // SealAppearance runs on the save worker. Ownership reads
                 // the live object table, so resolve and check in one game-
                 // thread dispatch; only the resulting value leaves it.
@@ -275,12 +274,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             : $"{bytes / (1024d * 1024):N0} MB";
 
     /// <summary>
-    /// Starts one character-file child once the single-flight MCDF slot is
-    /// free. The slot can be held for seconds by this operation's own
-    /// teardown (a clear-first load's reset releasing its package directory),
-    /// so a busy slot is WAITED out within the bound; only a slot still held
-    /// at the deadline is refused. <paramref name="begin"/> runs on the
-    /// framework thread with the slot free and returns its own refusal.
+    /// Waits for the shared MCDF operation slot, up to the supplied deadline.
+    /// Starts the child on the framework thread once free, or reports timeout
+    /// or cancellation. The child's own completion is awaited separately.
     /// </summary>
     private async Task<string?> BeginMcdfChild(
         Func<string?> begin, string busy, string cancelled, TimeSpan bound,
@@ -309,12 +305,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     }
 
     /// <summary>
-    /// Builds ONE new package from the actor's live supported state through
-    /// the existing MCDF export transaction — the same admission, the same
-    /// capability refusals, the same receipt. Returns null on success, else the
-    /// refusal detail, which is already the exporter's own words about which
-    /// provider was unavailable. <c>Delete</c> is false while the exporter may
-    /// still own the destination file.
+    /// Exports one appearance package through McdfTransaction. Returns null
+    /// on success or a failure reason. Delete is false while the transaction
+    /// may still be writing the destination, so cleanup must wait for it.
     /// </summary>
     private async Task<(string? Refusal, bool Delete)> ExportAppearance(
         Poser.Domain.Identity.ActorId id,
@@ -393,10 +386,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
 
     public void DeleteTemporary(string path) => DeleteQuietly(path);
 
-    /// <summary>A temporary file a still-running MCDF child reads or writes:
-    /// deleted once that child has stopped, whatever the outcome. The child
-    /// is cancelled and joined by the transaction's own drain at unload, so
-    /// this runs then at the latest.</summary>
+    /// <summary>Deletes a temporary file after the MCDF child stops reading
+    /// or writing it, regardless of the child's outcome.</summary>
     internal static void DeleteWhenSettled(string path, Task settled) =>
         _ = settled.ContinueWith(
             _ => DeleteQuietly(path),
@@ -450,29 +441,10 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     }
 
     /// <summary>
-    /// Re-imports the saved character file through <c>McdfTransaction</c> —
-    /// the ONE import path. Nothing here reimplements a phase: the file is
-    /// checked, the existing transaction is started, and this waits for the
-    /// receipt that transaction publishes. That is what keeps the ownership it
-    /// registers, and therefore the by-name unlock-and-restore teardown, the
-    /// same for a scene-restored actor as for a hand-imported one.
-    ///
-    /// <para>A PORTABLE entry carries the package itself, and is staged into
-    /// one owned temporary file the import runs from — the transaction takes a
-    /// path, and inventing a second import route for embedded bytes would mean
-    /// a second set of phases, a second rollback and a second ownership
-    /// ledger. Successful imports retain that file for history until the session
-    /// ends; failed imports delete it immediately. The bytes are hashed while
-    /// they are staged and refused unless they match the recorded digest —
-    /// the digest names the entry, so it is the payload's identity.</para>
-    ///
-    /// <para>A REFERENCE entry is resolved by CONTENT first. The scene records
-    /// the package's SHA-256, so the user's MCDF library is searched for those
-    /// exact bytes before the recorded path is tried — a package that was
-    /// renamed, filed into a subfolder or re-downloaded elsewhere is still the
-    /// package this scene was saved against, and only its checksum can say so.
-    /// The recorded path is the fallback, not the identity. When neither
-    /// answers, the refusal states BOTH things that were tried.</para>
+    /// Imports through McdfTransaction. Portable packages are streamed to a temporary
+    /// file and checked against their saved digest. Successful imports retain that
+    /// file for session history; failed imports delete it after the child stops.
+    /// References resolve by library checksum first, then by recorded path.
     /// </summary>
     public async Task<SceneMcdfOutcome> ImportMcdf(
         string scenePath,
@@ -549,10 +521,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 if (resolved.Origin == SceneAppearanceOrigin.RecordedPath &&
                     saved.ContentHash.Length > 0)
                 {
-                    // The library had no match and this file is still here, so
-                    // its bytes cannot be the saved ones — but say WHY rather
-                    // than inferring it, since the digest may simply have been
-                    // unreadable when the scene was saved.
+                    // A missing library match does not prove the file changed.
+                    // Hash the fallback path and compare with the saved digest.
                     var hash = FileDigest.TryHashFile(found);
                     changed = hash is null
                         ? $"The character file '{saved.FileName}' could not be " +

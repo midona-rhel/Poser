@@ -10,14 +10,9 @@ using static Poser.UI.Widgets.PageForm;
 namespace Poser.UI;
 
 /// <summary>
-/// The actor's whole face: the expression the game plays (picked, previewed,
-/// baked into the pose) and then the action-unit weights that shape it. Both
-/// belong to the FACE, so both are reached from the face surface rather than
-/// through the animation tab.
-///
-/// The picked-expression row is drawn by a delegate — <see cref="AnimationPane"/>
-/// owns the catalog feed and the shared picker it opens, and the surface that
-/// draws this section is the one that draws that picker.
+/// Draws a selected game expression and sliders for individual facial movements.
+/// The calling window supplies the expression row from its own <see cref="AnimationPane"/>
+/// and also draws that pane's picker.
 ///
 /// Combine L/R groups pairs on a row; Link L/R is an independent editing mode.
 /// </summary>
@@ -40,9 +35,8 @@ public sealed class ExpressionInspectorSection
         _profiler = profiler;
     }
 
-    /// <summary>Whether the action-unit backend is up. The section is drawn
-    /// whenever this OR an expression row is available — the picked expression
-    /// stands on its own if the sliders are down.</summary>
+    /// <summary>Whether facial movement sliders are supported. The expression
+    /// picker row can still be drawn when these sliders are unavailable.</summary>
     public bool CanDraw => _expressions.IsAvailable;
 
     /// <summary>
@@ -53,7 +47,7 @@ public sealed class ExpressionInspectorSection
     public void Draw(
         FormScope form,
         ActorId? actorId,
-        bool paired, // both hosts pair now; kept for call-site stability
+        bool paired, // Whether this layout allows two controls per row.
         Action<FormScope, ActorId>? expressionRow = null)
     {
         using var profile = _profiler.Scope(
@@ -325,10 +319,7 @@ public sealed class ExpressionInspectorSection
             help: DisplayName(first.Label) + " · " + DisplayName(second.Label));
     }
 
-    /// <summary>Both halves on one row, EACH under its own label — the
-    /// precise-naming rule: the left slider says it is the left one.
-    /// The pair cells carry no percentage readout — the row has no width
-    /// for two of them.</summary>
+    /// <summary>Draws both halves on one row, with a separate label and value for each.</summary>
     private void DrawPair(
         FormScope form,
         ActorId actor,
@@ -352,8 +343,7 @@ public sealed class ExpressionInspectorSection
 
     private readonly Dictionary<string, string> _sliderIds = new();
 
-    /// <summary>The slider's id for a unit, minted once: an interpolated
-    /// string per unit per frame was measurable garbage.</summary>
+    /// <summary>Caches each unit's slider id to avoid allocating it every frame.</summary>
     private string SliderId(string id)
     {
         if (!_sliderIds.TryGetValue(id, out var made))

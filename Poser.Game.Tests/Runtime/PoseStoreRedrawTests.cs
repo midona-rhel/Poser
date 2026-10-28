@@ -3,13 +3,8 @@ using Poser.Domain.Posing;
 namespace Poser.Game.Tests.Runtime;
 
 /// <summary>
-/// THE REDRAW CONTRACT, at the seam issue #78 moved it to: the pose store.
-///
-/// <para>A pose is addressed by (actor, slot) above the write layer and by
-/// bone NAME inside that. A redraw builds a new skeleton instance; nothing
-/// above the write layer may notice. The store keeps the pose exactly where it
-/// was and the next apply pass lands it on whatever instance is live — no
-/// parking lot, no adoption, no migration.</para>
+/// A redraw replaces the skeleton instance. Pose state remains keyed by actor,
+/// slot, partial, and bone name so the next live instance receives it.
 /// </summary>
 public sealed class PoseStoreRedrawTests
 {
@@ -22,8 +17,7 @@ public sealed class PoseStoreRedrawTests
         var again = store.GetPoseInfo("j_kosi", 0);
         var other = store.GetPoseInfo("j_sebo_a", 0);
 
-        // Same name, same partial, same stack — no instance anywhere in the
-        // lookup, so a rebuilt skeleton finds the pose it authored.
+        // No skeleton instance participates in the lookup.
         Assert.Same(first, again);
         Assert.NotSame(first, other);
     }

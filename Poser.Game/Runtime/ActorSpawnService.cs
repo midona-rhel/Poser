@@ -18,11 +18,9 @@ namespace Poser.Game;
 /// Service for spawning and destroying actors in GPose.
 /// Based on Brio's ActorSpawnService implementation.
 ///
-/// <para>The facade owns the thread and spawn-authority gates; every
-/// collaborator behind it (<see cref="SpawnTransaction"/>,
-/// <see cref="ActorRemoval"/>, <see cref="ActorCompanionControl"/>,
-/// <see cref="ActorModelControl"/>) runs only after both were proven, against
-/// the one <see cref="SpawnOwnershipLedger"/>.</para>
+/// <para>Mutation methods check the framework thread. Creation also requires
+/// the lifetime hook, so later cleanup can distinguish a spawn from a reused
+/// native slot. The collaborators share one spawn ledger.</para>
 /// </summary>
 public unsafe class ActorSpawnService : IActorSpawnService
 {
@@ -127,7 +125,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
 
-    /// <summary>Mints the identity ActorManager.RefreshActorsCore gives every
+    /// <summary>Builds the identity ActorManager.RefreshActors gives every
     /// GPose wrapper; the comparison must use the production formula, not a
     /// re-derivation from native ids.</summary>
     private static EntityId? ExpectedWrapperIdentity(IObjectTable objectTable, nint address)
@@ -200,10 +198,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
             _log?.Warning("ActorSpawnService: Cannot clone - source has no address");
             return null;
         }
-        // The seed copy reads the clone source raw, so the source wrapper
-        // must prove its identity through the adapter first. A stale wrapper
-        // (null or faulting resolution) is refusal, never permission to
-        // dereference its remembered address.
+        // Resolve the source address before the synchronous native copy.
+        // This does not compare the wrapper against a previously saved lifetime.
         SpawnNativeDescriptor? resolvedSource;
         try
         {
@@ -224,11 +220,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return _transaction.SpawnCloneFrom(resolvedSource.Value.Address, reserveCompanionSlot: true, out _);
     }
 
-    /// <summary>Brio's AddFromWorld: the overworld character ITSELF joins
-    /// GPose — the same body, no copy — and the scene lists it by
-    /// reference for as long as GPose lasts. Nothing is written to it
-    /// here; the registration is the game's own call.</summary>
-
+    /// <summary>Registers the existing world character with GPose and records
+    /// its original placement and visibility for release.</summary>
     internal IActor? AdoptFromWorldSource(nint sourceAddress)
     {
         if (!OnOwnerThread || sourceAddress == nint.Zero || !_gPoseService.IsGPosing)

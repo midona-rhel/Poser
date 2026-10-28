@@ -1,0 +1,1100 @@
+path,status,ledger,evidence
+.gitattributes,reviewed,root-extra.csv,Single text auto-normalization rule; comment matches rule.
+.github/scripts/update-download-count.cjs,reviewed,root-extra.csv,Read entire script; count filters published installable ZIPs; closes older bot PRs; exact commit workflow approval polling. Removed overbroad GitHub workflow guarantee. No execution of network mutations.
+.github/workflows/architecture.yml,reviewed,scripts-build.csv,Replaced manual-run and bot-download shorthand with direct event and artifact descriptions.
+.github/workflows/update-download-count.yml,reviewed,scripts-build.csv,No comments; job names and commands describe the scheduled update.
+.gitignore,reviewed,root-extra.csv,Read all ignore and negation rules; clarified release-directory exception comment. No pattern changes.
+Directory.Build.props,reviewed,scripts-build.csv,"Retained the reproducibility comment; PathMap, deterministic compilation, and disabled debug data support it."
+Poser.Application.Tests/Animation/AnimationHistoryTests.cs,reviewed,application-tests.csv,"Reviewed 6 comment blocks for AnimationHistoryTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Animation/AnimationInteractionOwnershipTests.cs,reviewed,application-tests.csv,"Reviewed 3 comment blocks for AnimationInteractionOwnershipTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Animation/ExpressionOwnershipTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for ExpressionOwnershipTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Animation/LayerIsolationTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for LayerIsolationTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Animation/LayerResetTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for LayerResetTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Animation/SceneAnimationCaptureTests.cs,reviewed,application-tests.csv,"Reviewed 3 comment blocks for SceneAnimationCaptureTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Appearance/ActorAppearanceControlTests.cs,reviewed,application-tests.csv,No comments in ActorAppearanceControlTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Appearance/AppearanceControlTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for AppearanceControlTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Appearance/ClothingOnlyControlTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for ClothingOnlyControlTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Appearance/CompanionControlTests.cs,reviewed,application-tests.csv,No comments in CompanionControlTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/AutoSave/SceneAutoSaveTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for SceneAutoSaveTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Diagnostics/DiagnosticRedactorTests.cs,reviewed,application-tests.csv,No comments in DiagnosticRedactorTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Diagnostics/DiagnosticValueTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for DiagnosticValueTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Files/AtomicFileTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for AtomicFileTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Files/AutoSaveHealthStoreTests.cs,reviewed,application-tests.csv,No comments in AutoSaveHealthStoreTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Files/FileNamePolicyTests.cs,reviewed,application-tests.csv,No comments in FileNamePolicyTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Files/GraphicalBoneReaderTests.cs,reviewed,application-tests.csv,No comments in GraphicalBoneReaderTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Files/IdleAnimationSamplesTests.cs,reviewed,application-tests.csv,No comments in IdleAnimationSamplesTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Files/IdleModPackageTests.cs,reviewed,application-tests.csv,"Reviewed 3 comment blocks for IdleModPackageTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Files/PoseFilePersistenceTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for PoseFilePersistenceTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Files/PoseImportTypeMatrixTests.cs,reviewed,application-tests.csv,No comments in PoseImportTypeMatrixTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Files/SceneDocumentStoreTests.cs,reviewed,application-tests.csv,No comments in SceneDocumentStoreTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Files/SceneFileStoreTests.cs,reviewed,application-tests.csv,"Reviewed 7 comment blocks for SceneFileStoreTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Files/SceneGroupFrameTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for SceneGroupFrameTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Files/SceneWorldObjectCodecTests.cs,reviewed,application-tests.csv,No comments in SceneWorldObjectCodecTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Fixtures/JournalUndo.cs,reviewed,application-tests.csv,No comments in JournalUndo; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Fixtures/MemoryConfigurationPersistence.cs,reviewed,application-tests.csv,No comments in MemoryConfigurationPersistence; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Fixtures/NoticeLog.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for NoticeLog; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Gaze/GazeSessionTests.cs,reviewed,application-tests.csv,No comments in GazeSessionTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Integration/CharaRequestTests.cs,reviewed,application-tests.csv,No comments in CharaRequestTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Integration/CharacterFileSessionTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for CharacterFileSessionTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Integration/CustomizeRequestTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for CustomizeRequestTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Integration/GlamourerAccessTests.cs,reviewed,application-tests.csv,No comments in GlamourerAccessTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Integration/InheritedCollectionHistoryTests.cs,reviewed,application-tests.csv,No comments in InheritedCollectionHistoryTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Integration/IntegrationGraph.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for IIntegrationRuntimeFake; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Integration/McdfFileBoundaryTests.cs,reviewed,application-tests.csv,No comments in McdfFileBoundaryTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Integration/McdfHistoryTests.cs,reviewed,application-tests.csv,"Reviewed 5 comment blocks for McdfHistoryTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Library/AutoSaveLibraryReaderTests.cs,reviewed,application-tests.csv,"Reviewed 4 comment blocks for AutoSaveLibraryReaderTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Library/LibrarySettingsDraftTests.cs,reviewed,application-tests.csv,No comments in LibrarySettingsDraftTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Library/McdfHashIndexTests.cs,reviewed,application-tests.csv,"Reviewed 4 comment blocks for McdfHashIndexTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Library/PoseLibraryFileActionsTests.cs,reviewed,application-tests.csv,No comments in PoseLibraryFileActionsTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Library/PoseLibraryServiceTests.cs,reviewed,application-tests.csv,No comments in PoseLibraryServiceTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Lifecycle/StartupCleanupTests.cs,reviewed,application-tests.csv,No comments in StartupCleanupTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Poser.Application.Tests.csproj,reviewed,scripts-build.csv,No comments; standard test properties need no prose.
+Poser.Application.Tests/Posing/ActorStateSnapshotsTests.cs,reviewed,application-tests.csv,No comments in ActorStateSnapshotsTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Presentation/BoneVisibilityDefaultsTests.cs,reviewed,application-tests.csv,No comments in BoneVisibilityDefaultsTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Scene/CoalescedRefreshTests.cs,reviewed,application-tests.csv,"Reviewed 3 comment blocks for CoalescedRefreshTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Scene/GroupRemovalHistoryTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for GroupRemovalHistoryTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Scene/PendingSceneCreationTests.cs,reviewed,application-tests.csv,No comments in PendingSceneCreationTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Scene/RetainedTransformTargetTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for RetainedTransformTargetTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Scene/SceneActorNamesTests.cs,reviewed,application-tests.csv,No comments in SceneActorNamesTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Scene/SceneAnimationCodecTests.cs,reviewed,application-tests.csv,No comments in SceneAnimationCodecTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Scene/SceneLoadPlacementTests.cs,reviewed,application-tests.csv,No comments in SceneLoadPlacementTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Scene/ScenePlacementPreferencesTests.cs,reviewed,application-tests.csv,No comments in ScenePlacementPreferencesTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Scene/ScenePortableAppearanceTests.cs,reviewed,application-tests.csv,"Reviewed 4 comment blocks for ScenePortableAppearanceTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Scene/SceneSaveNarrowingTests.cs,reviewed,application-tests.csv,No comments in SceneSaveNarrowingTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Scene/SceneSessionFloorTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for SceneSessionFloorTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Scene/SceneWorkflowTests.cs,reviewed,application-tests.csv,"Reviewed 39 comment blocks for SceneWorkflowTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Selection/EntityLockCommandsTests.cs,reviewed,application-tests.csv,No comments in EntityLockCommandsTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Selection/PropertiesContextTests.cs,reviewed,application-tests.csv,No comments in PropertiesContextTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Selection/SelectionEntityCommandsTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for SelectionEntityCommandsTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Settings/ActorNicknameLifetimeTests.cs,reviewed,application-tests.csv,No comments in ActorNicknameLifetimeTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Settings/BoneMapPresetTests.cs,reviewed,application-tests.csv,No comments in BoneMapPresetTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Settings/ConfigurationRecoveryTests.cs,reviewed,application-tests.csv,No comments in ConfigurationRecoveryTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Settings/KeybindTests.cs,reviewed,application-tests.csv,No comments in KeybindTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Settings/ReleaseIdentityTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for ReleaseIdentityTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Settings/ReleaseNotesSessionTests.cs,reviewed,application-tests.csv,No comments in ReleaseNotesSessionTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/DeferredValueJournalTests.cs,reviewed,application-tests.csv,No comments in DeferredValueJournalTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/FabrikHistoryTests.cs,reviewed,application-tests.csv,No comments in FabrikHistoryTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/GroupStepsTests.cs,reviewed,application-tests.csv,No comments in GroupStepsTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/GroupTransformRoutingTests.cs,reviewed,application-tests.csv,"Reviewed 3 comment blocks for GroupTransformRoutingTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Transforms/GroupTransformStateTests.cs,reviewed,application-tests.csv,"Reviewed 4 comment blocks for GroupTransformStateTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Transforms/HistoryAdmissionTests.cs,reviewed,application-tests.csv,No comments in HistoryAdmissionTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/LifecycleHistoryBatchTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for LifecycleHistoryBatchTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Transforms/PoseCommandTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for PoseCommandTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Transforms/PoseImportCoordinatorTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for PoseImportCoordinatorTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Transforms/PosePreviewControllerTests.cs,reviewed,application-tests.csv,No comments in PosePreviewControllerTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/ResultValueJournalTests.cs,reviewed,application-tests.csv,No comments in ResultValueJournalTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/ScopedHistoryTests.cs,reviewed,application-tests.csv,"Reviewed 2 comment blocks for ScopedHistoryTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Transforms/SelectionPlacementTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for SelectionPlacementTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Transforms/TransformParentingTests.cs,reviewed,application-tests.csv,No comments in TransformParentingTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/TransformSelectionPolicyTests.cs,reviewed,application-tests.csv,No comments in TransformSelectionPolicyTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/UndoJournalTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for UndoJournalTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/Transforms/ValueEditScopeTests.cs,reviewed,application-tests.csv,No comments in ValueEditScopeTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/Transforms/ValueJournalTests.cs,reviewed,application-tests.csv,No comments in ValueJournalTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/World/EnvironmentControlTests.cs,reviewed,application-tests.csv,"Reviewed 1 comment block for EnvironmentControlTests; retained comments explain its inputs, results, ordering, or limits and match the implementation."
+Poser.Application.Tests/World/WorldAcquisitionControlTests.cs,reviewed,application-tests.csv,No comments in WorldAcquisitionControlTests; its implementation does not need a separate explanatory block.
+Poser.Application.Tests/World/WorldClaimBookTests.cs,reviewed,application-tests.csv,No comments in WorldClaimBookTests; its implementation does not need a separate explanatory block.
+Poser.Application/Animation/AnimationCatalog.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/AnimationOverrideStore.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/AnimationSceneActions.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/AnimationSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/AnimationSteps.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/BaseAnimationSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/HeldExpressionSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationActions.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationCatalogLoader.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationPlayback.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationScrubPort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationSpeedPort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationStancePort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationTimelinePort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IExpressionPreview.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IFacialPoseCapture.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IdleModExport.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IdleModOptions.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/ScrubAnimationSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/SpeedAnimationSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/StanceAnimationSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ActorAppearanceControl.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ActorModelIdSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ClothingOnlyControl.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/CustomizeSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/IActorAppearanceControl.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ICustomizeControl.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/IInvisibleSkinService.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/IModelIdRuntimePort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/IWardrobeControl.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ModelCatalog.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/WardrobeSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/AutoSaveHealthLedger.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/AutoSaveService.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/AutoSaveWriter.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/IAutoSaveService.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/IPoseAutoSaveCapture.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/SceneAutoSaveResult.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/SceneAutoSaveService.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/ICompanionCatalogLoader.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/ICustomizeCatalog.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/IModelCatalogLoader.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/IPropCatalog.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/ISpawnCatalogService.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/IWardrobeCatalog.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/IWorldAssetCatalog.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Companions/CompanionCatalog.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Companions/CompanionSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Companions/ICompanionControl.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/ActionRecorder.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/DiagnosticRedactor.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/DiagnosticValue.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/IIssueReports.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/INativeHealth.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Events/IEventBus.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Events/WorkspaceEvents.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Gaze/GazeSession.cs,reviewed,application-controls.csv,Step journals Settings only; RestoreState sets target first when present; Adjust requires Position mode. Full-source spot check of prior review confirmed current comment scope.
+Poser.Application/Gaze/IGazeControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Gaze/IGazeRuntimePort.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Input/CameraInputState.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Input/IKeyEvents.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/ActorAppearanceSnapshot.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/CharacterFileSession.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/ICharacterFiles.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/ICustomizePlusPort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IGlamourerPort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IIntegrationResolutionPort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IPenumbraPort.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IntegrationOwnership.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IntegrationReset.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IntegrationSelectors.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfExport.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfImport.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfOperation.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfTeardown.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfTransaction.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/AutoSaveLibrary.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/IPoseLibraryService.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/LibraryFileOperations.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/LibrarySceneActions.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/LibrarySceneSave.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/LibrarySettingsDraft.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/PoseLibraryService.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/FinalCapture.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/FrameworkPoll.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/IGPoseService.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/SessionLifecycleCoordinator.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/SingleFlightOwner.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/StartupCleanup.cs,reviewed,application-production.csv,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Poser.Application.csproj,reviewed,scripts-build.csv,Retained the short pointer to existing license evidence.
+Poser.Application/Posing/ActorResetControl.cs,reviewed,application-posing.csv,ResetAll captures before reset and appends retryable async history; ResetCore resets expression/gaze/pose/IK before animation/presentation and integration last. Ordering comment matches calls.
+Poser.Application/Posing/ActorStateSnapshots.cs,reviewed,application-posing.csv,"Capture falls back to cached pose only for same actor/session; Restore waits for appearance, then pose, then properties. Removed unsupported claim that cached state cannot have changed."
+Poser.Application/Posing/ExpressionSession.cs,reviewed,application-posing.csv,SetWeight/SetPair use ValueJournal; Reset captures only nonzero weights and journals only successful write. Full-source review confirms gesture/history summary.
+Poser.Application/Posing/IActorColliderCapture.cs,reviewed,application-posing.csv,Interface exposes asynchronous group creation and optional warning result. Full declarations inspected; no comments needing changes.
+Poser.Application/Posing/IActorResetControl.cs,reviewed,application-posing.csv,"IActorPoseResetRuntime exposes CanReset, ResetExpression and ClearIk used by ActorResetControl. Existing boundary summary retained."
+Poser.Application/Posing/IExpressionControl.cs,reviewed,application-posing.csv,"Read/control/runtime interfaces separate detached values, journaling controls and batch writes with reset flag. Exact actor-generation summary retained."
+Poser.Application/Posing/IIkBake.cs,reviewed,application-posing.csv,"Exposes pending note, affected-chain IDs and Begin result without live bone wrappers. Existing summary matches interface."
+Poser.Application/Posing/IIkConfigurationPort.cs,reviewed,application-posing.csv,Chain settings API addresses exact targets and exposes explicit bone/entity targets. Removed claim scene workflow restores FABRIK settings because SceneLoadTransaction ignores saved chains.
+Poser.Application/Posing/IPoseCommands.cs,reviewed,application-posing.csv,"Commands cover bone resets/flip, actor region reset/mirror and stash; IPoseEditReads provides cheap authored-state query. Existing comments retained."
+Poser.Application/Posing/IPoseFileCapture.cs,reviewed,application-posing.csv,Export/capture return admission result and deliver completion callbacks; capture has authoredOnly option. Existing asynchronous contract retained.
+Poser.Application/Posing/IPoseImportCommands.cs,reviewed,application-posing.csv,"Two ImportPose overloads carry exact actor, selection and receipt callback; rest/reference pose use same receipt vocabulary. Full declarations reviewed."
+Poser.Application/Posing/IPoseImportRuntime.cs,reviewed,application-posing.csv,Reserve produces operation token and callbacks; Begin consumes prepared plan; scheduling and cancellation remain runtime responsibilities. Reviewed timing contracts.
+Poser.Application/Posing/IPoseInteraction.cs,reviewed,application-posing.csv,"Interface uses actor/skeleton/bone IDs for creature checks, propagation and IK translation clamping. Existing exact-identity summary retained."
+Poser.Application/Posing/IPosePreview.cs,reviewed,application-posing.csv,Rendered preview exposes texture and camera manipulation/close controls. Full declarations reviewed; summary matches API.
+Poser.Application/Posing/IPosePreviewRuntime.cs,reviewed,application-posing.csv,"Runtime opens one actor preview, shows two ordered pose requests and closes. Existing lifecycle summary retained."
+Poser.Application/Posing/PoseCommands.cs,reviewed,application-posing.csv,"Targets filters non-All regions to character slot; Mirror adds actor transform, stash/reset do not. Existing facing comment matches target construction."
+Poser.Application/Posing/PoseEditService.cs,reviewed,application-posing.csv,Reset/Flip/Mirror/portable apply share exact actor checks and Apply; Apply rolls back returned failures but does not catch throws. Corrected RecoveryBarrier read-only claim and failure wording.
+Poser.Application/Posing/PoseImportCoordinator.cs,reviewed,application-posing.csv,"Begin rejects non-holder, cancels prior import, pauses untracked, reserves, waits four ticks and restores speed after two ticks when required. Full-source comments checked against callbacks."
+Poser.Application/Posing/PoseImportInspection.cs,reviewed,application-posing.csv,Record carries expression/body compatibility and face-generation match with no behavior. Read-only inspection summary retained.
+Poser.Application/Posing/PoseImportPlan.cs,reviewed,application-posing.csv,Mutable lists store name/slot/partial entries and optional model transform; uniqueness is builder responsibility. Replaced guaranteed redraw-validity claim with runtime revalidation requirement.
+Poser.Application/Posing/PosePreviewController.cs,reviewed,application-posing.csv,"Begin uses one runtime owner, invalidates on source changes and retries baseline every60frames; Pose sends authored baseline then file. Rewrote source/capture narrative and removed incident quote."
+Poser.Application/Posing/PoseTransferService.cs,reviewed,application-posing.csv,Stash updates data/time/source only after successful capture; ApplyStash checks recovery before reading slot. Removed unnecessary reference name from source-label comment.
+Poser.Application/Presentation/ActorPresentationSession.Colors.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/ActorPresentationSession.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/ActorValueSession.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/BoneMapPresetDraft.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/BoneMapTemplates.cs,reviewed,application-controls.csv,ResolveDefault uses last matching race/gender rule only when preset exists with matching kind; falls back by section then kind. Full-source spot check confirmed identity comment.
+Poser.Application/Presentation/BoneVisibilityDefaults.cs,reviewed,application-controls.csv,Resolve filters only supplied BoneIds by default preset names and CanApply tests intersection. Full-source spot check confirmed no new bones introduced.
+Poser.Application/Presentation/CameraProperties.cs,reviewed,application-controls.csv,Portrait stores mode/roll tuple; RefuseWhileLocked permits only IsLocked. Full-source spot check confirmed lock comment and journal declarations.
+Poser.Application/Presentation/CameraSelectionPolicy.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/EntityProperty.cs,reviewed,application-controls.csv,Transport bypasses ValueJournal while Journal binds exact ID and stages by entity/property. Full-source spot check confirmed property history comments.
+Poser.Application/Presentation/IActorValueControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/IAppearanceColorControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/ICameraControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/ICameraTargetControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/ICustomizeReadRuntimePort.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/ILightControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/IOverlayControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/IPresentationRuntimePort.cs,reviewed,application-controls.csv,Full interface reread including default color failures and ownership restore calls. Removed all-caps emphasis and unsupported reference claim from opacity comment.
+Poser.Application/Presentation/IReferenceSkeletonReadPort.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/ISceneObjectControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/IStatusIconCatalog.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/IUserNotices.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/LightProperties.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/OverlayProperties.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/PropProperties.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Presentation/WorldObjectProperties.cs,reviewed,application-controls.csv,"AnimationPaused, VfxSpeed and VfxPaused explicitly use Transport; dye is a stain/tint tuple. Full-source spot check confirmed documented history distinction."
+Poser.Application/Scene/CoalescedRefresh.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/EntityIndex.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/GroupGateState.cs,reviewed,application-controls.csv,SetGate captures per-member value once; release restores only outside other enabled group overrides; Join records at outermost enabled ancestor. Full-source spot check.
+Poser.Application/Scene/GroupSteps.cs,reviewed,application-controls.csv,Run collapses nested appended history into before/after group snapshots; Put suspends value journaling and retries deferred membership capture. Full-source spot check confirmed ordering.
+Poser.Application/Scene/GroupsSnapshot.cs,reviewed,application-controls.csv,"Equals compares ordered groups/root order, remembered flags and transform content; Remap uses lifecycle replacement. Full-source spot check found summaries consistent."
+Poser.Application/Scene/IActorRestorePort.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/IActorSceneControl.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/IPlacementAnchorSource.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/ISceneCapturePort.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/ISceneCreation.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/ISceneHistoryPort.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/ISceneMaterializer.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/ISceneStatePort.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/ISceneWorkflow.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/ISceneWorkflowObserver.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/LifecycleSlotOwner.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/PendingSceneCreation.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/SceneActorNames.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/SceneAnimationCodec.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/SceneCaptureOutcome.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/SceneDuplication.cs,reviewed,application-controls.csv,Tick waits at most 120 unresolved-copy ticks then groups available handles; RealizeGroupCopy restores hidden/pause/night. Replaced pump/patience metaphor with actual timing.
+Poser.Application/Scene/SceneEntityHandle.cs,reviewed,application-controls.csv,Full source inspected model-visibly; current comments checked against the implementation and rewritten only where needed.
+Poser.Application/Scene/SceneGroups.cs,reviewed,application-controls.csv,Create removes old root slots before insertion; Rename and Dissolve reject own locks; Prune restarts by list order. Corrected contradictory summaries and gate metaphors.
+Poser.Application/Scene/SceneLoadBarriers.cs,reviewed,application-controls.csv,ImportPose ignores Pending until final receipt; waits for importer availability and cancels timed-out imports. Replaced incident narrative with receipt and cancellation contract.
+Poser.Application/Scene/SceneLoadHistory.cs,reviewed,application-controls.csv,Append suppresses replay entries and makes redo additive; Undo registers replacement resolvers before rollback; CompleteRedo waits for Drain. Ordering comments match code.
+Poser.Application/Scene/SceneLoadPlacement.cs,reviewed,application-controls.csv,Apply falls back to ContentCentroid without a saved anchor and includes collider positions. Corrected missing-anchor refusal claim and centroid category list.
+Poser.Application/Scene/SceneLoadPreferences.cs,reviewed,application-controls.csv,ForLoad copies shared Options and path-specific placement; ResolveDefault uses saved territory. Replaced UI-history essay with session and per-operation semantics.
+Poser.Application/Scene/SceneLoadRollback.cs,reviewed,application-controls.csv,"Run removes structure, restores baselines, then reverses each entity-kind list. Clarified that this is not one global reverse-creation order."
+Poser.Application/Scene/SceneLoadStructure.cs,reviewed,application-controls.csv,WaitForBindings checks referenced loaded tokens; Restore keeps entities on optional group/link failures and reports missing members. Reviewed optional-phase comments against branches.
+Poser.Application/Scene/SceneLoadTransaction.cs,reviewed,application-controls.csv,Read forces world objects to Spawned; Freeze restores optional animation before Pose; Commit keeps partial loads as one history step. Corrected borrowing and no-animation claims.
+Poser.Application/Scene/SceneOperation.cs,reviewed,application-controls.csv,Guard compares active GPose generation; rollback lists retain created handles. Corrected BorrowedWorldObjects comment because spawned copies also enter that list.
+Poser.Application/Scene/SceneOptions.cs,reviewed,application-controls.csv,Save defaults include structure and exclude animation/appearance; load defaults are additive. Replaced historical reference essay with concrete option behavior.
+Poser.Application/Scene/SceneOutcomes.cs,reviewed,application-controls.csv,FreezingActors includes animation restore; LeftEntitiesBehind checks receipt state only. Corrected both summaries; reviewed clear summary counts and degraded result flag.
+Poser.Application/Scene/SceneParentingCodec.cs,reviewed,application-controls.csv,Reference translates actor capture keys and companion owner keys; Write preserves excluded actor reference for later pruning. Existing fallback comment matches branch.
+Poser.Application/Scene/ScenePlaybackControl.cs,reviewed,application-controls.csv,"ReadPlaying handles actors, VFX and borrowed world objects; spawned non-VFX returns null; night ignores VFX. No misleading remaining comment."
+Poser.Application/Scene/SceneSaveNarrowing.cs,reviewed,application-controls.csv,"Narrow translates actor logical keys, removes categories and invalid nesting; DetachDangling clears targets and chooses live camera. Replaced metaphor-heavy summaries."
+Poser.Application/Scene/SceneSavePolicy.cs,reviewed,application-controls.csv,"Apply removes excluded categories and unpackaged MCDF references, returning unsealed count. Rewrote policy summary and partial-save explanation."
+Poser.Application/Scene/SceneSession.cs,reviewed,application-controls.csv,TryRefresh validates staged indexes before committing and notifying; Resolve allows actor-generation reconciliation but exact bones only. Clarified ownership and caller thread requirement.
+Poser.Application/Scene/SceneSnapshotValidator.cs,reviewed,application-controls.csv,"TryBuildIndexes validates exact IDs, unique logical IDs, bone graph, camera live/default counts and gaze masks. Removed borrowed-only claim from world-object validation."
+Poser.Application/Scene/SceneStructure.cs,reviewed,application-controls.csv,Capture excludes groups below two descendants; Import snapshots state and restores it on exception; Remove touches only imported groups. Comments match these paths.
+Poser.Application/Scene/SceneStructureCodec.cs,reviewed,application-controls.csv,"Write translates actor and entity IDs, saves group transforms only when all members translate, and maps root order. Existing short mapping summary retained."
+Poser.Application/Scene/SceneWorkflow.cs,reviewed,application-controls.csv,BeginLoad disables double placement; RunSave narrows before packaging and publishes Failed for partial appearance save. Corrected comment that partial save was not failure.
+Poser.Application/Selection/EntityLockCommands.cs,reviewed,application-controls.csv,Toggle rereads camera/collider state before control write; ToggleGroup delegates to GroupSteps. Existing journal-owner summary matches calls.
+Poser.Application/Selection/EntitySelection.cs,reviewed,application-controls.csv,IsEntity excludes bone/gaze; IsMultiEntity counts two; IsMixedEntities requires different entity kinds. Simplified anonymous-group explanation.
+Poser.Application/Selection/PropertiesContext.cs,reviewed,application-controls.csv,Pinned contexts retain logical targets and optionally follow same-actor workspace selection; Dispose unsubscribes only pinned instances. Comments align with selection paths.
+Poser.Application/Selection/SelectionEntityCommands.cs,reviewed,application-controls.csv,Visibility uses exact capabilities and batches multiple eligible writes; Remove builds typed requests then dispatches once. Reviewed stale-ID and batch comments.
+Poser.Application/Selection/SelectionSession.cs,reviewed,application-controls.csv,"Select/Add add partners, SelectRange does not; IsCompatible compares actor lineage across slots. Corrected universal pairing and per-skeleton claims."
+Poser.Application/Settings/ConfigurationService.cs,reviewed,application-controls.csv,MigrateConfig applies versions 2-5 then saves; LoadFailure comes from persistence; ResetSessionNames clears logical-name maps. Removed unsupported reference and backup assumptions.
+Poser.Application/Settings/EditorState.cs,reviewed,application-controls.csv,"Tool, skeleton mode and bone filter persist through ApplyChange; orientation, symmetry and pivot remain in memory. Replaced confusing two-properties claim."
+Poser.Application/Settings/IConfigurationPersistence.cs,reviewed,application-controls.csv,Load returns ConfigurationLoadResult and Save takes configuration; migration stays in ConfigurationService. Existing boundary summary retained.
+Poser.Application/Settings/ReleaseNotesHistory.cs,reviewed,application-controls.csv,"Full bundled list inspected, including reread of truncated 0.9.17 span. Entries run newest-first; historical user-facing strings left unchanged."
+Poser.Application/Settings/ReleaseNotesSession.cs,reviewed,application-controls.csv,Constructor freezes upgrade range; MarkPresented saves only when opened and restores config on save exception. Existing comments match control flow.
+Poser.Application/Transforms/DisruptiveSteps.cs,reviewed,application-controls.csv,Run captures before then defers after snapshot until first undo and validates actor/session; async Restore owns completion. Existing timing comment retained.
+Poser.Application/Transforms/EditHistory.cs,reviewed,application-controls.csv,Find stops at unknown/shared ordering barriers; Reconcile remaps complete patches and retains pending slots; capacity zero clears. Reviewed retention comments against branches.
+Poser.Application/Transforms/EntityValueJournal.cs,reviewed,application-controls.csv,Resolver/binding interfaces explicitly limit replacement identity to history. Full declarations inspected; no implementation or misleading comments.
+Poser.Application/Transforms/GroupTransformCoordinator.cs,reviewed,application-controls.csv,BindingsPublished remaps before group reconciliation; Admit requires complete requested membership; reads do not capture. Reviewed state and ordering comments against methods.
+Poser.Application/Transforms/GroupTransformState.cs,reviewed,application-controls.csv,Put validates membership key and limits anonymous records to 128; Rekey retains unchanged references; named restore clears only named records. Ownership comment retained.
+Poser.Application/Transforms/HistoryEntry.cs,reviewed,application-controls.csv,TransformPatch retains group state and pending flag; InverseEntry defaults DropOnRepeat while lifecycle overrides Keep. Refusal summaries match defaults.
+Poser.Application/Transforms/ITransformFacade.cs,reviewed,application-controls.csv,"Interface exposes gesture lifecycle, global/scoped replay, absolute writes and override reset. Full signatures inspected; concise summary retained."
+Poser.Application/Transforms/ITransformRuntimePort.cs,reviewed,application-controls.csv,Capture/apply/restore contracts distinguish raw bone basis and unknown mutation on failure; dependency depth defaults zero. Reviewed against callers TransformCommandService/Recovery.
+Poser.Application/Transforms/Journal.cs,reviewed,application-controls.csv,JournalStep async completion separates sync start from callback; pose restore default checks stillCurrent before dispatch. Comments match signatures and defaults.
+Poser.Application/Transforms/LifecycleHistoryBatch.cs,reviewed,application-controls.csv,TryAdd rejects async/file/transform entries; Run reverses undo order and tracks completed children. Prologue executes redo first and undo last as documented.
+Poser.Application/Transforms/ParentedTransformPort.cs,reviewed,application-controls.csv,Capture adds parent link; absolute edits update local offset through EditWorld; Restore uses saved parent when present. Existing local-offset summary retained.
+Poser.Application/Transforms/SelectionPlacement.cs,reviewed,application-controls.csv,ResolveOne rejects bones and locks; MoveToCamera uses centroid then one translation gesture; failed update cancels. No existing comments needed correction.
+Poser.Application/Transforms/TransformCommandService.cs,reviewed,application-controls.csv,"SetAbsoluteMany captures all before writes, orders by dependency, checks cancellation, and restores all captured baselines on write failure. Reviewed recovery claims."
+Poser.Application/Transforms/TransformFacade.cs,reviewed,application-controls.csv,Begin enforces complete group admission and expands linked/symmetry bones within slot and partial; ReplaySelected requires one entity. Existing boundary comments retained.
+Poser.Application/Transforms/TransformGestureService.cs,reviewed,application-controls.csv,"Begin captures pivot and baselines; Update orders parent writes; recovery blocks mutation; IsHomogeneous compares actor lineage, not skeleton. Corrected pivot prose and slot claim."
+Poser.Application/Transforms/TransformParenting.cs,reviewed,application-controls.csv,Attach computes local offset and journals globally; Evaluate follows parents first and rebinds only through history; cycle checks include companion owners. Comments match implementation.
+Poser.Application/Transforms/TransformRecovery.cs,reviewed,application-controls.csv,RestoreAll orders by DependencyDepth and records every exception/failure; AppendRollbackFailure preserves primary detail. Recovery comments match exhaustive loop.
+Poser.Application/Transforms/TransformSelectionPolicy.cs,reviewed,application-controls.csv,Editing permits full locked-group selection through IsLockedChild; Placement rejects any locked member. Existing distinction matches delegates.
+Poser.Application/Transforms/TransformTargetResolver.cs,reviewed,application-controls.csv,"Resolve repeats exact actor/light/prop/world checks, includes collider overlays, omits unsupported kinds. Corrected mixed-selection and primary-target summaries."
+Poser.Application/Transforms/UndoJournal.cs,reviewed,application-controls.csv,GiveUpOnRepeat respects Keep/DropNow before tracking repeated refusal; ReplayUntilComplete checks history revision. Corrected blanket repeat-drop summary.
+Poser.Application/Transforms/ValueJournal.cs,reviewed,application-controls.csv,Set/Adjust stage only successful writes; Seal commits pending state; ResultStep skips dead targets and keeps transient failures. Full code inspected including scoped tuple-key extraction.
+Poser.Application/Viewport/ICameraProjection.cs,reviewed,application-controls.csv,ScreenProjection computes homogeneous coordinates and checks positive w threshold; interface provides batched projection fallback. Removed dated profiling narrative.
+Poser.Application/Viewport/IViewportReads.cs,reviewed,application-controls.csv,Interface exposes detached transforms and caller-buffer bone reads plus snapshot request. Reviewed exact-ID and buffer contract; no runtime claims added.
+Poser.Application/World/EnvironmentControl.cs,reviewed,application-controls.csv,ApplyCore writes clock before freeze flag; brightness history checks binding; ResetFestivals delegates to Reset. Corrected claim it clears every slot.
+Poser.Application/World/IEnvironmentRuntimePort.cs,reviewed,application-controls.csv,Interface distinguishes time/weather/section holds and interior binding; setters declare hold semantics. Reviewed comments against EnvironmentControl ordering.
+Poser.Application/World/IFestivalRuntimePort.cs,reviewed,application-controls.csv,Add/Remove/ChangePhase expose queued operations and Reset restores pre-override slots. Reset contract used to correct EnvironmentControl summary.
+Poser.Application/World/IPlaceService.cs,reviewed,application-controls.csv,CapturePlace stores territory and optional name; Current requires framework thread. Replaced date-grouping and reference rhetoric with concise contract.
+Poser.Application/World/IWorldRenderingRuntimePort.cs,reviewed,application-controls.csv,Water availability and reset preference separate from physics Outcome command. Existing freeze ownership comments retained as runtime contract.
+Poser.Application/World/IWorldService.cs,reviewed,application-controls.csv,World claims use IDs and typed acquisition/release results; AlreadyReleased is successful release. Interface summary matches API.
+Poser.Application/World/VfxPathClaimOwner.cs,reviewed,application-controls.csv,Acquire counts case-insensitive paths under lock; Claim.Dispose uses Interlocked to release once. Ownership summary agrees with reference counting.
+Poser.Application/World/WorldAcquisitionControl.cs,reviewed,application-controls.csv,Acquire admits one pending operation per active session; Tick discards stale session and selects completed entity. Summary matches independent completion polling.
+Poser.Application/World/WorldClaimBook.cs,reviewed,application-controls.csv,Add binds claim to exact SelectionId; successful release removes all claims for that ID; failure retains them. Existing identity comment retained.
+Poser.Documents/Animation/IdleAnimationSamples.cs,reviewed,documents.csv,"Reviewed 4 comment blocks for IdleSkeletonPose; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Animation/IdleModPackage.cs,reviewed,documents.csv,"Reviewed 1 comment block for IdleModFile; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Animation/IdlePapBuilder.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for IdlePapBuilder; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Animation/PapAnimationDocument.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for PapAnimationDocument; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Appearance/CharacterAppearanceFiles.cs,reviewed,documents.csv,"Reviewed 5 comment blocks for ICharacterAppearanceFiles; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Appearance/CustomizeRequest.cs,reviewed,documents.csv,"Reviewed 3 comment blocks for CustomizeRequest; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/AutoSave/AutoSaveHealthStore.cs,reviewed,documents.csv,Replaced recovery metaphors with the stored data and atomic-write behavior.
+Poser.Documents/AutoSave/PoseAutoSaveStore.cs,reviewed,documents.csv,Corrected the last-write-time claim and simplified naming and retention comments.
+Poser.Documents/AutoSave/SceneAutoSaveStore.cs,reviewed,documents.csv,"Explained scene hashing, ignored timestamps, failure fallback, and JSON numeric converters directly."
+Poser.Documents/Config/AutoSaveConfiguration.cs,reviewed,documents.csv,Explained scheduling and legacy root resolution directly.
+Poser.Documents/Config/BoneMapPreset.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for BoneMapKind; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/CameraConfiguration.cs,reviewed,documents.csv,"Reviewed 10 comment blocks for CameraConfiguration; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/ConfigurationFileStore.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for ConfigurationFileStore; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/ConfigurationLoadResult.cs,reviewed,documents.csv,No comments in ConfigurationLoadResult; no explanatory block is required.
+Poser.Documents/Config/DefaultBonePresets.cs,reviewed,documents.csv,"Reviewed 5 comment blocks for DefaultBonePresets; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/DisplayConfiguration.cs,reviewed,documents.csv,"Reviewed 1 comment block for DisplayConfiguration; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/FirstRunNotice.cs,reviewed,documents.csv,"Reviewed 8 comment blocks for struct; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/GizmoConfiguration.cs,reviewed,documents.csv,"Reviewed 11 comment blocks for GizmoConfiguration; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/IntegrationConfiguration.cs,reviewed,documents.csv,"Reviewed 5 comment blocks for IntegrationConfiguration; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/KeybindRegistry.cs,reviewed,documents.csv,"Reviewed 17 comment blocks for KeybindSlots; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/PoserConfiguration.cs,reviewed,documents.csv,"Reviewed 17 comment blocks for PoserConfiguration; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/ReferenceImageConfiguration.cs,reviewed,documents.csv,"Reviewed 12 comment blocks for ReferenceImageEntry; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/SkeletonConfiguration.cs,reviewed,documents.csv,"Reviewed 23 comment blocks for BoneVisibilityPreset; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/TransformConfiguration.cs,reviewed,documents.csv,"Reviewed 4 comment blocks for TransformConfiguration; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Config/UIConfiguration.cs,reviewed,documents.csv,"Reviewed 11 comment blocks for UITheme; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Data/Config/GraphicalBoneConfig.cs,reviewed,documents.csv,"Reviewed 11 comment blocks for GraphicalBoneConfig; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Data/GraphicalBoneReader.cs,reviewed,documents.csv,"Reviewed 6 comment blocks for GraphicalBoneReader; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/AtomicFile.cs,reviewed,documents.csv,"Reviewed 19 comment blocks for AtomicWritePhase; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/AtomicFileSystem.cs,reviewed,documents.csv,"Reviewed 1 comment block for IAtomicFileSystem; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/AtomicPoseFileStore.cs,reviewed,documents.csv,"Reviewed 6 comment blocks for PoseFileStoreFailureKind; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/CMToolPoseFile.cs,reviewed,documents.csv,"Reviewed the legacy format, conversion, and raw-byte comments; retained the compatibility facts."
+Poser.Documents/Files/CameraFile.cs,reviewed,documents.csv,"Reviewed 6 comment blocks for CameraFile; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/Converters/AnamnesisBoneNameConverter.cs,reviewed,documents.csv,"Reviewed 1 comment block for AnamnesisBoneNameConverter; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/Converters/JsonNumericsConverters.cs,reviewed,documents.csv,"Reviewed 4 comment blocks for Vector2Converter; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/Converters/TagListConverter.cs,reviewed,documents.csv,"Reviewed 3 comment blocks for TagListConverter; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/FileDigest.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for FileDigest; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/FileNamePolicy.cs,reviewed,documents.csv,"Reviewed 1 comment block for FileNamePolicy; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/ImportBoneCategories.cs,reviewed,documents.csv,"Reviewed 19 comment blocks for ImportBoneCategory; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/LightFile.cs,reviewed,documents.csv,"Reviewed 5 comment blocks for LightFile; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/ObjectPlacement.cs,reviewed,documents.csv,"Reviewed 7 comment blocks for PlacementAnchorData; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/PoseClipboard.cs,reviewed,documents.csv,"Reviewed 15 comment blocks for PoseClipboard; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/PoseFile.cs,reviewed,documents.csv,"Removed emphatic wording from game-version, tag-shape, and extension-data comments while preserving the wire-format contract."
+Poser.Documents/Files/PoseFileClassification.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for PoseFileClassification; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/PoseFileLimits.cs,reviewed,documents.csv,"Reviewed 1 comment block for PoseFileLimits; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/PoseFileValidation.cs,reviewed,documents.csv,"Reviewed 3 comment blocks for PoseFileValidationFailureKind; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/PoseImportOptions.cs,reviewed,documents.csv,Rewrote expression staging and filter comments to explain the behavior without historical debugging prose or emphatic wording.
+Poser.Documents/Files/PosePreviewRequest.cs,reviewed,documents.csv,Defined file and in-memory preview identity without dedupe jargon.
+Poser.Documents/Files/RestPoses.cs,reviewed,documents.csv,"Reviewed 7 comment blocks for RestPoses; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/SceneFile.cs,reviewed,documents.csv,"Reviewed 107 comment blocks for SceneFile; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/SceneFileStore.cs,reviewed,documents.csv,"Reviewed 26 comment blocks for SceneStoreFailureKind; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/SceneFileValidation.cs,reviewed,documents.csv,Separated strict validation from partial-load validation without emphatic policy prose.
+Poser.Documents/Files/SceneGroupTransformCodec.cs,reviewed,documents.csv,"Reviewed 1 comment block for SceneGroupTransformCodec; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/SceneParenting.cs,reviewed,documents.csv,No comments in SceneParentLink; no explanatory block is required.
+Poser.Documents/Files/SceneStructureKind.cs,reviewed,documents.csv,"Reviewed 1 comment block for SceneStructureKind; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Files/Utf8Bom.cs,reviewed,documents.csv,"Reviewed 1 comment block for Utf8Bom; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Library/AutoSaveLibraryReader.cs,reviewed,documents.csv,Removed UI implementation metaphors and explained scan caching and missing place metadata.
+Poser.Documents/Library/LibraryConfiguration.cs,reviewed,documents.csv,"Reviewed 39 comment blocks for LibrarySourceConfig; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Library/LibraryScanner.cs,reviewed,documents.csv,"Reviewed traversal, publication, quarantine, and lazy-metadata comments against the implementation."
+Poser.Documents/Library/LibrarySourceOwnership.cs,reviewed,documents.csv,"Reviewed 3 comment blocks for LibrarySourceKind; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Library/McdfHashIndex.cs,reviewed,documents.csv,Replaced emphatic cache and hashing prose with direct descriptions of content lookup and session caching.
+Poser.Documents/Library/PoseLibraryFileActions.cs,reviewed,documents.csv,"Reviewed 26 comment blocks for PoseLibraryFileActionKind; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Library/PoseLibraryLimits.cs,reviewed,documents.csv,"Reviewed 7 comment blocks for PoseLibraryLimits; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/IMcdfFileBoundary.cs,reviewed,documents.csv,"Reviewed 9 comment blocks for IMcdfFileBoundary; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfFileBoundary.cs,reviewed,documents.csv,"Reviewed 1 comment block for McdfFileBoundary; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfFormat.cs,reviewed,documents.csv,"Reviewed 5 comment blocks for McdfFormat; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfLimits.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for McdfLimits; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfOperationDirectories.cs,reviewed,documents.csv,"Reviewed 3 comment blocks for McdfOperationDirectories; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfPackageValidator.cs,reviewed,documents.csv,"Reviewed 4 comment blocks for McdfPackageValidator; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfPayloadHash.cs,reviewed,documents.csv,"Reviewed 1 comment block for McdfPayloadHash; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfPlatformFileOwnership.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for McdfPlatformFileOwnership; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfReader.cs,reviewed,documents.csv,"Reviewed 5 comment blocks for McdfReader; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfWire.cs,reviewed,documents.csv,"Reviewed 3 comment blocks for McdfWire; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Mcdf/McdfWriter.cs,reviewed,documents.csv,"Reviewed 7 comment blocks for McdfWriter; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Poser.Documents.csproj,reviewed,scripts-build.csv,Retained the Newtonsoft compatibility reason because the package choice is non-obvious.
+Poser.Documents/Scene/ISceneDocumentStore.cs,reviewed,documents.csv,"Reviewed 2 comment blocks for SceneDocumentRead; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Scene/SceneDocumentStore.cs,reviewed,documents.csv,"Reviewed 1 comment block for SceneDocumentStore; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Scene/ScenePlacement.cs,reviewed,documents.csv,"Reviewed 10 comment blocks for SceneRelativePlacement; retained serialization, validation, ordering, and compatibility facts that match the implementation."
+Poser.Documents/Scene/StageFile.cs,reviewed,documents.csv,Replaced plugin folklore with the supported Stagehand entity and rotation mappings.
+Poser.Domain.Tests/BoneCategoryTreeTests.cs,reviewed,domain-tests.csv,No comments; names and assertions state category and pre-order contracts.
+Poser.Domain.Tests/EntityNamesTests.cs,reviewed,domain-tests.csv,No comments; the table demonstrates matching-series suffix allocation.
+Poser.Domain.Tests/FabrikSolverTests.cs,reviewed,domain-tests.csv,Retained three short comments identifying the exact edge case asserted next.
+Poser.Domain.Tests/IdentityAndSceneBaselineTests.cs,reviewed,domain-tests.csv,No comments; identity comparisons are explicit.
+Poser.Domain.Tests/IkAnchorAndSpanTests.cs,reviewed,domain-tests.csv,"Retained comments distinguishing captured anchors, external-parent motion, zero movement, and span restoration."
+Poser.Domain.Tests/IkColliderTests.cs,reviewed,domain-tests.csv,Retained the sphere comment because it explains why a zero-stem capsule responds to the length handle.
+Poser.Domain.Tests/IkImportOffsetTests.cs,reviewed,domain-tests.csv,Retained comments describing stripped IK metadata and preview-copy independence.
+Poser.Domain.Tests/PortablePoseBaselineTests.cs,reviewed,domain-tests.csv,No comments; construction makes structural and legacy matching cases explicit.
+Poser.Domain.Tests/Poser.Domain.Tests.csproj,reviewed,scripts-build.csv,No comments; standard test properties need no prose.
+Poser.Domain.Tests/SceneOutcomeRemedyTests.cs,reviewed,domain-tests.csv,Retained the regression example and kept-actor contrast because they explain the expected user-facing remedy.
+Poser.Domain.Tests/SceneSnapshotEqualityTests.cs,reviewed,domain-tests.csv,Retained the allocation note because the test distinguishes structural equality from reference equality.
+Poser.Domain.Tests/Settings/LightPlacementTests.cs,reviewed,domain-tests.csv,No comments; vector assertions state placement and orientation behavior.
+Poser.Domain.Tests/Settings/PoseMathAlignTests.cs,reviewed,domain-tests.csv,"No comments; assertions cover finite, zero, and NaN inputs."
+Poser.Domain.Tests/SpawnNamesTests.cs,reviewed,domain-tests.csv,Replaced repository shorthand with the compatibility reason: names are validated for Penumbra because they are sent there.
+Poser.Domain.Tests/TransformPolicyBaselineTests.cs,reviewed,domain-tests.csv,"No comments; assertions state normalization, mirroring, and atomic replacement."
+Poser.Domain.Tests/Transforms/GroupTransformReadModelTests.cs,reviewed,domain-tests.csv,Retained the axis note because it connects overlay rotation to the asserted quaternion expression.
+Poser.Domain.Tests/Transforms/IdentityDeltaTests.cs,reviewed,domain-tests.csv,Retained numerical examples because they expose intentionally different tolerances.
+Poser.Domain.Tests/Transforms/SmallBoneScaleTests.cs,reviewed,domain-tests.csv,No comments; accepted and rejected thresholds are explicit data rows.
+Poser.Domain.Tests/UndeclaredIkChainBaselineTests.cs,reviewed,domain-tests.csv,Replaced chain-policy shorthand with which solvers work without a declared chain and why.
+Poser.Domain/Actors/ActorKind.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Actors/SpawnNames.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Actors/WorldActors.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Animation/AnimationTypes.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Appearance/ModelCatalogEntry.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Cameras/FreeCameraSpeed.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Collections/ValueList.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Companions/CompanionAttachment.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Companions/CompanionEntry.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Companions/SpawnCatalogEntry.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Identity/EntityId.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Identity/StableIds.cs,reviewed,domain.csv,"Reviewed ID equality, generation and selection factories; explained logical identity versus runtime replacement."
+Poser.Domain/Integration/CustomizeTypes.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Integration/IntegrationTypes.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Integration/McdfTypes.cs,reviewed,domain.csv,Reviewed constructor copying and data contracts; records do not independently prove filesystem safety.
+Poser.Domain/Integration/WardrobeTypes.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Library/LibraryBrowseSort.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Library/PoseLibraryEntry.cs,reviewed,domain.csv,Corrected universal scan guarantees and reduced timestamp rhetoric; recorded capture time differs from filesystem modification time.
+Poser.Domain/Operations/OperationReceipt.cs,reviewed,domain.csv,Reviewed factory validations and recovery-state constraints; replaced redundant identity jargon with session/attempt explanations.
+Poser.Domain/Outcome.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/PluginConstants.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Poser.Domain.csproj,reviewed,scripts-build.csv,Retained the CS8509 explanation and license pointer; the setting enforces the stated coverage.
+Poser.Domain/Posing/BoneInfo/BoneData.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/BoneInfo/BoneInfoService.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/BoneInfo/Categories/ChestBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/ClothingBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/EarBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/EquipmentBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/FaceBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/HairBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/HeadBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/IVCSBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/LeftArmBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/LeftHandBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/LeftLegBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/PhysicsBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/RightArmBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/RightHandBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/RightLegBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/RootBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/SpineBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/TailBones.cs,reviewed,domain.csv,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneLinkCatalog.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/BonePoseInfo.cs,reviewed,domain.csv,"Corrected additive-rotation, rejection and atomicity claims; Apply can append identity entry before rejecting final data; inspect effect before behavior change."
+Poser.Domain/Posing/BoneSymmetry.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/FabrikControl.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/FabrikSolver.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/FaceGenerationMatch.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/IkActorAnchor.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/IkCollider.cs,reviewed,domain.csv,Corrected immutable-mesh claim: arrays are retained; trace actual writers before deciding whether copying is necessary.
+Poser.Domain/Posing/IkConfiguration.cs,reviewed,domain.csv,"Corrected solver defaults, undeclared-chain support and end-rotation defaults; historical CCD test is not proof of exact bound."
+Poser.Domain/Posing/IkEndRotationAnchor.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/IkReach.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/KtisisBoneCategories.g.cs,reviewed,domain.csv,"Full transcription and traversal read; provenance and jaw placement retained. Later traversal wins for duplicate ownership, not globally deepest node."
+Poser.Domain/Posing/LightPlacement.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/PortablePose.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/PoseEditResult.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/PoseLayers.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/PoseMath.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/PoseOperations.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/RestPose.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/RopeSolver.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Preferences/EditorOptions.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Preferences/KeyChord.cs,reviewed,domain.csv,Corrected parser guarantee: recognized later key replaces earlier key; malformed-input behavior is a policy decision.
+Poser.Domain/Preferences/KeyCode.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Preferences/RotationPivot.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Presentation/AppearanceColors.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Presentation/OverlayNodes.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Presentation/PresentationTypes.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/CameraTrackingMode.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/EntityNames.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/EnvironmentReading.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/EnvironmentValues.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/FestivalValues.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/FurnitureLightState.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/GazeTarget.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/LightFalloffType.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/ObjectPlacementMode.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/PropModel.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/SceneOutcomeKind.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/SceneSnapshot.cs,reviewed,domain.csv,Reviewed copied collections and equality; removed obsolete transitional migration story and misplaced property summaries.
+Poser.Domain/Scene/WorldAsset.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/GestureResult.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/GizmoSnap.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/GroupTransformReadModel.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/PoseTransform.cs,reviewed,domain.csv,"Reviewed scale bounds, quaternion normalization, pivot and mirror math; limits are application policy, not demonstrated native limits."
+Poser.Domain/Transforms/Transform.cs,reviewed,domain.csv,Corrected unsigned matrix conversion and false hash/equality guarantee; preserve authored scale and separate approximate comparison from equality.
+Poser.Domain/Transforms/TransformParent.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/TransformRecovery.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/TransformTargetState.cs,reviewed,domain.csv,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Game.Tests/ActorColliderDeformationTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/ActorColliderMeshTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Animation/AnimationOwnershipTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Animation/ExpressionPreviewTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Animation/FacialPoseCaptureTests.cs,reviewed,game.csv,Rewrote the six-tick bake explanation in chronological plain language
+Poser.Game.Tests/Animation/PhysicsFreezePatcherTests.cs,reviewed,game.csv,Rewrote native patch test comments to state the verified byte contracts plainly
+Poser.Game.Tests/Animation/PositionLockOwnershipTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Animation/TimelineStateTests.cs,reviewed,game.csv,Removed an unexplained animation-name assertion from the hold-bit comment
+Poser.Game.Tests/BepuIkCollisionTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Bindings/BoneNameRefreshTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Bindings/StableBindingAttachmentTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Bindings/StableBindingThreadTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/BodySurfaceFitTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Cameras/CameraCenteringTests.cs,reviewed,game.csv,No comments; full source reviewed
+Poser.Game.Tests/Cameras/CameraControlTests.cs,reviewed,game.csv,No comments; full source reviewed
+Poser.Game.Tests/Cameras/CameraTargetBindingTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Cameras/CameraTargetControlTests.cs,reviewed,game.csv,"Clarified lock restoration, replaced actor behavior, and copied reading comments"
+Poser.Game.Tests/Cameras/DefaultCameraRetryTests.cs,reviewed,game.csv,No comments; full source reviewed
+Poser.Game.Tests/Companions/OrnamentCatalogRowsTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Environment/EnvironmentHoldReleaseTests.cs,reviewed,game.csv,Removed unsupported claim that proxy events exactly reproduce Dalamud
+Poser.Game.Tests/ExpressionBlendingTests.cs,reviewed,game.csv,Explained parent-frame comparison directly
+Poser.Game.Tests/Files/AutoSaveServicePruningTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Files/AutoSaveServiceSnapshotTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Files/AutoSaveServiceTriggerTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Files/PoseFileServicePersistenceTests.cs,reviewed,game.csv,Explained matching-transform reset test without relying on an external report
+Poser.Game.Tests/Fixtures/AutoSaveHarness.cs,reviewed,game.csv,"Removed stale framework, Save/Load, dropped-save, and exclusive failure-injection claims; clarified background writes"
+Poser.Game.Tests/IdlePoseLocalTransformTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/IdlePoseRetargeterTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/IdleSkeletonBindingTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Input/KeyEventHookTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Integration/ActorRedrawBarrierTests.cs,reviewed,game.csv,No comments present; full source reviewed
+Poser.Game.Tests/Integration/CatalogModelInitializationTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Integration/GlamourerAccessTests.cs,reviewed,game.csv,Clarified comments after full source review
+Poser.Game.Tests/Integration/InheritedResourcePathsTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Integration/IntegrationGraph.cs,reviewed,game.csv,none
+Poser.Game.Tests/Integration/SpawnAppearanceCopyTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Journal/AppearanceColorTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Journal/OverlayDragHistoryTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Journal/PresentationResetHistoryTests.cs,reviewed,game.csv,Clarified comments after full source review
+Poser.Game.Tests/Lighting/BorrowedLightStateTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Lighting/LightBoundaryTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/NativePoseReadTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Natives/NativeHealthCheckTests.cs,reviewed,game.csv,Clarified comments after full source review
+Poser.Game.Tests/Natives/NativeSignatureSourceTests.cs,reviewed,game.csv,Clarified comments after full source review
+Poser.Game.Tests/Overlays/OverlayControlTests.cs,reviewed,game.csv,No comments present; full source reviewed
+Poser.Game.Tests/Poser.Game.Tests.csproj,reviewed,scripts-build.csv,Removed provenance claims and stated how tests locate and copy Dalamud assemblies.
+Poser.Game.Tests/Posing/ActorOrbitPositionTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Posing/ActorPoseReadinessTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Posing/AuthoredPoseStateTests.cs,reviewed,game.csv,Clarified comments after full source review
+Poser.Game.Tests/Posing/FabrikSpanTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Posing/GazePoseFrameTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Posing/IkSceneTargetTests.cs,reviewed,game.csv,No comments present; full source reviewed
+Poser.Game.Tests/Posing/PartialPoseFrameTests.cs,reviewed,game.csv,Replaced dated user-report provenance with the test case purpose
+Poser.Game.Tests/Posing/PoseExportCaptureTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Posing/PoseImportBoundaryTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Runtime/ActorAvailabilityTests.cs,reviewed,game.csv,Reworded fake/native claims to describe actual fixture behavior
+Poser.Game.Tests/Runtime/ActorIdentityTests.cs,reviewed,game.csv,Reduced failure-story prose to the tested identity invariant
+Poser.Game.Tests/Runtime/ActorSpawnServiceOwnershipTests.cs,reviewed,game.csv,Reworded fake/native claims to describe actual fixture behavior
+Poser.Game.Tests/Runtime/GazeCapabilityTests.cs,reviewed,game.csv,Reworded fake/native claims to describe actual fixture behavior
+Poser.Game.Tests/Runtime/PoseStoreRedrawTests.cs,reviewed,game.csv,Reduced emphatic historical prose to the identity invariant
+Poser.Game.Tests/Runtime/SceneFramePhaseTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Runtime/WorldActorDiscoveryTests.cs,reviewed,game.csv,Clarified fixture state and restoration comments; removed unsupported equivalence claims
+Poser.Game.Tests/Scene/ActorStateRestoreTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Scene/CoalescedRefreshTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Scene/LibrarySceneActionsTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Scene/SceneAppearanceSourceTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Scene/SceneCameraCaptureTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Scene/SceneLifecycleHistoryTests.cs,reviewed,game.csv,Clarified fixture state and restoration comments; removed unsupported equivalence claims
+Poser.Game.Tests/Scene/SceneObjectControlTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Scene/SceneRuntimeHandlesTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Scene/SessionAppearanceFilesTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/Selection/SelectionEntityCommandPortTests.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game.Tests/Transforms/RetainedTransformTargetTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/WorldObjects/PendingWorldAcquisitionTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/WorldObjects/VfxOwnedAllocationLedgerTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/WorldObjects/WorldCandidateBookTests.cs,reviewed,game.csv,none
+Poser.Game.Tests/WorldObjects/WorldObjectRestoreTests.cs,reviewed,game.csv,Removed exhaustive-proof and faithful-native-graph claims; described actual fixture scope
+Poser.Game/Actors/RaceFeatureRead.cs,reviewed,game.csv,Clarified rendered-customize precedence and native array-index invariant
+Poser.Game/Animation/AnimationCatalogLoader.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game/Animation/AnimationNativeState.Probe.cs,reviewed,game.csv,Full source review; bounded diagnostic claims and redraw/disposal guarantees.
+Poser.Game/Animation/AnimationNativeState.ResetWatch.cs,reviewed,game.csv,"Full source review; corrected guarantees about pointers, diagnostics, tokens, and patch rollback."
+Poser.Game/Animation/AnimationNativeState.cs,reviewed,game.csv,"Full source review; corrected guarantees about pointers, diagnostics, tokens, and patch rollback."
+Poser.Game/Animation/AnimationScrubRuntimePort.cs,reviewed,game.csv,Full source review; clarified native ordering and removed obsolete experiment narration.
+Poser.Game/Animation/AnimationSpeedRuntimePort.cs,reviewed,game.csv,Full source review; clarified native ordering and removed obsolete experiment narration.
+Poser.Game/Animation/AnimationStanceRuntimePort.cs,reviewed,game.csv,Full source review; clarified native ordering and removed obsolete experiment narration.
+Poser.Game/Animation/AnimationTimelineRuntimePort.cs,reviewed,game.csv,Full source review; clarified native ordering and removed obsolete experiment narration.
+Poser.Game/Animation/ExpressionPreview.cs,reviewed,game.csv,"Clarified native lifetime, retry, and restoration comments after full source review."
+Poser.Game/Animation/FacialPoseCapture.cs,reviewed,game.csv,"Full source review; clarified acceptance, capture speed, replay limits, and exception scope."
+Poser.Game/Animation/GPoseMotionRecords.cs,reviewed,game.csv,"Clarified native lifetime, retry, and restoration comments after full source review."
+Poser.Game/Animation/IdleHavokEncoder.cs,reviewed,game.csv,Full source review; clarified resource lifetime where needed.
+Poser.Game/Animation/IdleModDiagnostics.cs,reviewed,game.csv,none
+Poser.Game/Animation/IdleModRuntime.cs,reviewed,game.csv,Full source review; clarified resource lifetime where needed.
+Poser.Game/Animation/IdlePoseLocalTransform.cs,reviewed,game.csv,none
+Poser.Game/Animation/IdlePoseRetargeter.cs,reviewed,game.csv,none
+Poser.Game/Animation/PhysicsFreezePatcher.cs,reviewed,game.csv,"Full source review; corrected guarantees about pointers, diagnostics, tokens, and patch rollback."
+Poser.Game/Animation/PositionLockOwnership.cs,reviewed,game.csv,Removed issue-history narrative and described unchanged-value ownership
+Poser.Game/Animation/TimelineSeekEngine.Fallback.cs,reviewed,game.csv,Removed an old-version failure story and clarified the Havok-held control guard
+Poser.Game/Animation/TimelineSeekEngine.Props.cs,reviewed,game.csv,"Full source review; clarified seek lifecycle, pending result, prop retry and native query side effects."
+Poser.Game/Animation/TimelineSeekEngine.Speeds.cs,reviewed,game.csv,Full source review; scoped native validation and VFX ownership claims to actual checks.
+Poser.Game/Animation/TimelineSeekEngine.Vfx.cs,reviewed,game.csv,Full source review; scoped native validation and VFX ownership claims to actual checks.
+Poser.Game/Animation/TimelineSeekEngine.cs,reviewed,game.csv,"Full source review; clarified seek lifecycle, pending result, prop retry and native query side effects."
+Poser.Game/Animation/TimelineSeekLayout.Runtime.cs,reviewed,game.csv,Full source review; scoped native validation and VFX ownership claims to actual checks.
+Poser.Game/Animation/TimelineSeekLayout.cs,reviewed,game.csv,none
+Poser.Game/Animation/TimelineSeekNatives.cs,reviewed,game.csv,Full source review; scoped native validation and VFX ownership claims to actual checks.
+Poser.Game/Animation/TimelineSeekService.Loops.cs,reviewed,game.csv,"Full source review; clarified acceptance, capture speed, replay limits, and exception scope."
+Poser.Game/Animation/TimelineSeekService.Props.cs,reviewed,game.csv,"Full source review; clarified acceptance, capture speed, replay limits, and exception scope."
+Poser.Game/Animation/TimelineSeekService.Restore.cs,reviewed,game.csv,Full source review; bounded diagnostic claims and redraw/disposal guarantees.
+Poser.Game/Animation/TimelineSeekService.Speeds.cs,reviewed,game.csv,"Full source review; clarified acceptance, capture speed, replay limits, and exception scope."
+Poser.Game/Animation/TimelineSeekService.cs,reviewed,game.csv,Full source review; bounded diagnostic claims and redraw/disposal guarantees.
+Poser.Game/Animation/TimelineSeekWork.cs,reviewed,game.csv,"Clarified native lifetime, retry, and restoration comments after full source review."
+Poser.Game/Animation/TimelineState.cs,reviewed,game.csv,"Clarified native lifetime, retry, and restoration comments after full source review."
+Poser.Game/Appearance/CharacterModelNative.cs,reviewed,game.csv,none
+Poser.Game/Appearance/ModelCatalogLoader.cs,reviewed,game.csv,none
+Poser.Game/Appearance/ModelIdRuntimePort.cs,reviewed,game.csv,Replaced historical implementation narrative with the actual readback contract
+Poser.Game/AutoSave/AutoSaveRuntime.cs,reviewed,game.csv,Named the subscription actually owned
+Poser.Game/AutoSave/PoseAutoSaveCapturePort.cs,reviewed,game.csv,Condensed capture-thread comments to the enforced boundary
+Poser.Game/Bindings/StableBindingRegistry.cs,reviewed,game.csv,"Full source review; simplified source checks, preview lifecycle, auxiliary publication and lineage comments."
+Poser.Game/Cameras/CameraAccessors.cs,reviewed,game.csv,none
+Poser.Game/Cameras/CameraControl.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Cameras/CameraDocument.cs,reviewed,game.csv,Removed all-caps uniqueness claims and ownership shorthand
+Poser.Game/Cameras/CameraRestRecorder.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Cameras/CameraStructs.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Cameras/CameraTargetControl.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Cameras/CameraTargeting.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Cameras/CameraWorkspaceRuntime.cs,reviewed,game.csv,none
+Poser.Game/Cameras/FreeCameraController.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Cameras/GPoseDepthOfFieldGuard.cs,reviewed,game.csv,Condensed the hook contract and clarified why idle-camera detection is required
+Poser.Game/Cameras/NativeCameraHooks.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Cameras/VirtualCamera.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Cameras/VirtualCameraService.cs,reviewed,game.csv,Reworded comments against full visible source; removed unsupported native equivalence and guarantees
+Poser.Game/Companions/CompanionCatalogLoader.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game/Companions/CompanionRuntime.cs,reviewed,game.csv,none
+Poser.Game/Companions/OrnamentCatalogRows.cs,reviewed,game.csv,none
+Poser.Game/Core/EventBus.cs,reviewed,game.csv,Removed member-name narration; clarified snapshot dispatch invariant
+Poser.Game/Core/Events.cs,reviewed,game.csv,none
+Poser.Game/Core/GPoseObjectTable.cs,reviewed,game.csv,none
+Poser.Game/Core/NativeHelpers.cs,reviewed,game.csv,Removed redundant method narration
+Poser.Game/Diagnostics/GPoseTransitionLog.cs,reviewed,game.csv,none
+Poser.Game/Diagnostics/GazeEvaluationProbe.cs,reviewed,game.csv,none
+Poser.Game/Entities/ActorBase.cs,reviewed,game.csv,Aligned transform/cache/camera comments with implementation; removed stale universal claims
+Poser.Game/Entities/Bone.cs,reviewed,game.csv,Aligned transform/cache/camera comments with implementation; removed stale universal claims
+Poser.Game/Entities/BoneReadClock.cs,reviewed,game.csv,Removed layering shorthand and explained the demand stamps directly
+Poser.Game/Entities/BoneWorld.cs,reviewed,game.csv,none
+Poser.Game/Entities/EntityBase.cs,reviewed,game.csv,Condensed the cached-view invariant and removed comments that repeated the code
+Poser.Game/Entities/IActor.cs,reviewed,game.csv,Removed redundant member narration and clarified native address/category
+Poser.Game/Entities/IBone.cs,reviewed,game.csv,Removed redundant relationship narration while preserving partial-root scale and baseline contracts
+Poser.Game/Entities/IEntity.cs,reviewed,game.csv,none
+Poser.Game/Entities/ILight.cs,reviewed,game.csv,Removed emphatic framework-thread wording
+Poser.Game/Entities/ISkeleton.cs,reviewed,game.csv,Removed redundant member narration and issue-history wording from build revision
+Poser.Game/Entities/IVirtualCamera.cs,reviewed,game.csv,Aligned transform/cache/camera comments with implementation; removed stale universal claims
+Poser.Game/Entities/LegacyBoneFilters.cs,reviewed,game.csv,none
+Poser.Game/Entities/NativePoseRead.cs,reviewed,game.csv,none
+Poser.Game/Entities/Skeleton.cs,reviewed,game.csv,"Full source review; bounded map validity claims, clarified revision and reference composition, removed profiling history."
+Poser.Game/Entities/VirtualBone.cs,reviewed,game.csv,Aligned transform/cache/camera comments with implementation; removed stale universal claims
+Poser.Game/Environment/EnvManagerOverlay.cs,reviewed,game.csv,Full source reviewed; simplified native layout/freeze text and corrected snapshot variants
+Poser.Game/Environment/EnvironmentService.cs,reviewed,game.csv,Full source review; concise environment mechanism summary and accurate exception/thread boundary.
+Poser.Game/Environment/FestivalService.cs,reviewed,game.csv,Full source review; shortened festival ordering/restoration overview.
+Poser.Game/Environment/PlaceService.cs,reviewed,game.csv,Removed external-history detail and emphatic wording; retained optional-link and uint invariants
+Poser.Game/Environment/WorldRenderingService.cs,reviewed,game.csv,Full source reviewed; simplified native layout/freeze text and corrected snapshot variants
+Poser.Game/Files/PoseFileService.cs,reviewed,game.csv,"Full source review; clarified reset scope, anchor inheritance, native read assumptions and pass order."
+Poser.Game/Input/GPoseMouseTargetHook.cs,reviewed,game.csv,Replaced external-product attribution with the detour's observable contract
+Poser.Game/Input/KeyEventHook.cs,reviewed,game.csv,none
+Poser.Game/Integration/ActorRedrawBarrier.cs,reviewed,game.csv,Full source reviewed; clarified address preconditions and cleanup limits where needed
+Poser.Game/Integration/CharacterFilePump.cs,reviewed,game.csv,none
+Poser.Game/Integration/CustomizePlusIpc.cs,reviewed,game.csv,Full source reviewed; clarified address preconditions and cleanup limits where needed
+Poser.Game/Integration/DuplicateCollectionLedger.cs,reviewed,game.csv,Removed anecdote and explained both ownership maps directly
+Poser.Game/Integration/GlamourerIpc.cs,reviewed,game.csv,Qualified identity resolution and unavailable-provider comments; corrected parsed-key scope
+Poser.Game/Integration/ISpawnAppearancePort.cs,reviewed,game.csv,Replaced ownership shorthand with the spawn timing and target boundary
+Poser.Game/Integration/ISpawnCollectionPort.cs,reviewed,game.csv,Replaced insider spawn/Penumbra history with address-lifetime contract and normalized emphasis
+Poser.Game/Integration/IntegrationActorResolution.cs,reviewed,game.csv,Full source reviewed; clarified address preconditions and cleanup limits where needed
+Poser.Game/Integration/IntegrationIpc.cs,reviewed,game.csv,Full source reviewed; clarified address preconditions and cleanup limits where needed
+Poser.Game/Integration/InvisibleSkinService.cs,reviewed,game.csv,Full source reviewed; clarified address preconditions and cleanup limits where needed
+Poser.Game/Integration/PenumbraIpc.cs,reviewed,game.csv,Full source reviewed; clarified address preconditions and cleanup limits where needed
+Poser.Game/Integration/PenumbraRedrawRuntime.cs,reviewed,game.csv,none
+Poser.Game/Journal/AppearanceColorSession.cs,reviewed,game.csv,none
+Poser.Game/Journal/HistoryEntityLookup.cs,reviewed,game.csv,none
+Poser.Game/Journal/PoseSnapshotPort.cs,reviewed,game.csv,Full source reviewed; simplified native layout/freeze text and corrected snapshot variants
+Poser.Game/Journal/WorldActorSession.cs,reviewed,game.csv,Full source reviewed; simplified native layout/freeze text and corrected snapshot variants
+Poser.Game/Lighting/BorrowedLightState.cs,reviewed,game.csv,Full source reviewed; corrected native validity and gobo-library claims where needed
+Poser.Game/Lighting/GPoseCameraLights.cs,reviewed,game.csv,Full source reviewed; corrected native validity and gobo-library claims where needed
+Poser.Game/Lighting/GoboLibrary.cs,reviewed,game.csv,none
+Poser.Game/Lighting/Light.cs,reviewed,game.csv,Full source reviewed; corrected native validity and gobo-library claims where needed
+Poser.Game/Lighting/LightAccessors.cs,reviewed,game.csv,none
+Poser.Game/Lighting/LightControl.cs,reviewed,game.csv,No comments present; full source reviewed
+Poser.Game/Lighting/LightDocument.cs,reviewed,game.csv,none
+Poser.Game/Lighting/LightGoboController.cs,reviewed,game.csv,Full source reviewed; corrected native validity and gobo-library claims where needed
+Poser.Game/Lighting/LightStructs.cs,reviewed,game.csv,Full source reviewed; corrected native validity and gobo-library claims where needed
+Poser.Game/Lighting/LightingService.cs,reviewed,game.csv,Simplified discovery/teardown comments; removed unsupported pointer-latching claim
+Poser.Game/Lighting/WorldLightCapture.cs,reviewed,game.csv,Simplified discovery/teardown comments; removed unsupported pointer-latching claim
+Poser.Game/Natives/HookLedger.cs,reviewed,game.csv,Condensed class contract to recorded behavior
+Poser.Game/Natives/NativeCode.cs,reviewed,game.csv,none
+Poser.Game/Natives/NativeFields.g.cs,reviewed,generated-review.csv,Corrected scope and explained local versus pattern-checked values
+Poser.Game/Natives/NativeHealthCheck.cs,reviewed,game.csv,Condensed exhaustive narrative to implemented dependency classes and synchronization
+Poser.Game/Natives/NativeRegistry.g.cs,reviewed,generated-review.csv,Clarified Kind-based resolver and generation-snapshot consumers
+Poser.Game/Natives/NativeSignatures.g.cs,reviewed,generated-review.csv,Clarified external analysis provenance and removed unsupported offset-validity guarantee
+Poser.Game/Natives/OwnedSceneObjectLifetime.cs,reviewed,game.csv,none
+Poser.Game/Overlays/IOverlayNodePort.cs,reviewed,game.csv,Normalized emphasis and stated native ownership contract plainly
+Poser.Game/Overlays/KamiToolKitOverlayPort.cs,reviewed,game.csv,"Full source review; replaced lifecycle essay and corrected name reuse, availability and invalid-handle claims."
+Poser.Game/Overlays/OverlayAccessors.cs,reviewed,game.csv,none
+Poser.Game/Overlays/OverlayControl.cs,reviewed,game.csv,none
+Poser.Game/Overlays/OverlayNodeService.cs,reviewed,game.csv,"Full source review; replaced lifecycle essay and corrected name reuse, availability and invalid-handle claims."
+Poser.Game/Overlays/OverlayNodeShapes.cs,reviewed,game.csv,Full source review; simplified interface/overlay explanations and corrected warmup/thread claims.
+Poser.Game/Overlays/StatusIconCatalog.cs,reviewed,game.csv,Replaced all-caps and session shorthand with lazy sheet-loading behavior
+Poser.Game/Poser.Game.csproj,reviewed,scripts-build.csv,Retained source and compatibility notes for pinned UI and embedded third-party data.
+Poser.Game/Posing/ActorBodyColliderBuilder.cs,reviewed,game.csv,Full source review; simplified lifecycle comments and corrected rollback/disposal guarantees.
+Poser.Game/Posing/ActorColliderCapture.cs,reviewed,game.csv,"Full source review; collider geometry comments retained; corrected expression resource, availability and diagnostic scope."
+Poser.Game/Posing/ActorColliderDeformation.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game/Posing/ActorColliderMeshBuilder.cs,reviewed,game.csv,"Full source review; collider geometry comments retained; corrected expression resource, availability and diagnostic scope."
+Poser.Game/Posing/ActorOrbitPosition.cs,reviewed,game.csv,none
+Poser.Game/Posing/ActorPoseCaptureRuntime.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game/Posing/ActorPoseReadiness.cs,reviewed,game.csv,none
+Poser.Game/Posing/ActorPoseResetRuntime.cs,reviewed,game.csv,none
+Poser.Game/Posing/AuthoredPoseState.cs,reviewed,game.csv,none
+Poser.Game/Posing/BepuIkCollisionState.cs,reviewed,game.csv,"Full source review; collider geometry comments retained; corrected expression resource, availability and diagnostic scope."
+Poser.Game/Posing/BodySurfaceFit.cs,reviewed,game.csv,"Full source review; collider geometry comments retained; corrected expression resource, availability and diagnostic scope."
+Poser.Game/Posing/ExpressionRuntimePort.cs,reviewed,game.csv,none
+Poser.Game/Posing/ExpressionService.cs,reviewed,game.csv,"Full source review; collider geometry comments retained; corrected expression resource, availability and diagnostic scope."
+Poser.Game/Posing/GazePoseFrames.cs,reviewed,game.csv,Full source review; simplified import comments and bounded completion and rollback claims.
+Poser.Game/Posing/GazeRuntimeAdapter.cs,reviewed,game.csv,none
+Poser.Game/Posing/IkBakeCapture.cs,reviewed,game.csv,Full source review; simplified lifecycle comments and corrected rollback/disposal guarantees.
+Poser.Game/Posing/IkConfigurationPort.cs,reviewed,game.csv,Full source review; simplified import comments and bounded completion and rollback claims.
+Poser.Game/Posing/NativePoseImportService.cs,reviewed,game.csv,Full source review; simplified import comments and bounded completion and rollback claims.
+Poser.Game/Posing/PartialPoseFrame.cs,reviewed,game.csv,none
+Poser.Game/Posing/PoseEditReads.cs,reviewed,game.csv,none
+Poser.Game/Posing/PoseExportCapture.cs,reviewed,game.csv,Full source review; simplified lifecycle comments and corrected rollback/disposal guarantees.
+Poser.Game/Posing/PoseImportCapture.cs,reviewed,game.csv,Full source review; simplified lifecycle comments and corrected rollback/disposal guarantees.
+Poser.Game/Posing/PoseImportPlanner.cs,reviewed,game.csv,Full source review; simplified import comments and bounded completion and rollback claims.
+Poser.Game/Posing/PoseImportRuntime.cs,reviewed,game.csv,none
+Poser.Game/Posing/PoseImportState.cs,reviewed,game.csv,Full source review; simplified import comments and bounded completion and rollback claims.
+Poser.Game/Posing/PoseImportTerminal.cs,reviewed,game.csv,Full source review; simplified import comments and bounded completion and rollback claims.
+Poser.Game/Posing/PoseInteraction.cs,reviewed,game.csv,none
+Poser.Game/Presentation/ActorValueRuntime.cs,reviewed,game.csv,none
+Poser.Game/Presentation/CustomizeReadRuntimePort.cs,reviewed,game.csv,Removed historical map-pane wording and stated rendered-data fallback plainly
+Poser.Game/Presentation/EntityAccessors.cs,reviewed,game.csv,none
+Poser.Game/Presentation/HandleValuePort.cs,reviewed,game.csv,Explained lifecycle replacement without exact-id and repair shorthand
+Poser.Game/Presentation/PresentationRuntimePort.Colors.cs,reviewed,game.csv,Full source review; shortened presentation overview and scoped tint restoration/enforcement claims.
+Poser.Game/Presentation/PresentationRuntimePort.cs,reviewed,game.csv,Full source review; shortened presentation overview and scoped tint restoration/enforcement claims.
+Poser.Game/Presentation/ReferenceSkeletonReadPort.cs,reviewed,game.csv,none
+Poser.Game/Preview/PosePreviewService.cs,reviewed,game.csv,"Full source review; simplified source checks, preview lifecycle, auxiliary publication and lineage comments."
+Poser.Game/Runtime/ActorManager.cs,reviewed,game-spawn.csv,Shortened identity/name explanations and corrected address-only change detection and alpha restore wording
+Poser.Game/Runtime/ActorSpawnService.cs,reviewed,game-spawn.csv,"Corrected creation-only authority guarantee, source-address check and adoption side effects"
+Poser.Game/Runtime/BoneApplyPass.cs,reviewed,game.csv,"Full source review; clarified reset scope, anchor inheritance, native read assumptions and pass order."
+Poser.Game/Runtime/BonePosingService.cs,reviewed,game.csv,"Full source review; corrected IK key ownership, mode names, buffer callers and disposal claim."
+Poser.Game/Runtime/BoneSnapshotDemand.cs,reviewed,game.csv,Removed profiling anecdote and emphatic wording; stated demand behavior directly
+Poser.Game/Runtime/BoneSnapshotPass.cs,reviewed,game.csv,"Full source review; bounded detour exception handling, cache validity, driver reporting and threading assumptions."
+Poser.Game/Runtime/CameraService.cs,reviewed,game.csv,"Full source review; clarified camera fallback, quaternion convention, cache refresh and store ownership."
+Poser.Game/Runtime/GPoseService.cs,reviewed,game.csv,"Full source review; clarified camera fallback, quaternion convention, cache refresh and store ownership."
+Poser.Game/Runtime/GazeEntryStore.cs,reviewed,root-extra.csv,"Full read: source ID/address indices, release bits and mode policy. Removed false no-write and preserved-position guarantees; documented caller lock."
+Poser.Game/Runtime/GazeNative.cs,reviewed,root-extra.csv,"Full read: scanned hooks, native target union and explicit sizes retained; simplified native-target API explanation."
+Poser.Game/Runtime/GazeNativeDriver.cs,reviewed,root-extra.csv,"Full read: pending target booked before native call, snapshot writes, release bits, pose compensation. Corrected claims of successful write and same-bit concurrent release preservation."
+Poser.Game/Runtime/GazeReconciler.cs,reviewed,root-extra.csv,"Full read: post-commit snapshot, source resolution, sticky stale targets, releases and event. Replaced absence certainty with actual lookup result."
+Poser.Game/Runtime/GazeService.cs,reviewed,root-extra.csv,"Full read in three bounded spans: initialization, all mode/part/lock transitions and teardown. Corrected false preserved positions, enabled-only updates and immediate release claims."
+Poser.Game/Runtime/IKService.cs,reviewed,game.csv,"Full source review; corrected IK key ownership, mode names, buffer callers and disposal claim."
+Poser.Game/Runtime/IkChainRegistry.Fabrik.cs,reviewed,game.csv,"Full source review; corrected IK key ownership, mode names, buffer callers and disposal claim."
+Poser.Game/Runtime/IkChainRegistry.cs,reviewed,game.csv,"Full source review; corrected IK key ownership, mode names, buffer callers and disposal claim."
+Poser.Game/Runtime/IkChainShapes.cs,reviewed,game.csv,"Full source review; clarified camera fallback, quaternion convention, cache refresh and store ownership."
+Poser.Game/Runtime/IkHeldTargets.cs,reviewed,game.csv,"Full source review; clarified camera fallback, quaternion convention, cache refresh and store ownership."
+Poser.Game/Runtime/KineDriverRerun.cs,reviewed,game.csv,"Full source review; bounded detour exception handling, cache validity, driver reporting and threading assumptions."
+Poser.Game/Runtime/PoseStackStore.cs,reviewed,game.csv,"Full source review; clarified camera fallback, quaternion convention, cache refresh and store ownership."
+Poser.Game/Runtime/PosingService.cs,reviewed,game.csv,"Full source review; bounded detour exception handling, cache validity, driver reporting and threading assumptions."
+Poser.Game/Runtime/PropSpawnService.cs,reviewed,game-spawn.csv,Removed misplaced spawn/destroy summaries and narrowed failed-respawn and world-null claims
+Poser.Game/Runtime/SceneFramePhaseService.cs,reviewed,game.csv,"Full source review; clarified camera fallback, quaternion convention, cache refresh and store ownership."
+Poser.Game/Runtime/SkeletonKey.cs,reviewed,game.csv,Replaced historical migration story and emphatic wording with the redraw-stable identity invariant
+Poser.Game/Runtime/SkeletonService.cs,reviewed,game.csv,"Full source review; bounded detour exception handling, cache validity, driver reporting and threading assumptions."
+Poser.Game/Runtime/SlotCharacterBases.cs,reviewed,game.csv,Normalized emphatic layer and native-field wording while preserving offsets and Brio provenance
+Poser.Game/Runtime/Spawn/ActorCompanionControl.cs,reviewed,game-spawn.csv,Comments match inspected behavior; no edit required
+Poser.Game/Runtime/Spawn/ActorModelControl.cs,reviewed,game-spawn.csv,Comments match inspected behavior; no edit required
+Poser.Game/Runtime/Spawn/ActorRemoval.cs,reviewed,game-spawn.csv,Replaced contradictory local-player refusal summary with actual GPose-copy admission and index-space rules
+Poser.Game/Runtime/Spawn/Native/ActorSpawnNativeAdapter.cs,reviewed,game-spawn.csv,Shortened pose-preserving alpha explanation
+Poser.Game/Runtime/Spawn/Native/ClientObjectManagerNative.cs,reviewed,game.csv,none
+Poser.Game/Runtime/Spawn/Native/IActorSpawnNativeAdapter.cs,reviewed,game.csv,Replaced fail-closed and all-caps terms with explicit cross-frame safety behavior
+Poser.Game/Runtime/Spawn/Native/SpawnClientObjects.cs,reviewed,game-spawn.csv,Corrected snapshot-versus-manager-slot description
+Poser.Game/Runtime/Spawn/Ownership/SpawnActorResolver.cs,reviewed,game-spawn.csv,Comments match inspected behavior; no edit required
+Poser.Game/Runtime/Spawn/Ownership/SpawnLifetimeStamps.cs,reviewed,game.csv,none
+Poser.Game/Runtime/Spawn/Ownership/SpawnNativeDescriptor.cs,reviewed,game.csv,Removed exact/fail-closed shorthand and clarified lifetime-stamp consequence
+Poser.Game/Runtime/Spawn/Ownership/SpawnOwnershipLedger.cs,reviewed,game-spawn.csv,Corrected unresolved-record retirement prerequisite descriptions
+Poser.Game/Runtime/Spawn/Ownership/SpawnOwnershipRecord.cs,reviewed,game.csv,Normalized emphatic slot-resolution wording
+Poser.Game/Runtime/Spawn/SpawnFramePoller.cs,reviewed,game-spawn.csv,Documented optional rather than mandatory timeout
+Poser.Game/Runtime/Spawn/SpawnOwnershipCleanup.cs,reviewed,game-spawn.csv,Corrected DeleteAll result semantics and unresolved-record retention
+Poser.Game/Runtime/Spawn/SpawnTransaction.cs,reviewed,game-spawn.csv,Shortened deferred collection ordering and removed historical timestamps
+Poser.Game/Runtime/SpawnCatalogService.cs,reviewed,game-spawn.csv,Comments match inspected behavior; no edit required
+Poser.Game/Runtime/TransitiveActionScheduler.cs,reviewed,game.csv,Comments rewritten or removed for accuracy and plain language
+Poser.Game/Runtime/WorldActorDiscovery.cs,reviewed,game-spawn.csv,"Corrected adopted kinds, obsolete clone terminology and highlight-state field summary"
+Poser.Game/Scene/ActorLifecycleOwner.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/ActorRemovalCleanup.cs,reviewed,game.csv,Removed emphatic lifecycle shorthand while preserving cleanup ordering and Brio compatibility
+Poser.Game/Scene/ActorSceneControl.cs,reviewed,game.csv,none
+Poser.Game/Scene/ActorServiceLifecycle.Runtime.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/Scene/ActorServiceLifecycle.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/CameraLifecycleOwner.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/Scene/CleanSceneLifecycle.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/LightLifecycleOwner.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/Scene/OverlayLifecycleOwner.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/PlacementAnchorSource.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/PropLifecycleOwner.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneActorRuntime.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneAppearanceRuntime.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneAppearanceSource.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneCaptureService.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneClearRuntime.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneCreation.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/Scene/SceneCreationRuntime.cs,reviewed,game.csv,Explained framework ownership without internal shorthand
+Poser.Game/Scene/SceneEntityRuntime.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneHistoryBinder.cs,reviewed,game.csv,Replaced receipt and lifecycle-alias shorthand with the replacement-binding behavior
+Poser.Game/Scene/SceneLifecycleHistory.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneObjectAccessors.cs,reviewed,game.csv,none
+Poser.Game/Scene/SceneObjectControl.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneRuntimeHandles.cs,reviewed,game.csv,Replaced receipt and lifecycle-alias terminology with handle and replacement behavior
+Poser.Game/Scene/SceneStateRuntime.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/SceneWorkflowObserver.cs,reviewed,game.csv,none
+Poser.Game/Scene/SceneWorkflowRegistration.cs,reviewed,game.csv,none
+Poser.Game/Scene/SessionAppearanceFiles.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/TargetSyncService.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/Scene/WorldObjectLifecycleOwner.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/Selection/SelectionEntityCommandPort.cs,reviewed,game.csv,none
+Poser.Game/Services/BindingResult.cs,reviewed,game.csv,none
+Poser.Game/Services/GazeState.cs,reviewed,game.csv,none
+Poser.Game/Services/IActorManager.cs,reviewed,game.csv,Comments rewritten or removed for accuracy and plain language
+Poser.Game/Services/IActorSpawnService.cs,reviewed,game.csv,Full source review; simplified interface/overlay explanations and corrected warmup/thread claims.
+Poser.Game/Services/IBonePosingService.cs,reviewed,game.csv,Full source review; simplified interface/overlay explanations and corrected warmup/thread claims.
+Poser.Game/Services/IEntityBindings.cs,reviewed,game.csv,none
+Poser.Game/Services/ILightingService.cs,reviewed,game.csv,Removed an overbroad unavailable-state claim and clarified captured-light and gobo terms
+Poser.Game/Services/IOverlayNode.cs,reviewed,game.csv,none
+Poser.Game/Services/IOverlayNodeService.cs,reviewed,game.csv,none
+Poser.Game/Services/IPoseFileService.cs,reviewed,game.csv,none
+Poser.Game/Services/IPosingService.cs,reviewed,game.csv,Removed orphaned UI comment and redundant getter narration
+Poser.Game/Services/IPropHandle.cs,reviewed,game.csv,none
+Poser.Game/Services/ISceneLifecycleHistory.cs,reviewed,game.csv,none
+Poser.Game/Services/ISkeletonService.cs,reviewed,game.csv,none
+Poser.Game/Services/IVirtualCameraService.cs,reviewed,game.csv,Removed mint jargon and an overbroad unavailable-state claim
+Poser.Game/Services/IWorldObject.cs,reviewed,game.csv,none
+Poser.Game/Services/WorldObjectCandidate.cs,reviewed,game.csv,Replaced internal shorthand and emphatic prose with field and distance ownership
+Poser.Game/Services/WorldObjectOutline.cs,reviewed,game.csv,none
+Poser.Game/Transforms/GroupTransformSource.cs,reviewed,game.csv,none
+Poser.Game/Transforms/LegacyPoseStackConverter.cs,reviewed,game.csv,none
+Poser.Game/Transforms/ParentingFrameRuntime.cs,reviewed,game.csv,none
+Poser.Game/Transforms/ParentingRuntime.cs,reviewed,game.csv,none
+Poser.Game/Transforms/TransformRuntimePort.cs,reviewed,game.csv,Removed vague class prose and corrected fallback-capture description
+Poser.Game/Viewport/ViewportProjection.cs,reviewed,game.csv,Full source review; simplified interface/overlay explanations and corrected warmup/thread claims.
+Poser.Game/Wardrobe/CustomizeCatalog.cs,reviewed,game.csv,Full source review; simplified interface/overlay explanations and corrected warmup/thread claims.
+Poser.Game/Wardrobe/WardrobeCatalog.cs,reviewed,game.csv,Full source review; simplified interface/overlay explanations and corrected warmup/thread claims.
+Poser.Game/WorldObjects/AdoptedWorldObject.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/BgObjectNative.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/FurnitureCatalog.cs,reviewed,game.csv,none
+Poser.Game/WorldObjects/FurnitureLayoutDriver.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/WorldObjects/FurnitureLoadTracker.cs,reviewed,game.csv,none
+Poser.Game/WorldObjects/IWorldObjectPort.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/NativeWorldObjectPort.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/PendingWorldAcquisition.cs,reviewed,game.csv,No comment change required after full source review
+Poser.Game/WorldObjects/SceneryAnimationHold.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/SceneryAnimationState.cs,reviewed,game.csv,none
+Poser.Game/WorldObjects/VfxInterop.cs,reviewed,game.csv,none
+Poser.Game/WorldObjects/VfxLifecycleOwner.cs,reviewed,game.csv,"Replaced hidden-half metaphor with capture, transform, and restore behavior"
+Poser.Game/WorldObjects/VfxObjectNative.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/VfxOwnedAllocationLedger.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/WorldObjects/VfxPlaybackControl.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/WorldObjects/WorldAssetCatalog.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/WorldCandidateBook.cs,reviewed,game.csv,none
+Poser.Game/WorldObjects/WorldGraphWalker.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/WorldNodeResolver.cs,reviewed,game.csv,Replaced repeated one-door metaphors with validation and refusal behavior
+Poser.Game/WorldObjects/WorldObjectRespawner.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/WorldObjects/WorldObjectRestorer.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.Game/WorldObjects/WorldObjectService.cs,reviewed,game-extra.csv,Comments corrected or simplified; executable lines unchanged
+Poser.Game/WorldObjects/WorldService.cs,reviewed,game-extra.csv,No comment change needed after full source read
+Poser.UI/ActorNames.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/BoneChoice.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/BoneVisibilityPresetService.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Composition/EntityContextMenus.Duplicate.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Composition/EntityContextMenus.Entities.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Composition/EntityContextMenus.More.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Composition/EntityContextMenus.Tree.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Composition/EntityContextMenus.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Composition/EntityRemovalDialog.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Composition/IPropertiesContentFactory.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Composition/LibraryDetailsPanel.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Composition/LibraryMetadataEditor.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Composition/SidebarComposer.Bones.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Composition/SidebarComposer.cs,reviewed,root-extra.csv,Full source read in three bounded outputs; root/group filter divergence; cached-row refresh and disclosure behavior checked. Removed stale duplicated summaries and allocation/selection guarantees.
+Poser.UI/Composition/UiBuildIdentity.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Composition/UiWindowSet.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Compositions/ActionBar.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Compositions/FileDialog.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Compositions/FloatingSurface.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Compositions/PoseImportOptionsGrid.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Compositions/SearchPicker.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Compositions/TexturePicker.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Compositions/WindowFrame.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Controls/BonePick.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Controls/DetachedPlacementMemory.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Controls/DyePicker.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Controls/EntityNameModal.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Controls/IssueReportModal.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Controls/ManipulationState.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Controls/RememberedFolder.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Controls/RotationGizmoRings.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Controls/WorldGizmo.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Diagnostics/FrameProfiler.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/EntityActions.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/GameIconResolver.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/IUIManager.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Icons/PoserIconSources.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Icons/Tabler.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Icons/TablerSvgSources.cs,reviewed,generated-review.csv,No comment change needed
+Poser.UI/KeyChordInput.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/AnamnesisMatrixTable.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/AnimationPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/AppearancePane.Colors.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/AppearancePane.Customize.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/AppearancePane.Equipment.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/AppearancePane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/BoneMapEditorRegistry.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/BoneMatrixBuilder.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/CameraPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/CompanionSection.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/EnvironmentPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/ExpressionInspectorSection.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/GraphicalBonePane.Editor.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/GraphicalBonePane.Generated.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/GraphicalBonePane.Layout.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/GraphicalBonePane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/IdleModExportDialog.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/LightPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/OverlayPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/ParentingSection.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/PoseFileInspectorSection.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseInspectorPane.Fabrik.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/PoseInspectorPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.Activate.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.AutoSaves.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.Explorer.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/PoseLibraryPane.FileVerbs.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.Filtering.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.Grid.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.ImportOptions.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.InfoRail.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/PoseLibraryPane.Modals.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/PoseLibraryPane.Preview.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.Target.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.TileMenu.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseLibraryPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PoseRailPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PropertiesContent.CameraTracking.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PropertiesContent.Tabs.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PropertiesContent.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/PropsPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/ScenePane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/SelectionSection.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Panes/TransformClipboard.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Panes/WorldObjectsPane.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/PoseThumbnailCache.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Poser.UI.csproj,reviewed,scripts-build.csv,Retained the license pointer and compile-glob exclusion explanation.
+Poser.UI/PoserKeybinds.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Primitives/ControlStyle.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Primitives/Tags/Button.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Primitives/Tags/ColorWell.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Primitives/Tags/ContextMenu.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Primitives/Tags/Dialog.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Primitives/Tags/HoverHelp.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Primitives/Tags/SidebarPresentation.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Primitives/Tags/Slider.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Primitives/Tags/Text.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Primitives/Tags/TreeRow.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/ReferenceImageGeometry.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/ReferenceImageSession.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/BoxRenderer.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/BoxShadow.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/BoxShadowTextureCache.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/BoxStyle.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/ColorEx.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/ColorTokens.g.cs,reviewed,generated-review.csv,Clarified recorded CSS snapshot and missing repository generator
+Poser.UI/Rendering/ControlPaint.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Effects/GlassChrome.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/FontFamily.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/Fonts/FontRegistry.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Fonts/FontWeight.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/Fonts/TtfMetrics.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/Fonts/WindowsFontFallback.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/IImageSource.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Internal/Ids.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Internal/Interactive.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Internal/Motion.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Internal/VertexTransform.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/PseudoState.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/Svg/SvgCornerPlus.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Svg/SvgDocument.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Svg/SvgIconTextureCache.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Svg/SvgPath.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/Svg/SvgPathParser.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Svg/SvgRenderer.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Svg/SvgStrokeMask.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/Svg/SvgTessellator.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/Theme.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Rendering/ThemeModeGlyph.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Rendering/Transition.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/SkeletonOverlayPresentation.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/ThemeSelection.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/UIColorResolution.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/UIManager.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/UserNotices.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Views/AppShellView.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Views/BoneMatrixView.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Views/FirstRunNoticeView.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Views/GroupRowTag.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Views/PoseLibraryView.cs,reviewed,ui-host.csv,"Corrected host rectangle, tile subtitle, favorite availability, footer and thumbnail comments; removed misplaced empty-state summary"
+Poser.UI/Views/ReleaseNotesView.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Views/SettingsView.Library.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Views/SettingsView.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Views/ShellSidebar.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Views/ShellWorkspaceSelection.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Views/SpawnBrowserView.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Views/SpawnDispatch.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Widgets/ActionBarWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/AxisWellWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/ButtonWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/CheckboxWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/ColorWellWidgets.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Widgets/DialogWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/DropdownWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/FileDialog.cs,reviewed,root-extra.csv,All source read through EOF in four bounded spans. Confirmation deferred until close; navigation immediate; preview occupies existing body width; side-panel allocation and search reset inspected. Rewrote all lengthy summaries.
+Poser.UI/Widgets/FilterPillWidgets.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Widgets/FloatingMenu.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/FloatingSurface.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/HoverHelp.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/ImageWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/PageForm.cs,reviewed,root-extra.csv,All source read in eight bounded spans through EOF; halfRows ignored; 40% button shrink floor; row-visible checks inconsistent; full-line keeps track width. Corrected comments against actual layout.
+Poser.UI/Widgets/PalettePicker.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/PopoverWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/ProgressBarWidgets.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Widgets/ScrollRegionWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/SearchPicker.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/SegmentedControlWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/SidebarPresentation.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Widgets/SliderReadout.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Widgets/SliderWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/SwitchWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/TablerIconWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/TextInputWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/TextWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/TexturePicker.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/Themes.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Widgets/TransformGridWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/TreeRowWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/UiContext.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Widgets/ValueEdits.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/WindowFrameWidgets.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Widgets/WindowMovement.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Windows/FrameProfilerWindow.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/GizmoOverlayWindow.cs,reviewed,ui-host.csv,"Corrected contradictory Ctrl/Shift snap comments to Z/X; simplified group, input occlusion and symmetry explanations"
+Poser.UI/Windows/LibraryWindow.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/MainWindow.DragDrop.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/MainWindow.EntityVerbs.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/MainWindow.Shell.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/MainWindow.Sidebar.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/MainWindow.Tabs.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/MainWindow.Wiring.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/MainWindow.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/NativeHealthWindow.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Windows/PropertiesWindow.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/ReferenceImageWindow.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/ResizeAccent.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/SettingsWindow.cs,reviewed,ui-host.csv,comment prose revised
+Poser.UI/Windows/SkeletonOverlayWindow.Colliders.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Windows/SkeletonOverlayWindow.cs,reviewed,ui-host.csv,"Corrected master visibility, stale modifier gate, misplaced summaries, adoption timing/distance, color priority, selected-only predicate and point-light geometry comments"
+Poser.UI/Windows/SpawnBrowserWindow.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/Windows/SplitShellWindows.cs,reviewed,ui-host.csv,no comment change
+Poser.UI/WorldAdoptionSource.cs,reviewed,ui-host.csv,no comment change
+Poser.slnx,reviewed,root-extra.csv,All nine projects listed; no comments or program logic.
+Poser/.gitattributes,reviewed,root-extra.csv,Single text auto-normalization rule; comment matches rule.
+Poser/.gitignore,reviewed,root-extra.csv,Read all ignore rules; retained standard provenance and category labels. No pattern changes.
+Poser/Bridge/DebugBridge.AutoSave.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.ClothingOnly.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.GroupsModels.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.IdentityCancel.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.IntegrationCleanup.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.LifetimeTrace.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.ObjectsLibrary.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.Parenting.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.ReferenceImages.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.UiDrag.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.WorldSources.cs,reviewed,ui-host.csv,no comment change
+Poser/Bridge/DebugBridge.cs,reviewed,ui-host.csv,comment prose revised
+Poser/CommandRouter.cs,reviewed,ui-host.csv,no comment change
+Poser/Composition/HostConfigurationPersistence.cs,reviewed,ui-host.csv,no comment change
+Poser/Composition/PropertiesContentFactory.cs,reviewed,ui-host.csv,comment prose revised
+Poser/Composition/ServiceRegistration.cs,reviewed,ui-host.csv,comment prose revised
+Poser/Composition/Startables.cs,reviewed,ui-host.csv,comment prose revised
+Poser/Diagnostics/IssueReportService.cs,reviewed,ui-host.csv,comment prose revised
+Poser/Lifecycle/AppearanceCatalogWarmup.cs,reviewed,ui-host.csv,no comment change
+Poser/Lifecycle/AutoSaveFinalCapturePort.cs,reviewed,ui-host.csv,no comment change
+Poser/Lifecycle/DebugSceneAutoSaveRoot.cs,reviewed,ui-host.csv,no comment change
+Poser/Poser.cs,reviewed,ui-host.csv,no comment change
+Poser/Poser.csproj,reviewed,scripts-build.csv,Replaced the prerelease-label joke with the four-part numeric manifest constraint.
+tools/Report-TestFailures.ps1,reviewed,scripts-build.csv,Retained the purpose statement; other hash characters are annotation syntax.
+tools/Test-ProjectBoundaries.ps1,reviewed,scripts-build.csv,Retained comments explaining separate reference and namespace checks.
+tools/Update-ExpressionCatalogs.ps1,reviewed,scripts-build.csv,No comments; functions and data construction describe the importer.
+tools/count-lines.ps1,reviewed,scripts-build.csv,Replaced issue-era scope rhetoric with the historical comparison and counting semantics.
+tools/perf/speedscope-summary.py,reviewed,scripts-build.csv,"Defined inclusive time, frame normalization, unmanaged children, and hook attribution without metaphor."
+tools/poser_mcp.py,reviewed,scripts-build.csv,"Explained transport, endpoint mapping, dependencies, and Debug-only availability."

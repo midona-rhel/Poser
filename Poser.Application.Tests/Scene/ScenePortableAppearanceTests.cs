@@ -17,7 +17,7 @@ public sealed class ScenePortableAppearanceTests
         scene.Actors.Add(PortableActor("Sealed", 4));
         var notes = new List<string>();
 
-        // One reference could not be sealed: it is dropped AND counted, so the
+        // One reference could not be sealed. It is dropped and counted, so the
         // save can refuse to call itself a plain success.
         Assert.Equal(
             1,
@@ -76,7 +76,7 @@ public sealed class ScenePortableAppearanceTests
             },
         });
 
-    /// <summary>A portable entry of a stated SIZE. The bytes live in their own
+    /// <summary>A portable entry with a stated size. The bytes live in their own
     /// container entry, so a document only carries the entry name, the digest
     /// and the length — which is what makes a half-gigabyte payload testable
     /// without allocating one.</summary>

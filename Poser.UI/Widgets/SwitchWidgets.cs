@@ -52,7 +52,7 @@ public static class SwitchWidgets
 
     /// <summary>
     /// The toggle's pixels alone — pill, knob shadow rings, knob. The knob
-    /// metrics are PROPORTIONAL to the resolved box, so the seam recovers the
+    /// metrics are proportional to the resolved box, so the painter recovers the
     /// caller's control scale from the rect it is handed rather than taking it
     /// as a parameter: the box is the single source of that scale.
     /// </summary>
@@ -100,7 +100,7 @@ public static class SwitchWidgets
             knobLeft + knobRadius,
             logicalHeight * 0.5f * scale);
 
-        // knob drop shadow (0 1px 3px rgba(0,0,0,.2)) — cheap two-ring approximation
+        // Approximate the 0 1px 3px knob shadow with two rings.
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + scale,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveTheme.Chrome.SwitchShadow.Fade(opacity))), 32);
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + 0.4f * scale,

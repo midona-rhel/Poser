@@ -6,11 +6,9 @@ using Poser.Domain.Scene;
 namespace Poser.Game.Entities;
 
 /// <summary>
-/// One virtual camera. All setters route to the native camera while the
-/// camera is LIVE and to retained state otherwise, so switching cameras is a
-/// state save/restore over the game's one orbit camera (Brio's model — the
-/// game never sees a second camera object). Setters MUST be called on the
-/// framework thread while live.
+/// A saved camera configuration. Live orbit properties can access native memory;
+/// invoke setters on the framework thread. Other settings are retained until
+/// camera hooks or the service apply them.
 /// </summary>
 public interface IVirtualCamera
 {
@@ -24,7 +22,7 @@ public interface IVirtualCamera
     CameraKind Kind { get; }
 
     /// <summary>Whether this camera currently drives the game's view. Written
-    /// only through the service's select call — exactly one camera is live.
+    /// through the service; there may be no live camera outside GPose.
     /// </summary>
     bool IsLive { get; }
 
@@ -32,10 +30,8 @@ public interface IVirtualCamera
     /// destroyable; every other camera is spawned beside it.</summary>
     bool IsDefault { get; }
 
-    /// <summary>A locked camera keeps its framing: every property edit is
-    /// disabled and a live free camera stops responding to movement input.
-    /// Switching which camera is live stays allowed — the lock protects the
-    /// shot, not the session.</summary>
+    /// <summary>Requests input and editing restrictions. Command handlers enforce
+    /// the lock; direct setters do not. Switching cameras remains allowed.</summary>
     bool IsLocked { get; set; }
 
     // ── orbit (Game) state, native units ─────────────────────────────────
@@ -64,7 +60,7 @@ public interface IVirtualCamera
     Vector3 PositionOffset { get; set; }
 
     /// <summary>Extra offset aligning the orbit pivot with the followed
-    /// actor's draw position (Brio's target select).</summary>
+    /// actor's draw position.</summary>
     Vector3 TargetOffset { get; set; }
 
     /// <summary>Display name for the followed actor; empty when none.</summary>
@@ -87,12 +83,12 @@ public interface IVirtualCamera
     /// this is intentionally separate from the display name.</summary>
     IActor? TargetActor { get; }
 
-    /// <summary>The camera's real world position this frame — the native
-    /// position while live, the retained free-cam position otherwise.</summary>
+    /// <summary>Free-camera position, rendered live orbit position, or the saved
+    /// orbit position when inactive. A pinned inactive camera includes its offsets.</summary>
     Vector3 WorldPosition { get; }
 
     /// <summary>
-    /// Ktisis's <c>FixedPosition</c>: pin an orbit camera to a world point so
+    /// Pins an orbit camera to a world point so
     /// the shot does not drift when the subject moves. Null is unpinned — the
     /// camera goes wherever the game's own update puts it.
     /// <see cref="PositionOffset"/> still applies on top, so the pin is the
@@ -105,8 +101,7 @@ public interface IVirtualCamera
 
     bool DisableCollision { get; set; }
 
-    /// <summary>Lifts the native zoom and vertical-angle clamps (Brio's
-    /// distance range, Ktisis's Y loosening). Restores the game's own limits
+    /// <summary>Expands native distance and vertical-angle limits. Restores saved limits
     /// when cleared.</summary>
     bool DelimitCamera { get; set; }
 
@@ -139,7 +134,7 @@ public interface IVirtualCamera
     /// <summary>Lets free-cam pitch wrap past straight up/down.</summary>
     bool DelimitAngle { get; set; }
 
-    // ── Ktisis grafts ────────────────────────────────────────────────────
+    // Projection and tracking.
 
     /// <summary>Orthographic projection on the render camera.</summary>
     bool Orthographic { get; set; }
@@ -157,14 +152,12 @@ public interface IVirtualCamera
     /// </summary>
     IList<IBone> TrackedBones { get; }
 
-    /// <summary>Brio's reset-to-default: zoom, FoV, roll, pan, angle, offsets
-    /// and the collision/delimit overrides back to spawn values.</summary>
+    /// <summary>Resets framing, targeting, and projection to standard values,
+    /// and movement speed/sensitivity to configured defaults.</summary>
     void ResetProperties();
 
-    /// <summary>The OWNERSHIP BASELINE: the values this camera carried when
-    /// Poser took it — spawn, clone, or a file/scene apply. Alt-click reset
-    /// restores THESE, never constants, so the default follows the entity.
-    /// Kept in memory only.</summary>
+    /// <summary>In-memory values captured for individual property resets.
+    /// Separate from the standard values used by ResetProperties.</summary>
     float DefaultFoV { get; }
     float DefaultRoll { get; }
     System.Numerics.Vector3 DefaultRotation { get; }

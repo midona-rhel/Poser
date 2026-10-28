@@ -20,6 +20,7 @@ using Poser.Domain.Scene;
 using Poser.Documents.Files;
 using Poser.Game.Entities;
 using Poser.Game.Services;
+using Poser.Domain.Actors;
 
 namespace Poser.Game.Scene;
 
@@ -116,6 +117,13 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return _handles.Track(SceneEntityKind.Actor, actor);
     }
 
+    public SceneEntityHandle? FindLocalPlayer() =>
+        _actors.Actors.FirstOrDefault(actor =>
+            actor.ActorKind is not (ActorKind.Companion or ActorKind.Mount or ActorKind.Ornament)
+            && actor.Address != nint.Zero && _actors.IsLocalPlayer(actor)) is { } player
+            ? _handles.Track(SceneEntityKind.Actor, player)
+            : null;
+
     // ── props and overlays ───────────────────────────────────────────────
 
     public SceneEntityHandle? SpawnProp(SceneProp data, out string? detail)
@@ -176,10 +184,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     // ── world objects ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Restores one world-object entry by SPAWNING its path anew — any
-    /// zone, any position. A document never carries a borrow (ruled
-    /// 2026-09-01): borrowing is a live-session act, and the load owes
-    /// nothing to whatever the map may or may not be standing.
+    /// Creates a new object from the saved path and applies its saved properties.
+    /// Scene files do not reacquire a borrowed native map object.
     /// </summary>
     public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
     {

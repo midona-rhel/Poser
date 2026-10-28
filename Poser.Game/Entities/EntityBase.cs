@@ -16,10 +16,7 @@ public abstract class EntityBase : IEntity, IDisposable
 
     private readonly List<IEntity> _children = new();
 
-    /// <summary>Live read-only view over <c>_children</c>, allocated once.
-    /// <c>List.AsReadOnly()</c> wraps the SAME list, so one wrapper stays
-    /// correct for the entity's whole life — building a fresh one per access
-    /// only added garbage to paths that read Children per entity per frame.</summary>
+    /// <summary>Cached read-only view of the live child list.</summary>
     private readonly ReadOnlyCollection<IEntity> _childrenView;
 
     public IReadOnlyCollection<IEntity> Children => _childrenView;
@@ -38,7 +35,6 @@ public abstract class EntityBase : IEntity, IDisposable
     {
         if (child is EntityBase entityBase)
         {
-            // Detach from previous parent if any
             if (entityBase.Parent is EntityBase oldParent)
             {
                 oldParent._children.Remove(child);
@@ -67,7 +63,6 @@ public abstract class EntityBase : IEntity, IDisposable
 
     public virtual void Dispose()
     {
-        // Dispose all children
         foreach (var child in _children.ToArray())
         {
             if (child is IDisposable disposable)

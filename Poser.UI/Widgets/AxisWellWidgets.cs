@@ -52,8 +52,7 @@ public static class AxisWellWidgets
 
         var hit = Interactive.Reserve(id, size, disabled);
         bool changed = false;
-        // Alt-click resets to the stated default — the slider's own
-        // gesture, spoken by every value control that HAS a default.
+        // Alt-click restores the optional default and commits it as one edit.
         if (hit.Clicked && ImGui.GetIO().KeyAlt
             && altReset is { } fallback && !disabled)
         {
@@ -88,10 +87,7 @@ public static class AxisWellWidgets
         if (hit.DragEnded)
             Commit(id, onCommit);
 
-        // NO wheel stepping: the wheel belongs to the page scroll, and a
-        // well that stepped on a notch hijacked it (the Brio behaviour was
-        // removed 2026-08-30 — only the pose preview and the viewports
-        // read the wheel).
+        // Leave wheel input to the surrounding scroll region.
 
         // The label follows the adaptive three-digit rule when asked; the
         // EDIT above always carries the full value — precision belongs to
@@ -156,13 +152,8 @@ public static class AxisWellWidgets
                 - ImGui.CalcTextSize(editText).X
                 - horizontalPaddingPx * 2f);
 
-        // The EDIT centres by ImGui's own line height, with no metric
-        // rise and no caret scissor: the selection highlight and caret
-        // then exactly hug the text, which is what a focused input looks
-        // like. The file-metric seating bought sub-pixel alignment with
-        // the resting label and cost a visibly misplaced highlight after
-        // the Roboto switch (its cap dead band is 4.4px, Cascadia's was
-        // 3.0).
+        // Center the native editor using ImGui's line height so its text,
+        // selection highlight, and caret move together.
         ImGui.GetWindowDrawList().AddRectFilled(
             pos + new Vector2(inputLeft, 0f),
             pos + new Vector2(size.X, size.Y),

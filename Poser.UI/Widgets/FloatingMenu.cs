@@ -10,17 +10,9 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI.Widgets;
 
 /// <summary>
-/// The ONE floating menu (Picto ContextMenu transcription): a 260px
-/// surface sized to its rows, hosted in its own overlay window with
-/// enough transparent margin that the shadow and outer ring are never
-/// clipped. Chrome: surface-1 at 92% over blur(13px) brightness(.7),
-/// directional glass borders, black 50% outer ring, 0 3px 12px
-/// black-30 shadow. Lifecycle: 100ms entrance from opacity 0 /
-/// scale .92 on Picto's default easing, 80ms ease-in exit toward
-/// .95, shift-clamped to the viewport with a 12px margin and the
-/// transform origin flipped to the shifted corner. A transparent
-/// backdrop swallows the outside press that closes it. Short action
-/// menus only — deliberately non-searchable.
+/// Displays one action menu per UI context, with nested submenus and animated
+/// opening and closing. A separate overlay window leaves room for shadows.
+/// The caller must draw its menu every frame or EndFrame dismisses it.
 /// </summary>
 public static class FloatingMenu
 {
@@ -89,7 +81,7 @@ public static class FloatingMenu
 
     /// <summary>Opens the menu for <paramref name="id"/> at the given
     /// screen position (typically the mouse), replacing any open menu.
-    /// Items freeze at open.</summary>
+    /// Rows can be replaced later with Refresh.</summary>
     /// <param name="width">Surface width in LOGICAL units, overriding the
     /// canonical <c>Floating.MenuWidth</c> surface. Null — the default —
     /// keeps the 260px context-menu width every action menu is drawn at;
@@ -759,10 +751,7 @@ public static class FloatingMenu
                 hovered = hit.Hovered;
             }
 
-            // Context menus carry NO hovers (ruled 2026-08-31): a
-            // row's label is its whole explanation, and the help card
-            // under the menu read as a stray band.
-
+            // Menu rows show hover highlighting but no separate help cards.
             if (hovered)
                 dl.AddRectFilled(rowMin, rowMax,
                     ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
@@ -834,10 +823,7 @@ public static class FloatingMenu
                 MeasureText(item.Label, labelStyle);
             float labelWidth = MathF.Max(1f, labelRight - textX);
             var labelBand = new Vector2(labelWidth, rowHeightPx);
-            // CSS .label: flex 1, ellipsis. Constrain ONLY on
-            // overflow: the truncate path clips to the line box, and
-            // Segoe's descenders reach a hair below it — an
-            // unconditional clip shaved the bottom off 'g'.
+            // Clip only overflowing labels to avoid cutting off glyph descenders.
             if (labelSize.X > labelWidth)
                 TextInBand(
                     new Vector2(textX, rowMin.Y),

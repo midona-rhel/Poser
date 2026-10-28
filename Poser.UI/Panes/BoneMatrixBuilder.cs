@@ -14,14 +14,12 @@ namespace Poser.UI;
 
 /// <summary>
 /// Builds the Anamnesis-style bone matrix from the scene snapshot's skeleton
-/// descriptor. Instead of a hand-transcribed bone table (which would be wrong
-/// for Viera ears, tails, IVCS, modded skeletons), rows are DERIVED from the
-/// descriptor's actual bones via the curated BoneInfoService data: bones
+/// descriptor. Rows are derived from actual bones and curated
+/// <c>BoneInfoService</c> data: bones
 /// cluster on their base name (side/number suffixes stripped), the row label
 /// is the shared curated translation, pills are the concrete bones
 /// (L/R/numbered). Pills carry <see cref="MatrixPillTag"/> — a stable
-/// <see cref="SelectionId"/> plus display/canonical names for filtering; no
-/// legacy entity enters the matrix.
+/// <see cref="SelectionId"/> plus display and canonical names for filtering.
 /// </summary>
 public static class BoneMatrixBuilder
 {

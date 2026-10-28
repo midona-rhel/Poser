@@ -7,7 +7,7 @@ using Poser.Domain.Integration;
 namespace Poser.Application.Presentation;
 
 /// <summary>
-/// The ONE stable-id native boundary for runtime presentation. Every
+/// The native boundary for actor presentation. Every
 /// member takes an exact-generation <see cref="ActorId"/>; the runtime
 /// re-resolves it immediately before touching memory, so a replaced or
 /// removed actor fails explicitly instead of writing through a stale
@@ -16,7 +16,7 @@ namespace Poser.Application.Presentation;
 ///
 /// Ownership mechanics live on the port side where they must: owned
 /// tints are protected from the game's own tint update and re-applied to
-/// a REPLACED draw object (the exact new model instance, never a capture
+/// a replaced draw object (the exact new model instance, never a capture
 /// of its temporary defaults); the wetness override is re-applied on the
 /// framework tick because the game recomputes it. A missing weapon model
 /// is unavailable — never redirected to another model.
@@ -41,8 +41,7 @@ public interface IPresentationRuntimePort
     PresentationReading? Read(ActorId actor);
 
     // ── Opacity ───────────────────────────────────────────────────────
-    /// <summary>Writes the actor's opacity (0..1). Written on change,
-    /// as the reference does; never touches the visibility action.</summary>
+    /// <summary>Writes the actor's opacity (0..1) without changing its visibility setting.</summary>
     Outcome SetOpacity(ActorId actor, float opacity);
 
     /// <summary>Writes the captured incoming opacity back.</summary>

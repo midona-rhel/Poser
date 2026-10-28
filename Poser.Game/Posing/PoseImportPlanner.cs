@@ -73,12 +73,8 @@ internal sealed class PoseImportPlanner
         skeletons = new Dictionary<PoseSlot, ISkeleton>();
         model = null;
 
-        // Resolve and capture EVERYTHING before mutating anything, so a
-        // stale target fails synchronously with nothing to roll back. The
-        // plan is name-keyed (issue #78): every bone resolves against the
-        // LIVE slot skeletons on THIS tick, so nothing planned at the arm
-        // tick can have gone stale — a name that does not resolve here is
-        // a bone no live skeleton of this actor carries, refused by name.
+        // Resolve names and capture affected targets before starting mutation.
+        // Missing names and actor-generation mismatches refuse the plan here.
         TransformPortResult captured;
         var slotBones = new Dictionary<
             PoseSlot,
@@ -403,10 +399,8 @@ internal sealed class PoseImportPlanner
             var target = TransformTargetId.ForBone(id);
             if (!import.Before.ContainsKey(target))
             {
-                // Captured BEFORE the reconcile writes it. A bone the apply
-                // phase never touched carries no stacks, so this mid-flight
-                // capture equals its pre-import state and the one rollback
-                // restores both phases.
+                // Save a target before its first direct reconcile write. Earlier
+                // parent edits may already have changed its displayed transform.
                 var captured = _runtime.Capture(target);
                 if (!captured.Success || captured.State is not { } state)
                 {
@@ -537,11 +531,8 @@ internal sealed class PoseImportPlanner
                     entry.Components,
                     forceNewStack: true, drivesIk: false) == null)
             {
-                // One degenerate bone (a zero-scaled prop helper such as
-                // nf_handprop_k_l on an actor without a prop) is not the
-                // pose: it is skipped and named, the rest lands. Failing the
-                // whole import here left every duplicate of such an actor
-                // idling (2026-09-02).
+                // Skip and report a non-finite delta, such as one produced by
+                // a zero-scale prop helper, while allowing other bones to import.
                 _log.Warning(
                     $"Pose import: {bone.BoneName} produced a non-finite delta and was skipped.");
                 return;

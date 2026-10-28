@@ -8,17 +8,12 @@ using Poser.Documents.Config;
 namespace Poser.UI;
 
 /// <summary>
-/// Named overlay bone-visibility sets (Ktisis <c>ActorEntity</c> presets),
-/// applied per actor.
+/// Named bone-visibility sets applied per actor.
 ///
-/// <para>The layer owns NO visibility state of its own: whether a preset reads
-/// as applied is DERIVED from <see cref="SkeletonOverlayPresentation"/> — a
-/// preset is on when every one of its bones that exists on the actor is
-/// currently shown. Ktisis needs a per-actor state map plus an
-/// implicitly-enabled reconciliation pass (<c>ActorEntity.cs:297-321</c>)
-/// because its own store is the bone node; deriving instead makes the two
-/// notions incapable of disagreeing, and leaves the presentation service's
-/// per-bone API the single writer.</para>
+/// <para>Applied state is derived from
+/// <see cref="SkeletonOverlayPresentation"/>: a preset is active when every
+/// listed bone that exists on the actor is visible. This service does not keep
+/// a second visibility-state map.</para>
 /// </summary>
 public sealed class BoneVisibilityPresetService
 {
@@ -37,9 +32,8 @@ public sealed class BoneVisibilityPresetService
         SeedDefaults();
     }
 
-    /// <summary>The stock filters, written once per stock version: a
-    /// stock name is replaced with the current list, every other name is
-    /// the user's and is left alone.</summary>
+    /// <summary>Refreshes stock presets by name while preserving custom
+    /// presets.</summary>
     private void SeedDefaults()
     {
         var skeleton = _config().Skeleton;
@@ -97,9 +91,7 @@ public sealed class BoneVisibilityPresetService
         _presentation.SetVisible(bones, on ?? !_presentation.AreVisible(bones));
     }
 
-    /// <summary>Shows exactly the bones NO preset claims and hides the rest —
-    /// Ktisis' <c>ToggleOtherPreset(true)</c>, the one form its entity menu
-    /// invokes. It is how you reach the bones the shipped sets forgot.</summary>
+    /// <summary>Shows bones absent from every preset and hides the rest.</summary>
     public void ToggleOther(ActorDescriptor actor)
     {
         var covered = new HashSet<string>(StringComparer.Ordinal);

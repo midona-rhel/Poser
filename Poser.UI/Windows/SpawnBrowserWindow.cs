@@ -682,9 +682,8 @@ public sealed class SpawnBrowserWindow : Window
     private int _libraryRevision = -1;
     private bool _reseatHighlight;
 
-    /// <summary>Spawns one saved entry where the player stands, each kind
-    /// through the same route the library's own activation uses. No anchor
-    /// falls back to the entry's saved placement.</summary>
+    /// <summary>Adds a saved entry using the configured placement mode.
+    /// If its camera or actor anchor is unavailable, uses the saved position.</summary>
     private void SpawnSavedObject(SpawnDispatch.Saved saved)
     {
         var result = _libraryScene.SpawnEntry(saved.Path, saved.Kind,

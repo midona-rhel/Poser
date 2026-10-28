@@ -10,12 +10,10 @@ using static Poser.UI.Widgets.PageForm;
 namespace Poser.UI;
 
 /// <summary>
-/// The selected prop's editor — the pane behind the "Prop" tab that stands
-/// while a PROPS sidebar row is selected. The sidebar owns the list (rows,
-/// eye, the header's plus); this pane owns one prop: its visibility, its
-/// lifetime, and its transform.
+/// Editor for the selected prop. The sidebar owns the prop list; this pane
+/// exposes properties and lifetime actions for one prop.
 ///
-/// <para>Lifetime clicks are DEFERRED to the end of the frame: destroying the
+/// <para>Lifetime clicks are deferred to the end of the frame: destroying the
 /// prop republishes the scene mid-walk otherwise.</para>
 /// </summary>
 public sealed class PropsPane
@@ -185,8 +183,7 @@ public sealed class PropsPane
             }), help: "Save a spawnable copy of this prop"));
         form.Actions("Lifetime", actions =>
         {
-            // Destroy is THE destruction verb — Delete and Remove were
-            // invented synonyms for the same act.
+            // Use Destroy consistently for this lifecycle action.
             actions.Button(
                 "Destroy",
                 () =>

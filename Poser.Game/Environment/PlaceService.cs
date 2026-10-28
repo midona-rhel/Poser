@@ -6,16 +6,9 @@ using TerritoryRow = Lumina.Excel.Sheets.TerritoryType;
 namespace Poser.Game.Environment;
 
 /// <summary>
-/// Resolves the current territory to a place name, following Brio's own
-/// (CatalogWindow.cs:545): the <c>TerritoryType</c> row's <c>PlaceName</c>
-/// link, read through <c>ValueNullable</c> because a territory row can carry
-/// an unpopulated link, and <c>ExtractText</c> because the sheet string is
-/// payload-encoded. A territory that resolves to nothing yields NO name rather
-/// than a placeholder.
-///
-/// <para><c>IClientState.TerritoryType</c> is <c>uint</c> on this Dalamud, not
-/// the <c>ushort</c> the neighbouring festival lookup uses, so nothing is cast
-/// away here.</para>
+/// Resolves the current territory's optional <c>PlaceName</c>. Missing rows or
+/// links produce no name rather than a placeholder. The full unsigned territory
+/// id is preserved when querying the sheet.
 /// </summary>
 public sealed class PlaceService : IPlaceService
 {

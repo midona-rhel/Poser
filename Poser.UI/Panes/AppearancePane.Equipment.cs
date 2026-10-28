@@ -17,14 +17,10 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>
-/// The Equipment view: what the actor wears, through Glamourer. A card
-/// per slot — the icon two rows tall opens the item picker; the name
-/// reads beside it and the two dyes fill the line under the name as
-/// colour boxes — a Prop verb under each weapon; the facewear; the
-/// visibility switches; the outfit verbs; the raw model ids, closed. Every
-/// change is one journal step through
-/// <see cref="Poser.Application.Appearance.IWardrobeControl"/>. Without Glamourer
-/// everything disables in place and says why.
+/// Equipment controls backed by Glamourer. Each slot exposes its item, dyes,
+/// and raw model ids; weapon slots also expose prop actions. Changes are
+/// journaled through <see cref="Poser.Application.Appearance.IWardrobeControl"/>.
+/// Controls are disabled with an explanation when Glamourer is unavailable.
 /// </summary>
 public sealed partial class AppearancePane
 {

@@ -5,8 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Poser.Composition;
 
-/// <summary>Everything the host starts before the UI draws, in start order:
-/// the declaration order IS the order. Each feature module registers its own
+/// <summary>Services started before the UI draws. Declaration order is startup
+/// order. Each feature module registers its own
 /// entries; a service that subscribes on construction and is not listed here
 /// stays inert until something resolves it.</summary>
 internal enum StartStage

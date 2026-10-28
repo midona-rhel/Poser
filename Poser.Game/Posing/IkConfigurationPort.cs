@@ -11,8 +11,7 @@ namespace Poser.Game.Posing;
 
 /// <summary>
 /// The one stable-id IK configuration path. Resolves targets through the
-/// binding registry for one call at a time, rejects changes while a
-/// transform gesture is active, and delegates storage/validation to the
+/// binding registry for one call at a time and delegates storage/validation to the
 /// runtime's per-exact-skeleton session store.
 /// </summary>
 public sealed class IkConfigurationPort : IIkConfigurationPort
@@ -62,7 +61,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     }
 
     /// <summary>Eligibility is the runtime's own answer rather than a name
-    /// test: it alone knows whether the bone has a parent for CCD to bend.</summary>
+    /// test: Get returns a configuration only for supported live targets.</summary>
     public bool IsSupported(TransformTargetId target) => Get(target) != null;
 
     public IReadOnlyList<IkChainSummary> Chains(SkeletonId skeleton)
@@ -102,7 +101,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     private const string GestureActive = "IK configuration rejected: a transform gesture is active.";
 
     /// <summary>A replayed IK write. An active transform gesture ends by
-    /// itself, so that refusal is transient; any other is permanent.</summary>
+    /// itself, so replay reports that refusal as Busy and can retry.</summary>
     private Outcome Written(Func<Outcome> write)
     {
         if (_gestures.ActiveGesture != null)

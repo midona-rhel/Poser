@@ -15,10 +15,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Journal;
 
 /// <summary>
-/// The journal's snapshots on the live runtime: a capture is the actor's
-/// pose file plus its armed IK chains; a restore is a full-scope pose
-/// import with history suppressed (it IS an undo), and the chains are
-/// re-armed once the import has landed.
+/// Captures either a pose file or manual pose-layer state together with enabled
+/// IK chains. Restoration waits for skeleton readiness, restores the pose without
+/// adding history, and then restores the saved IK configuration.
 /// </summary>
 public sealed class PoseSnapshotPort : IPoseSnapshotPort, IDisposable
 {

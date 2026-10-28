@@ -14,9 +14,6 @@ public sealed partial class DebugBridge
     private const string DisposableAutoSaveSegment =
         "/artifacts/refactor-review-481/autosave-disposable/";
 
-    private IAutoSaveService BridgeAutoSaves =>
-        (IAutoSaveService)_services.GetService(typeof(IAutoSaveService))!;
-
     private AutoSaveLibrary BridgeAutoSaveLibrary =>
         (AutoSaveLibrary)_services.GetService(typeof(AutoSaveLibrary))!;
 
@@ -140,7 +137,7 @@ public sealed partial class DebugBridge
                 ((IDalamudPluginInterface)_services.GetService(typeof(IDalamudPluginInterface))!)
                     .GetPluginConfigDirectory(), "AutoSaves"))
             : Path.GetFullPath(stored);
-        string effective = Path.GetFullPath(BridgeAutoSaves.RootDirectory);
+        string effective = Path.GetFullPath(BridgeAutoSaveLibrary.RootDirectory);
         return new
         {
             enabled = settings.Enabled,
@@ -160,12 +157,10 @@ public sealed partial class DebugBridge
 
     private object AutoSaveStatus()
     {
-        var service = BridgeAutoSaves;
+        var service = BridgeAutoSaveLibrary;
         return new
         {
             root = Path.GetFullPath(service.RootDirectory),
-            terminal = service.LastTerminalResult,
-            health = service.LastHealthRecord,
             // Isolation is selected by /sceneautosaveconfig and takes effect
             // only after reload; this endpoint never swaps the running store.
             sceneRootIsolationSupported = true,
@@ -191,7 +186,7 @@ public sealed partial class DebugBridge
         if (!query.TryGetValue("path", out var requested) || !Path.IsPathFullyQualified(requested))
             return new { accepted = false, outcome = "Refused", reason = "An absolute pose path is required." };
         string path = Path.GetFullPath(requested);
-        string root = Path.GetFullPath(BridgeAutoSaves.RootDirectory);
+        string root = Path.GetFullPath(BridgeAutoSaveLibrary.RootDirectory);
         if (!IsStrictDescendant(path, root) || !IsDisposableAutoSavePath(path, allowRoot: false)
             || !path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
             return new { accepted = false, outcome = "Refused",

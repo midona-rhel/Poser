@@ -12,11 +12,17 @@ embedded appearance resources. Load reapplies it after appearance redraws and
 before the pose/readiness barrier. Ordinary redraw restores the body and clears
 the effective clothing-only state. Older scenes omit the flag and load normally;
 their former clothing-only intent cannot be inferred reliably from an MCDF.
-Temporary material overrides are serialized and removed even on cancellation.
-UI, bridge and scene requests share one clothing-only operation owner. It
-serializes native work, cancels queued and active requests on GPose exit, and
-refuses new work for the exiting session. The native port owns only the
-framework-thread mechanism and cleanup; callers await the same result.
+UI, bridge and scene requests share ClothingOnlyControl. It tracks requests by
+actor and cancels them when that actor leaves or GPose ends. After publishing
+a refreshed actor list, it forgets clothing-only state for departed actors.
+When queried, clothing-only state is checked against the current model so a
+redraw is reflected immediately. Forgetting state does not free a game model;
+CharacterModelNative alone releases the hidden hair, face and tail slots.
+
+The native port removes temporary collection materials after each redraw,
+including cancellation. Unexpected removal failures are reported without a
+retry queue. A deleted collection needs no cleanup. Cancelling a request does
+not mean its asynchronous cleanup has already finished.
 
 For each field, Poser captures the incoming value once before its first
 successful edit. Restore gives the field back only after native success. A
@@ -33,9 +39,11 @@ second history.
 
 External appearance targets one actor at a time. It can apply a Penumbra
 collection, a Glamourer design with default API flags and no persistent lock,
-or a temporary saved Customize+ profile. Incoming state is captured once per
-component. Reset and teardown restore it. Foreign locks and unreadable
-temporary profiles are refused before changes.
+or a temporary copy of a saved Customize+ profile. Collection and Glamourer
+state are captured before the first change so Reset can restore them.
+Customize+ Reset deletes Poser's temporary profile by its recorded ID; the
+provider then uses the actor's normal saved profile. Foreign Glamourer locks
+are refused before changes.
 
 Fresh spawns clear retained Glamourer appearance after native self-identification
 and model assignment, within the original deferred-draw window. Slot-based native
@@ -78,8 +86,11 @@ keeps the inherited collection alive and reattaches it on cleanup only if the ex
 actor remains and no newer external assignment has taken over.
 MCDF export uses that same profile capture: retained Poser-owned JSON takes
 precedence over the external saved-profile query. Customize+ 6.x does not expose
-temporary profiles through that query; a null result is not proof that no
-temporary profile is applied. Export never reapplies a profile to read it.
+temporary profiles through that query, even when it returns a saved profile.
+Poser cannot detect or preserve another plugin's temporary profile through
+these APIs. Applying a temporary profile replaces the previous temporary
+profile in Customize+; cleanup deletes only the ID Poser created.
+Export never reapplies a profile to read it.
 
 Glamourer access is actor-generation scoped: editable, Poser-held,
 foreign-held, or unavailable. A refused unkeyed read is probed read-only

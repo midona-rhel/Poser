@@ -6,9 +6,9 @@ using System.Numerics;
 namespace Poser.UI;
 
 /// <summary>
-/// Complete replaceable UI token value. Applying one theme replaces colors,
+/// Replaceable UI defaults. Applying a theme selects colors,
 /// typography, geometry, radii, shadows, motion, and optical corrections
-/// together; primitives never fall back to process-wide metric constants.
+/// together; individual components may also define local metrics.
 /// </summary>
 public readonly record struct Theme
 {
@@ -144,8 +144,7 @@ public readonly record struct Theme
         },
         Form = new()
         {
-            // Sized so the app's real labels FIT — re-measured for
-            // Roboto, which runs wider than Segoe did at 72.
+            // Width reserved for property labels before UI scaling.
             LabelColumnWidth = 90f,
             // Six digits and a unit ("0.0004", "600 s", "2.00×") in the
             // mono face, with the well's own padding.
@@ -374,15 +373,8 @@ public readonly record struct Theme
 
     public static Theme Default => Dark;
 
-    /// <summary>
-    /// Re-derives the primary color family from a chosen accent. Every stop
-    /// mirrors how tokens.css derives it from <c>--color-primary</c>: the
-    /// N-suffixed tokens are <c>color-mix(… N%, transparent)</c> — the same
-    /// RGB at alpha N/100 — and AccentActive/DangerHover-style stops are the
-    /// declared fixed-alpha derivations above. Accent index 0 never routes
-    /// here: the theme's own baked primary IS the default accent, so the
-    /// accepted baseline stays byte-for-byte.
-    /// </summary>
+    /// <summary>Replaces the primary accent and its hover, focus, and fill colors.
+    /// Derived colors retain the accent RGB and use fixed opacity levels.</summary>
     public Theme WithAccent(Vector4 accent) => this with
     {
         Accent = accent,
@@ -576,10 +568,7 @@ public readonly record struct Theme
         public float AxisWellMinimumWidth { get; init; }
         public float AxisWellHorizontalPadding { get; init; }
 
-        /// <summary>The standard action-button width. Every text verb is at
-        /// least this wide, so verbs stacked across rows (Reset over Redraw,
-        /// Apply under Reset) render identically and align; a longer label
-        /// widens only as far as its text demands.</summary>
+        /// <summary>Minimum width for form action buttons; longer labels can expand it.</summary>
         public float VerbWidth { get; init; }
         public float AxisLabelGap { get; init; }
     }
@@ -719,10 +708,7 @@ public readonly record struct Theme
         public float Height { get; init; }
         public float NavigationWidth { get; init; }
 
-        /// <summary>Settings pages override the form's default label column:
-        /// behavior rows carry sentence-length labels ("Game target follows
-        /// selection") that truncate at the shared 94px token, and the wide
-        /// settings body has the room to spend.</summary>
+        /// <summary>Wider label column for sentence-length settings labels.</summary>
         public float LabelColumnWidth { get; init; }
 
         /// <summary>The settings rail's page rows: taller than a list

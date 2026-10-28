@@ -3,11 +3,13 @@ using Poser.Application.AutoSave;
 
 namespace Poser.Application.Library;
 
-/// <summary>Coalesces directory reads independently of library-panel lifetime.
-/// The reader it owns remembers what each file said between passes, and the
-/// coalescing is what keeps it to one pass at a time.</summary>
-public sealed class AutoSaveLibrary(IAutoSaveService saves)
+/// <summary>
+/// Scans autosave folders in the background. Concurrent requests schedule at most
+/// one additional pass, and TakeLatest transfers the latest result to the caller.
+/// </summary>
+public sealed class AutoSaveLibrary(string rootDirectory, SceneAutoSaveService scenes)
 {
+    public string RootDirectory { get; } = rootDirectory;
     private readonly AutoSaveLibraryReader _reader = new();
     private readonly object _sync = new();
     private bool _scanning, _queued;
@@ -15,7 +17,7 @@ public sealed class AutoSaveLibrary(IAutoSaveService saves)
 
     public void RequestScan()
     {
-        var root = saves.RootDirectory;
+        var root = RootDirectory;
         lock (_sync)
         {
             if (_scanning) { _queued = true; return; }
@@ -26,7 +28,7 @@ public sealed class AutoSaveLibrary(IAutoSaveService saves)
             while (true)
             {
                 List<AutoSaveFolder> result;
-                try { result = _reader.Read(root); }
+                try { result = _reader.Read(root, scenes.RootDirectory); }
                 catch { result = []; }
                 Volatile.Write(ref _latest, result);
                 lock (_sync)

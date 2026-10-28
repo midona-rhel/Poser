@@ -18,8 +18,8 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Game.Animation;
 
-// Operates only on an independently loaded resource, never a live actor's
-// animation control or binding. Native allocations exist only during Save.
+// Loads separate resources for skeleton reads, sampling, and serialization.
+// Each operation releases its native resources before returning.
 internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner scanner)
 {
     private const string VtableStoreSiteBytes = "48 89 07 48 8B CD 48 89 77 38";

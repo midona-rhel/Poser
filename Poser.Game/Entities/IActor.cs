@@ -7,29 +7,16 @@ namespace Poser.Game.Entities;
 /// </summary>
 public interface IActor : IEntity
 {
-    /// <summary>
-    /// Memory address of the game character object.
-    /// </summary>
+    /// <summary>Current native game-character address.</summary>
     nint Address { get; }
 
-    /// <summary>
-    /// The type of actor (Player, Companion, BattleNpc, etc.).
-    /// </summary>
+    /// <summary>Actor category reported by the game.</summary>
     ActorKind ActorKind { get; }
 
-    /// <summary>
-    /// Returns true if this actor is a companion (minion, mount, pet).
-    /// </summary>
     bool IsCompanion { get; }
 
-    /// <summary>
-    /// Returns true if this actor is a player character.
-    /// </summary>
     bool IsPlayer { get; }
 
-    /// <summary>
-    /// Returns true if this actor is an NPC (battle or event).
-    /// </summary>
     bool IsNpc { get; }
 
     /// <summary>

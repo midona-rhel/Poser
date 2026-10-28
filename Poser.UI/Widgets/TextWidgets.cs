@@ -85,18 +85,10 @@ public static class TextWidgets
         Vector2 position, string text, in TextStyle style, TextConstraint constraint)
         => DrawTextRun(position, text, style, constraint);
 
-    /// <summary>
-    /// Extra lift, in CSS px, for a run seated beside an icon: the eye
-    /// judges that run against the ICON's ink centroid, not the band
-    /// centre. The value is constrained: with the metric ink rise it must
-    /// land BOTH accepted seats — the tree row and the context menu row —
-    /// on their measured pixel exactly, and it is the only such bias.
-    /// </summary>
+    /// <summary>Vertical adjustment in logical pixels for text beside an icon.</summary>
     public const float IconAdjacentInkBias = -1.5f;
 
-    /// <summary>Snaps an ink-centered baseline seat, breaking ties toward
-    /// the SMALLER y. A tie resolved low reproduces the exact defect
-    /// <see cref="TextInBand"/> exists to kill.</summary>
+    /// <summary>Rounds baseline placement to a pixel, resolving ties upward.</summary>
     private static float InkSnapY(float y) => MathF.Ceiling(y - 0.5f);
 
     /// <summary>
@@ -122,16 +114,9 @@ public static class TextWidgets
             + rise * State.FrameScale);
     }
 
-    /// <summary>
-    /// THE way to center one line of text in a band. Vertically it seats
-    /// the INK — the cap-to-baseline band — on the band's midline, using
-    /// the face's real metrics (<see cref="FontRegistry.InkRise"/>) instead
-    /// of a per-surface tuned constant; line-box centering alone reads low
-    /// because internal leading is asymmetric. Two modes: the default
-    /// band-centered seat, and <paramref name="besideIcon"/>, which adds
-    /// <see cref="IconAdjacentInkBias"/>. Horizontally the run's box is
-    /// placed by <paramref name="align"/>.
-    /// </summary>
+    /// <summary>Centers visible letter height in the band using font metrics.
+    /// Text beside an icon gets an additional optical adjustment. Horizontal
+    /// placement follows the requested alignment.</summary>
     public static void TextInBand(
         Vector2 bandMin, Vector2 bandSize, string text, in TextStyle style,
         TextAlign align = TextAlign.Start, bool besideIcon = false)
@@ -191,15 +176,8 @@ public static class TextWidgets
         }
     }
 
-    /// <summary>
-    /// The LAYOUT size a constrained run occupies, without drawing it —
-    /// the same answer <see cref="TextAt(Vector2, string, in TextStyle,
-    /// TextConstraint)"/> would return, shaped through the same wrap. A
-    /// caller that must reserve a wrapped run's height before it draws (a
-    /// form row, which states its logical height to the page) has no other
-    /// way to ask, and re-deriving line counts at the call site would be a
-    /// second wrap implementation.
-    /// </summary>
+    /// <summary>Measures constrained layout using the same wrapping and line
+    /// spacing as drawing, so callers can reserve its height beforehand.</summary>
     public static Vector2 MeasureText(
         string text, in TextStyle style, TextConstraint constraint)
     {
@@ -309,10 +287,8 @@ public static class TextWidgets
         return text;
     }
 
-    /// <summary>The host's once-per-frame announcement. The fallback asks
-    /// ImGui for the frame number on every text call, and that binding call
-    /// alone cost 3.6s of a 45s trace — a host that draws every frame calls
-    /// this instead and the per-call roll collapses to one branch.</summary>
+    /// <summary>Refreshes per-frame font availability and scale samples.
+    /// Once used, the host must call this on every drawn frame.</summary>
     public static void BeginTextFrame()
     {
         State.ExplicitTextFrame = true;
@@ -475,14 +451,8 @@ public static class TextWidgets
             _ => 0f,
         };
 
-    /// <summary>
-    /// Unquantized run width from per-glyph advances at the current
-    /// font scale. ImGui's CalcTextSize CEILS its result to whole
-    /// pixels, so a fit decision made on it accepts anything within the
-    /// rounding slack — one extra character at the truncation boundary,
-    /// a late line break at a wrap boundary. The browser compares
-    /// FRACTIONAL advance sums, so every fit comparison here does too.
-    /// </summary>
+    /// <summary>Sums glyph advances without rounding to whole pixels, so fitting
+    /// and alignment use the rendered width rather than CalcTextSize rounding.</summary>
     private static float FractionalTextWidth(ReadOnlySpan<char> text)
     {
         var font = ImGui.GetFont();
@@ -506,7 +476,7 @@ public static class TextWidgets
 
     private const int TruncateCacheCap = 4096;
 
-    /// <summary>Grapheme-cluster ellipsis backoff in the CURRENTLY PUSHED
+    /// <summary>Shortens text at grapheme boundaries using the active
     /// face — truncation and rendering always agree on the same font, and
     /// the fit decision uses fractional advances like the browser's. When
     /// even the ellipsis alone cannot fit, the ORIGINAL run is returned —
@@ -713,7 +683,7 @@ public static class TextWidgets
         => MeasureText(text,
             new TextStyle { Size = size, Weight = weight, Family = family });
 
-    /// <summary>Centers a label and clips it only when it overflows.</summary>
+    /// <summary>Vertically centers a start-aligned label and clips overflow.</summary>
     internal static void LabelInBand(
         Vector2 min, Vector2 band, string text, in TextStyle style,
         bool besideIcon = false)

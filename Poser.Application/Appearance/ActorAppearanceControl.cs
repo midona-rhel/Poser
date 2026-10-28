@@ -18,7 +18,6 @@ public sealed class ActorAppearanceControl(
     public GlamourerAccess AppearanceAccess(ActorId actor) => integration.AppearanceAccess(actor);
     public IntegrationOverrides OverridesFor(ActorId actor) => integration.OverridesFor(actor);
     public IntegrationValue<CollectionAssignment> ReadCollection(ActorId actor) => integration.ReadCollection(actor);
-    public IntegrationResult CheckBodyProfileDisplaceable(ActorId actor) => integration.CheckBodyProfileDisplaceable(actor);
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListCollections() => integration.ListCollections();
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListDesigns() => integration.ListDesigns();
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListBodyProfiles() => integration.ListBodyProfiles();

@@ -18,6 +18,56 @@ Consult Brio for native behavior and Ktisis for posing interaction. Review
 the actual patch for identity, runtime ordering, product scope, and existing
 UI conventions. Keep durable contracts in their existing documentation home.
 
+## Writing issues and pull requests
+
+Write for Midona and other people using Poser. Say what was wrong, what changed,
+and what that means when using the app. Use short, ordinary sentences. Read the
+text aloud: if it sounds like a lab report or an agent talking to another agent,
+rewrite it.
+
+Link to the code that demonstrates the problem. Use GitHub permalinks to a
+published commit and the relevant lines, with a short label explaining what the
+reader will find. Check that the commit exists on GitHub. Do not substitute a
+list of variable names for a useful source link, or link an unpublished commit.
+
+Leave line counts, local deployment status, reviewer names, and development
+chronology out of issue and PR prose. Answer those questions in chat when asked.
+An issue describes the problem and intended change; an update explains what
+changed. Neither is a diary of our conversation.
+
+For testing, say what you tried and whether it worked. Mention a limitation when
+it leaves a real question about the fix. Keep script troubleshooting, reviewer
+names, model names, commit hashes, and raw output in the validation record. Do
+not use “Sol reviewed” as a stamp of quality in an issue, PR, or routine update.
+Explain any useful finding from the review instead.
+
+For example: “Reset now removes the profile Poser created. I tried applying a
+profile, resetting it, and undoing the reset; all three worked.” Only say this
+when those checks were actually performed. An issue update should help someone
+understand the change without making them follow the whole development session.
+
+## Comment review
+
+Review comments alongside the code. Explain the behavior where it is implemented
+and a check where it is performed. A method comment should describe its purpose
+and result. Put a necessary explanation of an exception beside the decision it
+explains, rather than repeating it across unrelated methods.
+
+Check whether each comment helps someone find and understand the relevant code.
+Searching for a behavior should lead to its implementation. Remove comments that
+only mention where that behavior does not happen, restate obvious code, or carry
+old investigation notes. Verify factual claims against the implementation.
+
+## Guard review
+
+Preserving an existing guard's behavior does not establish that it is needed.
+For each guard in the cleanup scope, trace the real producers and callers that
+could reach it, including provider behavior and relevant asynchronous ordering.
+Remove branches that only protect states production code cannot create. Keep
+checks for actual external failures. An unresolved reachability question is
+unfinished audit work, not a completed review or an automatic reason to retain
+code. Apply this check before handoff; the user should not have to request it.
+
 ## Validation and acceptance
 
 Follow the [testing and deployment contract](testing.md): Release is the

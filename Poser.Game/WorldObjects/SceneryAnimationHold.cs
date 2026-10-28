@@ -32,19 +32,10 @@ internal sealed class SceneryAnimationHold
         // instead holds its pose and clock in the post-native frame phase.
         if (handle.AnimationPaused)
         {
-            // THE MECHANISM (proved in game 2026-09-01): re-write the
-            // captured transform AND the instance tail — the animation
-            // clock lives in it — every draw. A draw-time write lands
-            // after the game's animator and wins the frame; skeleton
-            // speed, flag bits and an UpdateRender skip all did nothing.
-            // A pause landing in the unpause hand-off window captures
-            // the BASE — the live value is the game's raw original
-            // place for a frame or two.
-            // On an ANCHORED object a field read LIES: the game's writer
-            // runs again after our seam write, so the fields end every
-            // frame holding ITS value while the render shows ours (the
-            // log proved it: held 127.36 vs base 125.93). The frozen pose
-            // is what we last composed, never a raw read.
+            // Hold both placement and animation-clock bytes after native animation.
+            // During reanchoring, use the desired base; once anchored, use the last
+            // composed placement. Raw native fields may already contain the game's
+            // next animation value rather than the placement shown to the user.
             var previous = handle.AnimationAnchor;
             var frozen = previous switch
             {

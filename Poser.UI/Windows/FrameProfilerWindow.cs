@@ -15,30 +15,15 @@ using static Poser.UI.Widgets.WindowFrameWidgets;
 namespace Poser.UI;
 
 /// <summary>
-/// THE PERF panel: every labelled draw unit's cost, worst first.
-///
-/// <para>It reads <see cref="FrameProfiler"/>'s published figures, which are
-/// last frame's — the ledger closes after every window has drawn, this one
-/// included, so a panel that read the live accumulators would be reading a
-/// half-built frame and would never account for itself.</para>
-///
-/// <para>The panel's OWN cost is measured like everything else, under
-/// <c>Window · Frame profiler</c>: a diagnostic surface that hides its own
-/// price is a diagnostic surface that lies. It formats a few dozen numbers per
-/// frame and that shows up there.</para>
-///
-/// <para>Closing it turns the setting off rather than leaving a switch that
-/// claims the panel is showing — the setting IS whether the panel is up.
-/// </para>
+/// Shows draw-callback CPU timings from the last completed frame, sorted by
+/// self time. The profiler measures this panel too. Closing it disables profiling.
 /// </summary>
 public sealed class FrameProfilerWindow : Window
 {
     private const float DesignWidth = 470f;
     private const float DesignHeight = 540f;
 
-    /// <summary>Rows below this smoothed self-cost are not drawn: a label that
-    /// has decayed to nothing is a surface that is no longer on screen, and
-    /// forty such rows would bury the ones that matter.</summary>
+    /// <summary>Hide rows below this average self time only when they also have no hits.</summary>
     private const double FloorMs = 0.0005;
 
     private const float RowHeight = 20f;

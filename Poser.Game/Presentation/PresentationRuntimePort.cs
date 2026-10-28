@@ -17,30 +17,11 @@ using Poser.Game.Natives;
 namespace Poser.Game.Presentation;
 
 /// <summary>
-/// Native side of runtime presentation. Reference provenance, verified
-/// against current ClientStructs by reflection:
-///
-///  · Opacity — Brio: <c>Character.Alpha</c> (CS-named, 0x22E8), written
-///    on change; the game may drive its own fades, exactly as in Brio.
-///  · Tint — Brio: <c>CharacterBase.Tint</c> (CS-named, 0x290; identical
-///    on Human and Weapon). Brio keeps writes alive by suppressing the
-///    game's tint update virtual; this port does the same but gates the
-///    detour PER MODEL INSTANCE on the owned set instead of globally.
-///    The vfunc (index 24, vtable byte 0xC0 off the CS-named
-///    <c>StaticVirtualTablePointer</c>) has no ClientStructs symbol; its
-///    position is verified against the named neighbors
-///    SetTransparency (26) and GetTransparency (27).
-///  · Wetness — Ktisis: <c>WeatherWetness/SwimmingWetness/WetnessDepth</c>
-///    (CS-named, 0x2E0/0x2E4/0x2E8 on the character's draw object),
-///    re-applied unconditionally on the framework tick while owned,
-///    exactly Ktisis' enforcement.
-///
-/// The tick also re-applies owned tints, which is what survives a
-/// draw-object replacement: pointers are re-resolved fresh every tick
-/// through the type-checked slot resolution, so a replaced model
-/// instance is rebound and rewritten within a frame — and never read
-/// back as a new capture. A missing weapon model resolves to null and
-/// fails; it is never redirected to another model.
+/// Reads and writes actor opacity, tint, wetness, and shader colours. Opacity is
+/// written once; owned tint, wetness, and colours are reapplied on framework updates.
+/// Tint uses the CharacterBase update hook, following Brio, but suppresses updates
+/// only for the currently indexed owned model instances. Models are resolved again
+/// each update so replacement draw objects can receive the owned values.
 /// </summary>
 public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntimePort, IDisposable
 {
@@ -122,7 +103,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         }
         catch (Exception ex)
         {
-            // Never throw into the game: a fault keeps the game's tinting.
+            // If Poser's lookup throws, continue to the original tint function.
             if (!_tintFaultLogged)
             {
                 _tintFaultLogged = true;
@@ -132,7 +113,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         return _updateTintHook!.Original(characterBase, tint);
     }
 
-    // ── Resolution (the AnimationNativeState pattern, verbatim) ───────
+    // ── Actor resolution ───────
 
     private CSCharacter* Resolve(ActorId actor, out string? detail)
     {
@@ -251,9 +232,8 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         var characterBase = BaseFor(character, model);
         if (characterBase != null)
             characterBase->Tint = incoming;
-        // An absent model has nothing left to restore into: the game
-        // rebuilt it with its own defaults, so releasing ownership IS the
-        // restoration.
+        // If the model is absent, release ownership without a native write.
+        // A later model will use its own values rather than this override.
         Release(actor, owned => owned.Tints.Remove(model));
         return Outcome.Ok();
     }
@@ -322,12 +302,8 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     }
 
     /// <summary>
-    /// The per-tick enforcement: wetness is rewritten because the game
-    /// recomputes it every frame (Ktisis' model), and owned tints are
-    /// rewritten so a REPLACED draw object gets the owned value on its
-    /// exact new instance within a frame — the replacement's defaults
-    /// are written over, never read back. The suppression index is
-    /// rebuilt from the same fresh resolution.
+    /// Reapplies owned values to the currently resolved models, then publishes
+    /// the tint-hook index. Missing actors or models are skipped until available.
     /// </summary>
     private void EnforceOwned(IFramework framework)
     {

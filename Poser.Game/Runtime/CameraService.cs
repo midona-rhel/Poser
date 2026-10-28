@@ -45,16 +45,9 @@ public class CameraService : ICameraProjection
         return proj;
     }
 
-    /// <summary>
-    /// The camera position the frame is actually RENDERED from: the inverse
-    /// of the view matrix, Brio's CameraExtensions.GetPosition. Never the
-    /// scene camera's Position field — a free camera replaces the view matrix
-    /// while the game keeps orbiting that field under the native input a free
-    /// camera does not consume (only the right-drag look and the movement
-    /// keys are eaten), so the field is a second, drifting camera that
-    /// nothing renders. Everything sized or aimed from "the camera" reads
-    /// this, or it silently tracks the wrong one.
-    /// </summary>
+    /// <summary>Gets the rendered camera position from the inverse view matrix.
+    /// A free-camera override changes this matrix without moving the native
+    /// scene-camera Position field. Returns zero if inversion fails.</summary>
     public Vector3 GetCameraPosition()
     {
         var view = GetViewMatrix();
@@ -133,7 +126,7 @@ public class CameraService : ICameraProjection
             camY - (camY * y / w)
         );
 
-        // Only reject if behind camera (w <= 0)
+        // Reject points with w at or below the near-zero threshold.
         return w > 0.001f;
     }
 
@@ -202,9 +195,7 @@ public class CameraService : ICameraProjection
 
     public unsafe Vector3 GetLookDirection()
     {
-        // The centre-screen ray IS the look direction, and unprojection is
-        // convention-free: near-to-far in clip space is toward positive w,
-        // which the in-front test above already defines as "ahead".
+        // Unproject the centre using the native projection's 0..1 depth range.
         var io = Dalamud.Bindings.ImGui.ImGui.GetIO();
         var center = new Vector2(io.DisplaySize.X / 2f, io.DisplaySize.Y / 2f);
         var probe = ScreenToWorld(center, 1f);
@@ -216,10 +207,8 @@ public class CameraService : ICameraProjection
                 return direction / length;
         }
 
-        // Fallback: the scene camera's own look-at, equally convention-free.
-        // The unprojection above needs an invertible view-projection, which
-        // a live free-camera override does not always leave readable — and a
-        // zero here silently cost every camera anchor of that session.
+        // Fallback uses the native look-at point and the rendered camera position.
+        // A free-camera override may leave these in different camera states.
         var cameraManager = CameraManager.Instance();
         if (cameraManager == null)
             return Vector3.Zero;

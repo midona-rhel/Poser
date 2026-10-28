@@ -11,15 +11,13 @@ using Poser.Application.Settings;
 
 namespace Poser.Application.AutoSave;
 
-/// <summary>Whole-scene autosave cadence, admission, deduplication and progress.</summary>
+/// <summary>Schedules, writes, and reports whole-scene autosaves.</summary>
 public sealed class SceneAutoSaveService : IDisposable
 {
     private readonly ConfigurationService _configuration;
-    /// <summary>ARMS a capture: the bone-transform caches a scene serializes
-    /// are refreshed first and the outcome arrives through the callback a few
-    /// ticks later, so a snapshot never files a never-posed actor's
-    /// skeleton-build-time bones. Returns the refusal detail, or null when
-    /// armed.</summary>
+    /// <summary>Requests an asynchronous scene capture after refreshing pose
+    /// caches. The callback receives the completed document. A non-null return
+    /// explains why capture could not be started.</summary>
     private readonly Func<Guid, string?, Action<SceneCaptureOutcome>, string?> _capture;
     private readonly SceneAutoSaveStore _store;
     private readonly Action<string> _warning;
@@ -27,10 +25,25 @@ public sealed class SceneAutoSaveService : IDisposable
     private readonly Func<DateTime> _clock;
     private readonly Func<Action, bool> _dispatch;
     private readonly object _gate = new();
+    private readonly object _diskGate = new();
+    private Guid? _cleanedSession;
 
-    /// <summary>The document identity every snapshot of this session reuses,
-    /// so successive snapshots are versions of ONE scene rather than
-    /// unrelated documents.</summary>
+    /// <summary>Stops future captures before actors are removed. If CleanOnExit
+    /// is enabled, waits for the active write and then removes the snapshots.</summary>
+    public void CompleteForExit()
+    {
+        _wasGPosing = false;
+        _nextDueUtc = null;
+        if (!Settings.Enabled || !Settings.CleanOnExit) return;
+        lock (_diskGate)
+        {
+            _cleanedSession = _sceneId;
+            _store.Prune(0);
+            lock (_gate) _writtenIdentity = null;
+        }
+    }
+
+    /// <summary>Document ID shared by snapshots from the current GPose session.</summary>
     private Guid _sceneId = Guid.NewGuid();
 
     private DateTime? _nextDueUtc;
@@ -69,8 +82,8 @@ public sealed class SceneAutoSaveService : IDisposable
 
     public string RootDirectory { get; }
 
-    /// <summary>Latest published outcome; tests observe the cadence through it.</summary>
-    internal SceneAutoSaveResult LastResult
+    /// <summary>Most recent autosave result, used for status reporting and diagnostics.</summary>
+    public SceneAutoSaveResult LastResult
     {
         get
         {
@@ -80,16 +93,15 @@ public sealed class SceneAutoSaveService : IDisposable
     }
 
 #if DEBUG
-    /// <summary>Debug bridge evidence for the real autosave writer outcome.</summary>
+    /// <summary>Most recent writer result exposed to the debug bridge.</summary>
     public SceneAutoSaveResult DebugLastResult => LastResult;
 #endif
 
     private AutoSaveConfiguration Settings => _configuration.Config.AutoSave;
 
     /// <summary>
-    /// The same interval shape the pose auto-save uses: idle disarms the
-    /// timer, and the first armed tick schedules one full interval out so
-    /// entering GPose never snapshots immediately.
+    /// Disables the timer outside GPose. Entering GPose schedules the first
+    /// snapshot after one complete interval.
     /// </summary>
     public void Tick(DateTime nowUtc, bool gposing)
     {
@@ -102,7 +114,7 @@ public sealed class SceneAutoSaveService : IDisposable
         _wasGPosing = gposing;
 
         var settings = Settings;
-        if (_disposed || !settings.Enabled || !settings.SceneSnapshots || !gposing)
+        if (_disposed || !settings.Enabled || !gposing)
         {
             _nextDueUtc = null;
             return;
@@ -122,15 +134,10 @@ public sealed class SceneAutoSaveService : IDisposable
     }
 
     /// <summary>
-    /// ARMS the capture (this runs on the framework thread) and hands the
-    /// immutable document to the writer once it lands. Only one write is in
-    /// flight: a tick arriving over a running write is skipped by name rather
-    /// than queued, so a slow disk can never grow an unbounded backlog.
-    ///
-    /// <para>The arm shares the ONE refresh slot with user-driven pose exports
-    /// and scene saves, so a tick landing on top of one is REFUSED and skipped
-    /// by name. A snapshot deferring to the user's own export is the right
-    /// trade: the alternative is filing bone values the game never showed.</para>
+    /// Starts one capture on the framework thread and passes the completed
+    /// document to the writer. If a write, scene operation, or shared pose-cache
+    /// refresh is already running, this autosave is reported as skipped rather
+    /// than queued.
     /// </summary>
     internal void SnapshotNow()
     {
@@ -167,8 +174,7 @@ public sealed class SceneAutoSaveService : IDisposable
         }
     }
 
-    /// <summary>The armed capture landed: from here on this is exactly the
-    /// path a synchronous capture took.</summary>
+    /// <summary>Handles a completed in-memory capture.</summary>
     private void OnCaptured(SceneCaptureOutcome captured)
     {
         if (_disposed)
@@ -181,9 +187,8 @@ public sealed class SceneAutoSaveService : IDisposable
             return;
         }
 
-        // Nothing to insure against: an empty scene writes no file and leaves
-        // no folder behind, exactly as the pose auto-save does with no
-        // qualifying actor.
+        // Skip scenes without any listed entities. Environment-only changes
+        // do not satisfy this check.
         if (scene.Actors.Count == 0 && scene.Props.Count == 0 &&
             scene.Lights.Count == 0 && scene.Cameras.Count == 0 &&
             scene.Overlays is not { Count: > 0 } && scene.WorldObjects is not { Count: > 0 })
@@ -202,7 +207,19 @@ public sealed class SceneAutoSaveService : IDisposable
         string? dispatchFailure = null;
         try
         {
-            if (!_dispatch(() => WriteAndPrune(scene, localNow, keep)))
+            var session = _sceneId;
+            if (!_dispatch(() =>
+            {
+                lock (_diskGate)
+                {
+                    if (_cleanedSession == session)
+                    {
+                        lock (_gate) _writing = false;
+                        return;
+                    }
+                    WriteAndPrune(scene, localNow, keep);
+                }
+            }))
                 dispatchFailure = "The snapshot writer could not be dispatched.";
         }
         catch (Exception ex)
@@ -223,9 +240,8 @@ public sealed class SceneAutoSaveService : IDisposable
     {
         try
         {
-            // The comparison runs HERE, on the writer, because that is where
-            // the cost of describing a whole scene belongs — never on the
-            // framework thread the capture ran on.
+            // Calculate the content identity on the writer thread because it
+            // walks the complete scene document.
             var identity = SceneAutoSaveStore.CaptureIdentity(scene);
             if (identity != null)
             {
@@ -280,8 +296,8 @@ public sealed class SceneAutoSaveService : IDisposable
         }
     }
 
-    /// <summary>Records the outcome; a snapshot that failed or left recovery
-    /// evidence is logged, since nothing else surfaces it.</summary>
+    /// <summary>Updates status and logs failures, including paths of files
+    /// retained for recovery.</summary>
     private void Publish(SceneAutoSaveResult result)
     {
         lock (_gate)

@@ -7,17 +7,15 @@ using Poser.Game.Animation;
 namespace Poser.Game.Tests.Animation;
 
 /// <summary>
-/// Drives every patch stage of <see cref="PhysicsFreezePatcher"/> through the
-/// <see cref="IPhysicsPatchNative"/> seam: a fake memory window stands in for
-/// the game's code pages, so startup validation, both rollback paths, foreign
-/// -byte refusal, and the dispose restore are all exact byte assertions.
+/// Exercises <see cref="PhysicsFreezePatcher"/> against a fake native memory
+/// window. Checks a successful freeze, a failed second restore write, and
+/// a subsequent successful restore of the captured instruction bytes.
 /// </summary>
 public sealed class PhysicsFreezePatcherTests
 {
-    // The site layout the patcher validates at startup: region 1 is the
-    // signature's own first instruction, region 2 sits 0x9 before it with a
-    // pinned 0F 11 opcode and a free operand byte (0x77 here on purpose, to
-    // prove the restore uses CAPTURED bytes, not hard-coded ones).
+    // Region 1 begins at the signature. Region 2 begins nine bytes earlier
+    // and has a fixed 0F 11 opcode. Its 0x77 operand verifies that restoration
+    // uses the captured bytes instead of a hard-coded instruction.
     private static readonly byte[] Region1 = [0x0F, 0x11, 0x48, 0x10];
     private static readonly byte[] Region2 = [0x0F, 0x11, 0x77];
     private static readonly byte[] Nops1 = [0x90, 0x90, 0x90, 0x90];
@@ -51,7 +49,7 @@ private static PhysicsFreezePatcher CreatePatcher(FakeNative native, out LogProx
     /// <summary>
     /// A 64-byte window standing in for the code pages around the freeze
     /// site. Reads and writes index into it; a 1-based write number can be
-    /// made to fault, and permission changes are recorded verbatim.
+    /// made to fault. Permission changes always succeed in this fake.
     /// </summary>
     private sealed class FakeNative : IPhysicsPatchNative
     {

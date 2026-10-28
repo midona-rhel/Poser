@@ -11,12 +11,10 @@ namespace Poser.Application.Animation;
 public interface IAnimationSpeedPort
 {
     Outcome SetOverallSpeed(ActorId actor, float speed);
-    /// <summary>Stops enforcing overall speed; the game's own value wins
-    /// again from its next recalculation.</summary>
-    /// <summary>Drops Poser's speed enforcement for an actor whose body is
-    /// gone. No native write: there is nothing left to hand back.</summary>
+    /// <summary>Forgets speed overrides for a removed actor without writing game memory.</summary>
     void Forget(ActorId actor);
 
+    /// <summary>Stops enforcing overall speed so the game can update it again.</summary>
     Outcome ClearOverallSpeed(ActorId actor);
 
     /// <summary>

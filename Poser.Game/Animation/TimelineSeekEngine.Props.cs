@@ -4,7 +4,7 @@ using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Prop (C031) timelines: found in the game's prop group, seeked, synced, re-fired, corrected at birth.</summary>
+/// <summary>Finds and updates prop animation timelines started by C031 clips.</summary>
 internal sealed unsafe partial class TimelineSeekEngine
 {
     // ── Props (C031) ──────────────────────────────────────────────────
@@ -146,8 +146,8 @@ internal sealed unsafe partial class TimelineSeekEngine
 
     /// <summary>
     /// Corrects a newly current prop timeline of <paramref name="weapon"/>.
-    /// Returns false while it can't be decided yet (not loaded, no C031 found),
-    /// so the caller retries next tick; true once handled either way.
+    /// Returns false while the prop timeline is loading so the caller can retry.
+    /// Returns true after correction or when no matching clip needs correction.
     /// </summary>
     public bool CorrectPropBirth(
         FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer,

@@ -146,13 +146,10 @@ after a checked request; a failure is reported without redirecting.
 
 ## Autosave
 
-In GPose, actors with edits are saved as snapshots under
-`<Auto-save home>/<yyyy-MM-dd>/<HH-mm-ss> <actor>.pose`. The first periodic save
-waits one full interval, and no actor means no folder. When GPose closes, Poser
-can request one final autosave before cleanup. The health file records the
-paths and whether work finished or needs recovery. Taking or queuing a snapshot
-does not prove it was saved. Retention keeps at least one save event. Scene
-autosave has separate rules in [scenes.md](scenes.md).
+Autosave writes whole scenes; its cadence, retention and exit behavior are
+defined in [scenes.md](scenes.md#autosave). The Autosaves library also reads
+legacy per-actor `.pose` backups. Those files remain available for recovery;
+new automatic backups do not create a second set of per-actor files.
 
 ## Character files (MCDF)
 

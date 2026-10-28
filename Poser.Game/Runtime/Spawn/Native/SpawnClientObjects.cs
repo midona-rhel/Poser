@@ -1,12 +1,9 @@
 namespace Poser.Game;
 
 /// <summary>
-/// One client object as ClientObjectManager reports it. It carries BOTH
-/// numbers the native object has — the slot it was resolved by and its global
-/// <see cref="ObjectIndex"/> — because they genuinely differ (see
-/// <c>docs/architecture/posing-runtime.md</c>), so a test ClientObjectManager
-/// reproduces the difference and picking the wrong one fails a test instead of
-/// a live spawn.
+/// Native identity and global object-table index returned for a manager slot.
+/// The manager slot is supplied separately to ResolveByIndex; it must not be
+/// confused with ObjectIndex when creating or deleting an object.
 /// </summary>
 internal readonly record struct ClientObjectSnapshot(
     nint Address,
@@ -39,8 +36,7 @@ internal sealed class SpawnClientObjects
 {
     public const uint NoIndex = 0xFFFFFFFF;
 
-    /// <summary>Let the game pick the slot. Naming one is how the clone ended
-    /// up aimed at slot 0 — the GPose primary.</summary>
+    /// <summary>Ask the game for a free manager slot instead of choosing one.</summary>
     private const uint NextAvailableSlot = uint.MaxValue;
 
     private readonly IClientObjectManagerNative _com;

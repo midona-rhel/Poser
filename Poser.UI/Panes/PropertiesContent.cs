@@ -17,8 +17,8 @@ using static Poser.UI.Widgets.TextWidgets;
 
 namespace Poser.UI;
 
-/// <summary>Properties presentation shared by the workspace and pinned hosts.
-/// Each host owns this graph; application commands and history remain shared.</summary>
+/// <summary>Draws properties in the main window or a pinned properties window.
+/// Each window has separate panes and selection state but shares application commands and history.</summary>
 public sealed partial class PropertiesContent
 {
     public PropertiesContext Context { get; }
@@ -48,8 +48,7 @@ public sealed partial class PropertiesContent
     private readonly PoseFileInspectorSection _poseFiles;
     private readonly GraphicalBonePane _map;
 
-    // The surface's own panes, for the window that hosts this content: each
-    // surface owns one set, so a host's verbs reach the inspector it shows.
+    // Expose this window's panes so its actions use the same inspector the user sees.
     public PoseInspectorPane PoseInspector => _poseInspector;
     public AnimationPane AnimationPanel => _animationPane;
     public AppearancePane AppearancePanel => _appearancePane;

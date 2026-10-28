@@ -164,11 +164,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     /// onto, or null when the row is missing or unmapped.</summary>
     public AnimationSlot? TimelineSlot(ushort timeline) => _native.TimelineSlot(timeline);
 
-    /// <summary>Clears one layered slot for real: the game's CancelTimeline
-    /// takes the SLOT as its second argument and drops that layer's
-    /// scheduler and control. A container-level cancel (slot 0) left the
-    /// layer alive and the base restore re-scheduled it (reset restarted
-    /// breakfast from 0, 2026-09-01 22:4x).</summary>
+    /// <summary>Cancels one animation layer, including its scheduler and animation control.</summary>
     public Outcome ClearSlotTimeline(ActorId actor, AnimationSlot slot)
     {
         var character = _native.Resolve(actor, out var detail);
@@ -180,9 +176,8 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (!_native.HasCancelTimeline)
             return Outcome.Fail(
                 "Timeline cancellation is unavailable: the game function was not found.");
-        // CancelTimeline's second argument IS the slot (bridge experiment
-        // 22:41: a2=1 dropped the upper layer, its scheduler and its havok
-        // control cleanly; a2=timeline id did nothing; a3=1 reset the base).
+        // CancelTimeline takes a slot index, not a timeline row id, as argument two.
+        // Keep argument three zero to avoid resetting the base animation.
         _native.CancelTimeline(&character->Timeline, (nint)index, nint.Zero);
         return Outcome.Ok();
     }
@@ -263,8 +258,8 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (!_loops.TryGetValue(actor, out var slots))
             _loops[actor] = slots = new Dictionary<int, LoopArm>();
         slots[(int)slot] = new LoopArm { Timeline = timeline, Cooldown = LoopCooldownTicks };
-        // The seek wraps the layer before it ends; the replay above only covers an
-        // end the wrap missed (or a layer the seek can't move).
+        // The seek service wraps the layer before it ends. EnforceLoops restarts it
+        // if wrapping misses the end or the layer cannot be seeked.
         _seek?.SetLoop(actor, slot, timeline);
         return Outcome.Ok();
     }
@@ -292,7 +287,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         _seek?.ClearLoops(actor);
     }
 
-    /// <summary>Replays an owned slot after its native timeline drifts.</summary>
+    /// <summary>Restarts a loop when the slot no longer contains the requested timeline.</summary>
     private void EnforceLoops(IFramework framework)
     {
         if (LoopsSuspended || _loops.Count == 0)

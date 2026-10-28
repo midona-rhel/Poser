@@ -43,7 +43,7 @@ public sealed class SpawnNamesTests
     public void Largest_slot_still_passes_Penumbra()
         => Assert.True(IsValidPenumbraPlayerName(SpawnNames.ForSlot(int.MaxValue)));
 
-    // Port of Penumbra.GameData ActorIdentifierFactory.VerifyPlayerName.
+    // Mirrors Penumbra's player-name rules because these names are passed to Penumbra.
     private static bool IsValidPenumbraPlayerName(string name)
     {
         if (name.Length > 21)

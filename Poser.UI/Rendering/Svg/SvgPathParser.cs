@@ -190,7 +190,8 @@ internal static class SvgPathParser
 
     private static void FlattenCubic(List<Vector2> output, Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float tol)
     {
-        // De Casteljau subdivision until the segment chord error is below tol.
+        // Split the cubic at its midpoint until it is flat enough or reaches
+        // the depth limit. Push the second half first to preserve point order.
         var stack = new Stack<(Vector2, Vector2, Vector2, Vector2, int)>();
         stack.Push((p0, p1, p2, p3, 0));
         while (stack.Count > 0)
@@ -234,7 +235,7 @@ internal static class SvgPathParser
         return MathF.Max(distB, distC);
     }
 
-    // --- Arc → cubic ---
+    // --- Arc sampling ---
 
     private static void FlattenArc(List<Vector2> output, Vector2 p0, Vector2 p1,
         float rx, float ry, float xRot, bool largeArc, bool sweep, float tol)

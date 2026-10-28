@@ -22,12 +22,8 @@ namespace Poser.UI;
 /// <summary>The import option toggles.</summary>
 public sealed partial class PoseLibraryPane
 {
-    /// <summary>The action row's per-tab affordances. NO component toggles
-    /// live here: the inspector owns which of position/rotation/scale a pose
-    /// applies, and an auto-save restore is full-fidelity by contract, so the
-    /// second set this row used to carry was both redundant and the reason
-    /// that one tab's footer read taller than every other (user 2026-08-14).
-    /// </summary>
+    /// <summary>Updates the actions shown for the current library tab.
+    /// Pose component choices come from the inspector; autosaves restore all components.</summary>
     private void SyncImportToggles()
     {
         // Favorites are the poses library's — an auto-save snapshot is not a
@@ -37,12 +33,10 @@ public sealed partial class PoseLibraryPane
         // A scene is not spawned as an actor, and saving one belongs where
         // scenes are found rather than behind a menu.
         _vm.ShowSpawn =
-            _type is not LibraryType.Scenes and not LibraryType.Objects;
-        // Scenes and objects both choose WHERE a load lands (ruled
-        // 2026-08-31): the same four-mode dropdown, the same preference.
-        // No probe here any more — nothing gates on saved anchors since
-        // the centroid fallback made every mode honourable.
-        if (_type is LibraryType.Objects or LibraryType.Scenes)
+            !IsSceneTile(_vm.Selected) && _type != LibraryType.Objects;
+        // Object placement is shared; scenes additionally resolve the map default
+        // and retain an explicit choice for the selected file.
+        if (_type == LibraryType.Objects || IsSceneTile(_vm.Selected))
         {
             BuildPlacementChoices();
             _vm.PlacementOptions = _placementChoiceLabels.ToArray();
@@ -51,7 +45,11 @@ public sealed partial class PoseLibraryPane
             _vm.OnPlacement = next =>
             {
                 if (next >= 0 && next < _placementChoices.Count)
-                    _placement.Mode = _placementChoices[next];
+                {
+                    if (IsSceneTile(_vm.Selected) && _vm.Selected >= 0)
+                        _scenePreferences.SetPlacement(_vm.Tiles[_vm.Selected].Id, _placementChoices[next]);
+                    else _placement.Mode = _placementChoices[next];
+                }
             };
         }
         else
@@ -64,14 +62,9 @@ public sealed partial class PoseLibraryPane
         _vm.CanEditMetadata = CanEditMetadata(_vm.Selected);
     }
 
-    /// <summary>The library's own import options: full scope with the active
-    /// tab's component toggles, and never a bone filter — a catalog apply is
-    /// whole-file. A library or auto-save apply has LOAD semantics: clean
-    /// slate in scope, then the file — prior in-scope edits (including the
-    /// position residue a rotation-only import can never repair) must not
-    /// survive a load. The FILES dialog keeps its own explicit "Reset first"
-    /// checkbox for opt-in layering; its scope/expression drafts likewise
-    /// never reach a library apply.</summary>
+    /// <summary>Builds import options with a reset before applying the file,
+    /// then handles CMP presets and expression-only pose files. Pose imports
+    /// use the inspector's choices; autosaves restore every component.</summary>
     private PoseImportOptions BuildImportOptions(string path)
     {
         // Brio's .cmp preset substitution (FileUIHelpers.cs:690) reaches the
@@ -108,11 +101,8 @@ public sealed partial class PoseLibraryPane
         return options;
     }
 
-    /// <summary>The UI-derived half of <see cref="BuildImportOptions"/>: the
-    /// active tab's toggles, the load semantics and the bone-filter
-    /// governance. Free of file I/O by contract — the preview polls it every
-    /// frame to notice an option change — and free of side effects: the files
-    /// section's own build only reads its checkbox state.</summary>
+    /// <summary>Builds options without reading a file. Preview checks these
+    /// options every frame and reads the file only when they change.</summary>
     private PoseImportOptions BuildImportOptionsCore()
     {
         // Poses apply with the SHARED menu options (the rail hosts them in

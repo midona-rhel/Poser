@@ -9,15 +9,10 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// Brio-parity two-way sync between the game's GPose target and Poser's
-/// selection. Both directions run on every framework tick and are
-/// edge-detected against the previous tick's target address and primary
-/// selected actor: only a *change* on one side is pushed to the other, so a
-/// manual selection made in the UI is never fought by a target that has not
-/// moved, and a manual retarget in-game is never undone by a selection that
-/// has not moved. Each direction is independently gated by its own live
-/// config toggle — the defaults mirror Brio's (game target drives selection,
-/// selection does NOT drive the game target).
+/// Synchronizes changed GPose targets and primary actor selections on framework
+/// ticks. Each direction has a separate setting. Selection is applied first,
+/// then the resulting game target is read, preventing repeated feedback between
+/// unchanged values. Unbound targets are retried on the next tick.
 /// </summary>
 public sealed class TargetSyncService : IDisposable
 {

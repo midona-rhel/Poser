@@ -10,8 +10,8 @@ using Poser.UI.Controls;
 
 namespace Poser.Composition;
 
-/// <summary>Builds only a fresh presentation graph. All unlisted dependencies
-/// come from the plugin's existing application/runtime owners.</summary>
+/// <summary>Builds a fresh presentation graph using shared application and
+/// runtime services.</summary>
 internal sealed class PropertiesContentFactory(IServiceProvider services) : IPropertiesContentFactory
 {
     public PropertiesContentLease Create(PropertiesContext context)
@@ -41,10 +41,9 @@ internal sealed class PropertiesContentFactory(IServiceProvider services) : IPro
     }
 }
 
-/// <summary>The main window's presentation graph: the one owner of the main
-/// surface's panes, as each pop-out's lease owns its own. The graph is built
-/// in the constructor so everything it resolves from the container is
-/// disposed after it.</summary>
+/// <summary>Presentation graph for the main window. Pop-out windows create
+/// independent graphs. Constructor resolution preserves reverse disposal
+/// order.</summary>
 internal sealed class MainPresentation : IDisposable
 {
     private readonly PresentationScope _scope;
@@ -70,9 +69,8 @@ internal sealed class MainPresentation : IDisposable
     public void Dispose() => _scope.Dispose();
 }
 
-/// <summary>One surface's panes over one properties context. Pane types are
-/// never registered in the container: a surface's scope creates and disposes
-/// them.</summary>
+/// <summary>Panes for one properties surface. The surface creates and disposes
+/// pane instances rather than resolving them as container services.</summary>
 internal sealed class PresentationScope(IServiceProvider shared, PropertiesContext context) : IServiceProvider, IDisposable
 {
     private static readonly HashSet<Type> Local =

@@ -1,12 +1,9 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace Poser.Domain.Presentation;
 
 /// <summary>
-/// The three game-UI panels Poser can put on the screen as scene furniture.
-/// Each is the REAL native widget — the same texture atlas the game draws its
-/// own dialogue, chat bubbles and status bar from — not a repaint of one, so
-/// a screenshot cannot tell a staged line from a spoken one.
+/// Scene overlay types: native dialogue, chat and status panels, or a world-space collider.
 /// </summary>
 public enum OverlayNodeKind
 {
@@ -26,11 +23,7 @@ public enum OverlayNodeKind
 }
 
 /// <summary>
-/// The dialogue panel's nine backgrounds. The first three come from the
-/// game's <c>Talk_Basic</c> sheet and the rest from <c>Talk_Other</c>; the
-/// split matters because the two sheets are addressed by different texture
-/// paths at the same coordinates (Ktisis
-/// <c>Interface/KTK/TalkNode.cs:93,170-181</c>).
+/// Dialogue-panel backgrounds. The renderer selects the corresponding game texture.
 /// </summary>
 public enum TalkBackground
 {
@@ -45,8 +38,9 @@ public enum TalkBackground
     Narration,
 }
 
-/// <summary>The advance mark in the panel's bottom-right: absent, the
-/// page-turn pin, or the continue loop.</summary>
+/// <summary>
+/// The dialogue panel's continue indicator.
+/// </summary>
 public enum TalkCursor
 {
     None,
@@ -54,9 +48,9 @@ public enum TalkCursor
     Loop,
 }
 
-/// <summary>The chat channel a balloon is dressed as. The channel decides the
-/// bubble's frame AND its gradient band, both addressed as rows of the one
-/// <c>MiniTalkPlayer</c> sheet.</summary>
+/// <summary>
+/// Chat-channel styling used for a staged speech bubble.
+/// </summary>
 public enum BalloonChannel
 {
     Say,
@@ -72,8 +66,9 @@ public enum BalloonChannel
     PvpTeam,
 }
 
-/// <summary>The sixteen tints the game offers over a balloon's gradient band,
-/// exactly the set the chat-colour settings expose.</summary>
+/// <summary>
+/// Available color tints for a speech bubble.
+/// </summary>
 public enum BalloonGradient
 {
     Default,
@@ -94,9 +89,9 @@ public enum BalloonGradient
     RoyalPurple,
 }
 
-/// <summary>What a staged status line CLAIMS to be. The kind decides the
-/// sign in front of the name and the outline colour behind it — the game's
-/// own green/red/grey vocabulary for gained, suffered and expiring.</summary>
+/// <summary>
+/// Visual style for a staged status line. It does not apply a game status effect.
+/// </summary>
 public enum StatusKind
 {
     /// <summary>Plain: the name alone, no sign and no coloured outline.
@@ -108,26 +103,23 @@ public enum StatusKind
 }
 
 /// <summary>
-/// One overlay node's COMPLETE state, as a document.
-///
-/// <para>Every kind's fields live on the one record rather than in a
-/// discriminated set, because this is the shape the scene file, the undo
-/// journal and the native port all speak, and a kind's unused fields simply
-/// go unread. It is what a removal captures, what a restore replays, and what
-/// an <c>.xivs</c> scene carries — the same discipline a light's
-/// <c>LightFile</c> follows.</para>
+/// Saved settings for an overlay, also used when restoring it through undo.
+/// Only fields relevant to Kind are used by the renderer.
 /// </summary>
 public sealed record OverlayNodeState
 {
     public Posing.IkCollider? Collider { get; init; }
     public OverlayNodeKind Kind { get; init; } = OverlayNodeKind.Talk;
 
-    /// <summary>The sidebar's name for this node. Never the drawn text.
+    /// <summary>
+    /// Name shown in the scene list, separate from the text drawn by the overlay.
     /// </summary>
     public string Name { get; init; } = string.Empty;
 
-    /// <summary>Where the node sits, in SCREEN pixels from the viewport's
-    /// top-left, for native UI panels only. Colliders use Collider.Transform.</summary>
+    /// <summary>
+    /// Screen-pixel position relative to the viewport's top-left.
+    /// Colliders instead use their world-space Collider.Transform.
+    /// </summary>
     public Vector2 Position { get; init; }
 
     /// <summary>Uniform scale; the node has no independent axes.</summary>
@@ -138,20 +130,23 @@ public sealed record OverlayNodeState
 
     public bool Visible { get; init; } = true;
 
-    /// <summary>Whether the node may be dragged by the pointer directly. Off
-    /// by default: a draggable node eats clicks the scene wants.</summary>
+    /// <summary>
+    /// Whether pointer dragging can move this overlay directly.
+    /// </summary>
     public bool Draggable { get; init; }
 
-    /// <summary>The drawn line — the dialogue body, the balloon's sentence, or
-    /// the status name — by kind.</summary>
+    /// <summary>
+    /// Displayed dialogue, speech-bubble text or status name, depending on Kind.
+    /// </summary>
     public string Text { get; init; } = string.Empty;
 
-    /// <summary>The dialogue panel's speaker plate. Unread by the other two
-    /// kinds.</summary>
+    /// <summary>
+    /// Speaker name for dialogue panels; unused by other overlay types.
+    /// </summary>
     public string Speaker { get; init; } = string.Empty;
 
-    /// <summary>Point size of the drawn text. The status line's size is fixed
-    /// by the game's own bar, so this is read by Talk and Balloon only.
+    /// <summary>
+    /// Text size for dialogue and speech bubbles. Status text uses a fixed size.
     /// </summary>
     public uint FontSize { get; init; } = 14;
 
@@ -161,24 +156,27 @@ public sealed record OverlayNodeState
     public BalloonChannel BalloonChannel { get; init; } = BalloonChannel.Say;
     public BalloonGradient BalloonGradient { get; init; } = BalloonGradient.Default;
 
-    /// <summary>Whether the balloon wears its tail.</summary>
+    /// <summary>
+    /// Whether to show the speech bubble's tail.
+    /// </summary>
     public bool ArrowVisible { get; init; } = true;
 
-    /// <summary>Where along the balloon's bottom edge the tail attaches, in
-    /// the node's own pixels. Clamped by the node to the run the sheet
-    /// actually draws.</summary>
+    /// <summary>
+    /// Horizontal tail position in the speech bubble's local pixels.
+    /// </summary>
     public float ArrowX { get; init; } = 130f;
 
     public StatusKind StatusKind { get; init; } = StatusKind.Buff;
 
-    /// <summary>The status icon's game icon id. This — not the resolved
-    /// path — is what a scene file carries: a path is a client-version
-    /// detail, an icon id is the sheet's own identity.</summary>
+    /// <summary>
+    /// Game icon ID displayed by a status overlay.
+    /// </summary>
     public uint StatusIconId { get; init; }
 
-    /// <summary>Bounds every free value to what the node can actually draw, so
-    /// nothing downstream — the native port least of all — has to re-check a
-    /// hostile file's numbers.</summary>
+    /// <summary>
+    /// Returns a copy with numeric values clamped and text truncated to OverlayNodeLimits.
+    /// Nonfinite numbers use the fallbacks below. This does not validate every field or enum.
+    /// </summary>
     public OverlayNodeState Normalized() => this with
     {
         Collider = Kind == OverlayNodeKind.Collider ? (Collider ?? new()).Normalized() : null,
@@ -213,19 +211,13 @@ public sealed record OverlayNodeState
 }
 
 /// <summary>
-/// Each kind's DRAWN extent, at scale 1, in the node's own screen pixels.
-///
-/// <para>A node reports no bounds of its own — the native subtree sizes its
-/// children, never itself — so the extent has to be stated, and it has to be
-/// stated ONCE: the editor measures against it to centre a node, and the node
-/// layer gives it to the game as the node's own size, which is what decides how
-/// much of the node the pointer can grab. Two copies of these numbers is a
-/// centred node that cannot be dragged by its middle.</para>
+/// Shared unscaled panel dimensions for placement and pointer hit areas.
 /// </summary>
 public static class OverlayNodeGeometry
 {
-    /// <summary>The dialogue plate at its own 1.25 scale (544×144 → 680×180),
-    /// the bubble's band, and the status line's icon-plus-name run.</summary>
+    /// <summary>
+    /// Returns panel dimensions in local pixels. The default is the dialogue panel size.
+    /// </summary>
     public static Vector2 DesignSize(OverlayNodeKind kind) => kind switch
     {
         OverlayNodeKind.Balloon => new Vector2(200f, 90f),
@@ -234,20 +226,23 @@ public static class OverlayNodeGeometry
     };
 }
 
-/// <summary>Hard bounds on an overlay node's free values. Stated once here so
-/// the editor, the codec and the native port agree without restating.
+/// <summary>
+/// Application limits used when editing and normalizing overlays.
+/// These constants alone do not establish native memory or rendering limits.
 /// </summary>
 public static class OverlayNodeLimits
 {
-    /// <summary>The dialogue body's cap, which is also the game's own — a
-    /// panel holds a page, not a novel.</summary>
+    /// <summary>
+    /// Maximum text length retained by Normalized.
+    /// </summary>
     public const int MaxTextCharacters = 1000;
 
     public const int MaxSpeakerCharacters = 64;
     public const int MaxNameCharacters = 64;
 
-    /// <summary>Far past any real viewport, so a node dragged off a wide
-    /// screen still comes back on a narrow one.</summary>
+    /// <summary>
+    /// Maximum screen coordinate retained by Normalized; not a viewport-fitting operation.
+    /// </summary>
     public const float MaxPosition = 16384f;
 
     public const float MinScale = 0.1f;
@@ -257,8 +252,9 @@ public static class OverlayNodeLimits
     public const uint MaxFontSize = 32;
     public const uint DefaultFontSize = 14;
 
-    /// <summary>The run of the balloon's bottom edge the tail can attach
-    /// along (Ktisis <c>Interface/KTK/BalloonNode.cs:105</c>).</summary>
+    /// <summary>
+    /// Allowed tail position along the speech bubble's bottom edge.
+    /// </summary>
     public const float MinArrowX = 32f;
     public const float MaxArrowX = 130f;
 }

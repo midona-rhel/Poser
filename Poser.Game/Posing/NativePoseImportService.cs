@@ -80,30 +80,16 @@ public sealed class NativePoseImportService : IPoseImportCommands
         return null;
     }
 
-    /// <summary>
-    /// Whether an import could reach this actor's posable skeleton at all.
-    /// The SAME wait-don't-spend distinction <see cref="IsImportBusy"/> draws:
-    /// a body with no Character skeleton yet plans NOTHING, and the plan
-    /// builder cannot tell that apart from a file whose bones genuinely miss —
-    /// both arrive as the typed "nothing applies" refusal. A caller that spends
-    /// its one attempt against it drops the pose permanently, so the staged
-    /// preview asks first and waits (the CharaView body is bound several ticks
-    /// after its actor is, so EVERY first statement races it).
-    /// </summary>
+    /// <summary>Checks whether the Character skeleton is available. Preview
+    /// callers can wait for it before attempting to plan an import.</summary>
     private bool HasPosableSkeleton(IActor actor) =>
         _skeletons.GetSkeleton(actor) is not null;
 
     private readonly IPoseFileService _poseFiles;
 
-    /// <summary>
-    /// File import dispatch through the in-pass application engine: the plan
-    /// is computed without mutation and handed to
-    /// <see cref="PoseImportCapture"/>, which diffs each file bone against
-    /// the apply pass's own running basis. Ok means the import is armed and
-    /// registered; an in-pass failure rolls the whole edit back and logs a
-    /// warning. Success lands as one undo/redo item including the model
-    /// transform when enabled.
-    /// </summary>
+    /// <summary>Builds a plan and submits it to the import coordinator. A successful
+    /// return accepts the operation; its terminal receipt reports application or
+    /// failure, including rollback problems. History may be suppressed.</summary>
     private PoseEditResult ImportPose(
         IActor actor,
         string path,
@@ -181,23 +167,9 @@ public sealed class NativePoseImportService : IPoseImportCommands
         return null;
     }
 
-    /// <summary>
-    /// Brio's "Import A-Pose"/"Import T-Pose" (FileUIHelpers.cs:611-621 →
-    /// PosingCapability.LoadResourcesPose, asBody: true): the embedded rest
-    /// pose, body scope, rotation-only, one undoable edit. Face, hair, ears,
-    /// head, and every auxiliary slot keep their current pose; the freeze
-    /// config default rides the bracket exactly as a file import's does.
-    ///
-    /// DELIBERATE DEVIATION from Brio: reset-before-apply, scoped by a
-    /// BoneFilter to EXACTLY the file's bones. A rest pose is "discard this
-    /// body's edits and stand neutral", so each press clears those bones'
-    /// authored stacks and lands fresh deltas against the animation basis —
-    /// A→T→A is idempotent by construction instead of stacking each press's
-    /// delta onto the previous one's (user 2026-08-08: sequential presses
-    /// left limbs deformed). The filter keeps the reset off everything the
-    /// file does not carry — j_kao, Viera ears, hair — which the bare
-    /// ResetBeforeImport body scope would wipe (IsFaceBone misses them).
-    /// </summary>
+    /// <summary>Applies the embedded body rest pose with rotation-only writes.
+    /// Unlike Brio's resource import, this resets authored changes first, limited
+    /// to names in the preset so unrelated head, ear, and hair edits remain.</summary>
     private PoseEditResult ApplyRestPose(
         IActor actor,
         RestPose pose,

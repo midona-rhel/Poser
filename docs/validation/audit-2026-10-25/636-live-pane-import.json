@@ -1,0 +1,29 @@
+{
+  "head": "9ce23896",
+  "entryPoint": "Actual pane Load buttons and file dialogs via bridge pointer/keyboard input",
+  "results": [
+    {
+      "kind": "camera",
+      "status": "PASS",
+      "addedId": "eb3cccf6eb6b40ea91a52c1de904964b@0",
+      "existingEntriesPreserved": true,
+      "maxNumericDifference": 0.0,
+      "compared": [
+        "Position",
+        "Rotation",
+        "FoV",
+        "Roll"
+      ]
+    },
+    {
+      "kind": "light",
+      "status": "PASS",
+      "addedId": "light:9a197b6c875f49d8a8ffabf64b4d261d@0",
+      "existingEntriesPreserved": true,
+      "maxNumericDifference": 0.0,
+      "compared": [
+        "world"
+      ]
+    }
+  ]
+}

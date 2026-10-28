@@ -29,7 +29,7 @@ namespace Poser.UI;
 
 /// <summary>
 /// Inline Body and Face graphical bone selection surface. This pane owns its
-/// textures and hit-testing state but has no independent window lifecycle.
+/// textures and hit-testing state. Its editor window is drawn by another partial.
 /// </summary>
 public sealed partial class GraphicalBonePane : IDisposable
 {
@@ -138,9 +138,7 @@ public sealed partial class GraphicalBonePane : IDisposable
 
         _config = GraphicalBoneReader.ReadEmbeddedResource();
 
-        // Every map starts decoding now, so the first visit to Body or
-        // Face finds its image ready instead of a placeholder that fills
-        // a few frames later.
+        // Start decoding bundled maps early; drawing still handles pending results.
         foreach (var section in _config.PoseImages.Values)
             if (!string.IsNullOrEmpty(section.Image))
                 GetTexture(section.Image);
@@ -412,12 +410,8 @@ public sealed partial class GraphicalBonePane : IDisposable
         }
     }
 
-    /// <summary>The last face map's source dimensions: the reservation
-    /// aspect while a face decode is in flight, so the image lands inside an
-    /// already reserved rect instead of popping the canvas in a frame late.
-    /// The config records no image sizes, so before any face map has ever
-    /// decoded the reservation is square — every head map is near-square.
-    /// </summary>
+    /// <summary>Fallback dimensions when neither a decoded texture nor PNG header
+    /// size is available. Initially square.</summary>
     private Vector2 _faceSourceSize = Vector2.One;
 
     private void DrawFacePage(SkeletonDescriptor skeleton, ActorId? actorId, Vector2 contentArea)
@@ -624,10 +618,7 @@ public sealed partial class GraphicalBonePane : IDisposable
         }
         var selectionId = _dotIds[bone.Id];
         bool matches = _drawingEditor || MatchesFilter(bone.DisplayName, bone.Id.CanonicalName);
-        // Brio's line rule, copied whole: a connector goes to the DIRECT
-        // parent only, and only when that parent has a dot on the SAME
-        // panel — an ancestor walk wired panels together into insanity
-        // (2026-09-01).
+        // Connect only to a direct parent drawn in the same map section.
         (string, PoseSlot, string, int)? parentKey = bone.Parent is { } parent
             ? (_pointSection, parent.Slot, parent.CanonicalName, parent.PartialId)
             : null;
@@ -738,7 +729,7 @@ public sealed partial class GraphicalBonePane : IDisposable
             bool isSelected = _selection.IsSelected(candidate.Id);
             bool isHovered = i == _hoveredDotIndex;
             var fact = candidate.Id.Bone;
-            // Selection is the THEME's primary, not ImGui's style checkmark.
+            // Resolve configured selection and hover colors before IK and mirror colors.
             uint circleColor = isSelected
                 ? skeletonColors.ResolveSelectedBoneColor()
                 : isHovered

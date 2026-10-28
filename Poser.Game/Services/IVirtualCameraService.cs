@@ -11,7 +11,7 @@ namespace Poser.Game.Services;
 
 /// <summary>
 /// Owns the virtual cameras over the game's one orbit camera (Brio's overlay
-/// model). GPose-scoped: entering GPose mints the default camera, leaving
+/// model). Entering GPose creates the default camera; leaving GPose
 /// destroys every camera and restores the native state. Publishes
 /// <c>CameraListChangedEvent</c> on any list change.
 /// </summary>
@@ -27,8 +27,7 @@ public interface IVirtualCameraService : IDisposable
     /// itself while the camera moves.</summary>
     bool FlightActive { get; }
 
-    /// <summary>False when the native camera-update signature was not found;
-    /// every operation is a silent no-op in that state.</summary>
+    /// <summary>False when the native camera-update function was not found.</summary>
     bool IsAvailable { get; }
 
     /// <summary>Default camera first, then creation order. Empty outside

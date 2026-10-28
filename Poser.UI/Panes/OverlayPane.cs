@@ -14,8 +14,7 @@ using static Poser.UI.Widgets.PageForm;
 namespace Poser.UI;
 
 /// <summary>
-/// The selected overlay node's editor — the pane behind the "Overlay" tab
-/// that stands while an OVERLAYS sidebar row is selected.
+/// Editor for the selected overlay node.
 ///
 /// <para>Native UI overlays have screen-space placement. Managed IK colliders
 /// instead use the shared inspector/gizmo for world transforms; their shape
@@ -25,7 +24,7 @@ namespace Poser.UI;
 /// function of its kind: the dialogue panel's speaker and plate, the balloon's
 /// channel and tail, the status line's kind and icon.</para>
 ///
-/// <para>Lifetime clicks are DEFERRED to the end of the frame: destroying the
+/// <para>Lifetime clicks are deferred to the end of the frame: destroying the
 /// node republishes the scene mid-walk otherwise — the props pane's rule.</para>
 /// </summary>
 public sealed class OverlayPane
@@ -244,21 +243,14 @@ public sealed class OverlayPane
     public OverlayReading? RailNode => SelectedNode();
 
     /// <summary>
-    /// The rail's section for an overlay node — the three facts a node is
-    /// adjusted BY while the eye is on the shot: where it sits, what it says,
-    /// and whether it can be dragged there directly.
+    /// Draws the overlay rail controls for position, text, and direct dragging.
     ///
     /// <para>It is the same seam as the pane, literally: both call the row
-    /// helpers below, so a well edited here and a well edited on the Overlay
-    /// tab are one control drawn twice and can never disagree. The rail does
-    /// NOT carry scale, opacity or the kind's own vocabulary — those are the
-    /// tab's, and duplicating a whole pane onto the rail is what the rail is
-    /// not for.</para>
+    /// helpers below, so both surfaces share their formatting and writes. The
+    /// rail omits scale, opacity, and kind-specific controls.</para>
     ///
-    /// <para>An overlay's placement is SCREEN pixels, so this stands in place
-    /// of the world TRANSLATION section every other primary declares — a world
-    /// gizmo has nothing to say about a node that lives in the viewport's own
-    /// coordinates.</para>
+    /// <para>Overlay placement uses screen pixels and therefore does not use
+    /// the world-translation controls.</para>
     /// </summary>
     public void DrawRailPlacement(FormScope form)
     {
@@ -530,8 +522,7 @@ public sealed class OverlayPane
 
     // ── acts ─────────────────────────────────────────────────────────────
 
-    /// <summary>Public because the overlay row's context menu speaks this
-    /// verb too — one duplication rule, wherever it is asked.</summary>
+    /// <summary>Duplicates an overlay from either the pane or context menu.</summary>
     private void Duplicate(OverlayId id)
     {
         var result = _creation.Duplicate(SelectionId.ForOverlay(id));

@@ -110,8 +110,7 @@ public sealed partial class PoseLibraryPane
         RebuildAfterFilterChange();
     }
 
-    /// <summary>The portal's from-library rows: exactly one kind shown,
-    /// or none for the whole tab.</summary>
+    /// <summary>Shows one kind, or all kinds when the argument is null.</summary>
     public void SetOnlyKindFilter(PoseLibraryEntryKind? kind, WorldAssetKind? worldKind = null)
     {
         _worldKindFilters.Clear();
@@ -187,10 +186,9 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>
-    /// The visible list, refilled in place, and the groups it falls into. A
-    /// query searches the WHOLE library and ignores the folder tree — a name is
-    /// looked for, not a place — while Favorites and the tag chip are filters
-    /// and compose with it.
+    /// Rebuilds visible tiles and their groups. Search ignores folder selection
+    /// in scanned libraries, but autosaves remain limited to the selected range.
+    /// Favorites and tag filters apply alongside the query.
     ///
     /// <para>Grouping is free here: the tiles are already ordered by folder, so
     /// a group closes the moment the folder changes and its count is known
@@ -223,6 +221,9 @@ public sealed partial class PoseLibraryPane
         for (int i = 0; i < tiles.Count; i++)
         {
             var tile = tiles[i];
+            if (_type == LibraryType.AutoSaves &&
+                (tile.Folder < _rangeStart || tile.Folder >= _rangeEnd))
+                continue;
             if (heads > 1 && folder == 1 && !tile.Favorite)
                 continue;
             if (query)
@@ -299,8 +300,7 @@ public sealed partial class PoseLibraryPane
             ClearTileSelection();
     }
 
-    /// <summary>The group row for a slot, reused in place: a refilter mints
-    /// only the count readouts, never the rows.</summary>
+    /// <summary>Reuses an existing group row or creates one when the list grows.</summary>
     private static PoseLibraryGroupRow GroupSlot(
         List<PoseLibraryGroupRow> groups, int index)
     {
@@ -362,13 +362,8 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>
-    /// Whether the footer belongs to a live character-file apply. Every
-    /// conjunct earns its place: the MCDF TAB is the only surface that
-    /// starts one, so no other tab may have its caption or its action row
-    /// taken over (a tab added later is excluded by construction); the
-    /// single-flight transaction must be an IMPORT rather than an export;
-    /// and its receipt must still be Pending, because a terminal outcome
-    /// reports through the note like every other result.
+    /// Shows import progress only on the character-file tab, while an import
+    /// is busy and its operation receipt is still pending.
     /// </summary>
     internal static bool ShowsImportCancel(
         LibraryType type,
@@ -410,57 +405,18 @@ public sealed partial class PoseLibraryPane
             return;
         }
 
-        // The auto-save tab's idle caption is a REFUSAL channel, nothing
-        // more: it speaks only when auto-save needs recovery, because that is
-        // the one state where a silent footer would hide that the tab's own
-        // source has stopped filling. A healthy cadence says nothing, so this
-        // tab's footer reads exactly like every other tab's.
+        // Show failures from the current scene-autosave service.
         if (_type == LibraryType.AutoSaves && !scanning)
         {
-            _vm.Status = AutoSaveRecoveryText();
+            var result = _sceneAutoSave.LastResult;
+            _vm.Status = result.Status is SceneAutoSaveStatus.Failed or SceneAutoSaveStatus.RecoveryRequired
+                ? result.Detail : string.Empty;
             return;
         }
 
         // No counter (user: pointless beside the single action row). Source
         // failures are presented beside their saved folders in Settings.
         _vm.Status = scanning ? ScanningText : string.Empty;
-    }
-
-    /// <summary>The auto-save tab's ONE caption, minted once per observation
-    /// CHANGE: the recovery-required detail, or nothing. Health narration —
-    /// the last-success stamp, the off state, the empty-session line — was
-    /// removed (user 2026-08-14): a cadence that is working is not news, and
-    /// stating it gave this tab a bar of chrome no other tab carries. A
-    /// recovery obligation stays, because a tab whose source has stopped
-    /// filling must not look merely empty.</summary>
-    private string AutoSaveRecoveryText()
-    {
-        var record = _autoSave.LastHealthRecord;
-        var terminal = _autoSave.LastTerminalResult;
-        var key = (record?.UpdatedUtc, record?.Status, terminal.Status);
-        if (key == _autoStatusKey)
-            return _autoStatusText;
-        _autoStatusKey = key;
-
-        string text;
-        if (terminal.Status == AutoSaveTerminalStatus.RecoveryRequired)
-            text = "Auto-save needs recovery: "
-                + Trim(terminal.Detail, "see the health record.");
-        else if (record is { Status: AutoSaveHealthStatus.RecoveryRequired })
-            text = "Auto-save needs recovery: "
-                + Trim(record.Detail ?? record.FailurePhase, "see the health record.");
-        else
-            text = string.Empty;
-        return _autoStatusText = text;
-
-        // The health record's detail is bounded at 4096; the footer is one
-        // caption line.
-        static string Trim(string? detail, string fallback)
-        {
-            if (string.IsNullOrWhiteSpace(detail))
-                return fallback;
-            return detail.Length <= 160 ? detail : detail[..160] + "…";
-        }
     }
 
     // ── the target actor ─────────────────────────────────────────────────
@@ -471,6 +427,7 @@ public sealed partial class PoseLibraryPane
             || index == _vm.SelectedFolder)
             return;
         _vm.SelectedFolder = index;
+        if (_type == LibraryType.AutoSaves) ClearTileSelection();
         SyncFolderRange();
         _refilter = true;
     }

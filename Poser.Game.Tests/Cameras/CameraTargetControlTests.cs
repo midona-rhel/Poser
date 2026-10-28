@@ -39,7 +39,7 @@ public sealed class CameraTargetControlTests
     [Fact]
     public void Undoing_stop_following_brings_back_the_locked_target_locked()
     {
-        // #489: the step recorded only the actor, so the lock stayed off.
+        // Undo must restore both the followed actor and its target lock (#489).
         var f = new Fixture();
         Assert.True(f.Control.Follow(f.Id, f.ActorId, "Actor").Success);
         f.Camera.IsTargetLocked = true;
@@ -55,7 +55,7 @@ public sealed class CameraTargetControlTests
         Assert.Null(f.Camera.TargetActorId);
         Assert.False(f.Camera.IsTargetLocked);
 
-        // A target that cannot come back is not locked onto nothing.
+        // If the actor was replaced, undo leaves the target cleared and unlocked.
         Assert.True(step.Undo());
         Assert.True(step.Redo());
         f.CurrentActorId = f.ActorId.NextGeneration();
@@ -76,7 +76,7 @@ public sealed class CameraTargetControlTests
         Assert.False(f.Control.Reconcile(f.Id).Success);
         Assert.Null(f.Camera.TargetActorId);
         Assert.Empty(f.Camera.TrackedBones);
-        Assert.Single(reading.TrackedBones); // A UI snapshot never aliases the native list.
+        Assert.Single(reading.TrackedBones); // The earlier reading keeps its own copy of the tracked bones.
         Assert.False(f.Control.ToggleTrackedBone(f.Id, f.BoneId).Success);
         Assert.False(f.Control.Follow(f.Id, f.ActorId, "Actor").Success);
         Assert.True(f.Control.Follow(f.Id, f.CurrentActorId, "Actor").Success);

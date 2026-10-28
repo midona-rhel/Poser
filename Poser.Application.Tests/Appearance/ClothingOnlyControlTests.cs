@@ -37,24 +37,40 @@ public sealed class ClothingOnlyControlTests
     }
 
     [Fact]
-    public async Task Exit_cancels_running_and_queued_work_without_starting_the_queued_write()
+    public async Task Removal_cancels_only_the_removed_actor_and_exit_cancels_the_remaining_work()
     {
         var f = new Fixture();
         using var control = f.Control;
+        var removed = new ActorId(Guid.NewGuid(), 1);
+        var remaining = new ActorId(Guid.NewGuid(), 1);
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        f.Runtime.Apply(default, Arg.Any<CancellationToken>()).Returns(async call =>
+        var remainingStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Runtime.Apply(Arg.Any<ActorId>(), Arg.Any<CancellationToken>()).Returns(async call =>
         {
-            started.TrySetResult();
+            if (call.Arg<ActorId>() == removed) started.TrySetResult();
+            else remainingStarted.TrySetResult();
             await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
             return (string?)null;
         });
-        var first = control.Apply(default, TestContext.Current.CancellationToken);
-        await started.Task;
-        var queued = control.Apply(default, TestContext.Current.CancellationToken);
-        f.Exit(new());
+        var first = control.Apply(removed, TestContext.Current.CancellationToken);
+        await started.Task.WaitAsync(TestContext.Current.CancellationToken);
+        var queuedRemoved = control.Apply(removed, TestContext.Current.CancellationToken);
+        var queuedRemaining = control.Apply(remaining, TestContext.Current.CancellationToken);
+        control.Reconcile(actor => actor == remaining);
         Assert.Equal("Clothing-only was cancelled.", await first);
-        Assert.Equal("Clothing-only was cancelled.", await queued);
-        await f.Runtime.Received(1).Apply(default, Arg.Any<CancellationToken>());
+        Assert.Equal("Clothing-only was cancelled.", await queuedRemoved);
+        await remainingStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+        Assert.False(queuedRemaining.IsCompleted);
+        f.Runtime.Received().Reconcile(Arg.Is<Func<ActorId, bool>>(predicate =>
+            !predicate(removed) && predicate(remaining)));
+        var queuedAtExit = control.Apply(remaining, TestContext.Current.CancellationToken);
+        f.Exit(new());
+        Assert.Equal("Clothing-only was cancelled.", await queuedRemaining);
+        Assert.Equal("Clothing-only was cancelled.", await queuedAtExit);
+        await f.Runtime.Received(1).Apply(removed, Arg.Any<CancellationToken>());
+        await f.Runtime.Received(1).Apply(remaining, Arg.Any<CancellationToken>());
+        f.Runtime.Received().Reconcile(Arg.Is<Func<ActorId, bool>>(predicate =>
+            !predicate(removed) && !predicate(remaining)));
     }
 
     [Fact]

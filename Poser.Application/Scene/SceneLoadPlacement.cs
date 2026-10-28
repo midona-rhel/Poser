@@ -6,10 +6,8 @@ using Poser.Documents.Scene;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// Moves a READ document to where the load asked it to land, before one
-/// native call: a refusal here costs nothing, because nothing has happened
-/// and there is nothing to roll back. Every placement it makes or declines
-/// is stated as a note.
+/// Adjusts positions in the loaded document before creating game entities.
+/// Invalid placement returns a reason without requiring scene rollback.
 /// </summary>
 internal static class SceneLoadPlacement
 {
@@ -19,9 +17,7 @@ internal static class SceneLoadPlacement
     public static string? Apply(
         SceneFile scene, SceneLoadOptions options, Vector3? origin, List<string> notes)
     {
-        // Relative placement rebases the READ document, before one native
-        // call: a file with no origin refuses HERE, where nothing has
-        // happened and there is nothing to roll back.
+        // Validate both origins before changing the live scene.
         if (options.PlaceRelativeToCurrentOrigin)
         {
             if (origin is not { } anchor)
@@ -32,19 +28,15 @@ internal static class SceneLoadPlacement
             notes.Add("Placed relative to where you are standing.");
         }
 
-        // The object-entry placement: the caller resolved the CURRENT
-        // anchor; the document carries the SAVED one. A mode whose saved
-        // anchor the file does not record refuses before anything is
-        // touched.
+        // The caller supplies the current anchor. A missing saved anchor
+        // falls back to the content's average position below.
         if (options.Placement == ObjectPlacementMode.AsSaved)
             return null;
         PlacementAnchorData? savedAnchor;
         if (options.Placement == ObjectPlacementMode.InFrontOfCamera)
         {
-            // The anchor is the content ITSELF: its centroid moves
-            // to the point in front of the camera, no turn — the
-            // light spawn's behavior, generalized. An entry that
-            // places nothing simply loads as saved.
+            // Move the content's average position in front of the camera.
+            // Matching anchor yaw values prevents rotation.
             savedAnchor = ContentCentroid(scene) is { } centroid
                 ? new PlacementAnchorData
                 {
@@ -62,11 +54,8 @@ internal static class SceneLoadPlacement
             savedAnchor = options.Placement == ObjectPlacementMode.RelativeToCamera
                 ? scene.CameraAnchor
                 : scene.ActorAnchor;
-            // No saved anchor is no longer a refusal (ruled
-            // 2026-08-31): the content's CENTROID stands in, so
-            // the content lands ON the current camera or actor —
-            // no turn — instead of keeping an offset the entry
-            // never recorded.
+            // Without a saved anchor, center the content on the current
+            // camera or actor without rotating it.
             if (savedAnchor is null)
             {
                 savedAnchor =
@@ -106,9 +95,9 @@ internal static class SceneLoadPlacement
         return null;
     }
 
-    /// <summary>The average position of everything the document PLACES —
-    /// actors, props, unattached lights, spawned world objects, free
-    /// cameras. Null when it places nothing.</summary>
+    /// <summary>The average position of placed actors, props, unattached lights,
+    /// spawned world objects, free cameras, and overlay colliders.
+    /// Returns null when none have a placement.</summary>
     public static Vector3? ContentCentroid(SceneFile scene)
     {
         var sum = Vector3.Zero;

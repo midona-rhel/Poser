@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -67,10 +67,8 @@ internal struct TextFit
 }
 
 /// <summary>
-/// One rail row: a source, a subfolder under it, or one of the two synthetic
-/// heads the binder always states first — "All poses" and "Favorites". Every
-/// string is minted when the rail is built, the count readout included, so no
-/// frame formats one.
+/// A source, subfolder, or synthetic rail row such as All or Favorites.
+/// Labels and count text are formatted when the rail is rebuilt.
 /// </summary>
 public sealed class PoseLibraryFolderRow
 {
@@ -95,7 +93,7 @@ public sealed class PoseLibraryTileRow
     public required string Id;
     public required string Label;
     public required string LabelLower;
-    /// <summary>The modified stamp, already formatted ("2026-08-01 14:32").
+    /// <summary>The formatted modification time, or a summary of the scene contents.
     /// </summary>
     public required string Sub;
     public required string ThumbKey;
@@ -201,9 +199,7 @@ internal readonly struct GridBand
 
 public sealed class PoseLibraryViewModel
 {
-    /// <summary>The rail. [0] is "All poses", [1] is "Favorites", and the
-    /// sources and their subfolders follow; two entries alone therefore means
-    /// no source yielded anything.</summary>
+    /// <summary>Synthetic rows first (RailHeads gives their count), then sources and folders.</summary>
     public List<PoseLibraryFolderRow> Folders = [];
 
     public int SelectedFolder;
@@ -398,8 +394,7 @@ public sealed class PoseLibraryViewModel
     /// </summary>
     public Action<int>? OnEditMetadata;
 
-    /// <summary>Whether tiles carry the favorite star — the poses library
-    /// only; an auto-save snapshot is not a curated entry.</summary>
+    /// <summary>Whether this tab allows changing a tile's favorite state.</summary>
     public bool CanFavorite = true;
 
     /// <summary>The LIVE pane width while the grid is resize-stepped; the
@@ -414,7 +409,7 @@ public sealed class PoseLibraryViewModel
     public Action? OnRefresh;
     public Action? OnOpenSettings;
 
-    // Hoisted once per model: the frame's chrome must not mint a closure, and
+    // Hoisted once per model: the window chrome must not allocate a closure each frame, and
     // every one of these closes over nothing but this model.
     internal Action<ActionBarScope>? Footer;
     internal Action<ActionBarScope>? FooterActions;
@@ -450,11 +445,8 @@ public sealed class PoseLibraryViewModel
 }
 
 /// <summary>
-/// The pose library, drawn INSIDE the shell's content rect: there is no window
-/// and no chassis to inherit, so the view lays its own bands out in the
-/// rectangle it is handed — the search band, the folder rail, the tile grid
-/// with its info strip, and the action row. Every tab lays out the SAME four
-/// bands: no tab earns an extra bar.
+/// Draws the library search, folder rail, grid, info strip and actions inside
+/// the rectangle supplied by its window.
 ///
 /// <para>The rail is the SOURCE tree, which is small and never clipped; the
 /// body is the tile grid, which is a catalog and always is. The body's grid
@@ -675,9 +667,7 @@ public static class PoseLibraryView
         };
     }
 
-    /// <summary>The action row: the status caption on the left (the size
-    /// scrubber is seated beside it separately) and the three commands on the
-    /// right.</summary>
+    /// <summary>Draws status on the left and the current tab's actions on the right.</summary>
     private static void DrawActionRow(
         PoseLibraryViewModel vm, WindowFrameRect footer, float scale, Theme theme)
     {
@@ -1554,11 +1544,7 @@ public static class PoseLibraryView
         }
     }
 
-    /// <summary>The thumbnail square, aspect-fitted and centred exactly as the
-    /// file dialog's preview column fits its image: a pose renders portrait or
-    /// landscape and the square has to seat either without cropping. An
-    /// unresolved thumbnail draws the fallback glyph instead — legacy poses
-    /// take the plain file mark, everything else the armature.</summary>
+    /// <summary>Fits the thumbnail without cropping, or draws the tile's fallback glyph.</summary>
     private static void DrawThumbnail(
         PoseLibraryViewModel vm,
         PoseLibraryTileRow tile,
@@ -1611,8 +1597,7 @@ public static class PoseLibraryView
             glyphMin, glyphMin + new Vector2(side), tile.Fallback, theme.TextDim);
     }
 
-    /// <summary>The tile's two caption lines: the name, then the modified
-    /// stamp. The full name is previewed on hover ONLY when it was cut — the
+    /// <summary>The tile name and subtitle. The full name is previewed on hover ONLY when it was cut — the
     /// card would otherwise repeat what is already legible.</summary>
     private static void DrawCaption(
         PoseLibraryTileRow tile,
@@ -1662,8 +1647,6 @@ public static class PoseLibraryView
                 TileLabelHelpId, min, min + size, tile.Label);
     }
 
-    /// <summary>The grid's empty state: one caption on a row band, centred
-    /// over the columns that would have been there.</summary>
     /// <summary>The grid's marquee: a rectangle from the press on empty
     /// ground to the pointer; on release the tiles it touches are handed
     /// over (Ctrl adds). A rectangle that touches nothing changes nothing.</summary>

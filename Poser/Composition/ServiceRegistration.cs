@@ -41,9 +41,9 @@ namespace Poser.Composition;
 /// <summary>
 /// Explicit composition modules for the plugin executable, arranged as a
 /// per-feature registration manifest. These methods only describe ownership;
-/// product behavior remains in the registered services. A feature that must
+/// behavior remains in the registered services. A feature that must
 /// run before the UI draws registers its <see cref="Startable"/> here too;
-/// <see cref="StartStage"/> is the one start order.
+/// <see cref="StartStage"/> defines startup order.
 ///
 /// Runtime modules precede presentation and reference no UI type; tests may
 /// append explicit runtime overrides.
@@ -158,7 +158,7 @@ internal static class ServiceRegistration
         // coordinator owns this port. The port resolves auto-save at exit.
         services.AddSingleton<IFinalCapturePort>(sp =>
             new AutoSaveFinalCapturePort(
-                () => sp.GetRequiredService<IAutoSaveService>()));
+                () => sp.GetRequiredService<SceneAutoSaveService>()));
         services.AddSingleton<SessionLifecycleCoordinator>();
         services.AddSingleton<ISessionGenerationSource>(sp =>
             sp.GetRequiredService<SessionLifecycleCoordinator>());
@@ -219,8 +219,7 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new ValueJournal(sp.GetRequiredService<EditHistory>(),
             owner => Game.Journal.HistoryEntityLookup.Identify(owner, sp.GetRequiredService<IEntityBindings>())));
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
-        // Entity lifecycle lands in the transform history, so
-        // undo stays one ordered story rather than two.
+        // Entity lifecycle and transforms share one ordered undo history.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Game.Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
@@ -558,9 +557,8 @@ internal static class ServiceRegistration
     private static IServiceCollection AddSpawnFeature(
         this IServiceCollection services)
     {
-        // The concrete spawn service is registered once and forwarded: the
-        // world-actor discovery funnels its clones through the same accepted
-        // ownership transaction (no second spawner).
+        // World-actor discovery and ordinary spawning share the same concrete
+        // spawn service and ownership transaction.
         services.AddSingleton<ActorSpawnService>();
         services.AddSingleton<IActorSpawnService>(
             sp => sp.GetRequiredService<ActorSpawnService>());
@@ -581,7 +579,11 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Application.Library.ILibraryFileOperations, Application.Library.LibraryFileOperations>();
-        services.AddSingleton<Application.Library.AutoSaveLibrary>();
+        services.AddSingleton<Application.Library.ICharacterFileLibrary, Application.Library.CharacterFileLibrary>();
+        services.AddSingleton(sp => new Application.Library.AutoSaveLibrary(
+            sp.GetRequiredService<ConfigurationService>().Config.AutoSave.EnsureRoot(System.IO.Path.Combine(
+                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "AutoSaves")),
+            sp.GetRequiredService<SceneAutoSaveService>()));
         services.AddSingleton<Application.Library.ILibrarySceneActions, Application.Library.LibrarySceneActions>();
         services.AddSingleton<Application.Library.IPoseLibraryService>(sp =>
         {
@@ -589,9 +591,8 @@ internal static class ServiceRegistration
             // Create every configured library root before the first scan.
             config.Config.Library.EnsureHomeRootsExist();
             var library = new Application.Library.PoseLibraryService(config);
-            // ONE scan at startup; after it, Poser knows what it saves —
-            // every entry save requests its own rescan, and the refresh
-            // button covers files changed outside Poser.
+            // Scan once at startup. Saves request a rescan, and the refresh
+            // action covers external file changes.
             library.RequestScan();
             return library;
         });
@@ -656,39 +657,11 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<IPoseFileService, PoseFileService>();
-        // One territory-to-place resolution is shared by whole-scene capture
-        // and pose auto-save so a recorded place means the same thing in both
-        // documents.
         services.AddSingleton<IPlaceService, Game.Environment.PlaceService>();
-        // Not a cycle break (the final-capture port is that): the capture
-        // reaches the actor graph only when it captures, so starting
-        // auto-save first does not build the binding registry ahead of its
-        // own start stage.
-        services.AddSingleton<IPoseAutoSaveCapture>(sp => new PoseAutoSaveCapturePort(
-            sp.GetRequiredService<IPluginLog>(),
-            sp.GetRequiredService<IActorManager>,
-            sp.GetRequiredService<ISkeletonService>,
-            sp.GetRequiredService<IBonePosingService>,
-            sp.GetRequiredService<IPoseFileService>,
-            sp.GetRequiredService<IPlaceService>()));
-        services.AddSingleton(sp =>
-        {
-            var log = sp.GetRequiredService<IPluginLog>();
-            var configuration = sp.GetRequiredService<ConfigurationService>();
-            var root = configuration.Config.AutoSave.EnsureRoot(System.IO.Path.Combine(
-                sp.GetRequiredService<IDalamudPluginInterface>().GetPluginConfigDirectory(), "AutoSaves"));
-            return new AutoSaveService(sp.GetRequiredService<IPoseAutoSaveCapture>(), configuration,
-                new PoseAutoSaveStore(root, message => log.Error(message),
-                    message => log.Info(message), message => log.Debug(message)),
-                message => log.Error(message), message => log.Debug(message));
-        });
-        services.AddSingleton<IAutoSaveService>(sp => sp.GetRequiredService<AutoSaveService>());
         services.AddSingleton<AutoSaveRuntime>();
         services.AddStartable<AutoSaveRuntime>(StartStage.AutoSave);
 
-        // The checksum index over the MCDF home. ONE instance: its whole
-        // value is the digests it remembers between scene loads, and a
-        // per-resolve copy would re-read the library every time.
+        // Keep one checksum index so digests persist between scene loads.
         services.AddSingleton<IMcdfHashIndex>(sp =>
             new McdfHashIndex(() => sp.GetRequiredService<ConfigurationService>().Config.Library.ResolveMcdfRoot()));
 
@@ -730,9 +703,8 @@ internal static class ServiceRegistration
     private static IServiceCollection AddFeaturePanes(
         this IServiceCollection services)
     {
-        // The one transient-message channel every surface below speaks
-        // through, registered ahead of them all; runtime owners reach it
-        // through the Application port.
+        // Register the shared transient-message channel before presentation
+        // services; runtime services access it through the application port.
         services.AddSingleton<UserNotices>();
         services.AddSingleton<Application.Presentation.IUserNotices>(sp => sp.GetRequiredService<UserNotices>());
         // Pane types are never registered here: the main window's graph and

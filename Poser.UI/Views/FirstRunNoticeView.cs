@@ -16,9 +16,8 @@ namespace Poser.UI.Views;
 /// The first-run notice is an ordinary dismissible window. Closing it does
 /// not accept the notice; it remains pending and returns next plugin session.
 ///
-/// <para>The gate holds no plugin state and owns no resources: it reads the
-/// live config through <see cref="configuration"/> and writes
-/// exactly one integer, so teardown has nothing to unwind here.</para>
+/// <para>Acceptance is saved in configuration. Typed text and dismissal last
+/// only for this view instance; there are no resources to dispose.</para>
 /// </summary>
 public sealed class FirstRunNoticeView(ConfigurationService configuration)
 {
@@ -32,8 +31,7 @@ public sealed class FirstRunNoticeView(ConfigurationService configuration)
     private string _typed = string.Empty;
     private bool _dismissed;
 
-    /// <summary>Opens the browser on a credited project. Assigned by the host
-    /// so the view keeps no Dalamud dependency of its own.</summary>
+    /// <summary>The host supplies the action that opens a credited project's URL.</summary>
     public Action<string>? OnOpenUrl;
 
     /// <summary>Closing the window never writes acceptance.</summary>

@@ -4,7 +4,8 @@ using System.Text.RegularExpressions;
 
 namespace Poser.Application.Diagnostics;
 
-/// <summary>One report-session policy for decoded JSON strings and free-text diagnostics.</summary>
+/// <summary>Replaces known names and detected paths with consistent placeholders
+/// within one report. This is pattern-based redaction, not a guarantee for arbitrary text.</summary>
 public sealed class DiagnosticRedactor
 {
     private static readonly Regex AbsolutePath = new(

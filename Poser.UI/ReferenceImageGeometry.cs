@@ -4,24 +4,18 @@ using System.Numerics;
 namespace Poser.UI;
 
 /// <summary>
-/// The reference window's ONE sizing rule: its aspect ratio IS the picture's,
-/// and every resize resolves back to it.
+/// Maintains the reference image's aspect ratio during window resize.
 ///
-/// <para>Resolved by CLAMP-ON-FRAME rather than by an ImGui size-constraint
+/// <para>Resolved once per frame rather than by an ImGui size-constraint
 /// callback. Ktisis takes the callback route
 /// (<c>Ktisis/Interface/Overlay/RefOverlay.cs:83-107</c>), which needs an
 /// <c>unsafe</c> static and a pinned struct because the callback carries no
 /// managed state; Poser's windows are <c>Dalamud.Interface.Windowing.Window</c>
-/// instances that already state <c>Size</c>/<c>SizeCondition</c> from
-/// <c>PreDraw</c> (MainWindow's collapse), so the same
-/// seam carries this and the codebase keeps one sizing idiom.</para>
+/// instances that already set <c>Size</c>/<c>SizeCondition</c> from
+/// <c>PreDraw</c>.</para>
 ///
-/// <para>WHICH AXIS WINS is the whole subtlety. Ktisis always derives height
-/// from width, so dragging the bottom edge of a window fights the callback and
-/// the window appears frozen vertically. Here the axis the pointer actually
-/// moved further on drives, measured against the last CONFORMANT size — so a
-/// bottom-edge drag resizes by height and a right-edge drag by width, and a
-/// corner drag follows whichever the hand favoured.</para>
+/// <para>The axis with the larger change from the previous conformant size
+/// drives the result, allowing both horizontal and vertical edge resizing.</para>
 /// </summary>
 public static class ReferenceImageGeometry
 {

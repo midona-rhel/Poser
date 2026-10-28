@@ -20,7 +20,7 @@ namespace Poser.UI;
 
 public partial class MainWindow
 {
-    // ── status bar, restated only when its numbers move ─────────────────
+    // Rebuild status-bar text only when its values change.
     private int _statusActorCount = -1;
 
     private int _statusBones;

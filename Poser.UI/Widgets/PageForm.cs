@@ -70,27 +70,22 @@ public static class PageForm
     internal static Vector4 FormValueColor => ActiveTheme.FormValue;
     internal static Vector4 FormSeparatorColor => ActiveTheme.FormSeparator;
 
-    /// <summary>Two half-width tracks fit above this logical content
-    /// width; below it the tracks stack into one column. Chosen so a
-    /// track keeps the label column plus a workable control.</summary>
+    /// <summary>
+    /// Minimum logical page width for paired rows with the default label width.
+    /// </summary>
     private const float TwoTrackMinimum = 480f;
 
     /// <param name="labelColumnWidth">Optional logical label-column width.</param>
     /// <param name="responsive">Fill the host width and wrap cell groups
     /// at the shared minimum track width. The default retains the readable cap.</param>
-    /// <param name="halfRows">Rows flow into two half-width tracks; a
-    /// full-line row reserves its whole line but paints only the left
-    /// track. Below <see cref="TwoTrackMinimum"/> everything stacks into
-    /// one half-width column — the small-monitor layout under test.</param>
+    /// <param name="halfRows">Currently unused. Sections request paired rows
+    /// through FormScope.PairRows.</param>
     public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content,
         float? labelColumnWidth = null, bool halfRows = false, bool responsive = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float inset = ActiveTheme.Page.Inset * scale;
-        // ONE left inset only: every page host's scroll region reserves
-        // the gutter, and the gutter IS the trailing margin — a second
-        // right inset made the right edge twice the left (the
-        // gutter-symmetry rule, measured at last).
+        // The host scroll region supplies the trailing gutter, so add only a left inset.
         float width = MathF.Max(0f, size.X - inset);
         if (!responsive)
             width = MathF.Min(width, ActiveTheme.Page.MaximumContentWidth * scale);
@@ -187,18 +182,13 @@ public static class PageForm
         private readonly bool _dense;
         private float _y;
 
-        // The host window's visible band, cached once per page. Rows fully
-        // outside it skip their drawing (labels, controls, readouts) while
-        // still advancing layout, so a long form costs what its visible
-        // slice costs. The slack above absorbs multi-line rows whose true
-        // height is only known after drawing.
+        // Cache an expanded visible band for row clipping. Rows can skip drawing
+        // while retaining layout space; extra space above accommodates taller rows.
         private readonly float _clipTop;
         private readonly float _clipBottom;
 
-        // Deliberate pairing: a section opts its rows into two-track flow
-        // (left, then right, on one line); a full-line row or a section
-        // boundary closes the line. This is a per-section DESIGN choice at
-        // the fixed width, not responsive behavior.
+        // Sections can request left/right row pairs when there is enough width.
+        // A full-line row or section boundary finishes the current pair.
         private bool _twoTrack;
         private float _trackWidth;
         private int _track;
@@ -263,8 +253,9 @@ public static class PageForm
         internal float Height { get; init; }
         internal bool Responsive { get; init; }
 
-        /// <summary>An empty page says so in the middle of itself, both
-        /// ways — never as a line pinned to the top-left corner.</summary>
+        /// <summary>
+        /// Centers a message when page height is known; otherwise places it near the top.
+        /// </summary>
         public void EmptyState(string text = "Select an actor or bone in the sidebar.")
         {
             float size = ActiveTheme.Typography.LabelSize;
@@ -488,9 +479,10 @@ public static class PageForm
             return row;
         }
 
-        /// <summary>A row the search dropped: laid far off screen so a
-        /// widget that paints regardless paints nothing anyone sees, and
-        /// ended without advancing the page.</summary>
+        /// <summary>
+        /// Returns a row excluded by search or probe mode. It takes no layout space and
+        /// is positioned offscreen; controls should still check Visible before drawing.
+        /// </summary>
         private FormRowScope SkippedRow() =>
             new(new(_origin.X, -100000f), _trackWidth, _scale,
                 LabelColumn(string.Empty, _trackWidth, _scale, _labelWidth) / _scale,
@@ -581,10 +573,10 @@ public static class PageForm
         /// stretch — nothing flows beside it.</summary>
         public void FullLine() => _page.NextFullLine = true;
 
-        /// <summary>Rows from here to the section's end (or
-        /// <see cref="EndPair"/>) flow two per line — the deliberate
-        /// pairing the standard calls for on short rows
-        /// (Override|Weather, Opacity|Tint).</summary>
+        /// <summary>
+        /// Requests two rows per line until EndPair or the next section. Narrow pages
+        /// keep one column; TwoTrack reports which layout is active.
+        /// </summary>
         public void PairRows() => _page.BeginPairedRows();
 
         /// <summary>Whether paired rows run two tracks at this width. A
@@ -597,9 +589,9 @@ public static class PageForm
         /// <summary>Adds a small scaled gap between groups of controls.</summary>
         public void Gap() => _page.AddGap();
 
-        /// <summary>Places a shared primitive or read-model view in one form
-        /// row. The caller owns only the content; page spacing and help remain
-        /// identical to every other form control.</summary>
+        /// <summary>
+        /// Draws custom content when its row is visible, using the page's spacing and help.
+        /// </summary>
         public void Custom(string label, float logicalHeight,
             Action<FormRowScope> draw, string? help = null)
         {
@@ -648,9 +640,7 @@ public static class PageForm
                 if (actionWidth > 0f)
                     actionGap = ActiveTheme.Page.ActionGap * row.Scale;
             }
-            // The value-well replaces the classic track only on surfaces
-            // that were DESIGNED for it (the pilot opts in per call) — a
-            // blanket swap leaked it into expression grids nobody designed.
+            // Use a value well only when requested and no marks or custom readout are needed.
             bool valueWell = well && marks is null && readout is null;
             float controlWidth = valueWell || bare
                 ? row.ControlWidth - actionWidth - actionGap
@@ -698,9 +688,8 @@ public static class PageForm
                 logCurvature: logCurvature,
                 altReset: altReset);
             }
-            // Classic path only: custom readouts use text; numeric
-            // readouts use a value well beside the track. A BARE slider
-            // presents no value at all — the inspector's form.
+            // A track slider can have text or an editable numeric readout.
+            // Bare sliders omit that readout.
             if (!valueWell && !bare)
             {
             var bandOrigin = new Vector2(
@@ -771,10 +760,9 @@ public static class PageForm
             }
             var controlStyle = InRegion(
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
-            // Toggles RIGHT-ALIGN in their cell (the standard).
+            // Leave one switch-width between the toggle and the right edge.
             float switchWidth = logicalSwitchWidth * row.Scale;
-            // One toggle-width of right MARGIN: the switch sits its own
-            // width in from the edge.
+            // Inset the toggle from the right edge by its own width.
             ImGui.SetCursorScreenPos(new Vector2(
                 row.ControlOrigin.X + row.ControlWidth - switchWidth * 2f,
                 row.CenterControl(switchHeight).Y));
@@ -1577,11 +1565,8 @@ public static class PageForm
         }
 
         /// <summary>
-        /// A WRAPPED status run across the row's whole width, growing the row
-        /// to as many lines as it takes. <see cref="Status"/> is the one-line
-        /// form and truncates; this is the form for a sentence the user has to
-        /// be able to READ — a refusal reason, a next step — where cutting the
-        /// text off would delete the only thing the row exists to say.
+        /// Wraps text across the row and increases its height to fit.
+        /// Use this for explanations that must remain readable; Status truncates.
         /// </summary>
         /// <param name="warning">Uses the warning colour.</param>
         public void Paragraph(
@@ -1690,8 +1675,7 @@ public static class PageForm
                 _page.EndRow(row, id, help);
                 return;
             }
-            // The same inter-cell MARGIN Cells uses — two columns never
-            // sit pixel-adjacent.
+            // Use the same gap between cells as Cells.
             float cellMargin = ActiveTheme.Spacing.Six * row.Scale;
             float half = (row.Width - cellMargin) * 0.5f;
             float column = MathF.Min(half * FormCellLabelShare,
@@ -1722,9 +1706,8 @@ public static class PageForm
         public void Cells(Action<FormCellScope> content, string? help = null, int? fixedColumns = null)
         {
             ArgumentNullException.ThrowIfNull(content);
-            // A Cells row is ALREADY a designed multi-cell row: pair flow
-            // halving it crushes every cell (the Stars incident). It always
-            // keeps its full line.
+            // Do not pair this multi-cell row with a following row. This reserves
+            // the line but retains the current track width when paired mode is active.
             _page.NextFullLine = true;
             var scope = new FormCellScope();
             content(scope);
@@ -1759,11 +1742,8 @@ public static class PageForm
                     new Vector2(x + column + cellMargin, y),
                     MathF.Max(0f, track - column - cellMargin),
                     row.Scale));
-                // The hover answers for exactly what the pointer is on:
-                // a cell's own help, else the row's shared help — either
-                // way anchored on THAT cell's label band, never the whole
-                // row (a Cells row has no row label, and the shared help
-                // once spanned the row and shadowed every cell).
+                // Use each cell's help, falling back to shared row help. Attach it to
+                // the label area so it does not replace the control's own tooltip.
                 string? cellHelp = string.IsNullOrEmpty(item.Help)
                     ? help
                     : item.Help;
@@ -2224,7 +2204,7 @@ public static class PageForm
             string id, bool value, Action<bool> onChange,
             bool disabled = false, string? help = null)
         {
-            // Toggles RIGHT-ALIGN in their cell (the standard).
+            // Leave one switch-width between the toggle and the right edge.
             float switchWidth =
                 ActiveTheme.Controls.SwitchWidth * Scale;
             var seat = Center(ActiveTheme.Controls.SwitchHeight);
@@ -2242,8 +2222,7 @@ public static class PageForm
         {
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.WorkspaceHeight));
-            // The well FILLS its cell: the CELL is the honestly-sized
-            // unit, and a 52px well adrift in it reads as broken.
+            // Fill the cell with the numeric input.
             AxisWell(
                 Ids.Join(id, "-value"),
                 "",
@@ -2386,13 +2365,12 @@ public static class PageForm
         /// <summary>Logical row height.</summary>
         public float RowHeight { get; }
 
-        /// <summary>False when the row lies outside the host window's
-        /// visible band — controls skip their drawing and interaction for
-        /// such rows while layout still advances.</summary>
+        /// <summary>False outside the host window's visible band. Controls
+        /// should check this before drawing; layout still advances.</summary>
         public bool Visible { get; }
 
-        /// <summary>Whether the row carries a label — what decides where
-        /// its help anchors: the label band, never the whole row.</summary>
+        /// <summary>Whether help uses the label area. Without a label,
+        /// EndRow uses the whole row as the help area.</summary>
         public bool HasLabel { get; internal init; }
 
         /// <summary>A row a search dropped: nothing drawn, no layout.</summary>
@@ -2411,9 +2389,7 @@ public static class PageForm
             Width = width;
             Scale = scale;
             LabelWidth = labelWidth * scale;
-            // MARGIN standard: the space between the label column and the
-            // control belongs to the LAYOUT, between the boxes — never
-            // carved out of the label's own band.
+            // Keep the label-to-control gap outside the label's text area.
             float labelMargin = ActiveTheme.Spacing.Three * scale;
             ControlOrigin = origin + new Vector2(LabelWidth + labelMargin, 0f);
             ControlWidth = MathF.Max(0f, width - LabelWidth - labelMargin);
@@ -2426,21 +2402,19 @@ public static class PageForm
             Origin.Y + (RowHeight - controlHeight) * 0.5f * Scale);
     }
 
-    /// <summary>A text verb is at least the standard verb width — equal
-    /// buttons render equally and align across rows — and grows only when
-    /// its label genuinely needs more.</summary>
+    /// <summary>
+    /// Natural text-button width, at least the theme's standard action width.
+    /// </summary>
     private static float VerbFloor(string label, ControlStyle style) =>
         MathF.Max(
             ActiveTheme.Form.VerbWidth,
             IntrinsicButtonWidth(label, style));
 
-    /// <summary>The floor YIELDS when the row cannot hold every verb at
-    /// it: the text buttons compress together so the cluster fits — the
-    /// global verb token once overflowed the inspector's reset row
-    /// because nothing re-ran the width math. Overflow is never an
-    /// acceptable outcome; equality of compression preserves alignment.
-    /// Measured and drawn with the SAME factor, so the two never
-    /// disagree.</summary>
+    /// <summary>
+    /// Shrinks content-sized text buttons equally when space is limited, down to
+    /// 40% of their natural width. Icons and fixed widths do not shrink. This cannot
+    /// guarantee that the group fits; callers still need enough room for those minima.
+    /// </summary>
     private static float VerbYieldFactor(
         IReadOnlyList<ActionItem> actions, float scale, float availableWidth)
     {
@@ -2463,7 +2437,7 @@ public static class PageForm
             switch (style.Width.Kind)
             {
                 case UiWidthKind.Fill:
-                    return 1f; // fill rows absorb slack by construction
+                    return 1f; // Fill widths are calculated separately by MeasureActions.
                 case UiWidthKind.Fixed:
                     fixedPart += style.Width.Value * scale;
                     break;
@@ -2588,7 +2562,10 @@ public static class PageForm
         }
     }
 
-    /// <summary>Limits a control to its row region.</summary>
+    /// <summary>
+    /// Assigns the available region to Fill widths and optionally unspecified widths.
+    /// Explicit fixed/content widths are left unchanged.
+    /// </summary>
     private static ControlStyle InRegion(
         ControlStyle style, float width, bool fillByDefault) =>
         style.Width.Kind == UiWidthKind.Fill
@@ -2696,11 +2673,10 @@ public static class PageForm
             TextConstraint.Truncate(width));
     }
 
-    /// <summary>The label column is FIXED: every label reserves the same
-    /// space regardless of its text, so controls align down the page —
-    /// text-measured growth made slider starts wander row to row. Built-in
-    /// labels must fit at the supported minimum size; truncation remains
-    /// a fallback, not the intended layout.</summary>
+    /// <summary>
+    /// Uses the configured label width, capped at half the row, so labels do not
+    /// shift controls according to their text length.
+    /// </summary>
     private static float LabelColumn(
         string label, float width, float scale, float baseColumn)
     {

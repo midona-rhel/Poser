@@ -3,9 +3,8 @@ using Poser.Domain.Scene;
 
 namespace Poser.UI;
 
-/// <summary>How an actor is named on every surface: the nickname, else the
-/// anonymous mask while it is on, else the scene name without its object
-/// index. One accessor, so no pane strips or masks on its own.</summary>
+/// <summary>Returns the nickname when present, the anonymous label when
+/// masking is enabled, or the scene name without its object index.</summary>
 public static class ActorNames
 {
     public static string Display(Application.Settings.ConfigurationService configuration, ActorDescriptor actor) =>

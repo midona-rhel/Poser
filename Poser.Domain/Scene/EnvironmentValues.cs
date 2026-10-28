@@ -6,9 +6,8 @@ namespace Poser.Domain.Scene;
 public readonly record struct WeatherInfo(uint Id, string Name, uint IconId);
 
 /// <summary>
-/// The eight independently holdable parts of the game's environment state.
-/// Names follow the reference implementation's EnvState layout; Particles is
-/// the same block Ktisis calls Dust (snow and leaves run through it too).
+/// Environment sections that can be held independently of game updates.
+/// Particles includes effects such as dust, snow and leaves.
 /// </summary>
 public enum EnvSection
 {
@@ -22,11 +21,10 @@ public enum EnvSection
     Wind,
 }
 
-// Section values cross this boundary as plain values. The native layouts are
-// EnvState sub-structs; fields the references never identified keep their
-// Unknown names so a future identification is a rename, not a re-layout.
+// These records contain values, not native memory layouts. Fields named
+// Unknown are preserved even though their effect has not been identified.
 
-/// <summary>Sky texture plus the fog member the reference stamps with it.</summary>
+/// <summary>Sky texture selection and sun visibility value.</summary>
 public readonly record struct EnvSkyValues(uint SkyTextureId, float SunVisibility);
 
 public readonly record struct EnvLightingValues(

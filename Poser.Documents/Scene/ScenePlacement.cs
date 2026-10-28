@@ -168,6 +168,8 @@ public static class ScenePlacementRebase
 
         foreach (var camera in scene.Cameras)
         {
+            if (camera.Camera is { OrbitPosition: { } eye } orbit)
+                orbit.OrbitPosition = move(eye);
             // Only a free camera states a world position; an orbit camera is
             // angle and zoom about a target that moved with the scene, and its
             // TargetOffset is relative to that target either way.

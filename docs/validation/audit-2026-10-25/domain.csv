@@ -1,0 +1,90 @@
+path,status,review_note
+Poser.Domain/Actors/ActorKind.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Actors/SpawnNames.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Actors/WorldActors.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Animation/AnimationTypes.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Appearance/ModelCatalogEntry.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Cameras/FreeCameraSpeed.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Collections/ValueList.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Companions/CompanionAttachment.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Companions/CompanionEntry.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Companions/SpawnCatalogEntry.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Identity/EntityId.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Identity/StableIds.cs,reviewed-full-read,"Reviewed ID equality, generation and selection factories; explained logical identity versus runtime replacement."
+Poser.Domain/Integration/CustomizeTypes.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Integration/IntegrationTypes.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Integration/McdfTypes.cs,reviewed-full-read,Reviewed constructor copying and data contracts; records do not independently prove filesystem safety.
+Poser.Domain/Integration/WardrobeTypes.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Library/LibraryBrowseSort.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Library/PoseLibraryEntry.cs,reviewed-full-read,Corrected universal scan guarantees and reduced timestamp rhetoric; recorded capture time differs from filesystem modification time.
+Poser.Domain/Operations/OperationReceipt.cs,reviewed-full-read,Reviewed factory validations and recovery-state constraints; replaced redundant identity jargon with session/attempt explanations.
+Poser.Domain/Outcome.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/PluginConstants.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/BoneInfo/BoneData.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/BoneInfo/BoneInfoService.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/BoneInfo/Categories/ChestBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/ClothingBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/EarBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/EquipmentBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/FaceBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/HairBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/HeadBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/IVCSBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/LeftArmBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/LeftHandBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/LeftLegBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/PhysicsBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/RightArmBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/RightHandBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/RightLegBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/RootBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/SpineBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneInfo/Categories/TailBones.cs,reviewed-full-read,Read complete bone-name registration table; section comments match the registered display-name data.
+Poser.Domain/Posing/BoneLinkCatalog.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/BonePoseInfo.cs,reviewed-full-read,"Corrected additive-rotation, rejection and atomicity claims; Apply can append identity entry before rejecting final data; inspect effect before behavior change."
+Poser.Domain/Posing/BoneSymmetry.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/FabrikControl.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/FabrikSolver.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/FaceGenerationMatch.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/IkActorAnchor.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/IkCollider.cs,reviewed-full-read,Corrected immutable-mesh claim: arrays are retained; trace actual writers before deciding whether copying is necessary.
+Poser.Domain/Posing/IkConfiguration.cs,reviewed-full-read,"Corrected solver defaults, undeclared-chain support and end-rotation defaults; historical CCD test is not proof of exact bound."
+Poser.Domain/Posing/IkEndRotationAnchor.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/IkReach.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/KtisisBoneCategories.g.cs,reviewed-full-read,"Full transcription and traversal read; provenance and jaw placement retained. Later traversal wins for duplicate ownership, not globally deepest node."
+Poser.Domain/Posing/LightPlacement.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/PortablePose.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/PoseEditResult.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/PoseLayers.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/PoseMath.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/PoseOperations.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Posing/RestPose.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Posing/RopeSolver.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Preferences/EditorOptions.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Preferences/KeyChord.cs,reviewed-full-read,Corrected parser guarantee: recognized later key replaces earlier key; malformed-input behavior is a policy decision.
+Poser.Domain/Preferences/KeyCode.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Preferences/RotationPivot.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Presentation/AppearanceColors.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Presentation/OverlayNodes.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Presentation/PresentationTypes.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/CameraTrackingMode.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/EntityNames.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/EnvironmentReading.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/EnvironmentValues.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/FestivalValues.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/FurnitureLightState.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/GazeTarget.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/LightFalloffType.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/ObjectPlacementMode.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; existing brief descriptions retained.
+Poser.Domain/Scene/PropModel.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/SceneOutcomeKind.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Scene/SceneSnapshot.cs,reviewed-full-read,Reviewed copied collections and equality; removed obsolete transitional migration story and misplaced property summaries.
+Poser.Domain/Scene/WorldAsset.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/GestureResult.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/GizmoSnap.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/GroupTransformReadModel.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/PoseTransform.cs,reviewed-full-read,"Reviewed scale bounds, quaternion normalization, pivot and mirror math; limits are application policy, not demonstrated native limits."
+Poser.Domain/Transforms/Transform.cs,reviewed-full-read,Corrected unsigned matrix conversion and false hash/equality guarantee; preserve authored scale and separate approximate comparison from equality.
+Poser.Domain/Transforms/TransformParent.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/TransformRecovery.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.
+Poser.Domain/Transforms/TransformTargetState.cs,reviewed-full-read,Read complete source and checked comments against declarations and implementation; rewrote unclear explanations without code changes.

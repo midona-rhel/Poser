@@ -25,10 +25,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// Restores a spawned actor's state, one materialization step per method:
-/// readiness, companion, the ONE atomic pose import, placement, name,
-/// freeze, gaze and visibility. Appearance runs through
-/// <see cref="SceneAppearanceRuntime"/>.
+/// Restores actor and companion state through separate workflow steps: readiness,
+/// pose, animation, placement, gaze, name, and visibility. Appearance restoration
+/// is delegated to SceneAppearanceRuntime.
 /// </summary>
 internal sealed class SceneActorRuntime : IActorRestorePort
 {
@@ -85,9 +84,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     }
 
     /// <summary>
-    /// A stable short ordinal for an object INSTANCE, for breadcrumbs. Two
-    /// lines quoting different ordinals for "the same" skeleton is the whole
-    /// diagnosis of a rebind race, and it fits on one screen.
+    /// Object identity hash for comparing wrapper and skeleton instances in logs.
+    /// Hashes are diagnostic hints and can collide.
     /// </summary>
     private static string Ord(object? instance) =>
         instance is null
@@ -103,39 +101,15 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         _log.Debug($"Scene pose leg: {message}");
 
     /// <summary>
-    /// Whether this actor can be POSED yet — which is a stricter question than
-    /// whether it exists.
-    ///
-    /// <para>Three things have to be true, and they land at different times.
-    /// The slot skeletons have to be built. The actor's own binding has to
-    /// name this exact live generation. And — the one that bit — the BONE
-    /// bindings have to have been republished for these skeleton instances.
-    /// </para>
-    ///
-    /// <para>Bone ids are published by the binding registry's staged
-    /// candidate/commit pass, not by the skeleton service, so after a redraw
-    /// the skeleton service hands out NEW bone objects while the registry
-    /// still holds the pre-redraw ones. <c>GetBoneId</c> requires the id to
-    /// bind to the very same instance (<c>ReferenceEquals</c>), so every bone
-    /// of a freshly rebuilt skeleton resolves to null until that pass runs.
-    /// The pose import resolves its targets up front and fails on the FIRST
-    /// one, which is why a clear-first load of a scene carrying appearance
-    /// reported "Import target n_root could not be resolved" — the MCDF redraw
-    /// had replaced the skeleton and the barrier had already let the load
-    /// through.</para>
-    ///
-    /// <para>Probing the root bone through the registry is the whole test: if
-    /// the maps resolve THAT instance they were rebuilt for this skeleton, and
-    /// every other bone of it resolves too. The barrier polls, so a skeleton
-    /// mid-publication is WAITED for; only a skeleton that never publishes
-    /// inside the bound is refused.</para>
+    /// Checks that skeletons and their root-bone bindings are ready, and that
+    /// the actor ID resolves to this exact wrapper. After a redraw, new skeleton
+    /// objects can exist before the binding registry has published their IDs.
+    /// The scene workflow polls this check before importing the saved pose.
     /// </summary>
     public bool ActorReady(SceneEntityHandle actor) =>
         Posable(_handles.Require<IActor>(actor, SceneEntityKind.Actor));
 
-    /// <summary>The three-part test above, for an actor or a companion body:
-    /// a companion's skeleton races its bone bindings exactly as an actor's
-    /// does after a redraw.</summary>
+    /// <summary>Checks actor and skeleton bindings for an actor or companion.</summary>
     private bool Posable(IActor candidate)
     {
         var skeletons = _skeletons.GetSkeletons(candidate);
@@ -223,11 +197,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         string description,
         Action<OperationReceipt> onReceipt)
     {
-        // The arm's own view of the world, quoted the same way readiness
-        // quotes it. If these ordinals differ from the ready line, the plan is
-        // being built against a skeleton the registry never bound — which is
-        // exactly the shape that reports "Import target n_root could not be
-        // resolved" for every bone at once.
+        // Compare these instance hashes with the readiness log to diagnose a
+        // skeleton replacement between readiness and import planning.
         var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         var skeletons = _skeletons.GetSkeletons(target);
         int resolvable = 0;
@@ -334,29 +305,15 @@ internal sealed class SceneActorRuntime : IActorRestorePort
             scale == System.Numerics.Vector3.Zero
                 ? System.Numerics.Vector3.One
                 : scale);
-        _posing.SetTransformOverride(target, placement);
-
-        // The override setter REFUSES silently — outside GPose, on an actor
-        // the live set does not yet carry, on a value it cannot sanitize —
-        // and a scene reporting a placement it never made is exactly the
-        // failure the user sees as "it did not restore where they stood".
-        // Ask whether it landed.
-        if (_posing.GetTransformOverride(target) is null)
+        if (!_posing.SetTransformOverride(target, placement))
             return "The actor's placement was refused by the transform owner.";
         return null;
     }
 
     /// <summary>
-    /// FREEZES the actor. A scene restores a picture, not a performance: it
-    /// carries pose data, which is self-contained, and deliberately carries no
-    /// animation at all — a timeline id resolves against the LOADING client's
-    /// game and mod list, so the same scene file would play something
-    /// different on someone else's machine, or nothing.
-    ///
-    /// <para>So every restored actor is stopped at speed 0 and the pose lands
-    /// on a held frame. That is the definition of a successful load: the same
-    /// picture every time, on every client. Expressions come back as part of
-    /// the pose, on the frozen face.</para>
+    /// Restores saved animation controls for the actor or its companion.
+    /// Entries without animation data are left unchanged here; pose-only loads
+    /// use FreezeActor separately.
     /// </summary>
     public string? RestoreAnimation(SceneEntityHandle actor, SceneActor data, bool companion)
     {

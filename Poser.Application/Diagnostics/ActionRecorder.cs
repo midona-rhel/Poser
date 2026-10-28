@@ -6,11 +6,9 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Diagnostics;
 
-/// <summary>One recorded thing: an action the journal appended, a notice
-/// the user saw, or an exception the UI caught. Already anonymized: the
-/// actor is a token, and the text was scrubbed as it was written.
-/// <see cref="Before"/>/<see cref="After"/> are bounded copies made by
-/// <see cref="DiagnosticValue"/>, never the live values.</summary>
+/// <summary>An action, notice, or exception captured for an issue report.
+/// ActionRecorder applies its configured text scrubber and copies before/after
+/// data through DiagnosticValue; this record itself performs no redaction.</summary>
 public sealed record ActionRecord(
     DateTime At,
     string Kind,
@@ -33,12 +31,9 @@ public sealed record ActionTarget(
     PoseTransform? After);
 
 /// <summary>
-/// The last five hundred actions, as they happen — saved, never applied.
-/// The journal is the source: every appended entry becomes a record with
-/// its committed before/after values, and the
-/// UI adds the notices it posts and the exceptions it catches. Names are
-/// replaced at write time by tokens the UI supplies, so nothing in the
-/// buffer identifies a character.
+/// Keeps the latest 500 history actions, notices, and UI exceptions for reports.
+/// The UI must configure ActorToken and Scrub before recording private data;
+/// the default Scrub function leaves text unchanged.
 /// </summary>
 public sealed class ActionRecorder : IDisposable
 {
@@ -54,8 +49,7 @@ public sealed class ActionRecorder : IDisposable
     /// stable for the session. Set by the UI, which knows the scene.</summary>
     public Func<Guid, string> ActorToken { get; set; } = lineage => "Actor";
 
-    /// <summary>Scrubs free text: character names to tokens, user paths to
-    /// a tilde. Set by the UI.</summary>
+    /// <summary>Text-redaction function supplied by the UI. Defaults to no redaction.</summary>
     public Func<string, string> Scrub { get; set; } = text => text;
 
     public ActionRecorder(EditHistory history)

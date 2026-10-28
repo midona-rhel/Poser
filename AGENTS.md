@@ -9,6 +9,9 @@
   new file only when no home fits, and keep it around 10–40 lines.
 - One normative home per contract; other documents link instead of
   restating. Delete superseded prose — Git preserves history.
+- Follow the unit-test budget and relevance rules in
+  [testing](docs/process/testing.md#unit-test-budget-and-relevance). Increasing
+  the passing test count is not evidence of better coverage.
 - Consult Brio for native/backend behavior and Ktisis for posing
   interaction (Brio: robust backend, horrid UI; Ktisis: the reverse). Keep a
   reference citation in docs only when it explains an intentional
@@ -47,3 +50,40 @@
 - Name work branches and worktrees by purpose: `feature/`, `bug/`, `ui/`,
   `docs/`, `test/`, `perf/`, `release/`, or `chore/` as appropriate. Never
   use a `codex/` branch prefix or a generic Codex work name.
+
+## Writing
+
+Write everything — issues, PRs, commits, docs and code comments — for Midona
+and other people using Poser, in short, ordinary sentences. If it reads like a
+lab report or one agent talking to another, rewrite it. The detailed rules
+live in [issue implementation and review](docs/process/external-implementation-review-loop.md#writing-issues-and-pull-requests).
+
+- **Issues and PRs.** Start with what goes wrong for the user, then what
+  should happen instead. Link the code that shows the problem with GitHub
+  permalinks to a published commit and the relevant lines, each with a short
+  label saying what the reader will find there. End with a short way to check
+  it. Say plainly whether something was reproduced, read in the source, or is
+  a guess. Leave out line counts, reviewer or model names, deployment status
+  and the story of the session. Use the
+  [work-item template](.github/ISSUE_TEMPLATE/work_item.md).
+- **Commits.** Author `midona-rhel <midona.rhel@gmail.com>`, with no Claude
+  co-author or session lines. The subject says in plain words what changed
+  ("Release scene-save appearance packages on every exit"), with the issue
+  number in parentheses when there is one. No `refactor:`/`docs:` prefixes.
+  Keep each commit to one change, and record live checks in their own commit.
+- **Code comments.** Say what the code is for and what it returns, in the
+  words a user would use: "undo step", "redraw", "bone IDs", not
+  "re-keyed footprint" or "ordering barrier". Put an explanation beside the
+  decision it explains, once. Mention which thread code runs on when it
+  matters. No capitals for emphasis, no investigation notes, no comments that
+  only say where a behavior does *not* happen. A search for a behavior should
+  land on its implementation.
+- **Code.** Prefer one shared implementation over parallel copies, and delete
+  the copy rather than leaving it beside its replacement. Before keeping a
+  guard, trace who can actually reach it; remove branches that only protect
+  states production code cannot create, and keep checks for real external
+  failures. Tests use the production path, and new tests follow the
+  [unit-test budget](docs/process/testing.md#unit-test-budget-and-relevance).
+- **Docs.** Update the existing normative home in plain language and delete
+  superseded prose. Feature pages describe what the user sees, not class
+  inventories. Dated evidence and live-check records go in `docs/validation/`.

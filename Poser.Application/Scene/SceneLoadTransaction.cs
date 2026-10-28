@@ -6,32 +6,13 @@ using Poser.Documents.Scene;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// ONE whole-scene load, run as an ordered list of phases with reverse-order
-/// rollback. <see cref="SceneWorkflow"/> admits it, publishes what it reports
-/// and drains it; everything the load decides lives here.
-///
-/// Load semantics: the ENTIRE document is validated before any native
-/// mutation — a document-level failure refuses the file, an entity whose own
-/// data is invalid is left out by name; entities spawn additively unless the load was asked to clear the
-/// session first (<see cref="SceneLoadOptions.ClearExistingScene"/>, whose
-/// sweep is deliberately outside the rollback ledger and says so in the
-/// outcome, and which is preflighted so it never runs for a load that cannot
-/// start).
-///
-/// <para>THE LOAD POLICY — the one place that decides what a failure costs.
-/// REQUIRED steps roll back everything THIS operation created, in reverse
-/// order: reading the document, admission and the session staying the same,
-/// cancellation, and CREATING each actor (a scene with a hole where an actor
-/// should be is not the scene). Everything else is OPTIONAL and becomes a
-/// named refusal beside the restored entities — a Failed receipt that keeps
-/// what did restore and is still one undoable step: an entity whose saved
-/// data does not validate, an actor whose body does
-/// not draw within the readiness bound (kept, not posed), appearance
-/// (character file, collection), companions, names, animation stop, gaze,
-/// pose and placement, props, overlays, map objects, cameras and their
-/// targets, lights, environment and world toggles, FABRIK, sidebar groups and
-/// order, and transform parent links. Never a silent detach, never a silent
-/// skip, and never a whole-scene rollback for one of these.</para>
+/// Loads one scene in ordered phases and records an outcome for each entity.
+/// Validation and preflight failures stop before mutation. Cancellation,
+/// session replacement, or failure to spawn a requested actor rolls back
+/// entities created by this load. Other entity-specific restore failures are
+/// reported by name, and successfully created entities remain as one undoable
+/// history step. A clear-first load cannot restore entities removed before
+/// this transaction, so the result reports that limitation.
 /// </summary>
 internal sealed class SceneLoadTransaction(
     SceneWorkflow workflow,
@@ -49,16 +30,14 @@ internal sealed class SceneLoadTransaction(
     CancellationToken cancellation)
 {
     /// <summary>
-    /// A character-file import's bound. Real packages run to hundreds of
-    /// megabytes and the import decompresses, extracts, applies and waits for
-    /// a redraw, so this is minutes rather than the one minute it used to be —
-    /// a bound that expires mid-import turns a working restore into a named
-    /// failure for no reason but impatience. Cancelling the load cuts it short.
+    /// Maximum time allowed for one character-file import. The import includes
+    /// file processing, application, and a redraw wait. Cancellation can end
+    /// the wait sooner.
     /// </summary>
     private static readonly TimeSpan McdfImportTimeout = TimeSpan.FromMinutes(10);
 
-    /// <summary>How a phase stops the load. Refused: nothing native ran, so it
-    /// is a plain Failed. RollBack: undo what this operation created.</summary>
+    /// <summary>How a phase ends the transaction. Refused stops before this
+    /// load creates anything; Abort rolls back entities created by this load.</summary>
     private sealed record Stop(string Detail, bool RollBack)
     {
         public static Stop Refused(string detail) => new(detail, false);
@@ -67,8 +46,7 @@ internal sealed class SceneLoadTransaction(
 
     private SceneLoadBarriers? _barriers;
     private readonly List<SceneEntityOutcome> _entities = new();
-    // Facts about the OPERATION rather than about any one entity: what a
-    // destroy-first clear cost, and which categories the user left out.
+    // Operation-level notes, such as a clear-first limitation or an excluded category.
     private readonly List<string> _notes = new();
     private int _total;
     private int _done;
@@ -189,10 +167,8 @@ internal sealed class SceneLoadTransaction(
         }
     }
 
-    // A structural refusal undoes the whole operation. The terminal state
-    // states exactly what the session is left holding: RolledBack/Cancelled
-    // mean nothing survived, Failed means the rollback itself left named
-    // leftovers the user must clean up by hand.
+    // Roll back entities created by this load. If rollback leaves anything
+    // behind, report those entities so the user can remove them manually.
     private async Task Abort(string failure)
     {
         bool cancelled =
@@ -228,6 +204,7 @@ internal sealed class SceneLoadTransaction(
             return Task.FromResult<Stop?>(Stop.Refused(read.Failure!.Detail));
         }
         _scene = scene;
+        options = SceneLoadPreferences.ResolveDefault(options, scene.TerritoryId);
 
         // Entities whose own data is invalid were left out of the
         // document by name; the rest of the scene loads beside them. A
@@ -248,11 +225,8 @@ internal sealed class SceneLoadTransaction(
                 _entities.Add(new SceneEntityOutcome(refusal.Kind, refusal.Name, false, refusal.Detail));
         }
 
-        // BORROWING NEVER PERSISTS (ruled 2026-09-01): the borrow is a
-        // live-session act — the footer's four marks — and a document
-        // always carries spawnable copies, loadable in any map at any
-        // position. Files saved before the rule carry borrowed
-        // entries; every one loads as a spawn.
+        // Saved world objects load as spawned copies, including older files
+        // that marked them as borrowed map objects.
         if (scene.WorldObjects != null)
             foreach (var entry in scene.WorldObjects)
                 entry.Spawned = true;
@@ -365,7 +339,10 @@ internal sealed class SceneLoadTransaction(
                     return $"{preflight} The session was not cleared.";
                 }
                 operation.SessionCleared = true;
-                if (sceneState.ClearScene().Summary() is { } cleared)
+                // A scene that holds the user's own character keeps it, so the
+                // load can put it back instead of spawning a copy.
+                if (sceneState.ClearScene(keepLocalPlayer: _actors.Any(actor => actor.LocalPlayer))
+                    .Summary() is { } cleared)
                     _notes.Add(cleared);
             }
 
@@ -388,6 +365,13 @@ internal sealed class SceneLoadTransaction(
 
             foreach (var actor in _actors)
             {
+                // The user's own character is reused, never spawned or removed by
+                // a rollback; a copy is spawned only when it is not in the scene.
+                if (actor.LocalPlayer && materializer.FindLocalPlayer() is { } player)
+                {
+                    _actorTokens[actor.Key] = player;
+                    continue;
+                }
                 var token = materializer.SpawnActor(actor, out var detail);
                 if (token is null)
                     return $"Actor '{actor.Name}' could not be spawned: " +
@@ -431,11 +415,8 @@ internal sealed class SceneLoadTransaction(
                     SceneOutcomeKind.Overlay, name, true, detail));
             }
 
-            // Borrowing back the map's own objects. A refusal here is
-            // NAMED and never structural: the map may have been rebuilt,
-            // the object may already be borrowed, or it may simply not be
-            // standing where this scene recorded it — and a scene is still
-            // a scene without it.
+            // Read converted these entries to spawned copies. A failed adoption
+            // records that object's failure without rolling back the rest of the load.
             foreach (var worldObject in _worldObjects)
             {
                 string name = materializer.WorldObjectName(worldObject.Path);
@@ -621,11 +602,8 @@ internal sealed class SceneLoadTransaction(
 
     private async Task<Stop?> Freeze()
     {
-        // A scene carries pose data and no animation: a timeline id resolves
-        // against the loading client's own game and mods, so replaying one
-        // would show a different thing on every machine, or nothing. Stopping
-        // the actor first is what makes the pose land on a held frame and the
-        // load deterministic.
+        // Restore saved animation when present; otherwise freeze the actor before
+        // applying its pose. Failed animation restores can use the baked pose.
         Step(ScenePhase.FreezingActors);
         var freezeFailure = await sceneState.OnFramework(() =>
         {
@@ -633,14 +611,8 @@ internal sealed class SceneLoadTransaction(
                 return stop;
             foreach (var actor in _actors)
             {
-                // VISIBILITY BEFORE THE POSE, and the ordering is the
-                // invariant, not the mechanism. Hiding is a fade today
-                // (ActorSpawnNativeAdapter.SetAlpha) and a fade cannot
-                // cost an actor its skeleton — but this phase used to run
-                // after the pose, so when hiding WAS a draw-state
-                // teardown a scene saved with a hidden actor threw away
-                // the pose it had just applied to it. Stated here so no
-                // later change to how an actor hides can bring that back.
+                // Set visibility before posing: a visibility implementation that
+                // rebuilds the draw object would otherwise discard the imported pose.
                 actorRestore.SetActorVisibility(_actorTokens[actor.Key], actor.Visible);
                 var nameDetail = actorRestore.RestoreActorName(_actorTokens[actor.Key], actor);
                 if (nameDetail != null)
@@ -811,9 +783,8 @@ internal sealed class SceneLoadTransaction(
 
     private async Task<Stop?> ApplyCameras()
     {
-        // The default camera takes the saved default document, additional
-        // cameras are created, targets re-resolve against the RESTORED actors,
-        // and exactly one camera goes live.
+        // Every saved camera becomes a new camera. Targets re-resolve against
+        // restored actors, and the saved live view becomes live.
         Step(ScenePhase.ApplyingCameras);
         var cameraFailure = await sceneState.OnFramework(() =>
         {
@@ -821,29 +792,15 @@ internal sealed class SceneLoadTransaction(
                 return stop;
 
             SceneEntityHandle? liveCamera = null;
-            bool liveIsDefault = false;
             foreach (var camera in _cameras)
             {
-                SceneEntityHandle? token = null;
-                string? detail;
-                if (camera.IsDefault)
+                // A saved Main camera is a shot to restore, not authority to
+                // overwrite the current session's Main camera.
+                var token = materializer.CreateCamera(camera, out var detail);
+                if (token != null)
                 {
-                    detail = materializer.ApplyDefaultCamera(camera);
-                    // The default camera mints a structure token too:
-                    // without one, a saved group that held the Main
-                    // Camera silently lost it on every load.
-                    if (detail == null
-                        && materializer.DefaultCameraToken() is { } main)
-                        _cameraTokens[camera.Key] = main;
-                }
-                else
-                {
-                    token = materializer.CreateCamera(camera, out detail);
-                    if (token != null)
-                    {
-                        operation.CreatedCameras.Add(token);
-                        _cameraTokens[camera.Key] = token;
-                    }
+                    operation.CreatedCameras.Add(token);
+                    _cameraTokens[camera.Key] = token;
                 }
 
                 if (detail != null)
@@ -885,7 +842,6 @@ internal sealed class SceneLoadTransaction(
                 if (camera.IsLive)
                 {
                     liveCamera = token;
-                    liveIsDefault = camera.IsDefault;
                 }
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.Camera, camera.Camera!.Name, true));
@@ -895,7 +851,7 @@ internal sealed class SceneLoadTransaction(
             if (_cameras.Count > 0)
             {
                 var liveDetail = materializer.SetLiveCamera(
-                    liveIsDefault ? null : liveCamera);
+                    liveCamera);
                 if (liveDetail != null)
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.LiveCamera, "Live camera", false, liveDetail));
@@ -969,11 +925,8 @@ internal sealed class SceneLoadTransaction(
 
     private async Task<Stop?> ApplyEnvironment()
     {
-        // Stamped last exactly as both references order it. The world block
-        // runs even when the file states none: "no frozen water, no frozen
-        // physics" is what a scene taken with the game running says, so a
-        // load into a session that froze either one must RELEASE it, or the
-        // scene did not restore what it saved.
+        // When environment loading is enabled, an absent world block restores
+        // default toggles. This releases freezes left over from the current session.
         Step(ScenePhase.ApplyingEnvironment);
         var environmentFailure = await sceneState.OnFramework(() =>
         {
@@ -1060,9 +1013,7 @@ internal sealed class SceneLoadTransaction(
         return committed != null ? Stop.Abort(committed) : null;
     }
 
-    /// <summary>A count and its noun, agreeing. Scene outcomes are read by a
-    /// user who just watched the thing happen; "1 actors" reads as a bug in
-    /// the count, not a bug in the grammar.</summary>
+    /// <summary>Formats a count with a noun whose plural is formed by adding s.</summary>
     internal static string Count(int value, string noun) =>
         $"{value} {noun}{(value == 1 ? string.Empty : "s")}";
 }

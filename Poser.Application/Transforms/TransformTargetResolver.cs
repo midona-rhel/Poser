@@ -5,7 +5,7 @@ namespace Poser.Application.Transforms;
 
 /// <summary>
 /// The effective transform selection derived from the ordered selection and
-/// the scene snapshot. <c>Primary</c> is the first selected target and
+/// the scene snapshot. <c>Primary</c> is the first resolved target and
 /// <c>Targets</c> preserves selection order.
 /// </summary>
 public sealed record EffectiveTransformSelection(
@@ -13,13 +13,10 @@ public sealed record EffectiveTransformSelection(
     IReadOnlyList<TransformTargetId> Targets);
 
 /// <summary>
-/// One shared resolution of "what does a transform act on" for the inspector
-/// and the gizmo. Every selected bone is a target — the user explicitly
-/// reversed PBI-001's descendant filtering in the 2026-07-24 walkthrough:
-/// selecting a knee and its calf must transform BOTH from their own frozen
-/// baselines (the gesture applies each target absolutely from its captured
-/// state, so an ancestor's propagation cannot compound into a feedback
-/// loop).
+/// Resolves transform targets for the inspector and gizmo. Every selected
+/// bone is included, even when its parent is also selected. Gestures apply
+/// each target from its captured starting state so parent movement does not
+/// accumulate into the child's next update.
 /// </summary>
 public static class TransformTargetResolver
 {
@@ -28,11 +25,8 @@ public static class TransformTargetResolver
         SceneSnapshot snapshot,
         Func<SelectionId, bool>? isLocked = null)
     {
-        // The lock predicate is selection-aware at the call sites: a
-        // locked group's child refuses INDIVIDUALLY, while a selection
-        // holding the whole membership moves the group as one. Whatever
-        // the predicate refuses leaves the resolution — no target, no
-        // gizmo seat — before any branch runs.
+        // Callers choose whether a fully selected locked group may move.
+        // Exclude IDs rejected by that policy before resolving target kinds.
         if (isLocked != null && AnyLocked(selected, isLocked))
         {
             var free = new List<SelectionId>();
@@ -44,12 +38,9 @@ public static class TransformTargetResolver
         if (selected.Count == 0)
             return null;
 
-        // The ANONYMOUS GROUP: entities spanning kinds resolve together —
-        // each transformable member a target from its own baseline, in
-        // selection order. Cameras and overlays ride along untargeted
-        // (they carry no world transform target), and one stale
-        // transformable member unresolves the whole selection, the
-        // uniform branches' own rule.
+        // Mixed selections preserve the order of supported targets. Cameras
+        // and non-collider overlays are omitted. A missing actor, light, prop,
+        // or world object rejects the selection; unavailable colliders are omitted.
         if (Selection.EntitySelection.IsMixedEntities(selected))
         {
             var mixed = new List<TransformTargetId>();

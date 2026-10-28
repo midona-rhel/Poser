@@ -16,9 +16,8 @@ using static Poser.Game.Integration.IntegrationIpc;
 namespace Poser.Game.Integration;
 
 /// <summary>
-/// Customize+'s raw, version-gated call gates, pinned against Customize+
-/// 0f3dfba (API 6.x). Every actor-targeted call resolves the exact stable
-/// generation to an object index at the call boundary.
+/// Calls Customize+ API 6.x. Each actor operation looks up the current game
+/// object index from Poser's actor ID before calling the provider.
 /// </summary>
 public sealed class CustomizePlusIpc : ICustomizePlusPort
 {
@@ -71,24 +70,19 @@ public sealed class CustomizePlusIpc : ICustomizePlusPort
             return IntegrationValue<IReadOnlyList<ExternalItem>>.Ok(items);
         });
 
-    public IntegrationValue<BodyProfileProbe> ProbeBodyProfile(ActorId actor) =>
-        Guarded(CustomizePlus, "Profile probe", () =>
+    public IntegrationValue<Guid?> GetActiveSavedBodyProfile(ActorId actor) =>
+        Guarded(CustomizePlus, "Read saved profile", () =>
         {
             int index = _actors.ResolveIndex(actor, out var detail);
             if (index < 0)
-                return IntegrationValue<BodyProfileProbe>.Fail(detail!);
+                return IntegrationValue<Guid?>.Fail(detail!);
             var (ec, active) = _getActiveProfileId.InvokeFunc((ushort)index);
-            if (ec == CustomizeEcProfileNotFound || active is not { } profile)
-                return IntegrationValue<BodyProfileProbe>.Ok(new BodyProfileProbe(null, false));
-            if (ec != CustomizeEcSuccess)
-                return IntegrationValue<BodyProfileProbe>.Fail(
-                    $"Customize+ failed reading the active profile (code {ec}).");
-            // C+ 6.x's active-ID query omits temporary profiles entirely.
-            // Keep the readability check for providers that do expose an ID;
-            // callers must not infer absence of a temporary profile from null.
-            var (readEc, _) = _getProfileByUniqueId.InvokeFunc(profile);
-            return IntegrationValue<BodyProfileProbe>.Ok(
-                new BodyProfileProbe(profile, readEc == CustomizeEcSuccess));
+            return ec switch
+            {
+                CustomizeEcSuccess => IntegrationValue<Guid?>.Ok(active),
+                CustomizeEcProfileNotFound => IntegrationValue<Guid?>.Ok(null),
+                _ => IntegrationValue<Guid?>.Fail($"Customize+ failed reading the active profile (code {ec})."),
+            };
         });
 
     public IntegrationValue<string> GetBodyProfileJson(Guid profile) =>
@@ -118,9 +112,8 @@ public sealed class CustomizePlusIpc : ICustomizePlusPort
         Guarded(CustomizePlus, "Delete profile", () =>
         {
             int ec = _deleteTemporaryProfileById.InvokeFunc(profile);
-            // Already-absent profile and already-gone owning actor are both
-            // successful releases (Customize+ itself documents
-            // InvalidCharacter on this path as "not an error").
+            // Customize+ may have already removed the profile or its actor.
+            // In either case, there is nothing left for Poser to delete.
             return ec is CustomizeEcSuccess or CustomizeEcProfileNotFound
                     or CustomizeEcInvalidCharacter
                 ? IntegrationResult.Ok()

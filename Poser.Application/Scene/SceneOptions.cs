@@ -22,16 +22,9 @@ public enum SceneCategories
 }
 
 /// <summary>
-/// What a scene SAVE is asked to put in the document. The category flags
-/// mirror the load's, so "what a scene contains" is one vocabulary in both
-/// directions.
-///
-/// <para><see cref="IncludeModdedAppearance"/> is the one consent switch, and
-/// it is off by default and never inferred: a scene saved with it on cannot
-/// hand the next save its answer, because the actor's mods are somebody's
-/// private data and each save is its own decision. On, it means PORTABLE —
-/// the package's bytes go into the document. It never means "keep a path and
-/// call it portable".</para>
+/// Categories and optional data to include in one save. Modded appearance is
+/// excluded by default; enabling it requests embedded package bytes, not a
+/// reference to a package on this computer.
 /// </summary>
 public sealed record SceneSaveOptions
 {
@@ -49,8 +42,8 @@ public sealed record SceneSaveOptions
 
     /// <summary>Saves each actor's (and attached companion's) animation and
     /// only the user's own bone edits, so a load plays on from that state,
-    /// instead of only the baked pose. Off by default; chosen per save.</summary>
-    public bool IncludeAnimation { get; init; }
+    /// instead of only the baked pose. On by default; the save dialog can turn it off.</summary>
+    public bool IncludeAnimation { get; init; } = true;
 
     /// <summary>Whether the document carries the sidebar's structure —
     /// named groups and the user's root order. On for whole-scene saves;
@@ -64,9 +57,8 @@ public sealed record SceneSaveOptions
     /// <see cref="SceneSaveNarrowing"/>.</summary>
     public IReadOnlyCollection<Guid>? OnlyEntityKeys { get; init; }
 
-    /// <summary>The name the save modal took: it lands ON the entry's one
-    /// thing — Stone rail spawns a Stone rail. A group entry names the
-    /// GROUP; children keep their own saved names.</summary>
+    /// <summary>Name for the saved group or single entity. Group members keep
+    /// their individual names.</summary>
     public string? EntryName { get; init; }
 
     /// <summary>An entry save: only these categories, narrowed to these
@@ -89,39 +81,16 @@ public sealed record SceneSaveOptions
 }
 
 /// <summary>
-/// What a scene load is asked to do with the document it read. Every member's
-/// DEFAULT is the behaviour the load had before options existed, so
-/// <see cref="Default"/> and no options at all are the same load.
-///
-/// <para>The set is the union of both references' import options, narrowed to
-/// what Poser's own loader can actually honour: Brio's <c>Override Current
-/// Scene</c> plus its six category flags plus its two relative-position
-/// toggles (<c>UI/Controls/Stateless/FileUIHelpers.cs</c>,
-/// <c>Services/SceneService.cs ImportScene</c>), and Ktisis's five per-category
-/// load checkboxes, its <c>Keep existing actors</c> opt-out and its
-/// world-space/local-space toggle
-/// (<c>Interface/Windows/Editors/SceneWindow.cs</c>,
-/// <c>Services/Data/SceneDataService.cs Load</c>). Brio's <c>Folders</c>
-/// category has no Poser counterpart — Poser's tree has fixed sections — and
-/// is deliberately absent rather than present and inert.</para>
-///
-/// <para>The two references split the relative choice per category (Brio has
-/// separate light and world-object toggles); Poser states ONE choice, because
-/// a scene half-rebased is a scene whose entities no longer stand where they
-/// stood beside each other.</para>
+/// Categories, placement, and clear-first behavior for one load. Defaults
+/// include every category and add the saved entities to the current scene.
+/// Relative placement moves the content together to preserve its arrangement.
 /// </summary>
 public sealed record SceneLoadOptions
 {
     /// <summary>
-    /// Clear what the session is holding before restoring anything. FALSE is
-    /// Poser's own long-standing behaviour — a load is additive — and is kept
-    /// as the default even though BOTH references default the other way (Brio
-    /// destroys unless <c>SceneDestoryActorsBeforeImport</c> is off; Ktisis
-    /// destroys unless <c>Keep existing actors</c> is ticked).
-    ///
-    /// <para>The clear is NOT part of the load's transaction: rollback restores
-    /// what the load CREATED, and nothing can resurrect an actor the user asked
-    /// to be rid of. A load that clears therefore says so in its outcome.</para>
+    /// Clears the current scene before creating loaded entities. Defaults to false.
+    /// The clear is outside the load's undo and rollback; the outcome reports
+    /// what was removed because those entities cannot be restored by undoing the load.
     /// </summary>
     public bool ClearExistingScene { get; init; }
 
@@ -149,12 +118,16 @@ public sealed record SceneLoadOptions
     /// so content lands once.</summary>
     public ObjectPlacementMode Placement { get; init; }
 
+    /// <summary>Known current map for a UI default, resolved against the loaded document before placement.
+    /// Zero means explicit placement; history retains the resolved result.</summary>
+    public uint DefaultPlacementTerritory { get; init; }
+
     /// <summary>The current anchor pose the placement measures against,
     /// resolved by the caller at load start.</summary>
     public System.Numerics.Vector3 PlacementPosition { get; init; }
     public float PlacementYaw { get; init; }
 
-    /// <summary>Today's load, stated once.</summary>
+    /// <summary>Additive loading of every category at its saved placement.</summary>
     public static SceneLoadOptions Default { get; } = new();
 
     /// <summary>An additive load of only these categories.</summary>

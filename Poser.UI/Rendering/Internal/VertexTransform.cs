@@ -16,7 +16,7 @@ public static class VertexTransform
     /// Uniform scale about a pivot, plus a translation, plus an alpha
     /// multiply, over a captured vertex range — the composited group
     /// animation a Mantine-style pop needs: chrome, shadow, text, and
-    /// badges move and fade as ONE surface instead of a background rect
+    /// badges move and fade as one surface instead of a background rectangle
     /// shrinking under full-size glyphs.
     /// </summary>
     public static unsafe void ApplyPop(ImDrawListPtr drawList, int vtxStart, int vtxEnd,

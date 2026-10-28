@@ -2,6 +2,7 @@ using Poser.Application.Selection;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
@@ -140,8 +141,6 @@ public sealed partial class AppearancePane
     private DateTime _readoutAt = DateTime.MinValue;
     private string _collectionReadout = "—";
     private string? _collectionKey;
-    private bool _bodyBlocked;
-    private string _bodyBlockedDetail = string.Empty;
 
     private readonly FileDialog _mcdfImportBrowser =
         new("Import Character File", new[] { ".mcdf", ".chara" }, isSaveMode: false);
@@ -153,6 +152,10 @@ public sealed partial class AppearancePane
     private readonly Application.Settings.ConfigurationService _configuration;
     private readonly PoseFileInspectorSection _poseFiles;
     private readonly IFramework _framework;
+    private readonly Application.Library.ICharacterFileLibrary _characterLibrary;
+
+    /// <summary>The import dialog's "Add to library" choice, kept for the session.</summary>
+    private bool _addMcdfToLibrary;
 
     public AppearancePane(
         ActorPresentationSession presentation,
@@ -177,8 +180,11 @@ public sealed partial class AppearancePane
         IAppearanceColorControl colors,
         ICharacterFiles characterFiles,
         PoseFileInspectorSection poseFiles,
-        IFramework framework)
+        IFramework framework,
+        Application.Library.ICharacterFileLibrary characterLibrary)
     {
+        _characterLibrary = characterLibrary;
+        _mcdfImportBrowser.BottomPanel = new FileSidePanel(52f, DrawMcdfImportOptions);
         _poseFiles = poseFiles;
         _framework = framework;
         _configuration = config;
@@ -457,9 +463,8 @@ public sealed partial class AppearancePane
             help: "What this actor draws as");
     }
 
-    /// <summary>The whole model on one row: the name, the id under its
-    /// steppers (the texture-selector shape), and the verbs. A step or a
-    /// committed edit applies immediately — one click, one change.</summary>
+    /// <summary>Draws the model name, numeric id, steppers, and actions. A
+    /// step or committed edit applies immediately.</summary>
     private void DrawModelRow(
         FormRowScope row, ActorId id, int current)
     {
@@ -478,7 +483,7 @@ public sealed partial class AppearancePane
             0f, row.ControlWidth - trailW - gap - stepperW - gap);
         var square = ControlStyle.Square(theme.Controls.WorkspaceHeight);
 
-        // The picker IS the value display: the name opens the search.
+        // The displayed model name also opens the picker.
         ImGui.SetCursorScreenPos(new Vector2(row.ControlOrigin.X, top));
         Button(
             ModelDisplayName(current),
@@ -928,7 +933,7 @@ public sealed partial class AppearancePane
                 : "Automatic",
             () => OpenPicker(actor, "Body profile", _integration.ListBodyProfiles),
             () => ReportExternal(_integration.ResetBodyProfile(actor), "Reset Body profile"),
-            available: customize.Available && !mcdfOwned && !_bodyBlocked,
+            available: customize.Available && !mcdfOwned,
             owned: external.TemporaryBodyProfile != null,
             disruptive: true,
             help: "Apply a saved Customize+ profile to this actor only. "
@@ -937,9 +942,7 @@ public sealed partial class AppearancePane
                 ? customize.Detail
                 : mcdfOwned
                     ? mcdfReason
-                    : _bodyBlocked
-                        ? _bodyBlockedDetail
-                        : "Apply a saved Customize+ profile to this actor only");
+                    : "Apply a saved Customize+ profile to this actor only");
 
         form.Actions("Look", actions =>
         {
@@ -1083,6 +1086,7 @@ public sealed partial class AppearancePane
             var result = _characterFiles.Spawn(chosen);
             if (result.Handle is { } body) select(body);
             else _notices.Failed(result.Detail ?? "The actor could not be spawned.");
+            if (result.Handle is not null) AddToLibraryIfChosen(chosen);
         });
     }
 
@@ -1091,8 +1095,48 @@ public sealed partial class AppearancePane
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
-            ReportExternal(_characterFiles.Import(actor, chosen), "Import");
+            var imported = _characterFiles.Import(actor, chosen);
+            ReportExternal(imported, "Import");
+            if (imported.Success) AddToLibraryIfChosen(chosen);
         });
+    }
+
+    /// <summary>Copies the chosen character file into the MCDF library when the
+    /// import dialog's option is on. The copy never affects the import itself.</summary>
+    private void AddToLibraryIfChosen(string path)
+    {
+        if (!_addMcdfToLibrary)
+            return;
+        _characterLibrary.AddAsync(path).ContinueWith(task =>
+        {
+            var added = task.IsCompletedSuccessfully
+                ? task.Result
+                : Outcome.Fail("The character file could not be added to your library.");
+            _framework.RunOnFrameworkThread(() =>
+            {
+                if (added.Success) _notices.Note(added.Detail ?? "Added to your library.");
+                else _notices.Failed(added.Detail ?? "The character file could not be added to your library.");
+            });
+        }, TaskScheduler.Default);
+    }
+
+    private void DrawMcdfImportOptions(Vector2 origin, Vector2 size, string? path)
+    {
+        float inset = ActiveTheme.Page.Inset * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        PageForm.Section(
+            "##mcdf-import-options", string.Empty,
+            origin + new Vector2(inset, inset),
+            MathF.Max(1f, size.X - inset * 2f),
+            true, null,
+            form => form.Checkboxes(
+                "Library",
+                new CheckItem(
+                    "Also add to library",
+                    _addMcdfToLibrary,
+                    next => _addMcdfToLibrary = next,
+                    "Copies the file into your MCDF library folder after it is applied. "
+                    + "A file the library already has is not copied twice.")),
+            divider: false, labelColumnWidth: 64f, dense: true);
     }
 
     private void OpenMcdfExport(ActorId actor)
@@ -1158,19 +1202,6 @@ public sealed partial class AppearancePane
             collection.Success && collection.Value is { } selectedCollection
                 ? selectedCollection.EffectiveId.ToString("N")
                 : null;
-
-        _bodyBlocked = false;
-        _bodyBlockedDetail = string.Empty;
-        if (_integration.CustomizePlus.Available)
-        {
-            var displaceable = _integration.CheckBodyProfileDisplaceable(actor);
-            if (!displaceable.Success)
-            {
-                _bodyBlocked = true;
-                _bodyBlockedDetail = displaceable.Detail
-                    ?? "The Customize+ state could not be read.";
-            }
-        }
     }
 
     /// <summary>Returns the shared label for an MCDF phase.</summary>

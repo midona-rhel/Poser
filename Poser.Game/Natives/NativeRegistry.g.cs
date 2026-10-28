@@ -12,8 +12,9 @@ internal enum NativeKind { Function, Offset, Data, PoserSignature, Hook, ClientS
 /// <summary>One native dependency: what it is, how patchcheck finds it, and who uses it.</summary>
 internal readonly record struct NativeEntry(string Name, NativeKind Kind, string Status, string Note, string Consumers)
 {
-    /// <summary>Resolves a signed entry: a function or data address, or an offset value. False when the
-    /// pattern is missing or the entry is not signed (then <paramref name="value"/> is 0).</summary>
+    /// <summary>Looks up the pattern by name for Function, Offset, or Data entries.
+    /// Returns false with value zero for other kinds, missing lookups, or failed scans.
+    /// Status is descriptive metadata and is not used to decide whether to resolve.</summary>
     public bool TryResolve(ISigScanner scanner, out long value)
     {
         value = 0;
@@ -40,7 +41,8 @@ internal readonly record struct NativeEntry(string Name, NativeKind Kind, string
     }
 }
 
-/// <summary>Every native dependency of Poser (see patchcheck/poser-registry.tsv).</summary>
+/// <summary>Native dependencies recorded in the external patchcheck/poser-registry.tsv
+/// input. Consumer locations describe the generation snapshot and can become stale.</summary>
 internal static class NativeRegistry
 {
     public static readonly NativeEntry[] All =

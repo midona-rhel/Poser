@@ -16,18 +16,14 @@ using Poser.Documents.Scene;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// The single-flight owner of the whole-scene workflow: admission
-/// (exact session generation, owner-local operation epoch, operation id),
-/// progress and receipt publication, the save capture/write pipeline, and
-/// the bounded cancel/drain that runs before disposal. A load runs as a
-/// <see cref="SceneLoadTransaction"/>, whose class documentation is THE LOAD
-/// POLICY. It reuses <see cref="OperationReceipt"/>,
-/// <see cref="OperationEpoch"/> and <see cref="SessionGeneration"/> wholesale —
-/// there is no scene-specific receipt or epoch type.
+/// Coordinates one scene save or load at a time. It validates the current
+/// session, publishes progress and a final receipt, and waits for active work
+/// to stop during disposal. <see cref="SceneLoadTransaction"/> implements the
+/// ordered load phases and rollback behavior.
 ///
 /// A whole-scene operation has no single target actor, so its receipts target
 /// the scene's own logical identity: <c>new ActorId(SceneScopeId, 0)</c>,
-/// where the scope id is the document's SceneId for a save and a minted
+/// where the scope id is the document's SceneId for a save and a newly assigned
 /// load-scope identity for a load (the file's id is unknown at admission and
 /// receipt identity must be stable from Pending to terminal).
 /// </summary>
@@ -107,20 +103,17 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     /// cheap stat over the actors in the session and nothing more.</summary>
     public long EstimatedAppearanceBytes => _capture.EstimateAppearanceBytes();
 
-    /// <summary>The armed capture's bound. Only the contract tests set it —
-    /// waiting the real bound out would make asserting the timeout a
-    /// fifteen-second test.</summary>
+    /// <summary>Maximum time to wait for an armed scene capture. Internal code
+    /// may shorten it when constructing the workflow.</summary>
     internal TimeSpan CaptureBound { get; init; } = SceneCaptureTimeout;
 
-    /// <summary>The actor readiness bound, settable for the same reason.</summary>
+    /// <summary>Maximum time to wait for spawned actors to become ready.</summary>
     internal TimeSpan ActorReadyBound { get; init; } = ActorReadyTimeout;
 
-    /// <summary>The pose slot and pose import bound, settable for the same
-    /// reason.</summary>
+    /// <summary>Maximum time to wait for the shared pose slot and pose import.</summary>
     internal TimeSpan PoseImportBound { get; init; } = PoseImportTimeout;
 
-    /// <summary>How long a load waits for the members its structure names to
-    /// bind, settable for the same reason.</summary>
+    /// <summary>Maximum time to wait for referenced scene members to bind.</summary>
     internal TimeSpan StructureBindingBound { get; init; } = TimeSpan.FromSeconds(2);
 
     /// <summary>Raised after any progress/receipt publication; UI reads the
@@ -291,8 +284,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         SceneSaveOptions options,
         CancellationToken cancellation)
     {
-        // A save never mutates the session, so its only terminal states are
-        // Applied, Cancelled, and Failed — there is nothing to roll back.
+        IReadOnlyList<string> sealTemporaries = Array.Empty<string>();
         void Finish(
             bool success,
             string detail,
@@ -313,12 +305,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
         try
         {
-            // The capture is ARMED, not called: the bone caches it reads are
-            // only current for skeletons the per-frame rebuild qualified, so a
-            // never-posed actor would serialize its skeleton-build-time values.
-            // The arm re-qualifies every actor's skeletons and the capture runs
-            // in the update pass that follows — which is why a save that used
-            // to be one framework hop is now a bounded await.
+            // Arm capture so pose caches refresh before the document is read.
+            // The callback completes on a later update, so the wait is bounded.
             var completion = new TaskCompletionSource<SceneCaptureOutcome>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             string? armRefusal;
@@ -392,9 +380,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
             var notes = captured.Notes.ToList();
 
-            // An entry save narrows to its keys BEFORE sealing: sealing reads
-            // and packages appearance per actor, and an entry save must pay
-            // for exactly the actors it keeps.
+            // Package appearance only for the actors included in this save.
             var actorIdentities = captured.ActorIdentities;
             if (SceneSaveNarrowing.Narrow(scene, options.OnlyEntityKeys, ref actorIdentities)
                 is { } narrowRefusal)
@@ -403,21 +389,15 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 return;
             }
 
-            // A document NEVER carries a borrow (ruled 2026-09-01): every
-            // world object saves as a SPAWNABLE copy, so anything saved
-            // loads in any map at any position. Borrowing stays a
-            // live-session act only.
+            // Store world objects as spawned copies so loading does not depend
+            // on finding the same borrowed objects in the current map.
             if (scene.WorldObjects != null)
                 foreach (var spawnable in scene.WorldObjects)
                     spawnable.Spawned = true;
 
             SceneSaveNarrowing.ApplyEntryName(scene, options.EntryName);
 
-            // Appearance is sealed BEFORE the policy narrows the document:
-            // the policy's job is to drop what could not be sealed, so it has
-            // to run second. Only a save that asked for appearance pays for
-            // this — it packages mods and reads tens of megabytes.
-            IReadOnlyList<string> sealTemporaries = Array.Empty<string>();
+            // Build appearance packages before the policy removes failed packages.
             if (options.IncludeModdedAppearance)
             {
                 PublishStep(operation, new SceneProgress(
@@ -443,16 +423,11 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 return;
             }
 
-            // Character-file references are hashed HERE, off the framework
-            // thread, between the capture that produced them and the write:
-            // hashing a package is file work the frame the capture ran on may
-            // not spend.
+            // Hash the packages on this worker before writing the scene.
             if (_capture.StampMcdfHashes(scene) is { Count: > 0 } stamped)
                 notes.AddRange(stamped);
 
-            // The narrowed, sealed document is what gets written, so its own
-            // limits — the per-actor and whole-document appearance caps — are
-            // enforced against what is actually going to disk.
+            // Validate the final contents, including appearance package sizes.
             var validated = SceneFileValidation.Validate(scene);
             if (!validated.Succeeded)
             {
@@ -467,11 +442,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             var stored = _documents.Write(scene, path);
             notes.AddRange(stored.Notes);
             var written = stored.Outcome;
-            // The writer has streamed every payload into the container, so the
-            // packages sealing created are the caller's to drop now — and only
-            // now: deleting them earlier would delete the bytes being saved.
-            foreach (var temporary in sealTemporaries)
-                _capture.DeleteTemporary(temporary);
             if (!written.Succeeded)
             {
                 Finish(
@@ -489,10 +459,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             if (notes.Count > 0)
                 summary += $" {notes.Count} entities carried notes.";
 
-            // A save that dropped appearance the user explicitly asked for is
-            // NOT a plain success. It wrote a file, so it is not a failure
-            // either — it is the partial state the entity list exists for, and
-            // it has to reach the notification rather than only the log.
+            // Report Failed with partial-save details when the file was written
+            // but requested appearance packages could not be included.
             if (unsealedAppearance > 0)
             {
                 var appearanceOutcomes = new List<SceneEntityOutcome>();
@@ -514,20 +482,24 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             }
 
             Finish(true, summary, notes);
-            // The file exists NOW: tell the index, so the entry lists in
-            // the library and the portal without a hand-driven refresh.
+            // Refresh the Library after saving.
             _observer.Saved();
         }
         catch (Exception ex)
         {
             Finish(false, $"The save failed unexpectedly: {ex.Message}");
         }
+        finally
+        {
+            // Release packages when the save finishes, including early exits.
+            foreach (var temporary in sealTemporaries)
+                _capture.DeleteTemporary(temporary);
+        }
     }
 
 
-    /// <summary>The ONE terminal publication: the receipt state, the progress
-    /// phase and the outcome state are derived from a single decision so a UI
-    /// can never read a phase that disagrees with its receipt.</summary>
+    /// <summary>Publishes the final receipt, progress phase, and outcome from
+    /// the same result.</summary>
     internal void FinishTerminal(
         SceneOperation operation,
         SceneOperationKind kind,

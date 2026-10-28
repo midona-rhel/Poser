@@ -12,8 +12,7 @@ namespace Poser.Game.Services;
 /// </summary>
 public interface ILightingService : IDisposable
 {
-    /// <summary>False when the native signatures were not found; every
-    /// operation is a silent no-op in that state.</summary>
+    /// <summary>False when the native functions required for light management were not found.</summary>
     bool IsAvailable { get; }
 
     IReadOnlyList<ILight> Lights { get; }
@@ -38,14 +37,14 @@ public interface ILightingService : IDisposable
     /// <summary>Captures only this observed native incarnation, never an address-reused replacement.</summary>
     ILight? CaptureWorldLight(WorldLightCandidate candidate) => null;
 
-    /// <summary>Original world identity behind an editable borrowed copy.</summary>
+    /// <summary>Returns the world light represented by an editable captured copy.</summary>
     WorldLightCandidate? GetWorldSource(ILight light) => null;
 
     /// <summary>Releases a captured light: delists a GPose light, or destroys
     /// the edited world copy and restores its source visibility. No-op for spawned.</summary>
     void ReleaseLight(ILight light);
 
-    /// <summary>The embedded gobo library (88 housing-window textures).</summary>
+    /// <summary>The embedded library of housing-window projection textures.</summary>
     IReadOnlyList<GoboEntry> Gobos { get; }
 
     /// <summary>Projects a gobo texture through the light. Spot and Area

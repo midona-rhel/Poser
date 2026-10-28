@@ -17,8 +17,7 @@ module.exports = async function updateDownloadCount({ github, context, core }) {
     throw new Error('Expected a single Poser repository entry');
   core.info(`DownloadCount: ${entries[0].DownloadCount} -> ${count}`);
 
-  // An earlier update that never merged is stale by now; replace it rather
-  // than wedging every later run behind it.
+  // Close older bot-generated count updates before proposing the current count.
   const pending = await github.paginate(github.rest.pulls.list, { ...repo, state: 'open', base, per_page: 100 });
   for (const stale of pending.filter(pr => pr.head.ref.startsWith('automation/download-count-') &&
     pr.user.login === 'github-actions[bot]')) {
@@ -50,11 +49,9 @@ module.exports = async function updateDownloadCount({ github, context, core }) {
   });
   core.info(`Created ${pr.html_url}`);
 
-  // main requires the "portable" check from this pull request's own run. A
-  // pull request opened with GITHUB_TOKEN holds its pull_request workflows at
-  // "action_required" until they are approved (a dispatched run lands on the
-  // same commit but never counted for the pull request). Approve this commit's
-  // waiting runs; auto-merge then lands it once they pass.
+  // Look for pull-request checks awaiting approval on this exact commit.
+  // Approving those runs lets them satisfy the required check before auto-merge.
+  // If none appears during this wait, report it rather than claiming checks ran.
   let approved = 0;
   for (let attempt = 0; attempt < 24 && approved === 0; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 5000));

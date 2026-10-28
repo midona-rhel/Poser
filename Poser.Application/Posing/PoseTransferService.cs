@@ -20,8 +20,7 @@ public sealed class PoseTransferService
     public bool HasStash => _stashedPose != null;
     public DateTimeOffset? StashedAt { get; private set; }
 
-    /// <summary>Display label of the actor the stash was captured from —
-    /// tooltip attribution only (Ktisis' StashedFrom), never identity.</summary>
+    /// <summary>Display label of the source actor for tooltips; not an actor ID.</summary>
     public string? StashedFrom { get; private set; }
 
     public PoseCaptureResult Capture(

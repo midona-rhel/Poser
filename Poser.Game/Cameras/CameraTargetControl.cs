@@ -224,7 +224,7 @@ public sealed class CameraTargetControl(
         var before = FollowState.Read(camera);
         if (!cameras.SetTargetActor(camera, actor, actorId, displayName))
             return false;
-        // Keys led by the camera service name no entity: these steps stay global.
+        // A service-based journal key keeps these entries in global history.
         journal.Record((cameras, camera), "Follow actor", before, FollowState.Read(camera),
             next => PutFollow(camera, next), () => Current(camera) is not null);
         return true;
@@ -253,7 +253,7 @@ public sealed class CameraTargetControl(
         if (Current(original) is not { } live) return Refused(Unavailable);
         var put = PutTarget(bindings, cameras, live, state.Target);
         if (!put.Success) return put;
-        // The lock only stands on a target that came back.
+        // Restore the lock only if the requested target was restored.
         live.IsTargetLocked = state.Locked && live.TargetActorId == state.Target;
         return put;
     }
@@ -266,7 +266,7 @@ public sealed class CameraTargetControl(
             cameras.ClearTargetActor(camera);
             return Outcome.Ok();
         }
-        // A followed actor that is gone has nothing to restore, as before.
+        // Missing targets are treated as a successful no-op; existing target state remains.
         var resolved = bindings.Resolve(id);
         if (!resolved.Success || resolved.Value is not { } actor)
             return Outcome.Ok();

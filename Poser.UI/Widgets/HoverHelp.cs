@@ -79,7 +79,7 @@ public static class HoverHelp
     {
         if (text.Length == 0 || opacity <= 0f)
             return;
-        // Numbers wiggle in the text face; a readout is numbers.
+        // Monospaced digits keep numeric readouts from shifting as values change.
         var readout = new Candidate(
             0, min, min, text, null, HoverHelpSide.Bottom,
             Instant: true, Animated: false, Owner: Interactive.CurrentOwner,

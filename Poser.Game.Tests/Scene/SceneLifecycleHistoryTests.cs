@@ -24,10 +24,8 @@ using Poser.Game.Services;
 namespace Poser.Game.Tests.Scene;
 
 /// <summary>
-/// The lifecycle seam's contract: an add or a remove is one entry in the
-/// SAME history the transforms use, its two directions are exact inverses,
-/// and the entity's IDENTITY survives a destroy/respawn pair so entries
-/// stacked on one entity keep naming that entity rather than its corpse.
+/// Exercises creation and removal in the shared edit history. When undo
+/// recreates an entity, earlier edits must resolve its replacement instance.
 /// </summary>
 public sealed class SceneLifecycleHistoryTests
 {
@@ -377,11 +375,8 @@ public sealed class SceneLifecycleHistoryTests
     private static readonly Transform UserPut = new(
         new Vector3(40f, 6f, 80f), Quaternion.Identity, new Vector3(2f, 2f, 2f));
 
-    // ── harness ──────────────────────────────────────────────────────────
-
-    /// <summary>The seam over fake services, plus the undo/redo dispatch the
-    /// gesture service performs on a lifecycle entry: run the direction, and
-    /// move the entry between stacks only if it landed.</summary>
+    /// <summary>Runs lifecycle history against fake services. Successful undo/redo
+    /// moves the entry; permanently refused entries are dropped.</summary>
     private sealed class World
     {
         public EditHistory History { get; }
@@ -646,14 +641,8 @@ public sealed class SceneLifecycleHistoryTests
         public void ResetProperties() { }
     }
 
-    /// <summary>The prop half at its port: a token per spawned prop, with the
-    /// state an entry reads and writes back.</summary>
-    /// <summary>
-    /// The adopted-world-object half at its port: a MAP the claims are taken
-    /// against, so a release genuinely gives the object back and a re-adoption
-    /// finds it again — the one property that separates this half from every
-    /// other, all of which destroy and re-create.
-    /// </summary>
+    /// <summary>Keeps map objects separate from adopted handles so release can
+    /// restore their original placement and later adoption can find them again.</summary>
     private sealed class FakeWorldObjects : IWorldObjectLifecycle
     {
         private readonly Dictionary<nint, Transform> _map = new();
@@ -665,8 +654,7 @@ public sealed class SceneLifecycleHistoryTests
         public IReadOnlyList<object> Live => _adopted;
         public IReadOnlyList<object> WorldObjects => _adopted.ToList();
 
-        /// <summary>Where the map stands one address, which is what every
-        /// release has to put back.</summary>
+        /// <summary>The current map placement at this address.</summary>
         public Transform MapPlacement(nint address) => _map[address];
 
         public nint Place(nint address, Transform placement)
@@ -906,9 +894,7 @@ public sealed class SceneLifecycleHistoryTests
 
         private readonly List<IActor> _actors = new();
 
-        /// <summary>What each live actor currently IS, so a removal's capture
-        /// and a restore's re-application are observable without a body.
-        /// </summary>
+        /// <summary>Actor state used to check capture and restoration without native actors.</summary>
         private readonly Dictionary<IActor, ActorState> _states =
             new(ReferenceEqualityComparer.Instance);
         private readonly Dictionary<IActor, string> _bodyProfiles =
@@ -919,8 +905,7 @@ public sealed class SceneLifecycleHistoryTests
         public IReadOnlyList<IActor> Live => _actors;
         public bool RefuseDestroy { get; set; }
 
-        /// <summary>Every refusal the seam named rather than skipping.
-        /// </summary>
+        /// <summary>Messages reported through the lifecycle port.</summary>
         public List<string> Notes { get; } = new();
         public List<string> CopyOperations { get; } = new();
         public List<Action>? DeferredProfileApplications { get; set; }
@@ -948,8 +933,7 @@ public sealed class SceneLifecycleHistoryTests
 
         public ActorState StateOf(IActor actor) => _states[actor];
 
-        /// <summary>The actor leaves without this seam's knowledge — a scene
-        /// import, or the game.</summary>
+        /// <summary>Removes the actor without recording a lifecycle history entry.</summary>
         public void DestroyActor(IActor actor) => Destroy(actor);
 
         public bool IsSpawned(object actor) => _actors.Contains((IActor)actor);
@@ -980,8 +964,7 @@ public sealed class SceneLifecycleHistoryTests
             };
         }
 
-        /// <summary>When set, a copy's pose capture waits here until the
-        /// test delivers it, as the live armed refresh does.</summary>
+        /// <summary>When set, stores pose-capture callbacks until the test completes them.</summary>
         public List<Action<ActorState?>>? DeferredCaptures { get; set; }
 
         public void CapturePoseForCopy(object actor, Action<ActorState?> done)

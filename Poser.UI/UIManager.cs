@@ -168,8 +168,7 @@ public sealed class UIManager : IUIManager
         if (!AdvanceTheme())
             return;
 
-        // Cache warming runs before primary windows can draw. Scoped so the
-        // ledger can see it: the un-attributed spikes lived exactly here.
+        // Warm caches before primary windows draw, with separate timing scopes.
         using (_profiler.Scope("Shell · icon pump"))
             _ui.Icons.PumpStartupIcons(_configService.Config.Library.IconSize);
         bool previewBackingReady;
@@ -177,10 +176,8 @@ public sealed class UIManager : IUIManager
             previewBackingReady = !_windows.IsPrimaryOpen
                 || _poseFileSection.PrewarmPreviewBacking();
         _windows.AdvancePrimaryOpen(previewBackingReady);
-        // THE frame boundary for the draw-cost ledger: everything Poser draws
-        // is drawn from here, so this is the only place that can answer for a
-        // whole frame. The close is unconditional — a window that threw must
-        // not leave the ledger open across frames.
+        // Measure window drawing and always close the profiler frame,
+        // including when a window throws.
         _profiler.BeginFrame();
         BeginTextFrame();
         try
@@ -235,10 +232,7 @@ public sealed class UIManager : IUIManager
         _manipulation.HideGizmo =
             _configService.Config.UI.HideGizmoWhileManipulating;
         _manipulation.AdvanceHide();
-        // The focus rule, published once per frame: only typing owns the
-        // keyboard. A hover over a handle or a window, or a drag in the
-        // UI, never stands the flight keys down — the camera keys are the
-        // user's hands while framing.
+        // Typing suppresses camera flight keys; hovering or dragging UI does not.
         _cameraInput.TextInputActive = ImGui.GetIO().WantTextInput;
         HandleKeybinds();
     }
@@ -460,12 +454,9 @@ public sealed class UIManager : IUIManager
         }
     }
 
-    /// <summary>The game's key message, before its keybinds read it. A
-    /// chord Poser binds is taken whole: the press queues the bind and is
-    /// swallowed, the repeats are swallowed, and the release of a taken
-    /// press is swallowed too, so the game never sees half a chord. Ctrl+Z
-    /// reset the game's camera while undoing (2026-09-03); clearing the
-    /// key state on the draw frame came too late for the game's dispatch.</summary>
+    /// <summary>Resolves a game key message using the modifiers currently held.
+    /// Matching presses queue actions for the draw frame. ProcessShortcutKey
+    /// decides whether the game also receives the message.</summary>
     private bool OnKeyEvent(Domain.Preferences.KeyCode code, global::Poser.Application.Input.KeyEventKind kind)
         => ProcessShortcutKey(new KeyChord(_keyState[VirtualKey.CONTROL],
             _keyState[VirtualKey.SHIFT], _keyState[VirtualKey.MENU], code), kind);
@@ -480,10 +471,8 @@ public sealed class UIManager : IUIManager
         if (ShortcutsSuppressed)
             return false;
         bool handled = false;
-        // Off, the bind still runs, and the game sees the key as well.
-        // Escape and Enter are never taken whatever the setting: they are
-        // how a user leaves GPose and a game dialog, and Deselect sits on
-        // Escape in every preset (Escape stopped leaving GPose, 2026-09-03).
+        // When disabled, bindings still run but the game also gets the key.
+        // Always pass Escape and Enter through for leaving GPose and dialogs.
         bool keep = _configService.Config.Camera.KeepBoundKeysFromGame
             && key != VirtualKey.ESCAPE && key != VirtualKey.RETURN;
         foreach (var bind in _keybinds)

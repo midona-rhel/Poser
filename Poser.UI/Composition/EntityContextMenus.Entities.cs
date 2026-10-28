@@ -31,11 +31,8 @@ internal sealed partial class EntityContextMenus
     /// <summary>The selected actor's skeleton, or null when nothing posable is
     /// selected or its binding no longer resolves.</summary>
 
-    /// <summary>Right-click actor menu: the lifetime actions that were stranded
-    /// without a sidebar affordance (target / visibility / rename / clone / companion / despawn).
-    /// The menu state is a stable ActorId; the legacy lifetime services still
-    /// take live actors, so the id resolves through the binding registry for
-    /// the duration of one frame and is dropped when resolution fails.</summary>
+    /// <summary>Actor context menu. The stored <see cref="ActorId"/> is resolved
+    /// for each draw because lifetime services require a current live actor.</summary>
     public void DrawActorContextMenu()
     {
         if (!_ctxOpenRequested && !FloatingMenu.IsOpen("##actor-ctx")) return;
@@ -187,12 +184,8 @@ internal sealed partial class EntityContextMenus
             submenuItems: BuildActorPoseSubmenu(actorId, out var poseActions)));
         actions.Add(null);
 
-        // ONE verb for every actor, Brio's: Destroy
-        // (Brio ActorLifetimeWidget.cs:82 — the same word whoever spawned
-        // the actor, your own clone included). The row appears only when the
-        // service would admit it right now — an actor it must refuse (a
-        // companion child, a stale wrapper) gets no row rather than a row
-        // that refuses.
+        // Show Destroy only when the lifetime service currently admits it;
+        // companion children and stale actors have no destructive action.
         if (!attached && _actorControl.Read(actorId)?.CanRemove == true)
         {
             items.Add(ContextMenuItem.Separator);
@@ -483,13 +476,8 @@ internal sealed partial class EntityContextMenus
 
     private bool _referenceCtxOpenRequested;
 
-    /// <summary>
-    /// A reference picture's verbs, in the overlay-node rows' family: the eye's
-    /// own verb, the rename every named thing in the tree carries, a second
-    /// placement, and the close. No transform verbs and no journal entry — a
-    /// picture is not in the scene, so there is nothing for undo to restore it
-    /// to and nothing to isolate it from.
-    /// </summary>
+    /// <summary>Reference-image visibility, rename, duplicate, and close
+    /// actions. Reference images are outside the scene edit journal.</summary>
     public void DrawReferenceImageContextMenu()
     {
         if (!_referenceCtxOpenRequested && !FloatingMenu.IsOpen("##reference-ctx")) return;
@@ -538,11 +526,8 @@ internal sealed partial class EntityContextMenus
 
     private bool _overlayNodeCtxOpenRequested;
 
-    /// <summary>Right-click menu for a staged overlay NODE (balloon, talk,
-    /// status) — distinct from the bone-category overlay menu below. The
-    /// same lifetime family the light menu speaks, in the overlay's
-    /// vocabulary; the shared creation service supplies the duplication
-    /// rule answers everywhere.</summary>
+    /// <summary>Context menu for a staged balloon, dialogue, or status node;
+    /// distinct from the bone-category overlay menu.</summary>
     public void DrawOverlayNodeContextMenu()
     {
         if (!_overlayNodeCtxOpenRequested && !FloatingMenu.IsOpen("##overlay-node-ctx")) return;
@@ -686,11 +671,8 @@ internal sealed partial class EntityContextMenus
 
     private bool _propCtxOpenRequested;
 
-    /// <summary>THE naming prompt, shared with every pane: lights,
-    /// cameras and props carry their name on the entity, so one modal
-    /// writes whichever apply hook the opener handed it — unlike the
-    /// actor modal, which writes a nickname beside a name the game
-    /// owns.</summary>
+    /// <summary>Shared naming prompt for lights, cameras, and props. The
+    /// opener supplies the write callback.</summary>
     private readonly Controls.EntityNameModal _names;
     private readonly Controls.IssueReportModal _issueReport;
 
@@ -778,17 +760,8 @@ internal sealed partial class EntityContextMenus
         DrawMoreAction(items, moreActions);
     }
 
-    /// <summary>
-    /// Right-click prop menu: the same lifetime family the light menu speaks,
-    /// in the prop's vocabulary. A prop was the one entity row whose right
-    /// click did nothing at all, while actors, bones, categories, lights and
-    /// cameras all answered.
-    ///
-    /// <para>There is no "Save to file…" row because a prop has no document
-    /// of its own — its whole identity is the model triple, which the scene
-    /// file carries. Every lifetime verb goes through the history seam, so a
-    /// clone and destroy use the same history seam as light actions.</para>
-    /// </summary>
+    /// <summary>Prop context menu. Props have no standalone document, so the
+    /// menu omits Save to file. Clone and destroy use scene history.</summary>
     public void DrawPropContextMenu()
     {
         if (!_propCtxOpenRequested && !FloatingMenu.IsOpen("##prop-ctx")) return;
@@ -1055,9 +1028,8 @@ internal sealed partial class EntityContextMenus
         DrawMoreAction(items, moreActions);
     }
 
-    /// <summary>Right-click group-head menu: the structure verbs. The
-    /// selection verbs live one click away — the head's left click IS the
-    /// member selection, whose own menu then answers.</summary>
+    /// <summary>Group-structure actions. Selection actions are available from
+    /// the selected members' context menu.</summary>
     public void DrawGroupContextMenu()
     {
         if (!_groupCtxOpenRequested && !FloatingMenu.IsOpen("##group-ctx")) return;
@@ -1156,11 +1128,9 @@ internal sealed partial class EntityContextMenus
             moreActions[subClicked]?.Invoke();
     }
 
-    /// <summary>Right-click on any row of a multi-entity selection: one
-    /// menu for the WHOLE selection, every verb dispatching per kind
-    /// through the same plumbing the single menus use. A kind a verb
-    /// cannot reach is skipped, never refused; verbs no selected kind
-    /// answers disable in place.</summary>
+    /// <summary>Actions for a multi-entity selection. Each action dispatches
+    /// to supported entity kinds, skips unsupported kinds, and is disabled
+    /// when no selected entity supports it.</summary>
     public void DrawSelectionContextMenu()
     {
         if (!_selectionCtxOpenRequested && !FloatingMenu.IsOpen("##selection-ctx")) return;

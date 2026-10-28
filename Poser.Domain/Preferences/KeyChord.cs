@@ -3,7 +3,8 @@ using System.Collections.Generic;
 
 namespace Poser.Domain.Preferences;
 
-/// <summary>Canonical chord text shared by settings and input adapters. Empty means unbound.</summary>
+/// <summary>A key and its modifiers, with shared parsing for saved bindings.
+/// A chord without a key is unbound.</summary>
 public readonly record struct KeyChord(bool Ctrl, bool Shift, bool Alt, KeyCode Key)
 {
     public static KeyChord None => default;
@@ -69,8 +70,7 @@ public readonly record struct KeyChord(bool Ctrl, bool Shift, bool Alt, KeyCode 
             StringComparer.OrdinalIgnoreCase);
         foreach (var token in Tokens)
             index[token.Text] = token;
-        // The stored text a hand-edited config may carry: the raw KeyCode
-        // member name. Accepted on the way in, never written on the way out.
+        // Also accept enum names from existing or hand-edited configuration.
         foreach (var token in Tokens)
             index.TryAdd(token.Key.ToString(), token);
         return index;
@@ -84,9 +84,8 @@ public readonly record struct KeyChord(bool Ctrl, bool Shift, bool Alt, KeyCode 
         return index;
     }
 
-    /// <summary>Unrecognised text is UNBOUND, never a partial chord: a
-    /// half-understood binding that fires on the modifier alone is worse than
-    /// one that does not fire.</summary>
+    /// <summary>Returns an unbound chord if any nonempty token is unknown
+    /// or no key is supplied. If several keys are supplied, the last wins.</summary>
     public static KeyChord Parse(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -124,9 +123,8 @@ public readonly record struct KeyChord(bool Ctrl, bool Shift, bool Alt, KeyCode 
             : new KeyChord(ctrl, shift, alt, key);
     }
 
-    /// <summary>The canonical text: modifiers in Ctrl, Shift, Alt order — the
-    /// order the shipped defaults were written in — then the key. Unbound
-    /// renders EMPTY; the display word for that belongs to the UI.</summary>
+    /// <summary>Formats Ctrl, Shift and Alt in that order, followed by the
+    /// key. An unbound or unsupported key produces an empty string.</summary>
     public override string ToString()
     {
         if (!IsBound || !ByKey.TryGetValue(Key, out var name))

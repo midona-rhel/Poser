@@ -10,11 +10,8 @@ using Poser.Game.Overlays;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The overlay-node half of <see cref="SceneLifecycleHistory"/>, the prop
-/// port's twin. A node's whole identity IS its document, so — like a prop and
-/// unlike an actor — both directions of a removal are exact, and the port
-/// exists for the reason the prop port does: an entry's two directions must be
-/// provable without the game's UI.
+/// Operations needed to undo and redo overlay creation and removal.
+/// OverlayNodeState contains the settings used to recreate a removed node.
 /// </summary>
 internal interface IOverlayLifecycle
 {
@@ -58,10 +55,8 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
         ((OverlayNodeHandle)overlay).State;
 }
 
-/// <summary>The live node token, plus the document that rebuilds it once
-/// the live one is gone. An overlay node's whole identity IS that document
-/// — there is no second, native half of it — so a removal inverts as
-/// cleanly as an addition and takes an entry.</summary>
+/// <summary>Tracks the current node and the settings saved when it was removed.
+/// Restoring creates a new node and binds it to this same history slot.</summary>
 internal sealed class OverlayLifecycleSlot
 {
     public object? Live;
@@ -235,8 +230,7 @@ internal sealed class OverlayLifecycleOwner
             return false;
         if (_overlays.IsLive(overlay))
         {
-            // Captured HERE, not at creation: a node the user rewrote comes
-            // back saying what they last made it say.
+            // Save the latest edits so undo restores the state at removal.
             slot.Document = _overlays.Read(overlay);
             slot.HasDocument = true;
             _overlays.Destroy(overlay);

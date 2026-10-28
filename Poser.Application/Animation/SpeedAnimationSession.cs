@@ -8,8 +8,8 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// Whole-actor and per-layer speed ownership: pause, resume, slot holds
-/// and the captured speeds a release restores.
+/// Changes animation speed for the whole actor or an individual layer.
+/// Keeps previous layer speeds so a pause can be resumed or reset.
 /// </summary>
 internal sealed class SpeedAnimationSession
 {
@@ -62,20 +62,14 @@ internal sealed class SpeedAnimationSession
         return SetSpeed(actor, 0f);
     }
 
-    /// <summary>Resume drops the override rather than writing 1, so an
-    /// actor the game is driving at its own speed keeps it.</summary>
-    /// <summary>Play-all: releases every hold — the per-slot pauses the
-    /// layer-play conversion parked, then the whole-actor speed. The
-    /// sidebar's play is the ONLY verb that releases everything (ruled
-    /// 2026-09-01).</summary>
+    /// <summary>Resumes paused animation layers and clears the whole-actor speed override.
+    /// A held facial expression stays in place until the Facial controls release it.</summary>
     public Outcome Resume(ActorId actor)
     {
         _store.Trace?.Invoke($"Resume(all) {actor}");
         var current = _store.For(actor);
         foreach (var (slot, speed) in current.SlotSpeeds)
         {
-            // A held expression (the Pose tab's static face) is not an animation
-            // the sidebar plays; only the Animation tab's Facial layer converts it.
             if (slot == AnimationSlot.Facial && current.HeldExpression != null)
                 continue;
             if (speed == 0f)
@@ -84,10 +78,8 @@ internal sealed class SpeedAnimationSession
         return ClearSpeed(actor);
     }
 
-    /// <summary>Whether any live layer is actually MOVING. The sidebar
-    /// button offers Pause while this is true and Resume otherwise
-    /// (ruled 2026-09-01): pause stops the stack, play overrides every
-    /// individual hold.</summary>
+    /// <summary>Reports a nonempty layer with no zero-speed override, unless
+    /// the whole actor is paused. This reads playback state, not bone movement.</summary>
     public bool AnyPlaying(ActorId actor)
     {
         if (IsPaused(actor))
@@ -104,10 +96,8 @@ internal sealed class SpeedAnimationSession
         return false;
     }
 
-    /// <summary>Playing ONE layer must not resurrect the rest (ruled
-    /// 2026-09-01): the whole-actor pause converts into per-slot holds on
-    /// every OTHER live layer, then the overall speed lifts so the played
-    /// layer can move.</summary>
+    /// <summary>Pauses other live layers that have no speed override, then
+    /// clears the whole-actor speed override so the chosen layer can play.</summary>
     public Outcome ResumeForLayerPlay(ActorId actor, AnimationSlot playing)
     {
         var current = _store.For(actor);
@@ -218,10 +208,8 @@ internal sealed class SpeedAnimationSession
 
     public Outcome PauseSlot(ActorId actor, AnimationSlot slot)
     {
-        // A layer's pause stays that layer's: layers are independent, so holding
-        // the last moving one no longer turns into a whole-actor pause (which
-        // froze the next layer applied at its frame 0). The sidebar reads
-        // "any layer playing" (AnyPlaying) either way.
+        // Pause only this layer. Pausing the whole actor here would also freeze
+        // any animation the user starts on another layer afterwards.
         return SetSlotSpeedCore(actor, slot, 0f);
     }
 
@@ -230,8 +218,8 @@ internal sealed class SpeedAnimationSession
         var current = _store.For(actor);
         if (!current.SlotSpeeds.TryGetValue(slot, out var speed) || speed != 0f)
             return Outcome.Ok();
-        // A hold parked by the layer-play conversion may never have seen
-        // a nonzero speed: fall back to the captured original, then 1.
+        // A layer paused while resuming another layer may have no remembered
+        // resume speed. Use its original positive speed, or normal speed (1).
         if (!current.SlotResumeSpeeds.TryGetValue(slot, out var resume) ||
             !float.IsFinite(resume) || resume <= 0f)
             resume = current.SlotSpeedCaptures.TryGetValue(slot, out var captured)

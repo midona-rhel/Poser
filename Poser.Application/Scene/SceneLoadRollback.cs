@@ -3,9 +3,9 @@ using Poser.Application.Transforms;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// Reverse-order destruction of everything ONE load created, plus the
-/// environment and default-camera baseline restores. It is both the load's
-/// abort path and its committed step's undo.
+/// Removes a load's groups and parent links, restores environment and camera
+/// baselines, then releases its entities in reverse order within each kind.
+/// Used both when a load aborts and when the user undoes a committed load.
 /// </summary>
 internal sealed class SceneLoadRollback(
     ISceneStatePort sceneState, ISceneMaterializer materializer, ISceneStructure structure,
@@ -72,9 +72,8 @@ internal sealed class SceneLoadRollback(
             }
         }
 
-        // First out, because it is the one rollback step that GIVES SOMETHING
-        // BACK rather than destroying it: whatever else fails below, the map
-        // must not be left holding this load's displacements.
+        // Release map objects before destroying other entities so cleanup failures
+        // below cannot prevent restoration of borrowed objects.
         Release(operation.BorrowedWorldObjects, materializer.ReleaseWorldObject,
             "world object release", failures);
         Release(operation.CreatedCameras, materializer.DestroyCamera,
