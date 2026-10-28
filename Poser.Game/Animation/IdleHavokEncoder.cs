@@ -20,7 +20,7 @@ namespace Poser.Game.Animation;
 
 // Loads separate resources for skeleton reads, sampling, and serialization.
 // Each operation releases its native resources before returning.
-internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner scanner)
+internal sealed unsafe class IdleHavokEncoder(ISigScanner scanner)
 {
     private const string VtableStoreSiteBytes = "48 89 07 48 8B CD 48 89 77 38";
 
@@ -43,7 +43,6 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
 
     public SkeletonLayout ReadSkeleton(byte[] sklb)
     {
-        RequireFramework();
         using var loaded = new LoadedAnimation(SkeletonData(sklb));
         if (loaded.Container->Skeletons.Length != 1 || loaded.Container->Skeletons[0].ptr == null)
             throw new InvalidDataException("Expected one destination skeleton.");
@@ -73,7 +72,6 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
 
     public PoseTransform[] SampleStart(byte[] havok, byte[] sklb, int index)
     {
-        RequireFramework();
         using var motion = new LoadedAnimation(havok);
         using var rig = new LoadedAnimation(SkeletonData(sklb));
         if (rig.Container->Skeletons.Length != 1 || index < 0 || index >= motion.Container->Bindings.Length)
@@ -121,15 +119,8 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
         finally { animated->Dtor(); }
     }
 
-    private void RequireFramework()
-    {
-        if (!framework.IsInFrameworkUpdateThread)
-            throw new InvalidOperationException("Animation serialization must run on the framework thread.");
-    }
-
     public byte[] Extract(byte[] source, int index)
     {
-        RequireFramework();
         using var first = new LoadedAnimation(source);
         if (index < 0 || index >= first.Container->Bindings.Length || index >= first.Container->Animations.Length)
             throw new InvalidDataException("The requested animation binding is absent.");
@@ -187,7 +178,6 @@ internal sealed unsafe class IdleHavokEncoder(IFramework framework, ISigScanner 
 
     public byte[] Encode(byte[] template, int bindingIndex, IdleAnimationBinding binding, IdleAnimationClip clip)
     {
-        RequireFramework();
         if (clip.Frames.Length < 2 || clip.DurationSeconds <= 0 || !float.IsFinite(clip.DurationSeconds) ||
             binding.BoneIndices.IsDefaultOrEmpty || clip.Frames.Any(f => f.Length != binding.BoneIndices.Length))
             throw new InvalidDataException("Invalid sampled animation.");
