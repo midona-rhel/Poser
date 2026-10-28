@@ -1774,6 +1774,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         {
             actions.Button("Import", () => RequestImportMenu(withPresets: true, target: actorId));
             actions.Button("Import from file", () => OpenImportFromFile(actorId));
+            actions.Button("From clipboard", () => ImportFromClipboard(actorId));
             actions.Button("Library", () => RequestLibrary(actorId));
         });
         form.Actions("Export", actions =>
