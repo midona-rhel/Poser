@@ -20,7 +20,7 @@ public sealed unsafe partial class TimelineSeekService
     /// one stops with fade 0 and the new one starts without a blend-in.</summary>
     internal void PrepareInstantSwap(Character* character, int slot)
     {
-        if (!Available || character == null)
+        if (!Available)
             return;
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
         if (root == 0 || TimelineState.Of(root).Speed != 0f)
@@ -50,7 +50,7 @@ public sealed unsafe partial class TimelineSeekService
     /// </summary>
     internal void HoldSlotSpeeds(Character* character, IReadOnlyDictionary<int, float> speeds, float overall)
     {
-        if (!Available || character == null || speeds.Count == 0)
+        if (!Available || speeds.Count == 0)
             return;
         try
         {
@@ -122,7 +122,7 @@ public sealed unsafe partial class TimelineSeekService
     /// </summary>
     internal void HoldActorSpeed(Character* character, float overall, IReadOnlyDictionary<int, float> slotSpeeds)
     {
-        if (!Available || character == null)
+        if (!Available)
             return;
         try
         {
@@ -165,7 +165,7 @@ public sealed unsafe partial class TimelineSeekService
     /// <summary>Holds layer weights (see TimelineSeekEngine.SetSlotWeight).</summary>
     internal void ApplySlotWeights(Character* character, IReadOnlyDictionary<int, float> weights)
     {
-        if (character == null || weights.Count == 0)
+        if (weights.Count == 0)
             return;
         try
         {
@@ -180,8 +180,6 @@ public sealed unsafe partial class TimelineSeekService
     /// <summary>Pause/resume edge for the actor's effects (the game drops speed 0).</summary>
     internal void ApplyVfxSpeed(Character* character, float overall)
     {
-        if (character == null)
-            return;
         try { _engine.SetActorVfxSpeeds(&character->Timeline.TimelineSequencer, (nint)character, overall); }
         catch (Exception ex) { LogOnce("vfxspeed", $"[TimelineSeek] VFX speed edge faulted: {ex.Message}"); }
     }
@@ -189,8 +187,6 @@ public sealed unsafe partial class TimelineSeekService
     /// <summary>Same-tick speed edge for the actor's prop timelines.</summary>
     internal void ApplyPropSpeed(Character* character, float overall)
     {
-        if (character == null)
-            return;
         try { _engine.SetPropSpeeds((nint)character, overall); }
         catch (Exception ex) { LogOnce("propspeed", $"[TimelineSeek] prop speed edge faulted: {ex.Message}"); }
     }
