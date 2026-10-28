@@ -211,7 +211,6 @@ public sealed class FacialPoseCaptureTests
                 case "Blend":
                     args![3] = null;
                     return Outcome.Ok();
-                case "get_SupportsForceLoop":
                 case "get_SupportsStance":
                     return true;
                 case "get_IsPhysicsFrozen":

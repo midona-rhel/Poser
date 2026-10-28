@@ -337,7 +337,6 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         return Outcome.Ok();
     }
 
-    public bool SupportsForceLoop => true;
 
     // ── Lips ──────────────────────────────────────────────────────────
 

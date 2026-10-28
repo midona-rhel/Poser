@@ -70,9 +70,6 @@ public interface IAnimationTimelinePort
     /// refuses the emote in that posture, null when the posture can't be read.</summary>
     ushort? EmotePostureRow(ActorId actor, uint emoteId);
 
-    /// <summary>Whether full-body repeat is available.</summary>
-    bool SupportsForceLoop { get; }
-
     /// <summary>Owns the forced timeline id until a zero write releases it.
     /// The runtime reasserts an armed id after native animation updates.</summary>
     Outcome SetForceLoop(ActorId actor, ushort timeline);

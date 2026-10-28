@@ -475,7 +475,6 @@ public sealed class AnimationSession : IAnimationPlayback
         _base.SetSlotLoop(actor, slot, timeline, on);
 
     /// <summary>Whether full-body repeat is available.</summary>
-    public bool SupportsForceLoop => _base.SupportsForceLoop;
 
     /// <summary>False when the client's stance-transition functions were
     /// not found; the stance controls render disabled.</summary>
@@ -859,7 +858,7 @@ public sealed class AnimationSession : IAnimationPlayback
     // ── Held expression ──────────────────────────────────────────────────
 
     /// <summary>Restores the captured facial layer.</summary>
-    public Outcome RestoreFacialLayer(ActorId actor) => _expression.RestoreFacialLayer(actor);
+    public Outcome RestoreFacialLayer(ActorId actor) => _expression.ReleaseExpression(actor);
 
     /// <summary>The expression currently held on the face, if any.</summary>
     public ushort? HeldExpressionFor(ActorId actor) => _expression.HeldExpressionFor(actor);

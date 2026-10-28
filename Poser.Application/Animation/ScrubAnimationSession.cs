@@ -37,9 +37,7 @@ internal sealed class ScrubAnimationSession
     /// <summary>Seeks a layer by its own timeline clock, in seconds from its begin
     /// (a timeline still loading takes it once loaded).</summary>
     public Outcome SeekLayer(ActorId actor, AnimationSlot slot, float seconds) =>
-        float.IsFinite(seconds)
-            ? _port.SetControlTime(actor, ScrubControlId.Timeline(slot), Math.Max(seconds, 0f), 0)
-            : Outcome.Fail("Scrub time must be a finite number.");
+        _port.SetControlTime(actor, ScrubControlId.Timeline(slot), Math.Max(seconds, 0f), 0);
 
     /// <summary>Gets the control for a slot.</summary>
     public ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot) =>
@@ -49,10 +47,7 @@ internal sealed class ScrubAnimationSession
     /// Finds the animation control, pauses it, and remembers its duration
     /// and skeleton token. Returns an error if the control cannot be found.
     /// </summary>
-    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null) =>
-        BeginScrubCore(actor, control, owner, slot);
-
-    private Outcome BeginScrubCore(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot)
+    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null)
     {
         var controls = _port.EnumerateControls(actor, out var token);
         ScrubControlReading? target = null;
@@ -83,10 +78,7 @@ internal sealed class ScrubAnimationSession
     /// Seeks within the duration captured at Begin. A different actor or owner
     /// is rejected without changing the drag. A failed game write ends it.
     /// </summary>
-    public Outcome UpdateScrub(ActorId actor, float time, Guid owner) =>
-        UpdateScrubCore(actor, time, owner);
-
-    private Outcome UpdateScrubCore(ActorId actor, float time, Guid owner)
+    public Outcome UpdateScrub(ActorId actor, float time, Guid owner)
     {
         if (_scrub is not { } gesture)
             return Outcome.Fail("No scrub is active.");
@@ -95,8 +87,6 @@ internal sealed class ScrubAnimationSession
         if (!gesture.Actor.Equals(actor))
             return Outcome.Fail(
                 "The scrub in flight belongs to a different actor.");
-        if (!float.IsFinite(time))
-            return Outcome.Fail("Scrub time must be a finite number.");
 
         float clamped = Math.Clamp(time, 0f, gesture.Duration);
         var result = _port.SetControlTime(

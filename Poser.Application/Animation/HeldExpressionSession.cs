@@ -46,14 +46,9 @@ internal sealed class HeldExpressionSession
 
         // A replacement must run with Facial unpinned before it is held again.
         var current = _store.For(actor);
-        float? speedCapture = null;
-        if (!current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial))
-        {
-            var reading = _timeline.Read(actor);
-            if (reading == null)
-                return Outcome.Fail("The facial speed restore point is unavailable.");
-            speedCapture = reading.SpeedFor(AnimationSlot.Facial);
-        }
+        float? speedCapture = current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial)
+            ? null
+            : _timeline.Read(actor)?.SpeedFor(AnimationSlot.Facial);
         if (current.SlotSpeeds.ContainsKey(AnimationSlot.Facial))
         {
             float restore = current.SlotSpeedCaptures.TryGetValue(
@@ -181,10 +176,6 @@ internal sealed class HeldExpressionSession
         }
         return _base.ResetBlendSelection(actor, slot);
     }
-
-    /// <summary>Restores the captured facial layer.</summary>
-    public Outcome RestoreFacialLayer(ActorId actor)
-        => ReleaseExpression(actor);
 
     /// <summary>The expression currently held on the face, if any.</summary>
     public ushort? HeldExpressionFor(ActorId actor) =>
