@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Domain;
@@ -26,15 +26,10 @@ using Poser.Game.Services;
 namespace Poser.Game.Cameras;
 
 /// <summary>
-/// Brio's virtual-camera overlay, whole: N virtual cameras save/restore state
-/// onto the game's one orbit camera, a position/target offset is re-applied
-/// inside the native camera update, collision and zoom limits are lifted per
-/// camera, and a free camera replaces the view matrix outright, fed by the
-/// game's own input handler. Ktisis's two exclusives are grafted on the same
-/// live camera: orthographic projection (render-camera fields) and bone
-/// tracking (the look-position hook steering the pivot at averaged bone
-/// positions). GPose-scoped: entering mints the default camera, leaving
-/// restores the native state and destroys everything.
+/// Saves and restores virtual-camera settings over the game's active camera.
+/// Hooks apply offsets, free-camera views, orthographic projection, and tracking.
+/// Entering GPose creates the main camera; leaving restores overridden limits
+/// and disables orthographic projection before removing virtual cameras.
 /// </summary>
 public sealed unsafe class VirtualCameraService : IVirtualCameraService
 {
@@ -350,11 +345,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// <summary>See <see cref="CameraTargeting.CenterOnBone"/>.</summary>
     public Outcome CenterOnBone(IBone bone) => _targeting.CenterOnBone(bone);
 
-    /// <summary>The spawned camera's default name. Bare number, no "#": every
-    /// other numbered entity in the scene (lights, props) is named
-    /// "{stem} {n}", and one family wearing a hash read as a different sort of
-    /// thing (user 2026-08-14). Restored scene documents keep their authored
-    /// names; fresh creation and duplication use the shared series rule.</summary>
+    /// <summary>Uses the shared numbered-name convention for newly created cameras.</summary>
     private string NextName(CameraKind kind)
     {
         string stem = kind == CameraKind.Free ? "Free camera" : "Camera";
@@ -366,8 +357,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     // ── native override plumbing ─────────────────────────────────────────
 
-    /// <summary>Brio's delimit (distance 0–500) plus Ktisis's vertical-clamp
-    /// loosening, over ONE saved original set.</summary>
+    /// <summary>Temporarily expands distance and pitch limits, saving the originals once.</summary>
     internal void ApplyDelimit(bool delimit)
     {
         var native = Native;
@@ -398,7 +388,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _originalLimits = null;
     }
 
-    /// <summary>Ktisis's orthographic switch on the render camera.</summary>
+    /// <summary>Sets orthographic projection and zoom on the render camera.</summary>
     internal void ApplyOrthographic(bool enabled, float zoom)
     {
         var native = Native;
@@ -412,8 +402,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         render->OrthographicZoom = enabled ? zoom : 10f;
     }
 
-    /// <summary>Puts the native camera back to its own state — the last live
-    /// camera's overrides all cleared.</summary>
+    /// <summary>Restores saved distance/pitch limits and disables orthographic projection.</summary>
     private void RestoreNativeOverrides()
     {
         ApplyDelimit(false);
@@ -501,7 +490,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             return;
         }
 
-        // Leaving GPose: the native camera goes back to the game untouched.
+        // Release limit/projection overrides and discard the virtual cameras.
         _defaultCameraPending = false;
         RestoreNativeOverrides();
         foreach (var camera in _cameras)

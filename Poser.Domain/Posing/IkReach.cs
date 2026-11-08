@@ -2,7 +2,11 @@ using System.Numerics;
 
 namespace Poser.Domain.Posing;
 
-/// <summary>Reach shell for native solvers; rejected travel is never stored as a target offset.</summary>
+/// <summary>
+/// Minimum and maximum distances an IK target can reach from Root.
+/// Move clamps the starting target before applying a drag, so reversing a
+/// drag does not first have to undo movement beyond the reachable distance.
+/// </summary>
 public readonly record struct IkReach(Vector3 Root, float Min, float Max, Vector3 Fallback)
 {
     public Vector3 Clamp(Vector3 target)

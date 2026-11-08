@@ -1,0 +1,562 @@
+[
+  {
+    "test": "TwoJoint switch to Bone",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "TwoJoint target is Bone",
+    "passed": true,
+    "detail": 2
+  },
+  {
+    "test": "TwoJoint switch to Entity",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "TwoJoint target is Entity",
+    "passed": true,
+    "detail": 3
+  },
+  {
+    "test": "TwoJoint switch to Actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 3.376456193479756e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 9.219544457859053e-08,
+        "degrees": 2.4027320194202382e-05
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 1.7029386368045956e-07,
+        "degrees": 5.122641877509564e-06
+      }
+    }
+  },
+  {
+    "test": "TwoJoint target is Actor",
+    "passed": true,
+    "detail": 0
+  },
+  {
+    "test": "TwoJoint switch to World",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.00041015982627953085
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 1.6159517319329926e-06,
+        "degrees": 0.0003559980168319262
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 2.3984369910289806e-06,
+        "degrees": 5.663293681020316e-06
+      }
+    }
+  },
+  {
+    "test": "TwoJoint target is World",
+    "passed": true,
+    "detail": 1
+  },
+  {
+    "test": "Ccd switch to Bone",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "Ccd target is Bone",
+    "passed": true,
+    "detail": 2
+  },
+  {
+    "test": "Ccd switch to Entity",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 1.024528375501913e-05
+      }
+    }
+  },
+  {
+    "test": "Ccd target is Entity",
+    "passed": true,
+    "detail": 3
+  },
+  {
+    "test": "Ccd switch to Actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.6293532459665734e-06,
+        "degrees": 5.9544208714703734e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 6.829150752501067e-06,
+        "degrees": 0.000275095355032613
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 6.464323321113906e-06,
+        "degrees": 1.1952831047522321e-05
+      }
+    }
+  },
+  {
+    "test": "Ccd target is Actor",
+    "passed": true,
+    "detail": 0
+  },
+  {
+    "test": "Ccd switch to World",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 2.2449966592378087e-06,
+        "degrees": 0.0015889239078788928
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 6.3751470571834505e-06,
+        "degrees": 0.0018313745222228311
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 8.531119504511633e-06,
+        "degrees": 9.956626120759429e-06
+      }
+    }
+  },
+  {
+    "test": "Ccd target is World",
+    "passed": true,
+    "detail": 1
+  },
+  {
+    "test": "Fabrik switch to Bone",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 3.818191820832845e-06
+      }
+    }
+  },
+  {
+    "test": "Fabrik target is Bone",
+    "passed": true,
+    "detail": 2
+  },
+  {
+    "test": "Fabrik switch to Entity",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 2.4148365394514667e-06
+      }
+    }
+  },
+  {
+    "test": "Fabrik target is Entity",
+    "passed": true,
+    "detail": 3
+  },
+  {
+    "test": "Fabrik switch to Actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "Fabrik target is Actor",
+    "passed": true,
+    "detail": 0
+  },
+  {
+    "test": "Fabrik switch to World",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 8.189109132934075e-06
+      }
+    }
+  },
+  {
+    "test": "Fabrik target is World",
+    "passed": true,
+    "detail": 1
+  },
+  {
+    "test": "Rope switch to Bone",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.3999999999569912e-08,
+        "degrees": 0.0005129552782332269
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 2.2945160709770934e-06,
+        "degrees": 0.0005966234749178323
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 3.7589892258387283e-06,
+        "degrees": 2.8776098462827356e-05
+      }
+    }
+  },
+  {
+    "test": "Rope target is Bone",
+    "passed": true,
+    "detail": 2
+  },
+  {
+    "test": "Rope switch to Entity",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 9.352621701108683e-06
+      }
+    }
+  },
+  {
+    "test": "Rope target is Entity",
+    "passed": true,
+    "detail": 3
+  },
+  {
+    "test": "Rope switch to Actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "Rope target is Actor",
+    "passed": true,
+    "detail": 0
+  },
+  {
+    "test": "Rope switch to World",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "Rope target is World",
+    "passed": true,
+    "detail": 1
+  }
+]

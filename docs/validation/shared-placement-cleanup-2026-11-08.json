@@ -1,0 +1,144 @@
+{
+  "head": "49a42eca",
+  "checks": [
+    {
+      "test": "InFrontOfCamera actor",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera light",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera prop",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera collider",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera camera",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera orbit",
+      "error": 2.700000000022129e-06,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera minion",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera world",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToSelectedActor actor",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToSelectedActor light",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToSelectedActor prop",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToSelectedActor collider",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToSelectedActor camera",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToSelectedActor orbit",
+      "error": 1.4681258922808015e-05,
+      "passed": true
+    },
+    {
+      "test": "RelativeToCamera actor",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToCamera light",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToCamera prop",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToCamera collider",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToCamera camera",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "RelativeToCamera orbit",
+      "error": 8.603411476435584e-06,
+      "passed": true
+    },
+    {
+      "test": "As saved posed duplicate",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "Placed posed duplicate",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera light",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera light",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "Group centre",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "Group spacing",
+      "passed": true
+    },
+    {
+      "test": "InFrontOfCamera light",
+      "error": 0.0,
+      "passed": true
+    },
+    {
+      "test": "Creation undo redo",
+      "error": 0.0,
+      "passed": true
+    }
+  ]
+}

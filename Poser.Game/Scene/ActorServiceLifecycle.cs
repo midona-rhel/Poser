@@ -11,31 +11,13 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The production <see cref="IActorLifecycle"/>: the spawn service for the
-/// lifetime verbs, and — because an actor's restore outlives the frame that
-/// starts it — the framework for the wait.
-///
-/// <para>WHY A WAIT. A respawn hands back its <see cref="IActor"/> at once,
-/// but the body behind it is drawn several ticks later (Brio's
-/// DrawWhenReady, ported in <c>ActorSpawnService</c>) and the skeleton a pose
-/// lands on is built with that draw object. So the placement and the pose are
-/// re-applied on the first tick the actor is posable, bounded by
-/// <see cref="ReadyAttempts"/>, exactly the shape of the scene loader's own
-/// readiness barrier.</para>
-///
-/// <para>WHY THE POSE IMPORT FILES NOTHING. Every other pose import IS a
-/// history entry. This one is running INSIDE an undo, so an append would
-/// clear the redo stack that undo had just pushed onto — the despawn could
-/// then never be redone, and the entry left on top would strip the pose again
-/// if the user pressed undo twice. <see cref="PoseImportOptions.SuppressHistory"/>
-/// is set for that one reason and no other.</para>
+/// Creates and removes actors through the spawn service, and waits for their
+/// bodies and skeletons before restoring pose and placement. Internal pose
+/// imports suppress history because the lifecycle operation owns the entry.
 /// </summary>
 internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 {
-    /// <summary>Ticks the restored body is given to become posable before the
-    /// pose is given up on. Generous on purpose: a spawn's deferred draw plus
-    /// whatever Penumbra and Glamourer do to it is the slowest thing the seam
-    /// waits for, and a pose abandoned early is the user's work lost.</summary>
+    /// <summary>Maximum readiness polls for pose restoration after spawning.</summary>
     private const int ReadyAttempts = 240;
 
     /// <summary>
@@ -70,11 +52,8 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     private readonly IActorManager _actorManager;
     private readonly PoseExportCapture _exports;
 
-    // Physics-driven bones (hair, clothing, the body-mod physics bones):
-    // the game simulates them, so a captured pose must leave them alone —
-    // pinning the source's momentary sway on a copy left its hair 35
-    // degrees off and never settling (2026-09-02). A bone the user HAS
-    // transformed on the source carries that transform across.
+    // Leave simulated hair and clothing motion out of the copied pose unless
+    // the user edited that bone. Otherwise the copy would freeze a momentary sway.
     private static readonly string[] PhysicsPrefixes =
         { "j_ex_h", "j_kami_", "j_ex_met_va", "j_sk_", "j_ex_top_", "j_ex_met_a", "j_ex_met_b", "j_ex_met_c", "j_ex_met_d", "j_zacc", "n_hijisoubi_", "n_hizasoubi_", "n_kataarmor_" };
 
@@ -271,11 +250,9 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
     }
 
     /// <summary>
-    /// The same synchronous whole-skeleton capture the scene SAVE makes
-    /// (<c>SceneCaptureService</c>): one document, read off the caches the
-    /// last update pass refreshed. The armed refresh <c>PoseExportCapture</c>
-    /// performs is not available here — the actor is about to stop existing,
-    /// so there is no later tick to write on.
+    /// Reads a pose from existing skeleton caches without refreshing them.
+    /// This legacy helper has no current caller; copy and scene capture use
+    /// the armed PoseExportCapture path.
     /// </summary>
     private PoseFile? CapturePose(IActor actor)
     {
@@ -503,8 +480,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
             return;
         }
 
-        _posing.SetTransformOverride(actor, state.Placement);
-        if (_posing.GetTransformOverride(actor) is null)
+        if (!_posing.SetTransformOverride(actor, state.Placement))
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its placement was refused by the transform owner.");
 

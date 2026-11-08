@@ -4,7 +4,7 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>Resize feedback on every resizable Poser window — the grip
-/// and the lit border edge — is the theme accent, never Dalamud's global
+/// and the highlighted border edge — uses the theme accent instead of Dalamud's global
 /// highlight. Pushed in PreDraw, popped in PostDraw.</summary>
 internal static class ResizeAccent
 {

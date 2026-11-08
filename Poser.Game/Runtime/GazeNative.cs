@@ -39,9 +39,8 @@ internal interface IGazeNativeFactory
         GazeLoopDelegate detour);
 
     /// <summary>
-    /// Writes the CHARACTER's own game target id (Brio ActorLookAtService
-    /// SetActorTarget, `actor.Native()-&gt;SetTargetId(targetActorID)`). Behind
-    /// the factory because it is a native member call on a live character.
+    /// Writes the character's native game target ID, as Brio SetActorTarget does.
+    /// The caller must provide a live character address.
     /// </summary>
     void SetCharacterTargetId(nint characterAddress, ulong targetId);
 }
@@ -105,8 +104,7 @@ internal struct LookAtTarget
 internal enum LookMode
 {
     None = 0,
-    // Value 1 is id-based object tracking (Brio LookMode.Target / Ktisis
-    // GazeMode.Object) — previously mislabeled "Frozen".
+    // Native object tracking value used by Brio LookMode.Target and Ktisis GazeMode.Object.
     Target = 1,
     Pivot = 2,
     Position = 3,

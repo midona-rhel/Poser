@@ -6,6 +6,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Game.Overlays;
 using Poser.Application.Lifecycle;
+using Poser.Game.Transforms;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 
@@ -26,7 +27,9 @@ public sealed class SceneCreation : ISceneCreation
     private readonly IEntityBindings _bindings;
     private readonly ISkeletonService _skeletons;
     private readonly SceneRuntimeHandles _handles;
-    private readonly ICameraProjection _camera;
+    private readonly IPlacementAnchorSource _anchors;
+    private readonly Application.Settings.ConfigurationService _configuration;
+    private readonly ParentingRuntime _transforms;
     private readonly IVirtualCameraService _cameras;
     private readonly ILightingService _lighting;
     private readonly IOverlayNodeService _overlays;
@@ -36,7 +39,7 @@ public sealed class SceneCreation : ISceneCreation
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, ICameraProjection camera, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
+        IEntityBindings bindings, ISkeletonService skeletons, IPlacementAnchorSource anchors, Application.Settings.ConfigurationService configuration, ParentingRuntime transforms, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
         Application.Integration.IntegrationSelectors integration, IPluginLog log,
         Application.Transforms.TransformParenting parenting)
     {
@@ -47,7 +50,9 @@ public sealed class SceneCreation : ISceneCreation
         _lifecycle = lifecycle;
         _bindings = bindings;
         _skeletons = skeletons;
-        _camera = camera;
+        _anchors = anchors;
+        _configuration = configuration;
+        _transforms = transforms;
         _cameras = cameras;
         _lighting = lighting;
         _overlays = overlays;
@@ -69,15 +74,13 @@ public sealed class SceneCreation : ISceneCreation
 
     public SceneCreationResult CreateActor(ActorCreationRequest request)
     {
-        if (!CanCreate) return new(null, "Actor creation requires an active GPose session.");
         var catalog = request.Catalog;
-        var actor = _lifecycle.SpawnActor(
+        return Create(SceneEntityKind.Actor, () => _lifecycle.SpawnActor(
             catalog is { } item ? $"Add {item.Name}" : request.ReserveCompanionSlot
                 ? "Add actor with companion slot" : "Add actor",
             () => catalog is { } entry ? _spawn.SpawnCatalogActor(entry)
                 : _spawn.SpawnNewActor(request.ReserveCompanionSlot, request.ModelCharaId),
-            name: catalog?.Name);
-        return Track(SceneEntityKind.Actor, actor);
+            name: catalog?.Name));
     }
 
     public SceneCreationResult CreateLight(LightKind kind) =>
@@ -91,41 +94,122 @@ public sealed class SceneCreation : ISceneCreation
             ? _lifecycle.SpawnProp(value) : _lifecycle.SpawnProp());
 
     public SceneCreationResult CreateOverlay(OverlayNodeKind kind) =>
-        Create(SceneEntityKind.Overlay, () => _lifecycle.SpawnOverlay(OverlayNodeService.DefaultState(kind)));
+        Create(SceneEntityKind.Overlay, () => _lifecycle.SpawnOverlay(OverlayNodeService.DefaultState(kind)), spatial: false);
 
     public SceneCreationResult CreateCollider(IkColliderShape shape) =>
-        Create(SceneEntityKind.Overlay, () =>
+        Create(SceneEntityKind.Overlay, () => _lifecycle.SpawnOverlay(new OverlayNodeState
         {
-            Matrix4x4.Invert(_camera.GetViewMatrix(), out var view);
-            var position = _camera.GetCameraPosition() - new Vector3(view.M31, view.M32, view.M33) * 2f;
-            return _lifecycle.SpawnOverlay(new OverlayNodeState
+            Kind = OverlayNodeKind.Collider, Alpha = .2f,
+            Collider = new IkCollider
             {
-                Kind = OverlayNodeKind.Collider, Alpha = .2f,
-                Collider = new IkCollider
+                Shape = shape,
+                Transform = PoseTransform.Identity with
                 {
-                    Shape = shape,
-                    Transform = PoseTransform.Identity with
-                    {
-                        Position = position,
-                        Scale = shape == IkColliderShape.Capsule ? new Vector3(.5f, 1, .5f) : Vector3.One,
-                    },
+                    Scale = shape == IkColliderShape.Capsule ? new Vector3(.5f, 1, .5f) : Vector3.One,
                 },
-            });
-        });
+            },
+        }), unsavedDefault: ObjectPlacementMode.InFrontOfCamera);
 
-    public SceneCreationResult CreateWorldObject(string path, PoseTransform placement) =>
-        Create(SceneEntityKind.WorldObject, () => _lifecycle.SpawnWorldObject(path, Transform.FromPose(placement), true));
+    public SceneCreationResult CreateWorldObject(string path) =>
+        Create(SceneEntityKind.WorldObject, () => _lifecycle.SpawnWorldObject(path, Transform.Identity, true));
 
-    private SceneCreationResult Create(SceneEntityKind kind, Func<object?> create) =>
-        CanCreate ? Track(kind, create()) : new(null, "Creation requires an active GPose session.");
-
-    public SceneCreationResult Duplicate(SelectionId source, bool withPose = false)
+    private SceneCreationResult Create(SceneEntityKind kind, Func<object?> create, bool spatial = true, ObjectPlacementMode? unsavedDefault = null)
     {
-        if (!CanCreate) return new(null, "Duplication requires an active GPose session.");
+        if (!CanCreate) return new(null, "Creation requires an active GPose session.");
+        Vector3? position = null;
+        if (spatial && !TryPlacement(out position, out var refusal, unsavedDefault)) return new(null, refusal);
+        return Finish(kind, create(), position);
+    }
+
+    private bool TryPlacement(out Vector3? position, out string? refusal, ObjectPlacementMode? unsavedDefault = null)
+    {
+        position = null;
+        refusal = null;
+        var mode = _configuration.Config.DefaultSpawnPlacement;
+        if (mode == ObjectPlacementMode.AsSaved)
+        {
+            if (unsavedDefault is not { } fallback) return true;
+            mode = fallback;
+        }
+        if (!_anchors.TryCurrentFor(mode, out var anchor, out _, out refusal)) return false;
+        // New entities have no saved anchor, so they land on the current one,
+        // just like a file without a saved anchor.
+        position = anchor;
+        return true;
+    }
+
+    private SceneCreationResult Finish(SceneEntityKind kind, object? entity, Vector3? position,
+        SelectionId? source = null)
+    {
+        var result = Track(kind, entity);
+        if (result.Handle is not { } handle) return result;
+        void Apply()
+        {
+            if (position is { } point)
+            {
+                if (entity is Cameras.VirtualCamera camera)
+                {
+                    if (camera.Kind == CameraKind.Free) camera.Position = point;
+                    else if (camera.FixedPosition != null)
+                        camera.FixedPosition = point - camera.PositionOffset - camera.TargetOffset;
+                    else camera.PendingOrbitPosition = point;
+                }
+                else if (_transforms.ReadEntity(entity) is not { } transform
+                    || !_transforms.WriteEntity(entity, transform with { Position = point }))
+                    _log.Warning("The new entity could not be placed.");
+            }
+            if (source is { } original && Resolve(handle) is { } target
+                && !_parenting.Copy(original, target, preserveWorld: position != null))
+                _log.Warning("The duplicated entity could not inherit its source's parent.");
+        }
+        // Native spawning sets the actor's position. Place it and copy its
+        // attachment after that finishes, so the attachment uses the new position.
+        if (entity is IActor actor) _lifecycle.WhenPosable(actor, _ => Apply());
+        else Apply();
+        return result;
+    }
+
+    public SceneCreationResult Duplicate(SelectionId source, bool withPose = false) =>
+        DuplicateMany([source], withPose)[source];
+
+    public IReadOnlyDictionary<SelectionId, SceneCreationResult> DuplicateMany(
+        IReadOnlyList<SelectionId> sources, bool withPose = false)
+    {
+        var results = new Dictionary<SelectionId, SceneCreationResult>();
+        if (!CanCreate)
+        {
+            foreach (var source in sources) results[source] = new(null, "Duplication requires an active GPose session.");
+            return results;
+        }
+        var transforms = sources.ToDictionary(id => id, ReadTransform);
+        var placed = transforms.Values.OfType<PoseTransform>().ToArray();
+        Vector3? anchor = null;
+        if (placed.Length > 0 && !TryPlacement(out anchor, out var refusal))
+        {
+            foreach (var source in sources) results[source] = new(null, refusal);
+            return results;
+        }
+        var offset = anchor is { } point
+            ? point - GroupTransformBaseline.Centroid(placed)
+            : (Vector3?)null;
+        // Capture the anchor once so creating a camera cannot move later copies.
+        foreach (var source in sources)
+            results[source] = DuplicateAt(source, withPose,
+                offset is { } delta && transforms[source] is { } transform ? transform.Position + delta : null);
+        return results;
+    }
+
+    private PoseTransform? ReadTransform(SelectionId source) => source.Camera is { } id
+        ? _bindings.Resolve(id).Value is { } camera
+            ? PoseTransform.Identity with { Position = camera.WorldPosition } : null
+        : _transforms.Read(source);
+
+    private SceneCreationResult DuplicateAt(SelectionId source, bool withPose, Vector3? position)
+    {
         object? copy = source.Kind switch
         {
             SceneEntityKind.Actor when source.Actor is { } id && _bindings.Resolve(id).Value is { } actor =>
-                DuplicateActor(actor, withPose),
+                DuplicateActor(actor, withPose, position),
             SceneEntityKind.Light when source.Light is { } id && _bindings.Resolve(id).Value is { } light =>
                 _lifecycle.CloneLight(light),
             SceneEntityKind.Camera when source.Camera is { } id && _bindings.Resolve(id).Value is { } camera =>
@@ -138,13 +222,10 @@ public sealed class SceneCreation : ISceneCreation
                 && world.Path.Contains('/') => _lifecycle.CloneWorldObject(world),
             _ => null,
         };
-        var result = Track(source.Kind, copy);
-        if (result.Handle is { } handle && Resolve(handle) is { } target && !_parenting.Copy(source, target))
-            _log.Warning("The duplicated entity could not inherit its source's parent.");
-        return result;
+        return Finish(source.Kind, copy, position, source);
     }
 
-    private IActor? DuplicateActor(IActor source, bool withPose)
+    private IActor? DuplicateActor(IActor source, bool withPose, Vector3? position)
     {
         string? parameters = null;
         if (_bindings.GetActorId(source) is { } sourceId
@@ -170,9 +251,7 @@ public sealed class SceneCreation : ISceneCreation
                 if (!_actors.IsAvailable(source) || !_actors.IsAvailable(target)) return;
                 _spawn.CopyDrawnAppearance(source, target);
                 _spawn.CopyEquipmentVisibility(source, target);
-                // Native customize bytes contain palette indices, not custom
-                // shader colours/opacity. Copy those through their provider,
-                // without reapplying equipment or requesting another redraw.
+                // Copy custom colours and opacity through their appearance provider.
                 if (parameters != null && _bindings.GetActorId(target) is { } targetId)
                 {
                     var applied = _integration.ApplyStateJson(targetId, parameters);
@@ -184,7 +263,7 @@ public sealed class SceneCreation : ISceneCreation
         string name = Application.Settings.ConfigurationService.StripObjectIndex(source.Name);
         if (!withPose || _skeletons.GetSkeleton(source) is null)
             return _lifecycle.SpawnActor($"Duplicate actor '{name}'", Clone, source: source);
-        return _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source);
+        return _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source, position);
     }
 
     private SceneCreationResult Track(SceneEntityKind kind, object? entity) => entity is null

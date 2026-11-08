@@ -2,7 +2,10 @@ using System.Numerics;
 
 namespace Poser.Domain.Posing;
 
-/// <summary>Existing hanging-curve solve, shared by either side of a selected handle.</summary>
+/// <summary>
+/// Fits a hanging curve between the root and target, sampling at the source
+/// chain's link lengths. A target beyond reach produces a straight chain.
+/// </summary>
 public static class RopeSolver
 {
     public static Vector3[] Solve(IReadOnlyList<Vector3> source, Vector3 root, Vector3 target, Vector3 down)

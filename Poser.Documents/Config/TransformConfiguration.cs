@@ -20,8 +20,6 @@ public class TransformConfiguration
     /// <summary>Metres per pixel for a single bone.</summary>
     public float BoneSpeed { get; set; } = 0.005f;
 
-    /// <summary>The speed for the thing being edited. One call site's whole
-    /// decision, so a row cannot pick the wrong one by writing the wrong
-    /// field name.</summary>
+    /// <summary>Returns the configured speed for a bone or other entity.</summary>
     public float For(bool isBone) => isBone ? BoneSpeed : EntitySpeed;
 }

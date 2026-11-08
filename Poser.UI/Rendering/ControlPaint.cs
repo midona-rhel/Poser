@@ -6,9 +6,7 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>
-/// Shared state-paint recipes: the small, repeated chrome fragments that
-/// several controls draw identically. One home means a change to the
-/// recipe cannot land on some controls and miss others.
+/// Shared state-paint recipes used by multiple controls.
 /// </summary>
 internal static class ControlPaint
 {
@@ -41,7 +39,7 @@ internal static class ControlPaint
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color)));
 
     /// <summary>
-    /// THE bordered-control disabled group (<c>.btn:disabled { opacity:
+    /// Bordered-control disabled group (<c>.btn:disabled { opacity:
     /// .35 }</c> and everything that borrows it): the chrome a
     /// <see cref="DisabledGroup"/> call paints, plus the transform the
     /// caller must put on whatever it draws INSIDE that chrome.
@@ -55,7 +53,7 @@ internal static class ControlPaint
     /// blends its glyphs over the faded fill, so it needs a COMPENSATED
     /// color (<see cref="Label"/>). An icon gets the product's SIMPLE
     /// glyph-opacity treatment (<see cref="Glyph"/>): its resting opacity
-    /// scaled by the group's — an accepted approximation, NOT exact CSS
+    /// scaled by the group's; this approximates rather than exactly reproduces CSS
     /// group opacity; the icon path (IconIn) does no backdrop-aware
     /// compositing.</para>
     ///
@@ -97,8 +95,7 @@ internal static class ControlPaint
     /// is faded twice. That is what makes this equivalent to a CSS group
     /// rather than an approximation of one.</para>
     ///
-    /// <para>The caller keeps its own disabled-opacity constant: WHICH
-    /// opacity a control fades to is a per-control decision.</para>
+    /// <para>The caller supplies the control-specific disabled opacity.</para>
     /// </summary>
     /// <param name="drawList">Draw list to render into.</param>
     /// <param name="min">Top-left of the control's border box.</param>

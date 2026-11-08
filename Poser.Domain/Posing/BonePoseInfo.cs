@@ -24,10 +24,9 @@ public enum TransformFrame
 }
 
 /// <summary>
-/// Stores transform information for a bone pose modification.
-/// Simple delta-based system - all transforms are additive.
-/// IkTransform null uses the ordinary edit delta; imports use an identity IK
-/// delta, and import resets can retain an IK-only offset with no pose delta.
+/// One bone edit and the components passed to its children. Position and scale
+/// changes are added; rotations are composed. IkTransform can give IK a separate
+/// offset, so an imported pose need not move the IK handle.
 /// </summary>
 public record struct BonePoseTransformInfo(
     TransformComponents PropagateComponents,
@@ -37,8 +36,7 @@ public record struct BonePoseTransformInfo(
     Transform? IkTransform = null);
 
 /// <summary>
-/// Tracks pose modifications for a single bone.
-/// Simple delta-based stacking like Brio.
+/// Ordered edits and named effect layers applied to one bone.
 /// </summary>
 public class BonePoseInfo
 {
@@ -69,20 +67,10 @@ public class BonePoseInfo
     }
 
     /// <summary>
-    /// Apply a transform to this bone. Calculates delta from original and stacks it.
+    /// Adds the difference from original to the bone's edit stack, keeping only applyTo components.
+    /// forceNewStack creates a separate entry, allowing an importer to remove it later.
+    /// Returns null for a nonfinite result; it does not reject an unchanged result.
     /// </summary>
-    /// <param name="newTransform">The new transform.</param>
-    /// <param name="original">The original transform before modification.</param>
-    /// <param name="propagation">Which components to propagate.</param>
-    /// <param name="applyTo">Which components of the DELTA to keep — Brio
-    /// PoseInfo.Apply's applyTo (PoseInfo.cs:94,108): excluded components are
-    /// zeroed on the delta, never emulated by re-asserting a stale absolute.</param>
-    /// <param name="forceNewStack">Brio PoseInfo.Apply's forceNewStack
-    /// (PoseInfo.cs:94,103) — its PoseImporter passes true on EVERY file
-    /// write, which is what lets the expression import's head restore pop
-    /// exactly the stack its phase 1 appended with
-    /// <see cref="RemoveLastInteractiveStack"/> instead of a combined blob.</param>
-    /// <returns>The final transform, or null if rejected due to NaN or near-identity.</returns>
     public Transform? Apply(
         Transform newTransform,
         Transform original,
@@ -93,8 +81,6 @@ public class BonePoseInfo
     {
         var prop = propagation ?? DefaultPropagation;
 
-        // Calculate delta from original, then mask it (Brio PoseInfo.cs:108
-        // calc.Filter(applyTo)).
         var delta = FilterDelta(CalculateDiff(newTransform, original), applyTo);
 
         // Find or create stack entry with matching propagation
@@ -136,10 +122,9 @@ public class BonePoseInfo
         return clone;
     }
 
-    /// <summary>Brio's RemoveLastStack, as the expression import's head
-    /// restore uses it (PosingCapability.cs:238-247): pops the NEWEST
-    /// interactive stack — the head rotation its phase 1 just appended —
-    /// and leaves named service layers untouched.</summary>
+    /// <summary>
+    /// Removes the newest unnamed edit, leaving named effect layers unchanged.
+    /// </summary>
     public bool RemoveLastInteractiveStack()
     {
         for (var i = _stacks.Count - 1; i >= 0; i--)
@@ -199,10 +184,9 @@ public class BonePoseInfo
     /// <summary>Public delta composition (matches the internal stack combine).</summary>
     public static Transform Combine(Transform a, Transform b) => CombineTransforms(a, b);
 
-    /// <summary>Brio's <c>Transform.Filter</c> (Core/Transform.cs:103-113) on a
-    /// stack DELTA: an excluded component becomes the delta identity — position
-    /// Vector3.Zero, rotation Quaternion.Identity, scale Vector3.Zero (scale
-    /// deltas are additive, matching Brio's convention).</summary>
+    /// <summary>
+    /// Replaces excluded changes with zero position/scale change or identity rotation.
+    /// </summary>
     public static Transform FilterDelta(Transform delta, TransformComponents applyTo)
     {
         if (applyTo == TransformComponents.All)
@@ -216,10 +200,8 @@ public class BonePoseInfo
     }
 
     /// <summary>
-    /// REPLACE the stack entry for a propagation set with an absolute delta —
-    /// idempotent write for orbit sessions (repeated calls with the same delta
-    /// leave the same state, unlike <see cref="Apply"/> which accumulates).
-    /// Returns false (and writes nothing) when the delta contains NaN.
+    /// Replaces the current compatible edit instead of accumulating another change.
+    /// Returns false without modifying the stack when the input contains NaN or infinity.
     /// </summary>
     public bool SetStackTransform(Transform absoluteDelta, TransformComponents? propagation = null)
     {
@@ -233,9 +215,8 @@ public class BonePoseInfo
     }
 
     /// <summary>
-    /// Replaces a named, service-owned delta layer without disturbing interactive
-    /// pose stacks. Named layers let continuously recomputed systems such as
-    /// expression blending remain idempotent while normal edits continue to stack.
+    /// Replaces a named effect layer, leaving manual edits unchanged.
+    /// This allows effects such as expression blending to be recomputed each frame.
     /// </summary>
     public bool SetLayerTransform(
         string layer,
@@ -267,8 +248,8 @@ public class BonePoseInfo
     }
 
     /// <summary>
-    /// Atomically replaces all stacks. Used by whole-pose mirroring to exchange
-    /// left/right deltas while preserving propagation and named-layer identity.
+    /// Checks all replacement transforms before replacing the stack.
+    /// This is not a thread-safety guarantee; callers must coordinate concurrent access.
     /// </summary>
     public bool ReplaceStacks(IEnumerable<BonePoseTransformInfo> stacks)
     {
@@ -286,10 +267,8 @@ public class BonePoseInfo
     }
 
     /// <summary>
-    /// Restores the interactive (unnamed) portion of a historical stack snapshot
-    /// while preserving the current values of service-owned named layers.
-    /// Expression and other continuously recomputed layers must not be rolled
-    /// back merely because a manual transform was undone.
+    /// Restores unnamed edits from a snapshot while keeping current named effect layers.
+    /// Undoing a manual edit should not undo a continuously updated expression.
     /// </summary>
     public bool RestoreInteractiveStacks(IEnumerable<BonePoseTransformInfo> snapshot)
     {
@@ -355,10 +334,8 @@ public class BonePoseInfo
 
     private static Transform CalculateDiff(Transform newTransform, Transform original)
     {
-        // Match Brio's formula: Conjugate(original) * new, normalized. A
-        // basis the game left with no rotation at all (a chain link frozen
-        // at zero) is taken as identity, so the delta IS the rotation and
-        // the apply, which treats such a basis the same way, lands it.
+        // For unit quaternions, conjugate(original) * new gives the relative rotation.
+        // UsableBasis substitutes identity for an unusable starting rotation.
         return new Transform
         {
             Position = newTransform.Position - original.Position,
@@ -368,9 +345,10 @@ public class BonePoseInfo
         };
     }
 
-    /// <summary>A rotation the delta math can stand on: the live one made
-    /// unit length (the game leaves a blending chain link short), identity
-    /// when it is zero or not finite.</summary>
+    /// <summary>
+    /// Normalizes the starting rotation. Returns identity when its squared length
+    /// is nonfinite or at most 0.000001; this is a fallback, not validation of the original data.
+    /// </summary>
     public static Quaternion UsableBasis(Quaternion rotation)
     {
         float length = rotation.LengthSquared();

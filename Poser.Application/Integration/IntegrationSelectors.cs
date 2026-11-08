@@ -5,12 +5,8 @@ using Poser.Domain.Integration;
 namespace Poser.Application.Integration;
 
 /// <summary>
-/// The per-component appearance selectors — Penumbra collection, Glamourer
-/// design and wardrobe, Customize+ profile — and the history capture/replay
-/// of an actor's whole external look. Each selector captures the incoming
-/// state into <see cref="IntegrationOwnership"/> before its first change and
-/// keeps its own reset; every edit refuses while an MCDF operation runs or an
-/// imported character file owns the actor.
+/// Applies Penumbra collections, Glamourer appearance, and Customize+ profiles.
+/// Saves the previous appearance for Reset and undo.
 /// </summary>
 public sealed class IntegrationSelectors
 {
@@ -20,6 +16,7 @@ public sealed class IntegrationSelectors
     private readonly ICustomizePlusPort _customizePlus;
     private readonly IntegrationOwnership _ownership;
     private readonly McdfTransaction _mcdf;
+    private readonly IntegrationReset _reset;
 
     public IntegrationSelectors(
         IIntegrationResolutionPort actors,
@@ -27,7 +24,8 @@ public sealed class IntegrationSelectors
         IGlamourerPort glamourer,
         ICustomizePlusPort customizePlus,
         IntegrationOwnership ownership,
-        McdfTransaction mcdf)
+        McdfTransaction mcdf,
+        IntegrationReset reset)
     {
         _actors = actors;
         _penumbra = penumbra;
@@ -35,6 +33,7 @@ public sealed class IntegrationSelectors
         _customizePlus = customizePlus;
         _ownership = ownership;
         _mcdf = mcdf;
+        _reset = reset;
     }
 
     public IntegrationAvailability Penumbra => _penumbra.Penumbra;
@@ -53,24 +52,24 @@ public sealed class IntegrationSelectors
 
     public IntegrationOverrides OverridesFor(ActorId actor) => _ownership.OverridesFor(actor);
 
-    /// <summary>The body profile the actor wears, Poser-owned contents first.</summary>
+    /// <summary>Captures profile contents for export and undo.</summary>
     public IntegrationValue<string?> CaptureBodyProfile(ActorId actor) => _ownership.CaptureBodyProfile(actor);
 
-    /// <summary>Loads the pickable lists; each picker calls this on open.</summary>
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListCollections() => _penumbra.GetCollections();
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListDesigns() => _glamourer.GetDesigns();
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListBodyProfiles() => _customizePlus.GetBodyProfiles();
 
-    /// <summary>The collection currently affecting the actor (for the
-    /// trigger readout).</summary>
+    /// <summary>Returns the collection currently applied to the actor.</summary>
     public IntegrationValue<CollectionAssignment> ReadCollection(ActorId actor) =>
         _penumbra.GetCollectionAssignment(actor);
 
     public IntegrationValue<Guid> ReadPlayerCollection() => _penumbra.GetPlayerCollection();
 
-    /// <summary>Destructive commands cannot silently turn a failed capture into empty state.
-    /// Only removal passes omitUnreadableLook: an actor Glamourer cannot read
-    /// at all must stay removable, so its look is left out and marked rather than refusing.</summary>
+    /// <summary>
+    /// Captures appearance for undo. By default an unreadable Glamourer state fails
+    /// the capture. Removal callers can instead omit unavailable appearance so the
+    /// actor remains removable; the snapshot records that omission.
+    /// </summary>
     public IntegrationValue<ActorAppearanceSnapshot> TryCaptureHistory(ActorId actor, bool captureCollection = true,
         bool omitUnreadableLook = false)
     {
@@ -129,8 +128,7 @@ public sealed class IntegrationSelectors
         Func<bool> stillCurrent, CancellationToken cancellation)
     {
         await _mcdf.CurrentCompletion.WaitAsync(cancellation);
-        // Ordinary state cannot be applied while an imported package owns the
-        // actor. Release it through its existing transaction and await cleanup.
+        // Release the imported appearance before restoring the saved appearance.
         if (snapshot.McdfPath == null)
         {
             var reset = await _actors.OnFrameworkThread(() =>
@@ -154,7 +152,7 @@ public sealed class IntegrationSelectors
                 operation = _mcdf.Receipt?.OperationId;
             }
             else
-                result = RestoreHistory(actor, snapshot, redraw: false);
+                result = RestoreCapturedAppearance(actor, snapshot);
             pending = _mcdf.CurrentCompletion;
             return result;
         });
@@ -177,15 +175,8 @@ public sealed class IntegrationSelectors
         });
     }
 
-    /// <summary>MCDF packages restore through BeginImport first; ordinary looks replay these captured values.</summary>
-    public IntegrationResult RestoreHistory(ActorId actor, ActorAppearanceSnapshot snapshot)
-        => RestoreHistory(actor, snapshot, redraw: true);
-
-    private IntegrationResult RestoreHistory(ActorId actor, ActorAppearanceSnapshot snapshot, bool redraw)
+    private IntegrationResult RestoreCapturedAppearance(ActorId actor, ActorAppearanceSnapshot snapshot)
     {
-        if (snapshot.McdfPath is not null)
-            return snapshot.McdfResources is { } resources
-                ? _mcdf.RestoreHistory(actor, resources, snapshot.McdfPath) : _mcdf.BeginImport(actor, snapshot.McdfPath);
         var failures = new List<string>();
         void Check(IntegrationResult result)
         {
@@ -195,12 +186,11 @@ public sealed class IntegrationSelectors
         {
             var restored = _penumbra.RestoreInheritedCollection(actor, inherited);
             if (!restored.Success) return restored;
-            if (redraw) Check(_penumbra.RequestRedraw(actor));
         }
         else if (snapshot.Collection is { } collection)
         {
             if (collection.HasIndividualAssignment)
-                Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName, redraw));
+                Check(SetCollection(actor, collection.EffectiveId, collection.EffectiveName, redraw: false));
             else
             {
                 var restored = _penumbra.RestoreCollection(actor, new(false, null));
@@ -214,7 +204,6 @@ public sealed class IntegrationSelectors
                         CollectionOwned = false,
                         CollectionName = null,
                     });
-                    if (redraw) Check(_penumbra.RequestRedraw(actor));
                 }
             }
         }
@@ -263,23 +252,18 @@ public sealed class IntegrationSelectors
 
     public IntegrationValue<Guid> SaveActorDesign(ActorId actor, string name)
     {
-        var access = AppearanceAccess(actor);
-        if (!access.CanEdit)
-            return IntegrationValue<Guid>.Refused(access);
         var state = GetStateJson(actor);
         if (!state.Success || state.Value is null)
             return new(false, default, state.Detail, state.AppearanceRefusal);
-        // Recheck after capture: a save must not knowingly consume a look
-        // that became foreign-held while the name dialog was open.
-        access = AppearanceAccess(actor);
-        return access.CanEdit ? _glamourer.AddDesign(state.Value, name) : IntegrationValue<Guid>.Refused(access);
+        // Save the captured appearance; this does not change the actor.
+        return _glamourer.AddDesign(state.Value, name);
     }
-
-    public IntegrationValue<Guid> SaveDesign(string stateJson, string name) => _glamourer.AddDesign(stateJson, name);
 
     // ── Selectors ────────────────────────────────────────────────────────
 
-    /// <summary>A Penumbra redraw of the actor; nothing else changes.</summary>
+    /// <summary>
+    /// Requests a Penumbra redraw using the actor's current collection.
+    /// </summary>
     public IntegrationResult Redraw(ActorId actor)
     {
         var redraw = _penumbra.RequestRedraw(actor);
@@ -333,9 +317,7 @@ public sealed class IntegrationSelectors
             CollectionOwned = true,
             CollectionName = name,
         });
-        // Penumbra applies a changed assignment on the next redraw; a
-        // failed request is reported, not swallowed — the assignment
-        // itself stands and stays owned either way.
+        // Keep the original collection for Reset even if the redraw fails.
         if (!redraw) return IntegrationResult.Ok();
         var request = _penumbra.RequestRedraw(actor);
         return request.Success
@@ -349,19 +331,12 @@ public sealed class IntegrationSelectors
         var current = OverridesFor(actor);
         if (!current.CollectionOwned)
             return IntegrationResult.Ok();
-        if (current.Baseline.Collection is not { } baseline)
-            return IntegrationResult.Fail("No captured collection baseline exists.");
 
-        var restored = _penumbra.RestoreCollection(actor, baseline);
+        var restored = _reset.RestoreCollection(actor, ref current, resolvable: true, out _);
         if (!restored.Success)
             return restored;
 
-        _ownership.Mutate(actor, current with
-        {
-            Baseline = current.Baseline with { Collection = null },
-            CollectionOwned = false,
-            CollectionName = null,
-        });
+        _ownership.Mutate(actor, current);
         var redraw = _penumbra.RequestRedraw(actor);
         return redraw.Success
             ? IntegrationResult.Ok()
@@ -381,7 +356,7 @@ public sealed class IntegrationSelectors
         var state = current.Baseline.GlamourerState;
         if (state == null)
         {
-            // A state locked by another plugin fails HERE, before mutation.
+            // Capture must succeed before applying the new design.
             var incoming = _glamourer.CaptureGlamourerState(actor);
             if (!incoming.Success || incoming.Value is not { } captured)
                 return new(false, incoming.Detail ?? "The incoming Glamourer state could not be captured.", incoming.AppearanceRefusal);
@@ -403,11 +378,8 @@ public sealed class IntegrationSelectors
     }
 
     /// <summary>
-    /// Takes ownership of the actor's look before the first wardrobe or
-    /// customize write: the Glamourer state as it stands is captured once,
-    /// and the reset that runs on GPose exit, on Revert and on the actor
-    /// leaving the scene puts it back, as Brio and Ktisis put an actor
-    /// back (asked 2026-09-03). A look already owned is left as it is.
+    /// Saves the current Glamourer state once, before wardrobe or character edits.
+    /// Reset can restore that state instead of reverting to the game's appearance.
     /// </summary>
     public IntegrationResult OwnLook(ActorId actor)
     {
@@ -417,7 +389,7 @@ public sealed class IntegrationSelectors
         if (!access.CanEdit)
             return IntegrationResult.Refused(access);
         var current = OverridesFor(actor);
-        if (current.DesignOwned && current.Baseline.GlamourerState != null)
+        if (current.DesignOwned)
             return IntegrationResult.Ok();
         var state = current.Baseline.GlamourerState;
         if (state == null)
@@ -453,21 +425,12 @@ public sealed class IntegrationSelectors
         var current = OverridesFor(actor);
         if (!current.DesignOwned)
             return IntegrationResult.Ok();
-        if (current.Baseline.GlamourerState is not { } state)
-            return IntegrationResult.Fail("No captured Glamourer state exists.");
 
-        // Reapply the captured incoming state exactly — not a revert to the
-        // game's own appearance.
-        var restored = _glamourer.RestoreGlamourerState(actor, state);
+        var restored = _reset.RestoreDesign(actor, ref current, resolvable: true);
         if (!restored.Success)
             return restored;
 
-        _ownership.Mutate(actor, current with
-        {
-            Baseline = current.Baseline with { GlamourerState = null },
-            DesignOwned = false,
-            DesignName = null,
-        });
+        _ownership.Mutate(actor, current);
         return IntegrationResult.Ok();
     }
 
@@ -480,35 +443,19 @@ public sealed class IntegrationSelectors
             : IntegrationResult.Fail(json.Detail ?? "The profile could not be read.");
     }
 
-    /// <summary>Replays the captured profile contents, not a mutable saved-profile selection.</summary>
+    /// <summary>Applies the saved profile contents so undo does not depend on later edits to the original profile.</summary>
     public IntegrationResult ApplyBodyProfileJson(ActorId actor, string profileJson, string name)
     {
         if (McdfGate(actor) is { } gate)
             return gate;
         var current = OverridesFor(actor);
 
-        var probe = _customizePlus.ProbeBodyProfile(actor);
-        if (!probe.Success || probe.Value is not { } bodyState)
-            return IntegrationResult.Fail(probe.Detail ?? "The Customize+ state could not be read.");
-        if (IntegrationOwnership.ForeignTemporaryBody(current, bodyState))
-            return IntegrationResult.Fail(
-                "This actor has a temporary Customize+ profile from another plugin; Poser will not displace it.");
-
-        var baseline = current.Baseline;
-        if (!baseline.BodyProfileCaptured)
-            baseline = baseline with
-            {
-                SavedBodyProfile = bodyState.ActiveIsSaved ? bodyState.ActiveProfile : null,
-                BodyProfileCaptured = true,
-            };
-
         var applied = _customizePlus.ApplyTemporaryBodyProfile(actor, profileJson);
-        if (!applied.Success || applied.Value == default)
+        if (!applied.Success)
             return IntegrationResult.Fail(applied.Detail ?? "The temporary profile could not be applied.");
 
         _ownership.Mutate(actor, current with
         {
-            Baseline = baseline,
             TemporaryBodyProfile = applied.Value,
             BodyProfileName = name,
             BodyProfileJson = profileJson,
@@ -519,39 +466,12 @@ public sealed class IntegrationSelectors
     public IntegrationResult ResetBodyProfile(ActorId actor)
     {
         var current = OverridesFor(actor);
-        if (current.TemporaryBodyProfile is not { } owned)
-            return IntegrationResult.Ok();
+        var restored = _reset.RestoreBodyProfile(ref current);
+        if (!restored.Success)
+            return restored;
 
-        // Deleting ONLY Poser's temporary profile — by its OWN id — lets
-        // the underlying saved assignment resume naturally. Deleting by
-        // actor would remove whatever temporary profile is active now,
-        // which may belong to another plugin.
-        var deleted = _customizePlus.DeleteTemporaryBodyProfileById(owned);
-        if (!deleted.Success)
-            return deleted;
-
-        _ownership.Mutate(actor, current with
-        {
-            Baseline = current.Baseline with { SavedBodyProfile = null, BodyProfileCaptured = false },
-            TemporaryBodyProfile = null,
-            BodyProfileName = null,
-            BodyProfileJson = null,
-        });
+        _ownership.Mutate(actor, current);
         return IntegrationResult.Ok();
-    }
-
-    /// <summary>Whether an actor's active temporary profile belongs to a
-    /// plugin other than Poser — the state no C+ or MCDF operation may
-    /// displace.</summary>
-    public IntegrationResult CheckBodyProfileDisplaceable(ActorId actor)
-    {
-        var probe = _customizePlus.ProbeBodyProfile(actor);
-        if (!probe.Success || probe.Value is not { } bodyState)
-            return IntegrationResult.Fail(probe.Detail ?? "The Customize+ state could not be read.");
-        return IntegrationOwnership.ForeignTemporaryBody(OverridesFor(actor), bodyState)
-            ? IntegrationResult.Fail(
-                "This actor has a temporary Customize+ profile from another plugin; Poser will not displace it.")
-            : IntegrationResult.Ok();
     }
 
     private IntegrationResult? McdfGate(ActorId actor)

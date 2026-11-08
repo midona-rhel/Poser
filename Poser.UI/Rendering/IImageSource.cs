@@ -4,8 +4,8 @@ using Dalamud.Bindings.ImGui;
 namespace Poser.UI;
 
 /// <summary>
-/// Opaque texture handle + dimensions, owned by the host plugin. The widgets do
-/// not load textures itself—the host wraps its texture system (Dalamud's
+/// Opaque texture handle and dimensions, owned by the host plugin. Widgets do
+/// not load textures themselves; the host wraps its texture system (Dalamud's
 /// <c>IDalamudTextureWrap</c>, raw GL/D3D textures, etc.) into this interface.
 ///
 /// <para>Implementations may load asynchronously; check <see cref="IsLoaded"/>
@@ -20,6 +20,6 @@ public interface IImageSource
     /// <summary>Texture dimensions in pixels.</summary>
     Vector2 Size { get; }
 
-    /// <summary>True when the texture is ready to render. False during async load / failure.</summary>
+    /// <summary>True when the texture is ready to render; false while loading or after failure.</summary>
     bool IsLoaded { get; }
 }

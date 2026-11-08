@@ -418,9 +418,8 @@ public sealed class AnimationPane : IDisposable
             choice = null;
             selected = 0;
         }
-        // The whole-actor pause pauses EVERY layer, so every row offers
-        // Play while it holds — not only Base (the old special case left
-        // other rows saying Pause over a frozen layer).
+        // Whole-actor pause affects every layer, so every row offers Play
+        // while it is active.
         // A layer the game ended offers Play too: it plays it again.
         bool paused = (owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
             ownedSpeed == 0f) ||
@@ -600,10 +599,8 @@ public sealed class AnimationPane : IDisposable
             _generalSelections.Remove(actor);
             command = null;
         }
-        // No staged pick still DESCRIBES what the actor is doing: the live
-        // base slot names a game emote (/hum) the same way the Full body
-        // layer row does. "None" means idle, never "Poser picked nothing" —
-        // so the two idle stands render as the empty value, not as names.
+        // Without a staged pick, show the live base-slot emote. Idle stands
+        // render as an empty value so "None" continues to mean idle.
         ushort liveBase = reading.TimelineFor(AnimationSlot.Base);
         if (liveBase is AnimationTimelines.Idle or AnimationTimelines.BattleIdle)
             liveBase = 0;

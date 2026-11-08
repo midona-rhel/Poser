@@ -68,17 +68,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     private bool ShowNsfwBones =>
         _configuration.Config.Display.ShowNsfwBones;
 
-    // ── the per-frame display model ──────────────────────────────────────
-    // One VALUE per drawn handle, held in buffers this window owns and
-    // clears at the top of each frame. The rebuild itself is the design
-    // (Ktisis draws from a fresh projection every frame); what the overlay
-    // must not do is allocate the model, because posing is the tool's
-    // hottest interactive state and a heap object per visible bone per
-    // frame is hundreds of allocations a frame. Mutating passes therefore
-    // reach the elements through CollectionsMarshal.AsSpan — a foreach over
-    // a List of values hands out copies, and a hover written to a copy is a
-    // hover lost.
-
+    // Reuse value-type buffers for each frame's projected handles. Mutating
+    // passes use spans because foreach over List<T> would change copies.
     private struct BoneDisplayData
     {
         public string Name;
@@ -433,15 +424,9 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         SizeCondition = ImGuiCond.Always;
     }
 
-    /// <summary>The toolbar's master overlay switch. With the toggle Off the
-    /// overlay still anchors the current selection: selected bones and
-    /// selected actor origins stay visible on their own, so an edit made
-    /// from the workspace never loses its on-screen anchor. Everything
-    /// unselected stays hidden and non-interactive.
-    ///
-    /// <para>It starts ON for each session (see <c>UiWindowSet</c>), so the
-    /// sidebar's per-bone eyes are what normally decides, and this is how the
-    /// whole armature is taken away at once.</para></summary>
+    /// <summary>Shows opted-in bones. Selected bones and their linked, mirrored
+    /// or IK partners can remain visible when this is off. Entity handles
+    /// have separate visibility settings.</summary>
     public bool UserVisible { get; set; }
 
     /// <summary>How many bones the last frame collected — the bridge's
@@ -520,13 +505,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             return;
         }
 
-        // The ARMATURE pass answers to the sidebar's opted-in bones (the
-        // Skeleton node and the finer eyes) and the selection anchor. The
-        // LIGHT pass does not: a light is invisible in the world and its
-        // handle is the only route to it from the viewport, so it draws
-        // whenever the scene holds lights — Ktisis and Brio both draw their
-        // light handles unconditionally. Alt still hides everything.
-        // Picking shows everything: every actor, every opted-out bone.
+        // The master switch controls bones. Entity handles use their own
+        // visibility settings; the bone picker also reveals filtered bones.
         bool picking = _bonePick.Active;
         bool drawArmature =
             (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor()
@@ -943,12 +923,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
                 && !listTravel
                 && IsHoveringDot(groupDot.ScreenPos, groupRadius);
 
-        // Update hover state. Brio's Posing_DisableSkeleton — a held modifier
-        // that leaves the dots painted and stops them answering the pointer,
-        // so a gizmo handle underneath one can be grabbed — reads exactly like
-        // an occluded pointer here, which is what makes it a one-line gate.
-        // Brio's popup owns the frame while it is open: no dot takes
-        // hover or a press until it closes.
+        // The overlap popup suppresses bone hover and world selection until it closes.
         bool dotsSuppressed = _popupOpen;
         if (pointerBlocked || dotsSuppressed)
         {
@@ -1240,8 +1215,6 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         return null;
     }
 
-    /// <summary>One actor's fade: full while it is the active one or while
-    /// nothing is active, the configured multiplier otherwise.</summary>
     /// <summary>The single actor the selection belongs to — bones, actor,
     /// gaze — or null when it belongs to none or to more than one.</summary>
     private Guid? SelectionActorLineage()
@@ -1342,9 +1315,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         return false;
     }
 
-    /// <summary>Whether any bone hovered THIS frame is one of the frozen
-    /// candidates — the test that keeps a cluster alive while the pointer
-    /// crosses into its list.</summary>
+    /// <summary>Tests each projected dot, plus bone bodies in octahedra mode.</summary>
     private void UpdateHoverState(List<BoneDisplayData> bones, Vector2 mousePos)
     {
         // The hit box is at least the reference dot plus its padding,
@@ -1498,9 +1469,6 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         return next;
     }
 
-    /// <summary>The group dot's press: press and release on the SAME
-    /// group selects its whole membership and makes it the active group —
-    /// the sidebar head-click, from the viewport.</summary>
     /// <summary>Overlay picking: a release over a bone hands it to the
     /// picker (Ctrl keeps a multi-pick going); a release over nothing, a
     /// right-click or Escape ends the pick. Nothing is selected.</summary>
@@ -1638,11 +1606,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     // whole visual argument — the scene's own handles are filled and accented,
     // so "not yours yet" reads before any tooltip does.
 
-    /// <summary>The resting handle radius, before UI scale, for something
-    /// standing next to the player; it falls to <see cref="AdoptFarScale"/> of
-    /// that at the listing's range, so the far half of a listing reads as
-    /// marks around whatever is close rather than a field of equal blots.
-    /// </summary>
+    /// <summary>Handle radius near the camera, before UI scale. It shrinks to
+    /// AdoptFarScale at the listing range.</summary>
     private const float AdoptNearRadius = 7f;
     private const float AdoptFarScale = 0.6f;
 
@@ -1698,9 +1663,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         }
     }
 
-    /// <summary>The adoption press, tracked exactly like the world press: a
-    /// click arms a target and only a release over that SAME target asks for
-    /// it, so a drag off a handle cancels.</summary>
+    /// <summary>Press and release on the same candidate queues adoption; dragging away cancels.</summary>
     private void UpdateAdoptPress(
         WorldAdoptionCandidate? target,
         bool pointerBlocked)
@@ -1726,9 +1689,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         _pressedAdoptTarget = null;
     }
 
-    /// <summary>Commits the release from the previous frame against the
-    /// listing THIS frame read: a candidate that has gone is dropped, not
-    /// adopted, and a release the pointer had already left is refused.</summary>
+    /// <summary>Rechecks the queued candidate and interface coverage before adoption.</summary>
     private void CommitPendingAdoption()
     {
         if (_pendingAdoption is not { } pending)
@@ -2019,9 +1980,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         }
     }
 
-    /// <summary>The one color priority for bones: Selected > Hovered > IK >
-    /// mirror partner > fallback. Hover is opt-in because the dot layer leaves
-    /// hover feedback to the hover list.</summary>
+    /// <summary>Color priority: selection, map hover, optional pointer hover,
+    /// IK chain, mirror/link partner, then the supplied fallback.</summary>
     private uint ResolveBoneColor(BoneDisplayData bone, bool useHover, uint fallback)
     {
         if (bone.IsSelected)
@@ -2037,9 +1997,8 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
         return fallback;
     }
 
-    /// <summary>Whether a bone carries state the eye must find: it draws
-    /// ON TOP of the plain skeleton, and its line draws bolder. Purely a
-    /// PAINT order — hit testing never consults it.</summary>
+    /// <summary>State that keeps a bone in the selected-only view and draws
+    /// it above plain bones, with a thicker connector.</summary>
     private static bool IsPriorityBone(in BoneDisplayData bone) =>
         bone.IsSelected || bone.IsHovered || bone.IsIkChain
         || bone.IsMirrorPartner;
@@ -2321,8 +2280,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             drawList.AddCircle(
                 light.ScreenPos, radius, OutlineColor, 20,
                 2f * ImGuiHelpers.GlobalScale);
-            // The inner ring reads as an aperture, which is what separates a
-            // light handle from an actor's transform point at a glance.
+            // Use the same inner-ring shape as other entity handles.
             drawList.AddCircle(
                 light.ScreenPos, radius * 0.45f, OutlineColor, 16,
                 1f * ImGuiHelpers.GlobalScale);
@@ -2384,8 +2342,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     /// beam (+Z of the light's rotation), sized in screen pixels. It says which
     /// way the light points and — for a spot — how wide the throw opens, and
     /// deliberately says nothing about range: extents are the Light tab's
-    /// numbers. Selection is emphasis on the same figure, never extra
-    /// geometry.</summary>
+    /// numbers. Selection thickens the mark; point lights also gain a ring.</summary>
     private void DrawLightShape(
         ImDrawListPtr drawList,
         Vector2 viewportPos,
@@ -2515,7 +2472,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
             var point = center +
                 (MathF.Cos(angle) * axisOne + MathF.Sin(angle) * axisTwo) * radius;
             // A point behind the camera simply contributes nothing; the path
-            // closes over the segment that stayed on screen.
+            // connects the remaining projected points.
             if (_cameraService.WorldToScreen(point, out var screen))
                 drawList.PathLineTo(viewportPos + screen);
         }

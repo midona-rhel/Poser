@@ -65,11 +65,8 @@ public static class SegmentedControlWidgets
         return changed;
     }
 
-    /// <summary>Icon variant: square tabs whose natural width IS the control's
-    /// width. Same trough, same selection paint, same per-tab refusal and help
-    /// as the label variant — including
-    /// <paramref name="alignFirstTabToCursor"/>, which is a property of the
-    /// TROUGH, not of what a tab carries.</summary>
+    /// <summary>Draws icon tabs with the same selection, disabled state, and help
+    /// behavior as text tabs. Explicit control width can stretch or shrink the tabs.</summary>
     public static bool SegmentedControl(
         string id,
         TablerIcon[] items,
@@ -111,9 +108,8 @@ public static class SegmentedControlWidgets
     }
 
     /// <summary>
-    /// The label variant's full per-tab geometry — the ONE layout resolution,
-    /// so measurement and drawing can never resolve tabs differently. All
-    /// values are PHYSICAL pixels.
+    /// Measures text tabs through the same layout helper used for drawing.
+    /// All returned dimensions are physical pixels.
     /// </summary>
     private static SegmentLayout LabelSegmentLayout(
         string[] items,
@@ -241,9 +237,7 @@ public static class SegmentedControlWidgets
         return new(layout.TotalWidth, layout.TotalHeight);
     }
 
-    /// <summary>A tab of the icon variant is a SQUARE of the comfortable
-    /// height — the width function is the whole difference between the two
-    /// variants' geometry.</summary>
+    /// <summary>Natural icon-tab width before fixed or fill sizing is applied.</summary>
     private static readonly Func<int, float> IconSegmentWidth =
         _ => ActiveTheme.Controls.ComfortableHeight * ImGuiHelpers.GlobalScale;
 

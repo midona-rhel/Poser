@@ -46,13 +46,18 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
     private SessionGeneration? _session;
     public WorldSnapshot Snapshot => _book.Snapshot;
 
-    // Scene files contain spawnable copies, never candidate/native addresses.
-    // These runtime-only operations bypass per-entity history because the
-    // scene workflow records the whole load as one step.
+    // Scene loading records one history step for the whole load.
     internal IReadOnlyList<AdoptedWorldObject> Adopted => _objects.Adopted;
     internal int Count => _objects.Count;
     internal AdoptedWorldObject? Spawn(string path, Transform placement, bool visible, out string? detail) =>
         _objects.Spawn(path, placement, visible, out detail);
+    internal AdoptedWorldObject? RestoreBorrowed(string path, Vector3 mapPosition, Transform placement, bool visible, out string? detail) =>
+        _objects.RestoreBorrowed(path, mapPosition, placement, visible, out detail);
+    internal WorldObjectState? BorrowedState(string path, Vector3 mapPosition) =>
+        _objects.FindBorrowed(path, mapPosition) is { } handle
+            ? new WorldObjectServiceLifecycle(_objects).Read(handle) : null;
+    internal void RestoreState(AdoptedWorldObject handle, WorldObjectState state) =>
+        new WorldObjectServiceLifecycle(_objects).Apply(handle, state);
     internal bool Release(AdoptedWorldObject entity) => _objects.Release(entity);
     internal bool IsLoading(AdoptedWorldObject entity) => _objects.IsLoading(entity);
     internal void KeepUnloaded(AdoptedWorldObject entity) => _objects.KeepUnloaded(entity);

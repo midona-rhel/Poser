@@ -11,7 +11,7 @@ using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Speed, weight and effect edges pushed to slots, props and VFX on the same tick.</summary>
+/// <summary>Applies speed and weight changes to animation slots, props, and effects.</summary>
 public sealed unsafe partial class TimelineSeekService
 {
     // ── Speed edges ───────────────────────────────────────────────────
@@ -20,7 +20,7 @@ public sealed unsafe partial class TimelineSeekService
     /// one stops with fade 0 and the new one starts without a blend-in.</summary>
     internal void PrepareInstantSwap(Character* character, int slot)
     {
-        if (!Available || character == null)
+        if (!Available)
             return;
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, slot);
         if (root == 0 || TimelineState.Of(root).Speed != 0f)
@@ -44,14 +44,13 @@ public sealed unsafe partial class TimelineSeekService
 
     /// <summary>
     /// Holds layer speeds natively, every tick: the slot timeline at layer ×
-    /// overall (its C009s carry it to their controls; change-guarded, so a steady
-    /// hold costs nothing), the controls of the props the layer summons, and its
+    /// overall (its C009s carry it to their controls; unchanged speed values skip the native update), the controls of the props the layer summons, and its
     /// effects at 0 when it is paused (the C012 speed handler drops 0). A replayed
     /// timeline is a new one and takes the speed on its first tick.
     /// </summary>
     internal void HoldSlotSpeeds(Character* character, IReadOnlyDictionary<int, float> speeds, float overall)
     {
-        if (!Available || character == null || speeds.Count == 0)
+        if (!Available || speeds.Count == 0)
             return;
         try
         {
@@ -80,8 +79,7 @@ public sealed unsafe partial class TimelineSeekService
                         TimelineSeekEngine.SetWeaponControlSpeeds(weapon, effective);
                     // Directly as well: a speed edge can land after this frame's push,
                     // which would leave the prop a frame on the old speed (half a frame
-                    // off at x0.5). The summoned prop gets no push at all. Change-
-                    // guarded, so the steady per-frame write costs nothing.
+                    // off at x0.5). The summoned prop gets no push at all. The native setter skips unchanged speed values.
                     _engine.SetWeaponTimelineSpeeds(weapon, effective);
                     if (TimelineSeekEngine.PropWeaponSlot(clip) != 3)
                     {
@@ -124,7 +122,7 @@ public sealed unsafe partial class TimelineSeekService
     /// </summary>
     internal void HoldActorSpeed(Character* character, float overall, IReadOnlyDictionary<int, float> slotSpeeds)
     {
-        if (!Available || character == null)
+        if (!Available)
             return;
         try
         {
@@ -167,7 +165,7 @@ public sealed unsafe partial class TimelineSeekService
     /// <summary>Holds layer weights (see TimelineSeekEngine.SetSlotWeight).</summary>
     internal void ApplySlotWeights(Character* character, IReadOnlyDictionary<int, float> weights)
     {
-        if (character == null || weights.Count == 0)
+        if (weights.Count == 0)
             return;
         try
         {
@@ -182,8 +180,6 @@ public sealed unsafe partial class TimelineSeekService
     /// <summary>Pause/resume edge for the actor's effects (the game drops speed 0).</summary>
     internal void ApplyVfxSpeed(Character* character, float overall)
     {
-        if (character == null)
-            return;
         try { _engine.SetActorVfxSpeeds(&character->Timeline.TimelineSequencer, (nint)character, overall); }
         catch (Exception ex) { LogOnce("vfxspeed", $"[TimelineSeek] VFX speed edge faulted: {ex.Message}"); }
     }
@@ -191,8 +187,6 @@ public sealed unsafe partial class TimelineSeekService
     /// <summary>Same-tick speed edge for the actor's prop timelines.</summary>
     internal void ApplyPropSpeed(Character* character, float overall)
     {
-        if (character == null)
-            return;
         try { _engine.SetPropSpeeds((nint)character, overall); }
         catch (Exception ex) { LogOnce("propspeed", $"[TimelineSeek] prop speed edge faulted: {ex.Message}"); }
     }

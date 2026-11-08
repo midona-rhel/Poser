@@ -5,7 +5,8 @@ using Poser.Application.Presentation;
 
 namespace Poser.Application.Appearance;
 
-/// <summary>Actor appearance actions and readouts; history and ownership stay behind this boundary.</summary>
+/// <summary>Appearance controls used by the UI. Implementations handle undo
+/// and restoration of the actor's previous appearance.</summary>
 public interface IActorAppearanceControl
 {
     IntegrationAvailability Penumbra { get; }
@@ -14,7 +15,6 @@ public interface IActorAppearanceControl
     GlamourerAccess AppearanceAccess(ActorId actor);
     IntegrationOverrides OverridesFor(ActorId actor);
     IntegrationValue<CollectionAssignment> ReadCollection(ActorId actor);
-    IntegrationResult CheckBodyProfileDisplaceable(ActorId actor);
     IntegrationValue<IReadOnlyList<ExternalItem>> ListCollections();
     IntegrationValue<IReadOnlyList<ExternalItem>> ListDesigns();
     IntegrationValue<IReadOnlyList<ExternalItem>> ListBodyProfiles();

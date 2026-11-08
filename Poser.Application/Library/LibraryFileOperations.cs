@@ -15,7 +15,10 @@ public interface ILibraryFileOperations
     void SetFavorite(string path, bool favorite);
 }
 
-/// <summary>File-operation policy and favorite identity; Documents owns safe disk writes.</summary>
+/// <summary>
+/// Runs file operations, updates favorite paths after successful moves or renames,
+/// and requests a Library rescan when needed.
+/// </summary>
 public sealed class LibraryFileOperations(ConfigurationService config, IPoseLibraryService library)
     : ILibraryFileOperations
 {

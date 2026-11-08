@@ -80,8 +80,8 @@ public unsafe class IKService : IDisposable
     }
 
     /// <summary>
-    /// Solves the endpoint's chain toward the request; a failed or
-    /// unavailable solver is a no-op. The havok pose is resolved from the
+    /// Solves the endpoint's chain toward the request. Returns early when
+    /// initialization or pose resolution is unavailable. The pose comes from the
     /// endpoint's own slot skeleton, keeping raw pointers out of the public API.
     /// </summary>
     public void Solve(IBone endpoint, in IkSolveRequest request)
@@ -423,10 +423,8 @@ public unsafe class IKService : IDisposable
     /// </summary>
     private List<IBone> GetBonesToDepth(IBone bone, int depth, bool includeSelf)
     {
-        // Reused buffer, not a fresh list: Solve runs per armed chain per
-        // physics tick. Safe because the single caller reads two indices out
-        // of the result and never retains it, and the physics pass is
-        // single-threaded.
+        // Reused by CCD and swivel. Callers must finish reading it before
+        // another solve; concurrent or re-entrant solves are unsupported.
         var result = _chainBuffer;
         result.Clear();
         if (includeSelf)
@@ -445,11 +443,8 @@ public unsafe class IKService : IDisposable
 
     public void Dispose()
     {
-        // Refuse before freeing. Solve gates on nothing but _initialized, so a
-        // physics-detour tick arriving after the frees — container teardown
-        // order is a convention, not a guarantee — would write through
-        // released aligned memory. Clearing the flag first makes that
-        // structural instead of ordering-dependent.
+        // Refuse later solves before freeing. This flag does not wait for a
+        // solve already in progress; the owner must stop native callbacks first.
         var wasInitialized = _initialized;
         _initialized = false;
 

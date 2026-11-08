@@ -1,8 +1,8 @@
 namespace Poser.UI;
 
 /// <summary>
-/// Font family selector. Cascades through nested elements.
-/// Tabler is reserved for the follow-up pass that registers the Tabler webfont.
+/// Font family selector. Cascades through nested elements; Icon selects the
+/// registered icon font.
 /// </summary>
 public enum FontFamily
 {

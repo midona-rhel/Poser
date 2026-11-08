@@ -46,7 +46,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private readonly SceneSession _scene;
     private readonly SelectionScope _selection;
     private readonly Application.Settings.ConfigurationService _config;
-    private readonly IAutoSaveService _autoSave;
+    private readonly Poser.Application.Library.AutoSaveLibrary _autoSave;
     private readonly IPosePreview _preview;
     private readonly ITextureProvider _textures;
     private readonly IPoseLibraryService _library;
@@ -106,7 +106,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         IPosePreviewRuntime previewRuntime,
         PropertiesContext properties,
         Application.Settings.ConfigurationService config,
-        IAutoSaveService autoSave,
+        Poser.Application.Library.AutoSaveLibrary autoSave,
         IPosePreview preview,
         ITextureProvider textures,
         IPoseLibraryService library,
@@ -211,11 +211,9 @@ public sealed class PoseFileInspectorSection : IDisposable
         _importMenuRequested = true;
     }
 
-    /// <summary>The library's OWN options menu — the same standing
-    /// settings the import flow reads (one state, retained), but options
-    /// only: none of the import dialog's actions belong in the library.
-    /// It opens to the LEFT of the seat so the preview stays visible
-    /// while the options are worked.</summary>
+    /// <summary>Opens the library options menu using the import flow's retained
+    /// settings. The menu excludes import actions and opens left of its anchor
+    /// to avoid covering the preview.</summary>
     public void RequestLibraryOptionsMenu(Vector2 seat)
     {
         _menuActor = null;
@@ -879,10 +877,8 @@ public sealed class PoseFileInspectorSection : IDisposable
             dense: dense,
             allowDisclosure: false);
 
-    /// <summary>The preview alone — the library window's plain right
-    /// column. Not a rail and not styled as one. With the seat, the
-    /// container lays out its OWN header: the options button at the
-    /// left, the Preview title moved right beside it.</summary>
+    /// <summary>Draws the library window's preview column with an options
+    /// button and Preview heading.</summary>
     public void DrawPreviewColumn(
         Vector2 origin, Vector2 size, bool optionsSeat = false)
     {
@@ -1054,12 +1050,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: true,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new CheckItem("Freeze", _freeze, next =>
-                    {
-                        _freeze = next;
-                        _config.Config.FreezeActorOnPoseImport = next;
-                        _config.Save();
-                    }, "Keep the actor paused after the import"));
+                    BuildFreezeImportItem());
                 form.Checkboxes(
                     string.Empty,
                     disabled: false,
@@ -1081,35 +1072,60 @@ public sealed class PoseFileInspectorSection : IDisposable
             labelColumnWidth: 0f,
             showTitle: true);
 
+    private CheckItem BuildFreezeImportItem() => new("Freeze", _freeze, next =>
+    {
+        _freeze = next;
+        _config.Config.FreezeActorOnPoseImport = next;
+        _config.Save();
+    }, "Keep the actor paused after the import");
+
+    private CheckItem BuildSmartImportItem() => new("Smart", _smartImport,
+        next => _smartImport = next, "Route face-only files as expression imports automatically");
+
+    private (bool Disabled, string Help) ImportBoneFilter => (_typeBody || _typeExpression,
+        _typeBody || _typeExpression
+            ? "The bone filter shapes the default import; uncheck Body and Expression to edit it"
+            : "Choose which bone categories imports may touch");
+
+    // Menu and file dialog share option rules; each keeps its own layout.
+    private (bool Locked, CheckItem[] Items) BuildImportTypeItems(bool selective)
+    {
+        bool locked = selective && _selectiveImport && !_selectiveDescendants;
+        const string why = "Selected bones import directly — the type gates only "
+            + "descendants (turn on Include descendants to use it)";
+        return (locked, [
+            new CheckItem("Body", _typeBody, next => _typeBody = next,
+                locked ? why : "Import the body. With Expression too, everything imports with every component"),
+            new CheckItem("Expression", _typeExpression, next => _typeExpression = next,
+                locked ? why : "Import the face as an expression — always every component")
+        ]);
+    }
+
+    private CheckItem[] BuildImportComponentItems()
+    {
+        bool locked = _cmpHighlighted || _typeExpression || _smartImport;
+        string? why = _cmpHighlighted
+            ? "CMTool poses carry rotations only — there is no position or scale in the file to apply"
+            : _typeExpression ? "Expression imports always apply every component"
+            : _smartImport ? "Smart Import's preset decides which components apply" : null;
+        return [
+            new CheckItem("Position", _position, next => _position = next, why, Disabled: locked),
+            new CheckItem("Rotation", _rotation, next => _rotation = next, why, Disabled: locked),
+            new CheckItem("Scale", _scale, next => _scale = next, why, Disabled: locked),
+            new CheckItem("Model", _modelTransform, next => _modelTransform = next,
+                "Also move the actor to the file's placement (model transform)", Disabled: _smartImport)
+        ];
+    }
+
     private float DrawImportTypeCard(Vector2 origin, float width) =>
         MenuSection(
             "##import-dialog-type-card", "Type",
             origin, width,
             form =>
             {
-                bool typeLocked = _selectiveImport && !_selectiveDescendants;
-                const string typeLockedWhy =
-                    "Selected bones import directly — the type gates only "
-                    + "descendants (turn on Include descendants to use it)";
-                form.Checkboxes(
-                    string.Empty,
-                    disabled: typeLocked,
-                    fullWidth: true,
-                    PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new CheckItem(
-                        "Body", _typeBody,
-                        next => _typeBody = next,
-                        typeLocked
-                            ? typeLockedWhy
-                            : "Import the body. With Expression too, everything "
-                                + "imports with every component"),
-                    new CheckItem(
-                        "Expression", _typeExpression,
-                        next => _typeExpression = next,
-                        typeLocked
-                            ? typeLockedWhy
-                            : "Import the face as an expression — always every "
-                                + "component"));
+                var type = BuildImportTypeItems(selective: true);
+                form.Checkboxes(string.Empty, disabled: type.Locked, fullWidth: true,
+                    PoseImportOptionsGrid.CheckboxColumnPitch, type.Items);
                 if (_faceWarning is { } faceWarning)
                     form.Status(faceWarning);
             },
@@ -1124,38 +1140,11 @@ public sealed class PoseFileInspectorSection : IDisposable
             origin, width,
             form =>
             {
-                bool locked = _cmpHighlighted || _typeExpression || _smartImport;
-                string? why = _cmpHighlighted
-                    ? "CMTool poses carry rotations only — there is no "
-                        + "position or scale in the file to apply"
-                    : locked
-                        ? "Expression imports always apply every component"
-                        : null;
-                form.Checkboxes(
-                    string.Empty,
-                    disabled: false,
-                    fullWidth: true,
-                    PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new CheckItem(
-                        "Position", _position, next => _position = next, why,
-                        Disabled: locked),
-                    new CheckItem(
-                        "Rotation", _rotation, next => _rotation = next, why,
-                        Disabled: locked));
-                form.Checkboxes(
-                    string.Empty,
-                    disabled: false,
-                    fullWidth: true,
-                    PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new CheckItem(
-                        "Scale", _scale, next => _scale = next, why,
-                        Disabled: locked),
-                    new CheckItem(
-                        "Model", _modelTransform,
-                        next => _modelTransform = next,
-                        "Also move the actor to the file's placement "
-                            + "(model transform)",
-                        Disabled: _smartImport));
+                var components = BuildImportComponentItems();
+                form.Checkboxes(string.Empty, disabled: false, fullWidth: true,
+                    PoseImportOptionsGrid.CheckboxColumnPitch, components[0], components[1]);
+                form.Checkboxes(string.Empty, disabled: false, fullWidth: true,
+                    PoseImportOptionsGrid.CheckboxColumnPitch, components[2], components[3]);
             },
             divider: false,
             dense: true,
@@ -1173,9 +1162,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
-                    new CheckItem(
-                        "Smart", _smartImport, next => _smartImport = next,
-                        "Route face-only files as expression imports automatically"));
+                    BuildSmartImportItem());
                 form.Checkboxes(
                     string.Empty,
                     disabled: false,
@@ -1200,39 +1187,42 @@ public sealed class PoseFileInspectorSection : IDisposable
             labelColumnWidth: 0f,
             showTitle: true);
 
-    private List<CheckItem> BuildImportScopeItems()
+    private List<CheckItem> BuildImportScopeItems(bool selective = true)
     {
         var scope = new List<CheckItem>(5);
-        bool hasSelection = HasSelectedBonesForImportTarget();
-        bool anchorable = SelectiveImportAppliesPosition();
-        scope.Add(new CheckItem(
-            "Selected bones", _selectiveImport,
-            next => _selectiveImport = next,
-            hasSelection || _selectiveImport
-                ? "Apply the pose only to the bones currently "
-                    + "selected on this actor"
-                : "Select bones on the target actor first",
-            Disabled: !hasSelection && !_selectiveImport));
-        scope.Add(new CheckItem(
-            "Include descendants", _selectiveDescendants,
-            next => _selectiveDescendants = next,
-            "Extend the selected-bones scope to every "
-                + "descendant of the selected bones",
-            Disabled: !_selectiveImport));
-        scope.Add(new CheckItem(
-            "Anchor positions", _selectiveAnchor,
-            next => _selectiveAnchor = next,
-            anchorable || !_selectiveImport
-                ? "Keep the selected bones (and descendants) "
-                    + "where they stand — the file's rotations "
-                    + "and scales apply, its positions do not"
-                : _smartImport
-                    ? "This import applies no position — Smart "
-                        + "Import's preset decides the components, "
-                        + "and there is nothing to anchor"
-                    : "Turn on the Position component first — "
-                        + "without it there is nothing to anchor",
-            Disabled: !_selectiveImport || !anchorable));
+        if (selective)
+        {
+            bool hasSelection = HasSelectedBonesForImportTarget();
+            bool anchorable = SelectiveImportAppliesPosition();
+            scope.Add(new CheckItem(
+                "Selected bones", _selectiveImport,
+                next => _selectiveImport = next,
+                hasSelection || _selectiveImport
+                    ? "Apply the pose only to the bones currently "
+                        + "selected on this actor"
+                    : "Select bones on the target actor first",
+                Disabled: !hasSelection && !_selectiveImport));
+            scope.Add(new CheckItem(
+                "Include descendants", _selectiveDescendants,
+                next => _selectiveDescendants = next,
+                "Extend the selected-bones scope to every "
+                    + "descendant of the selected bones",
+                Disabled: !_selectiveImport));
+            scope.Add(new CheckItem(
+                "Anchor positions", _selectiveAnchor,
+                next => _selectiveAnchor = next,
+                anchorable || !_selectiveImport
+                    ? "Keep the selected bones (and descendants) "
+                        + "where they stand — the file's rotations "
+                        + "and scales apply, its positions do not"
+                    : _smartImport
+                        ? "This import applies no position — Smart "
+                            + "Import's preset decides the components, "
+                            + "and there is nothing to anchor"
+                        : "Turn on the Position component first — "
+                            + "without it there is nothing to anchor",
+                Disabled: !_selectiveImport || !anchorable));
+        }
         scope.Add(new CheckItem(
             "Reset first", _reset, next => _reset = next,
             "Clear every bone in scope before importing, "
@@ -1247,16 +1237,13 @@ public sealed class PoseFileInspectorSection : IDisposable
 
     private void DrawImportFooterFilter(ActionBarScope actions)
     {
-        bool typed = _typeBody || _typeExpression;
+        var filter = ImportBoneFilter;
         actions.Button(
             "Bone filter",
             RequestBoneFilterMenu,
             style: ControlStyle.Comfortable,
-            disabled: typed,
-            help: typed
-                ? "The bone filter shapes the default import; "
-                    + "uncheck Body and Expression to edit it"
-                : "Choose which bone categories imports may touch");
+            disabled: filter.Disabled,
+            help: filter.Help);
     }
 
     private float DrawImportTypeSection(
@@ -1272,15 +1259,8 @@ public sealed class PoseFileInspectorSection : IDisposable
                     disabled: false,
                     fullWidth: false,
                     PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new CheckItem("Freeze", _freeze, next =>
-                    {
-                        _freeze = next;
-                        _config.Config.FreezeActorOnPoseImport = next;
-                        _config.Save();
-                    }, "Keep the actor paused after the import"),
-                    new CheckItem(
-                        "Smart", _smartImport, next => _smartImport = next,
-                        "Route face-only files as expression imports automatically"));
+                    BuildFreezeImportItem(),
+                    BuildSmartImportItem());
                 if (selective)
                     form.Checkbox(
                         "Single-click mode", _importBrowser.SingleClickActivation,
@@ -1289,30 +1269,9 @@ public sealed class PoseFileInspectorSection : IDisposable
                 if (dense)
                     form.Canvas("type-gap", ActiveTheme.Spacing.Three,
                         static (_, _) => { });
-                bool typeLocked =
-                    selective && _selectiveImport && !_selectiveDescendants;
-                const string typeLockedWhy =
-                    "Selected bones import directly — the type gates only "
-                    + "descendants (turn on Include descendants to use it)";
-                form.Checkboxes(
-                    "Type",
-                    disabled: typeLocked,
-                    fullWidth: false,
-                    PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new CheckItem(
-                        "Body", _typeBody,
-                        next => _typeBody = next,
-                        typeLocked
-                            ? typeLockedWhy
-                            : "Import the body. With Expression too, everything "
-                                + "imports with every component"),
-                    new CheckItem(
-                        "Expression", _typeExpression,
-                        next => _typeExpression = next,
-                        typeLocked
-                            ? typeLockedWhy
-                            : "Import the face as an expression — always every "
-                                + "component"));
+                var type = BuildImportTypeItems(selective);
+                form.Checkboxes("Type", disabled: type.Locked, fullWidth: false,
+                    PoseImportOptionsGrid.CheckboxColumnPitch, type.Items);
                 if (selective)
                 {
                     if (_faceWarning is { } faceWarning)
@@ -1330,38 +1289,11 @@ public sealed class PoseFileInspectorSection : IDisposable
             origin, width,
             form =>
             {
-                bool locked = _cmpHighlighted || _typeExpression || _smartImport;
-                string? why = _cmpHighlighted
-                    ? "CMTool poses carry rotations only — there is no "
-                        + "position or scale in the file to apply"
-                    : locked
-                        ? "Expression imports always apply every component"
-                        : null;
-                form.Checkboxes(
-                    "Apply",
-                    disabled: false,
-                    fullWidth: false,
-                    PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new CheckItem(
-                        "Position", _position, next => _position = next, why,
-                        Disabled: locked),
-                    new CheckItem(
-                        "Rotation", _rotation, next => _rotation = next, why,
-                        Disabled: locked));
-                form.Checkboxes(
-                    string.Empty,
-                    disabled: false,
-                    fullWidth: false,
-                    PoseImportOptionsGrid.CheckboxColumnPitch,
-                    new CheckItem(
-                        "Scale", _scale, next => _scale = next, why,
-                        Disabled: locked),
-                    new CheckItem(
-                        "Model", _modelTransform,
-                        next => _modelTransform = next,
-                        "Also move the actor to the file's placement "
-                            + "(model transform)",
-                        Disabled: _smartImport));
+                var components = BuildImportComponentItems();
+                form.Checkboxes("Apply", disabled: false, fullWidth: false,
+                    PoseImportOptionsGrid.CheckboxColumnPitch, components[0], components[1]);
+                form.Checkboxes(string.Empty, disabled: false, fullWidth: false,
+                    PoseImportOptionsGrid.CheckboxColumnPitch, components[2], components[3]);
             },
             divider: divider,
             dense: dense,
@@ -1375,54 +1307,11 @@ public sealed class PoseFileInspectorSection : IDisposable
             origin, width,
             form =>
             {
-                var scope = new List<CheckItem>(4);
-                if (selective)
-                {
-                    bool hasSelection = HasSelectedBonesForImportTarget();
-                    bool anchorable = SelectiveImportAppliesPosition();
-                    scope.Add(new CheckItem(
-                        "Selected bones", _selectiveImport,
-                        next => _selectiveImport = next,
-                        hasSelection || _selectiveImport
-                            ? "Apply the pose only to the bones currently "
-                                + "selected on this actor"
-                            : "Select bones on the target actor first",
-                        Disabled: !hasSelection && !_selectiveImport));
-                    scope.Add(new CheckItem(
-                        "Include descendants", _selectiveDescendants,
-                        next => _selectiveDescendants = next,
-                        "Extend the selected-bones scope to every "
-                            + "descendant of the selected bones",
-                        Disabled: !_selectiveImport));
-                    scope.Add(new CheckItem(
-                        "Anchor positions", _selectiveAnchor,
-                        next => _selectiveAnchor = next,
-                        anchorable || !_selectiveImport
-                            ? "Keep the selected bones (and descendants) "
-                                + "where they stand — the file's rotations "
-                                + "and scales apply, its positions do not"
-                            : _smartImport
-                                ? "This import applies no position — Smart "
-                                    + "Import's preset decides the "
-                                    + "components, and there is nothing to "
-                                    + "anchor"
-                                : "Turn on the Position component first — "
-                                    + "without it there is nothing to anchor",
-                        Disabled: !_selectiveImport || !anchorable));
-                }
-                scope.Add(new CheckItem(
-                    "Reset first", _reset, next => _reset = next,
-                    "Clear every bone in scope before importing, "
-                        + "including ones the file does not contain"));
-                scope.Add(new CheckItem(
-                    "Exclude ear bones", _excludeEars,
-                    next => _excludeEars = next,
-                    "Leave ears where they are — the six standard ear "
-                        + "bones and the Viera ear chains"));
+                var scope = BuildImportScopeItems(selective);
                 form.Checkboxes(
                     "Scope", disabled: false, fullWidth: false,
                     scope.ToArray());
-                bool typed = _typeBody || _typeExpression;
+                var filter = ImportBoneFilter;
                 if (dense)
                     form.Canvas("scope-filter-gap",
                         ActiveTheme.Spacing.Three,
@@ -1430,11 +1319,8 @@ public sealed class PoseFileInspectorSection : IDisposable
                 form.Actions(dense ? string.Empty : "Filter",
                     actions => actions.Button(
                         "Bone filter", () => RequestBoneFilterMenu(),
-                        disabled: typed,
-                        help: typed
-                            ? "The bone filter shapes the default import; "
-                                + "uncheck Body and Expression to edit it"
-                            : "Choose which bone categories imports may touch"),
+                        disabled: filter.Disabled,
+                        help: filter.Help),
                     alignRight: dense,
                     fullWidth: dense);
             },
@@ -1888,6 +1774,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         {
             actions.Button("Import", () => RequestImportMenu(withPresets: true, target: actorId));
             actions.Button("Import from file", () => OpenImportFromFile(actorId));
+            actions.Button("From clipboard", () => ImportFromClipboard(actorId));
             actions.Button("Library", () => RequestLibrary(actorId));
         });
         form.Actions("Export", actions =>

@@ -1,0 +1,582 @@
+[
+  {
+    "test": "TwoJoint bake without dragging succeeds",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "TwoJoint bake without dragging preserves pose",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 2.577813996454094e-06,
+        "degrees": 9.956626120759429e-06
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 3.0057445001911096e-06,
+        "degrees": 2.3536915126363644e-05
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 5.111056642183263e-06,
+        "degrees": 2.6342756612779254e-05
+      }
+    }
+  },
+  {
+    "test": "TwoJoint export preserves history",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "TwoJoint export preserves chain",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "TwoJoint export preserves live pose",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "TwoJoint fresh actor has IK off",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "TwoJoint live export on fresh actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 5.611595138660671e-07,
+        "degrees": 0.0004263127011661914
+      },
+      "j_ude_a_r": {
+        "metres": 3.237035681753504e-07,
+        "degrees": 4.37012028469289e-05
+      },
+      "j_ude_b_l": {
+        "metres": 7.311422569986769e-07,
+        "degrees": 0.0001553680382287332
+      },
+      "j_ude_b_r": {
+        "metres": 6.148170459725467e-07,
+        "degrees": 0.0002793340703744649
+      },
+      "j_te_l": {
+        "metres": 8.567963585621957e-07,
+        "degrees": 0.00010159547655638247
+      },
+      "j_te_r": {
+        "metres": 7.923484082428803e-07,
+        "degrees": 1.1706354451251832e-05
+      }
+    }
+  },
+  {
+    "test": "TwoJoint fresh actor has IK off",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "TwoJoint baked export on fresh actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 5.611595138660671e-07,
+        "degrees": 0.0004263127011661914
+      },
+      "j_ude_a_r": {
+        "metres": 2.990869438942417e-06,
+        "degrees": 4.0190889973957885e-05
+      },
+      "j_ude_b_l": {
+        "metres": 7.311422569986769e-07,
+        "degrees": 0.0001553680382287332
+      },
+      "j_ude_b_r": {
+        "metres": 3.2828036797431495e-06,
+        "degrees": 0.0002854720849470478
+      },
+      "j_te_l": {
+        "metres": 8.567963585621957e-07,
+        "degrees": 0.00010159547655638247
+      },
+      "j_te_r": {
+        "metres": 4.749442072553003e-06,
+        "degrees": 3.4150945850063884e-05
+      }
+    }
+  },
+  {
+    "test": "Ccd bake without dragging succeeds",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Ccd bake without dragging preserves pose",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.6320444234076347e-06,
+        "degrees": 1.799012704043476e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 3.304391018009083e-06,
+        "degrees": 0.00010559216211187696
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 6.344288770228261e-06,
+        "degrees": 5.399738656763832e-06
+      }
+    }
+  },
+  {
+    "test": "Ccd export preserves history",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Ccd export preserves chain",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Ccd export preserves live pose",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "Ccd fresh actor has IK off",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Ccd live export on fresh actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 6.347637356911408e-07,
+        "degrees": 0.0004514614250491023
+      },
+      "j_ude_a_r": {
+        "metres": 1.0070873844084402e-06,
+        "degrees": 4.040794406345859e-05
+      },
+      "j_ude_b_l": {
+        "metres": 8.202438663361467e-07,
+        "degrees": 0.00017434551215248672
+      },
+      "j_ude_b_r": {
+        "metres": 9.129074433635187e-07,
+        "degrees": 0.00019982681169021963
+      },
+      "j_te_l": {
+        "metres": 8.110487037673026e-07,
+        "degrees": 9.653307178686434e-05
+      },
+      "j_te_r": {
+        "metres": 8.137573346390449e-07,
+        "degrees": 2.020397203172922e-05
+      }
+    }
+  },
+  {
+    "test": "Ccd fresh actor has IK off",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Ccd baked export on fresh actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 6.347637356911408e-07,
+        "degrees": 0.0004514614250491023
+      },
+      "j_ude_a_r": {
+        "metres": 2.9957703515980217e-06,
+        "degrees": 5.585533098160351e-05
+      },
+      "j_ude_b_l": {
+        "metres": 8.202438663361467e-07,
+        "degrees": 0.00017434551215248672
+      },
+      "j_ude_b_r": {
+        "metres": 2.953658748168742e-06,
+        "degrees": 0.00020499814637987458
+      },
+      "j_te_l": {
+        "metres": 8.110487037673026e-07,
+        "degrees": 9.653307178686434e-05
+      },
+      "j_te_r": {
+        "metres": 4.888723862035012e-06,
+        "degrees": 3.0354024625058453e-05
+      }
+    }
+  },
+  {
+    "test": "Fabrik bake without dragging succeeds",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Fabrik bake without dragging preserves pose",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.766705691433049e-06,
+        "degrees": 9.507220963046143e-06
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 2.2423648231639173e-06,
+        "degrees": 9.80911239371096e-06
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 4.0103023576919805e-06,
+        "degrees": 1.024528375501913e-05
+      }
+    }
+  },
+  {
+    "test": "Fabrik export preserves history",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Fabrik export preserves chain",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Fabrik export preserves live pose",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "Fabrik fresh actor has IK off",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Fabrik live export on fresh actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 6.488451280214421e-07,
+        "degrees": 0.0003406289365096869
+      },
+      "j_ude_a_r": {
+        "metres": 4.3945989578875796e-07,
+        "degrees": 4.285909689161743e-05
+      },
+      "j_ude_b_l": {
+        "metres": 7.094793865170296e-07,
+        "degrees": 8.82820115434008e-05
+      },
+      "j_ude_b_r": {
+        "metres": 5.262128845296945e-07,
+        "degrees": 0.00019668691666811048
+      },
+      "j_te_l": {
+        "metres": 7.927799189943263e-07,
+        "degrees": 2.6008585494473073e-05
+      },
+      "j_te_r": {
+        "metres": 5.329165038495008e-07,
+        "degrees": 1.2313298636799906e-05
+      }
+    }
+  },
+  {
+    "test": "Fabrik fresh actor has IK off",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Fabrik baked export on fresh actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 6.488451280214421e-07,
+        "degrees": 0.0003406289365096869
+      },
+      "j_ude_a_r": {
+        "metres": 2.2956206133594907e-06,
+        "degrees": 4.161653934608438e-05
+      },
+      "j_ude_b_l": {
+        "metres": 7.094793865170296e-07,
+        "degrees": 8.82820115434008e-05
+      },
+      "j_ude_b_r": {
+        "metres": 3.0023490803019285e-06,
+        "degrees": 0.00018975299357459143
+      },
+      "j_te_l": {
+        "metres": 7.927799189943263e-07,
+        "degrees": 2.6008585494473073e-05
+      },
+      "j_te_r": {
+        "metres": 5.223954440878489e-06,
+        "degrees": 1.1326587362040635e-05
+      }
+    }
+  },
+  {
+    "test": "Rope bake without dragging succeeds",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Rope bake without dragging preserves pose",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.797970244505452e-06,
+        "degrees": 8.189109132934075e-06
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 2.9417980896067844e-06,
+        "degrees": 9.659346157805868e-06
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 4.763887593188683e-06,
+        "degrees": 1.9090959104164248e-05
+      }
+    }
+  },
+  {
+    "test": "Rope export preserves history",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Rope export preserves chain",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Rope export preserves live pose",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "Rope fresh actor has IK off",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Rope live export on fresh actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 5.590169942405807e-07,
+        "degrees": 0.0003694384226969307
+      },
+      "j_ude_a_r": {
+        "metres": 5.406930738093347e-07,
+        "degrees": 7.268617870074569e-05
+      },
+      "j_ude_b_l": {
+        "metres": 6.540405185762915e-07,
+        "degrees": 0.00010663629423853396
+      },
+      "j_ude_b_r": {
+        "metres": 4.3906263791317976e-07,
+        "degrees": 0.00020103423543714425
+      },
+      "j_te_l": {
+        "metres": 5.316013543787147e-07,
+        "degrees": 3.0112924503574538e-05
+      },
+      "j_te_r": {
+        "metres": 4.3675622487956766e-07,
+        "degrees": 1.961822478742194e-05
+      }
+    }
+  },
+  {
+    "test": "Rope fresh actor has IK off",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Rope baked export on fresh actor",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 5.590169942405807e-07,
+        "degrees": 0.0003694384226969307
+      },
+      "j_ude_a_r": {
+        "metres": 2.3451405076167076e-06,
+        "degrees": 6.382207850987505e-05
+      },
+      "j_ude_b_l": {
+        "metres": 6.540405185762915e-07,
+        "degrees": 0.00010663629423853396
+      },
+      "j_ude_b_r": {
+        "metres": 3.458525119209468e-06,
+        "degrees": 0.00020729652261899828
+      },
+      "j_te_l": {
+        "metres": 5.316013543787147e-07,
+        "degrees": 3.0112924503574538e-05
+      },
+      "j_te_r": {
+        "metres": 5.5197191957120685e-06,
+        "degrees": 2.9178580924908168e-05
+      }
+    }
+  }
+]

@@ -60,9 +60,8 @@ public sealed class TexturePicker
     /// menu-tier (4) and reads as none on a surface this large.</summary>
     private const float TextureSurfacePadding = 12f;
 
-    /// <summary>Ids probed per frame. A whole catalog resolves inside a
-    /// second at this rate and no frame carries more than a handful of
-    /// blocking wrap resolutions.</summary>
+    /// <summary>Maximum catalog probes per frame, including pending retries.
+    /// Total loading time depends on the catalog and texture loader.</summary>
     private const int TextureProbesPerFrame = 16;
 
     /// <summary>
@@ -95,17 +94,15 @@ public sealed class TexturePicker
     private uint _selected;
     private uint? _picked;
 
-    /// <param name="count">How many ids to walk. Missing ids are dropped.
-    /// </param>
-    /// <param name="caption">The tile's caption for an id — a catalog
-    /// whose entries have names states them here; unset, the id itself
-    /// is the caption.</param>
     /// <summary>The grid's columns and tile side, per picker: a face
     /// grid runs five small tiles across, a sky grid three big ones.</summary>
     private readonly int _columns;
     private readonly int _rows;
     private readonly float _tileSize;
 
+    /// <param name="count">Exclusive upper bound of the ID range to probe.</param>
+    /// <param name="caption">Optional label for an ID; otherwise displays the ID.</param>
+    /// <param name="knownIds">When supplied, uses this list instead of probing the range.</param>
     public TexturePicker(
         string id, TexturePreview preview, uint count = 1000,
         Func<uint, string>? caption = null,
@@ -260,11 +257,8 @@ public sealed class TexturePicker
     private uint Clamp(float value) => (uint)Math.Clamp(
         (int)MathF.Round(value), 0, (int)Math.Max(1u, _count) - 1);
 
-    /// <summary>Arms the surface under the tile that owns it. The anchor is
-    /// the TILE's rect rather than the last reserved item, so the trailing
-    /// steppers cannot move the surface.</summary>
-    /// <summary>Arms the surface under a tile the caller drew — a
-    /// bigger one than the field's own.</summary>
+    /// <summary>Opens the picker under the caller's tile rectangle. Explicit
+    /// bounds keep later controls from changing its anchor.</summary>
     public void OpenAt(uint selected, Vector2 anchorMin, Vector2 anchorMax) =>
         Open(selected, anchorMin, anchorMax);
 
@@ -277,9 +271,8 @@ public sealed class TexturePicker
     }
 
     /// <summary>
-    /// One chunk of the catalog walk. The loading list is retried FIRST:
-    /// every id answers Pending the first time it is asked, so the walk
-    /// would otherwise finish having admitted nothing.
+    /// Retries pending textures before probing more IDs. Both consume the
+    /// frame budget; unresolved textures remain queued for later frames.
     /// </summary>
     private void Probe()
     {

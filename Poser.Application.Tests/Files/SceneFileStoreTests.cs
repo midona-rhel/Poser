@@ -48,7 +48,7 @@ public sealed class SceneFileStoreTests
         actor.Animation = new SceneAnimationState
         {
             Base = new SceneAnimationLayer { Timeline = 6310, Playing = true, Speed = 0f, Weight = 1f, HeldSeconds = 4.03f },
-            UpperBody = new SceneAnimationLayer { Timeline = 8008, Playing = true, Loop = true, Speed = 0.5f, Weight = 0.6f },
+            UpperBody = new SceneAnimationLayer { Timeline = 8008, Playing = true, Loop = true, Speed = 0.5f, Weight = 0.6f, PlayedSeconds = 1.5f },
             HeldExpression = 605,
             Stance = Poser.Domain.Animation.AnimationStance.SitGround,
             Advanced = true,
@@ -76,6 +76,7 @@ public sealed class SceneFileStoreTests
         Assert.Equal(4.03f, back.Animation.Base.HeldSeconds);
         Assert.Equal(0.5f, back.Animation.UpperBody!.Speed);
         Assert.True(back.Animation.UpperBody.Loop);
+        Assert.Equal(1.5f, back.Animation.UpperBody.PlayedSeconds);
         Assert.Equal((ushort)605, back.Animation.HeldExpression);
         Assert.Equal(Poser.Domain.Animation.AnimationStance.SitGround, back.Animation.Stance);
         var edit = Assert.Single(back.PoseEdits!);
@@ -117,8 +118,8 @@ public sealed class SceneFileStoreTests
         Assert.Null(read.Scene.WorldObjects);
     }
 
-    /// <summary>Writes a raw document into a scene CONTAINER, which is what a
-    /// .xivs is: the payload entries are what let a scene carry hundreds of
+    /// <summary>Writes a raw document into a scene container. A <c>.xivs</c>
+    /// file stores payloads as separate entries, allowing a scene to carry
     /// megabytes of appearance without the document growing at all.</summary>
     internal static void WriteContainer(string path, string documentJson)
     {

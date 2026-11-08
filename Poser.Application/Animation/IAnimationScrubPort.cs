@@ -8,9 +8,8 @@ namespace Poser.Application.Animation;
 /// <summary>Havok control enumeration and local-time writes for scrubbing.</summary>
 public interface IAnimationScrubPort
 {
-    /// <summary>Every currently valid Havok control, freshly enumerated.
-    /// The returned <c>SkeletonToken</c> on the reading identifies the
-    /// enumeration; writing with a stale token is refused.</summary>
+    /// <summary>Reads the actor's animation controls and returns the skeleton
+    /// version in token. Pass that token back when setting a control's time.</summary>
     IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token);
 
     /// <summary>
@@ -20,9 +19,8 @@ public interface IAnimationScrubPort
     /// </summary>
     ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot, out ulong token);
 
-    /// <summary>Writes a control's local time. Fails when the actor,
-    /// skeleton, or control no longer matches <paramref name="token"/>,
-    /// so a scrub can never land on a replaced skeleton.</summary>
+    /// <summary>Sets the control's time. Implementations must reject a stale
+    /// skeleton token before writing, since control indices can be reused.</summary>
     Outcome SetControlTime(
         ActorId actor, ScrubControlId control, float time, ulong token);
 }

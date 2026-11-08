@@ -2,7 +2,9 @@ using Poser.Domain.Identity;
 
 namespace Poser.Domain.Transforms;
 
-/// <summary>One ordered attempt to restore an exact captured target state.</summary>
+/// <summary>
+/// Result of attempting to restore one captured transform.
+/// </summary>
 public sealed record TransformRecoveryAttempt(
     TransformTargetState RequestedState,
     TransformPortStatus Status,
@@ -12,9 +14,9 @@ public sealed record TransformRecoveryAttempt(
 }
 
 /// <summary>
-/// Typed evidence for an exhaustive restore sweep. Requested states remain the
-/// frozen retry payload; a failed port call is mutation-unknown. Receipts have
-/// reference identity so only the exact current pending token can be retried.
+/// Results of a set of restoration attempts, including the states to retry.
+/// A failed attempt may already have changed part of its target; failure does
+/// not mean nothing happened.
 /// </summary>
 public sealed class TransformRecoveryReceipt
 {

@@ -98,6 +98,8 @@ metadata-editor drafts. Application owns additive entry loading, pose-spawn
 continuation, entity/group save admission, file-operation policy and favorites;
 Documents performs scans and
 safe writes. Autosave browsing scans continue independently of panel visibility.
+The Library grid, scrollbar and toolbar use the current pane width during
+resizing. Grid rows are rebuilt when the column count or entries change.
 
 Inspector and Properties read the current selection independently when drawing.
 Changing selection retargets both panels; collapsing, hiding or switching tabs

@@ -9,8 +9,8 @@ using Poser.Application.Events;
 namespace Poser.Game.Environment;
 
 /// <summary>
-/// Brio's WorldRenderingService. The water freeze is the water renderer's
-/// update hooked to return zero; the hook's enabled state IS the freeze, so
+/// Water freeze replaces the water renderer's
+/// update with a zero return; the hook's enabled state is the freeze, so
 /// there is nothing to store and nothing to restore — releasing it hands the
 /// surface straight back to the game. The physics freeze is a process-global
 /// code patch owned by <see cref="PhysicsFreezePatcher"/>.

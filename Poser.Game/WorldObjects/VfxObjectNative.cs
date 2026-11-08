@@ -68,8 +68,8 @@ internal sealed unsafe class VfxObjectNative
         _resolver = resolver;
         _handledLock = handledLock;
         _destroyNative = destroyNative;
-        // Each signature is guarded on its own: a patch that breaks one
-        // takes VFX away and leaves BG objects standing.
+        // A failure in VFX initialization disables effect spawning.
+        // Background model support initializes separately.
         try
         {
             _vfxPlayStatic = (delegate* unmanaged<nint, float, uint, nint>)
@@ -254,8 +254,8 @@ internal sealed unsafe class VfxObjectNative
         return true;
     }
 
-    /// <summary>Puts a captured effect state back — the adopted release's
-    /// other half. Resume replays only when the adoption paused it.</summary>
+    /// <summary>Restores colour, intensity, and speed. The caller explicitly
+    /// chooses whether to restart playback through the resume argument.</summary>
     public void RestoreVfxState(
         nint address,
         System.Numerics.Vector4 color,

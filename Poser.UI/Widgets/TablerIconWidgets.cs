@@ -9,7 +9,7 @@ namespace Poser.UI.Widgets;
 public static class TablerIconWidgets
 {
     /// <summary>
-    /// Inline (cursor-flow) Tabler icon at a LOGICAL CSS-pixel size —
+    /// Inline (cursor-flow) Tabler icon at a logical CSS-pixel size —
     /// the same size semantics as <see cref="TextStyle"/>; UI scaling
     /// happens once inside the renderer. Picto renders bare Tabler SVGs
     /// (24-grid, round caps/joins) sized per call site, so size, tint,
@@ -29,7 +29,7 @@ public static class TablerIconWidgets
 
     /// <summary>
     /// Composed-control icon: fits and centers the glyph inside a
-    /// SCREEN-space box (already scaled by the owning control), through
+    /// screen-space box (already scaled by the owning control), through
     /// the same canonical geometry path the inline form uses.
     /// <paramref name="contentScale"/> shrinks the glyph square inside
     /// the box (button glyph inset); 1 fills the box.
@@ -42,7 +42,7 @@ public static class TablerIconWidgets
             Tabler.Get(icon), min, max, color, contentScale, opacity,
             disabled, flipX, strokeWidth);
 
-    /// <summary><paramref name="filled"/> asks for the glyph's SOLID twin —
+    /// <summary><paramref name="filled"/> asks for the glyph's solid variant —
     /// the latched on-state's whole vocabulary. It falls back to the outline
     /// when Tabler ships no filled variant, so a caller never has to know
     /// which glyphs have one.</summary>

@@ -92,8 +92,7 @@ public static class ActionBarWidgets
                 default,
                 TablerIcon.Circle));
 
-        /// <summary>An inline choice: the shared dropdown at the bar's
-        /// control height. The label is the item id.</summary>
+        /// <summary>Adds a dropdown to the bar. Its control id comes from its position in the bar.</summary>
         public void Dropdown(
             string label,
             string[] options,
@@ -325,14 +324,8 @@ public static class ActionBarWidgets
                     }
                     case ItemKind.Icon:
                     {
-                        // The bar's icons are SQUARE at the close-action side,
-                        // and stay square whatever else the caller states.
-                        // Substituting the square only when the whole style was
-                        // default meant one extra flag — Selected — silently
-                        // re-sized the button to the shell action side, so a
-                        // toggle grew out of the slot the bar had measured for
-                        // it and spilled past its bottom-right corner (user
-                        // 2026-08-14).
+                        // Default icon buttons use a square close-action size.
+                        // Other style flags do not suppress that default; explicit sizes do.
                         var style = item.Style;
                         if (style.Width == default && style.Height == default)
                             style = style with

@@ -1,4 +1,4 @@
-// Hand-authored project icons (user-designed, NOT from the Tabler set).
+// Hand-authored project icons outside the Tabler set.
 // These take precedence over TablerSvgSources so a re-run of the fetch script
 // cannot clobber them. Same drawing conventions as Tabler: 24-grid, stroke 2,
 // round caps/joins. "Filled" joint dots are tiny stroked circles (r .4 + the
@@ -86,9 +86,8 @@ internal static class PoserIconSources
         // wider chevron apexed at the hip (12,14) with feet at y 20.5. Open
         // strokes with large negative space — the opposite silhouette to `head`.
         ["body"] = @"<svg xmlns=""http://www.w3.org/2000/svg"" width=""24"" height=""24"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"" > <path d=""M9.7 5.7a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0 -4.6 0"" /> <path d=""M12 8v6"" /> <path d=""M7.5 13.5L12 10L16.5 13.5"" /> <path d=""M8.5 20.5L12 14L15.5 20.5"" /> </svg>",
-        // Light-kind identity glyphs, drawn to stand apart from `sun` and
-        // `bulb` at 14px — the four kinds share one sidebar column, so each
-        // silhouette has to answer "which kind" on its own.
+        // Light-kind glyphs remain distinguishable from `sun` and `bulb` at
+        // 14px in the shared sidebar icon column.
         // `spotlight`: a truncated cone tilted 60 degrees below the horizontal,
         // apex up-left. Built on axis a = (.5, .866) from A(7, 4.5): the
         // aperture is A +/- 1.9 perpendicular, the throw ends 13.5 units along

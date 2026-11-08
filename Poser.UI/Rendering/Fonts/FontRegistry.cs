@@ -10,23 +10,10 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>
-/// Resolves <see cref="FontFamily"/> + weight + size requests from
-/// the presentation contract to a concrete Dalamud <see cref="IFontHandle"/>.
-/// Handles are cached per normalized
-/// (family, weight, size). Requested sizes are honored exactly (rounded to whole pixels);
-/// bucketing them (a ±4px snap) silently corrupts the picto scale (12→13, 14→13).
-///
-/// <para><b>Font sources.</b> Real font files from <c>C:\Windows\Fonts</c>, matching the picto
-/// stack as rendered on Windows: Segoe UI (400), Segoe UI Italic,
-/// Segoe UI Semibold (500-approx and 600 — classic Segoe has no static
-/// Medium; documented fidelity deviation), and Cascadia Mono
-/// (Consolas fallback) for <see cref="FontFamily.Mono"/>. When a file is missing (e.g. Wine),
-/// falls back to the Dalamud default font at the requested size.</para>
-///
-/// <para><b>Bootstrapping.</b> The hosting plugin must call <see cref="Register"/> once at
-/// startup with its <c>IDalamudPluginInterface.UiBuilder.FontAtlas</c>. Without registration
-/// the registry returns <c>null</c> and callers fall back to the active ImGui
-/// font.</para>
+/// Caches Dalamud font handles by family, normalized weight, and rounded logical size.
+/// Uses bundled Geist files, with a Windows font-link fallback for requested Japanese glyphs.
+/// The host registers the active and optional standby atlases before drawing.
+/// Missing bundled files use the Dalamud default font; an unregistered atlas returns null.
 /// </summary>
 public static class FontRegistry
 {
@@ -49,8 +36,8 @@ public static class FontRegistry
     /// <summary>The atlas the standby polarity warms into. Adding fonts
     /// to an atlas rebuilds it, and the frame a rebuild lands is a frame
     /// the active handles read as unavailable; with the standby set on
-    /// its own atlas the active atlas never rebuilds after its first
-    /// build. Null means both sets share one atlas.</summary>
+    /// its own atlas, warming the other theme does not rebuild the active one.
+    /// New sizes or glyphs can still rebuild it. Null means both sets share one atlas.</summary>
     private static IFontAtlas? _standbyAtlas;
 
     /// <summary>True once <see cref="Ready"/> has been true. A frame
@@ -482,8 +469,8 @@ public static class FontRegistry
         Dictionary<Key, IFontHandle> into, Key key, bool light)
     {
         if (_atlas == null) return null;
-        // The standby set builds on its own atlas when there is one, so
-        // the active atlas is never rebuilt under the handles in use.
+        // Build standby handles separately when possible, so warming another
+        // theme does not interrupt the active handles.
         var atlas = ReferenceEquals(into, _standby) && _standbyAtlas is not null
             ? _standbyAtlas
             : _atlas;
@@ -513,11 +500,8 @@ public static class FontRegistry
                         // only the glyphs required so far (read at bake
                         // time, so every rebuild carries the current set);
                         // mono wells and italic hints have no CJK use.
-                        // The shared font-link resolver picks
-                        // the face Chromium falls back to from Segoe UI
-                        // (Meiryo UI before Yu Gothic UI), and the merge
-                        // sizes by THAT face's own metrics so the game renders
-                        // consistently with the selected font path.
+                        // Choose the fallback through the Windows Segoe UI font-link
+                        // chain and scale it using that face's own metrics.
                         if (key.Family == FontFamily.Default
                             && _cjkRanges is { } cjkRanges
                             && WindowsFontFallback.ResolveJapanese(
@@ -559,10 +543,7 @@ public static class FontRegistry
         }
     }
 
-    /// <summary>
-    /// Maps family+weight to a system font file. Cached; null means "not found, use Dalamud default".
-    /// </summary>
-    /// <summary>Maps family + weight to a BUNDLED Geist file — the fonts
+    /// <summary>Maps family + weight to a bundled Geist file — the fonts
     /// ship with the plugin (SIL OFL 1.1), so every machine renders the
     /// same, Wine included. Geist Medium carries the semibold role: the
     /// family's designed emphasis weight. Null (missing directory or

@@ -6,12 +6,6 @@ using Poser.Application.Settings;
 
 namespace Poser.UI;
 
-/// <summary>
-/// Session presentation mask for the skeleton overlay. Bones start HIDDEN:
-/// the sidebar's Skeleton node (and the finer category/bone eyes) opt them
-/// in — the replaced armature toggle's per-actor successor (user
-/// 2026-08-11). Selection anchors bypass this mask at the overlay.
-/// </summary>
 /// <summary>How much of a group of bones the overlay is showing.</summary>
 public enum OverlayVisibility
 {
@@ -20,6 +14,8 @@ public enum OverlayVisibility
     All,
 }
 
+/// <summary>Stores which bones the user has made visible in the skeleton overlay.
+/// Bones start hidden; selected anchors can still be drawn by the overlay.</summary>
 public sealed class SkeletonOverlayPresentation
 {
     private object? _mapHoverOwner;
@@ -60,14 +56,12 @@ public sealed class SkeletonOverlayPresentation
 
     public bool IsVisible(BoneId bone) => _shown.Contains(bone);
 
-    /// <summary>Bumps whenever the shown set changes, so a surface can keep
-    /// a per-skeleton mask instead of hashing a bone id per bone per
-    /// frame (0.18 ms a frame on a thousand bones, traced 2026-09-03).</summary>
+    /// <summary>Invalidates cached visibility masks after visibility commands
+    /// or scene reconciliation, even when the shown set does not change.</summary>
     public int Version { get; private set; }
 
-    /// <summary>Whether any bone of the SAME ACTOR is shown — the gizmo's
-    /// armature gate asks per skeleton, because a hidden actor standing
-    /// beside a visible one must still lose its gizmo.</summary>
+    /// <summary>Whether any bone with the same actor logical id is visible.
+    /// Another actor's visible skeleton must not enable this actor's gizmo.</summary>
     public bool AnyVisibleFor(BoneId bone)
     {
         var actor = bone.Skeleton.Actor.LogicalId;
@@ -156,10 +150,8 @@ public sealed class SkeletonOverlayPresentation
     private readonly HashSet<BoneId> _present = new();
     private readonly List<string> _subsetKeys = new();
 
-    /// <summary>Drops the choices for bones that left the scene. Once per
-    /// scene revision: this ran every frame and rebuilt a set of every
-    /// bone in the scene each time — 9 MB a second of garbage and the
-    /// plugin's largest allocator (profiled 2026-09-03).</summary>
+    /// <summary>Removes visibility choices for missing bones. Rebuilds the
+    /// present-bone set only when the scene revision changes.</summary>
     public void Reconcile(SceneSnapshot snapshot)
     {
         if (snapshot.Revision == _reconciledRevision)

@@ -44,6 +44,9 @@ public interface IPoseSnapshotPort
 {
     ActorSnapshot? Capture(Guid lineage);
 
+    /// <summary>Captures a posed actor before changing its appearance; an unposed actor needs no restore.</summary>
+    ActorSnapshot? CaptureForAppearanceChange(Guid lineage) => Capture(lineage);
+
     /// <summary>Owned pose layers only, excluding evaluated animation and expression layers.</summary>
     ActorSnapshot? CaptureAuthored(Guid lineage) => Capture(lineage);
 

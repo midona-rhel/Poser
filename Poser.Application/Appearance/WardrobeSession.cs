@@ -7,11 +7,9 @@ using Poser.Domain.Integration;
 namespace Poser.Application.Appearance;
 
 /// <summary>
-/// What the actor wears, as journal steps: an item with its dyes in a
-/// slot, a facewear, a visibility switch, a whole outfit. Each step's
-/// inverse is the slot's previous state read from Glamourer before the
-/// write, so undo puts the previous item back rather than "nothing".
-/// A refused write is no step.
+/// Applies equipment changes through Glamourer and records successful changes
+/// for undo. Each undo step restores the values read before the write.
+/// If an outfit stops partway through, its successful changes are still recorded.
 /// </summary>
 public sealed class WardrobeSession : IWardrobeControl
 {
@@ -38,8 +36,7 @@ public sealed class WardrobeSession : IWardrobeControl
     public IntegrationResult SetItem(
         ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2, string description)
     {
-        // The first write takes the look: its state as it stands is
-        // captured once and put back when the actor leaves or GPose ends.
+        // Save the original appearance before the first change for session cleanup.
         if (_integration.OwnLook(actor) is { Success: false } owned)
             return owned;
         var state = Read(actor);
@@ -59,8 +56,7 @@ public sealed class WardrobeSession : IWardrobeControl
     /// <summary>Changes one of the two dyes on what the slot wears.</summary>
     public IntegrationResult SetDye(ActorId actor, EquipSlot slot, int which, byte dye, string description)
     {
-        // The first write takes the look: its state as it stands is
-        // captured once and put back when the actor leaves or GPose ends.
+        // Save the original appearance before the first change for session cleanup.
         if (_integration.OwnLook(actor) is { Success: false } owned)
             return owned;
         var state = Read(actor);
@@ -75,8 +71,7 @@ public sealed class WardrobeSession : IWardrobeControl
 
     public IntegrationResult SetFacewear(ActorId actor, ulong bonusItemId, string description)
     {
-        // The first write takes the look: its state as it stands is
-        // captured once and put back when the actor leaves or GPose ends.
+        // Save the original appearance before the first change for session cleanup.
         if (_integration.OwnLook(actor) is { Success: false } owned)
             return owned;
         var state = Read(actor);
@@ -93,8 +88,7 @@ public sealed class WardrobeSession : IWardrobeControl
 
     public IntegrationResult SetSwitch(ActorId actor, MetaSwitch which, bool on)
     {
-        // The first write takes the look: its state as it stands is
-        // captured once and put back when the actor leaves or GPose ends.
+        // Save the original appearance before the first change for session cleanup.
         if (_integration.OwnLook(actor) is { Success: false } owned)
             return owned;
         var state = Read(actor);
@@ -122,14 +116,13 @@ public sealed class WardrobeSession : IWardrobeControl
         return result;
     }
 
-    /// <summary>Dresses every slot the outfit names in one step. A slot
-    /// the outfit leaves null keeps what it wears. The first refusal ends
-    /// the pass; what already landed is still one undoable step.</summary>
+    /// <summary>Applies all specified outfit slots as one undo step. Unspecified
+    /// slots are unchanged. Processing stops at the first failed write, and
+    /// earlier successful changes remain undoable together.</summary>
     public IntegrationResult SetOutfit(
         ActorId actor, string description, Func<EquipSlot, WardrobeSlot?> outfit)
     {
-        // The first write takes the look: its state as it stands is
-        // captured once and put back when the actor leaves or GPose ends.
+        // Save the original appearance before the first change for session cleanup.
         if (_integration.OwnLook(actor) is { Success: false } owned)
             return owned;
         var state = Read(actor);

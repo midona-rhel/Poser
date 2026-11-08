@@ -12,10 +12,8 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI.Controls;
 
 /// <summary>
-/// "Report an issue": says what the report holds, offers the scene as an
-/// option with its own plain caveat, and saves. The saved file's folder
-/// opens so the user can attach it. The dialog polls the service while a
-/// scene save runs, so the zip closes with the scene inside.
+/// Collects issue-report options and saves the report. The dialog polls while
+/// an included scene is being captured so the archive is finalized afterward.
 /// </summary>
 public sealed class IssueReportModal
 {

@@ -6,8 +6,7 @@ using Poser.Documents.Config;
 namespace Poser.Application.Settings;
 
 /// <summary>
-/// Service for managing plugin configuration with persistence.
-/// Follows Brio's pattern for configuration management.
+/// Loads, migrates, and saves configuration, and notifies readers when it changes.
 /// </summary>
 public class ConfigurationService : IDisposable
 {
@@ -18,11 +17,8 @@ public class ConfigurationService : IDisposable
     public event Action? OnConfigurationChanged;
 
     /// <summary>
-    /// Empty in the normal case. Otherwise: the stored config could not be
-    /// read, defaults are in force, and this sentence names the backup the
-    /// old file was copied to. Settings shows it — a config that quietly
-    /// evaporates has to leave something behind to look at (Ktisis's
-    /// backup-on-failure).
+    /// Failure detail returned by configuration storage, displayed in Settings.
+    /// Empty when loading succeeded.
     /// </summary>
     public string LoadFailure { get; private set; } = string.Empty;
 
@@ -72,8 +68,7 @@ public class ConfigurationService : IDisposable
 
         if (Config.Version < 3)
             Config.UI.MigrateKeybindsToSlots();
-        // The old 3.4 px dot was half the references' and hard to take;
-        // a user who never changed it gets Ktisis' size.
+        // Upgrade the former default dot radius while preserving custom values.
         if (Config.Version < 4
             && Math.Abs(Config.Skeleton.BoneDotRadius - 3.4f) < 0.01f)
             Config.Skeleton.BoneDotRadius = new SkeletonConfiguration().BoneDotRadius;

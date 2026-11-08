@@ -5,26 +5,15 @@ using Poser.Documents.Files;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// What the save OPTIONS do to a captured document, applied once between the
-/// capture and the write. The capture always takes everything it can see —
-/// there is one capture, not six — and this narrows it, so a category the user
-/// excluded is absent from the file rather than captured and ignored on load.
-///
-/// <para>Appearance is the case with teeth. With the consent switch off, every
-/// appearance entry is REMOVED, including the reference form: a scene that
-/// names another player's package path is appearance data whether or not it
-/// carries the bytes. With it on, only a PORTABLE entry survives — a reference
-/// the sealing step could not turn into bytes is dropped with a note, because
-/// "saved as portable" must not be a scene that only knows where the mods used
-/// to be.</para>
+/// Removes excluded categories from a captured document before writing it.
+/// Modded appearance is removed unless requested and packaged as embedded data;
+/// an unpackaged file reference is removed and reported in the save notes.
 /// </summary>
 internal static class SceneSavePolicy
 {
-    /// <summary>Applies the options, and answers how many actors asked for a
-    /// portable appearance and did not get one. A save that quietly drops what
-    /// the user explicitly asked for must not report plain success — that is
-    /// the shape of the defect where an oversized package vanished and the
-    /// load then had nothing to apply.</summary>
+    /// <summary>Applies category and appearance options. Returns the number of
+    /// requested appearance packages removed because they were not portable,
+    /// so the caller can report a partial save.</summary>
     public static int Apply(
         SceneFile scene,
         SceneSaveOptions options,
@@ -62,15 +51,12 @@ internal static class SceneSavePolicy
             }
             if (appearance.IsPortable)
                 continue;
-            // Consent was given and the payload could not be sealed. The
-            // sealing step already said WHY, by actor; dropping the leftover
-            // reference here is what stops a "portable" save from shipping a
-            // path to a machine that has never seen it.
+            // Remove the file reference when its appearance package could not be built.
             actor.Mcdf = null;
             unsealed++;
         }
 
-        // Settled only now that it is known which packages survived.
+        // Update each actor's appearance status after filtering the packages.
         foreach (var actor in scene.Actors)
         {
             if (actor.Mcdf is not null)
@@ -97,8 +83,7 @@ internal static class SceneSavePolicy
         return unsealed;
     }
 
-    /// <summary>The one wording for an actor saved without its own look, used
-    /// by the save that drops it and by every load of the file.</summary>
+    /// <summary>Explains the appearance fallback when saving and loading an actor.</summary>
     public static string AppearanceNotSavedNote(string actor) =>
         $"Actor '{actor}''s appearance was not saved, so it loads wearing your character's appearance.";
 }

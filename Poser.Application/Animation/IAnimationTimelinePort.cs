@@ -47,14 +47,13 @@ public interface IAnimationTimelinePort
     Outcome ClearSlotTimeline(ActorId actor, AnimationSlot slot);
 
     // ── Loops ───────────────────────────────────────────
-    /// <summary>Arms exact-slot replay for verified Base or Upper ownership.</summary>
+    /// <summary>Requests repetition of the specified timeline in its slot.</summary>
     Outcome SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);
     Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot);
     /// <summary>Drops every armed loop for the actor. No native writes.</summary>
     void ClearLoops(ActorId actor);
-    /// <summary>A layer Poser applied: looped, it never ends; otherwise the game
-    /// ends it at its end as it would (never while it is held or scrubbed), and
-    /// <see cref="LayerEnded"/> is raised.</summary>
+    /// <summary>Tracks whether Poser started this layer, so the runtime can
+    /// report when its animation ends through LayerEnded.</summary>
     void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned);
     /// <summary>An owned layer's animation was ended by the game (or replaced
     /// outside Poser), with its length in seconds.</summary>
@@ -70,9 +69,6 @@ public interface IAnimationTimelinePort
     /// dozing, mounted, swimming, diving) as the game picks it; 0 where the game
     /// refuses the emote in that posture, null when the posture can't be read.</summary>
     ushort? EmotePostureRow(ActorId actor, uint emoteId);
-
-    /// <summary>Whether full-body repeat is available.</summary>
-    bool SupportsForceLoop { get; }
 
     /// <summary>Owns the forced timeline id until a zero write releases it.
     /// The runtime reasserts an armed id after native animation updates.</summary>

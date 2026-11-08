@@ -14,13 +14,9 @@ public static class BoneInfoService
     private static Action<string>? _log;
     private static readonly HashSet<string> _loggedUntranslated = new();
 
-    /// <summary>Names seen for the first time and not yet reported. A modded
-    /// character carries hundreds of bones outside the translation tables, and
-    /// every one of them used to cost a SEPARATE synchronous log write on the
-    /// framework tick that rebuilt the skeleton — the dominant term in the
-    /// 50-63 ms redraw hitch. The dedup set is unchanged (each name is still
-    /// reported exactly once per session); only the delivery is coalesced into
-    /// one line by <see cref="FlushUntranslatedLog"/>.</summary>
+    /// <summary>
+    /// Untranslated names waiting to be logged together, avoiding a separate log write for every bone.
+    /// </summary>
     private static readonly List<string> _pendingUntranslated = new();
 
     /// <summary>How many names one flushed line spells out before it
@@ -76,7 +72,7 @@ public static class BoneInfoService
         log.Invoke($"[BoneInfoService] Loaded {_boneData.Count} bone definitions");
     }
 
-    /// <summary>True for IVCS/extended-group bones — the set the
+    /// <summary>True for IVCS/extended-group bones, the set the
     /// Display.ShowNsfwBones switch shows and hides.</summary>
     public static bool IsNsfw(string boneName) => _nsfwBones.Contains(boneName);
 
@@ -92,11 +88,8 @@ public static class BoneInfoService
     }
 
     /// <summary>
-    /// Gets the display name for a bone: the translation, or the internal name
-    /// when untranslated. The raw bone name is NOT appended — surfaces that
-    /// want it show a separate mono badge ("Jaw (j_f_ago)" next to a j_f_ago
-    /// badge was the round-4 "name followed by name" defect).
-    /// Logs untranslated bones once per session.
+    /// Returns the friendly bone name, or the game name if no translation exists.
+    /// Untranslated names are queued for logging once after each Initialize call.
     /// </summary>
     public static string GetDisplayName(string boneName)
     {
@@ -105,13 +98,8 @@ public static class BoneInfoService
             return data.Translation;
         }
 
-        // Record the untranslated bone (only once per bone name). Multiple
-        // threads resolve display names (framework refreshes and the UI), and
-        // an unsynchronized HashSet corrupts permanently under concurrent Add.
-        // NOTHING is written to the log here: a skeleton rebuild resolves every
-        // bone name in one framework tick, so per-name writes turned a redraw
-        // into hundreds of synchronous log writes. FlushUntranslatedLog emits
-        // them as one line.
+        // Name lookups can run on multiple threads. Protect both the deduplication
+        // set and the pending batch with the same lock.
         lock (_loggedUntranslated)
         {
             if (_loggedUntranslated.Add(boneName))
@@ -122,10 +110,8 @@ public static class BoneInfoService
     }
 
     /// <summary>
-    /// Emits ONE warning listing every untranslated bone name seen since the
-    /// previous flush, and nothing at all when there is none — the common case,
-    /// so it is safe to call on every scene refresh. Each name still appears
-    /// exactly once per session; only the number of log writes changes.
+    /// Logs one warning for newly encountered untranslated names, listing at most 40.
+    /// Does nothing when there are no pending names or no logger.
     /// </summary>
     public static void FlushUntranslatedLog()
     {

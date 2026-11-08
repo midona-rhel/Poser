@@ -3,9 +3,7 @@ namespace Poser.Domain.Scene;
 public enum WorldAssetKind { Scenery, Furniture, Effect }
 
 /// <summary>
-/// One spawnable game asset: the path the spawn takes, the LABEL a person
-/// searches by — Brio's derived naming, "Type [stem]" — and the context
-/// line (expansion · subtype) the picker badges.
+/// A spawnable game asset, including its file path and picker display text.
 /// </summary>
 public sealed record WorldAsset(
     string Name, string Path, string Label, string Context, uint IconId = 0)

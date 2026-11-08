@@ -4,30 +4,27 @@ using Poser.Domain.Integration;
 namespace Poser.Application.Integration;
 
 /// <summary>
-/// The synchronized operation record. Framework-thread confined for
-/// mutation: admission (the UI thread IS the framework thread) creates
-/// it, every phase registers its owned id/state inside the SAME
-/// framework-thread action that performed it, and invalidation and
-/// cleanup run there too — the lifecycle can never race the background
-/// orchestration, which touches the record only from inside
-/// OnFrameworkThread actions.
+/// Tracks an MCDF operation's target, temporary resources, and restore values.
+/// Import phases update this record through framework-thread callbacks. This
+/// record has no synchronization of its own; callers enforce that ordering.
 /// </summary>
 internal sealed class McdfOperation : SingleFlightOperation
 {
     public required string FileName { get; init; }
     public required McdfOperationKind Kind { get; init; }
-    /// <summary>Keeps cancellable worker publications shaped as Cancelling
-    /// until the worker enters its non-cancellable rollback.</summary>
+    /// <summary>
+    /// Keeps progress showing Cancelling until rollback begins.
+    /// </summary>
     public bool CancelRequested;
 
-    /// <summary>The package this import READ. Carried into ownership so a
-    /// scene can state which character file an actor is wearing; no phase
-    /// here consults it.</summary>
+    /// <summary>
+    /// Source package path saved with the actor for scene files and history.
+    /// </summary>
     public string? SourcePath;
-    /// <summary>Read while the target still resolved. The only handle a
-    /// teardown running after the actor is gone has for the locked
-    /// Glamourer state, which belongs to the character's identity
-    /// rather than to any id Poser created.</summary>
+    /// <summary>
+    /// Character name captured while the actor resolves. Glamourer cleanup can use
+    /// it after the game object disappears.
+    /// </summary>
     public string? ActorName;
     public McdfOperationDirectory? OperationDirectory;
     public Guid? TemporaryCollection;
@@ -35,18 +32,14 @@ internal sealed class McdfOperation : SingleFlightOperation
     public Guid? TemporaryProfile;
     public string? BodyJson;
     public IntegrationBaseline Baseline = IntegrationBaseline.None;
-    // The transaction WORKING snapshot — the live Poser-authored
-    // recipe immediately before this import — as opposed to the
-    // durable baseline above, which is what Reset restores. Rollback
-    // returns the actor to the working recipe.
+    // Appearance immediately before this import, used if the import fails.
+    // Baseline instead contains the original values used by Reset.
     public string? WorkingGlamourerState;
     public bool ReplacedWorkingBodyProfile;
     public string? WorkingBodyProfileJson;
     public bool RedrawPending;
-    // Working-recipe RECOVERY obligations: set once the imported state
-    // displaced the working recipe, released only after the recipe is
-    // successfully back. They persist into McdfOwnership so Reset MCDF
-    // retries them.
+    // Pre-import appearance still needing restoration after a failed import.
+    // These values pass to McdfOwnership so Reset MCDF can retry.
     public string? PendingGlamourerRecovery;
     public string? PendingBodyRecoveryJson;
     // True once PrepareImport captured the merged baseline; an

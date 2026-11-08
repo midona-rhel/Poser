@@ -5,13 +5,8 @@ using Poser.Domain.Companions;
 namespace Poser.Application.Companions;
 
 /// <summary>
-/// The searchable companion catalog. Holds one flat list of attachable
-/// minions, mounts and ornaments and answers filtered queries; it never
-/// touches the game, so the loader can populate it off the framework
-/// thread and every surface reads the same rows.
-///
-/// Entries that cannot be attached are never admitted (that is the
-/// loader's job), so a search result is always selectable.
+/// Searches the companion entries supplied by the loader.
+/// The loader decides which entries can be attached; this class does not check that.
 /// </summary>
 public sealed class CompanionCatalog
 {

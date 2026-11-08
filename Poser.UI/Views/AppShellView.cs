@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -100,9 +100,7 @@ public sealed class ShellSidebarRow
     public bool CollisionEnabled;
     public bool ColliderLocked;
 
-    /// <summary>Every world-object row's third seat: pause, the actor
-    /// row's own play/pause glyph. Spawned SCENERY cannot be animated by
-    /// the game, so its seat is inert and slashed.</summary>
+    /// <summary>Shows the optional play/pause action for this row.</summary>
     public bool PauseAction;
     public bool Paused;
     /// <summary>Scenery rows: the sun/moon seat over the object's night state.</summary>
@@ -272,9 +270,8 @@ public sealed class AppShellViewModel
     /// continuous surface from the titlebar's tb-right cell to the window bottom.</summary>
     public Action<Vector2, Vector2>? DrawRail;  // (origin, size)
 
-    /// <summary>The inspector's panel: 0 Target, 1 Environment, 2 Scene.
-    /// The selector band draws only while <see cref="OnInspectorMode"/>
-    /// is set — the library's per-type rails carry no selector.</summary>
+    /// <summary>Content mode: 0 Target, 1 Environment, 2 Scene.
+    /// The titlebar shows the selector when OnInspectorMode is set.</summary>
     public int InspectorMode;
     public Action<int>? OnInspectorMode;
 
@@ -283,7 +280,7 @@ public sealed class AppShellViewModel
     /// tab band, so a tabless page still says what it is.</summary>
     public string ContentKind = "";
 
-    /// <summary>Collapse-to-titlebar: only the 48px strip renders.</summary>
+    /// <summary>Collapse-to-titlebar: only the themed titlebar strip renders.</summary>
     public bool Collapsed;
     public Action<bool>? OnCollapse;
 
@@ -393,8 +390,8 @@ public sealed class AppShellViewModel
     /// header, told the section index.</summary>
     public Action<int>? OnSectionSelected;
 
-    // Hoisted once per model (the PoseLibraryView convention): the frame's
-    // chrome must not mint a closure, and every one of these closes over
+    // Hoisted once per model (the PoseLibraryView convention): window chrome
+    // must not allocate a closure each frame. Each delegate below captures
     // nothing but this model. AppShellView assigns them on first draw.
     internal Action<int>? TabChosen;
     internal Action<int>? GizmoOperationChosen;
@@ -474,8 +471,8 @@ public static class AppShellView
         internal readonly Action PressBurger;
 
         /// <summary>The titlebar plus's press, read back the same way and for
-        /// the same reason: the seat's anchor is a local, and a warm titlebar
-        /// frame must not mint a closure to carry it.</summary>
+        /// the same reason: the seat's anchor is a local, and a rendered titlebar
+        /// frame must not allocate a closure to carry it.</summary>
         internal bool SpawnPressed;
         internal readonly Action PressSpawn;
 
@@ -526,7 +523,7 @@ public static class AppShellView
 
     /// <summary>Hoists the model-forwarding callbacks once per model, per the
     /// codebase's own idiom (PoseLibraryView, SpawnBrowserView, ShellSidebar):
-    /// a warm chrome frame must not mint a closure. Each closes over nothing
+    /// a rendered chrome frame must not allocate a closure. Each delegate captures nothing
     /// but the model and reads its state at invoke time.</summary>
     private static void EnsureHoisted(AppShellViewModel vm)
     {
@@ -974,10 +971,7 @@ public static class AppShellView
     }
 
 
-    /// <summary>The four segment groups — gizmo operation, space, pivot,
-    /// symmetry — drawn once per frame from exactly one host: the titlebar
-    /// centre, or the floating toolbar when the toolbar is split. One set of
-    /// ids, so hover and motion state survive the move between hosts.</summary>
+    /// <summary>Draws the toolbar's operation, space, pivot, and symmetry controls.</summary>
     private static void DrawGizmoCluster(
         AppShellViewModel vm, float x, float top, float height, float s)
     {
@@ -1033,10 +1027,7 @@ public static class AppShellView
         // controls; no extra controls follow the gizmo segments.
     }
 
-    /// <summary>Rightmost is the collapse chevron, then the close X.
-    /// </summary>
-    /// <summary>The kind segment's hover — the same verb-first shape as
-    /// its siblings, minted per kind so no frame formats one.</summary>
+    /// <summary>Cached hover text for each kind segment.</summary>
     private static string KindHelp(string kind) => kind switch
     {
         "Actor" => "Edit the actor",
@@ -1163,7 +1154,7 @@ public static class AppShellView
         {
             var entry = vm.WorldClasses[i];
             ImGui.SetCursorScreenPos(new Vector2(x, y));
-            // Captured per glyph: the callback outlives this loop iteration.
+            // Pass this glyph's index to the caller when activated.
             int index = i;
             if (TemporaryIconToggle(
                     entry.Icon,
@@ -1476,9 +1467,6 @@ public static class AppShellView
         RailScrollSeam(vm, railMin, max, railWidth, s);
     }
 
-    /// <summary>The rail's scroll seam and content invocation, shared by the
-    /// attached rail and the floating inspector window. The chassis around it
-    /// is each host's own.</summary>
     /// <summary>The split Inspector window's content: the same seam the
     /// attached rail draws, inside a host-owned chassis.</summary>
     internal static void DrawRailContent(
@@ -1693,10 +1681,8 @@ public static class AppShellView
     // help — so splitting a part moves it without resetting it. Exactly one
     // host draws a part per frame; the split flags are that gate.
 
-    /// <summary>The floating toolbar's content: the brand and its GPose
-    /// pill, the command menu, undo/redo, then the same four segment groups
-    /// the titlebar centre hosts when attached. The spawn plus stays with
-    /// the scene window.</summary>
+    /// <summary>Draws the floating toolbar: brand, command/history actions, optional
+    /// spawn/project actions, and transform controls. Compact mode shows only the brand.</summary>
     public static void DrawToolbarContent(
         AppShellViewModel vm, Vector2 origin, float height, bool compact = false)
     {

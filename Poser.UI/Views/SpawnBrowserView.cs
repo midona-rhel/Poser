@@ -16,10 +16,8 @@ using static Poser.UI.Widgets.WindowFrameWidgets;
 namespace Poser.UI.Views;
 
 /// <summary>The browser's category strips. All is the whole flat list; the
-/// rest are the plus buttons' own groups, so a section plus can open its
-/// group directly. The minion/mount/accessory catalog lives under Actors —
-/// catalog spawns ARE actors — with the badge stating the kind; Props holds
-/// the prop entry (a prop catalog arrives later, user 2026-08-11).</summary>
+    /// rest match the section-add groups. Minions, mounts, and accessories are
+    /// actor spawns and appear under Actors; Props contains prop entries.</summary>
 public enum SpawnBrowserTab
 {
     All,
@@ -28,33 +26,21 @@ public enum SpawnBrowserTab
     Cameras,
     Props,
 
-    /// <summary>The SCENE objects: the map's own BG models — the whole
-    /// 103k catalog plus saved .xivw entries. Split from Props
-    /// (user 2026-08-31): a weapon prop and a map model are different
-    /// natives with different powers, and the tabs say so.</summary>
+    /// <summary>Map background models and saved <c>.xivw</c> entries. These
+    /// use a different runtime type from weapon props.</summary>
     SceneObjects,
 
     Furniture,
 
-    /// <summary>Every world effect in the game data, inline — the VFX
-    /// catalog IS the tab (user 2026-08-31): no opener row, just 8k
-    /// searchable flame rows.</summary>
+    /// <summary>Searchable world effects from game data.</summary>
     Effects,
 
-    /// <summary>Everything this browser lays OVER the game rather than into
-    /// the scene: the three game-UI overlay nodes — the dialogue panel, the
-    /// chat bubble and the status line — and the reference picture, which is
-    /// an overlay by the same test (user 2026-08-14: "shouldn't these spawn
-    /// images be under overlays? It's technically an overlay"). Brio files the
-    /// picture under its spawn menu's "Other" group instead
-    /// (<c>Brio/UI/Controls/Editors/SpawnMenu.cs:268-280</c>); a group named
-    /// for one entry is not a group.</summary>
+    /// <summary>Screen overlays: dialogue, balloon, status, and reference-image
+    /// entries.</summary>
     Overlays,
 
-    // The world had a tab here — a refreshable list of nearby actors to clone.
-    // It is gone (user 2026-08-15: "the world thing on the plus should just be
-    // removed"). The world is answered IN the world now: the footer's class
-    // glyphs mark what is addable and the marks themselves are the rows.
+    // Nearby world actors are adopted from their in-world markers rather than
+    // listed in this browser.
 }
 
 /// <summary>
@@ -168,10 +154,8 @@ public static class SpawnBrowserView
     // badge needs the room (user 2026-08-31: "make it a bit wider").
     private const float MinWidth = 400f;
 
-    /// <summary>The window is BUILT AROUND the tab strip: its logical width
-    /// is the strip plus the content inset each side (user 2026-08-11:
-    /// "build this around the width of the props spawner"). Callable
-    /// wherever an ImGui frame is current (PreDraw included).</summary>
+    /// <summary>Returns the tab strip width plus content insets. May be called
+    /// whenever an ImGui frame is active, including <c>PreDraw</c>.</summary>
     public static float MeasureWidth()
     {
         var theme = ActiveTheme;
@@ -316,10 +300,8 @@ public static class SpawnBrowserView
         };
         vm.TitleContent ??= rect => DrawSearchInTitle(vm, rect);
 
-        // THE window frame, exactly as before the title went: the search
-        // field IS the title-bar content now, the tab strip is the band,
-        // and the frame owns every rule, fill and hover treatment (user
-        // 2026-08-11: the hand-drawn chassis "doesn't look quite right").
+        // The shared frame hosts the search field in the title bar and the tab
+        // strip in its band.
         var rects = WindowFrame(
             "spawn-browser",
             origin,

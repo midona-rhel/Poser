@@ -19,20 +19,16 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;
     private readonly SceneSession _scene;
-    private readonly AnimationSpeedRuntimePort? _speeds;
 
     public AnimationTimelineRuntimePort(
         IFramework framework,
         IPluginLog log,
         AnimationNativeState native,
         SceneSession scene,
-        AnimationSpeedRuntimePort? speeds = null,
-        TimelineSeekService? seek = null)
+        TimelineSeekService seek)
     {
         _seek = seek;
-        if (_seek != null)
-            _seek.LayerEnded += (actor, slot, duration) => LayerEnded?.Invoke(actor, slot, duration);
-        _speeds = speeds;
+        _seek.LayerEnded += (actor, slot, duration) => LayerEnded?.Invoke(actor, slot, duration);
         _framework = framework;
         _log = log;
         _native = native;
@@ -115,14 +111,14 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
 
     // ── Base, blend, loop ─────────────────────────────────────────────
 
-    private readonly TimelineSeekService? _seek;
+    private readonly TimelineSeekService _seek;
 
     /// <summary>A swap into a paused slot: its cross-fade would never advance at
     /// speed 0 and keep showing the old animation (old control at weight 1, new
     /// at 0). The new animation appears on its frame 0 at full weight instead.</summary>
     private void PrepareSwap(Character* character, ushort timeline)
     {
-        if (_seek != null && _native.TimelineSlot(timeline) is { } slot)
+        if (_native.TimelineSlot(timeline) is { } slot)
             _seek.PrepareInstantSwap(character, (int)slot);
     }
 
@@ -156,7 +152,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         PrepareSwap(character, timeline);
         var played = _native.PlayTimeline(character, timeline);
         if (played.Success)
-            _seek?.ClearLoop(actor, AnimationSlot.Base);
+            _seek.ClearLoop(actor, AnimationSlot.Base);
         return played;
     }
 
@@ -164,11 +160,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     /// onto, or null when the row is missing or unmapped.</summary>
     public AnimationSlot? TimelineSlot(ushort timeline) => _native.TimelineSlot(timeline);
 
-    /// <summary>Clears one layered slot for real: the game's CancelTimeline
-    /// takes the SLOT as its second argument and drops that layer's
-    /// scheduler and control. A container-level cancel (slot 0) left the
-    /// layer alive and the base restore re-scheduled it (reset restarted
-    /// breakfast from 0, 2026-09-01 22:4x).</summary>
+    /// <summary>Cancels one animation layer, including its scheduler and animation control.</summary>
     public Outcome ClearSlotTimeline(ActorId actor, AnimationSlot slot)
     {
         var character = _native.Resolve(actor, out var detail);
@@ -180,9 +172,8 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (!_native.HasCancelTimeline)
             return Outcome.Fail(
                 "Timeline cancellation is unavailable: the game function was not found.");
-        // CancelTimeline's second argument IS the slot (bridge experiment
-        // 22:41: a2=1 dropped the upper layer, its scheduler and its havok
-        // control cleanly; a2=timeline id did nothing; a3=1 reset the base).
+        // CancelTimeline takes a slot index, not a timeline row id, as argument two.
+        // Keep argument three zero to avoid resetting the base animation.
         _native.CancelTimeline(&character->Timeline, (nint)index, nint.Zero);
         return Outcome.Ok();
     }
@@ -249,8 +240,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         set
         {
             _loopsSuspended = value;
-            if (_seek != null)
-                _seek.LoopsSuspended = value;
+            _seek.LoopsSuspended = value;
         }
     }
     private bool _loopsSuspended;
@@ -263,15 +253,15 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         if (!_loops.TryGetValue(actor, out var slots))
             _loops[actor] = slots = new Dictionary<int, LoopArm>();
         slots[(int)slot] = new LoopArm { Timeline = timeline, Cooldown = LoopCooldownTicks };
-        // The seek wraps the layer before it ends; the replay above only covers an
-        // end the wrap missed (or a layer the seek can't move).
-        _seek?.SetLoop(actor, slot, timeline);
+        // The seek service wraps the layer before it ends. EnforceLoops restarts it
+        // if wrapping misses the end or the layer cannot be seeked.
+        _seek.SetLoop(actor, slot, timeline);
         return Outcome.Ok();
     }
 
     public Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot)
     {
-        _seek?.ClearLoop(actor, slot);
+        _seek.ClearLoop(actor, slot);
         if (_loops.TryGetValue(actor, out var slots))
         {
             slots.Remove((int)slot);
@@ -282,17 +272,17 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
     }
 
     public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned) =>
-        _seek?.SetOwned(actor, slot, owned);
+        _seek.SetOwned(actor, slot, owned);
 
     public event Action<ActorId, AnimationSlot, float>? LayerEnded;
 
     public void ClearLoops(ActorId actor)
     {
         _loops.Remove(actor);
-        _seek?.ClearLoops(actor);
+        _seek.ClearLoops(actor);
     }
 
-    /// <summary>Replays an owned slot after its native timeline drifts.</summary>
+    /// <summary>Restarts a loop when the slot no longer contains the requested timeline.</summary>
     private void EnforceLoops(IFramework framework)
     {
         if (LoopsSuspended || _loops.Count == 0)
@@ -336,13 +326,12 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
             return Outcome.Fail(detail!);
         character->Timeline.BaseOverride = timeline;
         if (timeline == 0)
-            _seek?.ClearLoop(actor, AnimationSlot.Base);
+            _seek.ClearLoop(actor, AnimationSlot.Base);
         else
-            _seek?.SetLoop(actor, AnimationSlot.Base, timeline);
+            _seek.SetLoop(actor, AnimationSlot.Base, timeline);
         return Outcome.Ok();
     }
 
-    public bool SupportsForceLoop => true;
 
     // ── Lips ──────────────────────────────────────────────────────────
 

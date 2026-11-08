@@ -12,8 +12,8 @@ internal interface IActorSpawnNativeAdapter
     bool IsAvailable { get; }
 
     /// <summary>True while the Character finalize hook is installed. Without
-    /// it no authority may span frames: spawning and delayed callbacks
-    /// refuse (fail-closed narrowing).</summary>
+    /// it, spawning and delayed callbacks cannot safely retain a descriptor
+    /// across frames and must refuse.</summary>
     bool IsLifetimeAuthoritative { get; }
     string? LifetimeAuthorityDetail { get; }
 
@@ -25,7 +25,7 @@ internal interface IActorSpawnNativeAdapter
 
     bool EnableDraw(SpawnNativeDescriptor descriptor);
 
-    /// <summary>Writes the character's alpha. This is how an actor is HIDDEN;
+    /// <summary>Writes the character's alpha. This is how an actor is hidden;
     /// see <see cref="ActorSpawnNativeAdapter.SetAlpha"/> for why it is not
     /// a draw-state write.</summary>
     bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha);
@@ -39,14 +39,14 @@ internal interface IActorSpawnNativeAdapter
     bool CopyEquipmentVisibility(SpawnNativeDescriptor source, SpawnNativeDescriptor target);
 
     /// <summary>Seeds the target's DrawData customize and equipment from
-    /// the source's DRAWN model (Human.Customize, Human equipment models).
+    /// the source's rendered model (Human.Customize, Human equipment models).
     /// A sync plugin or a locked Glamourer state writes the draw object and
     /// leaves DrawData at the game's values, so the game's own copy drew a
     /// vanilla character next to a modded one (2026-09-02, Valya).</summary>
     bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target);
     bool HasCompanionSlot(SpawnNativeDescriptor descriptor);
     /// <summary>Reads the slot. False when the descriptor no longer
-    /// revalidates — an unreadable actor is NOT an empty slot, and only the
+    /// revalidates. An unreadable actor is not an empty slot, and only the
     /// empty slot may be written over. On true, a null
     /// <paramref name="attachment"/> is the empty slot.</summary>
     bool TryReadCompanion(
@@ -55,7 +55,7 @@ internal interface IActorSpawnNativeAdapter
 
     /// <summary>The attached child object's address; zero when the slot is
     /// empty or the descriptor no longer revalidates. It is the companion's
-    /// own BODY — the attachment ids alone name a sheet row, not a posable
+    /// own body. The attachment ids alone name a sheet row, not a posable
     /// object.</summary>
     nint ReadCompanionAddress(SpawnNativeDescriptor descriptor);
 

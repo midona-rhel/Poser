@@ -13,36 +13,7 @@ using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
 
-/// <summary>
-/// One page of <see cref="EnvironmentPane"/>. The environment's eleven sections
-/// do not fit one scroll, so the shell gives it a five-tab strip and hands the
-/// pane the tab it is drawing. Positional against the shell's environment strip.
-/// </summary>
-
-/// <summary>
-/// The scene's one environment: time, weather, the eight holdable environment
-/// sections, water rendering, and the festival slots. The pane owns its
-/// collapse state and its two picker surfaces; every value is read live from
-/// the services at DISPATCH time and written straight back, so a row never acts
-/// on the copy its section opened with.
-///
-/// <para>The eleven sections are hosted across FIVE pages, one per
-/// <see cref="EnvironmentTab"/>. Each page states its own id, so two sections on
-/// different tabs can never mint the same row identity, and the collapse state
-/// stays per SECTION — a tab is where a section is drawn, not what it is.</para>
-///
-/// <para>INVERSION BOUNDARY. The services state every hold positively: a HELD
-/// thing is one Poser keeps stamping. Time and weather are presented the same
-/// way round ("Freeze time", "Hold weather"), and the eight section switches
-/// are presented INVERTED — on means the game runs that section naturally,
-/// which is the service's hold turned off. Every inversion happens at the call
-/// site that needs it and nowhere else.</para>
-/// </summary>
-/// <summary>
-/// One page of <see cref="EnvironmentPane"/>. The environment's eleven sections
-/// do not fit one scroll, so the shell gives it a five-tab strip and hands the
-/// pane the tab it is drawing. Positional against the shell's environment strip.
-/// </summary>
+/// <summary>The four environment pages, in the shell tab strip's order.</summary>
 public enum EnvironmentTab
 {
     /// <summary>TIME, WEATHER, and LIGHTING: how the scene is lit — the
@@ -61,6 +32,9 @@ public enum EnvironmentTab
     World,
 }
 
+/// <summary>Edits the frame's environment snapshot across four pages.
+/// Natural section switches invert the service's held state; time and weather
+/// switches show it directly. Pickers are drawn on every environment page.</summary>
 public sealed class EnvironmentPane
 {
     private EnvironmentReading _reading = new();
@@ -79,7 +53,7 @@ public sealed class EnvironmentPane
     private const string FestivalsUnavailable =
         "Festivals can only be changed in GPose";
 
-    /// <summary>Where this pane's verb outcomes go; the five pages state
+    /// <summary>Where this pane's verb outcomes go; the four pages state
     /// standing facts only.</summary>
     private readonly UserNotices _notices;
 
@@ -88,9 +62,7 @@ public sealed class EnvironmentPane
     private const string FestivalPlaceRefusal =
         "This festival cannot be changed where you are standing.";
 
-    // Every section opens EXPANDED. A page carries at most four of them and a
-    // collapsed header hides the only thing the page is for; the disclosure is
-    // there to put a section away, not to make the user open it first.
+    // Initial expanded state is retained independently for each section.
     private bool _openTime = true;
     private bool _openWeather = true;
     private bool _openSky;
@@ -135,9 +107,7 @@ public sealed class EnvironmentPane
     private static readonly float[] OpacityMarks = [1f, 5f];
     private static readonly float[] DistanceMarks = [1f, 10f, 50f];
 
-    /// <summary>One option object per weather id, for the pane's life: the
-    /// picker keys its rows by identity string, and a fresh object per frame
-    /// would hand every row a new ImGui identity.</summary>
+    /// <summary>Reuses weather labels, icon IDs, and stable picker keys.</summary>
     private readonly Dictionary<uint, WeatherOption> _weatherOptions = new();
 
     /// <summary>The weather list the open surface is showing, refilled in
@@ -318,18 +288,8 @@ public sealed class EnvironmentPane
 
 
 
-    /// <summary>
-    /// Both surfaces are drained at the top of the frame, exactly where the rows
-    /// that opened them can still report the outcome.
-    ///
-    /// <para>UNCONDITIONAL, and it has to be: a picker is an ImGui popup, and a
-    /// popup that is not submitted on a frame is closed by ImGui at the end of
-    /// it. Draining only the page that hosts the picker's rows would therefore
-    /// make a tab change silently drop an open surface. Both are pumped on every
-    /// frame the pane draws, whichever tab that is — a closed picker's Draw
-    /// returns on its first line, so the tab that hosts neither pays nothing.
-    /// </para>
-    /// </summary>
+    /// <summary>Draws all pickers regardless of the active environment tab and
+    /// applies completed selections. Closed pickers return immediately.</summary>
     private void DrainPickers()
     {
         if (_weatherPicker.Draw() is { } weather)
@@ -348,7 +308,7 @@ public sealed class EnvironmentPane
                     + "where you are standing.");
         }
 
-        // Same rule as above, and for the same reason: the three texture grids
+        // Same rule as above, and for the same reason: the four texture grids
         // are pumped whichever tab is up, so a tab change cannot drop one.
         if (_skyTexture.Draw() is { } skyId)
             _values.SetSky(_reading.Sky with { SkyTextureId = skyId });

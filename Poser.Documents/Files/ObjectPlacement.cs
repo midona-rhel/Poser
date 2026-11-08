@@ -18,16 +18,6 @@ public class PlacementAnchorData
     public float Yaw { get; set; }
 }
 
-/// <summary>
-/// The one shared answer for where object entries land — the load dialogs
-/// and the library tiles are different mounts of the same choice, exactly as
-/// the scene load options are. Session state, never persisted.
-/// </summary>
-public sealed class ObjectPlacementPreferences
-{
-    public ObjectPlacementMode Mode { get; set; } = ObjectPlacementMode.AsSaved;
-}
-
 /// <summary>The pure placement math, shared by every kind that places.</summary>
 public static class ObjectPlacement
 {

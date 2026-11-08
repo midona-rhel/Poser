@@ -9,24 +9,15 @@ using Poser.Application.Catalog;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// Every spawnable world asset the game data holds, by path list: the BG
-/// models and the world effects. The lists are the community path dump both
-/// references ship (Stagehand embeds the same <c>paths.json</c>; Brio packs
-/// the same dump as its path store) — the game's own index carries only
-/// hashes, so a bundled list is the ONE way to browse it by name.
-///
-/// <para>Loaded lazily and once: a session that never opens a picker never
-/// touches the resources. The label is the file's own stem — asset codes
-/// are opaque, and the full path stays searchable and shown as the row's
-/// badge context elsewhere.</para>
+/// Loads bundled model and effect paths lazily; furniture is loaded at construction.
+/// Labels use user overrides or decoded asset tokens, with the filename stem
+/// as the fallback. The game index itself provides hashes rather than names.
 /// </summary>
 public sealed class WorldAssetCatalog : IWorldAssetCatalog
 {
-    /// <summary>The user's own names, beside the config: a plain JSON
-    /// object of path → label, overlaid on the derived names at catalog
-    /// load — names grow with use instead of shipping a curated database
-    /// nobody has. Created empty on first run so it is findable; read
-    /// once per session.</summary>
+    /// <summary>Name of the optional path-to-label JSON file beside the plugin
+    /// configuration. It is created empty on first use and read once per
+    /// session.</summary>
     public const string NamesFileName = "asset-names.json";
 
     private static string? _namesPath;
@@ -82,19 +73,16 @@ public sealed class WorldAssetCatalog : IWorldAssetCatalog
     private IReadOnlyList<WorldAsset>? _models;
     private IReadOnlyList<WorldAsset>? _effects;
 
-    /// <summary>Every spawnable BG model path in the game data.</summary>
+    /// <summary>Background model paths from the bundled list.</summary>
     public IReadOnlyList<WorldAsset> Models => _models ??= Load(ModelsResource);
 
     public IReadOnlyList<WorldAsset> Furniture => _furniture;
 
-    /// <summary>Every world effect (.avfx) path in the game data.</summary>
+    /// <summary>World effect paths from the bundled list.</summary>
     public IReadOnlyList<WorldAsset> Effects =>
         _effects ??= Load(EffectsResource);
 
-    // ── Brio's derived naming (PathDatabase.PathIndex), ported whole:
-    // the expansion, subtype and asset-type token maps that turn an
-    // opaque asset code into "Rock [r2f0_rok01a]" with a context line.
-    // The maps are facts about the game's own naming scheme.
+    // These token maps turn opaque game asset codes into searchable labels.
 
     private static readonly Dictionary<string, string> ExpansionNames =
         new(StringComparer.Ordinal)
@@ -193,9 +181,7 @@ public sealed class WorldAssetCatalog : IWorldAssetCatalog
         ["evt"] = "Event", ["gmc"] = "Gimmick", ["tbx"] = "Chest",
         ["vfog"] = "Fog", ["vfg"] = "Fog",
         ["cas"] = "Castle", ["bri"] = "Bridge", ["stg"] = "Stage",
-        // Best-effort wave over the biggest remaining groups (user
-        // 2026-08-31: name them and kill the remainder). Guessed from
-        // context, correctable one word at a time.
+        // These additional labels are inferred from path context and may need correction.
         ["fun"] = "Vent", ["gar"] = "Rubble",
         ["all"] = "Assembly", ["emp"] = "Imperial",
         ["rod"] = "Rod", ["cut"] = "Cinematic", ["rid"] = "Ridge",
@@ -349,9 +335,7 @@ public sealed class WorldAssetCatalog : IWorldAssetCatalog
                 assets.Add(new WorldAsset(
                     stem, line, label, ContextOf(line)));
             }
-            // RECOGNIZED entries lead (user 2026-08-31: "sort the ones
-            // matching first"): a row with a real word sorts before a raw
-            // stem, alphabetical within each half.
+            // Put decoded or custom labels first, then raw stems; sort each group alphabetically.
             assets.Sort(static (a, b) =>
             {
                 // NAMED means the label says more than the raw stem — a

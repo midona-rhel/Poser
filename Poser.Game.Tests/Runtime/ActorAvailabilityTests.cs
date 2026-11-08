@@ -44,7 +44,7 @@ public sealed class ActorAvailabilityTests
         var retained = Assert.Single(actors.Actors);
         Assert.True(actors.IsAvailable(retained));
 
-        // No actor-list refresh: precisely the Update -> logout -> Draw gap.
+        // Simulate logout after the last actor-list refresh.
         loggedIn = false;
         Assert.False(actors.IsAvailable(retained));
         loggedIn = true;
@@ -133,7 +133,7 @@ public sealed class ActorAvailabilityTests
                 Proxy<ITargetManager>((_, _) => null),
                 Proxy<IClientState>((_, _) => null));
 
-            // Same occupant: release seats the body back where it was taken.
+            // Releasing the same actor restores its captured position.
             actors.AdoptWorldActor(address);
             Assert.True(actors.IsAdopted(Assert.Single(actors.Actors)));
             draw->Object.Position = moved;
@@ -146,7 +146,7 @@ public sealed class ActorAvailabilityTests
             draw->Object.Position = moved;
             objectId = 8;
             Assert.False(actors.IsAdopted(adopted));
-            actors.Dispose(); // the GPose-exit restore path
+            actors.Dispose(); // Disposal must also skip the replacement object.
             Assert.Equal(moved, (System.Numerics.Vector3)draw->Object.Position);
         }
         finally

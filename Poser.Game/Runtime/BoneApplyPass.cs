@@ -57,9 +57,8 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     private readonly HashSet<SkeletonKey> _rawRefreshRequests = new();
 
     /// <summary>Reused snapshot buffer for the apply pass, which must iterate
-    /// a set it may mutate. Single-threaded (physics detour) and never
-    /// nested, so one instance keeps the steady state free of per-frame
-    /// arrays.</summary>
+    /// a set it may mutate. The re-entry guard protects nested calls; callers
+    /// must also serialize access across threads.</summary>
     private readonly List<SkeletonKey> _updatePassBuffer = new();
 
     private bool _isUpdating = false;
@@ -249,7 +248,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     }
 
     /// <summary>
-    /// Apply skeleton transforms following Brio's exact pattern:
+    /// Applies stacks and refreshes caches around partial attachment:
     /// 1. Apply transforms with per-bone LastTransform update
     /// 2. Full cache update after apply
     /// 3. Reparent partials
@@ -322,7 +321,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     /// of the driver's result, in the channels it wrote: a driver replaces one
     /// channel of the bone (position, rotation or scale), and the edits are
     /// deltas, so each lands exactly once. The channels a driver leaves keep the
-    /// edit of step 1. No IK: a driven bone is no chain's handle.
+    /// edit of step 1. This repeat pass does not invoke IK.
     /// </summary>
     private void ReapplyDrivenEdits(Skeleton skeleton, GameSkeleton* gameSkeleton, SkeletonPoseInfo poseInfo,
         IReadOnlyDictionary<(int Partial, int Bone), TransformComponents> driven)
@@ -344,6 +343,16 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             {
                 // The channels the driver didn't write stay neutral (no-op deltas).
                 var delta = stack.Transform;
+                if (stack.Frame == TransformFrame.BoneLocal)
+                {
+                    // This pass runs after the face is attached to the posed head.
+                    // Translate its stored offsets into that attached frame first.
+                    var origin = _stacks.FromApplySpace(bone, Transform.Identity);
+                    var offset = _stacks.FromApplySpace(bone,
+                        new Transform(delta.Position, Quaternion.Identity, delta.Scale));
+                    delta.Position = offset.Position - origin.Position;
+                    delta.Scale = offset.Scale;
+                }
                 if (!channels.HasFlag(TransformComponents.Position)) delta.Position = Vector3.Zero;
                 if (!channels.HasFlag(TransformComponents.Rotation)) delta.Rotation = Quaternion.Identity;
                 if (!channels.HasFlag(TransformComponents.Scale)) delta.Scale = Vector3.Zero;
@@ -353,7 +362,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     }
 
     /// <summary>
-    /// Apply transforms with per-bone LastTransform update - exactly like Brio's ApplyBrioTransforms.
+    /// Applies each bone's stacks before refreshing its caches and running queued actions.
     /// Updates LastTransform IMMEDIATELY after applying each bone's stacks.
     /// </summary>
     private void ApplyTransformsWithPerBoneUpdate(
@@ -528,7 +537,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
             // The fallback path resolves EVERY bone BY NAME, allocating a
             // managed copy of the native name per bone per frame — the
-            // third-of-a-core in the profile if it is what actually runs.
+            // additional string allocations when the map cannot be used.
             // One line per build says which path this partial is on.
             if (!boneMap.IsValid && _mapFallbackLogged.Add(
                     (skeleton.BuildRevision, partialIdx)))
@@ -590,9 +599,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                     // must happen even when no parent transform is written.
                     var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
                     // The Propagate side effect above is the point of the call
-                    // and has already happened; the null check only gates the
-                    // WRITE below, matching every other model-space deref in
-                    // this file (check-then-use, never fail-open).
+                    // precedes the parent check; null here skips the write.
                     if (modelSpace == null)
                         continue;
 

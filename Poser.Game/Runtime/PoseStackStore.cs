@@ -57,16 +57,8 @@ internal sealed class PoseStackStore
     public bool TryGet(SkeletonKey key, [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out SkeletonPoseInfo poseInfo) =>
         _poseInfos.TryGetValue(key, out poseInfo);
 
-    /// <summary>
-    /// The store for one (actor, slot), created on first use.
-    ///
-    /// <para>A plain lookup. It used to be an adoption point — purging stale
-    /// instance-keyed stores, taking a parked pose, re-asserting the model
-    /// transform — because the key carried the skeleton instance and a redraw
-    /// filed the pose under a dead key. The key is names now, so there is
-    /// nothing to adopt and nothing to purge: the store the caller gets is the
-    /// one the pose was authored into, whichever skeleton is live.</para>
-    /// </summary>
+    /// <summary>Gets or creates the actor-slot store. Replacing a skeleton
+    /// wrapper keeps the same authored pose under its stable key.</summary>
     public SkeletonPoseInfo GetPoseInfo(ISkeleton skeleton)
     {
         var slotKey = SkeletonKey.Of(skeleton);

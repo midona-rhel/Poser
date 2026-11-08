@@ -173,9 +173,9 @@ internal sealed class SpawnOwnershipCleanup
         }
     }
 
-    /// <summary>Settles every record at session end. Returns whether any
-    /// native object was deleted, so the caller knows the actor list owes a
-    /// refresh.</summary>
+    /// <summary>Attempts cleanup for every record, retaining unresolved failures.
+    /// True asks the caller to refresh actors; it can also mean an already-gone
+    /// object was retired or a pending create was resolved.</summary>
     public bool DeleteAll()
     {
         var deleted = false;

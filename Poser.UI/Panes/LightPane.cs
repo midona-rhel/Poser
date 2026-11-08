@@ -31,7 +31,7 @@ public sealed class LightPane
     private readonly ISceneCreation _creation;
 
     private readonly EntityActions _entityActions;
-    private readonly ObjectPlacementPreferences _placement;
+    private readonly Poser.Application.Settings.ConfigurationService _configuration;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IViewportReads _viewport;
     private readonly ICameraProjection _camera;
@@ -94,7 +94,7 @@ public sealed class LightPane
         PropertiesContext properties,
         ISceneCreation creation,
         EntityActions entityActions,
-        ObjectPlacementPreferences placement,
+        Poser.Application.Settings.ConfigurationService configuration,
         ITransformFacade cleanTransforms,
         IViewportReads viewport,
         ICameraProjection camera,
@@ -113,10 +113,9 @@ public sealed class LightPane
         _creation = creation;
         _scenePane = scenePane;
         _entityActions = entityActions;
-        _placement = placement;
+        _configuration = configuration;
         _cleanTransforms = cleanTransforms;
-        // The load dialog carries the ONE choice that changes where the
-        // light lands, decided beside the file it applies to.
+        // Placement is selected in the load dialog beside the chosen file.
         _loadBrowser.BottomPanel =
             new FileSidePanel(PlacementBandHeight, DrawPlacementBand);
         _viewport = viewport;
@@ -148,7 +147,7 @@ public sealed class LightPane
     /// <summary>The placement band's labels, positional against
     /// <see cref="ObjectPlacementMode"/>.</summary>
     private static readonly string[] PlacementModeLabels =
-        ["As saved", "Relative to camera", "Relative to actor"];
+        ["As saved", "Relative to camera", "Relative to actor", "In front of camera"];
 
     private const float PlacementBandHeight = 56f;
 
@@ -158,17 +157,12 @@ public sealed class LightPane
         float inset = ActiveTheme.Page.Inset * scale;
         ImGui.SetCursorScreenPos(
             new Vector2(origin.X + inset, origin.Y + inset));
-        SegmentedControl(
-            "##light-placement-mode",
-            PlacementModeLabels,
-            (int)_placement.Mode,
-            next => _placement.Mode = (ObjectPlacementMode)next,
-            itemHelp: index => index switch
-            {
-                1 => "Keeps the saved offset from the camera",
-                2 => "Keeps the saved offset from the selected actor",
-                _ => "Exactly where it was saved",
-            });
+        DropdownWidgets.Dropdown(
+            "##light-placement-mode", PlacementModeLabels,
+            (int)_configuration.Config.DefaultSpawnPlacement,
+            next => { _configuration.Config.DefaultSpawnPlacement = (ObjectPlacementMode)next; _configuration.Save(); },
+            style: new ControlStyle { Width = UiWidth.Region((size.X - inset * 2) / scale) },
+            help: "Placement for new entities, duplicates and loaded files");
     }
 
     /// <summary>Opens the load dialog from outside the pane — the add-entity
@@ -176,13 +170,11 @@ public sealed class LightPane
     public void OpenLoad()
     {
         _folder.Open(_loadBrowser,
-            path => _scenePane.LoadEntry(path, _placement.Mode));
+            path => _scenePane.LoadEntry(path, _configuration.Config.DefaultSpawnPlacement));
     }
 
     /// <summary>
-    /// The Light tab: what the light IS and what is done with it as a whole —
-    /// emission, the mask it projects through, its file, and the two
-    /// lifetime actions.
+    /// Draws emission, gobo, file, and lifetime controls for the light.
     /// </summary>
     public void DrawLight(Vector2 origin, Vector2 size) =>
         DrawTab("light", origin, size, (page, lightId, light) =>
@@ -418,9 +410,9 @@ public sealed class LightPane
     }
 
     /// <summary>
-    /// One gobo texture, answered for the current frame. The provider THROWS
+    /// Resolves one gobo texture for the current frame. The provider throws
     /// for a path the game does not have, so a failure is remembered; a null
-    /// wrap with no error is merely "still loading". The WRAP is never
+    /// wrap with no error means "still loading". The wrap is never
     /// cached: shared textures must be re-resolved each frame.
     /// </summary>
     private TextureProbe GoboPreview(

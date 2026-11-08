@@ -16,9 +16,7 @@ public static class TransformGridWidgets
     private const float TransformRowGap = 6f;
     private const float TransformBottomMargin = 8f;
 
-    /// <summary>The logical height for a grid of the given row count —
-    /// the transform presentation is UNIVERSAL across inspectors, and a
-    /// camera's grid carries different rows than an actor's.</summary>
+    /// <summary>Returns the grid height in logical units for the requested number of rows.</summary>
     public static float TransformGridHeightFor(int rowCount) =>
         TransformLegendRise + TransformBoxPad * 2f
         + ActiveTheme.Controls.WorkspaceHeight * rowCount
@@ -26,12 +24,8 @@ public static class TransformGridWidgets
         + TransformBottomMargin;
 
     /// <summary>
-    /// The inspector's transform: rows are translate / rotate / scale
-    /// wearing the toolbar's own icons instead of word labels; columns are
-    /// the axes, each wrapped in its color-coded rounded box that rises
-    /// above the grid and carries its letter in a CUTOUT of the top border
-    /// — a fieldset legend. The wells inside carry no letters; the column
-    /// says it once.
+    /// Draws transform values with one icon per row and one colour-coded
+    /// column per axis. Axis letters appear in gaps in the column borders.
     /// </summary>
     public static void TransformGrid(
         string id,
@@ -124,8 +118,7 @@ public static class TransformGridWidgets
                     },
                     disabled(row),
                     altReset: altReset?.Invoke(row));
-                // Disable-in-place: the WHY lives on the hover, never in a
-                // status row that pops in and reflows the rail.
+                // Explain disabled values on hover without changing the grid layout.
                 if (disabled(row) && disabledHelp?.Invoke(row) is { } why &&
                     ImGui.IsMouseHoveringRect(
                         new Vector2(x + pad, y),

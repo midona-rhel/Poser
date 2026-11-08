@@ -144,11 +144,9 @@ internal static class BoxRenderer
             return;
         }
 
-        // CSS box-shadow: alpha falls from color.a to 0 across ±blur around the
-        // spread edge with a gaussian-like sigmoid. Rendered as a solid core plus
-        // NON-overlapping 1px rings whose alpha follows 1−smoothstep — the old
-        // additive stacked-fill approximation piled alpha near the box and read
-        // as a hard dark ring.
+        // Approximate blur with a solid core and thin rings whose alpha follows
+        // 1−smoothstep across ±blur from the spread edge. Adjacent rings overlap
+        // slightly to hide antialiasing gaps.
         float core = blur; // core = spread edge − blur
         var cMin = sMin + new Vector2(core, core);
         var cMax = sMax - new Vector2(core, core);

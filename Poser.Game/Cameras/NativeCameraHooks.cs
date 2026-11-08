@@ -15,15 +15,13 @@ using RenderCamera = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Camera;
 namespace Poser.Game.Cameras;
 
 /// <summary>
-/// The native camera hooks the virtual-camera overlay runs inside: Brio's
-/// camera update, collision and input detours, Ktisis's look-position detour
-/// for bone tracking, and the matrix load a free camera's view needs. Each
-/// detour reads the owner's live camera; a fault is logged once per detour
-/// and the game's own call still runs.
+/// Applies virtual-camera offsets, collision settings, input handling, and bone
+/// tracking through native hooks. Managed failures in Poser's detour work are
+/// logged once per hook; calls to the original native functions are outside those catches.
 /// </summary>
 internal sealed unsafe class NativeCameraHooks
 {
-    // Brio signatures, verbatim from main (2026-08).
+    // Signatures generated from the patchcheck registry.
     private const string CameraUpdateSignature =
         Poser.Game.Natives.NativeSignatures.Camera_Update;
     private const string CameraCollisionSignature =
@@ -33,8 +31,7 @@ internal sealed unsafe class NativeCameraHooks
     private const string HandleInputSignature =
         Poser.Game.Natives.NativeSignatures.InputDeviceManager_Update;
 
-    // Ktisis signature, verbatim from main (2026-08): the function that
-    // derives the orbit look-at, hooked for bone tracking.
+    // The orbit look-at function is hooked for bone tracking.
     private const string CalculateLookPositionSignature =
         Poser.Game.Natives.NativeSignatures.Camera_SmoothLookAt;
 
@@ -58,8 +55,7 @@ internal sealed unsafe class NativeCameraHooks
     private Hook<HandleInputDelegate>? _handleInputHook;
     private Hook<CalculateLookPositionDelegate>? _lookPositionHook;
 
-    // A detour never throws into the game: a fault is logged once per
-    // detour and the game's own call still runs.
+    // Suppress repeated logs for managed exceptions in each detour's Poser work.
     private bool _updateFaultLogged;
     private bool _collisionFaultLogged;
     private bool _inputFaultLogged;
@@ -147,7 +143,7 @@ internal sealed unsafe class NativeCameraHooks
 
     private Vector3? TrackedPivot => _owner.TrackedPivot;
 
-    /// <summary>Brio's CameraUpdateDetour: the position/target offset is
+    /// <summary>The position/target offset is
     /// added after the game has computed the frame's camera, and the look-at
     /// moves with it so the view direction survives.</summary>
     private nint CameraUpdateDetour(NativeCamera* camera)
@@ -184,6 +180,9 @@ internal sealed unsafe class NativeCameraHooks
 
             if (live.Kind != CameraKind.Free)
             {
+                // Resolve the saved eye against the native orbit only once. Keeping
+                // an eye pin here would cancel every subsequent zoom movement.
+                live.RestoreOrbitPosition(camera->Camera.CameraBase.SceneCamera.Position);
                 var offset = live.PositionOffset + live.TargetOffset;
                 // Ktisis's WritePosition: a pinned camera measures its offset
                 // from the PIN instead of from wherever the game's update
@@ -221,7 +220,7 @@ internal sealed unsafe class NativeCameraHooks
         return result;
     }
 
-    /// <summary>Brio's collision detour: with collision disabled the collide
+    /// <summary>With collision disabled the collide
     /// distance is pushed to the zoom ceiling and the game's probe skipped.
     /// </summary>
     private nint CameraCollisionDetour(
@@ -263,11 +262,9 @@ internal sealed unsafe class NativeCameraHooks
                 (nint)(&camera->ViewMatrix));
     }
 
-    /// <summary>Brio's input detour, whole: a live free camera eats the
-    /// movement keys and the right-drag look, and a locked live camera of
-    /// ANY kind eats the game's camera input outright — the orbit drag, the
-    /// scroll zoom, and the movement keys — so nothing the game reads can
-    /// move the shot.</summary>
+    /// <summary>Consumes free-camera movement and look input after the game fills
+    /// the input buffers. A locked camera also consumes mouse movement and the
+    /// listed movement keys, unless text input is active.</summary>
     private void HandleInputDetour(
         nint a1, nint a2, nint a3, MouseFrame* mouse, KeyboardFrame* keyboard)
     {
@@ -277,11 +274,8 @@ internal sealed unsafe class NativeCameraHooks
             if (!_gPose.IsGPosing || Live is not { } live)
                 return;
 
-            // Null-checked BEFORE the deref: a null singleton here is an
-            // AccessViolationException, which .NET never delivers to the
-            // catch below — it would be a process crash inside the game's
-            // input handler. Every other singleton read in this file goes
-            // through the null-checking Native property.
+            // Check the native singleton before dereferencing it; the managed catch
+            // is not a recovery mechanism for invalid native memory.
             var atk = RaptureAtkModule.Instance();
             if (atk == null || atk->AtkModule.IsTextInputActive())
                 return;
@@ -366,9 +360,8 @@ internal sealed unsafe class NativeCameraHooks
                         break;
                     case CameraTrackingMode.FollowAndPan:
                     {
-                        // Ktisis's easing: normalize both positions and take
-                        // the per-component hypotenuse's first lane over √2 —
-                        // ~0 near the start pose, approaching one half.
+                        // The blend depends on the normalized world-position X components.
+                        // Its finite range is 0..1; normalizing a zero position yields NaN.
                         var from = Vector3.Normalize(actorPosition with
                         {
                             Y = actorPosition.Y + cameraOffsetY,

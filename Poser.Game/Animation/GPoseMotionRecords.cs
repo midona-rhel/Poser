@@ -9,13 +9,9 @@ using Poser.Game.Natives;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// GPose's per-actor motion record (RE notes/animation-system.md §13.2A): every frame
-/// GPose replays the emote or action an actor's record names whenever the actor's own
-/// emote differs, which put a GPose actor's recorded emote back over whatever Poser
-/// played. Poser takes the motion over the way GPose's own idle-motion menu does: the
-/// record is snapshotted and its kind cleared (a kind-0 record replays nothing), and
-/// the snapshot is written back when Poser hands the Full body back to the state it
-/// took it from. Not for the real player.
+/// Temporarily disables GPose's recorded motion so it cannot replace an animation
+/// chosen in Poser. Saves the actor record, clears its kind, and restores the record
+/// when the full-body animation returns to the saved state. Excludes the real player.
 /// </summary>
 internal sealed unsafe class GPoseMotionRecords
 {
@@ -28,7 +24,7 @@ internal sealed unsafe class GPoseMotionRecords
     private const int ActorOffset = NativeFields.GPoseActorRecord_Actor;   // patchcheck GPoseActorRecord.Actor
     private const int IdOffset = NativeFields.GPoseActorRecord_Id;         // patchcheck GPoseActorRecord.Id: the recorded motion
 
-    /// <summary>A record Poser took: its bytes and the Full body state Poser took it in.</summary>
+    /// <summary>Saved GPose record and the full-body animation state at capture.</summary>
     private sealed record Taken(byte[] Record, uint EntityId, CharacterModes Mode, byte Param,
         ushort BaseOverride, ushort SlotRow);
 
@@ -91,8 +87,8 @@ internal sealed unsafe class GPoseMotionRecords
             return;
         _taken.Remove((nint)character);
         // Only over the record Poser cleared: its kind still 0 and the same recorded
-        // motion. A newer recording sets a kind; another GPose session's record at a
-        // reused address carries another motion (or none). The game's own per-frame
+        // motion. A newer recording sets a kind; a changed motion id also prevents
+        // restoration. These checks cannot distinguish sessions that reuse the same id. The game's own per-frame
         // writes to the record (its countdown and flags) don't count.
         // A snapshot without a motion id (kind 3 can carry 0) can't tell its record
         // from an empty one, so it is never copied back.

@@ -119,10 +119,8 @@ internal sealed unsafe class SpawnTransaction
                 sourceAddress,
                 modelCharaId,
                 name ?? SpawnNames.ForSlot(descriptor.Value.Index));
-            // Penumbra cannot place the copy on the frame it is created
-            // (CollectionMissing, 00:14) and can one tick later (00:2x): the
-            // inherit runs next tick, still ahead of the draw. The flags
-            // copy is a plain field write and lands now.
+            // Defer collection assignment until the next tick, before drawing.
+            // Copy the current appearance and equipment flags synchronously.
             if (sourceAddress != nint.Zero
                 && _native.ResolveActor(sourceAddress) is { } flagSource)
             {
@@ -336,23 +334,10 @@ internal sealed unsafe class SpawnTransaction
     }
 
     /// <summary>
-    /// The clone wears the source's MODS, not just its raw appearance.
-    /// Penumbra resolves a GPose actor through the parent index its
-    /// CopyCharacter hook recorded (Penumbra CutsceneService.cs:123-130), and
-    /// the second, self-directed CharacterSetup copy above points that parent
-    /// at the clone itself — so the clone resolves under its own name and
-    /// inherits nothing. Brio's clone path never repairs that (its
-    /// ActorSpawnService.cs:108-172 makes no Penumbra call at all) and leaves
-    /// the user to pick a collection by hand afterwards
-    /// (Brio ActorAppearanceCapability.cs:210-235); Poser copies the source's
-    /// effective collection instead.
-    ///
-    /// It runs INSIDE the deferred-draw window, before the draw object is
-    /// ever built, which is the same window the copy itself needs. A refusal
-    /// is reported and never fails the spawn: an unmodded clone is still a
-    /// clone. The self-copy is also what makes this safe — without it the
-    /// assignment would land on the SOURCE's identifier and rewrite the
-    /// user's own character collection.
+    /// Assigns the source's resolved mods to a duplicate, or the player's
+    /// collection to a new actor. This runs before the first draw because
+    /// the native self-copy gives the actor its own collection identity.
+    /// Integration failures are logged without failing the spawn.
     /// </summary>
     private void InheritSourceCollection(
         SpawnOwnershipRecord ownership,

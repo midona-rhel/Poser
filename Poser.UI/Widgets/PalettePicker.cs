@@ -10,12 +10,9 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI.Widgets;
 
 /// <summary>
-/// One colour out of a fixed palette — a skin, hair or eye colour the
-/// game offers — chosen off a grid of the colours themselves. Retained
-/// like <see cref="TexturePicker"/> and drained the same way: the row
-/// that opened it reads the pick from <see cref="Draw"/>. The tile that
-/// opens it is the caller's (a <c>ColorTile</c>); the picker owns only
-/// the popup and the pick.
+/// Lets the user choose a skin, hair, or eye colour from a fixed grid.
+/// The caller draws the opening control and reads the chosen index from
+/// <see cref="Draw"/>. Keep the picker instance between frames.
 /// </summary>
 public sealed class PalettePicker
 {
@@ -43,7 +40,7 @@ public sealed class PalettePicker
         _body = DrawBody;
     }
 
-    /// <summary>Arms the grid under the tile that owns it.</summary>
+    /// <summary>Requests the popup below the control's screen rectangle.</summary>
     public void Open(
         IReadOnlyList<Vector4> colors, int selected, Vector2 anchorMin, Vector2 anchorMax)
     {
@@ -56,7 +53,7 @@ public sealed class PalettePicker
         _openRequested = true;
     }
 
-    /// <summary>Runs the surface and answers the picked index once.</summary>
+    /// <summary>Draws the popup and returns an index only on the frame a colour is chosen.</summary>
     public int? Draw()
     {
         if (_openRequested)

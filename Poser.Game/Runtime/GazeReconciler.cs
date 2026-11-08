@@ -52,13 +52,9 @@ internal sealed class GazeReconciler
     }
 
     /// <summary>
-    /// Reconciliation by stable id: a source the registry no longer resolves
-    /// drops its entry, a surviving one re-points the detour index at its
-    /// current body, and a departed Entity target marks its source stale.
-    /// Runs after each binding commit, not on the actor-list event itself:
-    /// until the registry publishes, its maps still describe the old list and
-    /// a replaced wrapper would read as a departed actor. Nothing ever
-    /// follows a reused address.
+    /// Refreshes source addresses and target availability after the binding registry commits.
+    /// Running before that commit would compare new actor wrappers with the old registry.
+    /// Unresolved sources are removed; unavailable targets stay marked stale until reselected.
     /// </summary>
     public void Reconcile()
     {
@@ -73,8 +69,7 @@ internal sealed class GazeReconciler
             snapshot = _store.SnapshotTargets();
         }
 
-        // Every registry and object-table read happens OUTSIDE the store lock: the
-        // detour contends on it from the native thread on every frame.
+        // Resolve outside the lock so these lookups do not hold up the native hook.
         var bodies = new Dictionary<ActorId, (IGameObject Body, bool Writable)>(snapshot.Count);
         var liveTargets = new HashSet<ActorId>();
         foreach (var (id, target) in snapshot)
@@ -97,32 +92,25 @@ internal sealed class GazeReconciler
                     continue;
                 if (!bodies.TryGetValue(id, out var resolved))
                 {
-                    // The exact actor generation the entry described is gone,
-                    // so the entry goes with it.
+                    // No usable source was resolved during this pass.
                     _store.Drop(id);
                     continue;
                 }
                 _store.Bind(id, resolved.Body.Address);
-                // The liveness probe answered about the target this entry held
-                // when the snapshot was taken. An entry retargeted since is
-                // left alone rather than judged on the wrong id — the retarget
-                // proved its own target live and cleared the mark itself.
+                // Do not apply an old lookup result to a target selected since the snapshot.
                 if (entry.TargetActor != probedTarget)
                     continue;
                 bool wasStale = entry.TargetStale;
-                // Exact identity, and STICKY: once a remembered target has left
-                // the scene the mark stays until a live target is chosen.
+                // Keep the stale flag until the user selects a live target.
                 entry.TargetStale = wasStale ||
                     (entry.TargetActor is { } target && !liveTargets.Contains(target));
                 if (entry.TargetStale == wasStale)
                     continue;
-                // Entity-only from here: a stale target is meaningless to a
-                // Point/Camera/Forward entry, and must not touch its locks.
+                // Other modes do not use the remembered actor target.
                 if (entry.Mode != GazeTargetMode.Entity)
                     continue;
                 ClearPartLock(entry, GazeTargetType.All);
-                // A stale target stops enforcement, so every claimed channel
-                // is owed its hand-back — the same debt an untoggle books.
+                // Queue disable writes for parts that were following this target.
                 BookRelease(entry);
                 _log.Debug($"GazeService: gaze target of {id} despawned — remembered as stale.");
                 modeChanged = true;
@@ -130,9 +118,7 @@ internal sealed class GazeReconciler
                     (targetWrites ??= new()).Add((resolved.Body, pending));
             }
         }
-        // Outside the lock: a despawned target leaves the character's imposed
-        // target id pointing at nothing, so it is cleared here too, through
-        // the same gated funnel as every other write.
+        // Clear the native target ID outside the store lock.
         if (targetWrites != null)
             foreach (var (character, targetId) in targetWrites)
                 _driver.WriteCharacterTarget(character, targetId);

@@ -23,6 +23,9 @@ The [architecture review and cleanup plan](validation/architecture-review-2026-1
 records the 2026-10-07 evidence, proposed changes, and documentation cleanup.
 It is not a replacement for the current contracts above.
 
+The [October 25 simplification plan](validation/simplification-plan-2026-10-25.md)
+prioritizes conflicting guards, duplicate behavior and unclear code comments.
+
 Historical/reference material: [validation snapshots and older proposals](validation/),
 [Brio notes](brio/known-brio-bugs.md), and [legacy PBI records](backlog/).
 Their dates and status belong to those snapshots; track current work in GitHub issues.

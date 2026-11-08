@@ -53,7 +53,7 @@ public class Bone : EntityBase, IBone
             System.Threading.Volatile.Read(ref _transformReadFrame) <= 2;
 
     /// <summary>
-    /// Current Havok model-space baseline captured during the Brio-style apply/cache
+    /// Current Havok model-space baseline captured during the pose apply/cache
     /// pipeline. Absolute editor and import targets calculate deltas against it.
     /// Persistent posing state remains in BonePoseInfo, not this observation cache.
     /// </summary>
@@ -71,17 +71,8 @@ public class Bone : EntityBase, IBone
     }
 
     /// <summary>
-    /// Gets the display name with translation: "Translation (internal_name)" or just "internal_name".
-    /// The TRANSLATION is resolved once at construction: the bone tables are
-    /// immutable after BoneInfoService.Initialize (which runs before the
-    /// plugin's DI container exists, so no bone can be built ahead of them),
-    /// while this property is read per bone per frame by every tree, overlay
-    /// and descriptor rebuild.
-    ///
-    /// <para>WHICH of the two names is handed back is a live read of the
-    /// config (Ktisis' <c>ShowFriendlyBoneNames</c>), because the switch has to
-    /// take effect on the next frame rather than the next skeleton rebuild.
-    /// </para>
+    /// Uses the translated name cached at construction when friendly names are
+    /// enabled. Reads the setting on each access so changing it needs no rebuild.
     /// </summary>
     public override string Name =>
         _showFriendlyNames() ? _displayName : BoneName;
@@ -100,8 +91,8 @@ public class Bone : EntityBase, IBone
 
     /// <summary>
     /// Whether this bone should be hidden in the UI.
-    /// Hidden bones include partial roots (except skeleton root when attached),
-    /// the superseded jaw, and the three Viera ear sets the character does not
+    /// Hidden bones include partial roots other than the skeleton root,
+    /// the superseded jaw, and the Viera ear sets the character does not
     /// wear.
     /// </summary>
     public bool IsHiddenBone
@@ -128,10 +119,7 @@ public class Bone : EntityBase, IBone
         _displayName = BoneInfoService.GetDisplayName(boneName);
         _showFriendlyNames = showFriendlyNames;
 
-        // VISIBLE by default — the overlay must show the skeleton out of the
-        // box (Ktisis/Brio parity); hiding is the opt-out filter, and the
-        // legacy tree that used to flip visibility on is gone. IsHiddenBone
-        // still filters curated junk bones.
+        // Start visible; IsHiddenBone separately excludes structural and filtered bones.
         IsVisible = true;
     }
 

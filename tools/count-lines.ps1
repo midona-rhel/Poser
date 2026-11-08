@@ -1,9 +1,6 @@
-# PBI-015 accounting: the ONE reproducible line count. Reported per slice.
-# Handwritten production = Poser.UI + Poser/UI + the plugin root, excluding
-# generated files. Tooling source = every handwritten source file under
-# tools/ (.cs .py .ps1 .html .js .json; Markdown documentation is
-# intentionally excluded). Generated files and output/artifact directories
-# are never counted as handwritten lines.
+# Reports the historical PBI-015 line-count scope. Production includes Poser.UI,
+# Poser/UI, and root plugin C# files. Tooling includes selected source formats
+# under tools/. Generated files, Markdown, and build/output directories are excluded.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $generated = @("TablerSvgSources.cs", "ColorTokens.g.cs")
@@ -19,10 +16,8 @@ function Count($paths, $filter) {
     ($files | Get-Content | Measure-Object -Line).Lines
 }
 
-# Scope matches PBI-015's stated baseline measure: the UI production
-# surface (widget library + product UI + plugin root wiring). Note:
-# Measure-Object -Line skips blank lines, so figures run lower than
-# wc -l; the committed baseline below is THIS script's semantics.
+# Measure-Object -Line excludes blank lines, so these totals are lower than
+# tools such as wc -l. Keep that behavior when comparing historical counts.
 $pluginRoot = (Get-ChildItem "$root\Poser\*.cs" -File |
     Where-Object { $generated -notcontains $_.Name } |
     Get-Content | Measure-Object -Line).Lines

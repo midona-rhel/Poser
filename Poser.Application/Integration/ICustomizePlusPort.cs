@@ -11,18 +11,14 @@ public interface ICustomizePlusPort
     /// <summary>Saved (normal) profiles only.</summary>
     IntegrationValue<IReadOnlyList<ExternalItem>> GetBodyProfiles();
 
-    /// <summary>The profile exposed by the provider's active-ID query.
-    /// Customize+ 6.x omits temporary profiles: null does not establish their
-    /// absence. Poser-owned profile contents must come from retained ownership.</summary>
-    IntegrationValue<BodyProfileProbe> ProbeBodyProfile(ActorId actor);
+    /// <summary>Returns the actor's selected saved Customize+ profile.</summary>
+    IntegrationValue<Guid?> GetActiveSavedBodyProfile(ActorId actor);
 
     IntegrationValue<string> GetBodyProfileJson(Guid profile);
 
     IntegrationValue<Guid> ApplyTemporaryBodyProfile(ActorId actor, string profileJson);
 
-    /// <summary>Deletes Poser's temporary profile by its OWN id — the one
-    /// ownership-safe cleanup primitive. There is deliberately no
-    /// delete-by-actor: that would remove whichever temporary profile is
-    /// active, including another plugin's.</summary>
+    /// <summary>Deletes the temporary profile using the ID returned when Poser
+    /// created it. Deleting by actor could remove another plugin's profile.</summary>
     IntegrationResult DeleteTemporaryBodyProfileById(Guid profile);
 }

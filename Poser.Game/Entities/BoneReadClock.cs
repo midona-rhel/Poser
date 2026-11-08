@@ -1,11 +1,8 @@
 namespace Poser.Game.Entities;
 
 /// <summary>
-/// The frame counter behind bone-transform demand. The finalize hook
-/// advances it once per render frame; reading a bone's transform stamps the
-/// bone with the current value; the hook copies only bones stamped
-/// recently. The clock lives HERE so the entity can stamp without the core
-/// referencing the game layer.
+/// Tracks render frames and the most recent bone-transform read. The finalize
+/// hook uses these stamps to skip snapshot work when no consumer needs it.
 /// </summary>
 public static class BoneReadClock
 {
@@ -13,14 +10,13 @@ public static class BoneReadClock
 
     public static long Frame => System.Threading.Volatile.Read(ref _frame);
 
-    /// <summary>The hook's once-per-frame advance.</summary>
+    /// <summary>Advances the counter once per render frame.</summary>
     public static long Advance() =>
         System.Threading.Interlocked.Increment(ref _frame);
 
     private static long _lastRead;
 
-    /// <summary>The frame of the newest bone-transform read anywhere —
-    /// what keeps the snapshot pass itself alive: no reads, no walk.</summary>
+    /// <summary>The frame containing the newest bone-transform read.</summary>
     public static long LastRead => System.Threading.Volatile.Read(ref _lastRead);
 
     internal static void MarkRead() =>

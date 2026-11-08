@@ -19,18 +19,32 @@ public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService po
     public bool CanParent(SelectionId id) => id.Kind is SceneEntityKind.Actor or SceneEntityKind.Light
         or SceneEntityKind.Prop or SceneEntityKind.WorldObject or SceneEntityKind.Overlay && Read(id) != null;
 
-    public PoseTransform? Read(SelectionId id)
+    private object? Resolve(SelectionId id) => id switch
     {
-        global::Poser.Domain.Transforms.Transform? world = id switch
+        { Actor: { } actor } => bindings.Resolve(actor).Value,
+        { Bone: { } bone } => bindings.Resolve(bone).Value,
+        { Light: { } light } => bindings.Resolve(light).Value,
+        { Prop: { } prop } => bindings.Resolve(prop).Value,
+        { WorldObject: { } obj } => bindings.Resolve(obj).Value,
+        { Overlay: { } overlay } => bindings.Resolve(overlay).Value,
+        _ => null,
+    };
+
+    public PoseTransform? Read(SelectionId id) => ReadEntity(Resolve(id));
+
+    // Creation uses the object directly before it appears in the scene's ID registry.
+    internal PoseTransform? ReadEntity(object? entity)
+    {
+        global::Poser.Domain.Transforms.Transform? world = entity switch
         {
-            { Actor: { } actor } when bindings.Resolve(actor).Value is { } live => posing.GetEffectiveTransform(live),
-            { Bone: { } bone } when bindings.Resolve(bone).Value is { } live => ReadBone(live),
-            { Light: { } light } => bindings.Resolve(light).Value?.Transform,
-            { Prop: { } prop } => bindings.Resolve(prop).Value?.Transform,
-            { WorldObject: { } obj } => bindings.Resolve(obj).Value?.Transform,
+            IActor actor => posing.GetEffectiveTransform(actor),
+            IBone bone => ReadBone(bone),
+            ILight light => light.Transform,
+            IPropHandle prop => prop.Transform,
+            IWorldObject obj => obj.Transform,
             _ => null,
         };
-        if (id.Overlay is { } overlay) return bindings.Resolve(overlay).Value?.State.Collider?.Transform;
+        if (entity is IOverlayNode overlay) return overlay.State.Collider?.Transform;
         return world is { } t && PoseTransform.TryCreate(t.Position, t.Rotation, t.Scale, out var value, out _) ? value : null;
     }
 
@@ -49,21 +63,23 @@ public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService po
         return bone == null ? null : SelectionId.ForBone(bone.Id);
     }
 
-    public bool Write(SelectionId id, PoseTransform world)
+    public bool Write(SelectionId id, PoseTransform world) => WriteEntity(Resolve(id), world);
+
+    internal bool WriteEntity(object? entity, PoseTransform world)
     {
         if (!world.IsValid) return false;
         var transform = global::Poser.Domain.Transforms.Transform.FromPose(world);
-        switch (id)
+        switch (entity)
         {
-            case { Actor: { } actor } when bindings.Resolve(actor).Value is { } live:
-                posing.SetTransformOverride(live, transform); return true;
-            case { Light: { } light } when bindings.Resolve(light).Value is { } live:
+            case IActor live:
+                return posing.SetTransformOverride(live, transform);
+            case ILight live:
                 live.Transform = transform; return true;
-            case { Prop: { } prop } when bindings.Resolve(prop).Value is { } live:
+            case IPropHandle live:
                 live.Transform = transform; return true;
-            case { WorldObject: { } obj } when bindings.Resolve(obj).Value is { } live:
+            case IWorldObject live:
                 live.Transform = transform; return true;
-            case { Overlay: { } overlay } when bindings.Resolve(overlay).Value is { } live && live.State.Collider is { } collider:
+            case IOverlayNode live when live.State.Collider is { } collider:
                 if (collider.Transform != world) live.State = live.State with { Collider = collider with { Transform = world } };
                 return true;
             default: return false;

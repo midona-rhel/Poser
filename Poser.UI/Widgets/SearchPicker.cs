@@ -381,7 +381,7 @@ public sealed class SearchPicker<T> where T : class
             _options.SecondStrip, 1, origin, y, pillInset, rowWidth, scale);
 
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, y * scale));
-        // The bar and its padding occupy the left gutter.
+        // Reserve the scrollbar gutter separately from the row content.
         ScrollRegion(_listId, _panelWidth, _listHeight, _list, pillInset);
 
         if (_picked != null)
@@ -498,7 +498,7 @@ public sealed class SearchPicker<T> where T : class
         float baseX = pillMin.X + PickerRowPadding * scale;
         float x = baseX;
 
-        // Multi-select rows reserve one selection seat.
+        // Multi-select rows reserve space for a checkbox.
         float slot = PickerCheckSlot * scale;
         var slotMin = new Vector2(x, centerY - slot * 0.5f);
         bool selectable = _options.IsSelectable?.Invoke(item) ?? true;

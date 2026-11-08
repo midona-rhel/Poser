@@ -22,11 +22,11 @@ public sealed class UiWindowSet : IDisposable
     private ToolbarPartWindow ToolbarPart { get; }
     private LibraryWindow LibraryPart { get; }
 
-    /// <summary>The PERF panel. Up exactly while its setting is on — the
-    /// switch IS the window, so nothing else opens or closes it.</summary>
+    /// <summary>The performance panel. Its open state follows the setting and
+    /// is not controlled independently.</summary>
     private FrameProfilerWindow FrameProfilerPanel { get; }
 
-    /// <summary>The game function check. Up exactly while its setting is on.</summary>
+    /// <summary>The native-function health panel. Its open state follows the setting.</summary>
     private NativeHealthWindow? NativeHealthPanel { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly WorldAdoptionSource _worldAdoption;
@@ -132,9 +132,8 @@ public sealed class UiWindowSet : IDisposable
         SpawnBrowser = spawnBrowser;
         System.AddWindow(SpawnBrowser);
 
-        // Last in draw order, and deliberately: it reports on every window
-        // registered above it, and a panel that drew first would be reporting
-        // on a frame that had not happened yet.
+        // Keep diagnostics after the main windows in draw order. The profiler
+        // displays published measurements from the last completed frame.
         _profiler = profiler;
         FrameProfilerPanel = new FrameProfilerWindow(configService, profiler);
         System.AddWindow(FrameProfilerPanel);
@@ -155,10 +154,8 @@ public sealed class UiWindowSet : IDisposable
             gPoseService.IsGPosing && configService.Config.OpenOnGPoseEnter);
     }
 
-    /// <summary>The profiler's panel and its recording are ONE state, and the
-    /// setting is that state. Nothing else may flip either half — a panel that
-    /// could be closed while the scopes kept measuring would leave a session
-    /// paying for a tool nobody is reading.</summary>
+    /// <summary>Applies the profiler setting to both the panel and recording.
+    /// Keeping them synchronized avoids recording while the panel is hidden.</summary>
     private void SyncFrameProfiler()
     {
         bool showing = _configService.Config.UI.ShowFrameProfiler;
@@ -218,8 +215,8 @@ public sealed class UiWindowSet : IDisposable
         SidebarPart.IsOpen = detached;
         InspectorPart.IsOpen =
             Main.IsOpen && _configService.Config.UI.SplitInspector;
-        // The toolbar is ALWAYS its own window — merging windows never
-        // merges the toolbar (the standard's shell roles).
+        // The toolbar stays in a separate window even when the sidebar and
+        // inspector are attached to the main window.
         ToolbarPart.IsOpen = Main.IsOpen;
         if (!Main.IsOpen)
             LibraryPart.IsOpen = false;
@@ -238,16 +235,13 @@ public sealed class UiWindowSet : IDisposable
             InspectorPart.IsOpen = !InspectorPart.IsOpen;
     }
 
-    /// <summary>The inspector's own split: the rail leaves the shell for
-    /// its own window and comes back through the same toggle — the bar's
-    /// merge, or the burger.</summary>
+    /// <summary>Moves the inspector between the main window and its own window.</summary>
     private void ToggleSplitInspector()
     {
         var ui = _configService.Config.UI;
         ui.SplitInspector = !ui.SplitInspector;
         InspectorPart.IsOpen = Main.IsOpen && ui.SplitInspector;
-        // The properties window sheds or regains the rail's width so the
-        // split reads as a split, not a widening.
+        // Resize the main window by the inspector's width when moving it out or back in.
         Main.ApplyRailShift(ui.SplitInspector ? +1 : -1);
         if (ui.SplitInspector)
             InspectorPart.RestorePlacement(
@@ -277,8 +271,7 @@ public sealed class UiWindowSet : IDisposable
         _configService.ApplyChange();
     }
 
-    /// <summary>Reference images live for the GPose session: leaving it
-    /// closes every one, roster included.</summary>
+    /// <summary>Closes every reference image and removes it from the session list.</summary>
     public void CloseReferenceImages()
     {
         foreach (var image in global::System.Linq.Enumerable.ToArray(_referenceImages.Instances))

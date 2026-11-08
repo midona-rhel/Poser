@@ -95,7 +95,7 @@ public class VirtualBone : EntityBase, IBone
     public bool IsSkeletonRoot => false;
     public bool IsHiddenBone => false;
     public Transform LastTransform => Transform;
-    public Transform LastRawTransform => Transform; // Virtual bones don't have reparenting
+    public Transform LastRawTransform => Transform; // Uses the same calculated transform as LastTransform.
 
     public System.Numerics.Vector3? PartialRootScale { get; set; }
 

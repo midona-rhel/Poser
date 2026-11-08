@@ -10,18 +10,9 @@ namespace Poser.UI.Widgets;
 
 public static class ButtonWidgets
 {
-    /// <summary>
-    /// The SEAT of the button whose click callback is running: the bottom-left
-    /// screen corner of that button's own rect. A button-borne floating
-    /// surface hangs off its button, never off the pointer — the pointer is
-    /// merely where the press landed (user 2026-08-14) — and a click callback
-    /// is an argumentless <see cref="Action"/>, so the seat is published here
-    /// for the duration of the call rather than threaded through every
-    /// button API. Meaningful ONLY inside a click callback; every other frame
-    /// it holds whatever the last press left. A surface with no button — a
-    /// row's context menu — still opens at the pointer, because it has no
-    /// seat to take.
-    /// </summary>
+    /// <summary>Bottom-left screen corner of the text or icon button currently
+    /// invoking its callback. Use it to anchor a popup to that button. Outside
+    /// those callbacks it retains the last value; temporary toggles do not set it.</summary>
     public static Vector2 ButtonSeat => UiContext.Current.ButtonSeat;
 
     public static bool Button(
@@ -75,10 +66,7 @@ public static class ButtonWidgets
             disruptive);
     }
 
-    /// <summary>The registry-NAME form, for the glyphs the enum does not carry
-    /// ("chevron-down", "x"). Every facet of the enum form is reachable here,
-    /// mirroring included: a name is a different way to say WHICH glyph, not a
-    /// smaller button.</summary>
+    /// <summary>Draws a momentary button using a registered icon name.</summary>
     public static bool IconButton(
         string icon,
         Action? onClick = null,
@@ -103,11 +91,7 @@ public static class ButtonWidgets
             onClick);
     }
 
-    /// <summary>
-    /// Slice-5 bridge for controls whose selected/slashed state persists.
-    /// Momentary actions use <see cref="IconButton(TablerIcon, Action?,
-    /// ControlStyle, bool, string?, string?, bool, float, float)"/>.
-    /// </summary>
+    /// <summary>Draws a persistent icon toggle with optional slash and dimming.</summary>
     public static bool TemporaryIconToggle(
         TablerIcon icon,
         bool selected,
@@ -134,7 +118,7 @@ public static class ButtonWidgets
             dimmed);
     }
 
-    /// <summary>Slice-5 bridge for registered custom SVG toggles.</summary>
+    /// <summary>Persistent toggle using a registered SVG icon name.</summary>
     public static bool TemporaryIconToggle(
         string icon,
         bool selected,
@@ -372,11 +356,7 @@ public static class ButtonWidgets
                 borderPx);
         }
 
-        // NO focus-visible outline — PRODUCT DECISION (user): this is a
-        // native-styled UI, not a web page; Picto's .btn:focus-visible ring
-        // is deliberately not reproduced. Keyboard activation (Enter/Space
-        // via Interactive.Reserve) still works; there is simply no web-style
-        // focus chrome anywhere in the widget toolkit.
+        // Keyboard activation is supported without drawing a focus outline.
         return text;
     }
 
@@ -442,14 +422,8 @@ public static class ButtonWidgets
                 : hit.Hovered
                     ? theme.Chrome.WeakOverlay
                     : Vector4.Zero;
-        // Picto's :active rule changes only the background. Opacity is
-        // controlled exclusively by :hover, so dragging a held button
-        // outside returns the complete element group to its resting .8.
-        //
-        // A LATCHED button wears the pill's white highlight PLUS the solid
-        // glyph twin at full presence (ruled 2026-09-01 — the fill alone
-        // said nothing on glyphs without a solid twin, the portal's pin
-        // included).
+        // Hover and selection restore full opacity; a held press changes the
+        // background. Selected icons also request their filled variant.
         float targetOpacity = selected || hit.Hovered ? 1f : 0.8f;
         // One group under one identity: the background and the opacity
         // share a clock, so pressing a button that is still fading in

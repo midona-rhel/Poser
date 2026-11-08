@@ -23,10 +23,8 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 internal sealed unsafe class WorldGraphWalker
 {
-    /// <summary>The hard stop on one walk. A zone's graph is thousands of
-    /// nodes, not hundreds of thousands; a count this high can only mean the
-    /// walk is following something that is not the graph it was told about.
-    /// </summary>
+    /// <summary>Visited-node threshold checked between pending nodes. Sibling
+    /// ring collection can exceed this threshold before that check runs.</summary>
     private const int MaxNodes = 100_000;
 
     private readonly IPluginLog _log;
@@ -66,8 +64,8 @@ internal sealed unsafe class WorldGraphWalker
             : _lights.ToArray();
     }
 
-    /// <summary>Walks the graph once and collects either BG objects or lights.
-    /// Keeping one traversal avoids a second read of the graph.</summary>
+    /// <summary>Shared traversal for background/effect rows and light addresses.
+    /// Each caller performs its own walk.</summary>
     private void Walk(bool wantLights)
     {
         _furniture.RefreshGraphics();

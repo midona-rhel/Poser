@@ -31,20 +31,9 @@ internal readonly record struct SceneAppearanceResolution(
     string? Detail);
 
 /// <summary>
-/// WHICH file a reference appearance entry should be imported from — the
-/// policy half of the restore, kept apart from the transaction half so the
-/// order can be stated and tested without a live client.
-///
-/// <para>Content before location. The scene records the package's SHA-256, so
-/// the library is searched for those exact bytes first: a package that was
-/// renamed, filed into a subfolder or downloaded again elsewhere is still the
-/// package the scene was saved against, and the recorded path is only a guess
-/// that nothing ever moved. The path is the fallback, and when neither answers
-/// the refusal states BOTH things that were tried.</para>
-///
-/// <para>An embedded portable payload never reaches here: its bytes ARE the
-/// package, so there is nothing to resolve and nothing to identify them
-/// against.</para>
+/// Resolves a referenced appearance package by checksum in the library first,
+/// then by its recorded path. Embedded packages are staged directly and do not
+/// use this lookup. The caller checks whether a fallback file's bytes changed.
 /// </summary>
 internal static class SceneAppearanceSource
 {

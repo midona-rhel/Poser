@@ -7,7 +7,7 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-/// <summary>What one candidate texture id answered when it was probed.</summary>
+/// <summary>Result of probing a candidate texture id.</summary>
 public enum TextureProbe
 {
     /// <summary>The game has no such texture: the id is dropped for good.
@@ -25,13 +25,11 @@ public enum TextureProbe
     Ready,
 }
 
-/// <summary>Resolves one candidate texture id to a frame-local ImGui handle
-/// and the pixel size of the image behind it. Stated by the caller, exactly as
-/// <see cref="PickerOptions{T}.Texture"/> is — game paths and the texture
-/// service stay outside the widgets.
+/// <summary>Resolves a candidate texture id to a frame-local ImGui handle
+/// and its pixel dimensions. The caller owns game paths and texture access.
 ///
 /// <para>The size is what tells a picture from an animation atlas, which the
-/// tile must sample differently; an unresolved probe answers
+/// tile must sample differently; an unresolved probe returns
 /// <see cref="Vector2.Zero"/> and is drawn whole.</para></summary>
 public delegate TextureProbe TexturePreview(
     uint id, out nint handle, out Vector2 pixels);

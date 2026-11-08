@@ -7,9 +7,9 @@ using Dalamud.Plugin.Services;
 namespace Poser.UI;
 
 /// <summary>
-/// The ONE way Poser says something transient to the user.
+/// The shared path for transient messages to the user.
 ///
-/// <para>A transient message is the outcome of a COMPLETED user action — a
+/// <para>A transient message reports the outcome of a completed user action — a
 /// save that landed, an import that refused, a verb whose target went away.
 /// It has no standing state to explain, it would linger until the next action
 /// displaced it, and the surface that started the action is often not the one
@@ -17,10 +17,10 @@ namespace Poser.UI;
 /// notification system, which is game-wide, dismissible, and does not occupy a
 /// pane's layout.</para>
 ///
-/// <para>What does NOT go here: text a pane renders from its CURRENT state
+/// <para>Do not use this for text a pane renders from its current state
 /// with no action behind it — an empty state, a scan in progress, a running
 /// transaction's phase, a per-file typed diagnosis, or a placeholder standing
-/// where a thing would be. Those explain an absence IN PLACE and must stay
+/// where a thing would be. Those explain an absence in its surrounding context and must stay
 /// where the absence is.</para>
 /// </summary>
 public sealed class UserNotices : global::Poser.Application.Presentation.IUserNotices

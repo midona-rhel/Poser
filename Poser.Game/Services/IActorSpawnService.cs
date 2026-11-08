@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 using Poser.Domain.Companions;
 using Poser.Game.Entities;
@@ -11,18 +11,14 @@ namespace Poser.Game.Services;
 public interface IActorSpawnService : IDisposable
 {
     /// <summary>
-    /// Create a NEW actor (Brio's actor-container "New actor"): spawned as
-    /// its own entity, internally seeded from the local player's
-    /// appearance exactly as Brio does. The companion slot is reserved
+    /// Creates an independent actor using the local player's appearance as its seed. The companion slot is reserved
     /// only on request — it costs an extra object slot and is what allows
     /// minions/mounts/ornaments to attach later.
     /// </summary>
     /// <returns>The spawned actor, or null if failed.</returns>
     IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId = 0);
 
-    /// <summary>The same spawn, answering WHY when it returns null — a full
-    /// actor table, no local player, no authoritative lifetime — in the
-    /// user's words, so a scene load can name the cause.</summary>
+    /// <summary>Creates an actor and supplies a user-facing refusal reason on failure.</summary>
     IActor? SpawnNewActor(bool reserveCompanionSlot, int modelCharaId, out string? refusal);
 
     /// <summary>
@@ -119,13 +115,9 @@ public interface IActorSpawnService : IDisposable
     CompanionAttachment? GetCompanionInfo(IActor owner);
 
     /// <summary>
-    /// The attached companion AS AN ACTOR — the body itself, which owns a
-    /// skeleton and can be posed like any other. The attachment
-    /// (<see cref="GetCompanionInfo"/>) says WHICH minion, mount or ornament
-    /// sits in the slot; this says which actor it is, and an actor is the only
-    /// handle a pose read or write has. Null when the slot is empty or
-    /// unreadable, and when the child object has no entry in the actor table
-    /// yet — a companion's body builds a few frames after it attaches.
+    /// Returns the companion body for posing. GetCompanionInfo describes the
+    /// attachment choice; this method returns its current actor. Returns null
+    /// while the slot is empty, unreadable, or its body is still being created.
     /// </summary>
     IActor? GetCompanionActor(IActor owner);
 

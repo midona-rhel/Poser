@@ -78,7 +78,7 @@ public partial class MainWindow
             _contentHidden,
             uiConfig.SplitInspector,
             inspectorOpen);
-        _shellMenuItems[(int)ShellCommand.Pose].SubmenuItems![1].SubmenuItems =
+        _shellMenuItems[(int)ShellCommand.Pose].SubmenuItems![2].SubmenuItems =
             _poseFileSection.BuildExportSubmenu(poseActor);
     }
 
@@ -102,6 +102,7 @@ public partial class MainWindow
                 submenuItems:
                 [
                     new ContextMenuItem("Import", TablerIcon.Download),
+                    new ContextMenuItem("Import from clipboard", TablerIcon.Copy),
                     new ContextMenuItem("Export", TablerIcon.Upload),
                     new ContextMenuItem("Auto-saves", TablerIcon.DeviceFloppy),
                 ]);
@@ -153,8 +154,7 @@ public partial class MainWindow
     ];
 
 
-    /// <summary>What the active pane keeps in the content footer between
-    /// the two attach seats.</summary>
+    /// <summary>Draws the active properties pane's middle footer content.</summary>
     private void DrawFooterMiddle(Vector2 origin, Vector2 size)
         => _properties.DrawFooterMiddle(origin, size);
 
@@ -171,7 +171,10 @@ public partial class MainWindow
                     case 0:
                         _poseFileSection.RequestImportMenu(withPresets: true, target: actorId);
                         break;
-                    case 2:
+                    case 1:
+                        _poseFileSection.ImportFromClipboard(actorId);
+                        break;
+                    case 3:
                         _poseFileSection.OpenAutoSaves(actorId);
                         break;
                 }
@@ -203,9 +206,7 @@ public partial class MainWindow
 
     internal void RequestDetachToggle() => OnDetachToggleRequested?.Invoke();
 
-    /// <summary>Runs one command. The skeleton is resolved at invocation, not
-    /// captured at build: the row array outlives every selection it was built
-    /// under.</summary>
+    /// <summary>Runs a top-level menu command using the current window state.</summary>
     private void InvokeShellCommand(ShellCommand command)
     {
         switch (command)

@@ -272,8 +272,7 @@ public static class DropdownWidgets
             LabelStyle = labelStyle;
         }
 
-        /// <summary>Resolved width in pixels, already floored to the
-        /// chevron-plus-padding minimum.</summary>
+        /// <summary>Resolved width in pixels after the minimum and MaxWidth cap are applied.</summary>
         public readonly float Width;
         public readonly float Height;
         public readonly float LogicalHeight;
@@ -385,10 +384,8 @@ public static class DropdownWidgets
     private static Vector4 DropdownPopupFill(in Theme theme) =>
         ColorEx.FlattenOver(theme.Chrome.ControlHover, theme.Surface);
 
-    /// <summary>The open panel itself: the trigger's own surface, radius
-    /// and border, with the panel shadows, drawn against the full display
-    /// so the shadows escape the popup window's clip. Restored to what it
-    /// was before the rewrite (2026-09-02).</summary>
+    /// <summary>Draws the popup background, border, and shadows using a display-wide
+    /// clip rectangle so the shadows can extend outside the popup.</summary>
     private static void PaintDropdownSurface(
         ImDrawListPtr drawList, Vector2 min, Vector2 max)
     {

@@ -1,0 +1,102 @@
+{
+  "candidate": "e8f12dc4 plus Debug-only native-pan probe",
+  "checks": {
+    "camera_move_separate_from_group_delete_undo_redo": "PASS",
+    "native_actor_pause_play_undo_redo": "PASS"
+  },
+  "samples": {
+    "pending_history": {
+      "canUndo": true,
+      "canRedo": false,
+      "undo": "Add spot light",
+      "redo": null
+    },
+    "removal": {
+      "running": false,
+      "result": {
+        "Items": [
+          {
+            "Id": {
+              "Kind": 2,
+              "Actor": null,
+              "Bone": null,
+              "ExternalId": null,
+              "OwnerActorLineage": null,
+              "Light": {
+                "LogicalId": "159ce865-a56f-4282-b1b9-e14e49793556",
+                "Generation": 0
+              },
+              "Gaze": null,
+              "Camera": null,
+              "Prop": null,
+              "Overlay": null,
+              "WorldObject": null,
+              "OwningActor": null,
+              "ActorLineage": null
+            },
+            "Status": 0,
+            "Detail": null
+          },
+          {
+            "Id": {
+              "Kind": 2,
+              "Actor": null,
+              "Bone": null,
+              "ExternalId": null,
+              "OwnerActorLineage": null,
+              "Light": {
+                "LogicalId": "673c0c8d-3228-49f3-aa8e-145542e448e0",
+                "Generation": 0
+              },
+              "Gaze": null,
+              "Camera": null,
+              "Prop": null,
+              "Overlay": null,
+              "WorldObject": null,
+              "OwningActor": null,
+              "ActorLineage": null
+            },
+            "Status": 0,
+            "Detail": null
+          }
+        ],
+        "AppliedCount": 2
+      }
+    },
+    "removed_history": {
+      "canUndo": true,
+      "canRedo": false,
+      "undo": "Remove entities",
+      "redo": null
+    },
+    "camera": {
+      "before": {
+        "X": 0,
+        "Y": -0.17546226
+      },
+      "moved": {
+        "X": 0.15,
+        "Y": -0.09546226000000001
+      },
+      "final": {
+        "X": 0.15,
+        "Y": -0.09546226
+      }
+    },
+    "animation": {
+      "undo_held_frames": [
+        2.1904178,
+        2.1904178
+      ],
+      "redo_frames": [
+        2.4820251,
+        0.17184809
+      ]
+    }
+  },
+  "limitations": [
+    "Native camera pan was changed through the Debug probe; Windows could not activate the game for a physical drag.",
+    "Restart refusal and partial-failure undo are covered by automated tests, not induced in the game.",
+    "The initial attempt to check exact held-frame restoration used the already-running game idle, which Poser had not applied. That attempt did not establish layer frame restoration."
+  ]
+}

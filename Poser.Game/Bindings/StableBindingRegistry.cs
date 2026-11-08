@@ -492,12 +492,7 @@ public sealed class StableBindingRegistry : IEntityBindings
             cameraDescriptors,
             propDescriptors,
             Overlays: overlayDescriptors,
-            // Built a dozen lines up and, until now, dropped on the floor: the
-            // snapshot defaulted WorldObjects to empty for the plugin's whole
-            // life. Everything downstream reads the snapshot, so a borrowed
-            // object was adopted, claimed and saved to file while being
-            // invisible to the sidebar, to the lifecycle's own signature, and
-            // therefore to the binding publish that a pending-select waits on.
+            // Include adopted objects in scene admission and selection.
             WorldObjects: worldObjectDescriptors),
             lineages,
             actorBindings,
@@ -634,9 +629,8 @@ public sealed class StableBindingRegistry : IEntityBindings
     }
 
     /// <summary>
-    /// Forgets every actor lineage. Lineages are keyed per native object and
-    /// slot index, so they only accumulate within a GPose session; once the
-    /// session's actors are gone none of them can be matched again.
+    /// Forgets actor lineage history. Published bindings and any staged
+    /// candidate remain unchanged; the lifecycle owner coordinates their reset.
     /// </summary>
     public void ResetLineages()
     {
@@ -729,24 +723,8 @@ public sealed class StableBindingRegistry : IEntityBindings
             targetOffset != Vector3.Zero || targetLocked;
     }
 
-    /// <summary>
-    /// Whether <paramref name="candidate"/> binds a different set of auxiliary
-    /// bodies than the published maps do.
-    ///
-    /// <para>The scene snapshot cannot answer this and must not be made to: an
-    /// auxiliary body (the CharaView pose preview at object index 441) is bound
-    /// so the import pipeline can reach it and deliberately given NO
-    /// <see cref="ActorDescriptor"/>, because the snapshot is what every pane,
-    /// picker, and gizmo draws from. The consequence is that the preview body
-    /// appearing changes NOTHING the scene signature can see, so the refresh
-    /// that coalesces on that signature aborts the very candidate carrying the
-    /// preview's actor and bone bindings — and
-    /// <see cref="GetActorId"/> answers null for the preview body forever.
-    /// Every pose stated against it is then dropped by the one guard that asks
-    /// (<c>PosePreviewService.TryApplyPendingPose</c>) without a word: the
-    /// CharaView renders a perfectly good body standing in its idle stance.
-    /// This predicate is the second signature that case needs.</para>
-    /// </summary>
+    /// <summary>Compares auxiliary bindings separately from scene descriptors.
+    /// Preview actors need published bindings but must not appear in scene UI.</summary>
     public bool AuxiliaryBindingsChanged(BindingCandidate candidate)
     {
         EnsureStaged(candidate);
@@ -1072,8 +1050,6 @@ public sealed class StableBindingRegistry : IEntityBindings
     public ISkeleton? ResolveSkeleton(SkeletonId id) =>
         _skeletonBones.TryGetValue(id, out var bone) ? Resolve(bone).Value?.Skeleton : null;
 
-    /// <summary>Light identity is instance identity: two distinct lights with
-    /// identical settings are never the same light.</summary>
     // The port's handle-typed forms. The registry keeps its concrete
     // signatures for the runtime; the surfaces see the interfaces.
     PropId? IEntityBindings.GetPropId(IPropHandle prop) => GetPropId((PropHandle)prop);

@@ -3,10 +3,9 @@ using Poser.Documents.Config;
 namespace Poser.UI;
 
 /// <summary>
-/// The ONE keybind resolution — configured slots over
-/// <see cref="KeybindRegistry"/>'s defaults — used identically by keybind
-/// EXECUTION (UIManager) and shortcut-badge DISPLAY (hover help), so a card
-/// can never advertise a chord that would not fire.
+/// Resolves configured keybind slots over <see cref="KeybindRegistry"/>'s
+/// defaults. UIManager and shortcut badges both use this path so a badge
+/// cannot advertise a chord that would not fire.
 /// </summary>
 internal static class PoserKeybinds
 {
@@ -21,7 +20,7 @@ internal static class PoserKeybinds
 
     /// <summary>
     /// The chord a badge shows: the primary, or the secondary when the
-    /// primary is unbound. A badge states ONE chord, and the one worth
+    /// primary is unbound. A badge shows one chord, and the useful one
     /// stating is the one that will actually fire.
     /// </summary>
     public static string Effective(UIConfiguration settings, string action)

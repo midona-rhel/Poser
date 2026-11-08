@@ -1031,7 +1031,7 @@ public partial class PoseInspectorPane : IDisposable
 
                 var stack = new SectionStack(
                     "pose-surface", origin, contentWidth);
-                // IK leads the actor's page (Midona, 2026-09-02).
+                // IK precedes the remaining actor pose sections.
                 if (skeleton != null)
                     stack.Section(
                         "actor-ik",

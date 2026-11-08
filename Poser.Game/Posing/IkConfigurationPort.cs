@@ -11,8 +11,7 @@ namespace Poser.Game.Posing;
 
 /// <summary>
 /// The one stable-id IK configuration path. Resolves targets through the
-/// binding registry for one call at a time, rejects changes while a
-/// transform gesture is active, and delegates storage/validation to the
+/// binding registry for one call at a time and delegates storage/validation to the
 /// runtime's per-exact-skeleton session store.
 /// </summary>
 public sealed class IkConfigurationPort : IIkConfigurationPort
@@ -38,18 +37,11 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         _log = log;
     }
 
-    /// <summary>The set as a journal step: the previous configuration is
-    /// the inverse. Only a landed set is journaled.</summary>
+    /// <summary>Applies the settings and records the resulting captured target for Undo and Redo.</summary>
     public Outcome Set(TransformTargetId target, IkChainConfig config)
     {
         _journal.Seal();
         var before = Get(target);
-        if (config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control }
-            && config.TargetMode is IkTargetMode.Actor or IkTargetMode.World
-            && control.Handle.Mode != config.TargetMode
-            && target.Bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } endpoint }
-            && _bonePosing.CaptureFabrikTarget(endpoint, config.TargetMode) is { } handle)
-            config = config with { Fabrik = control with { Handle = handle } };
         var result = Write(target, config);
         config = Get(target) ?? config; // Record captured endpoints, not the uncaptured request.
         if (!result.Success || before is null || before == config)
@@ -61,8 +53,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         return result;
     }
 
-    /// <summary>Eligibility is the runtime's own answer rather than a name
-    /// test: it alone knows whether the bone has a parent for CCD to bend.</summary>
+    /// <summary>True when the runtime supports IK for this bone.</summary>
     public bool IsSupported(TransformTargetId target) => Get(target) != null;
 
     public IReadOnlyList<IkChainSummary> Chains(SkeletonId skeleton)
@@ -101,8 +92,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
 
     private const string GestureActive = "IK configuration rejected: a transform gesture is active.";
 
-    /// <summary>A replayed IK write. An active transform gesture ends by
-    /// itself, so that refusal is transient; any other is permanent.</summary>
+    /// <summary>Returns Busy while a transform gesture owns the bone, so history can wait for it to finish.</summary>
     private Outcome Written(Func<Outcome> write)
     {
         if (_gestures.ActiveGesture != null)
@@ -192,9 +182,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         if (current == null)
             return Outcome.Fail(
                 $"Bone {boneId.CanonicalName} cannot use IK.");
-        // Reset Defaults preserves the chain's Enabled state. A bone with no
-        // declared chain resets to the CCD defaults, which are the only ones
-        // it can hold.
+        // Keep Enabled while restoring the limb or general-chain defaults.
         var definition = IkChains.ForEndpoint(boneId.CanonicalName);
         return Set(target, definition == null
             ? IkChainConfig.DefaultsForChain(current.Enabled)

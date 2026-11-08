@@ -67,7 +67,7 @@ internal sealed unsafe partial class TimelineSeekEngine
                 _n.SetModelVfxSpeed(weapon, speed);
     }
 
-    /// <summary>The actor's effects: slot timelines 0/1/2/3/6 and the live prop
+    /// <summary>Effects from all 14 actor slots, weapon models, and the live prop
     /// timelines of its four weapon objects.</summary>
     public void SetActorVfxSpeeds(
         FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer,
@@ -107,8 +107,8 @@ internal sealed unsafe partial class TimelineSeekEngine
         return handles;
     }
 
-    /// <summary>Whether any of the tree's C012 effects still has a live engine
-    /// instance (same generation, not released) in the Apricot slot table.</summary>
+    /// <summary>Checks effect handles against the Apricot slot table. If the table is
+    /// unavailable, treats any VFX clip in the tree as potentially live.</summary>
     private bool HasLiveVfx(Tree tree)
     {
         nint js = _l.VfxSlotTable;
@@ -127,10 +127,9 @@ internal sealed unsafe partial class TimelineSeekEngine
         return false;
     }
 
-    /// <summary>Releases the handles this actor held before the seek that are
-    /// still live (same generation, state != 3) but no longer held by any of its
-    /// wrappers: engine instances a kill+respawn orphaned. Never touches anything
-    /// outside <paramref name="before"/>.</summary>
+    /// <summary>Releases handles in before that are absent from now and still match a live
+    /// Apricot slot generation. The caller supplies the current handle set; this
+    /// method does not search other actors or wrappers for additional owners.</summary>
     public int ReleaseOrphans(HashSet<ulong> before, HashSet<ulong> now)
     {
         nint js = _l.VfxSlotTable;

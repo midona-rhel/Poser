@@ -205,29 +205,7 @@ public partial class MainWindow : Window
     /// <summary>The shell keeps workspace mode and entity selection mutually exclusive.</summary>
     private readonly ShellWorkspaceSelection _workspace;
 
-    /// <summary>The workspace is showing the complete scene view — save, load, progress
-    /// and recovery — instead of the selection's tabs. A mode exactly like the
-    /// library's, and its alternative: a scene is not a property of whatever
-    /// happens to be selected.</summary>
-
-    /// <summary>The library's sidebar section and its one tab, both retained:
-    /// they carry no per-frame data, so a warm frame restates them rather than
-    /// minting them.</summary>
-
-    /// <summary>The scene as a whole, seated at the very top of the tree: the
-    /// thing everything below it belongs to. Like the library's and the
-    /// environment's, its header is the affordance — there is one scene and
-    /// nothing creates or destroys it — and it carries no rows.</summary>
-
-    /// <summary>The scene's environment, seated above the actors. It is the one
-    /// scene entity that is always there and there is only ever one of it, so
-    /// the header is the affordance — exactly like the library's — rather than a
-    /// header naming a lone row beneath it. Nothing creates or destroys it, so
-    /// the section shows no plus and carries no rows.</summary>
-
-    /// <summary>The one environment selection, minted once: it carries no
-    /// per-scene data, so every frame's row and flag refresh restate it.
-    /// </summary>
+    /// <summary>Stable selection ID for the scene environment.</summary>
     private static readonly SelectionId EnvironmentSelection =
         SelectionId.ForEnvironment();
 
@@ -245,7 +223,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>One class's glyph and its two hover cards. Minted once with the
-    /// window: a warm footer frame states help, so it must not build the
+    /// window: a rendered footer frame provides help, so it must not build the
     /// sentence.</summary>
     private static ShellWorldClass WorldClassEntry(WorldAdoptionKind kind) =>
         kind switch
@@ -292,11 +270,7 @@ public partial class MainWindow : Window
 
 
 
-    /// <summary>The sections are stated in a fixed order — library, scene,
-    /// environment, actors, objects, lights, cameras, overlays — so the actors
-    /// section is index 3. Its header and the lights header are the only two
-    /// whose plus creates anything; neither the scene nor the environment is
-    /// ever created or destroyed.</summary>
+    /// <summary>Actor section index in the entity sidebar.</summary>
     private const int ActorsSectionIndex = 0;
 
     /// <summary>Objects stand between the actors and the lights: scene
@@ -447,9 +421,7 @@ public partial class MainWindow : Window
         _objectControl = objectControl;
         _scene = scene;
         _selection = scene.Selection;
-        // One selection for the whole shell. The subscription lives as long as
-        // this window does — both outlive every scene — so it is never torn
-        // down; Dispose exists on the type for hosts that do own a lifetime.
+        // Workspace mode follows the shared scene selection for this window's lifetime.
         _workspace = new ShellWorkspaceSelection(_selection);
         _workspace.Left += OnWorkspaceLeft;
         _creation = creation;
@@ -667,7 +639,7 @@ public partial class MainWindow : Window
         ImGui.PushStyleColor(ImGuiCol.HeaderHovered, ActiveTheme.AccentHover);
         ImGui.PushStyleColor(ImGuiCol.HeaderActive, ActiveTheme.AccentActive);
 
-        // The shell is the window chrome — the ImGui window must contribute
+        // The shell draws the window frame, so the ImGui window must contribute
         // nothing; the retained shell owns its padding and borders.
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
@@ -825,21 +797,15 @@ public partial class MainWindow : Window
         _contextMenus.DrawBonePresetManager();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
         // tab or a context menu survives subsequent selection changes.
-        // surface next.
+        // Keep the same dialogs alive across tabs.
         _appearancePane.DrawBrowsers();
         _lightPane.DrawBrowsers();
         _cameraPane.DrawBrowsers();
         _poseFileSection.DrawBrowsers();
         _scenePane.DrawBrowsers();
-        // An overlay created from the spawn browser binds a frame or more
-        // later, with nothing selected and its pane therefore undrawn; the
-        // pending select has to be pumped from the shell or it never lands.
-        // Unconditional, exactly like the dialog pumps: a library spawn binds
-        // its actor frames later, and leaving library mode must not strand it.
+        // Advance thumbnail decoding even when the library window is closed.
         _libraryPane.Tick();
-        // The companion catalog PREBUILDS from the shell's first frame — a
-        // background walk over three sheets — so the attach picker never
-        // opens against a catalog still building.
+        // Start loading the companion catalog before its picker is needed.
         _companionCatalog.EnsureLoaded();
         // The notice is non-modal like other dialogs; it never locks the game.
         _firstRunNotice.Draw();
@@ -865,16 +831,7 @@ public partial class MainWindow : Window
 
     internal ScenePane Scene => _scenePane;
 
-    /// <summary>
-    /// The one mode has been left — by an opener, or by any surface selecting
-    /// an entity. Restates nothing beyond the outgoing pane's own hidden
-    /// notice: leaving is never the last thing a caller does, and a resync
-    /// here would resolve the strip against the selection mid-change — the
-    /// outgoing one, or none at all — and settle <see cref="_activeTab"/> onto
-    /// that strip's first tab, which is precisely the tab that leaving a mode
-    /// promises to give back. Every caller resyncs once, after every change it
-    /// is going to make.
-    /// </summary>
+    /// <summary>Receives workspace-mode changes; no pane currently needs cleanup here.</summary>
     private void OnWorkspaceLeft(ShellWorkspace left)
     {
         // The library became its own window; no workspace mode remains
@@ -910,29 +867,8 @@ public partial class MainWindow : Window
         // only: an identical rescan publishes no new revision, so hover and
         // interaction identity survive every refresh that changed nothing.
         _vm.SceneRevision = _scene.Revision;
-        // The inspector rail stays on both tabs: bone selection and posing
-        // remain available while animation plays, so the right column is
-        // never reclaimed and the window width never depends on the tab.
-        //
-        // Pose owns a fixed outer viewport. Matrix scrolls only inside that
-        // allocation; its nested ScrollRegion consumes the same physical
-        // gutter the shell reserved, so mode changes cannot alter width.
-        // Animation is a document and uses the shell's scroll.
-        // Actor has no pose rail; its content takes the released
-        // width. The outer window size is untouched by tab changes.
-        // Library mode's rail hosts the import options;
-        // every other mode keeps the selection-typed rail.
-        //
-        // The delegate is stated even while collapsed: the shell's own
-        // titlebar guard ignores it then, but a split inspector window keeps
-        // hosting the rail through a collapse of the main window.
-        // The inspector is PER TAB in the library: pose-import options
-        // where poses apply; scene options where scenes load; the entry
-        // inspector on objects; and NO rail on MCDFs. Everywhere else the
-        // inspector is a THREE-PANEL column — the selected target, the
-        // environment, or the scene, chosen by the selector band — and
-        // selecting any entity snaps back to the target panel (you
-        // selected it to inspect it).
+        // Snapshot the content mode for this frame. A changed primary selection
+        // returns to target content after the first primary has been observed.
         var railConfig = _configuration.Config.UI;
         if (primary is { } primaryNow && primaryNow != _lastPrimaryForMode)
         {
@@ -997,11 +933,6 @@ public partial class MainWindow : Window
         // the switch shows the global state and is live under every selection
         // and under none: nothing about the patch is per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
-        // The sibling-link mode's second half. Co-selection reaches every
-        // _l/_r pair; the same-delta catalog (both eyes, the Viera ear-variant
-        // chains) pairs bones that are not _l/_r counterparts and cannot be
-        // reached that way, so the one switch arms both. Read here rather than
-        // wired once, so a Settings change takes effect on the next frame.
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
         _vm.UndoDescription = _cleanTransforms.UndoDescription;

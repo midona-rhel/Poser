@@ -231,11 +231,8 @@ public sealed class ActorSpawnServiceOwnershipTests
             spawnAppearance: appearance);
 
     /// <summary>
-    /// A ClientObjectManager whose two index spaces really differ: the occupant
-    /// of slot N reports object-table index N + 200, exactly as the game does.
-    /// The production identity logic runs against this, so a descriptor built
-    /// from the wrong number fails every ownership test rather than every live
-    /// spawn.
+    /// Gives each client-object slot a different object-table index (slot + 200).
+    /// Production identity code must keep these two indices separate.
     /// </summary>
     private sealed class FakeClientObjectManager : IClientObjectManagerNative
     {
@@ -246,14 +243,12 @@ public sealed class ActorSpawnServiceOwnershipTests
         /// Its <c>Index</c> is the slot; its object-table index is derived.</summary>
         public SpawnNativeDescriptor? Current { get; set; }
 
-        /// <summary>The Character finalize the real deletion runs, which the
-        /// real adapter's hook observes.</summary>
+        /// <summary>Simulates the destruction notification observed by the adapter.</summary>
         public Action<nint, ushort?>? OnDestroyed { get; set; }
 
         public uint CreateBattleCharacter(uint index, byte param)
         {
-            // The game builds in the slot it is named; uint.MaxValue means
-            // "next available", which here is the seeded occupant's slot.
+            // Treat uint.MaxValue as a request for the seeded available slot.
             var slot = index == uint.MaxValue ? Current?.Index : (ushort)index;
             if (slot is not { } created || Current is not { } occupant
                 || occupant.Index != created)
@@ -286,11 +281,8 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     /// <summary>
-    /// Fault injection plus the still-native members (draw, companion, model).
-    /// Create/resolve/delete and the destruction stamps are the PRODUCTION
-    /// <see cref="SpawnClientObjects"/> running on
-    /// <see cref="FakeClientObjectManager"/>, so index-space and argument-order
-    /// mistakes in that logic are test failures here.
+    /// Uses production SpawnClientObjects for creation, lookup, deletion, and
+    /// destruction stamps. Drawing, companions, and model changes are simulated.
     /// </summary>
     private sealed class FakeNative : IActorSpawnNativeAdapter
     {
@@ -324,9 +316,8 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool IsLifetimeAuthoritative => true;
         public string? LifetimeAuthorityDetail => null;
 
-        /// <summary>External delete observed by the finalize hook; the slot is
-        /// immediately reused by an object with the IDENTICAL
-        /// slot/address/EntityId triple.</summary>
+        /// <summary>Records destruction while retaining the descriptor, simulating
+        /// a replacement with the same slot, address, and entity ID.</summary>
         public void ExternallyDestroyCurrent()
         {
             if (Current is { } current)
@@ -345,8 +336,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         public SpawnNativeDescriptor? ResolveActor(nint address) =>
             SourceDescriptor is { } source && source.Address == address ? source : Objects.ResolveActor(address);
 
-        // DeleteResult false is the native call not taking effect - a
-        // failure the production path cannot observe for itself.
+        // Returning false injects a failed deletion without calling the object manager.
         public bool DeleteExact(SpawnNativeDescriptor descriptor) =>
             DeleteResult && Objects.DeleteExact(descriptor);
 

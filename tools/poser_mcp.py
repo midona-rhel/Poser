@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Poser debug MCP server: a stdio JSON-RPC bridge onto the plugin's local
-debug HTTP surface (Poser/Bridge/DebugBridge.cs, Debug builds only).
-Zero dependencies. Tools map 1:1 onto bridge endpoints."""
+"""Expose the Debug build's local HTTP bridge as MCP tools over standard I/O.
+
+Each tool calls the matching endpoint in Poser/Bridge/DebugBridge.cs. The
+server uses only Python's standard library and cannot connect to Release builds.
+"""
 import json, sys, urllib.request, urllib.parse
 
 BASE = "http://127.0.0.1:47999"

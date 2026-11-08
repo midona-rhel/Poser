@@ -5,7 +5,10 @@ namespace Poser.Domain.Posing;
 
 public enum IkColliderShape { Plane, Box, Cylinder, Cone, Mesh, Capsule, Sphere }
 
-/// <summary>Frozen, indexed geometry in collider-local space. Shared by history; never edited in place.</summary>
+/// <summary>
+/// Triangle mesh in collider-local coordinates. Arrays are stored by reference,
+/// so callers must not modify them while the collider or its history uses them.
+/// </summary>
 public sealed class IkColliderMesh
 {
     public Vector3[] Vertices { get; }
@@ -66,7 +69,10 @@ public sealed record IkCollider
     }
 }
 
-/// <summary>World-space geometry; primitive contact queries are convex, mesh contacts belong to Bepu.</summary>
+/// <summary>
+/// Builds world-space geometry for drawing and primitive contact checks.
+/// Mesh collision is handled separately by the physics backend.
+/// </summary>
 public sealed class ColliderGeometry
 {
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IkCollider, ColliderGeometry> PhysicsCache = new();
@@ -209,12 +215,15 @@ public sealed class ColliderGeometry
         _planes = planes.ToArray();
     }
 
-    /// <summary>Clip the whole thick segment against the convex shape, not just its endpoints.</summary>
+    /// <summary>
+    /// Checks a segment with thickness against the convex primitive and returns
+    /// a correction vector. Mesh collision is not implemented by this method.
+    /// </summary>
     public bool Contact(Vector3 a, Vector3 b, float radius, out float t, out Vector3 correction)
     {
         EnsureGeometry();
-        // A zero-width link still collides with a plane instead of silently
-        // crossing its zero-volume surface. This skin is below visible precision.
+        // Use a minimum contact thickness so a zero-radius link can intersect
+        // a plane. This is a collision tolerance, not a change to the mesh.
         radius = MathF.Max(radius, .0001f);
         float enter = 0, exit = 1;
         foreach (var plane in _planes!)
@@ -241,7 +250,10 @@ public sealed class ColliderGeometry
 
 }
 
-/// <summary>Owned continuation of one live chain, independent of the physics backend.</summary>
+/// <summary>
+/// Per-chain collision-solver state retained between updates. Dispose it
+/// when the chain is removed; Reset clears the previous solve state.
+/// </summary>
 public interface IIkCollisionState : IDisposable
 {
     void Solve(Vector3[] positions, int handle, IReadOnlyList<ColliderGeometry> colliders,

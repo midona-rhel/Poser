@@ -322,13 +322,9 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
                 _spawned.Add(address);
                 identity = new(address, generation, resource);
             }
-            // LoadAnimationData is deliberately NOT called: it kicked off
-            // the model's async .sklb/.pap loads on a raw spawn and the
-            // game's deferred task crashed seconds later — the completion
-            // expects layout context a bare Create never has (2026-09-01).
-            // Spawned copies of animated scenery stand still, by ruling.
-            // The placement write restates render and culling exactly as
-            // any placement write does.
+            // A bare BG allocation lacks the layout context expected by deferred
+            // animation loading. Calling LoadAnimationData here has crashed its
+            // completion task, so spawned scenery models remain static.
             Write(address, placement);
             return address;
         }

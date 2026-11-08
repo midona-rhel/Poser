@@ -5,8 +5,8 @@ using Poser.Domain.Transforms;
 namespace Poser.Game.Entities;
 
 /// <summary>
-/// One plugin-spawned scene light. All setters write the native light
-/// directly and MUST be called on the framework thread; the lighting
+/// One plugin-spawned scene light. Setters write the native light directly and
+/// must run on the framework thread. The lighting
 /// service re-runs the native update for every lit light each tick, so
 /// property writes take effect without an explicit flush.
 /// </summary>

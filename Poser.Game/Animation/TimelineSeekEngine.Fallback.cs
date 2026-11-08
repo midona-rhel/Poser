@@ -14,8 +14,7 @@ internal sealed unsafe partial class TimelineSeekEngine
     /// scheduler-driven actor), the way the game sets a clock (RE: SchedulerTimeline
     /// StartChild): TimelineController::SetCurrentTime on the timeline, then on each
     /// active C010's child at ((parent − start) · scale + offset), recursively. Nothing
-    /// else: the TMB actor, track and C010 offsets the old version wrote are not
-    /// fields (they landed in whatever the timeline's arena packed next).
+    /// else: TMB actor and track data are not writable timeline clock fields.
     /// </summary>
     public void WriteClocks(nint root, float frames)
     {
@@ -69,7 +68,7 @@ internal sealed unsafe partial class TimelineSeekEngine
             foreach (var clip in Collect(prop).Havok.Keys)
                 foreach (var control in ClipControls(clip))
                 {
-                    // Parked by Havok at its last cycle: a time alone is parked again.
+                    // Changing only the time would leave a Havok-held control parked.
                     if (HeldByHavok(control))
                         continue;
                     float length = CycleLength(control);

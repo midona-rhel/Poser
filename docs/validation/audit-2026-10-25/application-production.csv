@@ -1,0 +1,221 @@
+path,status,review_note
+Poser.Application/Animation/AnimationCatalog.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/AnimationOverrideStore.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/AnimationSceneActions.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/AnimationSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/AnimationSteps.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/BaseAnimationSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/HeldExpressionSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationActions.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationCatalogLoader.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationPlayback.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationScrubPort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationSpeedPort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationStancePort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IAnimationTimelinePort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IExpressionPreview.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IFacialPoseCapture.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IdleModExport.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/IdleModOptions.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/ScrubAnimationSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/SpeedAnimationSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Animation/StanceAnimationSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ActorAppearanceControl.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ActorModelIdSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ClothingOnlyControl.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/CustomizeSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/IActorAppearanceControl.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ICustomizeControl.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/IInvisibleSkinService.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/IModelIdRuntimePort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/IWardrobeControl.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/ModelCatalog.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Appearance/WardrobeSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/AutoSaveHealthLedger.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/AutoSaveService.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/AutoSaveWriter.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/IAutoSaveService.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/IPoseAutoSaveCapture.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/SceneAutoSaveResult.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/AutoSave/SceneAutoSaveService.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/ICompanionCatalogLoader.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/ICustomizeCatalog.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/IModelCatalogLoader.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/IPropCatalog.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/ISpawnCatalogService.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/IWardrobeCatalog.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Catalog/IWorldAssetCatalog.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Companions/CompanionCatalog.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Companions/CompanionSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Companions/ICompanionControl.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/ActionRecorder.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/DiagnosticRedactor.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/DiagnosticValue.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/IIssueReports.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Diagnostics/INativeHealth.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Events/IEventBus.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Events/WorkspaceEvents.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Gaze/GazeSession.cs,pending,Not yet reviewed in full.
+Poser.Application/Gaze/IGazeControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Gaze/IGazeRuntimePort.cs,pending,Not yet reviewed in full.
+Poser.Application/Input/CameraInputState.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Input/IKeyEvents.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/ActorAppearanceSnapshot.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/CharacterFileSession.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/ICharacterFiles.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/ICustomizePlusPort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IGlamourerPort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IIntegrationResolutionPort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IPenumbraPort.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IntegrationOwnership.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IntegrationReset.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/IntegrationSelectors.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfExport.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfImport.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfOperation.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfTeardown.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Integration/McdfTransaction.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/AutoSaveLibrary.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/IPoseLibraryService.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/LibraryFileOperations.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/LibrarySceneActions.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/LibrarySceneSave.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/LibrarySettingsDraft.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Library/PoseLibraryService.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/FinalCapture.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/FrameworkPoll.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/IGPoseService.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/SessionLifecycleCoordinator.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/SingleFlightOwner.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Lifecycle/StartupCleanup.cs,reviewed-full-read,Full source inspected; checked current comments against implemented conditions. See application-plan for behavior follow-up; no runtime edits.
+Poser.Application/Posing/ActorResetControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/ActorStateSnapshots.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/ExpressionSession.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IActorColliderCapture.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IActorResetControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IExpressionControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IIkBake.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IIkConfigurationPort.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IPoseCommands.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IPoseFileCapture.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IPoseImportCommands.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IPoseImportRuntime.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IPoseInteraction.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IPosePreview.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/IPosePreviewRuntime.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/PoseCommands.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/PoseEditService.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/PoseImportCoordinator.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/PoseImportInspection.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/PoseImportPlan.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/PosePreviewController.cs,pending,Not yet reviewed in full.
+Poser.Application/Posing/PoseTransferService.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/ActorPresentationSession.Colors.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/ActorPresentationSession.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/ActorValueSession.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/BoneMapPresetDraft.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/BoneMapTemplates.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/BoneVisibilityDefaults.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/CameraProperties.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/CameraSelectionPolicy.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/EntityProperty.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/IActorValueControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/IAppearanceColorControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/ICameraControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/ICameraTargetControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/ICustomizeReadRuntimePort.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/ILightControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/IOverlayControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/IPresentationRuntimePort.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/IReferenceSkeletonReadPort.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/ISceneObjectControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/IStatusIconCatalog.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/IUserNotices.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/LightProperties.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/OverlayProperties.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/PropProperties.cs,pending,Not yet reviewed in full.
+Poser.Application/Presentation/WorldObjectProperties.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/CoalescedRefresh.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/EntityIndex.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/GroupGateState.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/GroupSteps.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/GroupsSnapshot.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/IActorRestorePort.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/IActorSceneControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/IPlacementAnchorSource.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/ISceneCapturePort.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/ISceneCreation.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/ISceneHistoryPort.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/ISceneMaterializer.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/ISceneStatePort.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/ISceneWorkflow.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/ISceneWorkflowObserver.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/LifecycleSlotOwner.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/PendingSceneCreation.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneActorNames.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneAnimationCodec.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneCaptureOutcome.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneDuplication.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneEntityHandle.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneGroups.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneLoadBarriers.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneLoadHistory.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneLoadPlacement.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneLoadPreferences.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneLoadRollback.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneLoadStructure.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneLoadTransaction.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneOperation.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneOptions.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneOutcomes.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneParentingCodec.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/ScenePlaybackControl.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneSaveNarrowing.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneSavePolicy.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneSession.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneSnapshotValidator.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneStructure.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneStructureCodec.cs,pending,Not yet reviewed in full.
+Poser.Application/Scene/SceneWorkflow.cs,pending,Not yet reviewed in full.
+Poser.Application/Selection/EntityLockCommands.cs,pending,Not yet reviewed in full.
+Poser.Application/Selection/EntitySelection.cs,pending,Not yet reviewed in full.
+Poser.Application/Selection/PropertiesContext.cs,pending,Not yet reviewed in full.
+Poser.Application/Selection/SelectionEntityCommands.cs,pending,Not yet reviewed in full.
+Poser.Application/Selection/SelectionSession.cs,pending,Not yet reviewed in full.
+Poser.Application/Settings/ConfigurationService.cs,pending,Not yet reviewed in full.
+Poser.Application/Settings/EditorState.cs,pending,Not yet reviewed in full.
+Poser.Application/Settings/IConfigurationPersistence.cs,pending,Not yet reviewed in full.
+Poser.Application/Settings/ReleaseNotesHistory.cs,pending,Not yet reviewed in full.
+Poser.Application/Settings/ReleaseNotesSession.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/DisruptiveSteps.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/EditHistory.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/EntityValueJournal.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/GroupTransformCoordinator.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/GroupTransformState.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/HistoryEntry.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/ITransformFacade.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/ITransformRuntimePort.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/Journal.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/LifecycleHistoryBatch.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/ParentedTransformPort.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/SelectionPlacement.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/TransformCommandService.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/TransformFacade.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/TransformGestureService.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/TransformParenting.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/TransformRecovery.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/TransformSelectionPolicy.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/TransformTargetResolver.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/UndoJournal.cs,pending,Not yet reviewed in full.
+Poser.Application/Transforms/ValueJournal.cs,pending,Not yet reviewed in full.
+Poser.Application/Viewport/ICameraProjection.cs,pending,Not yet reviewed in full.
+Poser.Application/Viewport/IViewportReads.cs,pending,Not yet reviewed in full.
+Poser.Application/World/EnvironmentControl.cs,pending,Not yet reviewed in full.
+Poser.Application/World/IEnvironmentRuntimePort.cs,pending,Not yet reviewed in full.
+Poser.Application/World/IFestivalRuntimePort.cs,pending,Not yet reviewed in full.
+Poser.Application/World/IPlaceService.cs,pending,Not yet reviewed in full.
+Poser.Application/World/IWorldRenderingRuntimePort.cs,pending,Not yet reviewed in full.
+Poser.Application/World/IWorldService.cs,pending,Not yet reviewed in full.
+Poser.Application/World/VfxPathClaimOwner.cs,pending,Not yet reviewed in full.
+Poser.Application/World/WorldAcquisitionControl.cs,pending,Not yet reviewed in full.
+Poser.Application/World/WorldClaimBook.cs,pending,Not yet reviewed in full.

@@ -20,14 +20,13 @@ using Poser.Domain.Scene;
 using Poser.Documents.Files;
 using Poser.Game.Entities;
 using Poser.Game.Services;
+using Poser.Domain.Actors;
 
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// Creates the entities a load restores — actors, props, overlays, map
-/// objects, lights and cameras — through their accepted owners, and is the
-/// rollback's exact inverse for each. It owns no transaction state; every
-/// method is one materialization step.
+/// Creates or reuses the entities in a saved scene. Keeps the previous state
+/// of reused map objects so Undo can put back their earlier edits.
 /// </summary>
 internal sealed class SceneEntityRuntime : ISceneMaterializer
 {
@@ -48,6 +47,11 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     private readonly GazeService _gaze;
     private readonly Poser.Application.Integration.IntegrationReset _integration;
     private readonly IActorManager _actors;
+    private readonly IPlaceService _place;
+    private readonly IActorLifecycle _actorState;
+    private readonly AnimationSession _animation;
+    private sealed record BorrowedBaseline(WorldObjectState State);
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SceneEntityHandle, BorrowedBaseline> _borrowedBaselines = new();
 
     /// <summary>The selection, so a destroy path can never leave it pointing
     /// at something that no longer exists.</summary>
@@ -72,7 +76,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         Poser.Application.Integration.IntegrationReset integration,
         IActorManager actors,
         Poser.Application.Selection.SelectionSession selection,
-        IPluginLog log)
+        IPluginLog log, IPlaceService place, SceneLifecycleHistory lifecycle, AnimationSession animation)
     {
         _handles = handles;
         _history = history;
@@ -91,6 +95,9 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         _actors = actors;
         _selection = selection;
         _log = log;
+        _place = place;
+        _actorState = lifecycle.ActorStatePort;
+        _animation = animation;
     }
 
     public string WorldObjectName(string path) => WorldObjects.WorldObjectService.DisplayName(path);
@@ -114,6 +121,41 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         }
         detail = null;
         return _handles.Track(SceneEntityKind.Actor, actor);
+    }
+
+    public SceneEntityHandle? FindLocalPlayer() =>
+        _actors.Actors.FirstOrDefault(actor =>
+            actor.ActorKind is not (ActorKind.Companion or ActorKind.Mount or ActorKind.Ornament)
+            && actor.Address != nint.Zero && _actors.IsLocalPlayer(actor)) is { } player
+            ? _handles.Track(SceneEntityKind.Actor, player)
+            : null;
+
+    public SceneEntityHandle? FindMatchingActor(SceneActor data, IReadOnlyCollection<SceneEntityHandle> used)
+    {
+        var hash = data.IdentityHash ?? SceneActorNames.Hash(SceneActorNames.Resolve(data));
+        var taken = used.Select(handle => _handles.Resolve(handle)).ToHashSet();
+        var actor = _actors.Actors.FirstOrDefault(candidate => candidate.Address != nint.Zero
+            && !candidate.IsCompanion && !_spawns.IsSpawnedActor(candidate)
+            && !taken.Contains(candidate) && SceneActorNames.Hash(candidate.Name) == hash);
+        return actor == null ? null : _handles.Track(SceneEntityKind.Actor, actor);
+    }
+
+    public Action CaptureActorRestore(SceneEntityHandle token)
+    {
+        var actor = _handles.Require<IActor>(token, SceneEntityKind.Actor);
+        var state = _actorState.Read(actor);
+        var name = _actorState.GetName(actor);
+        var id = _bindings.GetActorId(actor)!.Value;
+        var animation = _animation.Capture(id);
+        return () =>
+        {
+            bool Current() => ReferenceEquals(_handles.Resolve(token), actor) && _actors.IsAvailable(actor);
+            if (!Current()) return;
+            _actorState.SetName(actor, name);
+            var restored = _animation.Restore(id, animation);
+            if (!restored.Success) _log.Warning(restored.Detail ?? "The actor's animation could not be restored.");
+            _actorState.Restore(actor, state, Current);
+        };
     }
 
     // ── props and overlays ───────────────────────────────────────────────
@@ -176,37 +218,39 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     // ── world objects ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Restores one world-object entry by SPAWNING its path anew — any
-    /// zone, any position. A document never carries a borrow (ruled
-    /// 2026-09-01): borrowing is a live-session act, and the load owes
-    /// nothing to whatever the map may or may not be standing.
+    /// Restores borrowed map objects in place and creates saved spawned objects.
     /// </summary>
-    public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
+    public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, uint territory, out string? detail)
     {
-        var handle = _worldObjects.Spawn(
-            data.Path, data.Transform, data.Visible, out detail);
-        if (handle != null && data.Name.Length > 0)
-            handle.Name = data.Name;
-        if (handle != null)
+        detail = null;
+        if (!data.Spawned && territory != 0 && territory != _place.Current.TerritoryId)
         {
-            if (data.Opacity < 1f)
-                handle.Opacity = data.Opacity;
-            if (data.Tint is { } tint)
-                handle.Tint = tint;
-            handle.Stain = data.Stain;
-            handle.FurnitureLights = data.FurnitureLights;
-            handle.LoopVfx = data.VfxLoop;
-            if (Math.Abs(data.VfxSpeed - 1f) > 0.001f)
-                handle.VfxSpeed = data.VfxSpeed;
-            if (Math.Abs(data.VfxIntensity - 1f) > 0.001f)
-                handle.VfxIntensity = data.VfxIntensity;
-            if (data.VfxPaused)
-                handle.VfxPaused = true;
-            handle.NightState = data.NightState;
-            if (data.AnimPaused)
-                handle.AnimationPaused = true;
+            detail = "This map object belongs to a different territory.";
+            return null;
         }
-        return handle == null ? null : _handles.Track(SceneEntityKind.WorldObject, handle);
+        var baseline = data.Spawned ? null : _worldObjects.BorrowedState(data.Path, data.MapPosition);
+        var handle = data.Spawned
+            ? _worldObjects.Spawn(data.Path, data.Transform, data.Visible, out detail)
+            : _worldObjects.RestoreBorrowed(data.Path, data.MapPosition, data.Transform, data.Visible, out detail);
+        if (handle == null) return null;
+        _worldObjects.RestoreState(handle, new WorldObjectState(
+            handle.Address, data.Path, data.Spawned, data.Transform, data.Visible)
+        {
+            Name = data.Name.Length > 0 ? data.Name : null,
+            Opacity = data.Opacity,
+            Tint = data.Tint,
+            Stain = data.Stain,
+            FurnitureLights = data.FurnitureLights,
+            LoopVfx = data.VfxLoop,
+            VfxSpeed = data.VfxSpeed,
+            VfxIntensity = data.VfxIntensity,
+            VfxPaused = data.VfxPaused,
+            NightState = data.NightState,
+            AnimationPaused = data.AnimPaused,
+        });
+        var token = _handles.Track(SceneEntityKind.WorldObject, handle);
+        if (baseline is { } previous) _borrowedBaselines.Add(token, new(previous));
+        return token;
     }
 
     public async Task<IReadOnlyList<SceneEntityHandle>> AwaitWorldObjectsLoaded(
@@ -243,6 +287,13 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         _handles.Remove<IWorldObject>(token, SceneEntityKind.WorldObject, _history.WorldObjects.Resolve, entity =>
         {
             var world = (WorldObjects.AdoptedWorldObject)entity;
+            // Undo a repeated load by restoring the earlier load's edits and claim.
+            if (_borrowedBaselines.TryGetValue(token, out var baseline))
+            {
+                _worldObjects.RestoreState(world, baseline.State);
+                _borrowedBaselines.Remove(token);
+                return;
+            }
             if (!_worldObjects.Release(world) && _worldObjects.Adopted.Contains(world))
                 throw new InvalidOperationException("The scene world object could not be released.");
         });

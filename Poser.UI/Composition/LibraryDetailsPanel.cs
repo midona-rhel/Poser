@@ -33,7 +33,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
     private Vector3? _detailsColor;
 
     /// <summary>The rail for the tabs that cannot preview (MCDF, scenes):
-    /// the selected FILE, stated — name, stamp, author, contents, tags.
+    /// the selected file's name, timestamp, author, contents, and tags.
     /// Returns the height consumed so a caller can stack below it.</summary>
     public float DrawInfoRail(Vector2 origin, Vector2 size, PoseLibraryTileRow? tile,
         string modified, string contents)
@@ -74,7 +74,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
                     mono: true);
                 if (!string.IsNullOrEmpty(tile.Author))
                     form.ReadOnly("Author", tile.Author!, mono: true);
-                // Contents are PER-KIND rows — "Actors 2", "Lights 3" —
+                // Show one row per kind — "Actors 2", "Lights 3" —
                 // never one truncating line (ruled 2026-08-31). The
                 // pre-minted one-liner splits on its own separator.
                 if (contents.Length > 0)
@@ -109,7 +109,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
         float inset = theme.Page.Inset * scale;
         var cursor = origin + new Vector2(inset, inset);
 
-        // The entry's NAME leads, then one plain "Properties" heading — no
+        // The entry's name leads, then one plain "Properties" heading — no
         // separators anywhere on this rail.
         TextAt(cursor, tile.Label, new TextStyle
         {
@@ -175,7 +175,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
                     {
                         if (!string.IsNullOrEmpty(metadata.PlaceName))
                             _detailsRows.Add(("Place", metadata.PlaceName!));
-                        // A group entry says what it HOLDS — the one fact
+                        // A group entry says what it contains — the one fact
                         // its tile cannot — as per-kind rows.
                         if (kind == PoseLibraryEntryKind.Group)
                             AppendContentsRows(metadata, _detailsRows);
@@ -218,7 +218,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
             _detailsRows.Add(("Details", "none recorded"));
     }
 
-    /// <summary>The entry's contents as PER-KIND rows — "Actors 2",
+    /// <summary>The entry's contents as one row per kind — "Actors 2",
     /// "Lights 3" — never one truncating line.</summary>
     private static void AppendContentsRows(
         SceneMetadataReadOutcome metadata,

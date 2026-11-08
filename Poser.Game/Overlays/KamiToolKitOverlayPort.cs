@@ -12,29 +12,10 @@ using Poser.Domain.Presentation;
 namespace Poser.Game.Overlays;
 
 /// <summary>
-/// The production <see cref="IOverlayNodePort"/>: KamiToolKit's UI-overlay
-/// controller, which is the same library and the same controller Ktisis uses
-/// (<c>Ktisis/Services/Game/OverlayService.cs:43,52,93,102-103</c>).
-///
-/// <para>WHY A LIBRARY. Attaching a node subtree to the game's UI means
-/// building <c>AtkResNode</c>s by hand, walking the right addon's node list,
-/// fixing up sibling/parent pointers, and undoing all of it in the exact
-/// reverse order before the addon is finalised. Getting the undo wrong crashes
-/// the renderer rather than throwing. KamiToolKit owns that dance, and it is
-/// the ONLY dependency this feature adds.</para>
-///
-/// <para>LIFETIME. The library has one global init and one global teardown, so
-/// this port owns both: init is deferred to the first node (a session that
-/// never stages one never touches the game's UI at all) and teardown runs from
-/// <see cref="Dispose"/>. Between them the controller holds every live node,
-/// and the port keeps its own set of them so a dispose can take back anything
-/// the service above it never heard about — a node created for a create that
-/// failed before its handle existed, for instance.</para>
-///
-/// <para>A failure to initialise is REMEMBERED as unavailability rather than
-/// retried per node: a library that could not attach once will not attach on
-/// the next click, and the create affordances read as unavailable instead of
-/// silently doing nothing.</para>
+/// Adapts KamiToolKit's native UI overlay controller. Initializes the library on
+/// first use, keeps the created nodes for cleanup, and disposes nodes before the
+/// controller and library. A failed initialization disables further create attempts
+/// for this instance; it does not establish that a later retry would fail.
 /// </summary>
 public sealed class KamiToolKitOverlayPort : IOverlayNodePort
 {
@@ -205,9 +186,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         }
     }
 
-    /// <summary>One document onto one node: the shared frame first, then the
-    /// status icon's path, which is the one field the node layer cannot
-    /// resolve for itself.</summary>
+    /// <summary>Resolves the status icon path, then applies the node state.</summary>
     private void Write(OverlayShapeNode node, OverlayNodeState state)
     {
         if (state.Kind == OverlayNodeKind.Status)

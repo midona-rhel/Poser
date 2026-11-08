@@ -7,14 +7,10 @@ using System.Reflection;
 namespace Poser.Application.Diagnostics;
 
 /// <summary>
-/// Turns a recorded before/after value into a small, immutable copy the
-/// issue report can serialize. Journal values are whatever a control wrote:
-/// mostly numbers, vectors and Domain records, but sometimes live runtime
-/// objects (a camera, an actor). Serializing those walks the native-backed
-/// graph behind them; reference-loop handling only stops a cycle on the
-/// current path, so a graph whose nodes are shared (bones and their parents)
-/// expands combinatorially until memory runs out (#491). Copying at record
-/// time also keeps the value as it was, not as the live object reads later.
+/// Copies a history value into a size-limited form for issue reports.
+/// Reports must not recursively serialize live actor or camera objects, whose
+/// relationships can expand into very large graphs. Capturing now also keeps
+/// later edits from changing the recorded before/after values.
 /// </summary>
 public static class DiagnosticValue
 {
@@ -77,8 +73,8 @@ public static class DiagnosticValue
             return items;
         }
 
-        // Plain data is copied member by member; anything else is a live
-        // object (a service, a native wrapper) and is named, never walked.
+        // Only inspect members of structs and records. Other objects are
+        // represented by their type name; this avoids traversing native wrappers.
         if (!IsPlainData(type))
             return $"<{type.Name}>";
         var members = new SortedDictionary<string, object?>(StringComparer.Ordinal);
@@ -102,8 +98,8 @@ public static class DiagnosticValue
         return members;
     }
 
-    /// <summary>Structs and records are value data; tuples too. Other
-    /// classes are runtime objects whose graphs a report must not follow.</summary>
+    /// <summary>Allows structs and record-like classes for property inspection.
+    /// This heuristic does not prove that their getters are free of side effects.</summary>
     private static bool IsPlainData(Type type) =>
         type.IsValueType
         || type.GetProperty("EqualityContract", BindingFlags.NonPublic | BindingFlags.Instance) is not null;

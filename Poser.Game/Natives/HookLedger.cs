@@ -8,9 +8,8 @@ using Dalamud.Plugin.Services;
 namespace Poser.Game.Natives;
 
 /// <summary>
-/// Every hook Poser creates: the plugin's one <see cref="IGameInteropProvider"/>,
-/// forwarding to Dalamud's and recording each hook with its target, its delegate and
-/// the code that made it, so the native check can say which hooks exist and run.
+/// Wraps the plugin's interop provider and records hook creation for the native
+/// health report.
 /// </summary>
 public sealed class HookLedger : IGameInteropProvider
 {

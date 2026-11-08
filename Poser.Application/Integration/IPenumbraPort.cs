@@ -12,8 +12,9 @@ public interface IPenumbraPort
 
     IntegrationValue<CollectionAssignment> GetCollectionAssignment(ActorId actor);
 
-    /// <summary>The local player's effective collection: what every plain
-    /// spawn is assigned, so wearing it is inheriting, not a choice.</summary>
+    /// <summary>
+    /// The local player's effective collection, used as the initial collection for plain spawns.
+    /// </summary>
     IntegrationValue<Guid> GetPlayerCollection();
 
     /// <summary>Captures only a currently effective collection owned by the duplicate lifecycle.</summary>
@@ -28,14 +29,15 @@ public interface IPenumbraPort
     /// inheritance resumes.</summary>
     IntegrationResult RestoreCollection(ActorId actor, CollectionBaseline baseline);
 
-    /// <summary>Creates one temporary collection. The caller registers the
-    /// returned id BEFORE assigning, so a failed assignment leaves a
-    /// tracked, retryable collection rather than an anonymous leak.</summary>
+    /// <summary>
+    /// Creates a temporary collection. Record its returned ID before assignment
+    /// so it can still be cleaned up if assignment fails.
+    /// </summary>
     IntegrationValue<Guid> CreateTemporaryCollection(string name);
 
-    /// <summary>Assigns the temporary collection to the exact actor WITHOUT
-    /// force: an existing temporary assignment (another plugin's) makes
-    /// this fail instead of being deleted.</summary>
+    /// <summary>
+    /// Assigns this temporary collection without replacing an existing temporary assignment.
+    /// </summary>
     IntegrationResult AssignTemporaryCollection(Guid collection, ActorId actor);
 
     /// <summary>Adds Poser's temporary mod (embedded files, swaps, and meta
@@ -66,9 +68,10 @@ public interface IPenumbraPort
     /// not wait.</summary>
     IntegrationResult RequestRedraw(ActorId actor);
 
-    /// <summary>Requests a redraw and waits, bounded, for the exact actor to
-    /// be drawable again, then refreshes scene bindings so downstream state
-    /// reconciles against the redrawn body.</summary>
+    /// <summary>
+    /// Requests a redraw, waits up to timeout for the same actor to become drawable,
+    /// and refreshes scene bindings to the new body.
+    /// </summary>
     Task<IntegrationResult> RedrawAndWait(
         ActorId actor, TimeSpan timeout, CancellationToken cancellation);
 }

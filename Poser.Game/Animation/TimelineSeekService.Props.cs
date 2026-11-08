@@ -18,7 +18,7 @@ public sealed unsafe partial class TimelineSeekService
     /// The per-frame push of the overall speed into a prop weapon's group: a prop
     /// summoned by a layer with its own speed gets overall × that layer's speed, so
     /// its timeline (its clips, effects and length) runs on its layer's time.
-    /// Everything else passes through. Never throws into the game.
+    /// Other speeds pass through. The catch covers the lookup, not the native call.
     /// </summary>
     private void WeaponSpeedDetour(nint manager, nint weapon, float speed)
     {
@@ -190,8 +190,8 @@ public sealed unsafe partial class TimelineSeekService
     /// Before a C094 applies its alphas: one of a layer below the group-0 prop's
     /// owner loses its slot-2 bit first, so it can't fade the higher layer's prop,
     /// not even on its start frame (Start applies at once, before the tick's
-    /// MaskLowerFades). The clip's root (+0x38) names its slot. Never throws into
-    /// the game.
+    /// MaskLowerFades). The clip's root (+0x38) identifies its slot. The catch covers Poser's
+    /// mask update, not the original native call.
     /// </summary>
     private void ApplyFadeMaskDetour(nint clip, ulong colourArg, nint values)
     {
@@ -220,7 +220,7 @@ public sealed unsafe partial class TimelineSeekService
         }
         catch
         {
-            // Losing the mask for one apply is all a failure costs.
+            // Continue to the original call if Poser's mask update throws.
         }
         _fadeMaskHook!.Original(clip, colourArg, values);
     }
@@ -277,8 +277,8 @@ public sealed unsafe partial class TimelineSeekService
     /// handler keeps the loaded model alive while the cell names it, and a cell
     /// naming another model lets the loaded one lapse and loads the new one (so
     /// when the higher layer ends, the lower layer's prop comes in by itself).
-    /// Counts and states are never touched, so each Stop stays balanced. Never
-    /// throws into the game.
+    /// Request counts and states are left unchanged. The catch covers Poser's
+    /// model writes, not the original native call.
     /// </summary>
     private void ApplyWeaponRequestsDetour(nint control)
     {
@@ -298,7 +298,7 @@ public sealed unsafe partial class TimelineSeekService
         }
         catch
         {
-            // Losing the priority for one apply is all a failure costs.
+            // Continue to the original call if Poser's priority update throws.
         }
         _applyRequestsHook!.Original(control);
     }

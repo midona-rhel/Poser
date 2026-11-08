@@ -127,9 +127,8 @@ internal unsafe sealed class WorldActorTableAdapter : IWorldActorTableAdapter
             IsDrawing(gameObject.Address),
             gameObject.Position);
 
-    /// <summary>Overworld kinds Poser offers for cloning: exactly the set the
-    /// GPose admission scan accepts (ActorManager.GetGPoseCharacters). Mount
-    /// is deliberately absent until the appearance copy is proven for it.</summary>
+    /// <summary>Kinds offered for world adoption. Mounts and ornaments are
+    /// excluded even though the GPose actor scan accepts them.</summary>
     private static WorldActorKind? ToKind(ObjectKind objectKind) => objectKind switch
     {
         ObjectKind.Pc => WorldActorKind.Player,
@@ -220,7 +219,7 @@ public sealed class WorldActorDiscovery
         _log = log;
     }
 
-    /// <summary>Object-table reads and the clone both belong to the framework
+    /// <summary>Object-table reads and adoption both belong to the framework
     /// (main) thread; off-thread calls refuse rather than race the game.</summary>
     private bool OnOwnerThread =>
         _framework is null || _framework.IsInFrameworkUpdateThread;
@@ -277,23 +276,8 @@ public sealed class WorldActorDiscovery
     internal WorldActorImportResult CloneCandidate(WorldActorCandidateId id) =>
         CloneCandidate(id, out _);
 
-    /// <summary>
-    /// Paints, or unpaints, the game's own selection highlight on a listed
-    /// overworld actor — what a hovered adoption handle marks its actor with.
-    ///
-    /// <para>The mechanism is Ktisis' own and verified at its call site:
-    /// <c>SceneDraw.SetActorHighlight</c>
-    /// (<c>Ktisis/Interface/Overlay/SceneDraw.cs:367-377</c>) casts the
-    /// wrapper's address to the client-structs GameObject and calls
-    /// <c>Highlight(colour)</c> on hover-enter and
-    /// <c>Highlight(ObjectHighlightColor.None)</c> on leave, refusing when the
-    /// object has no draw object. This is the same call, the same guard and the
-    /// same pairing.</para>
-    ///
-    /// <para>False means the highlight was not written — a stale id, an
-    /// off-thread call, or an actor with nothing drawn. A caller must read that
-    /// as "no highlight is on", never as an unpaired set.</para>
-    /// </summary>
+    /// <summary>Last successfully highlighted actor, retained so it can be
+    /// cleared after adoption removes it from the candidate list.</summary>
     private WorldActorObservation? _highlighted;
 
     public bool SetHighlight(WorldActorCandidateId id, bool highlighted)

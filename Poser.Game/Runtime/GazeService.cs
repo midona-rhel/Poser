@@ -28,15 +28,9 @@ using static Poser.Game.GazeNativeDriver;
 namespace Poser.Game;
 
 /// <summary>
-/// Service for controlling actor gaze (where they look). Based on Brio's
-/// ActorLookAtService. One entry per actor, keyed by the binding registry's
-/// <see cref="ActorId"/>: a GPose clone SHARES its source's GameObjectId, so
-/// that id cannot tell two player-seeded actors apart. The detour finds an
-/// entry by the body's address through an index the reconciliation pass
-/// keeps current. The Entity target is remembered by ActorId too; its
-/// GameObjectId is only the value written natively (LookMode.Target through
-/// the Brio/Ktisis-verified id/position union). Position mode holds a shared
-/// world anchor plus per-part positions the detour writes unchanged.
+/// Controls where an actor looks. Settings use Poser ActorId because multiple GPose
+/// copies can share a game object ID. The native hook finds settings by the current
+/// body address; reconciliation updates that index after binding changes.
 /// </summary>
 public unsafe class GazeService : IDisposable
 {
@@ -47,8 +41,9 @@ public unsafe class GazeService : IDisposable
     private readonly IFramework? _framework;
     private readonly Poser.Game.Posing.GazePoseFrames _gazeFrames;
 
-    /// <summary>Spawn/discovery-standard thread refusal (ActorSpawnService
-    /// shape) for the members that write natively outside the hooked loop.</summary>
+    /// <summary>
+    /// Native target commands require the framework thread when a framework is supplied.
+    /// </summary>
     private bool OnOwnerThread => _framework is null || _framework.IsInFrameworkUpdateThread;
 
     private bool _isAvailable;
@@ -192,9 +187,7 @@ public unsafe class GazeService : IDisposable
     }
 
     /// <summary>
-    /// The channels the detour will enforce for this actor on its next pass.
-    /// Everything absent is handed back to the game. This is the observable
-    /// form of the release contract, so it is what the tests assert.
+    /// Parts configured for active target writes on the next hook pass.
     /// </summary>
     internal GazeTargetType WrittenParts(ActorId actor)
     {
@@ -207,8 +200,7 @@ public unsafe class GazeService : IDisposable
     }
 
     /// <summary>
-    /// The channels owed a one-shot hand-back on the detour's next pass. The
-    /// other half of the release contract, and likewise what the tests assert.
+    /// Parts waiting for a disable write on the next hook pass.
     /// </summary>
     internal GazeTargetType PendingRelease(ActorId actor)
     {
@@ -223,14 +215,16 @@ public unsafe class GazeService : IDisposable
     private Outcome Unavailable() =>
         Outcome.Fail(UnavailableDetail ?? "Gaze capability unavailable.");
 
-    /// <summary>The remembered target is gone, so reapplying it is refused by
-    /// name instead of quietly following nothing or a reused address.</summary>
+    /// <summary>
+    /// Asks the user to replace an unavailable remembered target.
+    /// </summary>
     private static Outcome StaleRefusal(GazeEntry entry) => Outcome.Fail(
         $"The remembered gaze target ({entry.TargetId:X}) has left the scene. Choose another actor.");
 
-    /// <summary>The actor's stable id and live body. An actor the registry
-    /// has not bound has no gaze identity: keying it by anything else is how
-    /// two clones of one player came to share an entry.</summary>
+    /// <summary>
+    /// Finds the Poser actor ID and a game-object wrapper for its current address.
+    /// Native writes check the wrapper separately with CanWriteCharacter.
+    /// </summary>
     private bool Resolve(IActor actor, out ActorId id, [NotNullWhen(true)] out IGameObject? body)
     {
         id = default;
@@ -318,11 +312,9 @@ public unsafe class GazeService : IDisposable
     }
 
     /// <summary>
-    /// One mode transition. Entering a non-Off mode with no participating
-    /// parts enables all three. Entity mode without a chosen target performs
-    /// no native override until a target is set. Off keeps the remembered
-    /// target and per-part points — only <see cref="ResetGaze"/> forgets them.
-    /// Re-entering Entity on a stale remembered target is refused.
+    /// Changes the gaze mode. Enabling a mode with no participating parts enables all
+    /// three. Entity mode waits for a target; selecting a stale remembered target fails.
+    /// Off retains the actor target but clears locks and rebuilds the stored part targets.
     /// </summary>
     public Outcome SetGazeMode(IActor actor, GazeTargetMode mode)
     {
@@ -347,19 +339,15 @@ public unsafe class GazeService : IDisposable
             entry.Mode = mode;
             if (mode == GazeTargetMode.None)
             {
-                // Off stops every write and clears locks; the game's own
-                // update re-takes the released slots. The remembered target and
-                // the stored per-part points deliberately survive — this is the
-                // toggle the user expects to be able to undo.
+                // Off clears locks; BookRelease queues the native disable writes.
                 ClearPartLock(entry, GazeTargetType.All);
             }
             else if (entry.Parts == GazeTargetType.None)
             {
                 entry.Parts = GazeTargetType.All;
             }
-            // Entering Position seeds the anchor halfway between actor and
-            // camera (Ktisis GetCameraLerpFor parity) so the gizmo appears in
-            // view; re-selecting the mode it is already in never moves it.
+            // Start a new Position target between actor and camera. Reselecting
+            // Position preserves its current anchor.
             if (mode == GazeTargetMode.Position && previousMode != GazeTargetMode.Position)
                 entry.Position = CameraLerpPoint(actor);
             ReseedUnlockedParts(entry);
@@ -378,11 +366,9 @@ public unsafe class GazeService : IDisposable
     }
 
     /// <summary>
-    /// Changes part participation only, exactly as Brio's SetTargetType does:
-    /// a part removed from the mask is simply no longer written, so the game's
-    /// own look-at resumes owning it. The mode and target survive an empty
-    /// mask, so re-adding a part resumes what was configured. Re-adding a part
-    /// on a stale remembered target is refused; removing one never is.
+    /// Changes which parts follow the configured target. Removed parts receive a disable
+    /// write on the next hook pass. The mode and actor target survive an empty mask.
+    /// Adding parts in Entity mode fails if the remembered target is stale.
     /// </summary>
     public Outcome SetGazeParts(IActor actor, GazeTargetType parts)
     {
@@ -404,18 +390,12 @@ public unsafe class GazeService : IDisposable
                 && entry.TargetStale)
                 return StaleRefusal(entry);
             var beforeMode = EffectiveMode(entry);
-            // Removing a part relinquishes it immediately — the detour just
-            // stops writing it — and a locked part being disabled unlocks.
+            // Removed parts lose their locks and receive a queued disable write.
             ClearPartLock(entry, entry.Parts & ~parts);
             entry.Parts = parts;
-            // The mode is NOT cleared when the last part goes off. Brio's
-            // SetTargetType rewrites the participation mask and nothing else,
-            // so the mode and the chosen target are still there to resume from
-            // the moment a part comes back.
+            // Keep the mode and actor target for when a part is enabled again.
             ReseedUnlockedParts(entry);
-            // The untoggled channel is owed its hand-back here: the remembered
-            // mode and target survive, but the controller must stop aiming the
-            // channel Poser just gave up.
+            // Queue the native disable writes for removed parts.
             BookRelease(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
             pendingTarget = _driver.PendingTargetWrite(entry, writable);
@@ -443,9 +423,7 @@ public unsafe class GazeService : IDisposable
         if (!Resolve(actor, out var id, out var gameObject)
             || !Resolve(target, out var targetKey, out var targetObject))
             return Outcome.Fail("This actor is no longer resolvable.");
-        // The same predicate the write funnel enforces, spelled once, so this
-        // refusal can never drift from what WriteCharacterTarget will accept.
-        // It is stated here as well only to name the reason for the user.
+        // Report the same GPose restriction used by the native write.
         if (!CanWriteCharacter(gameObject))
             return Outcome.Fail("Only a GPose actor can be given a gaze target.");
         // Stable identity, not GameObjectId: two clones of one player share
@@ -464,9 +442,7 @@ public unsafe class GazeService : IDisposable
             var beforeMode = EffectiveMode(entry);
             entry.TargetActor = targetKey;
             entry.TargetId = targetObject.GameObjectId;
-            // A freshly chosen target is live by construction, and the stale
-            // mark is sticky everywhere else, so this is the ONE place it is
-            // lifted — an id reappearing does not resume anything by itself.
+            // Explicitly selecting a resolved target clears its stale flag.
             entry.TargetStale = false;
             entry.Mode = GazeTargetMode.Entity;
             if (entry.Parts == GazeTargetType.None)
@@ -476,21 +452,17 @@ public unsafe class GazeService : IDisposable
             modeChanged = EffectiveMode(entry) != beforeMode;
             pendingTarget = _driver.PendingTargetWrite(entry, writable);
         }
-        // Brio parity (SetActorTarget): the character's own target id backs
-        // the game's id-based look tracking. Written through the RESOLVED
-        // wrapper's address — the raw IActor address is only a claim.
+        // Set the native target ID used by the game's object tracking.
         _driver.WriteCharacterTarget(gameObject, pendingTarget);
-        // Retargeting within Entity mode is not a mode transition; only the
-        // move INTO Entity publishes. Published outside the lock.
+        // Notify only when the effective mode changed, outside the lock.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
         return Outcome.Ok();
     }
 
     /// <summary>
-    /// Position mode only: moves the shared anchor and every enabled,
-    /// unlocked part to <paramref name="position"/>. No-op in any other mode
-    /// or when no entry exists.
+    /// In Position mode, moves the shared anchor and rebuilds every unlocked part target.
+    /// Disabled parts are updated too, ready for later use. Other modes are unchanged.
     /// </summary>
     public void SetGazePosition(IActor actor, Vector3 position)
     {
@@ -504,15 +476,14 @@ public unsafe class GazeService : IDisposable
                 SeedMode(entry) != GazeTargetMode.Position)
                 return; // the anchor exists only in Position mode
             entry.Position = position;
-            // Locked parts keep their frozen positions — existing guarantee.
+            // Leave locked targets at their stored points.
             ReseedUnlockedParts(entry);
         }
     }
 
     /// <summary>
-    /// Position mode only: writes one part's target position explicitly.
-    /// Works on locked parts too — an explicit user edit outranks a lock, and
-    /// the lock flag itself is untouched. Does not move the anchor.
+    /// Changes the specified Position-mode part targets, including locked parts.
+    /// Leaves their lock flags and the shared anchor unchanged.
     /// </summary>
     public void SetPartPosition(IActor actor, GazeTargetType part, Vector3 position)
     {
@@ -532,8 +503,7 @@ public unsafe class GazeService : IDisposable
     }
 
     /// <summary>
-    /// Brio's "set to camera value": <see cref="SetPartPosition"/> with the
-    /// current camera position.
+    /// Copies the current camera position into the specified Position-mode targets.
     /// </summary>
     public void SnapPartToCamera(IActor actor, GazeTargetType part)
     {
@@ -557,9 +527,9 @@ public unsafe class GazeService : IDisposable
     }
 
     /// <summary>
-    /// Freezes/unfreezes one participating part at its actual current
-    /// target. Does not change the mode, the participation mask, or other
-    /// parts.
+    /// Freezes an enabled part at a point derived from its current mode, or resumes
+    /// following that mode. For Entity mode the point is the target actor position;
+    /// if unavailable, it falls back to the camera position.
     /// </summary>
     public void SetPartLock(IActor actor, GazeTargetType part, bool locked)
     {
@@ -577,14 +547,12 @@ public unsafe class GazeService : IDisposable
 
             if (locked)
             {
-                // Freeze the part at its ACTUAL current target.
+                // Choose the fixed point for this mode.
                 var freezePos = mode switch
                 {
                     GazeTargetMode.Camera => _cameraService.GetCameraPosition(),
                     GazeTargetMode.Forward => ForwardPoint(actor),
-                    // Position mode is already position-identity: freeze where
-                    // the part already looks so a lock only stops it following
-                    // later anchor moves.
+                    // Keep this part's stored point when the shared anchor moves.
                     GazeTargetMode.Position => PartPosition(entry, part) ?? entry.Position,
                     _ => TargetPosition(entry.TargetActor) ?? _cameraService.GetCameraPosition(),
                 };
@@ -616,7 +584,10 @@ public unsafe class GazeService : IDisposable
         }
     }
 
-    /// <summary>Removes state and the native handle — full game default.</summary>
+    /// <summary>
+    /// Clears stored settings and queues native part releases. Keeps the entry until
+    /// the hook can send those disable writes; clears the character target separately.
+    /// </summary>
     public void ResetGaze(IActor actor)
     {
         if (!IsAvailable)
@@ -627,11 +598,8 @@ public unsafe class GazeService : IDisposable
         ulong? pendingTarget = null;
         lock (_store.Sync)
         {
-            // Brio's RemoveObjectFromLook — the ONE path that forgets the
-            // remembered target, as opposed to the toggles, which keep it. The
-            // entry itself is cleared in place rather than dropped: it is the
-            // ledger the detour reads to deliver the hand-back, and dropping it
-            // would strand every claimed channel at its last gaze.
+            // Keep the entry so the hook can read its pending disable writes.
+            // Unlike toggling gaze off, Reset also forgets the actor target.
             if (!_store.TryGet(id, out var entry))
                 return;
             modeChanged = EffectiveMode(entry) != GazeTargetMode.None;
@@ -652,8 +620,7 @@ public unsafe class GazeService : IDisposable
             BookRelease(entry);
         }
         _driver.WriteCharacterTarget(gameObject, pendingTarget);
-        // A dropped entry that was already effectively Off changed nothing.
-        // Published outside the lock.
+        // Notify only if the effective mode changed.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
     }
@@ -670,9 +637,8 @@ public unsafe class GazeService : IDisposable
             : null;
 
     /// <summary>
-    /// Reseeds every UNLOCKED participating part for the entry's effective
-    /// mode. Locked parts keep their frozen position and mode — a transition
-    /// never silently moves a locked part.
+    /// Rebuilds every unlocked part target from the configured mode, including disabled
+    /// parts. This method does not change locked targets.
     /// </summary>
     private void ReseedUnlockedParts(GazeEntry entry)
     {
@@ -684,8 +650,7 @@ public unsafe class GazeService : IDisposable
     private void ReseedPart(GazeEntry entry, GazeTargetType part)
     {
         var target = new LookAtTarget();
-        // Seeded from the CONFIGURED mode, so untoggling every part leaves the
-        // stored per-part sources intact for the retoggle to resume from.
+        // Use the configured mode even when every part is disabled.
         switch (SeedMode(entry))
         {
             case GazeTargetMode.Camera:
@@ -700,7 +665,7 @@ public unsafe class GazeService : IDisposable
                 target.ActorTargetId = entry.TargetId;
                 break;
             case GazeTargetMode.Position:
-                // Fixed world point — the detour writes it unchanged each loop.
+                // Stored world point; the hook may compensate for the authored pose.
                 target.LookMode = LookMode.Position;
                 target.Position = entry.Position;
                 break;
@@ -712,8 +677,7 @@ public unsafe class GazeService : IDisposable
     }
 
     /// <summary>
-    /// Halfway between the actor and the camera — Ktisis GetCameraLerpFor,
-    /// the seed for a freshly entered Position mode.
+    /// Starts a Position-mode target halfway between actor and camera, matching Ktisis.
     /// </summary>
     private Vector3 CameraLerpPoint(IActor actor)
     {

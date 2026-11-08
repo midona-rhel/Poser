@@ -10,10 +10,9 @@ internal enum VfxTransformWriteResult
 }
 
 /// <summary>
-/// The hidden VFX half of world-object ownership. It keeps native timing and
-/// rollback policy out of the inspector: transforms restate placement without
-/// replaying the effect, while capture refuses when native playback is
-/// unavailable.
+/// Owns VFX-specific capture, transform, and restore behavior for world
+/// objects. Transform writes preserve playback state, and capture fails when
+/// playback state cannot be read.
 /// </summary>
 internal sealed class VfxLifecycleOwner
 {

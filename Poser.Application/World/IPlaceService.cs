@@ -1,18 +1,13 @@
 ﻿namespace Poser.Application.World;
 
 /// <summary>
-/// Where the session is, in the two forms a document keeps: the durable
-/// machine fact and the name resolved beside it. A zero id with a null name is
-/// "not recorded" — nothing ever invents a placeholder, because ABSENCE is
-/// what tells a listing to group a file by its day alone.
+/// Territory ID and display name saved with a document. Zero and null mean the
+/// location was not recorded, allowing file listings to group by date alone.
 /// </summary>
 public readonly record struct CapturePlace(uint TerritoryId, string? PlaceName);
 
 /// <summary>
-/// The one <c>TerritoryType</c> → <c>PlaceName</c> resolution. Whole-scene
-/// capture and pose auto-save both stamp their documents from here, so "where
-/// this was taken" means the same thing in an <c>.xivs</c> scene and in a
-/// <c>.pose</c>, and the Brio-verified lookup has a single home.
+/// Resolves the current territory and place name for scene capture and pose autosave.
 /// </summary>
 public interface IPlaceService
 {

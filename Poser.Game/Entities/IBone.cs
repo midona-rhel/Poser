@@ -3,14 +3,8 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Game.Entities;
 
-/// <summary>
-/// Represents a bone in a skeleton hierarchy.
-/// </summary>
 public interface IBone : IEntity
 {
-    /// <summary>
-    /// The index of this bone within its partial skeleton.
-    /// </summary>
     int BoneIndex { get; }
 
     /// <summary>
@@ -18,24 +12,12 @@ public interface IBone : IEntity
     /// </summary>
     string BoneName { get; }
 
-    /// <summary>
-    /// The partial skeleton ID this bone belongs to.
-    /// </summary>
     int PartialId { get; }
 
-    /// <summary>
-    /// The parent bone, if any.
-    /// </summary>
     IBone? ParentBone { get; }
 
-    /// <summary>
-    /// Child bones.
-    /// </summary>
     IReadOnlyList<IBone> ChildBones { get; }
 
-    /// <summary>
-    /// The skeleton this bone belongs to.
-    /// </summary>
     ISkeleton Skeleton { get; }
 
     /// <summary>

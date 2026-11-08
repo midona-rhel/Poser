@@ -61,15 +61,14 @@ internal sealed partial class SidebarComposer
 
     private bool _sidebarFriendlyBoneNames;
 
-    /// <summary>A gaze mode transition landed since the last rebuild. Gaze mode
-    /// is not part of the scene revision and cannot be, so the one row it owns
-    /// needs its own arming bit. Written from the gaze service's publishing
-    /// thread — volatile, and nothing but the bit is touched there.</summary>
+    /// <summary>Set when gaze mode changes. Gaze state does not increment the
+    /// scene revision, so this separate flag requests a sidebar rebuild. The
+    /// gaze publisher may set it from another thread; no other state is changed
+    /// from that thread.</summary>
     private volatile bool _gazeDirty;
 
-    /// <summary>Bumped by every disclosure toggle. The gate cannot observe
-    /// <see cref="_collapsedNodes"/> directly — a set carries no version — and
-    /// disclosure is the one non-scene input that changes the row count.
+    /// <summary>
+    /// Incremented when disclosure state changes so Build can refresh the row tree.
     /// </summary>
     private int _expandVersion;
 
@@ -169,20 +168,9 @@ internal sealed partial class SidebarComposer
 
 
     /// <summary>
-    /// Restates the sidebar. The row tree is assembled only when the gate below
-    /// flips; every other frame walks the retained rows and refreshes the flags
-    /// that read live state, allocating nothing.
-    ///
-    /// <para>The gate is exactly the inputs that can change the row count or
-    /// order: the published scene revision (the structural signature — actor
-    /// set and generations, slot presence, bone counts), the search filter, and
-    /// the disclosure version, and the bone-name presentation policy. Bone
-    /// labels are retained row strings, so the policy belongs in this gate
-    /// even though it changes no scene identity. Selection, actor visibility,
-    /// pause state and library mode are per-row flags: they are refreshed in
-    /// place, so they still land on the frame they change. An actor display
-    /// name is a flag too, except while filtering, where it can change what
-    /// matches — that case re-arms the gate.</para>
+    /// Rebuilds rows when scene/group revisions, gaze state, search, disclosure, or
+    /// friendly-name settings change. Otherwise updates the existing rows' live flags.
+    /// A renamed actor under an active filter requests a rebuild on the next call.
     /// </summary>
     public void Build()
     {
@@ -214,9 +202,9 @@ internal sealed partial class SidebarComposer
         RefreshSidebarFlags();
     }
 
-    /// <summary>The gaze node's three aim points, in the order the gaze pane
-    /// itself lists them. Static because the set is fixed: a gaze always has
-    /// exactly these three parts, so no actor mints its own copy.</summary>
+    /// <summary>
+    /// Gaze targets listed below the shared anchor, in pane display order.
+    /// </summary>
     private static readonly (string Label, string Icon, GazePart Part)[] GazeParts =
     {
         ("Eyes", "eye", GazePart.Eyes),
@@ -224,18 +212,14 @@ internal sealed partial class SidebarComposer
         ("Body", "body", GazePart.Body),
     };
 
-    /// <summary>
-    /// The cold path: the whole actor/bone tree. Everything here is discarded
-    /// and restated wholesale, so it runs only behind
-    /// <see cref="BuildSidebar"/>'s gate.
-    /// </summary>
+    /// <summary>Recreates the complete actor and bone row tree. Call only when
+    /// <see cref="Build"/> detects a structural input change.</summary>
     private void RebuildSidebar(string filter)
     {
         _vm.Sections.Clear();
-        // The sidebar is the OUTLINER — world things only, ONE list. The
-        // library, the scene, and the environment left it in the
-        // inspector-mode redesign: the first two are inspector panels,
-        // the library is its own workspace.
+        // The sidebar is a single outliner for world entities. Scene and
+        // environment controls live in the inspector, while the library has
+        // its own workspace.
         _vm.Sections.Add(_sceneSection);
         _sceneSection.Rows.Clear();
         _actorRows.Clear();
@@ -245,10 +229,8 @@ internal sealed partial class SidebarComposer
 
         var order = _groups.RootOrder;
 
-        // The USER'S order, kinds interleaved: a group head lists as a
-        // folder row with its members nested one level in; every other
-        // slot renders through the same constructions its grouped twin
-        // uses.
+        // Preserve the user's mixed entity order. Groups render as folder rows
+        // with nested members; ungrouped entities use the same row builders.
         for (int s = 0; s < order.Count; s++)
         {
             var slot = order[s];
@@ -263,18 +245,14 @@ internal sealed partial class SidebarComposer
             AddGroupRows(group, 0, snapshot, filter, filtering);
         }
 
-        // A reference picture is an overlay by the same test the nodes are —
-        // it is laid over the game rather than into the scene — so it closes
-        // the list. It is not a scene entity: it carries no SelectionId,
-        // holds no seat in the order, and its Tag is the session instance
-        // itself, which is what every verb below dispatches on.
+        // Reference images are listed last. Their row tags hold image instances,
+        // not scene SelectionIds, so they do not participate in scene root ordering.
         AppendReferenceImageRows(filter, filtering);
     }
 
-    /// <summary>One root entity's row(s) at depth 0 — the kind dispatch
-    /// the old per-kind walks did, driven by the root order instead. The
-    /// filter applies here, per row, exactly as those walks applied
-    /// it.</summary>
+    /// <summary>
+    /// Finds an ungrouped entity and builds its root row, applying the search filter.
+    /// </summary>
     private void AddRootEntityRow(
         SelectionId id,
         IReadOnlyList<ActorDescriptor> snapshot,
@@ -343,9 +321,9 @@ internal sealed partial class SidebarComposer
         }
     }
 
-    /// <summary>The mark for one overlay kind. A dialogue panel, a bubble and
-    /// a status line are three different things on screen, so they are three
-    /// different marks in the tree.</summary>
+    /// <summary>
+    /// Sidebar icon for each overlay kind.
+    /// </summary>
     private static TablerIcon OverlayIcon(
         OverlayNodeKind kind) => kind switch
     {
@@ -356,9 +334,9 @@ internal sealed partial class SidebarComposer
         _ => TablerIcon.Message,
     };
 
-    /// <summary>The mark for one light kind, shared by the sidebar rows and
-    /// the lights header's type chooser: a kind means the same thing wherever
-    /// it is shown, so it is drawn from one place.</summary>
+    /// <summary>
+    /// Icon for a light's type.
+    /// </summary>
     private static TablerIcon KindIcon(LightKind kind) => kind switch
     {
         LightKind.Directional => TablerIcon.Sun,
@@ -368,11 +346,8 @@ internal sealed partial class SidebarComposer
     };
 
     /// <summary>
-    /// The reference pictures, as overlays rows. The label is the file stem,
-    /// deduped: the roster mints identity per add precisely so the same sheet
-    /// can be placed twice, and two rows reading "sketch" would be two rows
-    /// naming nothing. The second and later occurrences carry an ordinal, so
-    /// the first one keeps the plain name.
+    /// Lists reference images after scene entities. Repeated names receive a number
+    /// so the rows can be distinguished; each row still refers to its own image instance.
     /// </summary>
     private void AppendReferenceImageRows(string filter, bool filtering)
     {
@@ -404,30 +379,19 @@ internal sealed partial class SidebarComposer
         }
     }
 
-    /// <summary>Scratch for the stem dedupe; a sidebar rebuild must not mint a
-    /// dictionary to count names.</summary>
+    /// <summary>
+    /// Reused name counts for reference-image labels during a rebuild.
+    /// </summary>
     private readonly Dictionary<string, int> _referenceStemCounts = new();
 
-    /// <summary>Flips one world class's handles. The glyph's own flag is
-    /// restated immediately so it lights with the click rather than on the
-    /// next refresh.</summary>
     /// <summary>
-    /// The warm frame's entire sidebar cost: the retained rows' live flags.
-    /// Nothing is created and no string is built — a display name that really
-    /// changed re-arms the rebuild gate, and only while a filter is active,
-    /// where the name decides whether the row is listed at all.
+    /// Updates selection, visibility, playback, and names on the existing rows.
+    /// When a group is selected, its member rows are not separately highlighted.
     /// </summary>
     private void RefreshSidebarFlags()
     {
-        // ONE walk over the one section, dispatching on the tag. Every
-        // state glyph reads the live object, never the descriptor: the
-        // change moves the scene signature, and waiting for the republish
-        // would leave the glyph behind the click that flipped it.
-        //
-        // The head and its children never light together: while the
-        // selection IS the group, only the head row wears the pill — the
-        // one exception is actor bones, whose dual highlight is the
-        // posing tree's own rule.
+        // Refresh live flags without rebuilding rows. Group selection highlights the
+        // group header rather than each member; bone selection is handled separately.
         var matchedGroup = _groups.ActiveSelection(_selection.Selected);
         var rows = _sceneSection.Rows;
         for (int i = 0; i < rows.Count; i++)
@@ -466,8 +430,7 @@ internal sealed partial class SidebarComposer
             {
                 row.CameraLive = liveCamera.IsLive;
                 row.CameraLocked = liveCamera.IsLocked;
-                // The seat retargets tracking onto the SELECTED actor —
-                // it has work exactly when an actor is selected.
+                // Recenter is available when an actor is selected.
                 row.CameraCanRecenter = _selection.Selected.Any(id => id.Kind == SceneEntityKind.Actor);
             }
             else if (id.Overlay is { } overlayId &&
@@ -497,9 +460,7 @@ internal sealed partial class SidebarComposer
             var state = _actorRows[a];
             var row = state.Row;
             row.ActorVisible = _entityCommands.ReadVisibility(SelectionId.ForActor(state.Id)) ?? !state.SnapshotHidden;
-            // Pause offers while ANYTHING moves; Resume otherwise —
-            // pause stops the entire stack, play overrides every
-            // individual hold (ruled 2026-09-01).
+            // Show Pause when playback state reports an active layer; otherwise show Play.
             row.ActorPaused = !_animation.AnyPlaying(state.Id);
             row.ActorTargeted = targetLineage == state.Id.LogicalId;
 
@@ -542,12 +503,8 @@ internal sealed partial class SidebarComposer
     }
 
 
-    /// <summary>One exact bone in the flat tracking picker.</summary>
-
     /// <summary>
-    /// One actor's subtree: owned companions first, then bone categories, then
-    /// auxiliary slots. Depth and trunk flags are inherited, so an attached
-    /// companion draws the same tree one level in and keeps its own subtree.
+    /// Builds a prop row at the requested depth.
     /// </summary>
     private ShellSidebarRow PropRow(PropDescriptor prop, int depth) => new()
     {
@@ -573,7 +530,7 @@ internal sealed partial class SidebarComposer
             Label = worldObject.Name,
             Draggable = true,
             Count = "",
-            // World objects wear the plant row mark; a VFX burns instead.
+            // Distinguish effects, furniture, and other world objects by their path type.
             Icon = isVfx ? TablerIcon.Fire : isFurniture ? TablerIcon.Couch : TablerIcon.Plant,
             Depth = depth,
             ForceIcon = depth > 0,
@@ -593,8 +550,7 @@ internal sealed partial class SidebarComposer
     private ShellSidebarRow LightRow(LightDescriptor light, int depth) => new()
     {
         Label = light.Name,
-        // A bone-attached light rides its bone — its place is not the
-        // user's to move.
+        // Bone-attached lights cannot be reordered by dragging this row.
         Draggable = light.AttachedBone == null,
         Count = "",
         Icon = light.Ownership == LightOwnership.GPose
@@ -641,12 +597,10 @@ internal sealed partial class SidebarComposer
         ColliderLocked = _overlayControl.Read(overlay.Id)?.State.Collider?.Locked ?? false,
     };
 
-    /// <summary>One grouped member's row(s), nested one level in — the
-    /// SAME constructions the kind walks use, so a grouped row never
-    /// drifts from its ungrouped twin.</summary>
-    /// <summary>A group head at <paramref name="depth"/>, its members one
-    /// level in, then its subgroups the same way — to
-    /// <see cref="global::Poser.Application.Scene.SceneGroups.MaxDepth"/>.</summary>
+    /// <summary>
+    /// Adds a group header, its members, and its child groups. Search expands groups;
+    /// non-actor group members are currently included without a name-filter check.
+    /// </summary>
     private void AddGroupRows(
         global::Poser.Application.Scene.SceneGroup group,
         int depth,
@@ -850,10 +804,8 @@ internal sealed partial class SidebarComposer
         bool categoriesFollow = skeleton != null && (!filtering || hasMatchingBone);
         bool auxFollows = auxSkeletons.Count > 0 && (!filtering || hasMatchingAux);
 
-        // Actor roots first appear collapsed; lineage keys survive
-        // refreshes, so a scene refresh cannot reset existing disclosure.
-        // Only explicit disclosure clicks expand — external bone selection
-        // (map, matrix, overlay, gizmo) never changes tree disclosure.
+        // New actor nodes use the saved subtree disclosure preference, or start collapsed.
+        // Search temporarily expands them; selecting a bone does not change disclosure.
         SeedTreeNode(actorKey, _knownActorNodes);
         bool expanded = filtering || !_collapsedNodes.Contains(actorKey);
         var actorSelectionId = SelectionId.ForActor(actor.Id);
@@ -874,8 +826,7 @@ internal sealed partial class SidebarComposer
             Tag = actorSelectionId,
             ExpandKey = actorKey,
             ActorActions = true,
-            // An attached companion rides its owner — not the user's to
-            // move while attached.
+            // Attached companion rows cannot be dragged independently of their owner.
             Draggable = actor.OwnerActor == null,
         };
         section.Rows.Add(actorRow);
@@ -972,8 +923,7 @@ internal sealed partial class SidebarComposer
                     is { } presentRoot)
                     built.Add(presentRoot);
 
-            // Whatever the tree left unclaimed — modded bones outside the
-            // Unclaimed schema bones keep a home.
+            // List visible bones absent from the category schema under Other.
             var leftovers = new List<BoneDescriptor>();
             foreach (var (bone, _) in byName.Values)
                 if (!claimed.Contains(bone.Id.CanonicalName)
@@ -988,8 +938,8 @@ internal sealed partial class SidebarComposer
             if (built.Count > 0)
             {
                 var skeletonKey = actorKey + "/skeleton";
-                // The skeleton starts folded like the actor above it;
-                // only a disclosure click, or the tree verbs, open it.
+                // Apply the subtree disclosure preference, defaulting to collapsed.
+                // Search temporarily expands the skeleton.
                 SeedTreeNode(skeletonKey, _knownCategoryNodes);
                 bool skeletonExpanded =
                     filtering || !_collapsedNodes.Contains(skeletonKey);
@@ -1039,8 +989,8 @@ internal sealed partial class SidebarComposer
                 depth + 1, childLines);
     }
 
-    /// <summary>Every category label, flattened once, for the filter
-    /// oracle: a query naming any category keeps the actor visible.</summary>
+    /// <summary>All category labels, flattened once for sidebar filtering. A
+    /// category-name match keeps the actor visible.</summary>
     private static readonly string[] KtisisLabels = FlattenKtisisLabels();
 
     /// <summary>Whether an actor, any of its bones or slots, or any actor
@@ -1178,7 +1128,7 @@ internal sealed partial class SidebarComposer
             {
                 bool hasKids = children.ContainsKey(bone.Id);
                 var boneKey = parentKey + "/bone:" + bone.Id.PartialId + ":" + bone.Id.BoneIndex;
-                // Every disclosure seeds collapsed, hierarchy nodes included.
+                // Apply the subtree disclosure preference to newly discovered branches.
                 if (hasKids)
                     SeedTreeNode(boneKey, _knownCategoryNodes);
                 bool boneExpanded = !_collapsedNodes.Contains(boneKey);

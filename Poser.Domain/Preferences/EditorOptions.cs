@@ -31,7 +31,7 @@ public enum TransformTool
 /// </summary>
 public enum SkeletonViewMode
 {
-    /// <summary>Simple dots with lines (Ktisis/Brio-style, default).</summary>
+    /// <summary>Joint dots joined by lines.</summary>
     Default,
     /// <summary>Blender-style bone shapes (diamond/octahedra pointing to child).</summary>
     Octahedra,
@@ -46,8 +46,8 @@ public enum SymmetryMode
 {
     /// <summary>No symmetry - only transform selected bones.</summary>
     Off,
-    /// <summary>Paired bone receives the same transform (both arms up identically).</summary>
+    /// <summary>Copy the edit to the paired bone without reflecting it.</summary>
     Copy,
-    /// <summary>Paired bone receives mirrored transform (left arm up = right arm down).</summary>
+    /// <summary>Reflect the edit before applying it to the paired bone.</summary>
     Mirror
 }

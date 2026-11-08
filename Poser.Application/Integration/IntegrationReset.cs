@@ -5,10 +5,8 @@ using Poser.Domain.Scene;
 namespace Poser.Application.Integration;
 
 /// <summary>
-/// The exit edges of Poser-owned external appearance: one actor's full
-/// reset (MCDF teardown first, then the Customize+ profile, the Glamourer
-/// state and the collection), every owned actor at once, the actors that
-/// left the exact scene, and unload.
+/// Restores external appearance when actors are reset, leave the scene, or the
+/// plugin unloads. Removes MCDF resources before restoring other appearance settings.
 /// </summary>
 public sealed class IntegrationReset : IDisposable
 {
@@ -35,9 +33,87 @@ public sealed class IntegrationReset : IDisposable
         _mcdf = mcdf;
     }
 
+    // These steps update the supplied record, not the ownership store. Actor
+    // cleanup combines them with MCDF cleanup before saving the final state;
+    // individual Reset buttons save just their own change.
+    internal IntegrationResult RestoreBodyProfile(ref IntegrationOverrides current)
+    {
+        if (current.TemporaryBodyProfile is not { } profile)
+            return IntegrationResult.Ok();
+
+        // Remove the profile Poser created, even if another profile is now active.
+        var result = _customizePlus.DeleteTemporaryBodyProfileById(profile);
+        if (!result.Success)
+            return result;
+
+        current = current with
+        {
+            TemporaryBodyProfile = null,
+            BodyProfileName = null,
+            BodyProfileJson = null,
+        };
+        return IntegrationResult.Ok();
+    }
+
+    internal IntegrationResult RestoreDesign(
+        ActorId actor, ref IntegrationOverrides current, bool resolvable)
+    {
+        if (!current.DesignOwned)
+            return IntegrationResult.Ok();
+
+        if (resolvable)
+        {
+            var result = _glamourer.RestoreGlamourerState(actor, current.Baseline.GlamourerState!);
+            if (!result.Success)
+                return result;
+        }
+        else if (current.DesignActorName is { } name)
+        {
+            // Glamourer can still hold appearance after the actor leaves the scene.
+            var result = _glamourer.RestoreGlamourerStateByName(name, current.Baseline.GlamourerState!);
+            if (!result.Success)
+                return result;
+        }
+
+        // Clear the captured name too, so a later design change reads it again.
+        current = current with
+        {
+            Baseline = current.Baseline with { GlamourerState = null },
+            DesignOwned = false,
+            DesignName = null,
+            DesignActorName = null,
+        };
+        return IntegrationResult.Ok();
+    }
+
+    internal IntegrationResult RestoreCollection(
+        ActorId actor, ref IntegrationOverrides current, bool resolvable, out bool redraw)
+    {
+        redraw = false;
+        if (!current.CollectionOwned)
+            return IntegrationResult.Ok();
+
+        if (resolvable)
+        {
+            var result = _penumbra.RestoreCollection(actor, current.Baseline.Collection!);
+            if (!result.Success)
+                return result;
+            redraw = true;
+        }
+
+        // A removed actor has no collection assignment left to restore.
+        current = current with
+        {
+            Baseline = current.Baseline with { Collection = null },
+            CollectionOwned = false,
+            CollectionName = null,
+        };
+        return IntegrationResult.Ok();
+    }
+
     public IntegrationResult ResetActor(ActorId actor)
     {
-        // A running import for this actor invalidates NOW; a running export
+        // Invalidate a running import for this actor; a running export
         // is read-only and merely cancels. See McdfTransaction.OnResetActor.
         _mcdf.OnResetActor(actor);
         var current = _ownership.OverridesFor(actor);
@@ -46,12 +122,9 @@ public sealed class IntegrationReset : IDisposable
 
         bool resolvable = _actors.IsResolvable(actor);
         var failures = new List<string>();
-        bool touchedNative = false;
 
-        // MCDF teardown first: it holds the lock and the temporary
-        // resources that sit on top of everything else. Its extracted
-        // directory stays owned until the redraw-complete barrier
-        // scheduled below releases it.
+        // Release the MCDF lock and overrides before restoring other settings.
+        // Keep extracted files until the redraw scheduled below has finished.
         if (current.Mcdf is { } mcdf)
         {
             current = _mcdf.TearDown(actor, current, mcdf, resolvable, failures);
@@ -59,104 +132,14 @@ public sealed class IntegrationReset : IDisposable
 
         current = _mcdf.RetryPendingDirectories(current, failures);
 
-        // Body profile: delete only Poser's temporary profile, by its own
-        // id — never whichever temporary profile is currently active.
-        if (current.TemporaryBodyProfile is { } temporary)
-        {
-            var deleted = _customizePlus.DeleteTemporaryBodyProfileById(temporary);
-            if (deleted.Success)
-                current = current with
-                {
-                    Baseline = current.Baseline with
-                    {
-                        SavedBodyProfile = null,
-                        BodyProfileCaptured = false,
-                    },
-                    TemporaryBodyProfile = null,
-                    BodyProfileName = null,
-                    BodyProfileJson = null,
-                };
-            else
-                failures.Add(deleted.Detail!);
-        }
+        var body = RestoreBodyProfile(ref current);
+        if (!body.Success) failures.Add(body.Detail!);
+        var design = RestoreDesign(actor, ref current, resolvable);
+        if (!design.Success) failures.Add(design.Detail!);
+        var collection = RestoreCollection(actor, ref current, resolvable, out bool redrawNeeded);
+        if (!collection.Success) failures.Add(collection.Detail!);
 
-        // Design / Glamourer state: reapply the captured incoming state.
-        if (current.DesignOwned)
-        {
-            if (!resolvable)
-            {
-                // No exact object to write into: the body left GPose. The
-                // character name still names it, so the baseline goes back
-                // by name; without a name the state died with the object.
-                bool released = true;
-                if (current.Baseline.GlamourerState is { } byNameState
-                    && current.DesignActorName is { } byName)
-                {
-                    var restoredByName = _glamourer.RestoreGlamourerStateByName(byName, byNameState);
-                    if (!restoredByName.Success)
-                    {
-                        released = false;
-                        failures.Add(restoredByName.Detail!);
-                    }
-                }
-                if (released)
-                    current = current with
-                    {
-                        Baseline = current.Baseline with { GlamourerState = null },
-                        DesignOwned = false,
-                        DesignName = null,
-                        DesignActorName = null,
-                    };
-            }
-            else if (current.Baseline.GlamourerState is { } state)
-            {
-                var restored = _glamourer.RestoreGlamourerState(actor, state);
-                if (restored.Success)
-                    current = current with
-                    {
-                        Baseline = current.Baseline with { GlamourerState = null },
-                        DesignOwned = false,
-                        DesignName = null,
-                        DesignActorName = null,
-                    };
-                else
-                    failures.Add(restored.Detail!);
-            }
-        }
-
-        // Collection: restore the assignment-vs-inheritance distinction.
-        if (current.CollectionOwned)
-        {
-            if (!resolvable)
-            {
-                current = current with
-                {
-                    Baseline = current.Baseline with { Collection = null },
-                    CollectionOwned = false,
-                    CollectionName = null,
-                };
-            }
-            else if (current.Baseline.Collection is { } baseline)
-            {
-                var restored = _penumbra.RestoreCollection(actor, baseline);
-                if (restored.Success)
-                {
-                    touchedNative = true;
-                    current = current with
-                    {
-                        Baseline = current.Baseline with { Collection = null },
-                        CollectionOwned = false,
-                        CollectionName = null,
-                    };
-                }
-                else
-                {
-                    failures.Add(restored.Detail!);
-                }
-            }
-        }
-
-        if (touchedNative && resolvable)
+        if (redrawNeeded)
         {
             var redraw = _penumbra.RequestRedraw(actor);
             if (!redraw.Success)
@@ -165,9 +148,7 @@ public sealed class IntegrationReset : IDisposable
 
         _ownership.Mutate(actor, current);
 
-        // A teardown that left the extracted directory owned pending a
-        // redraw gets its bounded release barrier now, if the transaction
-        // slot is free.
+        // Finish any file cleanup that needs to wait for the actor to redraw.
         _mcdf.ScheduleDirectoryReleaseIfPending(actor);
 
         return failures.Count == 0
@@ -193,8 +174,10 @@ public sealed class IntegrationReset : IDisposable
             : IntegrationResult.Fail(string.Join(" | ", failures));
     }
 
-    /// <summary>Restores-or-releases every owned actor that left the exact
-    /// scene — a replaced generation never receives the old capture.</summary>
+    /// <summary>
+    /// Cleans up appearance for actors that left the scene. Actor IDs include
+    /// their generation, so a replacement actor does not receive the old state.
+    /// </summary>
     public void Reconcile(SceneSnapshot snapshot)
     {
         var present = new HashSet<ActorId>(snapshot.Actors.Select(actor => actor.Id));
@@ -204,25 +187,9 @@ public sealed class IntegrationReset : IDisposable
     }
 
     /// <summary>
-    /// Unload is an exit edge, not merely a shutdown. The active MCDF task
-    /// drains first — admission closes permanently and the task is joined
-    /// inside its bound — and only then is COMMITTED ownership torn down,
-    /// so no imported character file can survive the plugin going away.
-    /// The drain must precede the teardown: a still-running import would
-    /// otherwise re-register ownership behind it.
-    ///
-    /// This repeats what the scene lifecycle's own exit reset already does
-    /// and is deliberately idempotent, because that reset runs through a
-    /// BOUNDED framework hop that a dead pump can abandon. Created after
-    /// the integration ports in composition, so container disposal runs this
-    /// BEFORE the ports and providers tear down.
-    ///
-    /// Disposal off the framework thread writes NOTHING rather than writing
-    /// unsafely, and says so: <see cref="IIntegrationResolutionPort.IsResolvable"/>
-    /// answers false off that thread, and the by-name fallbacks refuse on the
-    /// same check, so the teardown degrades to bookkeeping and its failures
-    /// stay owned as evidence. Dalamud disposes plugins ON the framework
-    /// thread, which is why the real path still releases.
+    /// Cancels MCDF work and waits up to its disposal timeout, then attempts to reset
+    /// all recorded appearance changes. The timeout does not prove the worker stopped;
+    /// provider and file cleanup can still fail.
     /// </summary>
     public void Dispose()
     {

@@ -11,42 +11,11 @@ using Poser.Domain.Presentation;
 namespace Poser.Game.Overlays;
 
 /// <summary>
-/// The three node shapes, built from the game's OWN texture sheets.
-///
-/// <para>Every coordinate, offset and colour here is transcribed from Ktisis's
-/// KamiToolKit node layer — <c>Ktisis/Interface/KTK/TalkNode.cs</c>,
-/// <c>BalloonNode.cs</c> and <c>StatusNode.cs</c> — because they are not
-/// arbitrary: they are the atlas rows the game itself draws these panels
-/// from, and a number changed here draws the wrong strip of somebody else's
-/// widget.</para>
-///
-/// <para>All three sit on <see cref="OverlayLayer.BehindUserInterface"/> and
-/// opt OUT of both auto-hides: a staged dialogue box is scene furniture, so it
-/// must survive the game hiding its own HUD and must survive the UI being
-/// toggled off for a screenshot — which is exactly when it is wanted.</para>
-///
-/// <para>Each node reads ONE document. A field is never written on its own:
-/// <see cref="OverlayShapeNode.State"/> is assigned whole and the node
-/// re-states itself on its next update, which is what keeps the handle's
-/// document and the drawn node the same thing.</para>
-///
-/// <para>THE DRAG SURFACE. The library's move mode hangs an edit overlay off
-/// the node sized <c>Size + 32</c> and that overlay IS the grab region
-/// (<c>KamiToolKit/NodeBase/NodeBase.Edit.cs</c>: <c>EnableEditMode</c>, and
-/// the <c>MouseDown</c> arm that begins a move on its collision). A node whose
-/// children are sized but which never sizes ITSELF is 0×0, so the grab region
-/// is the 32px margin alone — a stamp in the corner of a dialogue plate.
-/// Ktisis leaves it there; Poser states the drawn extent, so the whole face of
-/// the node is the handle. The size is set in the constructor because the edit
-/// overlay is minted the first time move mode goes on and keeps the size it
-/// was minted with.</para>
-///
-/// <para>THE WRITE-BACK. A drag moves the NATIVE node, and nothing upstream
-/// hears about it: the handle's document still says where the node used to be,
-/// so the next write of ANY field — the drag toggle going off, a rename, a
-/// scale — re-states that stale position and the node snaps home. The
-/// library's own move-complete callback is the seam that closes it, and it is
-/// raised on the framework thread the whole port already runs on.</para>
+/// Dialogue, chat-bubble, and status overlays built from native UI texture atlases.
+/// Atlas coordinates follow Ktisis's TalkNode, BalloonNode, and StatusNode layouts.
+/// These staged elements remain visible when the game HUD is hidden.
+/// The node size is set before move mode creates its drag region. Completed drags
+/// update State and notify the port, so later edits retain the new position.
 /// </summary>
 internal abstract class OverlayShapeNode : OverlayNode
 {

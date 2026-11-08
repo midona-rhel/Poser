@@ -6,27 +6,26 @@ using Poser.Game.Entities;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The ONE pre-delete cleanup every actor removal runs — a scene clear, a
-/// scene load's rollback and undo, and the removal of an adopted actor — while
-/// the actor still exists to release things against. Brio's
+/// Pre-delete cleanup shared by scene clear, rollback, undo, and adopted-actor
+/// removal. It runs while the actor still exists. Brio's
 /// <c>CleanObject</c> semantics: Brio releases look-at and reverts the
 /// character handler before the native delete
 /// (<c>Brio/Game/Actor/ActorSpawnService.cs:245-256</c>, called at
 /// <c>:203</c> — before <c>DeleteObjectByIndex</c> at <c>:208</c>).
 ///
-/// <para>The actor's own GAZE is released so Poser stops driving channels on a
-/// body that is about to go. Its APPEARANCE is reverted through the ordinary
+/// <para>The actor's gaze is released before removal. Its appearance is
+/// reverted through the ordinary
 /// integration teardown, which releases MCDF ownership, the temporary
 /// collection, the Glamourer design and the Customize+ profile — rather than
 /// leaving them to be reconciled later by name.</para>
 ///
 /// <para>Brio also scrubs the removed object out of every other actor's
-/// look-at; Poser deliberately does not. An Entity gaze target is kept BY ID
+/// look-at; Poser deliberately does not. An entity gaze target is kept by id
 /// and marked stale (<c>GazeService.TargetStale</c>), so a target that leaves
 /// is refused by name on reapply instead of the user's intent being deleted.
 /// </para>
 ///
-/// <para>A cleanup that fails is NAMED through <paramref name="refuse"/>; the
+/// <para>A cleanup failure is reported through <paramref name="refuse"/>; the
 /// removal still proceeds.</para>
 /// </summary>
 internal static class ActorRemovalCleanup

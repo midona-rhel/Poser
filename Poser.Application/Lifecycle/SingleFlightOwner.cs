@@ -3,9 +3,7 @@ using Poser.Domain.Operations;
 
 namespace Poser.Application.Lifecycle;
 
-/// <summary>What every single-flight operation carries: the receipt identity
-/// it was admitted under and the two flags publication and the per-phase
-/// guards read.</summary>
+/// <summary>Shared state for an operation that may be cancelled or invalidated.</summary>
 internal abstract class SingleFlightOperation
 {
     public required Guid OperationId { get; init; }
@@ -17,14 +15,10 @@ internal abstract class SingleFlightOperation
 }
 
 /// <summary>
-/// The single-flight slot an owner runs its operations in: one operation at a
-/// time, an owner-local epoch, Pending-to-terminal receipts, late-completion
-/// armor on publication, and the bounded cancel/drain before disposal.
-///
-/// <para>Publication is refused for anything but the CURRENT operation, and a
-/// terminal publishes exactly once: a late completion can neither overwrite a
-/// newer operation's read models nor its own terminal. The owner decides its
-/// own admission refusals and what its operations do.</para>
+/// Tracks an operation's task, cancellation, progress, and result.
+/// Callers must check Busy and Closed before admitting work; Admit does not
+/// enforce either. Updates from a replaced operation are ignored, and its
+/// final result can be published only once.
 /// </summary>
 internal sealed class SingleFlightOwner<TOperation, TProgress>
     where TOperation : SingleFlightOperation
@@ -33,9 +27,8 @@ internal sealed class SingleFlightOwner<TOperation, TProgress>
     private readonly object _gate = new();
     private readonly Func<TOperation, TProgress, TProgress>? _shapeStep;
 
-    /// <summary>Cancelled only by <see cref="Drain"/> and deliberately never
-    /// disposed: a task the drain abandoned after its bounded join still reads
-    /// its token, and a timer-less source holds nothing worth releasing.</summary>
+    /// <summary>Cancelled by Drain. Kept alive because a task can still read
+    /// its token after the timed wait returns.</summary>
     private readonly CancellationTokenSource _disposal = new();
 
     private TProgress? _progress;
@@ -45,14 +38,13 @@ internal sealed class SingleFlightOwner<TOperation, TProgress>
     private TOperation? _current;
     private OperationEpoch _epoch;
 
-    /// <param name="shapeStep">Rewrites a non-terminal step under the
-    /// publication gate, for an owner whose steps depend on state another
-    /// thread sets under that gate.</param>
+    /// <param name="shapeStep">Optionally adjusts progress while holding the
+    /// same lock used for publication.</param>
     public SingleFlightOwner(Func<TOperation, TProgress, TProgress>? shapeStep = null) =>
         _shapeStep = shapeStep;
 
-    /// <summary>Raised after every publication. Observer failures never
-    /// poison the operation.</summary>
+    /// <summary>Notifies observers of published changes. Exceptions from
+    /// observers are caught by RaiseChanged.</summary>
     public event Action? Changed;
 
     public TProgress? Progress => _progress;
@@ -64,7 +56,7 @@ internal sealed class SingleFlightOwner<TOperation, TProgress>
     /// <summary>The running task's join handle; completed when idle.</summary>
     public Task Completion => _task ?? Task.CompletedTask;
 
-    /// <summary>Admission is closed for good.</summary>
+    /// <summary>Whether the caller has marked this owner closed to new work.</summary>
     public bool Closed { get; private set; }
 
     /// <summary>Cancelled at drain. Waits that must outlive a user cancel —
@@ -150,7 +142,7 @@ internal sealed class SingleFlightOwner<TOperation, TProgress>
         }
         catch
         {
-            // Observer failures never poison the transaction.
+            // A failed observer must not turn a completed operation into a failure.
         }
     }
 
@@ -164,11 +156,10 @@ internal sealed class SingleFlightOwner<TOperation, TProgress>
     }
 
     /// <summary>
-    /// Bounded cancel/drain: the operation's token and the disposal token
-    /// cancel, and the task is joined inside <paramref name="bound"/>. The
-    /// join is bounded because a task parked on a framework hop cannot finish
-    /// while disposal holds the framework thread; an abandoned task cannot
-    /// mutate anything — every phase re-guards on the cancelled token.
+    /// Cancels the current operation and waits up to
+    /// <paramref name="bound"/>. Returning after the timeout does not prove the
+    /// task has stopped; operation code must check cancellation before each
+    /// later mutation.
     /// </summary>
     public void Drain(TimeSpan bound)
     {
@@ -180,8 +171,8 @@ internal sealed class SingleFlightOwner<TOperation, TProgress>
         }
         catch (AggregateException)
         {
-            // A cancelled or faulted task is a completed drain; its
-            // failure evidence already published through its own path.
+            // The task completed by cancellation or failure. Its workflow
+            // is responsible for recording the result.
         }
     }
 }

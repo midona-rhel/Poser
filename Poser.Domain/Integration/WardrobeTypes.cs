@@ -29,8 +29,9 @@ public enum MetaSwitch : byte
     WeaponVisible = 0x08,
 }
 
-/// <summary>One equippable item from the sheet, with the model ids the
-/// game draws it by.</summary>
+/// <summary>
+/// An item's display information and the model identifiers used to render it.
+/// </summary>
 public sealed record WardrobeItem(
     uint Id, string Name, uint Icon, byte DyeCount,
     ushort Model, ushort WeaponType, byte Variant);
@@ -57,11 +58,9 @@ public sealed record WardrobeState(
 }
 
 /// <summary>
-/// Glamourer's item id space, as its resolver reads it: a sheet row id;
-/// zero for nothing; a sentinel just under the 32-bit ceiling for
-/// nothing-per-slot and smallclothes-per-slot; and above the 32-bit
-/// ceiling a CUSTOM id that packs raw model ids — model, weapon type,
-/// variant — which is how a slot wears what no item names.
+/// Encodes Glamourer item IDs. Ordinary items use game-table row IDs.
+/// Special values near uint.MaxValue represent empty slots and smallclothes.
+/// Custom IDs pack a model, weapon type, and variant without requiring an item row.
 /// </summary>
 public static class WardrobeIds
 {
@@ -96,11 +95,12 @@ public static class WardrobeIds
     public static (ushort Model, ushort WeaponType, byte Variant) Split(ulong id) =>
         ((ushort)id, (ushort)(id >> 16), (byte)(id >> 32));
 
-    /// <summary>The glasses slot's "nothing": zero, or a custom bonus id
-    /// whose model is zero.</summary>
+    /// <summary>
+    /// Treats zero or a custom ID with model zero as empty facewear.
+    /// </summary>
     public static bool IsNoFacewear(ulong id) => id == 0 || ((id & CustomFlag) != 0 && (ushort)id == 0);
 
-    // The outfits Brio offers, by their model ids.
+    // Model IDs for invisible equipment options.
     public static readonly ulong EmperorsBody = Custom(279, 0, 1);
     public static readonly ulong EmperorsAccessory = Custom(53, 0, 1);
     public static readonly ulong Invisible = Custom(6121, 0, 12);

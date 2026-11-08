@@ -8,9 +8,8 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// The per-actor <see cref="AnimationOverrides"/> the animation sub-sessions
-/// share, plus the facial-bake command suspension every mutating verb checks.
-/// An actor whose overrides become empty is forgotten.
+/// Animation overrides shared by the animation controllers. Mutate removes
+/// actors with no remaining overrides. CommandsSuspended pauses edits during face capture.
 /// </summary>
 internal sealed class AnimationOverrideStore
 {
@@ -19,7 +18,9 @@ internal sealed class AnimationOverrideStore
     /// <summary>Diagnostic tap for the pause/play path.</summary>
     public Action<string>? Trace { get; set; }
 
-    /// <summary>True while a multi-phase operation owns the actor's animation.</summary>
+    /// <summary>
+    /// Whether animation commands are temporarily blocked during face capture.
+    /// </summary>
     public bool CommandsSuspended { get; set; }
 
     public Outcome? Suspended() => CommandsSuspended

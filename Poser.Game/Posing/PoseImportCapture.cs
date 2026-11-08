@@ -21,36 +21,10 @@ using static Poser.Game.Posing.PoseImportPlanner;
 
 namespace Poser.Game.Posing;
 
-/// <summary>
-/// Applies a <see cref="PoseImportPlan"/> INSIDE the apply pass — Brio's
-/// interactive pose-file import (SkeletonPosingCapability.ImportSkeletonPose →
-/// PoseImporter.ApplyBone, Game/Posing/PoseImporter.cs:9-87), on the same
-/// transitive-action lifecycle as <see cref="IkBakeCapture"/>.
-///
-/// The mechanism is the point: each write's delta is diffed against
-/// <c>bone.LastRawTransform</c> exactly as the pass has just refreshed it —
-/// after the synchronous reset cleared the scope's stacks, and after every
-/// parent already written in this same pass has moved this bone. A basis read
-/// on any earlier tick (the replaced ImportEdit path) predates those parent
-/// deltas, so children double-move under propagation. Partial-component
-/// imports mask the DELTA (Brio PoseImporter.cs:35 → PoseInfo.Apply's applyTo,
-/// PoseInfo.cs:108 calc.Filter), so an excluded component contributes nothing
-/// instead of pinning the bone to a stale absolute.
-///
-/// One pass is not the whole story for faces. File data is exported from
-/// <c>bone.LastRawTransform</c> AFTER the update phase's post-reparent
-/// refresh (PoseFileService.cs:74, BonePosingService STEP 4; Brio
-/// SkeletonService.cs:243), while the pass's mid-pass basis is PRE-reparent;
-/// for bones of a non-zero partial the two spaces differ by the head's
-/// posed-vs-animated delta, so the first diff lands the face wrong in both
-/// tools. Brio converges by scheduling Snapshot at +4 ticks after its import
-/// (PosingCapability.cs:249-250), which runs ReconcileHead (:316-317,
-/// :323-352) into ReconcileChildren("j_kao", false) (:370-401): re-export
-/// the j_kao subtree from the now POST-reparent LastRawTransform (:385) and
-/// re-import it in-pass with TransformComponents.All (:380). This engine
-/// ports that as a second one-shot transitive batch between the apply pass
-/// and completion; the single history entry covers the CONVERGED state.
-/// </summary>
+/// <summary>Schedules pose-file writes inside the native apply pass, using each
+/// bone's current basis after parent edits. Face imports can restore the head,
+/// reconcile attached partials, and flatten the result before recording history.
+/// Failure attempts rollback and reports any incomplete recovery.</summary>
 public sealed class PoseImportCapture : IDisposable
 {
     /// <summary>Framework ticks a registered batch is given to reach a pass
@@ -95,8 +69,8 @@ public sealed class PoseImportCapture : IDisposable
     private int _disposed;
 
     /// <summary>Raised once for each accepted operation's terminal receipt.
-    /// Delivery is framework-thread-only and synchronous refusals publish
-    /// nothing.</summary>
+    /// Normal completion runs on the framework thread. Host teardown and
+    /// off-thread disposal publish on their calling thread.</summary>
     public event Action<OperationReceipt>? ReceiptPublished
     {
         add => _terminal.ReceiptPublished += value;
@@ -133,13 +107,10 @@ public sealed class PoseImportCapture : IDisposable
         _scene.SceneChanged += OnSceneChanged;
     }
 
-    /// <summary>Whether an import is armed and has not finished: true from
-    /// registration until the pass has executed the actions AND the history
-    /// entry has been appended (or the whole edit rolled back).</summary>
+    /// <summary>Whether an operation still owns the pending slot.</summary>
     public bool IsPending => Volatile.Read(ref _pending) != null;
 
-    /// <summary>The transient refusals of <see cref="Reserve"/>: a caller that
-    /// waits these out instead of spending its attempt gets admitted.</summary>
+    /// <summary>Busy conditions callers may wait out before retrying admission.</summary>
     public bool AdmissionBusy =>
         IsPending || _ikBake.IsPending || _gestures.ActiveGesture != null;
 
@@ -169,15 +140,8 @@ public sealed class PoseImportCapture : IDisposable
         };
     }
 
-    /// <summary>
-    /// Arms one plan, on one tick: capture every affected target, apply the
-    /// reset scope and the model transform synchronously, register the
-    /// per-bone file writes for the next pass. Ok means the import is armed
-    /// and its actions are queued — an in-pass failure rolls the whole edit
-    /// back and logs, it does not reach this return value.
-    /// </summary>
-    /// <summary>Reserve-and-begin in one call. The plan is name-keyed and
-    /// names no actor, so the target is stated explicitly.</summary>
+    /// <summary>Reserves the actor and begins the name-keyed plan in one call.
+    /// A successful return accepts deferred work; the receipt reports completion.</summary>
     public GestureResult Begin(
         IActor actor,
         PoseImportPlan plan,
@@ -559,20 +523,9 @@ public sealed class PoseImportCapture : IDisposable
         Complete(generation);
     }
 
-    /// <summary>
-    /// Brio's <c>Reconcile(reset: true)</c> (PosingCapability.cs:417-429),
-    /// the expression chain's final stage: export the ENTIRE current pose
-    /// (GeneratePoseData — per-slot post-reparent absolutes), clear every
-    /// interactive stack (Reset), and re-import the export whole with every
-    /// component. Whatever the head dance left behind is erased; the final
-    /// state is one clean absolute re-expression of what is on screen.
-    /// Brio's nested second round (Reset's own Snapshot → Reconcile(false))
-    /// re-imports the same absolutes WITHOUT a reset, so every delta
-    /// rejects as near-identity — one round is the entire effect. The model
-    /// transform is skipped: Brio resets it and re-applies the exported
-    /// difference onto the reset original, a net no-op an expression never
-    /// disturbs.
-    /// </summary>
+    /// <summary>Exports the current pose, clears interactive layers in the plan's
+    /// scope, and schedules its re-import. Named service layers remain active.
+    /// This follows Brio's final expression-import flatten stage.</summary>
     private void BeginFlatten(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
@@ -795,12 +748,8 @@ public sealed class PoseImportCapture : IDisposable
         }
     }
 
-    /// <summary>
-    /// The framework-thread half: by now the pass has run the actions and
-    /// every imported stack is in place. Capture the after-states of what
-    /// actually changed and append ONE history entry — or, on any failure,
-    /// restore every captured target and append nothing.
-    /// </summary>
+    /// <summary>Checks batch outcomes, corrects driven bones and records history.
+    /// Failures attempt rollback and publish the resulting recovery status.</summary>
     private void Complete(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
@@ -945,8 +894,8 @@ public sealed class PoseImportCapture : IDisposable
         };
     }
 
-    /// <summary>Thread-safe host fallback used before session/provider teardown
-    /// when framework dispatch could not run the ordinary drain.</summary>
+    /// <summary>Host fallback when framework dispatch cannot run the drain.
+    /// The host must stop competing callbacks before this off-thread cleanup.</summary>
     public void InvalidateForHostTeardown(
         string detail = "Pose import invalidated before host teardown; recovery was not attempted.")
     {
@@ -973,9 +922,8 @@ public sealed class PoseImportCapture : IDisposable
             Volatile.Write(ref _pending, null);
     }
 
-    /// <summary>A pending import never outlives the session: its registered
-    /// actions die with the posing interval and the completion it was
-    /// waiting for is dropped.</summary>
+    /// <summary>Invalidates pending work and publishes a terminal receipt.
+    /// Only framework-thread disposal attempts rollback.</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

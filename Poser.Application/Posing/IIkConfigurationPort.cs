@@ -16,17 +16,13 @@ public readonly record struct IkChainSummary(
     IReadOnlyList<string> Bones);
 
 /// <summary>
-/// The ONE stable-id path the UI uses to read and write per-chain IK
-/// configuration. Implemented by the game runtime; the UI never exchanges
-/// retained entities, and configuration changes are rejected while a
-/// transform gesture is active. FABRIK endpoint controls use the same journal
-/// and are restored by the scene workflow after target entities are bound.
+/// Reads and writes per-chain IK configuration using exact target IDs.
+/// The game runtime resolves those IDs and rejects configuration changes
+/// while a transform gesture is active.
 /// </summary>
 public interface IIkConfigurationPort
 {
-    /// <summary>Whether IK can be armed on the target at all: a declared arm
-    /// or leg endpoint, or — Brio's rule — any resolvable bone with a parent
-    /// for CCD to bend.</summary>
+    /// <summary>Whether the target supports an IK chain.</summary>
     bool IsSupported(TransformTargetId target);
 
     /// <summary>Every configured chain on the skeleton, armed or not.</summary>

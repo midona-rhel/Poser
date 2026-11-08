@@ -14,16 +14,9 @@ using Poser.Application.Appearance;
 namespace Poser.Game.Integration;
 
 /// <summary>
-/// Hides an actor's skin, hair and eyes so only the clothing remains —
-/// Ktisis' invisible-skin mechanism, verified against its source
-/// (PenumbraIpcProvider.AssignInvisibleSkin + McdfManager.SetInvisibleSkin):
-/// a temporary Penumbra mod on the actor's EFFECTIVE collection remaps
-/// every known skin material to one bundled invisible material, a redraw
-/// bakes it into the drawn body, the hair/face/tail model slots are then
-/// nulled natively, and the temporary mod is removed again — the
-/// collection is only dirty for the redraw's duration, so nothing else
-/// sharing it keeps the change. The drawn body holds the state until its
-/// next redraw, which is therefore the restore.
+/// Temporarily remaps skin materials in the actor's effective Penumbra collection,
+/// redraws the actor, then removes its hair, face, and tail model slots.
+/// Cleanup requests removal of the temporary mod; the next redraw restores the body.
 /// </summary>
 public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
 {
@@ -57,11 +50,19 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
         return true;
     }
 
+    public void Reconcile(Func<ActorId, bool> isCurrent)
+    {
+        foreach (var actor in new List<ActorId>(_appliedBodies.Keys))
+            if (!isCurrent(actor))
+                _appliedBodies.Remove(actor);
+    }
+
     public bool IsApplied(ActorId actor)
     {
-        foreach (var key in new List<ActorId>(_appliedBodies.Keys))
-            if (!StillApplied(key, _appliedBodies[key])) _appliedBodies.Remove(key);
-        return _appliedBodies.ContainsKey(actor);
+        if (!_appliedBodies.TryGetValue(actor, out var body)) return false;
+        if (StillApplied(actor, body)) return true;
+        _appliedBodies.Remove(actor);
+        return false;
     }
 
     public InvisibleSkinService(
@@ -118,9 +119,8 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
         if (!added.Success)
             return added.Detail;
 
-        // The redraw is what bakes the remapped materials into the drawn
-        // body; the temporary mod is removed again afterwards WHATEVER
-        // happened, so the collection never stays dirty.
+        // Redraw loads the remapped materials. Remove the collection override even
+        // when the actor disappears or the redraw is cancelled.
         try
         {
             var redraw = await _port.RedrawAndWait(
@@ -136,8 +136,10 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
         }
         finally
         {
-            await _framework.RunOnFrameworkThread(
+            var cleanup = await _framework.RunOnFrameworkThread(
                 () => _port.RemoveInvisibleSkinMods(collection.Value)).ConfigureAwait(false);
+            if (!cleanup.Success)
+                throw new InvalidOperationException($"Clothing-only material cleanup failed: {cleanup.Detail}");
         }
     }
 
@@ -145,7 +147,7 @@ public sealed class InvisibleSkinService : IClothingOnlyRuntimePort
     /// body — the material remap covers the body skin; these three carry
     /// the hair, the face (eyes included) and the tail. Ktisis'
     /// SetInvisibleSkin's slot selection. Framework thread only, and only on a
-    /// GPose copy — the native-write gate every other write honors.</summary>
+    /// actor in the GPose object-table range.</summary>
     private unsafe bool StripHeadModels(ActorId actor)
     {
         var resolved = _bindings.Value.Resolve(actor);

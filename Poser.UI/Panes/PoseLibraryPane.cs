@@ -10,7 +10,6 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility;
 using Poser.Application.Integration;
 using Poser.Application.Transforms;
 using Poser.Domain.Operations;
@@ -21,7 +20,6 @@ using Poser.Domain.Integration;
 using Poser.UI.Views;
 using Poser.UI.Widgets;
 using Poser.Domain.Library;
-using Poser.Documents.AutoSave;
 using Poser.Documents.Files;
 using Poser.Application.AutoSave;
 using Poser.Application.Library;
@@ -42,17 +40,6 @@ public sealed partial class PoseLibraryPane
     /// same tile: a second apply of the SAME tile is swallowed rather than
     /// importing twice.</summary>
     private const double ReactivationSwallow = 0.35;
-
-    /// <summary>Logical pixels between reflows while the workspace is being
-    /// resized.</summary>
-    private const float ResizeStep = 32f;
-
-    /// <summary>Hysteresis on BOTH edges of stepping: consecutive frames the
-    /// size must MOVE before stepping engages, and consecutive frames it must
-    /// HOLD before the exact size is adopted. Pointer deltas arrive in
-    /// bursts, so a single delta-free frame mid-drag is not a release.
-    /// </summary>
-    private const int DragStreakFrames = 3;
 
     private const string AllKey = "##pose-library-all";
 
@@ -122,7 +109,6 @@ public sealed partial class PoseLibraryPane
     private readonly ISceneWorkflow _scenes;
 
 
-    private readonly ObjectPlacementPreferences _placement;
 
     private readonly LibraryDetailsPanel _details;
 
@@ -141,7 +127,6 @@ public sealed partial class PoseLibraryPane
 
     private readonly McdfTransaction _mcdf;
 
-    private readonly IAutoSaveService _autoSave;
 
     private readonly PoseFileInspectorSection _files;
 
@@ -166,12 +151,6 @@ public sealed partial class PoseLibraryPane
     private readonly HashSet<PoseLibraryEntryKind> _kindFilter =
         new(Enum.GetValues<PoseLibraryEntryKind>());
 
-    /// <summary>The action row's import components, one set per tab. SESSION
-    /// state like the FILES section's own toggles. The poses tab starts
-    /// rotation-only — the pose import default; the auto-save tab starts with
-    /// all three, because a restore reproduces what was saved. The MCDF tab
-    /// has no set: character files never travel the pose import pipeline.
-    /// </summary>
     /// <summary>Collapsed group keys. Session state, cleared on entry; poses
     /// and character files share a folder's key deliberately — it is the same
     /// folder either way.</summary>
@@ -215,8 +194,7 @@ public sealed partial class PoseLibraryPane
     /// decide which recovery verbs an entry qualifies for.</summary>
     private readonly List<PoseLibraryMetadataStatus> _tileStatus = [];
 
-    /// <summary>Each tile's entry kind, parallel to the tiles — the Objects
-    /// tab holds three kinds and its activation dispatches on this.</summary>
+    /// <summary>Entry kinds parallel to the tiles, used to choose their activation behavior.</summary>
     private readonly List<PoseLibraryEntryKind> _tileKinds = [];
 
     /// <summary>The snapshot revision the rows were built from. A type switch
@@ -240,22 +218,8 @@ public sealed partial class PoseLibraryPane
 
     private int _rangeEnd = -1;
 
-    // Resize stepping state (StepResize). Only the WIDTH is ever stepped, so
-    // the standing layout is a single X.
-    private Vector2 _handedSize;
-
-    private float _steppedX;
-
-    private float _layoutX;
-
-    private int _changedStreak;
-
-    private int _stillStreak;
-
-    private bool _stepping;
-
-    /// <summary>Whether the standing tiles were minted with extensions on
-    /// their labels; a Settings flip forces a remint.</summary>
+    /// <summary>Whether the current tiles were built with extensions on
+    /// their labels; changing Settings rebuilds them.</summary>
     private bool _builtExtensions;
 
     private int _lastAppliedTile = -1;
@@ -314,13 +278,6 @@ public sealed partial class PoseLibraryPane
 
     private string _deleteName = string.Empty;
 
-    /// <summary>The auto-save tab's minted recovery line and the observation
-    /// key it was minted from — one format per CHANGE, not per frame.</summary>
-    private string _autoStatusText = string.Empty;
-
-    private (DateTime? Updated, AutoSaveHealthStatus? Health,
-        AutoSaveTerminalStatus Terminal) _autoStatusKey;
-
     /// <summary>This pane's drive of the ONE shared preview: whose appearance,
     /// which file, which options, and the compare that re-poses it when any of
     /// the three moves.</summary>
@@ -355,18 +312,22 @@ public sealed partial class PoseLibraryPane
         SelectionSession selection,
         SceneSession scene,
         McdfTransaction mcdf,
-        IAutoSaveService autoSave,
         PropertiesContent properties,
         IPosePreview preview,
         ISceneWorkflow scenes,
-        ObjectPlacementPreferences placement,
         EnvironmentControl environment,
         UserNotices notices,
         ICharacterFiles characterFiles,
         Application.Library.ILibraryFileOperations fileOperations,
-        Application.Library.AutoSaveLibrary autoLibrary)
+        Application.Library.AutoSaveLibrary autoLibrary,
+        SceneLoadPreferences scenePreferences,
+        Application.World.IPlaceService place,
+        SceneAutoSaveService sceneAutoSave)
     {
         _autoLibrary = autoLibrary;
+        _scenePreferences = scenePreferences;
+        _place = place;
+        _sceneAutoSave = sceneAutoSave;
         _fileOperations = fileOperations;
         _metadataEditor = new(fileOperations, thumbs, notices);
         _characterFiles = characterFiles;
@@ -376,12 +337,10 @@ public sealed partial class PoseLibraryPane
         _imports = imports;
         _libraryScene = libraryScene;
         _scenes = scenes;
-        _placement = placement;
         _details = new(environment);
         _selection = selection;
         _scene = scene;
         _mcdf = mcdf;
-        _autoSave = autoSave;
         _files = properties.PoseFiles;
         _notices = notices;
         _previewBinder = new PosePreviewController(previewRuntime, capture);
@@ -417,7 +376,7 @@ public sealed partial class PoseLibraryPane
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {
-            if (_type == LibraryType.Scenes)
+            if (IsSceneTile(_vm.Selected))
             {
                 LoadScene(_vm.Selected);
                 return;
@@ -511,10 +470,7 @@ public sealed partial class PoseLibraryPane
         SyncStatus();
         SyncPreview();
 
-        // The grid reflows at resize steps; the bar rows track the live
-        // width through ChromeWidth so their clusters do not jump.
-        _vm.ChromeWidth = size.X;
-        PoseLibraryView.Draw(_vm, origin, StepResize(size));
+        PoseLibraryView.Draw(_vm, origin, size);
         DrawTileMenu();
         _renameModal.Draw();
         _metadataEditor.Draw();
@@ -524,10 +480,7 @@ public sealed partial class PoseLibraryPane
 
     // ── the tile menu ────────────────────────────────────────────────────
 
-    /// <summary>The footer's LEFT cluster: configuring sources belongs on
-    /// every tab (left-aligned, user rule), the Objects tab's placement
-    /// choice sits at the bottom where the spawn happens, and the status
-    /// stays last.</summary>
+    /// <summary>Shows Add source and scan status at the left of the footer.</summary>
     private void DrawFooterLead(ActionBarScope scope)
     {
         scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
@@ -536,10 +489,7 @@ public sealed partial class PoseLibraryPane
 
     // ── the objects inspector rail ───────────────────────────────────────
 
-    /// <summary>The modes on offer, positional against the dropdown. ALL
-    /// four, always (ruled 2026-08-31): an entry without a saved anchor no
-    /// longer refuses a relative mode — the load anchors on the content's
-    /// centroid, landing it on the current camera or actor.</summary>
+    /// <summary>Placement choices in the order shown in the dropdown.</summary>
     private readonly List<ObjectPlacementMode> _placementChoices = [];
 
     private readonly List<string> _placementChoiceLabels = [];
@@ -558,75 +508,34 @@ public sealed partial class PoseLibraryPane
         _placementChoiceLabels.Add(PlacementModeLabels[2]);
     }
 
-    /// <summary>What this spawn actually uses: the preference when the
-    /// entry can honour it, else as-saved — the same fallback the dropdown
-    /// displays, so the shown choice and the spawn can never disagree.
-    /// </summary>
-    private ObjectPlacementMode EffectiveMode() =>
-        _placementChoices.Contains(_placement.Mode)
-            ? _placement.Mode
-            : ObjectPlacementMode.AsSaved;
+    private readonly SceneLoadPreferences _scenePreferences;
+    private readonly Application.World.IPlaceService _place;
+    private readonly SceneAutoSaveService _sceneAutoSave;
+    private readonly Dictionary<string, uint> _sceneTerritories = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// The Objects tab's INSPECTOR rail — the same right column every other
-    /// library tab fills. One plain run of rows: where a load lands, then
-    /// what the selected entry IS — the properties a person recognizes it
-    /// by, never raw coordinates.
-    /// </summary>
+    private bool IsSceneTile(int index) => _type == LibraryType.Scenes ||
+        (_type == LibraryType.AutoSaves &&
+         (index >= 0 && index < _vm.Tiles.Count
+            ? _vm.Tiles[index].Id.EndsWith(SceneFile.Extension, StringComparison.OrdinalIgnoreCase)
+            : _vm.SelectedFolder < _legacyAutoSavesStart));
+
+    private ObjectPlacementMode EffectiveMode(int index = -1)
+    {
+        if (index < 0) index = _vm.Selected;
+        if (IsSceneTile(index) && index >= 0 && index < _vm.Tiles.Count)
+        {
+            var path = _vm.Tiles[index].Id;
+            return _scenePreferences.PlacementFor(path, _sceneTerritories.GetValueOrDefault(path),
+                _place.Current.TerritoryId, _config.Config.DefaultSpawnPlacement);
+        }
+        return _config.Config.DefaultSpawnPlacement;
+    }
+
     /// <summary>Per-tile stamps for the info rail, parallel to the tile
     /// list like the tag and author lists above.</summary>
     private readonly List<string> _tileModified = [];
 
     private readonly List<string> _tileContents = [];
-
-    /// <summary>
-    /// Resize stepping: a drag on the window edge reflows the pane only at
-    /// <see cref="ResizeStep"/> boundaries — per-pixel reflow of the grid
-    /// while dragging cost whole frames. Two constraints shape it. Only the
-    /// WIDTH is stepped: the width is what lays the grid's columns out, while
-    /// the height only moves the clipper — and stepping the height bounced
-    /// the footer block off the true bottom edge by up to a step, which read
-    /// as the footer flipping between one and two rows. And stepping engages
-    /// AND releases on a <see cref="DragStreakFrames"/> streak: pointer
-    /// deltas arrive in bursts, so releasing on the first delta-free frame
-    /// flapped the layout between the exact and the floored size for the
-    /// whole drag. A one-off change (entering the mode, a snapped window)
-    /// never engages and adopts the exact size immediately.
-    /// </summary>
-    private Vector2 StepResize(Vector2 size)
-    {
-        bool moved = size != _handedSize;
-        _handedSize = size;
-        if (moved)
-        {
-            _stillStreak = 0;
-            if (++_changedStreak >= DragStreakFrames)
-                _stepping = true;
-        }
-        else if (++_stillStreak >= DragStreakFrames)
-        {
-            _stepping = false;
-            _changedStreak = 0;
-        }
-
-        if (!_stepping)
-        {
-            _layoutX = size.X;
-            _steppedX = 0f;
-            return size;
-        }
-
-        float step = ResizeStep * ImGuiHelpers.GlobalScale;
-        float stepped = MathF.Floor(size.X / step) * step;
-        // Only cross a boundary; a sub-step wiggle keeps the standing layout
-        // as long as it still fits the handed rect.
-        if (stepped != _steppedX || _layoutX > size.X)
-        {
-            _steppedX = stepped;
-            _layoutX = MathF.Min(MathF.Max(stepped, 1f), size.X);
-        }
-        return new Vector2(_layoutX, size.Y);
-    }
 
     /// <summary>The workspace moved on. The decoded thumbnails are a cache of
     /// what was on screen, and the icon size is persisted here rather than on
@@ -689,12 +598,14 @@ public sealed partial class PoseLibraryPane
         _rangeEnd = -1;
     }
 
-    /// <summary>The active library type as an index (Poses/Auto-saves/MCDF).
+    /// <summary>The active LibraryType value as an index.
     /// The shell's tab strip states it while the mode is on.</summary>
     public int SelectedType => (int)_type;
+    public bool ShowsPosePreview => (_type is LibraryType.Poses or LibraryType.AutoSaves)
+        && !IsSceneTile(_vm.Selected);
 
     /// <summary>The selected tile's file path, or null — the library
-    /// window's footer and preview state their content off it.</summary>
+    /// window uses it to choose preview and details content.</summary>
     public string? SelectedPath
         => _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count
             ? _vm.Tiles[_vm.Selected].ThumbKey
@@ -955,15 +866,10 @@ public sealed partial class PoseLibraryPane
     }
 
     // ── the auto-save tab ────────────────────────────────────────────────
-    // Read straight off IAutoSaveService.RootDirectory — retention, naming and
-    // the write path all stay where they are; this only reads what the service
-    // left. The read is SPLIT from the mint: enumerating a cold root, stamping
-    // every file and formatting every string is disk work no frame may do, so
-    // a worker produces a detached result and the draw thread only writes rows.
+    // Scan backup files on a worker; drawing the library only consumes the results.
 
-    /// <summary>Resolves a tile's thumbnail. The view asks only for tiles that
-    /// carry one, and a shared wrap must be re-resolved each frame, so this is
-    /// a dictionary hit and nothing more.</summary>
+    /// <summary>Requests the current thumbnail handle and size from the cache.
+    /// A cache miss can queue decoding and returns no handle yet.</summary>
     private PoseThumbnail ResolveThumbnail(string path)
     {
         var handle = _thumbs.Get(path, out var size);

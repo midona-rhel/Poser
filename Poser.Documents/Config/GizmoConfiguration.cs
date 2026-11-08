@@ -1,9 +1,7 @@
 namespace Poser.Documents.Config;
 
 /// <summary>
-/// The world gizmo's own options: size, snapping, and whether the gizmo
-/// survives a fully hidden armature. Every default is the behaviour Poser
-/// already had.
+/// Controls gizmo size, snapping, scaling, and visibility.
 /// </summary>
 public class GizmoConfiguration
 {
@@ -14,14 +12,8 @@ public class GizmoConfiguration
     /// </summary>
     public float GizmoScale { get; set; } = 1.0f;
 
-    // ── snapping (Ktisis Gizmo.Manipulate / OverlayWindow.HandleShiftRaycast)
-
-    /// <summary>Ktisis' <c>AllowHoldSnap</c>: hold Ctrl and the gesture's TOTAL
-    /// delta quantises to <see cref="SnapRotationDegrees"/> /
-    /// <see cref="SnapLinearStep"/>; add Shift and both divide by ten. Ktisis
-    /// ships it on — Poser ships it off, because Ctrl already means "finer" and
-    /// silently adding quantisation to an existing chord is exactly the
-    /// surprise a stored config must not get.</summary>
+    /// <summary>Enables snapping while Ctrl is held. Rotation and linear changes
+    /// use the configured increments; holding Shift divides them by ten.</summary>
     public bool AllowHoldSnap { get; set; } = false;
 
     /// <summary>What scaling a multi-selection does: grow the members and
@@ -42,15 +34,13 @@ public class GizmoConfiguration
     public bool AllowRaySnap { get; set; } = false;
 
     /// <summary>
-    /// Brio's <c>GizmoStaysWhenAllBonesAreDisabled</c>. Poser's long-standing
-    /// behaviour IS Brio's ON state — a selection anchor alone is enough to
-    /// draw the gizmo — so this ships true and turning it off is what buys
-    /// Brio's other state: hiding the armature hides the gizmo with it.
+    /// Whether a selected bone keeps its gizmo when every bone in the
+    /// armature overlay is hidden.
     /// </summary>
     public bool KeepGizmoWhenBonesHidden { get; set; } = true;
 
-    /// <summary>The Universal tool's centre handle moves the target
-    /// instead of scaling it uniformly (ruled 2026-09-03: the user picks).</summary>
+    /// <summary>Whether the Universal tool's center handle translates instead
+    /// of applying uniform scale.</summary>
     public bool UniversalCenterTranslates { get; set; }
 
     /// <summary>Hides the bone gizmo whenever the armature overlay is not

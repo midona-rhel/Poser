@@ -2,9 +2,10 @@ using System.Collections.Generic;
 
 namespace Poser.Domain.Integration;
 
-/// <summary>Glamourer's customize keys, named as its state JSON names
-/// them. The game packs several of these into one byte (a flag in the
-/// high bit); Glamourer unpacks them, so every key is a plain value.</summary>
+/// <summary>
+/// Appearance field names used in Glamourer state JSON.
+/// Flags are separate fields, but their values retain the game's bit masks.
+/// </summary>
 public enum CustomizeKey
 {
     Race,
@@ -65,18 +66,20 @@ public sealed record CustomizeState(IReadOnlyDictionary<CustomizeKey, int> Value
     public int Value(CustomizeKey key) => Values.TryGetValue(key, out var value) ? value : 0;
 }
 
-/// <summary>One choice a feature offers: the value the game stores and
-/// the icon that shows it, zero when the choice has none.</summary>
+/// <summary>
+/// A stored appearance value and its icon ID; zero means no icon.
+/// </summary>
 public sealed record CustomizeOption(byte Value, uint Icon);
 
-/// <summary>A feature the character-making sheet offers a clan and
-/// gender: its game name and the choices it takes.</summary>
+/// <summary>
+/// An appearance option offered for a clan and gender, with its allowed choices.
+/// </summary>
 public sealed record CustomizeFeature(
     CustomizeKey Key, string Name, IReadOnlyList<CustomizeOption> Options, bool Icons);
 
-/// <summary>Everything the character-making sheet says for one clan and
-/// gender: the features, the seven facial-feature icons per face, and
-/// the skin and hair palettes that are theirs alone.</summary>
+/// <summary>
+/// Character-creation options and color palettes for one clan and gender.
+/// </summary>
 public sealed record CustomizeMenu(
     byte Clan,
     byte Gender,

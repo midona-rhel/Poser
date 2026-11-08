@@ -13,7 +13,8 @@ public class ActorBase : EntityBase, IActor
     public ActorKind ActorKind { get; }
 
     /// <summary>
-    /// Gets the current world transform of this actor.
+    /// Reads game-object position and yaw with unit scale. Use IPosingService
+    /// for the effective posed transform and for writes.
     /// </summary>
     public override Transform Transform
     {
@@ -40,7 +41,7 @@ public class ActorBase : EntityBase, IActor
     }
 
     /// <summary>
-    /// Returns true if this actor is a companion (minion, mount, pet).
+    /// Identifies companion, mount, and ornament actor kinds.
     /// </summary>
     public bool IsCompanion => ActorKind == ActorKind.Companion ||
                                ActorKind == ActorKind.Mount ||

@@ -31,7 +31,7 @@ internal sealed class LibraryMetadataEditor(
 
     /// <summary>Whether the file carried a preview image when the modal
     /// opened, and what the modal has decided to do about it. Both halves are
-    /// needed: the caption states what IS stored, and the edit states what
+    /// needed: the caption states what is stored, and the edit states what
     /// Save will write, which are different things until Save runs.</summary>
     private bool _metaHadImage;
 

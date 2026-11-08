@@ -22,10 +22,10 @@ public sealed record BeginTransformGesture(
     bool IsGroupTransform = false);
 
 /// <summary>
-/// Idempotent transform gesture, recovery, and patch-history coordinator.
-/// Public transitions run serialized on the Application/framework thread.
-/// The narrow guard rejects synchronous port-callback reentry; it is not a
-/// lock, scheduler, or cross-thread coordinator.
+/// Coordinates transform gestures, rollback recovery, and history entries.
+/// Callers serialize public transitions on the framework thread. The internal
+/// guard rejects synchronous reentry from a runtime callback; it does not make
+/// this class thread-safe.
 /// </summary>
 public sealed class TransformGestureService : IDisposable, IUndoRunner
 {
@@ -82,13 +82,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return new(false, active.GroupProposed ?? before);
     }
 
-    /// <summary>The point the running gesture rotates and scales ABOUT, frozen
-    /// at Begin. Published because a surface that draws a handle has to draw it
-    /// where the thing it moves has GOT to — under
-    /// <see cref="PivotMode.Centroid"/> and <see cref="PivotMode.Custom"/> the
-    /// primary orbits this point like every other target, so a handle echoing
-    /// the primary must orbit it too, and it must be THIS point rather than one
-    /// the surface derived again from live positions.</summary>
+    /// <summary>The pivot captured at Begin. Viewport handles use this same point
+    /// when displaying rotation or scaling around a centroid or custom pivot.</summary>
     public Vector3? ActivePivot => _active?.Pivot;
 
     /// <summary>
@@ -786,10 +781,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     private static bool IsHomogeneous(
         IReadOnlyList<TransformTargetId> targets)
     {
-        // Bones stay alone and per-skeleton: their pivot math lives in
-        // model space. Scene ENTITIES mix freely — the anonymous group —
-        // because every entity target captures and applies in world space
-        // through its own port.
+        // Bone targets must belong to one logical actor, but may span its slots.
+        // Other entity kinds may be mixed because their transforms use world space.
         var first = targets[0];
         if (targets.Any(target => target.Kind == TransformTargetKind.Bone))
             return targets.All(target =>

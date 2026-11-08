@@ -7,7 +7,7 @@ using Poser.Documents.Files;
 namespace Poser.Documents.Library;
 
 /// <summary>
-/// Finds an appearance package in the user's MCDF library BY ITS CONTENT,
+/// Finds an appearance package in the user's MCDF library by its content,
 /// never by its name or its path.
 ///
 /// <para>It is the seam a scene load uses when the document carries a
@@ -28,7 +28,7 @@ public interface IMcdfHashIndex
     /// holds no such package. A hash that is not a SHA-256 digest answers null
     /// without touching the disk.
     ///
-    /// <para>Hashing multi-megabyte packages is FILE work: callers run it off
+    /// <para>Hashing multi-megabyte packages is filesystem work: callers run it off
     /// the framework thread and hand it a token, and it stops at the first
     /// match rather than reading the whole library.</para>
     /// </summary>
@@ -38,13 +38,13 @@ public interface IMcdfHashIndex
 /// <summary>
 /// The production index over the configured MCDF home.
 ///
-/// <para>It hashes LAZILY — nothing is read until a scene load actually asks
+/// <para>It hashes lazily: nothing is read until a scene load actually asks
 /// for a checksum, and even then it stops at the first file that matches — and
 /// remembers each answer against the identity of the file it read it from:
 /// path, byte length and last-write time. Any of the three moving re-hashes
 /// that file, so a package replaced in place cannot serve its old digest.</para>
 ///
-/// <para>The cache is IN-MEMORY, for the session. The pose library keeps no
+/// <para>The cache exists only in memory for the current session. The pose library keeps no
 /// derived state on disk at all — it rescans — and a checksum cache is the
 /// same kind of fact as a scan: cheap to rebuild, wrong to persist past a
 /// build that might hash differently. Nothing here is eager; there is no

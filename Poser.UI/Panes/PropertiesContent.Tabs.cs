@@ -30,9 +30,8 @@ public sealed partial class PropertiesContent
     /// side is showing.</summary>
     public string ContentKind(SelectionId? primary)
     {
-        // ALWAYS the selected object's kind — the segment names what
-        // Target would show, whichever panel is active. A multiselect IS
-        // its own kind: the anonymous group.
+        // The segment names the selected object's kind. A multi-selection uses
+        // the anonymous-group label.
         if (global::Poser.Application.Selection.EntitySelection.IsMultiEntity(
                 _selection.Selected))
             return "Selection";
@@ -74,7 +73,7 @@ public sealed partial class PropertiesContent
             .CountEntities(_selection.Selected);
         if (entities >= 2)
         {
-            // A selection that IS a named group wears the group's name.
+            // A named group selection uses the group name.
             if (_groups.MatchingSelection(_selection.Selected) is { } group)
                 return group.Name;
             if (_multiTitleCount != entities)
@@ -97,8 +96,7 @@ public sealed partial class PropertiesContent
                     : "Poser",
             { Kind: SceneEntityKind.Environment } => "Environment",
             { Kind: SceneEntityKind.Light } => LightTitle(primary.Value),
-            // The titlebar says the THING's name — "Balloon 1", never the
-            // kind label (ruled 2026-08-31).
+            // Use the entity name rather than its kind label.
             { Kind: SceneEntityKind.Camera } =>
                 EntityTitle(primary.Value, "Camera"),
             { Kind: SceneEntityKind.Prop } =>
@@ -201,9 +199,8 @@ public sealed partial class PropertiesContent
     /// </summary>
     private ShellTab[] SyncStripAndTab(SelectionId? primary)
     {
-        // The ANONYMOUS GROUP first: two or more entities together answer
-        // with ONE Selection page, whatever their kinds — the multiselect
-        // is a group that was never created.
+        // Two or more selected entities use the Selection page regardless of
+        // their kinds.
         if (global::Poser.Application.Selection.EntitySelection.IsMultiEntity(
                 _selection.Selected))
         {
@@ -211,8 +208,7 @@ public sealed partial class PropertiesContent
             _activeTab = "Selection";
             return _multiselectTabs;
         }
-        // NOTHING selected: no strip and no tabs — the content side says
-        // so instead of showing an ownerless actor page.
+        // No selection has no strip or tabs.
         if (primary == null)
         {
             _activeStrip = "none";

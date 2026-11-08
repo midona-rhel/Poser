@@ -111,8 +111,8 @@ public sealed class EnvironmentHoldReleaseTests
         }
     }
 
-    /// <summary>Captures event subscriptions off the IClientState proxy so the
-    /// tests can raise TerritoryChanged/Logout exactly as Dalamud would.</summary>
+    /// <summary>Stores subscribed handlers so tests can invoke territory-change
+    /// and logout callbacks without running Dalamud.</summary>
     private sealed class ClientStateEvents
     {
         public Delegate? TerritoryChanged;

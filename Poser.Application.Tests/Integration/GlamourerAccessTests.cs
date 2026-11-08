@@ -10,7 +10,7 @@ namespace Poser.Application.Tests.Integration;
 public sealed class GlamourerAccessTests
 {
     [Fact]
-    public void History_restores_captured_appearance_and_collection_after_source_changes()
+    public async Task History_restores_captured_appearance_and_collection_after_source_changes()
     {
         var (session, port) = Create();
         var actor = ActorId.New();
@@ -19,7 +19,7 @@ public sealed class GlamourerAccessTests
         var saved = session.TryCaptureHistory(actor).Value!;
         port.StateResult = IntegrationValue<string>.Ok("{}");
         var replacement = ActorId.New();
-        Assert.True(session.RestoreHistory(replacement, saved).Success);
+        Assert.True((await session.RestoreHistoryAndWait(replacement, saved, () => true, CancellationToken.None)).Success);
         Assert.Equal(authored, port.AppliedState);
         Assert.Equal(replacement, port.AppliedActor);
         Assert.Contains(nameof(IIntegrationRuntimeFake.SetIndividualCollection), port.Calls);
@@ -30,7 +30,7 @@ public sealed class GlamourerAccessTests
     }
 
     [Fact]
-    public void Removal_capture_omits_an_unreadable_look_but_keeps_a_foreign_hold_refusal()
+    public async Task Removal_capture_omits_an_unreadable_look_but_keeps_a_foreign_hold_refusal()
     {
         var (session, port) = Create();
         var actor = ActorId.New();
@@ -41,7 +41,7 @@ public sealed class GlamourerAccessTests
         Assert.True(removal.Value!.LookOmitted);
         Assert.Null(removal.Value.StateJson);
         port.Access = _ => GlamourerAccess.Editable;
-        Assert.True(session.RestoreHistory(ActorId.New(), removal.Value).Success);
+        Assert.True((await session.RestoreHistoryAndWait(ActorId.New(), removal.Value, () => true, CancellationToken.None)).Success);
         Assert.DoesNotContain(nameof(IIntegrationRuntimeFake.ApplyGlamourerStateJson), port.Calls);
         port.Access = _ => GlamourerAccess.ForeignHeld;
         Assert.False(session.TryCaptureHistory(actor, omitUnreadableLook: true).Success);
@@ -68,6 +68,16 @@ public sealed class GlamourerAccessTests
         Assert.All(port.Calls, call => Assert.Equal(nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess), call));
         Assert.True(session.OpenGlamourer(actor).Success);
         Assert.False(session.OverridesFor(actor).HasAny);
+
+        port.Access = _ => GlamourerAccess.Editable;
+        port.StateResult = IntegrationValue<string>.Fail("Appearance unavailable");
+        Assert.False(session.SaveActorDesign(actor, "My design").Success);
+        Assert.Null(port.SavedDesign);
+        const string appearance = "{\"Customize\":{\"Hair\":17}}";
+        port.StateResult = IntegrationValue<string>.Ok(appearance);
+        Assert.True(session.SaveActorDesign(actor, "My design").Success);
+        Assert.Equal((appearance, "My design"), port.SavedDesign);
+
     }
 
     [Fact]
@@ -75,7 +85,11 @@ public sealed class GlamourerAccessTests
     {
         var (session, port) = Create();
         var actor = ActorId.New();
+        // Keep another appearance component alive so design reset cannot hide
+        // stale fields by removing the whole actor record.
+        Assert.True(session.ApplyBodyProfileJson(actor, "{}", "Body").Success);
         Assert.True(session.OwnLook(actor).Success);
+        Assert.Equal("Actor", session.OverridesFor(actor).DesignActorName);
         port.Access = _ => GlamourerAccess.ForeignHeld;
         AssertRefused(session.ResetDesign(actor));
         Assert.Equal("baseline", session.OverridesFor(actor).Baseline.GlamourerState);
@@ -83,6 +97,11 @@ public sealed class GlamourerAccessTests
         port.Access = _ => GlamourerAccess.Editable;
         Assert.True(session.ResetDesign(actor).Success);
         Assert.False(session.OverridesFor(actor).DesignOwned);
+        Assert.NotNull(session.OverridesFor(actor).TemporaryBodyProfile);
+        Assert.Null(session.OverridesFor(actor).DesignActorName);
+        port.ActorName = "Renamed actor";
+        Assert.True(session.OwnLook(actor).Success);
+        Assert.Equal("Renamed actor", session.OverridesFor(actor).DesignActorName);
         Assert.Contains(nameof(IIntegrationRuntimeFake.RestoreGlamourerState), port.Calls);
     }
 
@@ -107,18 +126,28 @@ public sealed class GlamourerAccessTests
     {
         public Func<ActorId, GlamourerAccess> Access = _ => GlamourerAccess.Editable;
         public IntegrationValue<string> StateResult = IntegrationValue<string>.Ok("{}");
+        public string ActorName = "Actor";
         public string? AppliedState;
+        public (string State, string Name)? SavedDesign;
         public ActorId? AppliedActor;
         public List<string> Calls { get; } = new();
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
+            if (method!.Name == nameof(IIntegrationRuntimeFake.OnFrameworkThread))
+            {
+                var value = ((Delegate)args![0]!).DynamicInvoke();
+                return typeof(Task).GetMethod(nameof(Task.FromResult))!
+                    .MakeGenericMethod(method.GetGenericArguments()[0]).Invoke(null, [value]);
+            }
             string name = method!.Name;
             Calls.Add(name);
             if (name is "get_CustomizePlus" or "get_Penumbra" or "get_Glamourer")
                 return new IntegrationAvailability(true, "Available");
-            if (name == nameof(IIntegrationRuntimeFake.ProbeBodyProfile))
-                return IntegrationValue<BodyProfileProbe>.Ok(new(null, false));
+            if (name == nameof(IIntegrationRuntimeFake.ApplyTemporaryBodyProfile))
+                return IntegrationValue<Guid>.Ok(Guid.NewGuid());
+            if (name == nameof(IIntegrationRuntimeFake.GetActiveSavedBodyProfile))
+                return IntegrationValue<Guid?>.Ok(null);
             if (name == nameof(IIntegrationRuntimeFake.ProbeGlamourerAccess))
                 return Access((ActorId)args![0]!);
             if (name == nameof(IIntegrationRuntimeFake.IsResolvable))
@@ -126,7 +155,7 @@ public sealed class GlamourerAccessTests
             if (name == nameof(IIntegrationRuntimeFake.CaptureGlamourerState))
                 return IntegrationValue<string>.Ok("baseline");
             if (name == nameof(IIntegrationRuntimeFake.GetActorName))
-                return IntegrationValue<string>.Ok("Actor");
+                return IntegrationValue<string>.Ok(ActorName);
             if (name == nameof(IIntegrationRuntimeFake.GetGlamourerStateJson))
                 return StateResult;
             if (name == nameof(IIntegrationRuntimeFake.GetCollectionAssignment))
@@ -137,7 +166,10 @@ public sealed class GlamourerAccessTests
                 AppliedState = (string)args[1]!;
             }
             if (name == nameof(IIntegrationRuntimeFake.AddDesign))
+            {
+                SavedDesign = ((string)args![0]!, (string)args[1]!);
                 return IntegrationValue<Guid>.Ok(Guid.NewGuid());
+            }
             if (method.ReturnType == typeof(IntegrationResult))
                 return IntegrationResult.Ok();
             throw new NotSupportedException(name);

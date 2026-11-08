@@ -86,13 +86,9 @@ public partial class MainWindow
     private Action? _openLibrary;
 
     /// <summary>
-    /// One row click, then one layout resync — after every change the click
-    /// makes, never between them. The strip a frame draws is a function of
-    /// the selection, so the mode exits below must not restate the layout on
-    /// their way out: they would resolve it against the outgoing selection
-    /// (the library clears it entirely) and settle the active tab onto that
-    /// strip's first tab, losing the prior tab before entering the
-    /// mode — the promise <see cref="BuildTabs"/> makes for the library.
+    /// Applies all selection and workspace changes before rebuilding the tabs.
+    /// Refreshing between those changes could choose a tab for the old selection
+    /// and lose the user's previous tab.
     /// </summary>
     private void OnRowClicked(ShellSidebarRow row)
     {
@@ -106,10 +102,8 @@ public partial class MainWindow
 
     private void ApplyRowClick(ShellSidebarRow row)
     {
-        // A reference picture is not in the scene, so there is nothing to
-        // select: the row's body raises its window instead, and shows it first
-        // if the eye had set it aside — a click that focuses something the
-        // hidden window would read as a no-op.
+        // Reference-image rows focus their window rather than select a scene entity.
+        // Show a hidden image first so the click has a visible result.
         if (row.Tag is ReferenceImageInstance clickedImage)
         {
             _referenceImages.SetHidden(clickedImage, false);

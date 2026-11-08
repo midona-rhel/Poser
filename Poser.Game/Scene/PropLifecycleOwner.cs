@@ -8,9 +8,7 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Game.Scene;
 
-/// <summary>What a prop entry has to put back: the model it was spawned from
-/// plus everything the user can change about it afterwards. Captured at the
-/// MOMENT OF REMOVAL, for the same reason a light's document is.</summary>
+/// <summary>Model, name, placement, and visibility saved when a prop is removed.</summary>
 internal readonly record struct PropState(
     string Name,
     PropModel Model,
@@ -18,13 +16,8 @@ internal readonly record struct PropState(
     bool Visible);
 
 /// <summary>
-/// The prop half of <see cref="SceneLifecycleHistory"/>. A spawned prop is a
-/// native graphics-scene object with no entity interface of its own — the
-/// scene runtime already names one by an opaque token for exactly that reason
-/// — so this states only the acts an entry performs on that token.
-/// <see cref="PropServiceLifecycle"/> is the sole production implementation;
-/// the indirection is what lets an entry's two directions be proven without
-/// the game.
+/// Operations needed to undo and redo prop creation and removal.
+/// The opaque token represents a native prop without exposing its handle here.
 /// </summary>
 internal interface IPropLifecycle
 {
@@ -80,9 +73,8 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
     }
 }
 
-/// <summary>The live prop token, plus the state that rebuilds it once the
-/// live one is gone. A prop's whole identity is its model triple, so —
-/// unlike an actor — a removal IS invertible and takes an entry.</summary>
+/// <summary>Tracks the current prop and the state saved when it was removed.
+/// Restoring creates a new native prop and binds it to this history slot.</summary>
 internal sealed class PropLifecycleSlot
 {
     public object? Live;
@@ -90,8 +82,8 @@ internal sealed class PropLifecycleSlot
     public bool HasDocument;
 }
 
-/// <summary>Owns prop lifecycle entries: spawn, clone and removal, each with
-/// its exact inverse, re-binding the slot to every instance a restore mints.</summary>
+/// <summary>Records prop creation, cloning, and removal in undo history,
+/// and updates the slot when restoration creates a replacement prop.</summary>
 internal sealed class PropLifecycleOwner
 {
     private readonly EditHistory _history;
@@ -138,9 +130,8 @@ internal sealed class PropLifecycleOwner
     }
 
     /// <summary>
-    /// A prop's clone is its model triple spawned again, standing where the
-    /// source stands and showing what the source shows, with the next name
-    /// in the source's series.
+    /// Creates the same model with the source's placement and visibility,
+    /// choosing the next available name in the source's series.
     /// </summary>
     public object? CloneProp(object source)
     {
@@ -176,8 +167,7 @@ internal sealed class PropLifecycleOwner
             return false;
         if (_props.IsLive(prop))
         {
-            // Captured HERE, not at spawn: a prop the user moved comes back
-            // where they left it.
+            // Save the latest edits so undo restores the state at removal.
             slot.Document = _props.Read(prop);
             slot.HasDocument = true;
             _props.Destroy(prop);

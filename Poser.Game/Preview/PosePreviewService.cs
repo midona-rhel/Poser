@@ -46,10 +46,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     private const float MinPanScale = 0.15f;
     private const float MaxPanScale = 2.0f;
 
-    /// <summary>Framework ticks a stage may wait on the preview body's skeleton
-    /// before the wait is STATED. About two seconds — long past the handful of
-    /// ticks a healthy bind takes, so the line only ever appears when something
-    /// is actually stuck.</summary>
+    /// <summary>Wait this many framework ticks before showing a readiness message.</summary>
     private const int SkeletonWaitTicks = 120;
 
     private readonly IFramework _framework;
@@ -98,21 +95,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     /// unresolvable is logged once rather than once per tick.</summary>
     private nint _refusedSource;
 
-    /// <summary>
-    /// The appearance source AS PROVEN on the framework thread: the address the
-    /// draw thread asked for, the object-table slot found to be holding it, and
-    /// that occupant's GameObjectId. Recorded ONCE, by searching the table for
-    /// the address (<see cref="ProveSource"/>) rather than by dereferencing it,
-    /// and thereafter only ever revalidated INDEX-FIRST
-    /// (<see cref="ProvenSourceStillStands"/>).
-    ///
-    /// <para>The identity has to be stored, not re-derived: an index taken FROM
-    /// the address under test proves only "this address is some live occupant",
-    /// which a recycled address at a DIFFERENT slot satisfies. The stored slot
-    /// plus the stored id is what makes the check say "still the same actor"
-    /// (WorldActorDiscovery.cs:77-86 stores the index, :270-274 pairs it with
-    /// the GameObjectId).</para>
-    /// </summary>
+    /// <summary>Source address, table slot and object id captured on the framework
+    /// thread. Later reads check the saved slot before using the source.</summary>
     private nint _provenSource;
     private ushort _provenIndex = ushort.MaxValue;
     private ulong _provenObjectId;
@@ -239,12 +223,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     public void ShowSequence(PosePreviewRequest first, PosePreviewRequest second) =>
         Request(first, second);
 
-    /// <summary>
-    /// The one door every statement goes through. A restatement of what already
-    /// stands is FREE — the binder restates every frame while the service warms
-    /// up — and identity is the same rule as before the sequence existed: the
-    /// key, and the options INSTANCE.
-    /// </summary>
+    /// <summary>Replaces the request unless both stage values compare equal.</summary>
     private void Request(PosePreviewRequest first, PosePreviewRequest? second)
     {
         lock (_gate)
@@ -298,19 +277,9 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         _zoomAccum += distanceDelta;
     });
 
-    /// <summary>
-    /// Framing — a DELTA in NATIVE world units, positive carrying the view DOWN
-    /// the body.
-    ///
-    /// The camera does not move: <c>CharaView.SetCameraXAndY</c> is a
-    /// <c>[VirtualFunction]</c> (slot 6) and the INSPECT view's vtable leaves it
-    /// a no-op — tested in game at 20 and at 75 with identical results, while
-    /// slots 4 and 5 (distance, yaw/pitch) on the same object work. That matches
-    /// the game itself: try-on and inspect rotate and zoom but never pan; only
-    /// CharaViewPortrait pans. So the preview BODY moves instead, opposite the
-    /// requested view travel — camera fixed, body offset, frame effectively
-    /// panned. This is Poser's own mechanism; no reference implements it.
-    /// </summary>
+    /// <summary>Pans by moving the preview body vertically, because the inspect
+    /// camera does not provide the required pan. Positive input moves the view
+    /// down the body. Zoom reduces or increases the movement scale.</summary>
     public void Pan(float viewDelta) => RunOnFramework(() =>
     {
         if (!_initialized)
@@ -342,7 +311,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     });
 
     /// <summary>Releases the CharaView and the auxiliary registration.
-    /// Idempotent and safe from any thread.</summary>
+    /// Native release is dispatched to the framework thread and is not awaited.</summary>
     public void Close()
     {
         _open = false;
@@ -424,17 +393,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         var source = sourceActor.Address;
         var named = sourceActor.Id;
 
-        // PROVE ONCE, then REVALIDATE EVERY TICK — both on this thread, where
-        // the object table is coherent. Stable identity resolution precedes
-        // the existing native slot proof; no draw-thread address is retained.
-        //
-        // Refusal is for THIS TICK ONLY and never touches the request: the
-        // standing request belongs to the draw thread, which restates it every
-        // frame from Open(). Clearing it here would start a refuse/re-arm loop
-        // that cannot terminate, and a refusal landing before the first
-        // successful copy would leave the CharaView with empty ModelData — no
-        // body ever spawns at slot 441, TryApplyPendingPose is never reached,
-        // and every stated pose is dropped in silence.
+        // Preserve the request while its source is unavailable. Check the table
+        // slot before copying; retry a refused source on later ticks.
         if (source != _provenSource && !ProveSource(source, named))
             return;
         _proveWaitTicks = 0;
@@ -461,17 +421,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         ClearPanBase();
     }
 
-    /// <summary>
-    /// Proves that <paramref name="source"/> is still the actor
-    /// <paramref name="named"/>, and records where it lives. TWO independent
-    /// accounts have to agree: the SCENE must still know that address as that
-    /// actor, and the object TABLE must have a slot holding it.
-    ///
-    /// <para>The table search is by ADDRESS (<c>GetObjectAddress</c> reads each
-    /// slot's own pointer), so the suspect pointer is never dereferenced to
-    /// find out where it lives — asking an address which slot it occupies is
-    /// asking the thing under test to vouch for itself.</para>
-    /// </summary>
+    /// <summary>Requires the actor list to associate this address with the named
+    /// actor, then records the matching object-table slot and object id.</summary>
     private bool ProveSource(nint source, EntityId named)
     {
         // Identity first, and off the SCENE rather than the table — a second,
@@ -509,11 +460,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         return false;
     }
 
-    /// <summary>A source that cannot be proven is WAITED on, never spent: it is
-    /// routinely a body still coming up. Logged once per source; the tick count
-    /// is what <see cref="OnFrameworkUpdate"/> turns into a spoken wait past the
-    /// same bound the skeleton wait uses, rather than staring back in
-    /// silence.</summary>
+    /// <summary>Counts source-readiness waits and logs each refused address once.</summary>
     private bool Unproven(nint source, string why)
     {
         if (_refusedSource != source)
@@ -527,14 +474,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         return false;
     }
 
-    /// <summary>
-    /// INDEX FIRST, always: read the slot that was recorded and ask whether it
-    /// still holds the recorded address AND the recorded actor. Deriving the
-    /// index from the address instead would prove only that the address is
-    /// SOME live occupant — a despawned source whose memory has been recycled
-    /// into a different actor at a different slot passes that test, which is no
-    /// test at all.
-    /// </summary>
+    /// <summary>Checks the saved slot, address and object id. These observations
+    /// cannot distinguish reuse with all three values unchanged.</summary>
     private bool ProvenSourceStillStands() =>
         _provenIndex != ushort.MaxValue
         && _objectTable[_provenIndex] is { } occupant
@@ -611,23 +552,9 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
             TryApplyPendingPose(previewAddress);
     }
 
-    /// <summary>
-    /// The pending sequence lands as soon as the preview body has an auxiliary
-    /// actor AND a stable binding — the import engine resolves every target
-    /// through the binding registry, whose refresh runs on its own cadence.
-    /// Until then the standing request is retried next tick, from whichever
-    /// stage it had reached.
-    ///
-    /// <para>ONE STAGE PER ARM: the engine takes a single import at a time, so
-    /// the second stage waits on the first through <see cref="IPoseImportCommands.
-    /// IsImportBusy"/> rather than failing against it. A stage that is REFUSED
-    /// (an unreadable file, nothing in scope) is spent all the same — retrying
-    /// it would re-read the file every tick forever — and the sequence moves
-    /// on, so a baseline that cannot be stood in still lets the file show.</para>
-    ///
-    /// <para>The serial is the supersession: a statement made mid-sequence
-    /// replaces both stages, and the counter restarts at the first.</para>
-    /// </summary>
+    /// <summary>Dispatches each stage once after actor, binding and skeleton
+    /// readiness. Waits while the import engine is busy. A synchronous refusal
+    /// consumes the stage; terminal import receipts are not observed here.</summary>
     private void TryApplyPendingPose(nint previewAddress)
     {
         PosePreviewRequest? first;
@@ -671,36 +598,14 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
                 break;
             }
         }
-        // The auxiliary actor and its STABLE BINDING, on the same bounded-
-        // silence terms as the skeleton wait below rather than a bare return:
-        // the binding is published by the scene refresh, and a refresh that
-        // cannot see the preview body arrive (it owns no scene descriptor by
-        // design) used to drop the candidate carrying it, so this gate held
-        // shut forever and every pose was dropped without a word behind a
-        // perfectly good render. The publication is fixed at its source
-        // (StableBindingRegistry.AuxiliaryBindingsChanged); this makes the WAIT
-        // audible, so the next variant of it cannot hide.
+        // Wait for the auxiliary actor and its published binding.
         if (actor == null || _bindings.GetActorId(actor) is not { } previewId)
         {
             if (++_skeletonWaitTicks > SkeletonWaitTicks)
                 _statusText = "Waiting for the preview body…";
             return;
         }
-        // …and its SKELETON, on the same terms. The auxiliary actor and its
-        // stable binding both exist several ticks before the CharaView body is
-        // skeleton-bound, so every first statement against a fresh body races
-        // it. An import dispatched inside that window plans nothing and comes
-        // back as the ordinary "nothing applies" refusal — indistinguishable
-        // from a file whose bones genuinely miss — and the stage is SPENT
-        // below, so the pose is dropped for good while the skeleton lands
-        // milliseconds later. Waiting is the only correct reading: readiness is
-        // not a verdict about the file.
-        //
-        // Bounded silence, never a refusal. The wait normally ends within a
-        // handful of ticks; past the bound something is genuinely stuck, and a
-        // preview that sits there saying nothing is the same failure in a new
-        // costume. The user is told it is WAITING — the standing render, if
-        // any, keeps showing meanwhile.
+        // Wait for the skeleton before spending this stage's import attempt.
         if (!_poses.HasPosableSkeleton(previewId))
         {
             if (++_skeletonWaitTicks > SkeletonWaitTicks)
@@ -736,20 +641,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         _appliedStage++;
     }
 
-    /// <summary>
-    /// Stands the preview body at its staged position plus the pan offset —
-    /// ABSOLUTE, never live-plus-delta: a write that reads back its own output
-    /// accumulates drift every frame, the same trap the orbit rotation fell
-    /// into. Re-asserted every tick after Update/Render, which is also the
-    /// answer to the CharaView restaging the body: whatever it staged this
-    /// frame is either the captured base or a fresh one.
-    ///
-    /// The body travels OPPOSITE the view — carrying the view DOWN the body
-    /// means lifting the body in front of a camera that cannot move.
-    ///
-    /// The write path is PosingService.ApplyTransformToActor's, verbatim:
-    /// the game object's draw object, <c>Object.Position</c>.
-    /// </summary>
+    /// <summary>Writes the captured base position plus pan, avoiding accumulated
+    /// drift. A new draw-object address causes the base to be captured again.</summary>
     private void ApplyViewPan()
     {
         var drawObject = ResolvePreviewDrawObject();
@@ -813,8 +706,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
         }
         catch (Exception ex)
         {
-            // An unreachable pump at shutdown: the CharaView dies with the
-            // process either way.
+            // Scheduling failed. The native release may remain unfinished.
             _log.Debug($"Pose preview could not reach the framework thread: {ex.Message}");
         }
     }

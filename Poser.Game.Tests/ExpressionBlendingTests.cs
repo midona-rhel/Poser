@@ -79,7 +79,7 @@ public sealed class ExpressionBlendingTests
         var projected = PoseMath.ProjectExpressionDelta(delta, parent);
         var initial = parent * localBone;
         var actual = initial * projected.Rotation;
-        // Literal Ktisis ApplyBlend expression with a fresh (identity) last delta.
+        // Compare with applying the rotation delta through the parent frame.
         var expected = (initial / parent) * (parent * delta.Rotation);
         Assert.True(MathF.Abs(Quaternion.Dot(expected, actual)) > .99999f);
         Assert.True(Vector3.Distance(Vector3.Transform(projected.Position, Quaternion.Inverse(parent)), delta.Position) < .00001f);

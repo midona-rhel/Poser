@@ -187,7 +187,7 @@ public sealed class ActorStateSnapshotsTests
                 case "CaptureGlamourerState": return IntegrationValue<string>.Ok(Look);
                 case "GetCollectionAssignment": return IntegrationValue<CollectionAssignment>.Ok(new(Guid.Empty, "Empty", true));
                 case "SetIndividualCollection": Events.Add("collection"); return IntegrationResult.Ok();
-                case "ProbeBodyProfile": return IntegrationValue<BodyProfileProbe>.Ok(new(_profile, true));
+                case "GetActiveSavedBodyProfile": return IntegrationValue<Guid?>.Ok(_profile);
                 case "GetBodyProfileJson": return IntegrationValue<string>.Ok(Profile);
                 case "ApplyTemporaryBodyProfile":
                     Profile = (string)args[1]!; Events.Add("profile"); return IntegrationValue<Guid>.Ok(Guid.NewGuid());

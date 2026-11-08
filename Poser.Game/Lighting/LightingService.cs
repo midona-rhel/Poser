@@ -32,9 +32,7 @@ namespace Poser.Game.Lighting;
 /// </summary>
 public sealed unsafe class LightingService : ILightingService
 {
-    // Light.Create. Wildcarded exactly as Brio upstream wildcards it: the
-    // strict prologue stopped matching after a game patch, and the loosened
-    // form is what still finds the factory.
+    // Light factory signature from the generated native registry.
     private const string CreateLightSignature =
         Poser.Game.Natives.NativeSignatures.Light_Create;
 
@@ -253,8 +251,8 @@ public sealed unsafe class LightingService : ILightingService
     }
 
     /// <summary>The native calls run inline on the caller's thread, so every
-    /// public entry that reaches one refuses off-thread rather than racing the
-    /// game. Teardown paths bypass this deliberately — see DestroyAllLights.</summary>
+    /// entry using this guard refuses off-thread. Teardown paths bypass it
+    /// deliberately; callers must arrange appropriate shutdown ordering.</summary>
     private bool OnOwnerThread(string operation)
     {
         if (_framework.IsInFrameworkUpdateThread)
@@ -267,9 +265,7 @@ public sealed unsafe class LightingService : ILightingService
     {
         if (!IsAvailable)
         {
-            // Said out loud like the other two refusals below it. This branch
-            // was the silent one, so a light that could never be made looked
-            // exactly like a click that missed.
+            // Report why spawning is unavailable rather than returning a silent miss.
             _log.Warning(
                 "LightingService: lights are unavailable — the game's light "
                 + "factory was not found.");
@@ -351,9 +347,7 @@ public sealed unsafe class LightingService : ILightingService
         // plugin's own light lands in the overworld set; take it back out.
         _world.Forget((nint)native);
 
-        // The render object caches the address of the light's transform,
-        // so the transform must hold its final values BEFORE the pointer
-        // is published — a pointer written first latches stale data.
+        // Initialize the transform before giving the render object its address.
         native->Transform.Position = transform.Position;
         native->Transform.Rotation = transform.Rotation;
         native->Transform.Scale = transform.Scale;
@@ -651,9 +645,8 @@ public sealed unsafe class LightingService : ILightingService
         _cameraLights.ResetPoll();
         if (evt.IsGPosing)
         {
-            // Ktisis rebuilds its world listing on this same edge
-            // (WorldService.cs:27-30). The seed runs first so the camera
-            // lights the refresh finds are already deduped against it.
+            // Seed first, then let camera-light refresh remove those slots from
+            // the world-light candidates.
             _world.Unseed();
             _world.SeedWorldLights();
             _cameraLights.RefreshGPoseLights();

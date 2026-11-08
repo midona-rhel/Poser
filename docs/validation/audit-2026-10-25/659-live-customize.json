@@ -1,0 +1,89 @@
+{
+  "candidate": "707174e5",
+  "checks": {
+    "apply_saved_profile": true,
+    "replace_owned_profile": true,
+    "retained_json_present": true,
+    "mcdf_with_body_profile_import": true,
+    "mcdf_reset": true,
+    "actor_cleanup": true
+  },
+  "first_profile": {
+    "CollectionOwned": false,
+    "CollectionName": null,
+    "DesignOwned": false,
+    "tempBody": "6d27b2a3-d3fc-4e72-9a0c-531eb4711600",
+    "bodyJson": 9802,
+    "mcdf": null,
+    "mcdfBody": null,
+    "mcdfCollection": null
+  },
+  "second_profile": {
+    "CollectionOwned": false,
+    "CollectionName": null,
+    "DesignOwned": false,
+    "tempBody": "b759aefa-5b38-4465-8761-261c25188554",
+    "bodyJson": 9802,
+    "mcdf": null,
+    "mcdfBody": null,
+    "mcdfCollection": null
+  },
+  "imported": {
+    "CollectionOwned": false,
+    "CollectionName": null,
+    "DesignOwned": false,
+    "tempBody": null,
+    "bodyJson": null,
+    "mcdf": "653-body.mcdf",
+    "mcdfBody": 9802,
+    "mcdfCollection": null
+  },
+  "reset": {
+    "CollectionOwned": false,
+    "CollectionName": null,
+    "DesignOwned": false,
+    "tempBody": null,
+    "bodyJson": null,
+    "mcdf": null,
+    "mcdfBody": null,
+    "mcdfCollection": null
+  },
+  "removal": {
+    "running": false,
+    "result": {
+      "Items": [
+        {
+          "Id": {
+            "Kind": 0,
+            "Actor": {
+              "LogicalId": "5061e83f-a3b1-49cb-bf6a-f0b34f7eda7f",
+              "Generation": 0
+            },
+            "Bone": null,
+            "ExternalId": null,
+            "OwnerActorLineage": null,
+            "Light": null,
+            "Gaze": null,
+            "Camera": null,
+            "Prop": null,
+            "Overlay": null,
+            "WorldObject": null,
+            "OwningActor": {
+              "LogicalId": "5061e83f-a3b1-49cb-bf6a-f0b34f7eda7f",
+              "Generation": 0
+            },
+            "ActorLineage": "5061e83f-a3b1-49cb-bf6a-f0b34f7eda7f"
+          },
+          "Status": 0,
+          "Detail": null
+        }
+      ],
+      "AppliedCount": 1
+    }
+  },
+  "limitations": [
+    "Initial script assumed identical JSON lengths on repeated provider reads; that assertion failed and was removed. Live checks establish profile application and ownership, not exact JSON equality.",
+    "Undo/redo covered by existing automated tests, not exercised through live UI.",
+    "No foreign temporary-profile detection is claimed; the provider does not expose it."
+  ]
+}

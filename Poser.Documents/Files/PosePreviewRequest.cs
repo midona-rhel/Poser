@@ -1,12 +1,11 @@
 namespace Poser.Documents.Files;
 
 /// <summary>
-/// ONE pose the preview body should stand in: a file on disk, or a pose held
-/// in memory (the rebase baseline, which no path names).
+/// Identifies the pose shown by the preview actor. The pose may come from a
+/// file or from an in-memory baseline with no file path.
 /// </summary>
-/// <param name="Key">What the request is DEDUPED on in place of a path — the
-/// path itself for a file, a caller-chosen stand-in for an in-memory pose.
-/// Restating the same key with the same options INSTANCE is free.</param>
+/// <param name="Key">Stable value used to detect an unchanged request: the
+/// path for a file, or a caller-provided ID for an in-memory pose.</param>
 public readonly record struct PosePreviewRequest(
     string Key, string? Path, PoseFile? Pose, PoseImportOptions Options)
 {

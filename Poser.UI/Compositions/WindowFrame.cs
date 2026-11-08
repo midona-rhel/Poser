@@ -13,9 +13,8 @@ public readonly record struct WindowFrameRect(Vector2 Min, Vector2 Max)
 }
 
 /// <summary>
-/// What <see cref="WindowFrameWidgets.WindowFrame"/> drew and what it left to the
-/// caller: the two bars are already painted, the rail band and the body are
-/// empty rectangles their owner fills.
+/// Rectangles produced by <see cref="WindowFrameWidgets.WindowFrame"/>. The
+/// frame paints its bars; the caller fills the rail, body, and optional bands.
 /// </summary>
 public readonly record struct WindowFrameRects
 {
@@ -46,9 +45,8 @@ public readonly record struct WindowFrameRects
 }
 
 /// <summary>
-/// The frame's slots. A rail is its WIDTH (rule included; 0 is no rail and no
-/// rule) and a footer is its ACTIONS: both slots vanish when unstated, and the
-/// body takes the space back.
+/// Frame content and optional regions. A zero rail width removes the rail and
+/// its rule; omitting footer actions removes the footer.
 /// </summary>
 public readonly record struct WindowFrameProps
 {
@@ -64,10 +62,9 @@ public readonly record struct WindowFrameProps
     /// </summary>
     public Action<ActionBarScope>? HeaderRight { get; init; }
 
-    /// <summary>Custom title-bar content instead of the <see cref="Title"/>
-    /// label — a search field, a breadcrumb. Told the WHOLE title-bar rect;
-    /// the right icon cluster still draws, so the content must size itself
-    /// to leave that cluster room. The label is skipped while stated.
+    /// <summary>Custom title-bar content in place of <see cref="Title"/>.
+    /// Receives the full title-bar rectangle and must leave room for the
+    /// right-side icon cluster.
     /// </summary>
     public Action<WindowFrameRect>? TitleContent { get; init; }
 
@@ -81,11 +78,8 @@ public readonly record struct WindowFrameProps
     /// </summary>
     public float BandHeight { get; init; }
 
-    /// <summary>Logical height of a band between the columns region and the
-    /// footer — the file surface's option band; 0 is no band. The mirror of
-    /// <see cref="BandHeight"/>: the frame reserves it FULL WIDTH — the rail
-    /// and the body both stop above it — and rules its top edge; the caller
-    /// fills the rect.</summary>
+    /// <summary>Logical height of a full-width band above the footer; zero
+    /// removes it. The rail and body stop above the band.</summary>
     public float BottomBandHeight { get; init; }
 
     /// <summary>Logical width excluded from the bottom-band separator.</summary>

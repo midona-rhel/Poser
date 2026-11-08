@@ -15,9 +15,8 @@ using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 
 namespace Poser.Game.WorldObjects;
 
-/// <summary>The one address check every native world-object read and write
-/// goes through. Furniture layouts are addressed through their driver, never
-/// as a raw graph node.</summary>
+/// <summary>Validates native world-object addresses before use. Furniture
+/// layouts are handled by their driver rather than as raw graph nodes.</summary>
 internal sealed unsafe class WorldNodeResolver
 {
     private readonly FurnitureLayoutDriver _furniture;
@@ -29,9 +28,7 @@ internal sealed unsafe class WorldNodeResolver
         _log = log;
     }
 
-    /// <summary>The one address check every read and write goes through: a
-    /// non-null pointer that still answers BgObject. An address that has
-    /// stopped being one is inert rather than written blind.</summary>
+    /// <summary>Returns a currently readable background or VFX object, or null.</summary>
     public CSObject* Resolve(nint address)
     {
         if (address == nint.Zero || _furniture.Contains(address))
@@ -46,9 +43,7 @@ internal sealed unsafe class WorldNodeResolver
         }
         catch (Exception ex)
         {
-            // Answering null is right — an address that cannot be read is not
-            // written — but doing it silently made every read and write past
-            // this point a no-op nobody could account for.
+            // Refuse the write and retain a diagnostic for the unreadable address.
             _log.Warning(
                 $"NativeWorldObjectPort: {address:X} could not be resolved: {ex.Message}");
             return null;

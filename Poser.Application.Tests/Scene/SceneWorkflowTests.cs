@@ -23,6 +23,37 @@ namespace Poser.Application.Tests.Scene;
 /// </summary>
 public sealed class SceneWorkflowTests
 {
+    [Fact]
+    public async Task Saved_main_camera_is_created_as_a_new_camera()
+    {
+        var scene = new SceneFile { SceneId = Guid.NewGuid() };
+        scene.Cameras.Add(new SceneCamera
+        {
+            Key = Guid.NewGuid(), IsDefault = true, IsLive = true,
+            Camera = new CameraFile { Name = "Main Camera", FixedPosition = new Vector3(12, 4, -9) },
+        });
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var load = Workflow(runtime);
+        Assert.True(load.BeginLoad("autosave.xivs").Success);
+        await load.Drain;
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        Assert.Contains("CreateCamera", runtime.Calls);
+        Assert.DoesNotContain("ApplyDefaultCamera", runtime.Calls);
+        Assert.NotNull(runtime.LastLiveCamera);
+
+        scene.Actors.Add(Actor("Subject", out var subject));
+        scene.Cameras[0].TargetActorKey = subject;
+        scene.Cameras[0].TargetActorName = "Subject";
+        var unavailableTarget = new FakeRuntime { ReadResult = scene };
+        using var partialLoad = Workflow(unavailableTarget);
+        Assert.True(partialLoad.BeginLoad("autosave.xivs",
+            new SceneLoadOptions { IncludeActors = false }).Success);
+        await partialLoad.Drain;
+        Assert.NotNull(unavailableTarget.LastLiveCamera);
+        Assert.Contains(partialLoad.Progress!.Outcome!.Entities,
+            result => result.Kind == SceneOutcomeKind.Camera && !result.Restored);
+    }
+
     private sealed class ParentRuntime : IParentingRuntime
     {
         public Dictionary<SelectionId, PoseTransform> Values = new();
@@ -562,7 +593,7 @@ public sealed class SceneWorkflowTests
             return Token($"overlay:{name}");
         }
 
-        public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
+        public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, uint territory, out string? detail)
         {
             Record($"AdoptWorldObject:{data.Path}");
             detail = null;
@@ -623,8 +654,10 @@ public sealed class SceneWorkflowTests
             return null;
         }
 
+        public SceneEntityHandle? LastLiveCamera;
         public string? SetLiveCamera(SceneEntityHandle? camera)
         {
+            LastLiveCamera = camera;
             Record("SetLiveCamera");
             return null;
         }
@@ -659,10 +692,27 @@ public sealed class SceneWorkflowTests
         public string? Preflight;
         public string? LoadPreflight(int actors) => Preflight;
 
-        public SceneClearOutcome ClearScene()
+        public bool KeptLocalPlayer;
+        public IReadOnlyCollection<SceneEntityHandle>? KeptActors;
+        public string? MatchingHash;
+
+        public SceneClearOutcome ClearScene(bool keepLocalPlayer = false, IReadOnlyCollection<SceneEntityHandle>? keepActors = null)
         {
             Record("ClearScene");
+            KeptLocalPlayer = keepLocalPlayer;
+            KeptActors = keepActors;
             return new(2, 1, 0, 3, 1);
+        }
+
+        public SceneEntityHandle? FindLocalPlayer() => Token("actor:player");
+        public SceneEntityHandle? FindMatchingActor(SceneActor data, IReadOnlyCollection<SceneEntityHandle> used) =>
+            MatchingHash != null && data.IdentityHash == MatchingHash
+                && !used.Any(handle => _names[handle] == "actor:matched") ? Token("actor:matched") : null;
+
+        public Action CaptureActorRestore(SceneEntityHandle actor)
+        {
+            Record($"Capture:{TokenName(actor)}");
+            return () => Record($"Restore:{TokenName(actor)}");
         }
 
         public void DestroyActor(SceneEntityHandle actor) => Destroy(actor);
@@ -839,9 +889,13 @@ public sealed class SceneWorkflowTests
             Assert.False(refused.Progress!.Outcome!.SessionCleared);
         }
 
+        // The user's own character is kept through the clear and reused, and the
+        // rollback never removes it.
+        var me = Actor("Me", out _);
+        me.LocalPlayer = true;
         var runtime = new FakeRuntime
         {
-            ReadResult = SceneWith(Actor("Lead", out _)),
+            ReadResult = SceneWith(me, Actor("Lead", out _)),
             ActorSpawnFailure = _ => "The game has no free GPose actor slot (the actor table is full).",
         };
         using var load = Workflow(runtime);
@@ -849,8 +903,29 @@ public sealed class SceneWorkflowTests
         await load.Drain;
         Assert.Equal(OperationReceiptState.RolledBack, load.Receipt!.State);
         Assert.Contains("ClearScene", runtime.Calls);
+        Assert.True(runtime.KeptLocalPlayer);
+        Assert.DoesNotContain("SpawnActor:Me", runtime.Calls);
+        Assert.DoesNotContain("actor:player", runtime.Destroyed);
+        Assert.Contains("Restore:actor:player", runtime.Calls);
         Assert.True(load.Progress!.Outcome!.SessionCleared);
         Assert.Contains("actor table is full", load.Progress.Outcome.Detail);
+
+        me.IdentityHash = SceneActorNames.Hash("Matching Character");
+        var matching = new FakeRuntime { ReadResult = SceneWith(me), MatchingHash = me.IdentityHash };
+        using var matchedLoad = Workflow(matching);
+        Assert.True(matchedLoad.BeginLoad("shot.xivs", clearFirst).Success);
+        await matchedLoad.Drain;
+        Assert.True(matchedLoad.Progress!.Outcome!.Success);
+        Assert.Single(matching.KeptActors!);
+        Assert.Contains("Capture:actor:matched", matching.Calls);
+        Assert.DoesNotContain(matching.Calls, call => call.StartsWith("SpawnActor"));
+
+        var entry = new FakeRuntime { ReadResult = SceneWith(me), MatchingHash = me.IdentityHash };
+        using var entryLoad = Workflow(entry);
+        Assert.True(entryLoad.BeginLoad("actor.xivs", new() { ReuseExistingActors = false }).Success);
+        await entryLoad.Drain;
+        Assert.Contains(entry.Calls, call => call.StartsWith("SpawnActor"));
+        Assert.DoesNotContain(entry.Calls, call => call.StartsWith("Capture:"));
     }
 
     // ── issue #433: a committed load is one consistent history step ──────
@@ -880,7 +955,7 @@ public sealed class SceneWorkflowTests
 
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         Assert.True(step.Undo());
-        Assert.Equal(new[] { "light", "overlay:Line", "prop:Chair", "actor:Lead" }, runtime.Destroyed.ToArray());
+        Assert.Equal(new[] { "camera", "light", "overlay:Line", "prop:Chair", "actor:Lead" }, runtime.Destroyed.ToArray());
         Assert.Contains("ReleaseWorldObject:world:bg/example.mdl", runtime.Calls);
         Assert.Contains("RestoreDefaultCamera", runtime.Calls);
     }
@@ -974,11 +1049,9 @@ public sealed class SceneWorkflowTests
     }
 
     /// <summary>
-    /// THE RESTORE CONTRACT. A scene is a picture, not a performance: it
-    /// carries pose data and no animation, because a timeline id resolves
-    /// against the loading client's own game and mods and would show something
-    /// different — or nothing — on someone else's machine. So every restored
-    /// actor is stopped first and the pose lands on a held frame.
+    /// When a scene includes animation, restoration starts that animation and
+    /// then reapplies only the saved pose edits. Without usable animation,
+    /// restoration freezes the actor before applying the saved pose.
     /// </summary>
     [Fact]
     public async Task A_scene_saved_with_its_animation_plays_it_again_and_puts_only_the_edits_back()
@@ -1032,11 +1105,12 @@ public sealed class SceneWorkflowTests
         Assert.True(workflow.BeginLoad("shot.xivs").Success);
         await workflow.Drain;
 
-        Assert.True(workflow.BeginSave("with.xivs", null, new SceneSaveOptions { IncludeAnimation = true }).Success);
+        // Animation is saved unless the save turns it off.
+        Assert.True(workflow.BeginSave("with.xivs").Success);
         await workflow.Drain;
         Assert.True(runtime.LastCaptureIncludedAnimation);
 
-        Assert.True(workflow.BeginSave("without.xivs").Success);
+        Assert.True(workflow.BeginSave("without.xivs", null, new SceneSaveOptions { IncludeAnimation = false }).Success);
         await workflow.Drain;
         Assert.False(runtime.LastCaptureIncludedAnimation);
     }
@@ -1152,6 +1226,12 @@ public sealed class SceneWorkflowTests
         AssertApplied(load);
         Assert.Contains("1 object", load.Progress!.Outcome!.Detail);
         Assert.DoesNotContain("0 objects", load.Progress.Outcome.Detail);
+        Assert.False(scene.WorldObjects[0].Spawned);
+        runtime.CapturedScene = () => scene;
+        Assert.True(load.BeginSave("saved-housing.xivs").Success);
+        await load.Drain;
+        AssertApplied(load);
+        Assert.False(scene.WorldObjects[0].Spawned);
     }
 
     [Fact]
@@ -1337,7 +1417,7 @@ public sealed class SceneWorkflowTests
     }
 
     /// <summary>A whole scene: one of every entity kind the load restores, so
-    /// a per-phase failure can be asserted to keep everything the OTHER phases
+    /// a per-phase failure can be asserted to keep everything the other phases
     /// produced.</summary>
     private static SceneFile WholeScene()
     {
@@ -1387,9 +1467,9 @@ public sealed class SceneWorkflowTests
 
     /// <summary>One named entity-level failure mode per load phase, driven
     /// through the seam the way the real refusals arrive. Every one of them
-    /// must land the SAME shape — the operation ends Failed rather than rolled
-    /// back, the refused entity is named with its kind, a reason and a next
-    /// step, nothing this load created is destroyed, and the outcome says the
+    /// must produce the same result shape: the operation ends Failed rather
+    /// than rolled back, the refused entity is named with its kind, a reason
+    /// and a next step, nothing this load created is destroyed, and the outcome says the
     /// successes were kept — because that shape is what the result list and
     /// the operation log both read.</summary>
     public static TheoryData<string, string, Action<object>> PhaseFailures()

@@ -91,7 +91,7 @@ public sealed unsafe class TimelineStateTests
     [Fact]
     public void A_hold_flag_counts_only_at_the_end_and_until_released()
     {
-        // Toast carries +0x7D bit 1 from its start.
+        // This bit may be set before the timeline reaches its end.
         Assert.False(Running().Bit(TimelineState.Flags7D, 0x02).Read(s => s.HeldAtEnd));
         var held = Running().Bit(TimelineState.Flags7D, 0x02).Set(TimelineState.ClockOffset, 90f);
         Assert.True(held.Read(s => s.HeldAtEnd));

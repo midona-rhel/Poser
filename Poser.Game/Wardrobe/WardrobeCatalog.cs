@@ -28,9 +28,8 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
         _log = log;
     }
 
-    /// <summary>Reads every sheet now, off the draw thread, so the first
-    /// Equipment view pays nothing. Cancellation stops between sheets; an
-    /// unread sheet still loads on first use.</summary>
+    /// <summary>Loads equipment, dyes, and facewear synchronously on the caller's thread.
+    /// Checks cancellation between loads; uncached data loads on first use.</summary>
     public void Warm(CancellationToken cancel)
     {
         LoadItems();

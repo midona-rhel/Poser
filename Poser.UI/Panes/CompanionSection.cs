@@ -13,11 +13,8 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>
-/// The companion-slot attach surface: a <see cref="SearchPicker{T}"/>
-/// over the whole minion/mount/ornament catalog, opened from an actor's
-/// context menu or Actor &gt; General and applied to that actor's native slot.
-/// Standalone creatures still come from the spawn browser; this control owns
-/// only an actor's native minion, mount, or ornament slot.
+/// Lets the user attach a minion, mount, or ornament to an actor through
+/// a searchable catalog. Standalone creatures are created in the spawn browser.
 /// </summary>
 public sealed class CompanionSection
 {
@@ -29,16 +26,14 @@ public sealed class CompanionSection
     private readonly SearchPicker<CompanionEntry> _picker =
         new("companion");
 
-    /// <summary>The OWNER actor frozen when the surface opened — a minion row
-    /// and its owner's row both attach through the owner, and a selection
-    /// change while the popover is up never retargets the pending pick.
+    /// <summary>The actor whose companion slot was selected when the picker opened.
+    /// Changing selection while the picker is open must not change this target.
     /// </summary>
     private ActorId? _pickOwner;
     private ActorId? _pickSubject;
 
-    /// <summary>The strip's selection, controlled and persistent like every
-    /// other picker strip; an open with something attached reseeds it because
-    /// a swap starts from what the actor already is.</summary>
+    /// <summary>The selected catalog filter. Opening an occupied slot selects
+    /// the kind of companion already attached.</summary>
     private int _kindIndex;
 
     private readonly GameIconResolver _icons;
@@ -46,8 +41,7 @@ public sealed class CompanionSection
     private readonly Dictionary<ushort, string> _idText = new();
     private readonly Dictionary<int, string> _rowKeys = new();
 
-    // The memo and the exact inputs its answer was computed from: the open
-    // surface asks for the visible list every frame.
+    // Cache search results until the query, kind filter, or loading state changes.
     private string? _memoQuery;
     private int _memoKind = -1;
     private bool _memoLoaded;
@@ -134,14 +128,11 @@ public sealed class CompanionSection
         return _companions.Set(subjectId, state.Owner, null).Success;
     }
 
-    /// <summary>The strip is CONTROLLED — its selection lives here — so the
-    /// open surface is re-told its options each frame before it draws. Pumped
-    /// by the pane at window level so it survives a section collapse.</summary>
+    /// <summary>Refreshes picker options and applies a choice. Called outside
+    /// the collapsible section so an open picker continues to draw.</summary>
     public void DrawPicker()
     {
-        // The catalog builds in the background: the status is RE-TOLD every
-        // frame, or a picker opened mid-build would show "Building" forever
-        // (the notice was an open-time argument and nothing refreshed it).
+        // Refresh the status so a picker opened during loading notices completion.
         _picker.SetLoadStatus(
             _catalog.IsLoaded ? null : "Building minion catalog…");
         _picker.Update(Options());
@@ -167,8 +158,7 @@ public sealed class CompanionSection
         Glyph = static _ => TablerIcon.Paw,
         Badge = _entryBadge,
         Strip = new PickerStrip(KindLabels, _kindIndex, _setKind),
-        // A row carries an icon, a name and a badge, and the narrow picker
-        // cuts all three.
+        // Leave room for the icon, name, and badge on each row.
         Width = ActiveTheme.Picker.WideWidth,
     };
 
@@ -213,9 +203,8 @@ public sealed class CompanionSection
         return text;
     }
 
-    /// <summary>Ids are only unique WITHIN a sheet, so a row's identity is the
-    /// kind and the id — two rows sharing an ImGui id share one another's
-    /// hover and press.</summary>
+    /// <summary>Combines kind and id because different catalog sheets can use
+    /// the same numeric id. ImGui needs a unique key for each interactive row.</summary>
     private string RowKey(CompanionEntry entry)
     {
         int identity = ((int)entry.Kind << 16) | entry.Id;

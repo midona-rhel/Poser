@@ -14,7 +14,9 @@ public enum TransformComponents
     All = Position | Rotation | Scale,
 }
 
-/// <summary>Validation vocabulary for the three transform propagation bits.</summary>
+/// <summary>
+/// Rejects flag bits other than position, rotation, and scale.
+/// </summary>
 public static class TransformComponentsPolicy
 {
     public static bool IsDefined(TransformComponents value) =>
@@ -46,7 +48,10 @@ public readonly record struct PoseLayerId(PoseLayerKind Kind, string Name)
     public override string ToString() => $"{Kind}:{Name}";
 }
 
-/// <summary>Brio/Havok-compatible pose delta. Scale is additive.</summary>
+/// <summary>
+/// A bone pose change. Position and scale are added; rotation is composed.
+/// This differs from TransformDelta, whose scale is a multiplier.
+/// </summary>
 public readonly record struct PoseDelta(
     Vector3 Position,
     Quaternion Rotation,

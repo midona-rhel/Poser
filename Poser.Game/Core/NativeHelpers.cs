@@ -3,9 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Poser.Game.Core;
 
-/// <summary>
-/// Helper methods for native memory operations.
-/// </summary>
+/// <summary>Owns aligned unmanaged allocations used by native interop.</summary>
 public static class NativeHelpers
 {
     /// <summary>
@@ -18,15 +16,17 @@ public static class NativeHelpers
     {
         int alignedSize = sizeInBytes + alignment - 1;
         nint unalignedMemory = Marshal.AllocHGlobal(alignedSize);
-        int alignmentOffset = (int)(alignment - (unalignedMemory % alignment));
-        nint alignedMemory = unalignedMemory + alignmentOffset;
+        nint alignedMemory = AlignAddress(unalignedMemory, alignment);
 
         return (alignedMemory, unalignedMemory);
     }
 
-    /// <summary>
-    /// Frees aligned memory allocated with AllocateAlignedMemory.
-    /// </summary>
+    // Already aligned addresses need no padding. The allocation reserves at most
+    // alignment - 1 extra bytes, so moving forward by a full alignment would overrun it.
+    internal static nint AlignAddress(nint address, int alignment) =>
+        address + (alignment - address % alignment) % alignment;
+
+    /// <summary>Frees memory returned by <see cref="AllocateAlignedMemory"/>.</summary>
     public static void FreeAlignedMemory((nint Aligned, nint Unaligned) addrs)
     {
         Marshal.FreeHGlobal(addrs.Unaligned);

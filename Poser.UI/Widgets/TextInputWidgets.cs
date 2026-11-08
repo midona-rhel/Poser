@@ -10,44 +10,9 @@ using static Poser.UI.Widgets.ValueEdits;
 namespace Poser.UI.Widgets;
 
 /// <summary>
-/// GlassInput — <c>src/shared/ui/GlassInput/GlassInput.module.css</c> and
-/// its <c>.tsx</c>. Two variants share one core:
-///
-/// <list type="bullet">
-/// <item><c>.input</c> — 32px box, <c>padding: 0 10px</c>, 1px
-/// <c>--color-border-primary</c>, <c>--radius-sm</c>,
-/// <c>--color-black-20</c> fill, <c>--font-size-md</c>
-/// <c>--color-text-primary</c> value, <c>--color-text-tertiary</c>
-/// placeholder, <c>:focus</c> = <c>border-color: --color-primary-50</c>,
-/// <c>:disabled</c> = <c>opacity: .5</c>.</item>
-/// <item><c>.searchWrap</c> — 36px flex row, <c>padding-left: 10px</c>,
-/// <c>gap: 6px</c>, a 14px leading icon at <c>--color-text-tertiary</c>
-/// <c>opacity: .6</c>, and a <c>.searchInput</c> with NO background, NO
-/// border and NO focus treatment (<c>background: none; border: none;
-/// outline: none</c>).</item>
-/// </list>
-///
-/// <para>The value itself is a native ImGui <c>InputText</c>, so its
-/// frame, text, selection and nav chrome are normalized through ImGui
-/// style pushes rather than painted here; only what CSS puts OUTSIDE the
-/// native widget (border color, placeholder, search icon, clear
-/// affordance) is drawn by this file.</para>
-///
-/// <para>DEVIATIONS from the CSS, all deliberate:</para>
-/// <list type="number">
-/// <item>The clear affordance has NO Picto counterpart — GlassInput never
-/// clears. It is kept as Poser's own, painted in the <c>.searchIcon</c>
-/// grammar (<c>--color-text-tertiary</c>, lifting to
-/// <c>--color-text-primary</c> under the pointer).</item>
-/// <item>The search glyph is the true Tabler <c>search</c> (GlassInput's
-/// IconSearch), added to the shipped set on user direction — the interim
-/// <c>zoom-in</c> stand-in read as a cross inside the lens.</item>
-/// <item>ImGui's FramePadding is symmetric, so the search variant's
-/// 30px leading inset (10 + 14 + 6) is mirrored on the right where CSS
-/// has 0. It also keeps the value clear of the clear affordance.</item>
-/// <item>Selection uses <c>--color-primary</c> at .32 (the AxisWell inline
-/// edit's existing idiom); the CSS declares no <c>::selection</c>.</item>
-/// </list>
+/// Draws plain and search text fields around native ImGui InputText controls.
+/// Native input handles editing and selection; this wrapper draws the border,
+/// placeholder, search icon, and optional clear button.
 /// </summary>
 public static class TextInputWidgets
 {
@@ -186,14 +151,12 @@ public static class TextInputWidgets
         ImGui.PushStyleColor(ImGuiCol.Text, theme.Text);
         ImGui.PushStyleColor(
             ImGuiCol.TextSelectedBg, theme.Chrome.Primary with { W = 0.32f });
-        // `outline: none` on both variants: ImGui's own nav ring is not a
-        // declared treatment, and the CSS focus treatment is the border.
+        // Hide the native navigation ring; the caret indicates text focus.
         ImGui.PushStyleColor(ImGuiCol.NavHighlight, Vector4.Zero);
         ImGui.PushStyleVar(
             ImGuiStyleVar.FramePadding, new Vector2(textInset, framePadY));
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, radius);
-        // The border is painted below instead: its COLOR is the whole
-        // :focus treatment, and focus is only known after submission.
+        // Draw the border at the unshifted box rectangle after the native input.
         ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 0f);
         ImGui.SetCursorScreenPos(boxMin + new Vector2(0f, rise));
         ImGui.SetNextItemWidth(width);
@@ -249,10 +212,8 @@ public static class TextInputWidgets
         if (caretClipped)
             draw.PopClipRect();
 
-        // The item rect is the RISEN widget; the box chrome below anchors
-        // to the intended box rect instead. Only the placeholder tracks
-        // the item rect — it must overlay exactly where the native value
-        // renders.
+        // The native item's rectangle includes the text-position adjustment.
+        // The border, icons, and placeholder use the original box rectangle.
         var inputMin = ImGui.GetItemRectMin();
         // The flow cursor advanced from the risen item; put it back where
         // the un-risen box would have left it.
@@ -267,11 +228,7 @@ public static class TextInputWidgets
         ImGui.PopStyleVar(3);
         ImGui.PopStyleColor(6);
 
-        // .input's 1px border. Picto's :focus swaps its color to
-        // primary-50; PRODUCT DECISION (user): no focus chrome anywhere —
-        // native-styled UI, the caret is the focus signal. The border
-        // stays ControlBorder in every state. .searchInput has
-        // `border: none`, so the search variant paints nothing here.
+        // Plain fields keep the same border when focused; search fields have no border.
         if (!search)
             draw.AddRect(
                 boxMin,

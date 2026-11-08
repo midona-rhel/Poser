@@ -140,7 +140,7 @@ public sealed class PresentationResetHistoryTests
         var before = f.Session.OverridesFor(f.Actor);
         Assert.True(f.Values.ResetPresentation(f.Actor).Success);
         Assert.False(f.Session.OverridesFor(f.Actor).HasAny);
-        // A new live reading cannot replace the original recovery baseline.
+        // Undo must retain the values captured before editing, even if live colors change.
         f.Port.Colors[AppearanceColorChannel.Skin] = new Vector4(0.7f);
         Assert.True(f.Journal.Undo().Success);
         var restored = f.Session.OverridesFor(f.Actor);

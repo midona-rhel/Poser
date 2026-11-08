@@ -116,7 +116,6 @@ public sealed class SpawnBrowserWindow : Window
         ReferenceImageSession referenceImages,
         global::Poser.Application.Library.IPoseLibraryService library,
         Application.Library.ILibrarySceneActions libraryScene,
-        IPlacementAnchorSource anchors,
         IWorldAssetCatalog assets,
         global::Poser.Application.Appearance.ModelCatalog modelCatalog,
         IModelCatalogLoader modelLoader,
@@ -140,7 +139,6 @@ public sealed class SpawnBrowserWindow : Window
         _referenceImages = referenceImages;
         _library = library;
         _libraryScene = libraryScene;
-        _anchors = anchors;
         _assets = assets;
         _modelCatalog = modelCatalog;
         _modelLoader = modelLoader;
@@ -382,12 +380,7 @@ public sealed class SpawnBrowserWindow : Window
     /// world-object spawn every picked asset lands through.</summary>
     private void SpawnWorldAsset(string path)
     {
-        var at = Domain.Transforms.PoseTransform.Identity;
-        if (_anchors.TryCurrentFor(
-                _configuration.Config.DefaultSpawnPlacement,
-                out var position, out _, out _))
-            at = at with { Position = position };
-        if (_creation.CreateWorldObject(path, at).Handle is { } spawned)
+        if (_creation.CreateWorldObject(path).Handle is { } spawned)
             SelectSpawned(spawned);
         else
             _notices.Failed("The selected world asset could not be spawned.");
@@ -653,7 +646,6 @@ public sealed class SpawnBrowserWindow : Window
 
     private readonly global::Poser.Application.Library.IPoseLibraryService _library;
     private readonly Application.Library.ILibrarySceneActions _libraryScene;
-    private readonly IPlacementAnchorSource _anchors;
     private readonly IWorldAssetCatalog _assets;
     private readonly global::Poser.Application.Appearance.ModelCatalog
         _modelCatalog;
@@ -682,13 +674,12 @@ public sealed class SpawnBrowserWindow : Window
     private int _libraryRevision = -1;
     private bool _reseatHighlight;
 
-    /// <summary>Spawns one saved entry where the player stands, each kind
-    /// through the same route the library's own activation uses. No anchor
-    /// falls back to the entry's saved placement.</summary>
+    /// <summary>Adds a saved entry using the configured placement mode.
+    /// If its camera or actor anchor is unavailable, uses the saved position.</summary>
     private void SpawnSavedObject(SpawnDispatch.Saved saved)
     {
         var result = _libraryScene.SpawnEntry(saved.Path, saved.Kind,
-            _configuration.Config.DefaultSpawnPlacement, fallbackToSaved: true);
+            _configuration.Config.DefaultSpawnPlacement);
         if (!result.Success) _notices.Failed(result.Detail ?? $"'{saved.Label}' could not be spawned.");
     }
 

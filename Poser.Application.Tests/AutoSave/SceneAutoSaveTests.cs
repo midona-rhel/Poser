@@ -12,6 +12,49 @@ namespace Poser.Application.Tests.AutoSave;
 public sealed class SceneAutoSaveTests
 {
     [Fact]
+    public void Legacy_scene_toggle_cannot_disable_whole_scene_autosave()
+    {
+        using var test = new Harness();
+        test.Configuration.Config.AutoSave.SceneSnapshots = false;
+        test.Tick(0);
+        test.Tick(10);
+        test.Complete();
+        Assert.Equal(SceneAutoSaveStatus.Written, test.Service.LastResult.Status);
+    }
+
+    [Fact]
+    public void Clean_exit_clears_scene_files_and_a_queued_writer_cannot_recreate_them()
+    {
+        using var test = new Harness();
+        test.Configuration.Config.AutoSave.CleanOnExit = true;
+        test.Tick(0);
+        test.Tick(10);
+        test.Complete();
+        test.Scene.Description = "Changed";
+        Action? queued = null;
+        test.Dispatch = work => { queued = work; return true; };
+        test.Tick(20);
+        test.Complete();
+        test.Service.CompleteForExit();
+        queued!();
+        Assert.Empty(Directory.GetFiles(test.Root, "*.xivs", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void Normal_exit_retains_the_snapshot_and_ignores_late_capture()
+    {
+        using var test = new Harness();
+        test.Tick(0);
+        test.Tick(10);
+        test.Complete();
+        test.Tick(20);
+        test.Service.CompleteForExit();
+        test.Scene.Description = "Too late";
+        test.Complete();
+        Assert.Single(Directory.GetFiles(test.Root, "*.xivs", SearchOption.AllDirectories));
+    }
+
+    [Fact]
     public void Deferred_capture_progresses_without_a_panel_and_deduplicates_unchanged_files()
     {
         using var test = new Harness();

@@ -8,14 +8,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Appearance;
 
 /// <summary>
-/// Native side of Model ID ownership: exact-id resolution over the stable
-/// binding registry, with the write delegated WHOLE to
-/// <see cref="IActorSpawnService.SetModelCharaId"/> — Brio's mechanism
-/// (model id write, redraw down, bounded wait, draw up;
-/// ActorAppearanceService.cs:117-123) that Poser already owns. The spawn
-/// service's write is fire-and-forget and silently refuses off-thread or
-/// unresolvable targets, so success here is a READBACK: the id the actor
-/// draws after the call is the id that was asked for.
+/// Resolves stable actor identities and delegates model-id mutation to the
+/// spawn service. A write succeeds only when an immediate readback matches;
+/// redraw completion remains asynchronous.
 /// </summary>
 public sealed class ModelIdRuntimePort : IModelIdRuntimePort
 {

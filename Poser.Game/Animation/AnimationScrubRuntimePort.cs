@@ -16,7 +16,7 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
 {
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;
-    private readonly TimelineSeekService? _seek;
+    private readonly TimelineSeekService _seek;
 #if DEBUG
     /// <summary>Debug bridge: scrub Base and Upper Body through the clock-writing
     /// fallback even where the native seek could move them.</summary>
@@ -26,7 +26,7 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
     private const bool SeekAllowed = true;
 #endif
 
-    public AnimationScrubRuntimePort(IPluginLog log, AnimationNativeState native, TimelineSeekService? seek = null)
+    public AnimationScrubRuntimePort(IPluginLog log, AnimationNativeState native, TimelineSeekService seek)
     {
         _log = log;
         _native = native;
@@ -40,8 +40,6 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         if (character == null)
             return Array.Empty<ScrubControlReading>();
         var controls = AnimationNativeState.CollectControls(character, out token);
-        if (_seek == null)
-            return controls;
         // Layers without a fixed Havok control are scrubbed by their timeline clock.
         var all = new List<ScrubControlReading>(controls);
         foreach (var slot in TimelineScrubSlots)
@@ -50,10 +48,9 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         return all;
     }
 
-    /// <summary>The layers the native seek scrubs by their own timeline clock: all of
-    /// them where it can. Base and Upper Body fall back to their Havok control only
-    /// without it (that control is found by index, and a seek's re-created controls
-    /// reorder the array: Upper Body then read Full body's time).</summary>
+    /// <summary>Layers for which the seek service can provide a timeline clock reading.
+    /// Reading the timeline avoids assuming a fixed order for Havok controls,
+    /// whose array can change after a seek.</summary>
     private static readonly AnimationSlot[] TimelineScrubSlots =
         [AnimationSlot.Base, AnimationSlot.UpperBody, AnimationSlot.Facial, AnimationSlot.Additive, AnimationSlot.Lips,
          AnimationSlot.Parts1, AnimationSlot.Parts2, AnimationSlot.Parts3, AnimationSlot.Parts4, AnimationSlot.Overlay];
@@ -71,7 +68,7 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         var character = _native.Resolve(actor, out _);
         if (character == null)
             return null;
-        if (SeekAllowed && _seek?.TimelineReading(character, slot) is { } timeline)
+        if (SeekAllowed && _seek.TimelineReading(character, slot) is { } timeline)
             return timeline;
         if (Engine is { } engine)
             return SlotControlReading(engine, character, slot);
@@ -94,7 +91,7 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         return found;
     }
 
-    private TimelineSeekEngine? Engine => _seek is { Available: true } seek ? seek.Engine : null;
+    private TimelineSeekEngine? Engine => _seek.Available ? _seek.Engine : null;
 
     /// <summary>The slot's main animation control: its longest C009 control (the body
     /// animation; a slot's tree also carries short clips).</summary>
@@ -120,11 +117,10 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
     }
 
     /// <summary>
-    /// The scrub fallback for a slot the native seek can't move: each of the slot's
-    /// own controls set to the time (one frame short of its end), its props moved by
-    /// the same delta, and its timeline clocks set the game's way
-    /// (TimelineSeekEngine.WriteClocks). Never a cursor ON the last frame: a child
-    /// timeline set exactly at its end fires its end events but never completes.
+    /// Fallback for layers the native seek cannot move. Clamp the requested time
+    /// one frame before the main control's end, set the layer's controls, move its
+    /// props by the same time difference, and update its timeline clocks. Avoiding
+    /// the main timeline's exact end prevents its end events from getting stuck.
     /// </summary>
     private static Outcome ScrubSlotFallback(TimelineSeekEngine engine, Character* character, AnimationSlot slot, float time)
     {
@@ -154,8 +150,6 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         if (control.IsTimeline)
         {
             var slot = (AnimationSlot)control.Control;
-            if (_seek == null)
-                return Outcome.Fail("This layer's animation can no longer be scrubbed.");
             if (SeekAllowed && _seek.Supports(character, (int)slot))
             {
                 _seek.RequestTimeline(actor, character, slot, time);
@@ -185,7 +179,7 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
             return Outcome.Fail("Scrub target no longer exists.");
         // A Base or Upper Body control picked from the control list: the native seek
         // moves its slot where it can, the slot fallback where it can't.
-        if (control.Control is 0 or 1 && _seek != null)
+        if (control.Control is 0 or 1)
         {
             if (SeekAllowed && _seek.Supports(character, control.Control))
             {

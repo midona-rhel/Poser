@@ -255,9 +255,7 @@ public static class FloatingSurface
         int clicked = -1;
         if (visible)
         {
-            // On top: above the overlays that draw after it, the gizmo's
-            // window included — a list beside the pointer is never
-            // under anything.
+            // Raise this window above other ImGui windows when requested.
             if (onTop)
                 ImGuiP.BringWindowToDisplayFront(ImGuiP.GetCurrentWindow());
             var owner = Interactive.BeginOwner(

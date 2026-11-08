@@ -14,11 +14,10 @@ public enum SceneAutoSaveStatus
     /// pose import.</summary>
     Skipped,
 
-    /// <summary>Capture or the write refused; nothing new is on disk.</summary>
+    /// <summary>The attempt failed. Consult Detail rather than assuming no files changed.</summary>
     Failed,
 
-    /// <summary>The write left surviving temp/backup bytes whose fate is
-    /// unknown. <c>RecoveryEvidencePaths</c> names every one.</summary>
+    /// <summary>The write retained files for recovery, listed in RecoveryEvidencePaths.</summary>
     RecoveryRequired,
 }
 

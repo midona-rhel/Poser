@@ -4,10 +4,9 @@ using Poser.Game.Natives;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// The frames after one seek (#533). Clips that started inside the step fail the
-/// sync guard for a frame or two, a prop timeline may still be loading, and only
-/// once the deferred frames have run can the VFX handles from before the seek be
-/// checked for orphans. Pumped once per framework tick until it reports done.
+/// Finishes work that cannot complete during a seek: retries newly started clips,
+/// waits for prop timelines to load, and then releases effects left behind by the
+/// seek. Tick advances this work once per framework update.
 /// </summary>
 internal sealed unsafe class TimelineSeekWork
 {
@@ -37,13 +36,13 @@ internal sealed unsafe class TimelineSeekWork
     private (nint Node, uint Id) _rootIdentity;
     public int Frame { get; private set; }
     /// <summary>The body's speed before the seek's window: what Poser's pause
-    /// (0) or the game left it at, and what a re-born prop must run at.</summary>
+    /// (0) or the game left it at, and the speed restored on a restarted prop.</summary>
     public float OwnerSpeed;
     public readonly HashSet<nint> PendingHavok = new();
     public readonly List<Prop> Props = new();
     public HashSet<ulong> VfxBefore { get; private set; } = new();
-    /// <summary>A reload restore: re-fire C031s whose start gave up while the
-    /// new weapon object was loading, and keep pumping until they are seeked.</summary>
+    /// <summary>During reload restoration, retry C031 prop clips whose weapon object was
+    /// still loading. Wait for them up to PropWaitFrames.</summary>
     public bool AllowFire;
     /// <summary>Upper bound for waiting on a prop's weapon object.</summary>
     public const int PropWaitFrames = 300;

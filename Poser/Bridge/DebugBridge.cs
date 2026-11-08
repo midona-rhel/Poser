@@ -30,10 +30,8 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.Bridge;
 
 /// <summary>
-/// THE DEBUG BRIDGE — a Debug-build-only local HTTP control surface so the
-/// animation work can be driven and measured from outside the game (the MCP
-/// server in tools/ wraps it). Every game call is marshalled onto the
-/// framework thread; every answer is JSON. Not a feature: a test rig.
+/// Debug-build-only local HTTP control surface used by the test tooling.
+/// Game calls are dispatched to the framework thread and responses are JSON.
 /// </summary>
 public sealed partial class DebugBridge : IDisposable
 {
@@ -206,7 +204,7 @@ public sealed partial class DebugBridge : IDisposable
 
     private int _disposed;
 
-    /// <summary>Idempotent, and the listener stops BEFORE the token cancels:
+    /// <summary>Idempotent. The listener stops before token cancellation:
     /// cancelling a token with an accept pending on it threw on unload,
     /// which failed the unload and left the port held by a dead instance.</summary>
     public void Dispose()
@@ -354,6 +352,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
+                        "/camera?camera=NAME&action=probe-native-pan&x=NUMBER&y=NUMBER (Debug: native pan for camera-rest recording tests)",
                         "/scene", "/scene?path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera&clear=true|false&relativeToOrigin=true|false",
                         "/groups", "/group?action=create&name=NAME&members=SELECTION_ID,SELECTION_ID|add&group=ID&member=SELECTION_ID|nest&parent=ID&child=ID|remove&group=ID",
                         "/catalogmodels?actor=NAME|INDEX&limit=20", "/actormodel?actor=NAME|INDEX&model=ID|reset=true or ?spawn=MODEL_ID",
@@ -386,7 +385,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/gazetarget?actor=NAME|INDEX|SELECTION_ID&target=NAME|INDEX|SELECTION_ID",
                         "/cameratarget?camera=CAMERA_SELECTION_ID (read) or &actor=NAME|INDEX|SELECTION_ID (follow)",
                         "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
-                        "/autosavestatus (read-only pose-autosave terminal and health state)",
+                        "/autosavestatus (legacy pose-backup folder)",
                         "/autosavelibrary?action=refresh|read|delete&path=DISPOSABLE_POSE_FILE",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
                         "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",
@@ -436,9 +435,9 @@ public sealed partial class DebugBridge : IDisposable
             case "/idlecheck":
                 if (query.TryGetValue("repackage", out var destination))
                     return _framework.RunOnFrameworkThread(() => Json(Game.Animation.IdleModDiagnostics.Repackage(
-                        query["path"], destination, query["race"], query["face"], _framework, _idleData, _idleScanner)));
+                        query["path"], destination, query["race"], query["face"], _idleData, _idleScanner)));
                 return _framework.RunOnFrameworkThread(() => Json(Game.Animation.IdleModDiagnostics.Inspect(
-                    query["path"], query["race"], query["face"], _framework, _idleData, _idleScanner)));
+                    query["path"], query["race"], query["face"], _idleData, _idleScanner)));
             case "/peek":
                 return Task.FromResult(Peek(query));
             case "/poke":
@@ -536,6 +535,7 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 return Json(global::Poser.Documents.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
             }
+            case "/placement": return JsonSerializer.Serialize(PlacementCommand(query), new JsonSerializerOptions { IncludeFields = true });
             case "/selection":
             {
                 if (query.TryGetValue("entities", out var entityKeys))
@@ -817,10 +817,18 @@ public sealed partial class DebugBridge : IDisposable
             {
                 if (query.TryGetValue("create", out var kind))
                     return Json(_creation.CreateCamera(Enum.Parse<Domain.Scene.CameraKind>(kind, true)));
-                var selected = _cameras.Cameras.FirstOrDefault(c => c.Name == query.GetValueOrDefault("camera"));
+                var selected = _cameras.Cameras.FirstOrDefault(c =>
+                    _bindings.GetCameraId(c)?.ToString() == query.GetValueOrDefault("camera"))
+                    ?? _cameras.Cameras.FirstOrDefault(c => c.Name == query.GetValueOrDefault("camera"));
                 if (selected == null || _bindings.GetCameraId(selected) is not { } cameraId)
                     return Json(new { error = "No such camera." });
                 float Number(string key) => float.Parse(query.GetValueOrDefault(key, "0"), CultureInfo.InvariantCulture);
+                if (query.GetValueOrDefault("action") == "probe-native-pan")
+                {
+                    // Exercise CameraRestRecorder with a native change, like the game's pan controls.
+                    selected.Pan = new(Number("x"), Number("y"));
+                    return Json(Domain.Outcome.Ok());
+                }
                 var result = query.GetValueOrDefault("action") switch
                 {
                     "live" => _cameraControl.SetLive(cameraId, true),
@@ -831,6 +839,7 @@ public sealed partial class DebugBridge : IDisposable
                     "pan" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Pan, new(Number("x"), Number("y"))),
                     "roll" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Roll, Number("x")),
                     "fov" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.FoV, Number("x")),
+                    "zoom" => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Zoom, Number("x")),
                     _ => new Domain.Outcome(false, "Unknown camera command."),
                 };
                 _cameraControl.Seal();
@@ -838,9 +847,8 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/profile":
             {
-                // The frame profiler's own ledger — the instrument Midona reads
-                // — plus the GC counters, so a stopwatch cost the sampler
-                // cannot see (a collection pausing the render thread) shows.
+                // Include GC counters because collection pauses are not
+                // attributed to individual profiler scopes.
                 var profiler = (global::Poser.UI.FrameProfiler)_services.GetService(typeof(global::Poser.UI.FrameProfiler))!;
                 profiler.SetEnabled(true);
                 var samples = new global::Poser.UI.FrameProfiler.Sample[64];
@@ -947,24 +955,44 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/movediag":
             {
-                // Debug: why an actor move doesn't land. ?dx= moves actor 0's override.
-                var actorManager = (global::Poser.Game.Services.IActorManager)_services.GetService(typeof(global::Poser.Game.Services.IActorManager))!;
-                var gpose = _gpose;
-                var target = actorManager.Actors.FirstOrDefault();
-                if (target == null) return Json(new { error = "no actors" });
-                var before = _posing.GetTransformOverride(target);
-                var original = _posing.GetOriginalTransform(target);
-                if (query.TryGetValue("dx", out var dxText))
+                var target = FindActor(query.GetValueOrDefault("actor", "0"));
+                if (target == null || _bindings.GetActorId(target) is not { } targetId)
+                    return Json(new { error = "actor is unavailable" });
+                var before = _posing.GetEffectiveTransform(target);
+                global::Poser.Domain.Transforms.GestureResult? result = null;
+                if (query.ContainsKey("dx") || query.ContainsKey("sx") || query.ContainsKey("sy") || query.ContainsKey("sz") || query.ContainsKey("yaw"))
                 {
-                    var t = before ?? original;
-                    t.Position = t.Position + new System.Numerics.Vector3(float.Parse(dxText, CultureInfo.InvariantCulture), 0, 0);
-                    _posing.SetTransformOverride(target, t);
+                    float Value(string name, float fallback) => query.TryGetValue(name, out var value)
+                        ? float.Parse(value, CultureInfo.InvariantCulture) : fallback;
+                    var desired = new global::Poser.Domain.Transforms.PoseTransform(
+                        before.Position + new System.Numerics.Vector3(Value("dx", 0), 0, 0),
+                        System.Numerics.Quaternion.Normalize(before.Rotation * System.Numerics.Quaternion.CreateFromAxisAngle(
+                            System.Numerics.Vector3.UnitY, Value("yaw", 0) * MathF.PI / 180)),
+                        new(Value("sx", before.Scale.X), Value("sy", before.Scale.Y), Value("sz", before.Scale.Z)));
+                    result = _transforms.SetAbsolute(TransformTargetId.ForActor(targetId), desired, "Bridge actor transform");
                 }
-                var after = _posing.GetTransformOverride(target);
+                var after = _posing.GetEffectiveTransform(target);
+                float[]? nativeScale;
+                unsafe
+                {
+                    var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)target.Address;
+                    nativeScale = native->DrawObject == null ? null : new[]
+                    {
+                        native->DrawObject->Object.Scale.X,
+                        native->DrawObject->Object.Scale.Y,
+                        native->DrawObject->Object.Scale.Z,
+                    };
+                }
+                var rendered = (_skeletons.GetSkeletons(target).FirstOrDefault(s => s.Slot == PoseSlot.Character)
+                    as global::Poser.Game.Entities.Skeleton)?.GetModelTransform();
                 return Json(new
                 {
-                    target.Name, gposing = gpose.IsGPosing, available = actorManager.IsAvailable(target),
-                    before = before?.Position.ToString(), after = after?.Position.ToString(), original = original.Position.ToString(),
+                    target.Name, ok = result?.Success, detail = result?.Detail,
+                    position = new[] { after.Position.X, after.Position.Y, after.Position.Z },
+                    scale = new[] { after.Scale.X, after.Scale.Y, after.Scale.Z },
+                    nativeScale,
+                    renderedRotation = rendered is { } r ? new[] { r.Rotation.X, r.Rotation.Y, r.Rotation.Z, r.Rotation.W } : null,
+                    history = History(),
                 });
             }
             case "/gameui":
@@ -1362,7 +1390,7 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/cancel":
             {
-                // Experiment: which cancel arguments stop ONE layer?
+                // Probe which cancellation arguments stop one layer.
                 nint a2 = query.TryGetValue("a2", out var x2) ? (nint)long.Parse(x2, CultureInfo.InvariantCulture) : 0;
                 nint a3 = query.TryGetValue("a3", out var x3) ? (nint)long.Parse(x3, CultureInfo.InvariantCulture) : 0;
                 var r = _port.ProbeCancel(id, a2, a3);
@@ -1515,6 +1543,32 @@ public sealed partial class DebugBridge : IDisposable
                         }
                 return Json(new { error = "no such bone" });
             }
+            case "/posefile":
+            {
+                var imports = (Application.Posing.IPoseImportCommands)_services.GetService(typeof(Application.Posing.IPoseImportCommands))!;
+                if (query.GetValueOrDefault("action") == "read")
+                    return Json(new { busy = imports.IsImportBusy, bakePending = _ikBake.IsPending, bakeNote = _ikBake.Note?.Text });
+                var posePath = query.GetValueOrDefault("path", "");
+                if (!Path.IsPathFullyQualified(posePath))
+                    return Json(new { error = "An absolute pose path is required." });
+                if (query.GetValueOrDefault("action") == "export")
+                {
+                    if (File.Exists(posePath)) return Json(new { error = "Choose a new diagnostic export file." });
+                    var capture = (Application.Posing.IPoseFileCapture)_services.GetService(typeof(Application.Posing.IPoseFileCapture))!;
+                    var exported = capture.ExportPose(id, posePath);
+                    return Json(new { ok = exported.Success, exported.Detail });
+                }
+                var options = Documents.Files.PoseImportOptions.Default;
+                if (query.GetValueOrDefault("full") == "1")
+                {
+                    options.ApplyPosition = true;
+                    options.ApplyScale = true;
+                    options.ResetBeforeImport = true;
+                    options.FreezeOnImport = true;
+                }
+                var imported = imports.ImportPose(id, posePath, options);
+                return Json(new { ok = imported.Success, imported.Detail });
+            }
             case "/library":
             {
                 // A full rescan, timed: how long the listing takes for
@@ -1578,6 +1632,28 @@ public sealed partial class DebugBridge : IDisposable
                             if (query.GetValueOrDefault("action") == "read")
                                 return JsonSerializer.Serialize(new { actorId = id.ToString(), config = current },
                                     new JsonSerializerOptions { IncludeFields = true });
+                            if (query.GetValueOrDefault("action") == "defaults")
+                            {
+                                var reset = _ikConfiguration.ResetDefaults(target);
+                                return Json(new { ok = reset.Success, reset.Detail });
+                            }
+                            if (query.GetValueOrDefault("action") is "bone" or "entity" &&
+                                FindActor(query.GetValueOrDefault("targetActor", "0")) is { } followed)
+                            {
+                                if (query.GetValueOrDefault("action") == "entity")
+                                {
+                                    var followedLight = _sceneSession.Snapshot.Lights.FirstOrDefault();
+                                    if (followedLight == null) return Json(new { error = "Spawn a test light first." });
+                                    var picked = _ikConfiguration.SetEntityTarget(target, SelectionId.ForLight(followedLight.Id));
+                                    return Json(new { ok = picked.Success, picked.Detail });
+                                }
+                                var targetBone = _skeletons.GetSkeletons(followed).SelectMany(s => s.Bones)
+                                    .FirstOrDefault(b => b.BoneName == query.GetValueOrDefault("targetName") && b.PartialId == 0);
+                                if (targetBone == null || _bindings.GetBoneId(targetBone) is not { } followedBone)
+                                    return Json(new { error = "Target bone not found." });
+                                var bonePicked = _ikConfiguration.SetBoneTarget(target, followedBone);
+                                return Json(new { ok = bonePicked.Success, bonePicked.Detail });
+                            }
                             var next = current with
                             {
                                 Enabled = !query.TryGetValue("enabled", out var en) || en != "0",
@@ -1673,9 +1749,8 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/setbone":
             {
-                // A JOURNALED bone write: the same absolute write a typed
-                // inspector well issues, so the step lands in the history the
-                // way a drag does. /rotatebone below writes the runtime directly.
+                // This absolute bone write uses the edit journal. /rotatebone
+                // below writes directly to the runtime for comparison.
                 string name = query["name"]; int part = query.TryGetValue("partial", out var sp) ? int.Parse(sp) : 0;
                 float deg = float.Parse(query.GetValueOrDefault("deg", "0"), CultureInfo.InvariantCulture);
                 var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;
@@ -2114,13 +2189,13 @@ public sealed partial class DebugBridge : IDisposable
 
     private object BodyProfile(ActorId id)
     {
-        var probe = _customizePlus.ProbeBodyProfile(id);
+        var probe = _customizePlus.GetActiveSavedBodyProfile(id);
         return new
         {
             ok = probe.Success,
             detail = probe.Detail,
-            active = probe.Value?.ActiveProfile?.ToString(),
-            saved = probe.Value?.ActiveIsSaved,
+            active = probe.Value?.ToString(),
+            saved = probe.Success ? probe.Value.HasValue : (bool?)null,
         };
     }
 
@@ -2152,3 +2227,4 @@ public sealed partial class DebugBridge : IDisposable
     }
 }
 #endif
+

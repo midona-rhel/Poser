@@ -3,8 +3,9 @@ using System.Numerics;
 
 namespace Poser.Domain.Presentation;
 
-/// <summary>The three whole-model tint targets Poser owns. Props and
-/// ornaments are deliberately absent — the references tint only these.</summary>
+/// <summary>
+/// Models supported by the whole-model tint control.
+/// </summary>
 public enum PresentationModel
 {
     Character,
@@ -12,16 +13,14 @@ public enum PresentationModel
     OffHand,
 }
 
-/// <summary>The granular wet-surface state: weather wetness 0..1,
-/// swimming wetness 0..1, and wetness depth 0..3. Glamourer's wetness is
-/// binary; this exists only for the granular values.</summary>
+/// <summary>
+/// Weather and swimming wetness values (0–1), plus wetness depth (0–3).
+/// </summary>
 public readonly record struct WetnessState(float Weather, float Swimming, float Depth);
 
 /// <summary>
-/// Everything Poser authored for one actor's runtime presentation. This
-/// is the ONLY record of what must be undone; anything absent here was
-/// never Poser's to restore. Not pose data, not a named layer, not
-/// transform history, and never a second undo journal.
+/// Runtime appearance edits and the original values captured for restoration.
+/// Pose and transform edits are stored separately.
 /// </summary>
 public sealed record PresentationOverrides
 {
@@ -29,34 +28,37 @@ public sealed record PresentationOverrides
     public float? Opacity { get; init; }
     public IReadOnlyDictionary<PresentationModel, Vector4> Tints { get; init; } =
         new Dictionary<PresentationModel, Vector4>();
-    /// <summary>The enabled wetness override; null while the game owns
-    /// its own wetness.</summary>
+    /// <summary>
+    /// Wetness override, or null to leave wetness under game control.
+    /// </summary>
     public WetnessState? Wetness { get; init; }
     public IReadOnlyDictionary<AppearanceColorChannel, Vector4> Colors { get; init; } = new Dictionary<AppearanceColorChannel, Vector4>();
     public IReadOnlyDictionary<AppearanceColorChannel, Vector4> ColorCaptures { get; init; } = new Dictionary<AppearanceColorChannel, Vector4>();
 
     // ── Captures ──────────────────────────────────────────────────────
-    // Each is taken ONCE, before the first Poser edit of that field, and
-    // is the only thing that can put that field back. A draw-object
-    // replacement never re-captures: the replacement's temporary
-    // defaults are not the actor's incoming state.
+    // Keep the pre-edit values across redraws. A newly created draw object
+    // may contain temporary defaults rather than the values being restored.
 
     public float? OpacityCapture { get; init; }
     public IReadOnlyDictionary<PresentationModel, Vector4> TintCaptures { get; init; } =
         new Dictionary<PresentationModel, Vector4>();
-    /// <summary>The COMPLETE incoming three-float state, captured before
-    /// the first wetness write; disabling restores all three.</summary>
+    /// <summary>
+    /// All three wetness values captured before the first override.
+    /// </summary>
     public WetnessState? WetnessCapture { get; init; }
 
     public static PresentationOverrides None { get; } = new();
 
-    /// <summary>True when Poser owns anything that must be restored.</summary>
+    /// <summary>
+    /// Whether any original values have been captured for later restoration.
+    /// </summary>
     public bool HasAny =>
         OpacityCapture != null || TintCaptures.Count > 0 || WetnessCapture != null || ColorCaptures.Count > 0;
 }
 
-/// <summary>One frame's live native read. Weapon tints are null when the
-/// model is absent — an absent model is unavailable, never redirected.</summary>
+/// <summary>
+/// Snapshot of rendered appearance values. A null weapon tint means that model was unavailable.
+/// </summary>
 public sealed record PresentationReading(
     float Opacity,
     Vector4? CharacterTint,

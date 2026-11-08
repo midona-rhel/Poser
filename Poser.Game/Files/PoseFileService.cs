@@ -61,11 +61,8 @@ public class PoseFileService : IPoseFileService
         _ => false,
     };
 
-    /// <summary>The running game build, or empty when it is not resolvable —
-    /// an export off the framework thread, or a call before the framework
-    /// exists. Brio stamps the same value from the same place
-    /// (PoseFile.cs:148); neither plugin reads it back, so an empty string is
-    /// a correct answer and an invented one would not be.</summary>
+    /// <summary>Reads the native game version, returning empty if the framework
+    /// is absent or a managed exception occurs. This method does not check thread affinity.</summary>
     private static unsafe string LiveGameVersion()
     {
         try
@@ -359,13 +356,9 @@ public class PoseFileService : IPoseFileService
         return plan;
     }
 
-    /// <summary>Reset-before-import touches EXACTLY what the importer could
-    /// apply, bone by bone: Expression resets applicable face bones but
-    /// never j_kao; Body (face off) resets only non-face bones; Full resets
-    /// everything present in the file; Selected follows the slot-qualified
-    /// filter. A slot resets ONLY under the same collection-present/enabled
-    /// gate the application loop uses — a selected auxiliary bone is never
-    /// erased when nothing from its slot can apply.</summary>
+    /// <summary>Resets live bones in the selected scope when their file collection
+    /// is nonempty. The reset can include bones absent from that collection.
+    /// Expression imports preserve j_kao layers for the later head restore.</summary>
     private void PlanResetScope(
         PoseImportPlan plan,
         IReadOnlyDictionary<PoseSlot, ISkeleton> bySlot,
@@ -480,29 +473,9 @@ public class PoseFileService : IPoseFileService
             // modify how an accepted bone applies, never smuggle an
             // out-of-scope bone past AsExpression/ApplyFace/the filter.
 
-            // The MODE gates, folded into one verdict because a DIRECTLY
-            // selected bone bypasses all of them (Ktisis: ApplyToBones
-            // applies the explicit selection with no partial-mode gating;
-            // modes gate only descendant expansion). A selection the user
-            // made bone by bone must never partially and silently drop
-            // under a narrowed type strip or category filter.
-            //
-            // Expression import scope: Brio's ExpressionOptions — head,
-            // ears, hair, face, eyes, lips, jaw (PosingService.cs:77-86) —
-            // INCLUDING j_kao. The file's face was authored around the
-            // file's OWN head, so the head must move to the file's space for
-            // the face deltas to be face-local; the import engine's head
-            // restore stage then reverts the head, Brio's expressionPhase2
-            // (PosingCapability.cs:238-247, PoseImporter.cs:11-26). The
-            // earlier "skip j_kao, single phase" shortcut silently baked the
-            // exporter-vs-target head offset into every face position delta
-            // and flung imported faces (user 2026-08-08).
-            //
-            // Category exclusions: the bone-filter menu (Brio's category
-            // filter, BoneFilter.IsBoneValidUncached): disabled category
-            // prefixes never apply; with "Other" off, neither does anything
-            // no category claims. Then the face gate, then the call site's
-            // own ApplyBody gate, which the filtered call re-enters.
+            // Direct selections bypass scope gates. Other bones obey expression,
+            // category, face and body settings. Expression scope includes j_kao
+            // temporarily; the import engine restores the head afterward.
             bool modeGated =
                 (options.AsExpression && !IsExpressionScopeBone(boneName))
                 || IsExcludedByCategories(boneName, options)
@@ -587,48 +560,9 @@ public class PoseFileService : IPoseFileService
         Unfiltered,
     }
 
-    /// <summary>
-    /// Ktisis' "Anchor group positions" (PosingManager.ApplyPoseFile:254-265):
-    /// after the selective apply, Ktisis restores the selection's pre-import
-    /// POSITIONS — descendants included, GetSelectedBones(false,
-    /// includeDescendants) — inside the same MultipleMemento. Poser plans the
-    /// equivalent by withholding the position component from every filtered
-    /// bone's write. Gated exactly like Ktisis (selective active AND a
-    /// position component applying); a write masked to nothing is dropped, so
-    /// an anchor that empties the whole plan surfaces as the existing typed
-    /// "nothing applies" refusal instead of a silent no-op arm.
-    ///
-    /// <para>Anchoring by never-writing lands the SAME net pose as Ktisis'
-    /// do-then-undo on the body partial, and in one history patch instead of
-    /// two mementos. Ktisis' restore is relative (PoseContainer.cs:200-207):
-    /// the bone's pre-import offset from its parent, carried by that parent's
-    /// rigid motion. A masked bone reaches the identical place from the other
-    /// side — ApplyBoneTransform reads model space with propagation already
-    /// applied (BonePosingService.AccessBoneModelSpace(..., Propagate)), so
-    /// the bone sits exactly where its ancestors' motion put it. Neither has
-    /// an observable transient: Ktisis' two passes share one
-    /// RunOnFrameworkThread tick, so the mask's advantage is the single patch,
-    /// not the absence of a flicker.</para>
-    ///
-    /// <para>Two characterized divergences, neither an equivalence claim.
-    /// FACE AND HAIR PARTIALS — Ktisis' TryGetRelativeParent
-    /// (PoseContainer.cs:236-238) forces parentIndex 0 for partialIndex 1 or
-    /// 2, so it anchors every face/hair bone to the PARTIAL ROOT (j_kao)
-    /// rather than to the bone's own parent: a deep face bone does not swing
-    /// with a rotating intermediate parent there. The mask leaves the bone
-    /// riding its true parent (ClassifyBoneFilter walks bone.ParentBone), so
-    /// the net poses genuinely differ — INTENTIONALLY. "Anchor" means a bone
-    /// follows its own parent; Ktisis' behaviour is a by-product of the
-    /// partial-root shortcut its selective rotation math uses, and this is the
-    /// coherent reading, not a port gap. SCALE — Poser propagates with
-    /// TransformComponents.All (PoseImportCapture, exact Brio parity,
-    /// PoseImporter.cs:35) while Ktisis' Propagate carries pos/rot only
-    /// (HavokPosing.cs:175-178), so a propagated scale can displace an
-    /// anchored descendant where Ktisis would have restored it. Inherited from
-    /// the Brio-vs-Ktisis propagation difference, not introduced here, and it
-    /// is the one place the anchor's promise leaks — only while Scale is also
-    /// importing.</para>
-    /// </summary>
+    /// <summary>Anchors selected bones by excluding position deltas. Ancestor
+    /// rotation and scale still propagate to them. Unlike Ktisis' face/hair
+    /// partial-root anchoring, this follows each bone's actual parent.</summary>
     private static TransformComponents AnchorMask(
         BoneFilterMatch match,
         PoseImportOptions options,
@@ -732,20 +666,7 @@ public class PoseFileService : IPoseFileService
                boneName.Contains("_kuti");       // Mouth
     }
 
-    /// <summary>
-    /// Brio's ExpressionOptions bone scope, read straight off the shipped
-    /// catalog: the union of the head, ears, hair, face, eyes, lips and jaw
-    /// category prefixes, which is precisely the set its DisableAll +
-    /// EnableCategory run leaves allowed (PosingService.cs:77-86) evaluated
-    /// through BoneFilter's prefix test (BoneFilter.cs:127).
-    ///
-    /// <para>Replaces a hand-rolled predicate that approximated the same set
-    /// from <see cref="IsFaceBone"/>: it was too WIDE (every j_f_* name, so
-    /// the legacy and ex rows Brio leaves disabled rode along, as did bare
-    /// j_ago and j_hana) and too NARROW (j_kao matched only exactly, where
-    /// Brio's entry is a prefix). The catalog is now the only statement of
-    /// this scope.</para>
-    /// </summary>
+    /// <summary>Uses the shared category prefixes for Brio-compatible expression scope.</summary>
     internal static bool IsExpressionScopeBone(string boneName) =>
         ImportBoneCategories.IsInCategories(
             boneName, ImportBoneCategories.ExpressionCategories);
@@ -870,8 +791,6 @@ public class PoseFileService : IPoseFileService
             : FaceGenerationMatch.PreDawntrailFileOnDawntrailSkeleton;
     }
 
-    /// <summary>Brio ResolveSmartImport's local IsFaceBone (:405-419):
-    /// j_kao plus the j_f_/j_eye/j_may/j_ago/j_lip/j_bero prefixes.</summary>
     public void Dispose()
     {
         // Nothing to dispose

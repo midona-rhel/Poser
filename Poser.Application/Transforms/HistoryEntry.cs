@@ -9,15 +9,14 @@ namespace Poser.Application.Transforms;
 /// </summary>
 public abstract record HistoryEntry(string Description)
 {
-    // Re-keying replaces the immutable patch while an async restore may
-    // still hold the old object. The operation identity survives that copy.
+    // A redraw can replace the saved bone IDs while an undo is running.
+    // Keep the same step ID so undo can commit the updated entry.
     public Guid Id { get; init; } = Guid.NewGuid();
     /// <summary>External file required to repeat the operation, when any.</summary>
     public string? RequiredAsset { get; init; }
-    /// <summary>Complete entity footprint for scoped replay. Null is a scene-wide
-    /// ordering barrier, not permission to skip an unknown operation.</summary>
+    /// <summary>Entities changed by this step, used to find edits for selected-entity undo.</summary>
     public IReadOnlyList<SelectionId>? AffectedEntities { get; init; }
-    /// <summary>Lifecycle entries may bind their new identity on the next scene publication.</summary>
+    /// <summary>Finds the current entities after undo or redo recreates them.</summary>
     public Func<IReadOnlyList<SelectionId>?>? ResolveAffectedEntities { get; init; }
 }
 
@@ -26,43 +25,38 @@ public sealed record TransformPatch(
     IReadOnlyList<TransformTargetState> Before,
     IReadOnlyList<TransformTargetState> After) : HistoryEntry(Description)
 {
-    /// <summary>Retained across a slot's redraw gap, but not replayable until
-    /// reconciliation has validated and re-keyed every target.</summary>
+    /// <summary>Waits for replacement transform targets to load before this step can be replayed.</summary>
     public bool AwaitingTargets { get; init; }
 
-    /// <summary>Optional named/anonymous group presentation state changed by
-    /// the same gesture. It is restored with the target snapshots, never by
-    /// a post-commit observer.</summary>
+    /// <summary>Group state changed by the gesture, restored together with its transforms.</summary>
     public GroupTransformHistoryChange? GroupState { get; init; }
 }
 
-/// <summary>What history does with an entry whose inverse was refused.</summary>
+/// <summary>What happens to a step after undo or redo fails.</summary>
 public enum RefusalAction
 {
-    /// <summary>Retain the entry for retry; the cursor does not move.</summary>
+    /// <summary>Keep the step so the user can try undo or redo again.</summary>
     Keep,
-    /// <summary>Retain it once; the same entry refused again is discarded.</summary>
+    /// <summary>Keep the step after its first failure; remove it if the next attempt fails.</summary>
     DropOnRepeat,
-    /// <summary>The refusal is permanent: report it and discard the entry so
-    /// unrelated earlier history can proceed.</summary>
+    /// <summary>Report the failure and remove this step so earlier edits can be undone.</summary>
     DropNow,
 }
 
 /// <summary>
-/// An entry that runs its own undo and redo delegates, each reporting
-/// whether the direction landed. Refusal handling is one value per entry,
-/// read through <see cref="RefusalPolicy"/>.
+/// Runs undo and redo actions that report whether they succeeded.
+/// RefusalPolicy decides whether a failed step stays available for another attempt.
 /// </summary>
 public abstract record InverseEntry(
     string Description,
     Func<bool> Undo,
     Func<bool> Redo) : HistoryEntry(Description)
 {
-    /// <summary>Optional reason for a refused direction.</summary>
+    /// <summary>Explains why undo or redo failed.</summary>
     public Func<string?>? FailureDetail { get; init; }
 
-    /// <summary>Decided after a refusal, when it is known; null uses the
-    /// entry kind's default.</summary>
+    /// <summary>Decides whether to keep a failed step. Called after the failure;
+    /// leaving it unset uses the entry's default policy.</summary>
     public Func<RefusalAction>? OnRefusal { get; init; }
 
     protected internal virtual RefusalAction DefaultRefusal => RefusalAction.DropOnRepeat;
@@ -79,9 +73,8 @@ public static class RefusalPolicy
 }
 
 /// <summary>
-/// A scene-lifecycle action. Its undo and redo delegates report whether the
-/// action landed and resolve the entity again when it is recreated. A
-/// refusal is retained unless the entry says it is permanent.
+/// Undoes or repeats an entity change, such as creating or deleting an actor.
+/// Failed attempts stay available by default so loading can finish before retrying.
 /// </summary>
 public sealed record SceneLifecyclePatch(
     string Description,

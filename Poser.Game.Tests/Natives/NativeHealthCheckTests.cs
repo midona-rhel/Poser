@@ -12,7 +12,7 @@ namespace Poser.Game.Tests.Natives;
 
 public sealed unsafe class NativeHealthCheckTests : IDisposable
 {
-    // Every pattern "matches" here; each reader's displacement is read from this buffer.
+    // When enabled, the fake scanner returns this same buffer for every pattern.
     private readonly nint _code = Marshal.AllocHGlobal(0x1000);
 
     public NativeHealthCheckTests() => new Span<byte>((void*)_code, 0x1000).Clear();
@@ -56,7 +56,7 @@ public sealed unsafe class NativeHealthCheckTests : IDisposable
         Assert.Contains($"0x{speed.Analysed:X}", moved.Detail);
         Assert.Contains($"0x{other.Value.Analysed:X}", moved.Detail);
 
-        // The constants derived from each follow their entry.
+        // Derived field checks report the same status as their source offset.
         var speedField = NativeFieldChecks.All.First(f => f.Entry == "SchedulerTimeline.Speed");
         Assert.Equal(NativeHealthState.Ok, Row(report, "NativeFields." + speedField.Constant).State);
         var movedField = NativeFieldChecks.All.First(f => f.Entry == other.Key && f.Delta == 0);

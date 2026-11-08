@@ -47,7 +47,7 @@ public sealed class CharacterFileSession(
         if (_pending is not null || mcdf.Busy)
             return new(null, "A character-file import is already pending.");
 
-        // Validate before creating a body, and retain these exact bytes until it binds.
+        // Read the appearance file before spawning, then keep it until the actor is ready.
         string? appearance = null;
         if (IsAppearance(path))
         {
@@ -61,7 +61,8 @@ public sealed class CharacterFileSession(
         return result;
     }
 
-    /// <summary>Framework-driven; closing a window cannot suspend or redirect an import.</summary>
+    /// <summary>Applies the pending character file once the spawned actor is ready.
+    /// Called by the framework update.</summary>
     public IntegrationResult? Advance()
     {
         if (_pending is not { } pending) return null;
@@ -70,8 +71,7 @@ public sealed class CharacterFileSession(
             _pending = null;
             return null;
         }
-        // Both formats capture the pre-import actor state for Undo. An MCDF
-        // does not import a pose, but its history capture still needs the rig.
+        // Undo captures the actor's pose before import, so wait for its skeleton.
         if (creation.Resolve(pending.Body, requirePose: true)?.Actor is not { } actor)
         {
             if (_clock.GetElapsedTime(pending.Started) < TimeSpan.FromSeconds(30)) return null;

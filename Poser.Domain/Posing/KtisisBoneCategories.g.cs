@@ -246,7 +246,8 @@ public static class KtisisBoneCategories
             []),
     ];
 
-    /// <summary>Bone name -> owning category id, leaf-most wins; built once.
+    /// <summary>Maps each bone to its category. Later traversal entries replace
+    /// earlier ones, so a child overrides its parent and later branches override earlier branches.
     /// </summary>
     public static IReadOnlyDictionary<string, string> OwnerByBone { get; } =
         BuildOwners();

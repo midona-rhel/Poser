@@ -6,11 +6,9 @@ using Microsoft.Win32;
 namespace Poser.UI;
 
 /// <summary>
-/// Resolves the CJK fallback face the way Chromium falls back from
-/// Segoe UI on Windows: by walking the Segoe UI font-link chain
-/// (<c>FontLink\SystemLink</c>) in registry order and taking the first
-/// linked face that actually covers Japanese — Meiryo UI before
-/// Yu Gothic UI on machines that ship both.
+/// Finds a Japanese fallback font through Segoe UI's Windows font-link chain
+/// (<c>FontLink\SystemLink</c>). Registry order takes precedence; the built-in
+/// fallback list tries Meiryo UI, Yu Gothic UI, then MS UI Gothic.
 /// </summary>
 public static class WindowsFontFallback
 {
@@ -32,10 +30,9 @@ public static class WindowsFontFallback
     private static readonly object Gate = new();
     private static readonly Dictionary<int, ResolvedFace?> Cache = new();
 
-    /// <summary>First font-link face covering Japanese, nearest to the
-    /// requested weight among that file's matching faces. Font-link does
-    /// not switch files per weight, so a single-weight family (Meiryo)
-    /// serves every weight, exactly as GDI/Chromium fall back.</summary>
+    /// <summary>Uses the first linked file with a Japanese face and chooses
+    /// its closest available weight. A different weight does not skip ahead
+    /// to a later file in the chain.</summary>
     public static ResolvedFace? ResolveJapanese(int weight)
     {
         lock (Gate)

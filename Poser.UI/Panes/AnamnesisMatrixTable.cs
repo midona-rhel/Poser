@@ -1,7 +1,6 @@
-// GENERATED from Anamnesis Actor/Posing/Views/PoseMatrixView.xaml (modern
-// variant) + Languages/en.json — the authoritative matrix layout the user's
-// reference image shows. Regenerate with scratchpad tooling if Anamnesis
-// changes; do NOT hand-edit rows.
+// Generated from Anamnesis Actor/Posing/Views/PoseMatrixView.xaml (modern
+// variant) and Languages/en.json. Regenerate with the scratchpad tooling;
+// do not hand-edit rows.
 namespace Poser.UI;
 
 public static class AnamnesisMatrixTable

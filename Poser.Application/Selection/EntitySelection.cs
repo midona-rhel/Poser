@@ -4,11 +4,8 @@ using Poser.Domain.Scene;
 namespace Poser.Application.Selection;
 
 /// <summary>
-/// The selection questions the ANONYMOUS GROUP asks: a multiselect of two
-/// or more scene entities behaves as a group that was never created —
-/// manipulated together about its centroid, presented on one Selection
-/// page — while bones and gaze anchors stay posing concerns and never
-/// count toward it.
+/// Counts scene entities for multi-selection controls. Bones and gaze targets
+/// are excluded; selecting two entities does not create a named scene group.
 /// </summary>
 public static class EntitySelection
 {

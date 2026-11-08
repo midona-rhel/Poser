@@ -46,8 +46,8 @@ public sealed class WorldActorDiscoveryTests
         }));
         using var gpose = new GPoseService(client, framework, bus, log, lifecycle);
 
-        // ActorManager subscribes first in production. Its state-change event
-        // can remove the binding, but not before the separate restore phase.
+        // Simulate binding removal on the state-change event. Restoration must
+        // happen first through the separate GPoseExitingEvent.
         bus.Subscribe<GPoseStateChangedEvent>(evt =>
         {
             if (evt.IsGPosing) return;
@@ -294,9 +294,7 @@ public sealed class WorldActorDiscoveryTests
         public List<WorldActorObservation> World { get; } = new();
         public IReadOnlyList<WorldActorObservation> EnumerateOverworld() => World.ToArray();
 
-        /// <summary>Default revalidation resolves the stored candidate's own
-        /// reference against the current world — the same "does this exact
-        /// object still stand there" question the production adapter asks.</summary>
+        /// <summary>Finds the current observation that retains the stored object reference.</summary>
         public WorldActorObservation? Revalidate(WorldActorObservation stored)
         {
             foreach (var current in World)

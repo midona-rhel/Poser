@@ -13,8 +13,8 @@ namespace Poser.Game.Cameras;
 /// <summary>
 /// Aims a camera at an actor or bone: the follow target's draw offset, and
 /// the one-shot centering commands. Every actor address is resolved through
-/// the object table before it is dereferenced — a raw address is a claim,
-/// not a proof (WorldActorDiscovery standard).
+/// the object table before it is dereferenced. This checks the current occupant;
+/// callers still need to validate the actor identity.
 /// </summary>
 internal sealed unsafe class CameraTargeting
 {
@@ -45,8 +45,7 @@ internal sealed unsafe class CameraTargeting
     {
         if (camera is not VirtualCamera target || actor.Address == nint.Zero)
             return false;
-        // Deref-time revalidation: the stored actor address is only a claim;
-        // the deref goes through the object-table-resolved wrapper.
+        // Resolve a valid current object wrapper before reading native draw fields.
         var resolved = _objectTable?.CreateObjectReference(actor.Address);
         if (resolved == null || !resolved.IsValid())
             return false;
@@ -136,8 +135,7 @@ internal sealed unsafe class CameraTargeting
     }
 
     /// <summary>Centers on the selected bone's live model-space transform.
-    /// The skeleton cache and object-table draw checks happen before either
-    /// camera setter so a replaced or undrawn identity cannot move the shot.
+    /// Checks skeleton validity and draw availability before changing the camera.
     /// </summary>
     public Outcome CenterOnBone(IBone bone)
     {
@@ -176,7 +174,7 @@ internal sealed unsafe class CameraTargeting
             ? reportedHeight
             : 1.7f;
         // A bone is a point rather than a body; a quarter body height gives a
-        // useful Ktisis-like close framing without changing the view angles.
+        // close framing without changing the view angles.
         float framingHeight = Math.Clamp(actorHeight * 0.25f, 0.5f, 1.5f);
         var pivot = world.Position;
         var scene = &native->Camera.CameraBase.SceneCamera;

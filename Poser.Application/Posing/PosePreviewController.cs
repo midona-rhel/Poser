@@ -62,9 +62,7 @@ public sealed class PosePreviewController
         }
         if (source != _source)
         {
-            // A different appearance means a different hidden body: the pose
-            // standing on the old one says nothing about the new one. A
-            // different actor also means a different pose to rebase onto.
+            // A different source actor needs its own starting pose.
             _source = source;
             InvalidateBaseline();
         }
@@ -75,8 +73,8 @@ public sealed class PosePreviewController
         TakeCapture();
         if (_baseline is null)
         {
-            // Nothing may be stated without one, and nothing may be REMEMBERED
-            // either: the pose has to be stated the frame the capture lands.
+            // Do not cache the request before capture completes: the next Begin
+            // must still request a rebuild once the starting pose is available.
             _path = null;
             _candidate = null;
             ArmBaseline(source, frame);
@@ -167,12 +165,8 @@ public sealed class PosePreviewController
         _baselineArmedAt = frame;
         var capture = new Capture();
         _captured = capture;
-        // Authored bones only: a full snapshot bakes whatever frame the
-        // target's ANIMATION happened to be on — eyes caught mid-blink,
-        // enforced forever on the preview body (user 2026-08-10: "eyes
-        // unreliable"). The stance is the AUTHORED pose; everything else
-        // rides the preview body's own live animation, exactly as it rides
-        // the target's.
+        // Capture authored edits only. Capturing evaluated animation would freeze
+        // transient poses, such as a blink, into the preview's starting pose.
         var armed = _poses.CapturePoseFile(
             target,
             pose => capture.Pose = pose,

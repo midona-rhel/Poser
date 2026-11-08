@@ -17,17 +17,10 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>
-/// The Appearance view: the actor's customization, through Glamourer,
-/// with the choices the game offers its clan and gender — the sheet's,
-/// plus the faces and hairs found by probing the model files, as Ktisis
-/// lists them. Body: race and clan on one row with the gender symbol as
-/// a swap, then height beside the bust or muscle slider. Face: the four
-/// tiles (face, hair, tail or ears, face paint) on fixed rows, each with a
-/// plus and minus that step only through valid values; the named options
-/// on fixed rows as plus and minus wells; the features as one row of
-/// small tiles. Colours keep two columns, with the switches
-/// under them. Every value is a journal step; a slider folds while it
-/// drags. Without Glamourer everything disables in place and says why.
+/// Actor customization controls backed by Glamourer and the available
+/// clan/gender catalogs. Changes are journaled; slider drags fold into one
+/// edit. Controls are disabled with an explanation when Glamourer is
+/// unavailable.
 /// </summary>
 public sealed partial class AppearancePane
 {
@@ -576,9 +569,8 @@ public sealed partial class AppearancePane
         }
     }
 
-    /// <summary>The value a flag key takes when on: a facial feature is
-    /// its own bit, the rest are the high bit — as Glamourer reads them
-    /// back (a one is ignored; probed live 2026-09-02).</summary>
+    /// <summary>Returns the enabled value expected by Glamourer: facial
+    /// features use their bit, while other flags use the high bit.</summary>
     private static int Flag(CustomizeKey key) => CustomizeEncoding.FlagValue(key);
 
     private static string ColorName(CustomizeKey key) => key switch

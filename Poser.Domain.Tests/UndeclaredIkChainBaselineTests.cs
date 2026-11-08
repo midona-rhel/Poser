@@ -4,15 +4,10 @@ using Poser.Domain.Posing;
 namespace Poser.Domain.Tests;
 
 /// <summary>
-/// Acceptance for a chain that has no declared definition — CCD armed on an
-/// arbitrary bone.
-///
-/// <para>A bone that heads no declared arm or leg chain is judged by
-/// <see cref="IkChainConfig.ValidateUndeclared"/>, whose one extra rule is
-/// that Two Joint needs a definition's named joints and twists while CCD
-/// needs nothing but the endpoint's own parent walk. That is Brio's
-/// split: every bone carries CCD options, and Two Joint is offered
-/// additionally for <c>j_te*</c> / <c>j_asi_d*</c>.</para>
+/// Verifies IK settings for a bone that is not part of a configured arm or leg
+/// chain. CCD can discover its joints by walking parents from the selected
+/// bone. The two-joint solver requires named joints from a declared chain and
+/// must therefore be rejected here.
 /// </summary>
 public sealed class UndeclaredIkChainBaselineTests
 {
@@ -39,8 +34,7 @@ public sealed class UndeclaredIkChainBaselineTests
         };
 
         Assert.NotNull(twoJoint.ValidateUndeclared());
-        // The configuration itself is perfectly valid — it is only the
-        // UNDECLARED reading of it that refuses.
+        // The general values are valid; only use without a declared chain fails.
         Assert.Null(twoJoint.Validate());
     }
 }

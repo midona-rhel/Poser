@@ -10,9 +10,8 @@
 		<ProduceReferenceAssembly>false</ProduceReferenceAssembly>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-		<!-- A Dalamud manifest takes a four-part numeric AssemblyVersion, so
-		     "beta" reads in the punchline and the changelog, never in the
-		     version string. Keep this in lockstep with Poser.json's
+		<!-- Dalamud requires a four-part numeric AssemblyVersion, so prerelease
+		     labels belong in the changelog instead. Keep this in sync with Poser.json's
 		     AssemblyVersion. -->
 		<Version>0.9.23.0</Version>
 	</PropertyGroup>

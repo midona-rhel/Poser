@@ -3,7 +3,7 @@ using System;
 namespace Poser.Application.Events;
 
 /// <summary>
-/// Provides decoupled communication between components via publish/subscribe pattern.
+/// Lets components listen for notifications without the sender calling them directly.
 /// </summary>
 public interface IEventBus : IDisposable
 {

@@ -38,11 +38,8 @@ public sealed partial class PoseLibraryPane
         : TargetActor() is { } selected && IsApplyTarget(selected) ? selected
         : FirstApplyTarget();
 
-    /// <summary>The apply gates. The picker chooses the target, so applying
-    /// only needs an ELIGIBLE ACTOR TO EXIST — the sidebar selection is
-    /// irrelevant, and nothing here touches it (the old label-minting tail
-    /// resolved the SELECTED actor and crashed the frame when the gate was
-    /// true with nothing selected).</summary>
+    /// <summary>Updates action availability and labels using the resolved target.
+    /// An explicit dropdown choice can differ from the sidebar selection.</summary>
     private void SyncTarget()
     {
         _vm.CanApply = CurrentApplyTarget() is not null;
@@ -54,21 +51,18 @@ public sealed partial class PoseLibraryPane
 
         // A character file is applied to an actor that already exists; there is
         // no "spawn and dress" path in v1.
-        _vm.CanSpawn = _type != LibraryType.Mcdf && _type != LibraryType.Scenes;
+        _vm.CanSpawn = _type != LibraryType.Mcdf && !IsSceneTile(_vm.Selected);
 
-        // A scene has no target to pick: it IS the session. Its primary needs
-        // a highlighted file and nothing else, and it names the transaction it
-        // starts rather than the picker it does not open.
+        // Loading a scene replaces the session and does not need an actor target.
         _vm.ApplyDisruptive = false;
-        if (_type == LibraryType.Scenes)
+        if (IsSceneTile(_vm.Selected))
         {
             _vm.CanApply = true;
             _vm.ApplyLabel = "Load scene";
             return;
         }
 
-        // An object entry has ONE verb — it spawns what it is. No picker,
-        // no apply, no second spawn button.
+        // Object entries use one Spawn action instead of an actor-targeted Apply action.
         if (_type == LibraryType.Objects)
         {
             _vm.CanApply = true;
@@ -76,15 +70,13 @@ public sealed partial class PoseLibraryPane
             return;
         }
 
-        // The primary opens the actor picker; its caption is constant. A
-        // character file redraws the actor, so its verb is Disruptive.
+        // Character-file imports redraw the target actor, so use the disruptive action style.
         _vm.ApplyLabel = "Apply";
         _vm.ApplyDisruptive = _type == LibraryType.Mcdf;
     }
 
-    /// <summary>Whom a pose or character file applies to: the scene's
-    /// eligible actors in a dropdown beside the verb, the selection's actor
-    /// by default, a chosen one until the choice leaves the scene.</summary>
+    /// <summary>An explicit dropdown target. If it leaves the scene, keep the
+    /// choice unavailable until the user chooses another actor.</summary>
     private ActorId? _applyChoice;
 
     public void SetApplyTarget(ActorId? actor) => _applyChoice = actor;

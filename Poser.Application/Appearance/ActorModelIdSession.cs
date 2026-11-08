@@ -9,22 +9,11 @@ using Poser.Domain.Scene;
 namespace Poser.Application.Appearance;
 
 /// <summary>
-/// The one authority for Poser-owned Model ID changes, keyed by
-/// exact-generation <see cref="ActorId"/> — the vendor-baseline idiom the
-/// runtime-appearance feature already uses (Brio:
-/// <c>_originalAppearance ??= GetActorAppearance(...)</c>,
-/// ActorAppearanceCapability.cs:326, restored exactly and cleared at
-/// :476-481; Poser: <see cref="ActorPresentationSession"/>).
-///
-/// The INCOMING model id is captured once, before the first successful
-/// apply, and never overwritten by later applies. Reset writes exactly
-/// that capture back; a failed restore stays owned so the next reset
-/// retries; an actor whose exact generation no longer resolves is dropped
-/// WITHOUT writes — a replaced actor's old generation never writes its
-/// capture into the replacement.
-///
-/// Model ID is the whole surface: customize, equipment, dyes and designs
-/// stay Glamourer's (standing exclusion).
+/// Tracks model-ID changes made by Poser. Before the first successful change,
+/// it saves the actor's current model ID for reset. A failed reset remains
+/// pending and can be retried. If that actor instance no longer exists, the
+/// saved value is discarded without writing to a replacement actor.
+/// Customization, equipment, dyes, and designs remain managed by Glamourer.
 /// </summary>
 public sealed class ActorModelIdSession
 {
@@ -36,15 +25,15 @@ public sealed class ActorModelIdSession
         _port = port;
     }
 
-    /// <summary>One live read, or null when unresolvable.</summary>
+    /// <summary>Returns the actor's current model ID, or null if that actor
+    /// instance no longer exists.</summary>
     public int? Read(ActorId actor) => _port.Read(actor);
 
     public bool IsOwned(ActorId actor) => _captures.ContainsKey(actor);
 
     /// <summary>
-    /// Applies a model id. The first successful apply captures the actor's
-    /// incoming id — read BEFORE the write — and later applies keep that
-    /// first capture.
+    /// Changes the model ID. The first successful change saves the previous ID;
+    /// later changes keep that original reset value.
     /// </summary>
     public Outcome Apply(ActorId actor, int modelCharaId)
     {
@@ -69,10 +58,9 @@ public sealed class ActorModelIdSession
     }
 
     /// <summary>
-    /// Restores the captured incoming model id exactly and releases
-    /// ownership. Not owned is a no-op; a failed restore stays owned for
-    /// the next attempt; an unresolvable exact generation is dropped
-    /// without writes — the capture must never land on a replacement.
+    /// Restores the saved model ID. A failed write remains pending for another
+    /// attempt. If the original actor instance is gone, the saved value is
+    /// discarded without writing to another actor.
     /// </summary>
     public Outcome Reset(ActorId actor)
     {

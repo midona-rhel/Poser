@@ -105,23 +105,9 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
     }
 
     /// <summary>
-    /// Writes the character's alpha, which is how an actor is HIDDEN.
-    ///
-    /// <para>Not a draw-state write: <c>DisableDraw</c> tears the draw
-    /// object down, and the skeleton — with the user's whole pose on it — goes
-    /// with it, so re-showing rebuilt the actor standing in its animation's
-    /// pose. Both references hide by fading instead, and both land on this
-    /// same field: Brio writes <c>ExtendedAppearance.Transparency</c>
-    /// (Capabilities/Actor/ActorAppearanceCapability.cs ToggleHide), Ktisis
-    /// writes <c>CharacterEx-&gt;Opacity</c> (Scene/Entities/Game/
-    /// ActorEntity.cs IsHidden). The draw object survives, so the pose does.
-    /// </para>
-    ///
-    /// <para>The field's provenance is stated once, in
-    /// <c>PresentationRuntimePort</c> (Brio's <c>Character.Alpha</c>,
-    /// CS-named); this is the same field the Opacity slider drives, which is
-    /// exactly the relationship both references have between their hide verb
-    /// and their transparency control.</para>
+    /// Hides the character by changing alpha. DisableDraw would destroy its
+    /// draw object and skeleton, losing the current pose. Brio and Ktisis also
+    /// use alpha for hiding; the opacity slider writes this same field.
     /// </summary>
     public bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha)
     {

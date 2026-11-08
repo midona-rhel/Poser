@@ -70,11 +70,9 @@ public static class SliderWidgets
     }
 
     /// <summary>
-    /// THE standard slider: a value-well with the fill inside and the mono
-    /// number at the right — AxisWell wearing the slider's fill. Dragging
-    /// sets the value by absolute position along the well (through the
-    /// same travel mapping the classic slider uses, log included);
-    /// double-click types the exact value through the shared well editor.
+    /// Draws a filled numeric field. Dragging sets the value from the pointer's
+    /// position; double-click opens the shared numeric editor. Both slider styles
+    /// use the same linear or logarithmic value mapping.
     /// </summary>
     public static bool SliderWell(
         string id,

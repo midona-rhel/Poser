@@ -31,7 +31,7 @@ public class PoseFile
     /// <summary>The game build the capture ran on, Brio's wire name and its
     /// informational semantics (Brio stamps
     /// <c>Framework.Instance()-&gt;GameVersionString</c>, PoseFile.cs:148).
-    /// NOTHING reads it back on either side; it exists so a file can say which
+    /// Neither Poser nor Brio uses it while importing; it records which
     /// build it came from. Empty is the honest answer when no build is
     /// resolvable, which is why the default is not a guess — the export path
     /// stamps it by the runtime capture service.</summary>
@@ -50,7 +50,7 @@ public class PoseFile
     /// Poser writes a plain string array, which is what current Brio writes
     /// too — its <c>TagCollection</c> serializes through the globally
     /// registered <c>TagCollectionConverter</c>. Older documents carry an
-    /// array of tag OBJECTS; the converter reads both, because a shape
+    /// array of tag objects; the converter reads both, because a shape
     /// mismatch rejects the entire document, not just its tags
     /// (<see cref="Converters.TagListConverter"/>).
     /// </summary>
@@ -106,7 +106,7 @@ public class PoseFile
 
     /// <summary>
     /// Every root member this model does not name, carried verbatim.
-    /// System.Text.Json SKIPS unmapped members by default, so without this any
+    /// System.Text.Json skips unmapped members by default, so without this any
     /// read-modify-write of a document Poser did not author would silently
     /// drop what Brio (or a newer Poser) writes and consumes at that root —
     /// whatever the format gains next.

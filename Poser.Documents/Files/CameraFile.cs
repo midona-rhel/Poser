@@ -42,6 +42,9 @@ public class CameraFile
     /// why it is nullable rather than a sentinel.</summary>
     public Vector3? FixedPosition { get; set; }
 
+    /// <summary>Saved orbit eye position, restored once without pinning movement.</summary>
+    public Vector3? OrbitPosition { get; set; }
+
     public bool DisableCollision { get; set; }
     public bool DelimitCamera { get; set; }
 

@@ -5,7 +5,8 @@ using Poser.Domain.Operations;
 
 namespace Poser.Application.Integration;
 
-/// <summary>UI supplies paths and exact targets; application owns routing and history.</summary>
+/// <summary>Imports and exports character files for a specific actor and
+/// records successful imports in application history.</summary>
 public interface ICharacterFiles
 {
     McdfProgress? Progress { get; }

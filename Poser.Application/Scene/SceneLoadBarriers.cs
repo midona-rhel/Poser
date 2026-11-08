@@ -5,10 +5,9 @@ using Poser.Documents.Files;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// The bounded waits ONE load runs between its phases: actor readiness,
-/// companion bodies, and each atomic pose import's terminal receipt. None of
-/// them decides what a miss costs — <see cref="SceneLoadTransaction"/>'s load
-/// policy does.
+/// Waits for actors, companion bodies, and pose imports with time limits.
+/// SceneLoadTransaction decides whether a failure aborts the load or affects
+/// only the named entity.
 /// </summary>
 internal sealed class SceneLoadBarriers(
     SceneWorkflow workflow, ISceneStatePort sceneState, IActorRestorePort actorRestore,
@@ -24,21 +23,10 @@ internal sealed class SceneLoadBarriers(
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
 
     /// <summary>
-    /// Arms ONE atomic pose import — an actor's or its companion's, through
-    /// <paramref name="arm"/> — and awaits its TERMINAL receipt within a
-    /// bound. Returns null on Applied, else the detail.
-    ///
-    /// <para>Pending receipts never complete the wait; they only name the
-    /// operation to cancel if the wait ends first. The import
-    /// engine acknowledges an admitted import by publishing a Pending receipt
-    /// synchronously from inside <paramref name="arm"/>
-    /// through the shared import coordinator,
-    /// and that receipt's Detail is the import's DESCRIPTION. Completing on it
-    /// made every scene pose import report itself failed with its own label —
-    /// the reported "1 of 4 entities could not be restored" whose only stated
-    /// reason was <c>Scene pose: &lt;actor&gt;</c>. Only a terminal state is an
-    /// answer; <see cref="OperationReceiptState.Pending"/> is the explicit
-    /// non-terminal acknowledgement and says nothing about the outcome.</para>
+    /// Starts one pose import through <paramref name="arm"/> and waits for its
+    /// final receipt. Returns null on Applied, otherwise the failure detail.
+    /// A Pending receipt only supplies the operation ID for cancellation;
+    /// its Detail describes the request and is not a failure message.
     /// </summary>
     public async Task<string?> ImportPose(Func<Action<OperationReceipt>, string?> arm)
     {
@@ -53,9 +41,8 @@ internal sealed class SceneLoadBarriers(
                 completion.TrySetResult(receipt);
         }
 
-        // The slot is shared with every other pose feature, and an IK bake or
-        // an open gesture holds it for a moment: WAIT for it, within the
-        // bound, rather than spend this actor's one attempt on a busy answer.
+        // Other pose edits share the importer. Wait for it to become available
+        // rather than failing this actor immediately while another edit finishes.
         (string? Refusal, bool Busy) TryArm()
         {
             if (operation.Guard(sceneState, cancellation) is { } stop)
@@ -91,8 +78,8 @@ internal sealed class SceneLoadBarriers(
             completion.Task, Task.Delay(workflow.PoseImportBound, cancellation));
         if (finished != completion.Task)
         {
-            // Never leave the child armed: landing after this answer would
-            // pose an actor behind the terminal receipt, or after rollback.
+            // Cancel the pending import so it cannot change an actor after
+            // this wait reports failure or the scene load rolls back.
             if (admitted is { } id)
             {
                 try
@@ -105,7 +92,7 @@ internal sealed class SceneLoadBarriers(
                 }
                 catch (Exception)
                 {
-                    // The framework thread is gone, and the import with it.
+                    // Cancellation could not be dispatched; preserve the timeout result.
                 }
             }
             // The cancel publishes the import's own Cancelled terminal; only
@@ -196,7 +183,7 @@ internal sealed class SceneLoadBarriers(
             }
             catch (Exception)
             {
-                // The framework thread is gone; the pose phase reports it.
+            // Stop waiting on dispatch failure; the pose phase reports readiness failures.
                 return true;
             }
             return ready || operation.Invalidated || cancellation.IsCancellationRequested;

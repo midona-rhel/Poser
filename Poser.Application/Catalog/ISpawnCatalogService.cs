@@ -4,9 +4,8 @@ using Poser.Domain.Companions;
 namespace Poser.Application.Catalog;
 
 /// <summary>
-/// Every minion, mount and fashion accessory as ONE flat immutable list.
-/// The list is built on first access and never again: plugin load pays
-/// nothing, and no frame may enumerate the sheets.
+/// Minions, mounts, and fashion accessories offered by the spawn browser.
+/// Implementations should cache the game-data lookup instead of rebuilding it each frame.
 /// </summary>
 public interface ISpawnCatalogService
 {

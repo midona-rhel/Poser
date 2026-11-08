@@ -7,14 +7,9 @@ using Poser.Domain.Transforms;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// One BG/layout object as the last walk of the world's scene graph found it:
-/// a pointer-free row carrying the address the graph reached it at, the model
-/// path that names it to a human, where it stood, and the draw flags it stood
-/// with.
-///
-/// <para>Placement and flags are captured during the walk because adoption
-/// restores those values. Reading them later could capture a placement that
-/// the user has already changed.</para>
+/// One background model or effect observed during a world-graph walk.
+/// Carries its native address as a value, resource path, placement, and flags.
+/// Adoption reads the current native state again before retaining a claim.
 /// </summary>
 public readonly record struct WorldObjectRow(
     nint Address,
@@ -157,9 +152,8 @@ public interface IWorldNodePort
 
     bool TryReadOpacity(nint address, out float opacity);
 
-    /// <summary>Destroys a spawned object — BG or VFX; the vtable serves
-    /// both. Never called with an adopted address — the map's own objects
-    /// are always restored instead.</summary>
+    /// <summary>Destroys an owned model, furniture layout, or effect using its
+    /// native lifetime mechanism. Borrowed map objects must be restored instead.</summary>
     void Destroy(nint address);
 
     /// <summary>Reports whether teardown actually completed. The default
@@ -187,12 +181,11 @@ public interface IBgObjectPort : IWorldNodePort
     /// <summary>Whether a BG object's model has fully streamed in.</summary>
     bool IsBgReady(nint address);
 
-    /// <summary>The instance's day/night state byte: true = night (a raw
-    /// spawn's default). Null for effects.</summary>
     /// <summary>Whether the BG model can take dye (its stain buffer
     /// exists); null while it is still streaming.</summary>
     bool? CanDyeBg(nint address);
 
+    /// <summary>Reads day/night dressing; true means night. Null for effects.</summary>
     bool? ReadBgNightState(nint address);
 
     /// <summary>Sets an animated BG object's playback speed; false until
@@ -232,9 +225,8 @@ public interface IVfxObjectPort : IWorldNodePort
         return true;
     }
 
-    /// <summary>Writes a VFX's colour multiplier (RGB; the effect's alpha
-    /// stays the opacity's). A no-op on a BG object — model staining needs
-    /// natives this port does not carry yet.</summary>
+    /// <summary>Writes effect RGB while preserving alpha. Does nothing for models;
+    /// their dye operations are exposed separately by IBgObjectPort.</summary>
     void WriteVfxTint(nint address, System.Numerics.Vector3 tint);
 
     /// <summary>One uniform brightness on the effect's intensity triple.
@@ -328,28 +320,10 @@ public interface IVfxObjectPort : IWorldNodePort
 }
 
 /// <summary>
-/// The NATIVE seam under <see cref="WorldObjectService"/>: the walk of the
-/// game's own scene graph, and the reads and writes to the BG objects it
-/// finds. Nothing else in Poser touches a map object.
-///
-/// <para>Enumeration may read the whole graph, but writes are reached only
-/// through an adopted or spawned handle. The map's own objects are never
-/// created or destroyed — each is restored before its handle is forgotten.
-/// Objects POSER spawned are the one exception: they are Poser's to destroy,
-/// and are never restored onto.</para>
-///
-/// <para>Every implementation must:</para>
-/// <list type="number">
-/// <item><description><see cref="Enumerate"/> returns rows whose placement and
-/// flags are the values the world held at the moment of the walk, and never
-/// throws — a graph it cannot read is an empty listing.</description></item>
-/// <item><description><see cref="IsAlive"/> answers false for any address the
-/// implementation cannot still see as a BG object, and every read and write
-/// below is a no-op for such an address.</description></item>
-/// <item><description><see cref="Write"/> leaves the object drawn where it was
-/// put — the game caches culling and render state off the transform, so the
-/// write is not complete until that cache is re-stated.</description></item>
-/// </list>
+/// Combines graph discovery with operations for models, furniture, and effects.
+/// Callers validate native identity before editing a retained handle. Borrowed
+/// objects are restored on release; spawned objects are destroyed. Hover
+/// feedback may write an outline before adoption.
 /// </summary>
 public interface IWorldObjectPort : IWorldGraphPort, IBgObjectPort, IVfxObjectPort
 {

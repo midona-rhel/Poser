@@ -6,37 +6,12 @@ using TransformMath = Poser.Domain.Transforms.TransformMath;
 
 namespace Poser.Documents.Scene;
 
-/// <summary>
-/// The relative-placement rebase: one pure pass over a READ document that
-/// moves every world position it states by a single offset.
-///
-/// <para>It runs on the deserialized document before any native work, which is
-/// why the wire format stays absolute — the alternative (Ktisis's, which writes
-/// positions already relative to a saved origin) makes every number in the file
-/// meaningless without the origin beside it, and Poser's listings, diffs and
-/// codecs all read the file without one.</para>
-///
-/// <para>What moves is everything whose position is a point IN the scene:
-/// actor placements, prop transforms, world-space lights, free-camera
-/// positions, and the gaze world points an actor is looking at. What does NOT
-/// move is anything already expressed relative to something that moved with
-/// the scene — a bone-attached light (its position is the bone's), an orbit
-/// camera (it orbits its target), and a camera's target offset.</para>
-///
-/// <para>A BORROWED MAP OBJECT also does not move, and for a different reason
-/// than either: it is not Poser's to place. Its identity IS the point the map
-/// stands it at, so rebasing it would match the fixture at its real spot and
-/// then shove it by an arbitrary offset — a pillar hanging over a field. A
-/// relative load therefore leaves borrowed objects where the map has them and
-/// says so, rather than dragging the zone's own furniture along.</para>
-/// </summary>
+/// <summary>Moves saved scene positions relative to the current player position.
+/// Files keep absolute coordinates; placement is applied after reading them.</summary>
 public static class SceneRelativePlacement
 {
-    /// <summary>
-    /// Rebases <paramref name="scene"/> onto <paramref name="currentOrigin"/>
-    /// in place. Returns null when it landed, else the named refusal — the
-    /// document states no origin, so there is nothing to rebase FROM.
-    /// </summary>
+    /// <summary>Moves the scene from its saved origin to the current origin.
+    /// Returns an explanation when either origin is unavailable.</summary>
     public static string? Rebase(SceneFile scene, Vector3 currentOrigin)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -62,13 +37,8 @@ public static class SceneRelativePlacement
     }
 }
 
-/// <summary>
-/// The object-entry placement rebase: the origin rebase's sibling, with the
-/// turn the origin rebase deliberately lacks. Everything whose position is a
-/// point IN the document moves to the current anchor and turns by the yaw
-/// difference; rotations turn with it, keeping their own pitch and roll.
-/// Borrowed map objects do not move, for the origin rebase's own reason.
-/// </summary>
+/// <summary>Moves loaded content between placement anchors, preserving its layout.
+/// Relative placement also turns it by the change in the anchor's heading.</summary>
 public static class ScenePlacementRebase
 {
     internal static void RebaseCompanionPlacement(
@@ -168,13 +138,18 @@ public static class ScenePlacementRebase
 
         foreach (var camera in scene.Cameras)
         {
-            // Only a free camera states a world position; an orbit camera is
-            // angle and zoom about a target that moved with the scene, and its
-            // TargetOffset is relative to that target either way.
-            if (camera.Camera is { Kind: CameraKind.Free } document)
+            if (camera.Camera is not { } document) continue;
+            if (document.OrbitPosition is { } eye) document.OrbitPosition = move(eye);
+            if (document.FixedPosition is { } pin) document.FixedPosition = move(pin);
+            if (document.Kind == CameraKind.Free) document.Position = move(document.Position);
+            if (turn is { } rotation)
             {
-                document.Position = move(document.Position);
-                if (turn is not null)
+                document.PositionOffset = Vector3.Transform(document.PositionOffset, rotation);
+                camera.TargetOffset = Vector3.Transform(camera.TargetOffset, rotation);
+                // Free cameras store yaw in Rotation.X; orbit cameras use Angle.X.
+                if (document.Kind == CameraKind.Free)
+                    document.Rotation = document.Rotation with { X = document.Rotation.X + yawDelta };
+                else
                     document.Angle = document.Angle with { X = document.Angle.X + yawDelta };
             }
         }

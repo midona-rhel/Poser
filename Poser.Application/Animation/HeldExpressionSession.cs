@@ -7,7 +7,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
 
-/// <summary>A facial expression applied and pinned at its frame, and its release.</summary>
+/// <summary>Applies and pauses a facial expression, then restores the previous
+/// facial animation and speed when the expression is released.</summary>
 internal sealed class HeldExpressionSession
 {
     private readonly AnimationOverrideStore _store;
@@ -45,14 +46,9 @@ internal sealed class HeldExpressionSession
 
         // A replacement must run with Facial unpinned before it is held again.
         var current = _store.For(actor);
-        float? speedCapture = null;
-        if (!current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial))
-        {
-            var reading = _timeline.Read(actor);
-            if (reading == null)
-                return Outcome.Fail("The facial speed restore point is unavailable.");
-            speedCapture = reading.SpeedFor(AnimationSlot.Facial);
-        }
+        float? speedCapture = current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial)
+            ? null
+            : _timeline.Read(actor)?.SpeedFor(AnimationSlot.Facial);
         if (current.SlotSpeeds.ContainsKey(AnimationSlot.Facial))
         {
             float restore = current.SlotSpeedCaptures.TryGetValue(
@@ -80,7 +76,7 @@ internal sealed class HeldExpressionSession
         if (!played.Success)
             return played;
 
-        var held = _speed.SetSlotSpeedCore(
+        var held = _speed.SetSlotSpeed(
             actor, AnimationSlot.Facial, 0f, speedCapture);
         if (!held.Success)
         {
@@ -136,8 +132,8 @@ internal sealed class HeldExpressionSession
                 straight.Detail ?? again.Detail ?? "Expression release failed.");
         if (!restored.Success)
         {
-            // Session ownership has not been cleared. Put the held expression
-            // back when possible so Reset remains a truthful retry.
+            // Keep the saved restore values and try to put the held expression
+            // back. A later Reset can then retry the failed restoration.
             var replayed = _base.BlendCore(actor, held, AnimationSlot.Facial);
             var repinned = replayed.Success
                 ? _speedPort.SetSlotSpeed(actor, AnimationSlot.Facial, 0f)
@@ -174,16 +170,12 @@ internal sealed class HeldExpressionSession
     {
         if (_store.For(actor).SlotSpeedCaptures.ContainsKey(slot))
         {
-            var speed = _speed.ClearSlotSpeedCore(actor, slot);
+            var speed = _speed.ClearSlotSpeed(actor, slot);
             if (!speed.Success)
                 return speed;
         }
         return _base.ResetBlendSelection(actor, slot);
     }
-
-    /// <summary>Restores the captured facial layer.</summary>
-    public Outcome RestoreFacialLayer(ActorId actor)
-        => ReleaseExpression(actor);
 
     /// <summary>The expression currently held on the face, if any.</summary>
     public ushort? HeldExpressionFor(ActorId actor) =>

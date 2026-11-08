@@ -33,8 +33,10 @@ public sealed class LibrarySourceDraft
 
 public sealed record LibrarySourceIssue(LibrarySourceDraft Source, PoseLibrarySourceSnapshot Health, bool PendingSave);
 
-/// <summary>Settings' source transaction. Health describes saved identities;
-/// source edits are never previewed into live configuration.</summary>
+/// <summary>
+/// Unsaved Library source edits. Health checks still refer to saved sources;
+/// editing this draft does not change the active configuration.
+/// </summary>
 public sealed class LibrarySettingsDraft
 {
     private readonly List<LibrarySourceDraft> _sources;

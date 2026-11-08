@@ -19,14 +19,19 @@ public readonly record struct GestureResult(
         new(false, detail);
     public static GestureResult From(Outcome outcome) => new(outcome.Success, outcome.Detail);
 
-    /// <summary>The plain outcome, without the gesture and its evidence.</summary>
+    /// <summary>
+    /// Success and detail without the gesture ID or recovery information.
+    /// </summary>
     public Outcome Outcome => new(Success, Detail);
 
-    /// <summary>Additive evidence, excluded from legacy positional equality.</summary>
+    /// <summary>
+    /// Results of restoration attempts. Excluded from this result's equality and hash.
+    /// </summary>
     public TransformRecoveryReceipt? Recovery { get; init; }
 
-    /// <summary>Additive operation evidence, excluded from legacy positional
-    /// equality, hashing, and deconstruction.</summary>
+    /// <summary>
+    /// Detailed operation status. Excluded from equality, hashing and positional deconstruction.
+    /// </summary>
     public OperationReceipt? OperationReceipt { get; init; }
 
     public bool Equals(GestureResult other) =>

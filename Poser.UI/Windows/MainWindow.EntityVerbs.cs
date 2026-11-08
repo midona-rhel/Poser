@@ -51,7 +51,7 @@ public partial class MainWindow
     }
 
     /// <summary>Destroys the whole selection, each kind through its own
-    /// lifetime seam: actors despawn where the service admits it, spawned
+    /// lifetime rules: actors despawn when the service permits it, spawned
     /// lights destroy while borrowed ones release, the default camera
     /// stays, borrowed objects go back to the map.</summary>
     private async void DestroySelection()
@@ -69,7 +69,7 @@ public partial class MainWindow
         return removed;
     }
 
-    /// <summary>The selection's actor, if any — the recenter seat's
+    /// <summary>The selection's actor, if any — the recenter button's
     /// target.</summary>
     private SelectionId? SelectedActorRef()
     {
@@ -79,9 +79,9 @@ public partial class MainWindow
         return null;
     }
 
-    /// <summary>Whether the LOOK-AT verb has anything to do — the context
+    /// <summary>Whether the look-at action has anything to do — the context
     /// menu's "Look at tracked actor", distinct from the row seat's
-    /// Brio-style retarget.</summary>
+    /// Brio-style retarget action.</summary>
     private bool CanRecenterOnTracked(CameraId id) =>
         _cameraTargets.Read(id)?.CanCenterTrackedActor == true;
 

@@ -95,7 +95,8 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
             ? "There is no local player to spawn the scene's actors from."
             : null;
 
-    public SceneClearOutcome ClearScene() => _clear.ClearScene();
+    public SceneClearOutcome ClearScene(bool keepLocalPlayer = false, IReadOnlyCollection<SceneEntityHandle>? keepActors = null) =>
+        _clear.ClearScene(keepLocalPlayer, keepActors?.Select(handle => _handles.Resolve(handle)).ToHashSet());
 
     // ── environment ──────────────────────────────────────────────────────
 
@@ -105,12 +106,8 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
     public SceneWorld CaptureWorldState() => _capture.CaptureWorld();
 
     /// <summary>
-    /// Stamps the session-wide toggles. Both are patches whose enabled state
-    /// is their whole state, so a scene that asks for neither RELEASES them —
-    /// loading a scene taken with running water into a session that froze it
-    /// must give the water back, or the scene did not restore what it saved.
-    /// A toggle the running client cannot reach is a named degradation, never
-    /// a silent no-op.
+    /// Applies saved water and physics freeze settings, including releasing
+    /// freezes when the saved setting is false. Reports unavailable controls.
     /// </summary>
     public string? ApplyWorld(SceneWorld world)
     {

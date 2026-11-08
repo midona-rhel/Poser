@@ -289,9 +289,8 @@ internal sealed partial class SidebarComposer
             : category.VisibleBones.FindAll(
                 bone => !bone.Id.Equals(mergedBone.Id));
 
-        // Preserve category ordering from the pose builder.
-        // bones (SkeletonNode.OrderByPriority), and bones bind flat in
-        // skeleton index order (BindBones: SortPriority = base + BoneIndex).
+        // Show child categories before individual bones. BuildKtisisCategory
+        // preserves each bone's position in the skeleton's input list.
         for (int c = 0; c < category.Children.Count; c++)
             EmitKtisisCategory(
                 section, category.Children[c], catKey, depth + 1, childLines,

@@ -6,13 +6,10 @@ using Poser.Game.Natives;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Build identities for the timeline seek (#533), all resolved from game code:
-/// clip classes by the type id at clip+0x84, looked up BY TAG NAME in the
-/// scheduler's clip type table (survives renumbering and moved vtables);
-/// vtables only for the two classes with no type field; the default event
-/// payload, ActionTimelineManager and the Apricot job system by their
-/// RIP-relative uses. Every hard-coded field offset the seek relies on is
-/// checked against its resolved value; any mismatch disables the seek.
+/// Resolves native addresses and clip type ids used by timeline seeking. Clip
+/// types are looked up by tag name so numeric type ids may change. Checks the
+/// selected field offsets listed in the constructor; a missing required address
+/// or mismatched checked offset disables seeking. Other offsets remain constants.
 /// </summary>
 internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
 {
@@ -78,7 +75,7 @@ internal sealed unsafe class TimelineSeekLayout : ITimelineSeekLayout
             _c094 = ids.TryGetValue("C094", out var c094) ? c094 : -1;
         }
 
-        // The seek's hard-coded field offsets, each against the game's own use.
+        // Check these field offsets against their uses in game instructions.
         void Offset(OffsetPattern pattern, int expected)
         {
             if (!NativeOffsets.TryResolve(scanner, pattern, out var actual))

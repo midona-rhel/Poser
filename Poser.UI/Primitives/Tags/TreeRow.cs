@@ -64,14 +64,10 @@ public record struct TreeRowProps
     /// </summary>
     public bool Draggable;
 
-    /// <summary>While a drag is live the plain hover fill goes silent —
-    /// only the drop indicators speak.</summary>
+    /// <summary>Suppresses the ordinary hover fill during a drag.</summary>
     public bool SuppressHover;
 
-    /// <summary>The CURRENT one: the game's target actor and the live
-    /// camera wear their row mark in the ACCENT at full strength, so
-    /// which is which reads at a glance without selecting anything. (A
-    /// full-row outline was tried 2026-08-30 and replaced by this.)</summary>
+    /// <summary>Marks a current target or live camera with the accent color.</summary>
     public bool Marked;
 
     /// <summary>Right padding reserved for the scroll gutter.</summary>

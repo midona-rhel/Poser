@@ -4,7 +4,8 @@ using Poser.Application.World;
 
 namespace Poser.Game.Scene;
 
-/// <summary>The one frame owner for pending creation; no window needs to be open.</summary>
+/// <summary>Advances pending scene creation on every framework update,
+/// independently of UI windows.</summary>
 public sealed class SceneCreationRuntime : IDisposable
 {
     private readonly IFramework _framework;

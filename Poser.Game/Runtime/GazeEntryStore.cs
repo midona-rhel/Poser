@@ -7,14 +7,13 @@ using Poser.Domain.Scene;
 namespace Poser.Game;
 
 /// <summary>
-/// One managed+native entry per actor. Mutated from the UI thread and read
-/// from the hooked game loop, so every access goes through the store's lock.
+/// Gaze settings and pending native writes for one actor. Callers hold the store lock.
 /// </summary>
 internal sealed class GazeEntry
 {
-    /// <summary>The CONFIGURED mode. Remembered across a full untoggle:
-    /// Brio's SetTargetType only rewrites the participation mask and never
-    /// touches TargetMode, so re-adding a part resumes the same mode.</summary>
+    /// <summary>
+    /// Configured mode, retained when every body part is disabled.
+    /// </summary>
     public GazeTargetMode Mode;
     public bool PoseAware;
     public GazeTargetType Parts = GazeTargetType.All;
@@ -22,22 +21,24 @@ internal sealed class GazeEntry
     /// <summary>The body this entry drives; the detour's lookup key.</summary>
     public nint Address;
 
-    /// <summary>The remembered Entity target; null = never chosen.
-    /// Surviving a full untoggle is the point — it is cleared only by
-    /// <see cref="GazeService.ResetGaze"/>, which is Brio's RemoveObjectFromLook.</summary>
+    /// <summary>
+    /// Remembered actor target. Disabling gaze retains it; Reset clears it.
+    /// </summary>
     public ActorId? TargetActor;
 
-    /// <summary>The target's GameObjectId: only the value written into
-    /// the native target union, never an identity. 0 when unset.</summary>
+    /// <summary>
+    /// GameObjectId written to the native target field. ActorId identifies the target in Poser.
+    /// </summary>
     public ulong TargetId;
 
-    /// <summary>The remembered target is no longer in the object table.
-    /// Exact identity, never an address: the id stays so the refusal can
-    /// name it, and reapplying it is refused rather than followed.</summary>
+    /// <summary>
+    /// The remembered target failed reconciliation. Selecting a live target clears this flag.
+    /// </summary>
     public bool TargetStale;
 
-    /// <summary>The character target id Poser last wrote natively; 0 when
-    /// Poser has written none. Poser only ever clears what it set.</summary>
+    /// <summary>
+    /// Last target ID scheduled for a native write. This is updated before the write runs.
+    /// </summary>
     public ulong AppliedTargetId;
 
     public Vector3 Position;            // Position-mode shared world anchor
@@ -46,21 +47,20 @@ internal sealed class GazeEntry
     public bool HeadLocked;
     public bool BodyLocked;
 
-    /// <summary>Channels Poser currently claims — the set the detour is
-    /// enforcing. Only a claimed channel can be owed a hand-back.</summary>
+    /// <summary>
+    /// Parts enabled by the most recent transition. Used to decide which parts need disabling.
+    /// </summary>
     public GazeTargetType ClaimedParts;
 
-    /// <summary>Channels owed ONE disable write. Booked by the transition
-    /// that dropped them and delivered by the detour on the native
-    /// thread, which is the only place _updateLookAt may be called.</summary>
+    /// <summary>
+    /// Parts waiting for a native disable write in the hooked look-at loop.
+    /// </summary>
     public GazeTargetType PendingRelease;
 }
 
 /// <summary>
-/// The gaze entries, keyed by the binding registry's <see cref="ActorId"/>,
-/// with the detour's view of them by body address; plus the pure per-entry
-/// policy every transition and the detour share. Every instance member is
-/// called with <see cref="Sync"/> held.
+/// Stores gaze settings by ActorId and indexes them by address for the native hook.
+/// Callers must hold Sync when accessing entries; the store does not acquire the lock itself.
 /// </summary>
 internal sealed class GazeEntryStore
 {
@@ -124,14 +124,11 @@ internal sealed class GazeEntryStore
             _byAddress.Remove(entry.Address);
     }
 
-    // ── per-entry policy ─────────────────────────────────────────────────
+    // Shared mode and part settings.
 
     /// <summary>
-    /// The mode the entry's stored per-part sources are SEEDED from. Entity
-    /// without a usable target seeds nothing; the participation mask is
-    /// deliberately not consulted, so untoggling every part leaves the stored
-    /// positions and target id exactly as they were (Brio's SetTargetType
-    /// rewrites the mask and nothing else).
+    /// Returns the configured mode, except Entity mode requires a usable target.
+    /// Part participation is checked separately by EffectiveMode.
     /// </summary>
     public static GazeTargetMode SeedMode(GazeEntry entry) =>
         entry.Mode == GazeTargetMode.Entity && (entry.TargetActor is null || entry.TargetStale)
@@ -139,10 +136,8 @@ internal sealed class GazeEntryStore
             : entry.Mode;
 
     /// <summary>
-    /// What the detour actually enforces. No participating part means Poser
-    /// writes nothing at all — a channel outside the mask gets no
-    /// _updateLookAt call, exactly as in Brio, where the original loop then
-    /// runs unconditionally.
+    /// Returns None when all parts are disabled or an Entity target is unavailable.
+    /// Pending disable writes may still run even when this returns None.
     /// </summary>
     public static GazeTargetMode EffectiveMode(GazeEntry entry) =>
         entry.Parts == GazeTargetType.None
@@ -156,18 +151,10 @@ internal sealed class GazeEntryStore
             : entry.Parts;
 
     /// <summary>
-    /// Books the hand-back this transition owes. Ceasing to write a channel is
-    /// NOT a release: _updateLookAt copies into the controller's persistent
-    /// per-channel slot (Ktisis names the same native call
-    /// <c>ActorLookAt(ActorGaze* writeTo, Gaze* readFrom, GazeControl part)</c>
-    /// — Scene/Modules/Actors/ActorModule.cs:231), so a channel Poser stops
-    /// writing keeps aiming at the last target it was given. Each dropped
-    /// channel is therefore owed exactly one INACTIVE write; Brio spells that
-    /// released value out in StopLookAt as LookMode.None on every part
-    /// (Brio/Game/Actor/ActorLookAtService.cs:101-108) and Ktisis calls the
-    /// same value GazeMode.Disabled (Ktisis/Structs/Actors/ActorGaze.cs:75).
-    /// A channel that comes straight back cancels its debt, because the active
-    /// write supersedes the disable. Callers hold <see cref="Sync"/>.
+    /// Queues a disable write for each part no longer controlled by Poser. The native
+    /// controller retains its last target until explicitly disabled. Re-enabling a part
+    /// cancels its pending disable. Brio StopLookAt and Ktisis GazeMode.Disabled use
+    /// the same native disabled value. Callers hold Sync.
     /// </summary>
     public static void BookRelease(GazeEntry entry)
     {

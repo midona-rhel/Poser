@@ -170,8 +170,8 @@ public sealed partial class GraphicalBonePane
     private static void SeparateNearby(Vector2[] points, float width, float spacing)
     {
         var seeds = points.ToArray();
-        // Bounded proximity-preserving relaxation, not a continuous simulation or
-        // a full PRISM implementation. The following hard pass guarantees spacing.
+        // Push nearby points apart while gently pulling them toward their original
+        // positions. Limit the work here; PlaceWithoutOverlap enforces final spacing.
         int passes = Math.Clamp(160000 / Math.Max(1, points.Length * (points.Length - 1) / 2), 2, 80);
         for (int pass = 0; pass < passes; pass++)
         {

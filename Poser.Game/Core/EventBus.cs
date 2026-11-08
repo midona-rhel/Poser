@@ -5,9 +5,7 @@ using Poser.Application.Events;
 
 namespace Poser.Game.Core;
 
-/// <summary>
-/// Provides decoupled communication between components via publish/subscribe pattern.
-/// </summary>
+/// <summary>Thread-safe in-process event dispatch.</summary>
 public class EventBus : IEventBus
 {
     private readonly Dictionary<Type, List<Delegate>> _handlers = new();
@@ -19,9 +17,6 @@ public class EventBus : IEventBus
         _log = log;
     }
 
-    /// <summary>
-    /// Subscribe to events of type T.
-    /// </summary>
     public void Subscribe<T>(Action<T> handler) where T : IEvent
     {
         lock (_lock)
@@ -36,9 +31,6 @@ public class EventBus : IEventBus
         }
     }
 
-    /// <summary>
-    /// Unsubscribe from events of type T.
-    /// </summary>
     public void Unsubscribe<T>(Action<T> handler) where T : IEvent
     {
         lock (_lock)
@@ -51,9 +43,6 @@ public class EventBus : IEventBus
         }
     }
 
-    /// <summary>
-    /// Publish an event to all subscribers.
-    /// </summary>
     public void Publish<T>(T evt) where T : IEvent
     {
         List<Delegate>? handlersCopy;
@@ -64,7 +53,7 @@ public class EventBus : IEventBus
             if (!_handlers.TryGetValue(type, out var handlers))
                 return;
 
-            // Copy to avoid issues if handlers modify subscriptions
+            // Dispatch outside the lock; handlers may change subscriptions.
             handlersCopy = new List<Delegate>(handlers);
         }
 

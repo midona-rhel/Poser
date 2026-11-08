@@ -33,8 +33,7 @@ public enum ScenePhase
     /// </summary>
     ApplyingAppearance,
     ApplyingRelationships,
-    /// <summary>Stopping every actor so its pose lands on a held frame.
-    /// Scenes restore a picture, not a performance.</summary>
+    /// <summary>Restoring saved animation, or freezing actors before applying baked poses.</summary>
     FreezingActors,
     ApplyingPose,
     ApplyingPresentation,
@@ -106,8 +105,8 @@ public sealed record SceneOutcome(
 {
     public bool Success => State == OperationReceiptState.Applied;
 
-    /// <summary>Whether anything this operation created still exists. Only a
-    /// completed rollback and a clean cancel leave nothing behind.</summary>
+    /// <summary>Whether the final state may have left created entities behind.
+    /// This checks the outcome state, not the live entity count.</summary>
     public bool LeftEntitiesBehind => State is not (
         OperationReceiptState.RolledBack or OperationReceiptState.Cancelled);
 

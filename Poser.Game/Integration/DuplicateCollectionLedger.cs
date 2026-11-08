@@ -5,14 +5,11 @@ using Poser.Domain.Identity;
 namespace Poser.Game.Integration;
 
 /// <summary>
-/// Which Penumbra temporary collections belong to Poser's duplicates.
-/// The duplicate's own temporary collection per clone address: deleted
-/// with the clone, so no identity mapping outlives it (a foreign
-/// temporary assignment cannot be undone through the API, and one left
-/// on "Poser Six" fed the next Poser Six another actor's meta, 00:5x).
-/// A duplicate's collection displaced by an MCDF temporary is remembered per
-/// MCDF collection, so deleting that MCDF reattaches the duplicate's own.
-/// Bookkeeping only; every Penumbra call stays in <see cref="PenumbraIpc"/>.
+/// Tracks Penumbra temporary collections owned by duplicate actors. Clone
+/// collections are keyed by the clone address and removed with that clone.
+/// When an MCDF collection temporarily replaces one, the displaced actor is
+/// recorded so its duplicate collection can be restored afterward. Penumbra
+/// calls remain in <see cref="PenumbraIpc"/>.
 /// </summary>
 internal sealed class DuplicateCollectionLedger
 {

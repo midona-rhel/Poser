@@ -10,13 +10,13 @@ public static class CheckboxWidgets
 {
     public static Vector2 MeasureCheckbox(ControlStyle style = default)
     {
-        // Square by default: the box's content width IS its resolved side.
+        // Square by default: the box's content width is its resolved side.
         float side = ControlSizing.Height(
             style.Height, ActiveTheme.Controls.CheckboxSize);
         return ControlSizing.Resolve(style, side, side).Size;
     }
 
-    /// <param name="partial">Tristate paint: an UNCHECKED box showing a
+    /// <param name="partial">Tristate paint: an unchecked box showing a
     /// filled dot — "some, not all" for a checkbox that aggregates children
     /// (the bone-filter group headers). Clicking still toggles through
     /// <paramref name="onChange"/> with the plain boolean flip.</param>
@@ -48,9 +48,9 @@ public static class CheckboxWidgets
     }
 
     /// <summary>
-    /// The box's PAINT alone — the fill, the unchecked inset ring, the
+    /// The box's paint alone — the fill, the unchecked inset ring, the
     /// Tabler check polyline, the disabled fade, and nothing that reserves
-    /// layout. <paramref name="side"/> is the resolved PHYSICAL side, the
+    /// layout. <paramref name="side"/> is the resolved physical side, the
     /// leading square of whatever was reserved.
     /// </summary>
     private static void PaintCheckboxBox(

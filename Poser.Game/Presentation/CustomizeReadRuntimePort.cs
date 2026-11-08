@@ -7,11 +7,9 @@ using CSCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 namespace Poser.Game.Presentation;
 
 /// <summary>
-/// Native side of the customize read. The race value comes from the
-/// rendered Human customization (base character data is the fallback), read on the draw
-/// path exactly as the map pane always has: no thread gate, and any
-/// resolution or read failure falls back to the default human section so
-/// the face map always draws something.
+/// Reads race and Viera ear data from the rendered Human, falling back to the
+/// base character data. A failed head-section read returns the default human
+/// section so the face map remains usable.
 /// </summary>
 public sealed unsafe class CustomizeReadRuntimePort : ICustomizeReadRuntimePort
 {

@@ -2,7 +2,9 @@ using Poser.Domain.Identity;
 
 namespace Poser.Domain.Posing;
 
-/// <summary>Actor-independent identity retained by the legacy pose API.</summary>
+/// <summary>
+/// Identifies a bone by slot, partial skeleton, and name, without tying it to an actor.
+/// </summary>
 public readonly record struct PortableBoneId(
     PoseSlot Slot,
     int PartialId,
@@ -77,15 +79,17 @@ public readonly struct BonePath : IEquatable<BonePath>
         !left.Equals(right);
 }
 
-/// <summary>Stable partial identity retained inside a portable bone key.</summary>
+/// <summary>
+/// Partial-skeleton index stored with a portable bone name.
+/// </summary>
 public readonly record struct PortablePartialKey(int PartialId)
 {
     public bool IsValid => PartialId >= 0;
 }
 
 /// <summary>
-/// Structural portable identity. An empty path is an explicit legacy
-/// name-only key; a non-empty path must end at the canonical bone name.
+/// Identifies a bone by its slot, partial skeleton, name, and path through the hierarchy.
+/// An empty path represents an older key that matches without a hierarchy path.
 /// </summary>
 public readonly record struct PortableBoneKey(
     PoseSlot Slot,
@@ -124,7 +128,9 @@ public readonly record struct PortableBoneKey(
         new(bone.Slot, bone.PartialId, bone.CanonicalName, path);
 }
 
-/// <summary>One ordered portable pose entry and its non-identity index hint.</summary>
+/// <summary>
+/// A saved bone pose and an optional index hint. The hint is not part of matching.
+/// </summary>
 public readonly record struct PortableBoneEntry(
     PortableBoneKey Key,
     BonePose Pose,
@@ -140,7 +146,9 @@ public readonly record struct PortableBonePose(
     PortableBoneId Bone,
     BonePose Pose);
 
-/// <summary>Destination identity plus the native index observation used as a hint.</summary>
+/// <summary>
+/// A destination bone and its portable key, optionally carrying a native index hint.
+/// </summary>
 public readonly record struct PortableBoneTarget(
     BoneId Bone,
     PortableBoneKey Key,
@@ -165,7 +173,9 @@ public readonly record struct PortableBoneMatch(
     PortableBoneEntry Source,
     PortableBoneTarget Target);
 
-/// <summary>Feature-specific unmatched or ambiguous portable source outcome.</summary>
+/// <summary>
+/// A saved bone that matched no destination or more than one destination.
+/// </summary>
 public sealed class PortableBoneMatchFailure
 {
     public PortableBoneMatchFailure(
@@ -183,7 +193,11 @@ public sealed class PortableBoneMatchFailure
     public IReadOnlyList<PortableBoneTarget> Candidates { get; }
 }
 
-/// <summary>All outcomes from one ordered portable-pose matching pass.</summary>
+/// <summary>
+/// Pose edits that can be transferred between actors. Keys identify bones without
+/// using game-memory addresses. Duplicate keys are rejected; older name-only lookups
+/// return no match when several entries share that name, slot, and partial skeleton.
+/// </summary>
 public sealed class PortablePoseMatchResult
 {
     internal PortablePoseMatchResult(

@@ -30,8 +30,8 @@ public interface IExpressionService
     /// Bidirectional, Available); empty when the actor's customize
     /// combination has no catalog. A unit with zero resolvable target bones
     /// on the actor's current skeleton reports Available = false — it is
-    /// presented as unavailable, never as a functional slider that performs
-    /// no work.</summary>
+    /// reported unavailable. If the skeleton is not loaded, availability is
+    /// provisionally true; SetWeight still requires a valid skeleton.</summary>
     IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> GetUnits(IActor actor);
 
     float GetWeight(IActor actor, string unitId);
@@ -121,7 +121,7 @@ public class ExpressionService : IExpressionService, IDisposable
 
     private void LoadCatalogs()
     {
-        // The catalogs remain embedded in Core with their existing resource names.
+        // Read embedded catalogs from the Game assembly.
         var assembly = typeof(Poser.Game.Files.PoseFileService).Assembly;
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, IncludeFields = true };
         foreach (var name in assembly.GetManifestResourceNames())
@@ -379,9 +379,7 @@ public class ExpressionService : IExpressionService, IDisposable
     private readonly HashSet<string> _diagnosedCatalogs = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// One diagnostic record per catalog per session: which instances each
-    /// catalog bone resolves to (with partial ids) and which units have no
-    /// resolvable target at all — the PBI-002 round-1 Jaw Open diagnosis.
+    /// Logs resolution details once per catalog for this service instance.
     /// </summary>
     private void DiagnoseResolutionOnce(
         string catalogKey, List<ActionUnit> units, Dictionary<string, List<IBone>> byName)

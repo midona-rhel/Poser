@@ -32,7 +32,7 @@ public enum TextWhitespace
 /// (CSS <c>text-align</c>). Start draws from the box's start edge; End
 /// pins the run's end to the end edge — a truncated run keeps its
 /// ellipsis on that edge when truncation begins, and a raw overflow run
-/// (narrower-than-ellipsis box) shows its END with the start clipped,
+/// (narrower-than-ellipsis box) shows its end with the start clipped,
 /// exactly as an end-aligned CSS line overflows. Center splits the
 /// leftover width, going negative on overflow like End does.</summary>
 public enum TextAlign
@@ -44,7 +44,7 @@ public enum TextAlign
 
 /// <summary>
 /// A typed width constraint for a text run. Intrinsic text carries no
-/// width; truncation REQUIRES one; wrapping requires one and owns its
+/// width; truncation and wrapping require one. Wrapping also owns its
 /// optional CSS line-height and white-space policy. Constrained runs
 /// carry a typed <see cref="TextAlign"/>, defaulting to Start. Invalid
 /// combinations are unrepresentable and non-positive dimensions are
@@ -74,7 +74,7 @@ public readonly struct TextConstraint
     /// <summary>Natural content width; never cut.</summary>
     public static TextConstraint Intrinsic => default;
 
-    /// <summary>One line, ellipsis-truncated and CLIPPED inside the pixel
+    /// <summary>One line, ellipsis-truncated and clipped inside the pixel
     /// width (Picto's <c>overflow:hidden; text-overflow:ellipsis;
     /// white-space:nowrap</c> idiom). The run occupies the full width in
     /// layout, exactly like the CSS box, and aligns inside it per
@@ -91,10 +91,10 @@ public readonly struct TextConstraint
 
     /// <summary>
     /// Word wrap inside the pixel width. The run occupies the full width
-    /// in layout, like the CSS box; a single over-wide word OVERFLOWS its
+    /// in layout, like the CSS box; a single over-wide word overflows its
     /// line (CSS <c>overflow-wrap: normal</c>) rather than being
     /// hard-broken. Whitespace follows the typed <paramref name="whitespace"/>
-    /// policy. The line advance is the FRACTIONAL CSS line height,
+    /// policy. The line advance uses the fractional CSS line height,
     /// accumulated unrounded so long paragraphs cannot drift; each line's
     /// glyph run sits half-leading-centered inside its explicit line box.
     /// A null line height uses the font's natural line box.
@@ -120,7 +120,7 @@ public readonly struct TextConstraint
 /// One text run's style, Picto typography semantics: token sizes
 /// (shortcut 10 / caption 11 / label 12 / body 13 / surface title 14),
 /// weights 400/500/600, theme text colors, the mono family for tabular
-/// values, and the OPACITY disabled idiom — Picto dims disabled text by
+/// values, and Picto's opacity-based disabled style, which dims disabled text by
 /// opacity, it does not recolor it. Unset members resolve from the
 /// active theme (body size, regular weight, primary text).
 /// </summary>

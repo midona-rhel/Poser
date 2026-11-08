@@ -1,0 +1,44 @@
+{
+  "candidate": "4c6c1931",
+  "collection_apply": {
+    "ok": true,
+    "Detail": null,
+    "tried": "00000000-0000-0000-0000-000000000000",
+    "was": "Poser duplicate 202 6d03715b-4610-432b-876c-864681a70403 individual=False"
+  },
+  "collection_reset": {
+    "ok": true,
+    "Detail": null,
+    "tried": "00000000-0000-0000-0000-000000000000",
+    "was": "None 00000000-0000-0000-0000-000000000000 individual=True"
+  },
+  "baseline_collection": {
+    "EffectiveId": "6d03715b-4610-432b-876c-864681a70403",
+    "EffectiveName": "Poser duplicate 202",
+    "HasIndividualAssignment": false
+  },
+  "restored_collection": {
+    "EffectiveId": "62cf578b-c550-4bd3-a33b-2cf0cd043526",
+    "EffectiveName": "Poser duplicate 202",
+    "HasIndividualAssignment": false
+  },
+  "resource_mappings_match": true,
+  "resource_count": 117,
+  "body_profile_prepared": true,
+  "owned_profile_before_removal": "2316c7d2-6b8e-4520-92a4-45bcfce4caf2",
+  "actor_removal": {
+    "applied_count": 1,
+    "statuses": [
+      0
+    ]
+  },
+  "actor_removed": true,
+  "limits": [
+    "Design reset and captured-name correction verified by existing automated test, not clicked live."
+  ],
+  "provider_log": "2026-10-25 19:06:49.373 +01:00 [DBG] [CustomizePlus] Removed temporary profile for P. T. (Any World)",
+  "script_corrections": [
+    "Use actor index for bridge actor= queries.",
+    "Inherited collections may be recreated with a new GUID; compare resource mappings and assignment mode rather than requiring the old GUID."
+  ]
+}

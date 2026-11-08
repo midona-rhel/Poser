@@ -24,7 +24,7 @@ namespace Poser.Game;
 /// <summary>
 /// The shape of an IK chain on a skeleton, read off bone topology alone:
 /// which bones each solver moves, whether a bone can anchor CCD, and a scene
-/// target's validated world transform. Pure; holds nothing.
+/// target's position and rotation. Target resolution reads live bindings.
 /// </summary>
 internal static class IkChainShapes
 {

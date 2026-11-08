@@ -5,9 +5,9 @@ using Poser.Game.Natives;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// The scheduler natives the timeline seek (#533) calls, resolved by
-/// signature. Any missing entry leaves <see cref="Ready"/> false and the scrub
-/// port keeps its clock-write fallback; nothing half-works.
+/// Resolves native scheduler functions for timeline seeking. Missing required
+/// functions leave Ready false; optional functions have separate null checks
+/// at their call sites.
 /// </summary>
 internal sealed unsafe class TimelineSeekNatives
 {
@@ -52,11 +52,9 @@ internal sealed unsafe class TimelineSeekNatives
     /// call a C010 Stop makes on its child).</summary>
     public readonly delegate* unmanaged<nint, int, nint, void> StopTimeline;
 
-    // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x1418FE4A0).
     private const string SchedulerTimeline_Stop =
         Poser.Game.Natives.NativeSignatures.SchedulerTimeline_StopAllClips;
 
-    // Pending a patchcheck entry; unique on the analysed build (sig.py, 1 hit at 0x140433DD0).
     private const string CharacterBase_SetModelVfxSpeed =
         Poser.Game.Natives.NativeSignatures.CharacterBase_SetModelVfxSpeed;
 

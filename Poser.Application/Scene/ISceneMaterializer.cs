@@ -22,6 +22,16 @@ public interface ISceneMaterializer
     /// spawn's own refusal on failure.</summary>
     SceneEntityHandle? SpawnActor(SceneActor data, out string? detail);
 
+    /// <summary>The user's own character in the scene, for a saved entry marked
+    /// as theirs. Null when it is not in the scene; the load then spawns a copy.</summary>
+    SceneEntityHandle? FindLocalPlayer();
+
+    /// <summary>Finds the saved character among live GPose actors, excluding actors already used by this load.</summary>
+    SceneEntityHandle? FindMatchingActor(SceneActor data, IReadOnlyCollection<SceneEntityHandle> used);
+
+    /// <summary>Captures an existing actor so undo can restore it without removing it.</summary>
+    Action CaptureActorRestore(SceneEntityHandle actor);
+
     /// <summary>Spawns one prop with its transform and visibility.</summary>
     SceneEntityHandle? SpawnProp(SceneProp data, out string? detail);
 
@@ -29,11 +39,10 @@ public interface ISceneMaterializer
     SceneEntityHandle? SpawnOverlay(SceneOverlay data, out string? detail);
 
     /// <summary>
-    /// Restores one world-object entry by spawning its path with the
-    /// placement and state the file recorded. Null with a stated detail when
-    /// it cannot be spawned.
+    /// Restores saved edits to the original map object, or spawns a copy
+    /// for an object the scene owns. Returns a reason if restoration fails.
     /// </summary>
-    SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail);
+    SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, uint territory, out string? detail);
 
     /// <summary>Waits, within <paramref name="bound"/>, for spawned world
     /// objects whose models are still streaming (housing furniture). Answers

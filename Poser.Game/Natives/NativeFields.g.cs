@@ -5,9 +5,10 @@
 
 namespace Poser.Game.Natives;
 
-/// <summary>Every field offset Poser uses, as compile-time constants for the analysed build. Signed ones are
-/// re-resolved from the game's code by the native check (<see cref="NativeFieldChecks"/>), which reports drift
-/// after a patch; local ones have no game reader and carry the reason.</summary>
+/// <summary>Field offsets and related constants recorded for the analysed build.
+/// NativeFieldChecks lists values that the health check can compare with instruction
+/// patterns. Entries marked local use recorded layout evidence instead of a unique
+/// instruction pattern; some are strides, patch positions, or managed-buffer offsets.</summary>
 internal static class NativeFields
 {
     /// <summary>checked against NativeOffsets.ActionTimelineSequencer_SlotStartedIds</summary>

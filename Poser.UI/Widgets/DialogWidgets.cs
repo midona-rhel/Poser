@@ -35,7 +35,7 @@ public static class DialogWidgets
     ///           ButtonVariant.Primary));
     /// </code>
     /// </summary>
-    /// <returns>True on the frame the modal closes.</returns>
+    /// <returns>True when this dialog requests closure through its close control or Escape.</returns>
     public static bool Dialog(
         string id,
         bool open,
@@ -95,9 +95,7 @@ public static class DialogWidgets
         bool visible = ImGui.Begin(popupId, ref keepOpen,
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove
             | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoSavedSettings);
-        // The unwind is unconditional (PBI-013 class): a throw in the body
-        // or footer callback must not skip End or strand the
-        // style entries on the global stack for every window drawn after.
+        // Restore the window and style stacks even if a content callback throws.
         try
         {
             if (visible)
@@ -148,9 +146,7 @@ public static class DialogWidgets
 
             var theme = ActiveTheme;
 
-            // ── Header: title 14px/500 at 16px, close 24×24 at right 10px,
-            //    inset bottom border (border-secondary). Ink-seated on the
-            //    bar band through the canonical path.
+            // Header dimensions come from the active theme.
             float headerInset = ActiveTheme.Floating.HeaderInset * scale;
             TextInBand(
                 new Vector2(winMin.X + headerInset, winMin.Y),

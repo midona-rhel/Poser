@@ -10,23 +10,23 @@ using static Poser.UI.Widgets.PageForm;
 namespace Poser.UI;
 
 /// <summary>
-/// What a MULTI-entity selection can be told to do, stated at the head of the
-/// inspector rail while more than one entity is selected — Brio's
+/// Commands for a multi-entity selection, shown at the top of the inspector
+/// while more than one entity is selected. This follows Brio's
 /// <c>{N} Selected</c> block (<c>UI/Widgets/Core/EntityManagerWidget.cs</c>),
 /// which is the only place either reference puts a verb that consumes a
 /// selection rather than a row.
 ///
-/// <para>It carries the two group verbs that are NOT already transforms:
+/// <para>It carries the two group actions that are not already transforms:
 /// visibility and removal. The third — group transform — needs no surface of
-/// its own, because the rail's own TRANSLATION rows and the world gizmo drive
+/// its own, because the inspector's translation rows and the world gizmo drive
 /// every selected entity already, and a selection of more than one turns about
 /// its own middle (<see cref="Poser.Domain.Transforms.PivotMode.Centroid"/>).
 /// </para>
 ///
-/// <para>Removal ARMS before it fires, the same two-press gate every other
+/// <para>Removal requires confirmation through the same two-press gate every other
 /// irreversible act in Poser uses, and the arm dies the moment the selection
 /// changes underneath it — a confirm must always be about the set the user was
-/// looking at when they armed it. Both verbs run AFTER the page has drawn:
+/// looking at when they armed it. Both actions run after the page has drawn:
 /// destroying an entity republishes the scene, and doing that mid-walk rebuilds
 /// the rows being walked.</para>
 /// </summary>

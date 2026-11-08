@@ -1,0 +1,698 @@
+[
+  {
+    "test": "TwoJoint bake finished",
+    "passed": true,
+    "detail": {
+      "busy": false,
+      "bakePending": false,
+      "bakeNote": null
+    }
+  },
+  {
+    "test": "TwoJoint bake keeps both limbs",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 2.325188164332325e-06,
+        "degrees": 1.7827317112193638e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 3.3639262774276153e-06,
+        "degrees": 3.337370496129498e-05
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 5.991368791828557e-06,
+        "degrees": 2.4027320194202382e-05
+      }
+    }
+  },
+  {
+    "test": "TwoJoint only right chain disabled",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "TwoJoint undo bake",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "TwoJoint undo restores both chains",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "TwoJoint redo bake",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 2.3275499993665446e-06,
+        "degrees": 2.0561592220437876e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 3.4463023663345973e-06,
+        "degrees": 3.646323212220162e-05
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 6.1951674714755665e-06,
+        "degrees": 1.916717082078121e-05
+      }
+    }
+  },
+  {
+    "test": "TwoJoint redo leaves left chain active",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "TwoJoint import live-IK export with IK off",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 5.368575228515554e-07,
+        "degrees": 0.00040694832241100086
+      },
+      "j_ude_a_r": {
+        "metres": 4.0914545070236014e-07,
+        "degrees": 6.163749050897475e-05
+      },
+      "j_ude_b_l": {
+        "metres": 4.7234268276185663e-07,
+        "degrees": 5.580310532176688e-05
+      },
+      "j_ude_b_r": {
+        "metres": 4.012480529670075e-07,
+        "degrees": 0.00029837648360062725
+      },
+      "j_te_l": {
+        "metres": 6.103277807992331e-07,
+        "degrees": 9.588147936433859e-05
+      },
+      "j_te_r": {
+        "metres": 3.905124837745785e-07,
+        "degrees": 3.7759581337059494e-05
+      }
+    }
+  },
+  {
+    "test": "TwoJoint import baked export with IK off",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 5.368575228515554e-07,
+        "degrees": 0.00040694832241100086
+      },
+      "j_ude_a_r": {
+        "metres": 2.7192094438483507e-06,
+        "degrees": 5.538352714890994e-05
+      },
+      "j_ude_b_l": {
+        "metres": 4.7234268276185663e-07,
+        "degrees": 5.580310532176688e-05
+      },
+      "j_ude_b_r": {
+        "metres": 3.4220607826238017e-06,
+        "degrees": 0.0002942337363648278
+      },
+      "j_te_l": {
+        "metres": 6.103277807992331e-07,
+        "degrees": 9.588147936433859e-05
+      },
+      "j_te_r": {
+        "metres": 5.792531829806226e-06,
+        "degrees": 3.630295340289845e-05
+      }
+    }
+  },
+  {
+    "test": "Ccd bake finished",
+    "passed": true,
+    "detail": {
+      "busy": false,
+      "bakePending": false,
+      "bakeNote": null
+    }
+  },
+  {
+    "test": "Ccd bake keeps both limbs",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.7636408364927437e-06,
+        "degrees": 7.82496472061276e-06
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 2.510796686315245e-06,
+        "degrees": 2.9526252879164333e-05
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 4.1614271589858745e-06,
+        "degrees": 1.4589290462454057e-05
+      }
+    }
+  },
+  {
+    "test": "Ccd only right chain disabled",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Ccd undo bake",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "test": "Ccd undo restores both chains",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Ccd redo bake",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.7616089237238331e-06,
+        "degrees": 7.82496472061276e-06
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 2.521110866276172e-06,
+        "degrees": 8.00910673140078e-06
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 4.540803893532515e-06,
+        "degrees": 1.1326587362040635e-05
+      }
+    }
+  },
+  {
+    "test": "Ccd redo leaves left chain active",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Ccd import live-IK export with IK off",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 7.043436660822255e-07,
+        "degrees": 0.00033607463266286725
+      },
+      "j_ude_a_r": {
+        "metres": 4.1258332492784184e-07,
+        "degrees": 4.54348783573103e-05
+      },
+      "j_ude_b_l": {
+        "metres": 6.315296431301392e-07,
+        "degrees": 3.5939712936636e-05
+      },
+      "j_ude_b_r": {
+        "metres": 4.3474130239371537e-07,
+        "degrees": 0.00019564647378000235
+      },
+      "j_te_l": {
+        "metres": 6.821290199746195e-07,
+        "degrees": 6.156649318400024e-05
+      },
+      "j_te_r": {
+        "metres": 5.249761897995204e-07,
+        "degrees": 3.1762215659848187e-05
+      }
+    }
+  },
+  {
+    "test": "Ccd import baked export with IK off",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 7.043436660822255e-07,
+        "degrees": 0.00033607463266286725
+      },
+      "j_ude_a_r": {
+        "metres": 2.3632236457397543e-06,
+        "degrees": 4.954830320672627e-05
+      },
+      "j_ude_b_l": {
+        "metres": 6.315296431301392e-07,
+        "degrees": 3.5939712936636e-05
+      },
+      "j_ude_b_r": {
+        "metres": 2.767670500606332e-06,
+        "degrees": 0.00019418048826374502
+      },
+      "j_te_l": {
+        "metres": 6.821290199746195e-07,
+        "degrees": 6.156649318400024e-05
+      },
+      "j_te_r": {
+        "metres": 4.195087126622219e-06,
+        "degrees": 3.115981406865179e-05
+      }
+    }
+  },
+  {
+    "test": "Fabrik bake finished",
+    "passed": true,
+    "detail": {
+      "busy": false,
+      "bakePending": false,
+      "bakeNote": null
+    }
+  },
+  {
+    "test": "Fabrik bake keeps both limbs",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.966977376535523e-06,
+        "degrees": 1.1197136397927984e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 2.9697474640281354e-06,
+        "degrees": 3.818191820832845e-06
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 5.190337175999371e-06,
+        "degrees": 1.183023466776879e-05
+      }
+    }
+  },
+  {
+    "test": "Fabrik only right chain disabled",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Fabrik undo bake",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.008273772178643233
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 3.649663683133213e-05,
+        "degrees": 0.004304934998390545
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 3.355947848225392e-05,
+        "degrees": 1.9090959104164248e-05
+      }
+    }
+  },
+  {
+    "test": "Fabrik undo restores both chains",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Fabrik redo bake",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.9676658760581815e-06,
+        "degrees": 1.3872179782028061e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 3.041463463533301e-06,
+        "degrees": 2.0347774359156983e-05
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 5.604884030937975e-06,
+        "degrees": 2.6672741375736675e-05
+      }
+    }
+  },
+  {
+    "test": "Fabrik redo leaves left chain active",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Fabrik import live-IK export with IK off",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 4.842520005180308e-07,
+        "degrees": 0.00038052644481731857
+      },
+      "j_ude_a_r": {
+        "metres": 3.7537847563692054e-07,
+        "degrees": 4.713572880708302e-05
+      },
+      "j_ude_b_l": {
+        "metres": 8.773459979586816e-07,
+        "degrees": 2.8623708520629015e-05
+      },
+      "j_ude_b_r": {
+        "metres": 7.449832213414027e-07,
+        "degrees": 0.0002641681070367224
+      },
+      "j_te_l": {
+        "metres": 8.433267457032746e-07,
+        "degrees": 5.820707888761387e-05
+      },
+      "j_te_r": {
+        "metres": 1.1079711187406256e-06,
+        "degrees": 2.8776098462827356e-05
+      }
+    }
+  },
+  {
+    "test": "Fabrik import baked export with IK off",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 4.842520005180308e-07,
+        "degrees": 0.00038052644481731857
+      },
+      "j_ude_a_r": {
+        "metres": 2.299771510346374e-06,
+        "degrees": 4.5945398631873294e-05
+      },
+      "j_ude_b_l": {
+        "metres": 8.773459979586816e-07,
+        "degrees": 2.8623708520629015e-05
+      },
+      "j_ude_b_r": {
+        "metres": 2.82290630382725e-06,
+        "degrees": 0.00025347157780796685
+      },
+      "j_te_l": {
+        "metres": 8.433267457032746e-07,
+        "degrees": 5.820707888761387e-05
+      },
+      "j_te_r": {
+        "metres": 4.552197271705334e-06,
+        "degrees": 3.614196390276095e-05
+      }
+    }
+  },
+  {
+    "test": "Rope bake finished",
+    "passed": true,
+    "detail": {
+      "busy": false,
+      "bakePending": false,
+      "bakeNote": null
+    }
+  },
+  {
+    "test": "Rope bake keeps both limbs",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 2.0763670195733376e-06,
+        "degrees": 2.567006452828869e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 3.1519835025302783e-06,
+        "degrees": 3.1624218414915807e-05
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 5.382880269937428e-06,
+        "degrees": 2.6618028002479826e-05
+      }
+    }
+  },
+  {
+    "test": "Rope only right chain disabled",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Rope undo bake",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 1.9999999996411777e-08,
+        "degrees": 0.003830480369304592
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 1.6297094833274683e-05,
+        "degrees": 0.00313423549918308
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 1.8618834549989716e-05,
+        "degrees": 3.897549167036039e-05
+      }
+    }
+  },
+  {
+    "test": "Rope undo restores both chains",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Rope redo bake",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_a_r": {
+        "metres": 2.077209666829515e-06,
+        "degrees": 2.5613209387547872e-05
+      },
+      "j_ude_b_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 3.2348879424452164e-06,
+        "degrees": 3.4065461496091986e-05
+      },
+      "j_te_l": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 5.366945127341228e-06,
+        "degrees": 2.5896236867758322e-05
+      }
+    }
+  },
+  {
+    "test": "Rope redo leaves left chain active",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "test": "Rope import live-IK export with IK off",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 5.8172158294543e-07,
+        "degrees": 0.0003244519592598682
+      },
+      "j_ude_a_r": {
+        "metres": 4.3205208020623403e-07,
+        "degrees": 6.070804925011744e-05
+      },
+      "j_ude_b_l": {
+        "metres": 5.874912765928772e-07,
+        "degrees": 3.143927987931276e-05
+      },
+      "j_ude_b_r": {
+        "metres": 4.085339644301027e-07,
+        "degrees": 0.00020861448470344175
+      },
+      "j_te_l": {
+        "metres": 5.273518750035205e-07,
+        "degrees": 4.292707329736469e-05
+      },
+      "j_te_r": {
+        "metres": 4.5485821979362073e-07,
+        "degrees": 2.784925354712232e-05
+      }
+    }
+  },
+  {
+    "test": "Rope import baked export with IK off",
+    "passed": true,
+    "detail": {
+      "j_ude_a_l": {
+        "metres": 5.8172158294543e-07,
+        "degrees": 0.0003244519592598682
+      },
+      "j_ude_a_r": {
+        "metres": 2.9180301573463093e-06,
+        "degrees": 7.132970968997197e-05
+      },
+      "j_ude_b_l": {
+        "metres": 5.874912765928772e-07,
+        "degrees": 3.143927987931276e-05
+      },
+      "j_ude_b_r": {
+        "metres": 3.2334192429037634e-06,
+        "degrees": 0.00020795654776660844
+      },
+      "j_te_l": {
+        "metres": 5.273518750035205e-07,
+        "degrees": 4.292707329736469e-05
+      },
+      "j_te_r": {
+        "metres": 5.10498775713759e-06,
+        "degrees": 4.309654522879991e-05
+      }
+    }
+  }
+]

@@ -7,7 +7,7 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
 
-/// <summary>The single in-flight scrub drag.</summary>
+/// <summary>Tracks the animation control and actor being scrubbed by one drag.</summary>
 internal sealed class ScrubAnimationSession
 {
     private readonly IAnimationScrubPort _port;
@@ -20,11 +20,9 @@ internal sealed class ScrubAnimationSession
     }
 
     /// <summary>
-    /// One scrub drag. Everything that could move under the drag freezes
-    /// at Begin: playback (so the game cannot advance the frame out from
-    /// under the pointer), the control identity, its duration, and the
-    /// skeleton token. Release leaves the actor paused on the frame the
-    /// user chose — resuming is a separate, deliberate act.
+    /// Values captured when the drag starts. The selected layer is paused;
+    /// without a layer selection, the whole actor is paused. The skeleton
+    /// token lets the game port reject writes after the skeleton changes.
     /// </summary>
     private sealed record ScrubGesture(
         Guid Owner,
@@ -39,23 +37,17 @@ internal sealed class ScrubAnimationSession
     /// <summary>Seeks a layer by its own timeline clock, in seconds from its begin
     /// (a timeline still loading takes it once loaded).</summary>
     public Outcome SeekLayer(ActorId actor, AnimationSlot slot, float seconds) =>
-        float.IsFinite(seconds)
-            ? _port.SetControlTime(actor, ScrubControlId.Timeline(slot), Math.Max(seconds, 0f), 0)
-            : Outcome.Fail("Scrub time must be a finite number.");
+        _port.SetControlTime(actor, ScrubControlId.Timeline(slot), Math.Max(seconds, 0f), 0);
 
     /// <summary>Gets the control for a slot.</summary>
     public ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot) =>
         _port.FindSlotControl(actor, slot, out _);
 
     /// <summary>
-    /// Freezes playback and captures the drag's whole mapping. Fails when
-    /// the control is not present, so a scrub never starts against
-    /// geometry that is already gone.
+    /// Finds the animation control, pauses it, and remembers its duration
+    /// and skeleton token. Returns an error if the control cannot be found.
     /// </summary>
-    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null) =>
-        BeginScrubCore(actor, control, owner, slot);
-
-    private Outcome BeginScrubCore(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot)
+    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null)
     {
         var controls = _port.EnumerateControls(actor, out var token);
         ScrubControlReading? target = null;
@@ -66,7 +58,7 @@ internal sealed class ScrubAnimationSession
             return Outcome.Fail("That animation control is no longer present.");
 
         // A layer's scrub holds that layer only; the others keep playing. Without a
-        // known layer the whole actor is held, as before.
+        // known layer the whole actor is held.
         bool wasPaused = _speed.IsPaused(actor) ||
             (slot is { } held && _speed.IsSlotHeld(actor, held));
         if (!wasPaused)
@@ -83,13 +75,10 @@ internal sealed class ScrubAnimationSession
     }
 
     /// <summary>
-    /// Writes a frame clamped to the duration captured at Begin. Actor and
-    /// skeleton mismatches end the drag instead of retargeting the write.
+    /// Seeks within the duration captured at Begin. A different actor or owner
+    /// is rejected without changing the drag. A failed game write ends it.
     /// </summary>
-    public Outcome UpdateScrub(ActorId actor, float time, Guid owner) =>
-        UpdateScrubCore(actor, time, owner);
-
-    private Outcome UpdateScrubCore(ActorId actor, float time, Guid owner)
+    public Outcome UpdateScrub(ActorId actor, float time, Guid owner)
     {
         if (_scrub is not { } gesture)
             return Outcome.Fail("No scrub is active.");
@@ -98,8 +87,6 @@ internal sealed class ScrubAnimationSession
         if (!gesture.Actor.Equals(actor))
             return Outcome.Fail(
                 "The scrub in flight belongs to a different actor.");
-        if (!float.IsFinite(time))
-            return Outcome.Fail("Scrub time must be a finite number.");
 
         float clamped = Math.Clamp(time, 0f, gesture.Duration);
         var result = _port.SetControlTime(
@@ -111,9 +98,8 @@ internal sealed class ScrubAnimationSession
         return result;
     }
 
-    /// <summary>Ends the drag, leaving the actor paused on the released
-    /// frame. That pause is an ordinary speed override, so Resume
-    /// continues from exactly there.</summary>
+    /// <summary>Forgets this owner's drag. The pause remains until a separate
+    /// playback action releases it.</summary>
     public void EndScrub(Guid owner)
     {
         if (_scrub?.Owner != owner)

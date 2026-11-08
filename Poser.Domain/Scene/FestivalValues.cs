@@ -9,9 +9,9 @@ public readonly record struct ActiveFestival(uint Id, ushort Phase);
 public sealed record FestivalPhaseInfo(int Id, string Name);
 
 /// <summary>
-/// A festival row joined with the curated reference data. A row the data does
-/// not name is still offered, flagged <see cref="Unknown"/>; a row known to
-/// break the game in some places is flagged <see cref="Unsafe"/>.
+/// Festival metadata for the picker. Unknown means no curated name is
+/// available; Unsafe marks entries flagged by the source data. This record
+/// does not establish that an entry is safe on the current map.
 /// </summary>
 public sealed record FestivalEntry(
     uint Id,

@@ -113,7 +113,7 @@ public sealed class CameraRestRecorder : IDisposable
         _recording = true;
         try
         {
-            // Keys led by the camera service name no entity: this step stays global.
+            // A service-based journal key keeps this entry in global history.
             // A camera removed and restored by undo is a new instance: resolve it.
             IVirtualCamera? Current() => (_restored?.Resolve(camera) ?? camera) is { IsValid: true } live ? live : null;
             _journal.Record((_cameras, camera, nameof(CameraRestRecorder)), "Move camera", before, after, state =>

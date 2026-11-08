@@ -20,13 +20,13 @@ public readonly record struct FilePreviewResult(
 /// <summary>
 /// One caller-drawn column right of the file list. The dialog owns the
 /// geometry and nothing else: the panel is handed its box in screen space and
-/// the full path the list is HIGHLIGHTING — null for a folder row, and for no
+/// the full path highlighted in the list — null for a folder row, and for no
 /// selection at all — and whatever it draws there is its own business,
 /// scrolling included.
 /// </summary>
 /// <param name="Width">Logical column width. Unlike
 /// <see cref="FileDialog.FilePreview"/>, which steals width from the
-/// listing, this is ADDED to the dialog: the browser keeps its own width
+/// listing, this is added to the dialog: the browser keeps its own width
 /// whatever a consumer bolts on beside it.</param>
 public readonly record struct FileSidePanel(
     float Width, Action<Vector2, Vector2, string?> Draw);
@@ -40,8 +40,8 @@ internal readonly record struct FileQuickEntry(
     string Name, string Path, TablerIcon Icon);
 
 /// <summary>
-/// THE DIALOG'S VIEW OF THE DISK, and the only one. Ordering, extension
-/// filtering and the error line are the DIALOG's policy and stay above this
+/// The dialog's only view of the disk. Ordering, extension filtering, and the
+/// error line are dialog policy and stay above this
 /// line; hidden-attribute suppression is the filesystem's own and stays below.
 /// </summary>
 internal interface IFileListingSource

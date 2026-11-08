@@ -21,7 +21,7 @@ public record struct ContextMenuItem
     public Action? OnInvoke;
 
     /// <summary>Explanatory hover help for the row — the same card every
-    /// control's <c>help</c> shows. The one row shape that NEEDS it is a
+    /// control's <c>help</c> shows. A disabled row especially needs it to explain
     /// disabled row explaining why it is unavailable, which has no live
     /// item to hover, so the menu registers it geometrically.</summary>
     public string? Help;

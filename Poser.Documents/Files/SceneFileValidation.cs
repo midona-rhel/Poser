@@ -62,23 +62,15 @@ public sealed class SceneFileValidationOutcome
         new(false, SceneFileValidationFailure.Create(kind, detail));
 }
 
-/// <summary>One entity a load leaves out because its own data is invalid:
-/// named, with the reason, beside everything that did restore.</summary>
+/// <summary>Identifies an invalid entity omitted from a partial scene load.</summary>
 public sealed record SceneEntityRefusal(SceneOutcomeKind Kind, string Name, string Detail);
 
 /// <summary>
-/// Complete-document scene validation: version, identity, bounds, finite
-/// numerics, nondegenerate rotations, embedded pose/light/camera documents,
-/// and every explicit relationship reference.
-///
-/// <para>Two strengths over the same checks. <see cref="Validate"/> is
-/// strict — any failure refuses — and guards every write and capture.
-/// <see cref="ValidateForLoad"/> splits them: DOCUMENT-level failures
-/// (version, identity, collection caps, document text, cameras' live/default
-/// rules, the group and parent graph) still refuse the file, but an ENTITY
-/// whose own data is invalid is removed from the document and named, so one
-/// bad light never costs the rest of the scene. Either way nothing that
-/// passes can throw during a load's commit.</para>
+/// Validates scene version, IDs, collection limits, numeric values, embedded
+/// documents, and relationships. <see cref="Validate"/> rejects the complete
+/// scene on any failure. <see cref="ValidateForLoad"/> still rejects structural
+/// failures, but removes invalid individual entities and reports them so the
+/// remaining scene can load.
 /// </summary>
 public static class SceneFileValidation
 {
@@ -86,7 +78,7 @@ public static class SceneFileValidation
         Check(scene, null);
 
     /// <summary>
-    /// The load's validation. Refused entities are REMOVED from
+    /// The load's validation. Invalid entities are removed from
     /// <paramref name="scene"/> (a refused character file, gaze or environment
     /// only drops that part). A reference to a removed entity stays valid —
     /// relationships are checked against every key the file declares — and
@@ -725,6 +717,7 @@ public static class SceneFileValidation
             // all — but a present one is held to the same finiteness as every
             // other coordinate in the document.
             (document.FixedPosition is { } pinned && !TransformMath.IsFinite(pinned)) ||
+            (document.OrbitPosition is { } orbit && !TransformMath.IsFinite(orbit)) ||
             !TransformMath.IsFinite(document.Position) ||
             !TransformMath.IsFinite(document.Rotation))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
@@ -934,6 +927,8 @@ public static class SceneFileValidation
                 return "layer frame out of range";
             if (layer.EndedSeconds is { } ended && !(float.IsFinite(ended) && ended >= 0f))
                 return "layer length out of range";
+            if (layer.PlayedSeconds is { } played && !(float.IsFinite(played) && played >= 0f))
+                return "layer position out of range";
         }
         return null;
     }

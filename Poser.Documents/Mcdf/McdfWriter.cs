@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using K4os.Compression.LZ4.Legacy;
@@ -51,88 +50,110 @@ internal static class McdfWriter
                 "Penumbra's mod directory is missing or inaccessible.");
         }
 
+        // Each file is read once here, several at a time, for the MCDF payload
+        // hash. The writer reuses that hash for the header and checks it again
+        // while copying, so it never has to read a file just to hash it.
+        var listed = resources.ToArray();
+        var results = new InspectedResource[listed.Length];
+        try
+        {
+            Parallel.For(0, listed.Length, new ParallelOptions
+            {
+                CancellationToken = cancellation,
+                MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 1, 4),
+            }, i => results[i] = InspectResource(realRoot, listed[i].Key, listed[i].Value, cancellation));
+        }
+        catch (OperationCanceledException)
+        {
+            return IntegrationValue<McdfExportInspection>.Fail(
+                "The export inspection was cancelled.");
+        }
+
         var candidates = new List<McdfExportCandidate>();
         var skipped = new List<string>();
-        foreach (var (actualRaw, gamePathsRaw) in resources)
+        foreach (var result in results)
         {
-            if (cancellation.IsCancellationRequested)
-                return IntegrationValue<McdfExportInspection>.Fail(
-                    "The export inspection was cancelled.");
-            if (actualRaw.Length > 1 && actualRaw[1] == ':')
-            {
-                string fullPath;
-                try
-                {
-                    fullPath = Path.GetFullPath(actualRaw);
-                }
-                catch
-                {
-                    skipped.Add($"{actualRaw} (not a usable path)");
-                    continue;
-                }
-
-                try
-                {
-                    using var stream = new FileStream(
-                        fullPath, FileMode.Open, FileAccess.Read,
-                        FileShare.ReadWrite | FileShare.Delete);
-                    string finalPath = McdfPlatformFileOwnership.GetRequiredFinalPath(stream.SafeFileHandle);
-                    if (EscapesRoot(Path.GetRelativePath(realRoot, finalPath)))
-                    {
-                        skipped.Add($"{actualRaw} (changed or outside the Penumbra mod directory)");
-                        continue;
-                    }
-                    long length = stream.Length;
-                    string hash = HashStream(
-                        stream, HashAlgorithmName.SHA256, cancellation);
-                    string? identity = McdfPlatformFileOwnership.TryGetIdentity(stream.SafeFileHandle);
-                    var source = new McdfExportSourceObservation(
-                        finalPath, realRoot, length, hash, identity);
-                    candidates.Add(new McdfExportCandidate(
-                        actualRaw, gamePathsRaw.ToArray(),
-                        McdfExportCandidateKind.LocalFile, finalPath, length, source));
-                }
-                catch (OperationCanceledException)
-                {
-                    return IntegrationValue<McdfExportInspection>.Fail(
-                        "The export inspection was cancelled.");
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    skipped.Add($"{actualRaw} (not readable)");
-                }
-                catch (FileNotFoundException)
-                {
-                    skipped.Add($"{actualRaw} (missing on disk)");
-                }
-                catch (DirectoryNotFoundException)
-                {
-                    skipped.Add($"{actualRaw} (missing on disk)");
-                }
-                catch (Win32Exception)
-                {
-                    return IntegrationValue<McdfExportInspection>.Fail(
-                        "A source file's final handle path or identity could not be verified.");
-                }
-                catch (IOException)
-                {
-                    skipped.Add($"{actualRaw} (metadata could not be read)");
-                }
-                catch
-                {
-                    skipped.Add($"{actualRaw} (could not resolve the real path)");
-                }
-            }
-            else
-            {
-                candidates.Add(new McdfExportCandidate(
-                    actualRaw, gamePathsRaw.ToArray(),
-                    McdfExportCandidateKind.GamePath, null, 0));
-            }
+            if (result.Fatal != null)
+                return IntegrationValue<McdfExportInspection>.Fail(result.Fatal);
+            if (result.Candidate != null)
+                candidates.Add(result.Candidate);
+            if (result.Skipped != null)
+                skipped.Add(result.Skipped);
         }
 
         return IntegrationValue<McdfExportInspection>.Ok(
             new McdfExportInspection(candidates, skipped));
+    }
+
+    private readonly record struct InspectedResource(
+        McdfExportCandidate? Candidate, string? Skipped, string? Fatal);
+
+    private static InspectedResource InspectResource(
+        string realRoot, string actualRaw, IReadOnlyList<string> gamePathsRaw,
+        CancellationToken cancellation)
+    {
+        // A drive-letter path is a file replacement; anything else is a game path.
+        if (actualRaw.Length <= 1 || actualRaw[1] != ':')
+            return new(new McdfExportCandidate(
+                actualRaw, gamePathsRaw.ToArray(),
+                McdfExportCandidateKind.GamePath, null, 0), null, null);
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(actualRaw);
+        }
+        catch
+        {
+            return new(null, $"{actualRaw} (not a usable path)", null);
+        }
+
+        try
+        {
+            using var stream = new FileStream(
+                fullPath, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            string finalPath = McdfPlatformFileOwnership.GetRequiredFinalPath(stream.SafeFileHandle);
+            if (EscapesRoot(Path.GetRelativePath(realRoot, finalPath)))
+                return new(null, $"{actualRaw} (changed or outside the Penumbra mod directory)", null);
+            long length = stream.Length;
+            string hash = HashPayload(stream, cancellation);
+            string? identity = McdfPlatformFileOwnership.TryGetIdentity(stream.SafeFileHandle);
+            var source = new McdfExportSourceObservation(
+                finalPath, realRoot, length, hash, identity);
+            return new(new McdfExportCandidate(
+                actualRaw, gamePathsRaw.ToArray(),
+                McdfExportCandidateKind.LocalFile, finalPath, length, source), null, null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new(null, $"{actualRaw} (not readable)", null);
+        }
+        catch (FileNotFoundException)
+        {
+            return new(null, $"{actualRaw} (missing on disk)", null);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new(null, $"{actualRaw} (missing on disk)", null);
+        }
+        catch (Win32Exception)
+        {
+            return new(null, null,
+                "A source file's final handle path or identity could not be verified.");
+        }
+        catch (IOException)
+        {
+            return new(null, $"{actualRaw} (metadata could not be read)", null);
+        }
+        catch
+        {
+            return new(null, $"{actualRaw} (could not resolve the real path)", null);
+        }
     }
 
     public static IntegrationValue<McdfWriteStats> Write(
@@ -167,72 +188,41 @@ internal static class McdfWriter
                     throw new WriteFailureException(
                         "The existing destination identity could not be verified.");
             }
-            // Pass 1 — hash and measure every local file so the header can
-            // precede the payloads, deduplicating identical content by
-            // BLAKE3 (current Lightless/Brio) while every game path is preserved.
+            // Pass 1 — the header lists every payload before the payloads
+            // themselves, deduplicated by their MCDF hash (BLAKE3, as current
+            // Lightless/Brio write it) with every game path kept. Inspected files
+            // already carry that hash; only a file given without one is read here.
             var byHash = new Dictionary<string, (
                 McdfWireFile Entry, string LocalPath, McdfExportSourceObservation Source)>(
                 StringComparer.OrdinalIgnoreCase);
             var order = new List<string>();
             long totalBytes = 0;
-            long hashedBytes = 0;
-            long toHash = 0;
-            foreach (var file in content.Files)
-            {
-                if (file.Source is { } source)
-                    toHash += source.Length;
-                else
-                    toHash += new FileInfo(file.LocalPath).Length;
-            }
-
             foreach (var file in content.Files)
             {
                 if (cancellation.IsCancellationRequested)
                     throw new WriteFailureException("The export was cancelled.");
                 var source = file.Source ?? CaptureSource(file.LocalPath, cancellation);
-                using (var input = OpenValidatedSource(file.LocalPath, source, cancellation,
-                    out string? sourceError))
+                // McdfWireFile.Length is the format's int32 length field.
+                if (source.Length > int.MaxValue)
+                    throw new WriteFailureException(
+                        $"{file.LocalPath} is too large for the MCDF format.");
+                string digest = source.ContentHash;
+                if (byHash.TryGetValue(digest, out var existing))
                 {
-                    if (input == null)
-                        throw new WriteFailureException(
-                            sourceError ?? $"{file.LocalPath} changed while exporting.");
-                    string localDigest = HashStream(
-                        input, HashAlgorithmName.SHA256, cancellation,
-                        bytes =>
-                        {
-                            hashedBytes += bytes;
-                            progress(new McdfProgressStep(
-                                McdfPhase.WritingPackage, 0, content.Files.Count,
-                                hashedBytes, toHash));
-                        });
-                    if (!string.Equals(localDigest, source.ContentHash, StringComparison.OrdinalIgnoreCase))
-                        throw new WriteFailureException(
-                            $"{file.LocalPath} changed while exporting; its declared hash would be false.");
-                    input.Position = 0;
-                    string digest = HashPayload(input, cancellation);
-                    long length = input.Length;
-                    // McdfWireFile.Length is the format's int32 length field.
-                    if (length > int.MaxValue)
-                        throw new WriteFailureException(
-                            $"{file.LocalPath} is too large for the MCDF format.");
-
-                    if (byHash.TryGetValue(digest, out var existing))
+                    foreach (var gamePath in file.GamePaths)
+                        if (!existing.Entry.GamePaths.Contains(gamePath))
+                            existing.Entry.GamePaths.Add(gamePath);
+                }
+                else
+                {
+                    byHash[digest] = (new McdfWireFile
                     {
-                        foreach (var gamePath in file.GamePaths)
-                            if (!existing.Entry.GamePaths.Contains(gamePath))
-                                existing.Entry.GamePaths.Add(gamePath);
-                    }
-                    else
-                    {
-                        byHash[digest] = (new McdfWireFile
-                        {
-                            GamePaths = file.GamePaths.ToList(),
-                            Length = (int)length,
-                            Hash = digest,
-                        }, file.LocalPath, source);
-                        order.Add(digest);
-                        totalBytes += length;
-                    }
+                        GamePaths = file.GamePaths.ToList(),
+                        Length = (int)source.Length,
+                        Hash = digest,
+                    }, file.LocalPath, source);
+                    order.Add(digest);
+                    totalBytes += source.Length;
                 }
             }
 
@@ -260,8 +250,11 @@ internal static class McdfWriter
             // then write header + payloads before the atomic destination step.
             ownedOutput = CreateOwnedTemporary(
                 Path.GetFullPath(destination), out temporary);
+            // Normal LZ4: high compression is several times slower and barely
+            // shrinks game files, whose textures are already compressed. Readers
+            // decode both the same way.
             using (var lz4 = LZ4Legacy.Encode(
-                ownedOutput, highCompression: true, blockSize: 1024 * 1024, leaveOpen: true))
+                ownedOutput, highCompression: false, blockSize: 1024 * 1024, leaveOpen: true))
             using (var writer = new BinaryWriter(lz4, Encoding.UTF8, leaveOpen: true))
             {
                 writer.Write((byte)'M');
@@ -273,6 +266,7 @@ internal static class McdfWriter
                 writer.Write(jsonBytes);
 
                 long written = 0;
+                long reported = 0;
                 int done = 0;
                 var chunk = new byte[McdfWire.ChunkSize];
                 foreach (var digest in order)
@@ -285,32 +279,28 @@ internal static class McdfWriter
                     if (input == null)
                         throw new WriteFailureException(
                             sourceError ?? $"{byHash[digest].LocalPath} changed while exporting.");
-                    string localDigestBeforeCopy = HashStream(
-                        input, HashAlgorithmName.SHA256, cancellation);
-                    if (!string.Equals(localDigestBeforeCopy, source.ContentHash,
-                            StringComparison.OrdinalIgnoreCase))
-                        throw new WriteFailureException(
-                            $"{byHash[digest].LocalPath} changed while exporting; its declared hash would be false.");
-                    input.Position = 0;
-                    string wireDigestBeforeCopy = HashPayload(input, cancellation);
-                    if (!string.Equals(wireDigestBeforeCopy, digest,
-                            StringComparison.OrdinalIgnoreCase))
-                        throw new WriteFailureException(
-                            $"{byHash[digest].LocalPath} changed while exporting.");
-                    input.Position = 0;
+                    // Hash while copying: a file that changed since it was hashed
+                    // fails the export, and the unfinished package is discarded.
+                    using var copied = new McdfPayloadHash();
                     long fileWritten = 0;
                     int got;
                     while ((got = input.Read(chunk, 0, chunk.Length)) > 0)
                     {
                         if (cancellation.IsCancellationRequested)
                             throw new WriteFailureException("The export was cancelled.");
+                        copied.Append(chunk.AsSpan(0, got));
                         writer.Write(chunk, 0, got);
                         written += got;
                         fileWritten += got;
-                        progress(new McdfProgressStep(
-                            McdfPhase.WritingPackage, done, order.Count, written, totalBytes));
+                        if (written - reported >= ProgressBytes)
+                        {
+                            reported = written;
+                            progress(new McdfProgressStep(
+                                McdfPhase.WritingPackage, done, order.Count, written, totalBytes));
+                        }
                     }
-                    if (fileWritten != byHash[digest].Entry.Length)
+                    if (fileWritten != byHash[digest].Entry.Length
+                        || !string.Equals(copied.Finish(), digest, StringComparison.OrdinalIgnoreCase))
                         throw new WriteFailureException(
                             $"{byHash[digest].LocalPath} changed while exporting.");
                     done++;
@@ -427,6 +417,10 @@ internal static class McdfWriter
         return result;
     }
 
+    /// <summary>Progress is reported per file and about every 8 MB copied,
+    /// not after every read.</summary>
+    private const long ProgressBytes = 8L * 1024 * 1024;
+
     private sealed class WriteFailureException(string message)
         : IOException(message);
 
@@ -538,8 +532,7 @@ internal static class McdfWriter
         if (!McdfPlatformFileOwnership.PathsEqual(finalPath, realPath))
             throw new IOException($"{localPath} changed while being opened.");
         long length = input.Length;
-        string hash = HashStream(
-            input, HashAlgorithmName.SHA256, cancellation);
+        string hash = HashPayload(input, cancellation);
         return new McdfExportSourceObservation(
             finalPath, string.Empty, length, hash,
             McdfPlatformFileOwnership.TryGetIdentity(input.SafeFileHandle));
@@ -557,25 +550,6 @@ internal static class McdfWriter
         }
         cancellation.ThrowIfCancellationRequested();
         return hash.Finish();
-    }
-
-    private static string HashStream(
-        Stream stream,
-        HashAlgorithmName algorithm,
-        CancellationToken cancellation,
-        Action<int>? bytesRead = null)
-    {
-        using var hash = IncrementalHash.CreateHash(algorithm);
-        var chunk = new byte[McdfWire.ChunkSize];
-        int got;
-        while ((got = stream.Read(chunk, 0, chunk.Length)) > 0)
-        {
-            cancellation.ThrowIfCancellationRequested();
-            hash.AppendData(chunk, 0, got);
-            bytesRead?.Invoke(got);
-        }
-        cancellation.ThrowIfCancellationRequested();
-        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     /// <summary>Resolves every reparse point in a path, including

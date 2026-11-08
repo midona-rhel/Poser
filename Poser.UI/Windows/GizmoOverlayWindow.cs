@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Poser.Application.Viewport;
 using Poser.Application.Gaze;
 using System.Collections.Generic;
@@ -38,8 +38,7 @@ internal enum GizmoTargetType
     WorldObject,
     Collider,
 
-    /// <summary>The anonymous group: entities of MIXED kinds selected
-    /// together, seated at their centroid.</summary>
+    /// <summary>Different entity kinds selected together, with a gizmo at their centroid.</summary>
     Mixed
 }
 
@@ -207,7 +206,7 @@ public class GizmoOverlayWindow : Window
         _configuration = configuration;
         // The first click on an unselected entity only selects it: the
         // press that changed the selection may not begin a drag on the
-        // gizmo that appeared under it (ruled 2026-09-03). The flag clears
+        // gizmo that appeared under it. The flag clears
         // on release, as every other suppression does.
         scene.Selection.SelectionChanged += _ => _beginSuppressed = true;
         _selection = scene.Selection;
@@ -690,7 +689,7 @@ public class GizmoOverlayWindow : Window
             {
                 if (!_presentation.IsVisible(primaryBoneId))
                     return;
-                // Per SKELETON: this actor's bones must be shown, not anyone's.
+                // In per-skeleton mode, show this actor's bones and no others.
                 if (GizmoConfig.HideGizmoWithoutArmature
                     && !(_presentation.ArmatureShown
                         && _presentation.AnyVisibleFor(primaryBoneId)))
@@ -864,9 +863,7 @@ public class GizmoOverlayWindow : Window
         var io = ImGui.GetIO();
         var mouse = io.MousePos;
         WorldHandleHit? hover = null;
-        // Occlusion suppresses new grabs only; the configured hold-modifier
-        // died with its setting — Alt is the ONE suspend and hides the
-        // gizmo outright.
+        // A window over the pointer prevents new grabs but does not stop a drag.
         if (gesture == null && layout != null && !occluded)
             hover = WorldGizmo.HitTest(layout, mouse, 2f * uiScale);
 
@@ -1317,7 +1314,7 @@ public class GizmoOverlayWindow : Window
         Vector2 mouse)
     {
         float multiplier = RotationGizmoRings.ModifierMultiplier(io);
-        // Ctrl enables hold-snap; Shift enables translate ray-snap.
+        // Z enables increment snapping; X snaps translation to the pointer ray.
         var gizmoConfig = GizmoConfig;
         // Z and X, not Ctrl and Shift: those are the step ladder during a
         // world drag (the modifier contract), so snapping holds its own
@@ -1330,7 +1327,7 @@ public class GizmoOverlayWindow : Window
         float linearStep = holdSnap
             ? GizmoSnap.Increment(gizmoConfig.SnapLinearStep, io.KeyShift)
             : 0f;
-        // Shift ray-snap takes precedence for translation.
+        // Pointer-ray snapping takes precedence over increment snapping.
         bool raySnap = gizmoConfig.AllowRaySnap
             && ImGui.IsKeyDown(ImGuiKey.X);
 
@@ -1533,9 +1530,7 @@ public class GizmoOverlayWindow : Window
                 ScaleFactor(start.Scale.Y, desired.Scale.Y),
                 ScaleFactor(start.Scale.Z, desired.Scale.Z)));
     }
-    /// <summary>The per-bone symmetry resolver every gesture uses: the
-    /// bone's own stated mode when the per-bone sheet is on, the toolbar
-    /// otherwise — the one rule, from its one home.</summary>
+    /// <summary>Uses the bone override when enabled, otherwise the toolbar symmetry mode.</summary>
     private System.Nullable<TransformDeltaMode> SymmetryDeltaFor(
         string canonicalName)
     {

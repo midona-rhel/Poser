@@ -11,7 +11,7 @@ using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace Poser.Game.Animation;
 
-/// <summary>The redraw restore: a redrawn actor comes back on the frame it was on.</summary>
+/// <summary>Captures selected timeline clocks before redraw and attempts to restore them afterward.</summary>
 public sealed unsafe partial class TimelineSeekService
 {
     // ── Redraw restore ────────────────────────────────────────────────
@@ -20,7 +20,8 @@ public sealed unsafe partial class TimelineSeekService
     /// Entry of Character::DisableDraw (every redraw path: Penumbra, Glamourer,
     /// the game's own hide). At entry the slot ids, handles and clocks are intact;
     /// the function then destroys the props and stops every slot. Only drawn
-    /// (+0x9A bit 7) Poser actors; never throws into the game.
+    /// (+0x9A bit 7) Poser actors. The detour catches capture exceptions before
+    /// calling the original native function.
     /// </summary>
     private sealed class Restore
     {

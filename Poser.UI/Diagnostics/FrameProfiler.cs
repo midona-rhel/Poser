@@ -24,33 +24,27 @@ public readonly ref struct ProfileScope
 }
 
 /// <summary>
-/// THE draw-cost ledger. Every major draw unit wears a
-/// <see cref="Scope"/>; each frame the profiler folds the measured spans
-/// into a per-label exponential average and a per-label peak, which the
-/// PERF panel reads.
+/// Records scoped draw costs and publishes per-label exponential averages and
+/// peaks for the performance panel.
 ///
-/// <para>WHAT IT MEASURES: CPU time spent inside the plugin's own draw
-/// callback, nothing else. The GPU work an ImGui draw list causes — the
-/// backdrop blur above all — is submitted here and executed later, so it is
-/// invisible to every number this class produces. The panel says so in its
-/// own footnote, and any reading of these figures has to carry that caveat
-/// with it.</para>
+/// <para>Measurements cover CPU time inside the plugin draw callback. Deferred
+/// GPU work, including backdrop blur, is excluded.</para>
 ///
-/// <para>SELF vs INCLUSIVE: scopes nest (window → column → section), so
+/// <para>Scopes nest (window → column → section), so
 /// inclusive time double-counts down the tree and the outermost label always
 /// wins. Each scope therefore also reports SELF time — its inclusive span
 /// minus the inclusive spans of the scopes opened directly inside it — and
 /// that is what the panel sorts on, because "what costs" is a question about
 /// the work a unit does itself.</para>
 ///
-/// <para>OFF IS FREE: <see cref="Enabled"/> is a plain field read before
+/// <para>When disabled, <see cref="Enabled"/> is checked before
 /// anything else happens, and a disabled <see cref="ProfileScope"/> carries
 /// no profiler, so a disabled scope is a predictable branch and no allocation
-/// at all. ON is allocation-free too once a label has been seen once: label
+/// at all. Recording is allocation-free once a label has been interned: label
 /// slots are interned on first sight and the per-frame accumulators are
 /// preallocated arrays indexed by slot.</para>
 ///
-/// <para>The switch is applied at the FRAME BOUNDARY, never mid-frame:
+/// <para>The switch is applied at the frame boundary rather than mid-frame:
 /// flipping it between a scope's open and its close would unbalance the
 /// nesting stack. <see cref="SetEnabled"/> therefore records a request that
 /// <see cref="BeginFrame"/> honours.</para>
@@ -154,12 +148,11 @@ public sealed class FrameProfiler
     }
 
     /// <summary>Closes the frame and folds every label's measured span into
-    /// its average and peak. A label NOT seen this frame samples zero, so a
+    /// its average and peak. A label not seen this frame samples zero, so a
     /// closed window's row decays instead of standing at its last value
     /// forever.</summary>
     /// <summary>Frames past this log their costliest units. The bar is the
-    /// 120fps budget: the WHOLE game gets 8.3ms, so a Poser draw pass past
-    /// 4ms is already guaranteed to be the reason a frame dropped.</summary>
+    /// 120fps frame budget. A 4ms Poser draw pass is logged for diagnosis.</summary>
     private const double HitchThresholdMs = 4.0;
 
     /// <summary>A sustained overshoot logs once a second, not once a frame.

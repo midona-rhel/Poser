@@ -5,10 +5,9 @@ using Poser.Domain.Identity;
 
 namespace Poser.Game.Presentation;
 
-/// <summary>Binds an exact stable ID to its live handle. A bound target keeps
-/// the handle it was bound to; each write and replay resolves it again through
-/// the history-only resolver, so a lifecycle restore that replaced the wrapper
-/// still receives undo and redo. Public IDs are never repaired.</summary>
+/// <summary>Binds a stable id to its current handle. History replay may resolve
+/// a replacement handle created by lifecycle restoration; ordinary public id
+/// lookups remain unchanged.</summary>
 public sealed class HandleValuePort<TId, THandle> : IEntityValuePort<TId>
     where TId : struct where THandle : class
 {

@@ -6,8 +6,7 @@ using Poser.Domain.Transforms;
 namespace Poser.Application.Posing;
 
 /// <summary>One bone the import's chosen scope resets, named the way the
-/// pose store is addressed: slot, partial, bone name — never an instance
-/// (issue #78).</summary>
+/// pose store is addressed: slot, partial, and bone name rather than a live instance.</summary>
 public readonly record struct PoseImportReset(
     PoseSlot Slot, int Partial, string Bone);
 
@@ -22,16 +21,12 @@ public readonly record struct PoseImportWrite(
     TransformComponents Components);
 
 /// <summary>
-/// Everything one pose-file import would change, computed WITHOUT mutating
-/// anything: the exact bones the chosen scope resets, the file's absolute
-/// transforms verbatim with their per-bone delta masks, and the owning
-/// actor's model transform when enabled. Every target appears at most once
-/// per role, so the edit gives each exactly one deterministic final state.
-/// The plan is pure data — bones by (slot, partial, name), never skeleton
-/// or bone instances — so it stays valid across the ticks between arming
-/// and application, redraws included (issue #78). A write's basis is NOT
-/// part of the plan: the apply pass supplies its own just-refreshed
-/// <c>bone.LastRawTransform</c> (Brio PoseImporter.cs:35).
+/// Planned bone resets, absolute file transforms with component masks, and an
+/// optional actor model transform. Entries identify bones by slot, partial,
+/// and name so the apply pass can resolve current bones after a redraw.
+/// Builders must avoid duplicate targets within each list. The runtime still
+/// validates the operation and supplies the current raw transform used as the
+/// basis for each bone write.
 /// </summary>
 public sealed class PoseImportPlan
 {

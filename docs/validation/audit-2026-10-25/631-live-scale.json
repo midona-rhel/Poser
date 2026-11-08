@@ -1,0 +1,185 @@
+{
+  "actor": "0",
+  "checks": [
+    {
+      "check": "small apply",
+      "pass": true,
+      "scale": [
+        0.005,
+        0.005,
+        0.005
+      ],
+      "nativeScale": [
+        0.005,
+        0.005,
+        0.005
+      ]
+    },
+    {
+      "check": "small undo",
+      "pass": true,
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "nativeScale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "check": "small redo",
+      "pass": true,
+      "scale": [
+        0.005,
+        0.005,
+        0.005
+      ],
+      "nativeScale": [
+        0.005,
+        0.005,
+        0.005
+      ]
+    },
+    {
+      "check": "small restored",
+      "pass": true,
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "nativeScale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "check": "tiny apply",
+      "pass": true,
+      "scale": [
+        1e-06,
+        1e-06,
+        1e-06
+      ],
+      "nativeScale": [
+        1e-06,
+        1e-06,
+        1e-06
+      ]
+    },
+    {
+      "check": "tiny undo",
+      "pass": true,
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "nativeScale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "check": "tiny redo",
+      "pass": true,
+      "scale": [
+        1e-06,
+        1e-06,
+        1e-06
+      ],
+      "nativeScale": [
+        1e-06,
+        1e-06,
+        1e-06
+      ]
+    },
+    {
+      "check": "tiny restored",
+      "pass": true,
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "nativeScale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "check": "negative X apply",
+      "pass": true,
+      "scale": [
+        -1,
+        1,
+        1
+      ],
+      "nativeScale": [
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "check": "negative X undo",
+      "pass": true,
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "nativeScale": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "check": "negative X redo",
+      "pass": true,
+      "scale": [
+        -1,
+        1,
+        1
+      ],
+      "nativeScale": [
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "check": "negative X restored",
+      "pass": true,
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "nativeScale": [
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "pass": true,
+  "deployedHead": "409edac9",
+  "initialScale": [
+    1,
+    1,
+    1
+  ],
+  "finalScale": [
+    1,
+    1,
+    1
+  ]
+}

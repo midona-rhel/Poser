@@ -26,22 +26,21 @@ using static Poser.Game.IkHeldTargets;
 namespace Poser.Game;
 
 /// <summary>Session IK state per exact endpoint: validated chain
-/// configuration, resolved native chain, and the Fixed-mode capture.
-/// Keyed by the exact skeleton instance, so a replacement never
-/// inherits configuration or targets.</summary>
+/// configuration, resolved native indices, and held target. The registry
+/// keys this state by actor-slot, partial index and bone index.</summary>
 internal sealed class IkChainState
 {
     public required Poser.Domain.Posing.IkChainConfig Config;
     public Poser.Domain.Posing.IkResolvedChain Chain;
-    /// <summary>The held target: World mode keeps the tip's world
-    /// point, Bone mode keeps the tip's world OFFSET from the target
-    /// bone. Translation is the authored delta at capture, so a later
-    /// drag moves the target by exactly what was dragged.</summary>
+    /// <summary>The held point and the edits already included in it.
+    /// Bone and Entity modes store an offset from the selected target.</summary>
     public HeldTarget? HeldCapture;
-    /// <summary>A capture taken from the displayed pose, not yet put onto the
-    /// end bone as the solve sees it (Customize+ scales the body after the
-    /// solve, so the two can differ): the first solve seats it.</summary>
+    /// <summary>The first solve must align this displayed capture with its input pose.
+    /// Customize+ can scale the displayed body after IK runs.</summary>
     public bool SeatPending;
+    // A target change keeps this solver-space point until its new anchor is read during evaluation.
+    public (Vector3 Position, Quaternion Rotation)? PendingRetarget;
+    public (Vector3 Position, Quaternion Rotation)? SolveTarget;
     /// <summary>World, Bone, Entity: the first bone above the chain and its frame
     /// as the last solve saw it, so a displayed drag converts into the solve's
     /// frame (Customize+ scales the body after the solve).</summary>
@@ -52,16 +51,6 @@ internal sealed class IkChainState
     public bool PreviewModelSpace;
     public readonly Poser.Game.Posing.BepuIkCollisionState CollisionState = new();
 }
-
-/// <summary>What a held chain captured: World mode's world point and
-/// rotation, or Bone mode's offset and relative rotation from the
-/// target bone, plus the authored deltas at capture so a later drag or
-/// turn moves the target by exactly that much.</summary>
-internal readonly record struct HeldTarget(
-    Vector3 Target,
-    Quaternion Rotation,
-    Vector3 Translation,
-    Quaternion RotationDelta);
 
 /// <summary>
 /// Session IK state per exact endpoint: each chain's validated
@@ -116,8 +105,7 @@ internal sealed unsafe partial class IkChainRegistry
         [System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out IkChainState state) =>
         _ikChains.TryGetValue(key, out state);
 
-    /// <summary>A replacement never inherits configuration or fixed targets:
-    /// every chain of the purged skeleton goes, with its collision state.</summary>
+    /// <summary>Removes every chain and collision state under an actor-slot key.</summary>
     public void Purge(SkeletonKey key)
     {
         foreach (var chainKey in _ikChains.Keys
@@ -150,7 +138,11 @@ internal sealed unsafe partial class IkChainRegistry
             return null;
         var key = ChainKey(bone);
         if (_ikChains.TryGetValue(key, out var state))
-            return state.Config;
+            return state.Config with
+            {
+                WorldAnchor = state.Config.TargetMode == IkTargetMode.World && state.HeldCapture is { } capture
+                    ? capture with { Unseated = state.SeatPending } : null,
+            };
         return definition == null
             ? Poser.Domain.Posing.IkChainConfig.DefaultsForChain()
             : Poser.Domain.Posing.IkChainConfig.DefaultsFor(definition.IsArm);
@@ -245,8 +237,7 @@ internal sealed unsafe partial class IkChainRegistry
             || previous.Config.Fabrik != config.Fabrik || previous.Config.SwivelDegrees != config.SwivelDegrees))
             state.CollisionState.Reset();
 
-        // Fixed-target lifecycle: capture on entering Fixed or enabling a
-        // Fixed chain; disabling retains tuning but clears the capture.
+        // A saved target is restored as-is. A newly enabled chain captures its starting pose.
         var mode = config.TargetMode;
         bool fresh = previous == null
             || previous.Config.TargetMode != mode
@@ -255,6 +246,9 @@ internal sealed unsafe partial class IkChainRegistry
         if (mode != IkTargetMode.Actor || !config.Enabled || config.Solver is IkSolver.Fabrik or IkSolver.Rope)
             config = config with { ActorAnchor = null };
         state.Config = config.Normalized();
+        state.SeatPending = false;
+        state.PendingRetarget = null;
+        state.SolveTarget = null;
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
         {
             state.HeldCapture = config.ActorAnchor is { } actorAnchor
@@ -269,12 +263,12 @@ internal sealed unsafe partial class IkChainRegistry
             // is retaken when the chain comes back.
             state.HeldCapture = null;
         }
-        else if (mode == Poser.Domain.Posing.IkTargetMode.World && fresh)
+        else if (mode == Poser.Domain.Posing.IkTargetMode.World && (fresh || config.WorldAnchor != null))
         {
             state.TargetBone = null;
             state.TargetEntity = null;
-            state.HeldCapture = _held.CaptureWorld(bone);
-            state.SeatPending = state.HeldCapture != null;
+            state.HeldCapture = config.WorldAnchor ?? _held.CaptureWorld(bone);
+            state.SeatPending = config.WorldAnchor?.Unseated ?? state.HeldCapture != null;
         }
         else if (mode == Poser.Domain.Posing.IkTargetMode.Bone)
         {
@@ -317,21 +311,18 @@ internal sealed unsafe partial class IkChainRegistry
             var stored = SetIkConfiguration(endpoint, config);
             if (stored != null)
                 return stored;
-            _ikChains.TryGetValue(key, out state);
-            if (state == null)
-                return "This bone cannot use IK.";
+            state = _ikChains[key];
         }
+        var capture = state.Config.Enabled ? _held.CaptureBoneOffset(endpoint, target, state) : null;
         state.TargetBone = target;
         state.TargetEntity = null;
         state.Config = state.Config with
         {
             TargetMode = Poser.Domain.Posing.IkTargetMode.Bone,
         };
-        state.HeldCapture = state.Config.Enabled
-            ? _held.CaptureBoneOffset(endpoint, target)
-            : null;
-        state.SeatPending = state.HeldCapture != null;
-        RetakeEndAnchor(endpoint, state);
+        state.HeldCapture = capture;
+        state.SeatPending = capture != null;
+        if (capture is { Unseated: true }) RetakeEndAnchor(endpoint, state);
         return null;
     }
 
@@ -356,9 +347,6 @@ internal sealed unsafe partial class IkChainRegistry
         var config = GetIkConfiguration(endpoint);
         if (config == null)
             return "This bone cannot use IK.";
-        var capture = _held.CaptureEntityOffset(endpoint, target);
-        if (capture == null)
-            return "The IK endpoint or scene target is not drawn.";
         if (!_ikChains.TryGetValue(ChainKey(endpoint), out var state))
         {
             var error = SetIkConfiguration(endpoint, config);
@@ -366,12 +354,15 @@ internal sealed unsafe partial class IkChainRegistry
                 return error;
             state = _ikChains[ChainKey(endpoint)];
         }
+        var capture = _held.CaptureEntityOffset(endpoint, target, state);
+        if (capture == null)
+            return "The IK endpoint or scene target is not drawn.";
         state.TargetBone = null;
         state.TargetEntity = target;
         state.Config = state.Config with { TargetMode = IkTargetMode.Entity };
         state.HeldCapture = state.Config.Enabled ? capture : null;
         state.SeatPending = state.HeldCapture != null;
-        RetakeEndAnchor(endpoint, state);
+        if (capture is { Unseated: true }) RetakeEndAnchor(endpoint, state);
         return null;
     }
 
@@ -440,15 +431,7 @@ internal sealed unsafe partial class IkChainRegistry
         return definition != null && ResolveChain(bone, definition).TwoJointAvailable;
     }
 
-    public void ClearIkConfigurations(ISkeleton skeleton)
-    {
-        var key = SkeletonKey.Of(skeleton);
-        foreach (var chainKey in _ikChains.Keys
-                     .Where(chainKey => chainKey.Skeleton == key)
-                     .ToArray())
-            if (_ikChains.Remove(chainKey, out var chain)) chain.CollisionState.Dispose();
-
-    }
+    public void ClearIkConfigurations(ISkeleton skeleton) => Purge(SkeletonKey.Of(skeleton));
 
     public bool HasEnabledChains(SkeletonKey key)
     {
@@ -463,7 +446,7 @@ internal sealed unsafe partial class IkChainRegistry
     private static (SkeletonKey Skeleton, int Partial, int Bone) ChainKey(IBone bone) =>
         (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex);
 
-    /// <summary>Resolves the chain inside the endpoint's OWN skeleton and
+    /// <summary>Resolves the chain inside the endpoint's skeleton and
     /// partial; missing optional twists resolve to native index -1 and a
     /// missing mandatory joint makes Two Joint unavailable.</summary>
     private static Poser.Domain.Posing.IkResolvedChain ResolveChain(

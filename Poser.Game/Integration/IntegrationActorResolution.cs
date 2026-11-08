@@ -18,11 +18,8 @@ namespace Poser.Game.Integration;
 public sealed class IntegrationActorResolution : IIntegrationResolutionPort
 {
     private readonly IFramework _framework;
-    // LAZY BY NECESSITY, not by taste: the registry's own graph reaches this
-    // class (StableBindingRegistry → IActorSpawnService → ISpawnCollectionPort
-    // → PenumbraIpc → here), so taking the instance in the constructor closes
-    // a dependency cycle that blocks the whole plugin load. Resolution only
-    // ever reads the registry at call time, never while loading.
+    // Resolve lazily to break the constructor dependency cycle through
+    // StableBindingRegistry, actor spawning, and PenumbraIpc.
     private readonly Lazy<StableBindingRegistry> _bindings;
     private readonly IObjectTable _objects;
 
@@ -73,10 +70,8 @@ public sealed class IntegrationActorResolution : IIntegrationResolutionPort
     /// <summary>The resolved address; only after <see cref="ResolveIndex"/> succeeded.</summary>
     internal nint AddressOf(ActorId actor) => _bindings.Value.Resolve(actor).Value!.Address;
 
-    /// <summary>The shared preconditions of the address-addressed calls: the
-    /// framework thread, and two addresses that are actually objects. The
-    /// stable-id calls get both from actor resolution, which by definition
-    /// cannot run for a clone that has no binding yet.</summary>
+    /// <summary>Checks the framework thread and nonzero addresses for spawn calls
+    /// made before stable bindings exist. It does not validate address ownership.</summary>
     internal IntegrationResult? AddressPair(nint first, nint second)
     {
         if (!_framework.IsInFrameworkUpdateThread)

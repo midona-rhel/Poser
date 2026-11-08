@@ -21,7 +21,7 @@ public sealed class BoneMatrixRow
     public string Label = "";
     public List<BoneMatrixPill> Pills = new();
 
-    /// <summary>5+ pill clusters span two grid tracks (`.mxRow.-wide`).</summary>
+    /// <summary>Rows with five or more bone buttons span two columns when space allows.</summary>
     public bool Wide => Pills.Count >= 5;
 }
 
@@ -35,7 +35,7 @@ public sealed class BoneMatrixViewModel
 {
     public List<BoneMatrixSection> Sections = new();
 
-    /// <summary>Pill clicked; second arg = additive (ctrl held).</summary>
+    /// <summary>Reports the clicked bone button and whether Ctrl and Shift are held.</summary>
     public Action<BoneMatrixPill, bool, bool>? OnPill;
 
     /// <summary>Section heading clicked; second arg = additive (ctrl held).</summary>
@@ -43,14 +43,9 @@ public sealed class BoneMatrixViewModel
 }
 
 /// <summary>
-/// Anamnesis-style grouped bone matrix — pixel transcription of the m2
-/// properties mockup's `.mxWrap/.mxHead/.mxGrid/.mxRow/.mxPill` grammar
-/// (itself transcribed from Anamnesis PoseMatrixView.xaml into picto
-/// tokens); the frozen mockup remains the only source for that grammar.
-/// Dynamic auto-fit columns: `repeat(auto-fit, minmax(235px, 1fr))`
-/// with 22px column / 2px row gaps; rows are 30px (label right-aligned,
-/// 24px circular pills); wide clusters span two tracks. Selection state and
-/// click routing come from the VM — the view stays service-free.
+/// Draws grouped bone buttons in columns that fit the available width.
+/// Theme metrics set row and button sizes. Selection and click actions come
+/// from the view model; this view does not change the scene itself.
 /// </summary>
 public static class BoneMatrixView
 {
@@ -81,7 +76,7 @@ public static class BoneMatrixView
         float logicalWidth = width / s;
         var dl = ImGui.GetWindowDrawList();
 
-        // Only a viewport resize recomputes the responsive column fit.
+        // Fit as many minimum-width columns as the current width allows.
         int columns = Math.Max(1, (int)MathF.Floor(
             (logicalWidth + metrics.ColumnGap)
             / (metrics.MinimumTrackWidth + metrics.ColumnGap)));
@@ -169,7 +164,7 @@ public static class BoneMatrixView
         Vector2 pos, float width, float s, string id)
     {
         var metrics = ActiveTheme.Matrix;
-        // pills right-aligned; label fills the rest, right-aligned with ellipsis
+        // Align buttons to the right and truncate the label in the remaining space.
         float pillsW = (row.Pills.Count * metrics.PillSize
             + (row.Pills.Count - 1) * metrics.PillGap) * s;
         float labelRight = pos.X + width - pillsW - 10f * s;

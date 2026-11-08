@@ -70,8 +70,8 @@ public sealed class PoseFileServicePersistenceTests
         var pose = new PoseFile();
         var collection = slot == PoseSlot.Character ? pose.Bones : pose.MainHand;
         var bones = new List<IBone>();
-        // The reported FABRIK chain has 23 links. Capture the already-posed
-        // chain, as reset/reapply does; all local offsets match at plan time.
+        // Use 24 connected bones whose imported transforms already match their
+        // current transforms. Reset-before-import must still retain positions.
         for (int i = 0; i < 24; i++)
         {
             var transform = new Transform(

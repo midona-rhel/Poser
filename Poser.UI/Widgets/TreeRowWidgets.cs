@@ -130,11 +130,9 @@ public static class TreeRowWidgets
         var action = hit.Activated
             ? TreeRowAction.Selected
             : TreeRowAction.None;
-        // A held press that travels becomes a DRAG — reported every frame
-        // it persists; the host runs the drop state machine. Travel is
-        // measured from the PRESS POINT (ImGui's accumulated drag), never
-        // per-frame: a per-frame delta gate only fires on a fast yank and
-        // made slow deliberate drags read as clicks.
+        // Report dragging each frame after movement from the original press
+        // crosses the threshold. Per-frame movement would miss slow drags.
+        // The caller handles the eventual drop.
         if (props.Draggable && hit.Active
             && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 5f * scale))
             action = TreeRowAction.Drag;
@@ -243,8 +241,8 @@ public static class TreeRowWidgets
             var markMin = theme.Optical.Snap(new Vector2(
                 x, hit.ScreenMin.Y + (height - side) * 0.5f));
             var markMax = markMin + new Vector2(side);
-            // The CURRENT one — the game's target actor, the live camera —
-            // wears its mark in the accent, at full strength.
+            // Marked vector icons use the accent at full opacity;
+            // texture icons retain their original colors and normal opacity.
             var markColor = props.Marked ? theme.Accent : theme.Text;
             float markOpacity = props.Marked ? 1f : TreeIconOpacity;
             if (props.IconTexture is { } texture)
@@ -283,7 +281,7 @@ public static class TreeRowWidgets
         float badgeTrail = 0f;
         var badgeStyle = new TextStyle
         {
-            // The badge: 11px mono on the label's own optical line.
+            // Use the theme's caption size and align with the row label.
             Size = theme.Typography.CaptionSize,
             Family = FontFamily.Mono,
             Color = theme.FormLabel,

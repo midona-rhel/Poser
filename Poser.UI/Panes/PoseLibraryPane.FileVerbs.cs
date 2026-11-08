@@ -31,15 +31,13 @@ public sealed partial class PoseLibraryPane
             _notices.Failed("Retry", result.Detail);
             return;
         }
-        // A clean read says nothing: the badge that prompted the retry simply
-        // goes, which IS the answer (user 2026-08-14 — the confirmations were
-        // restating what the tile already showed). Only a still-bad read has
-        // something the tile cannot say on its own.
+        // A successful retry clears the tile's error badge after rescanning.
+        // Show a separate notice only if the file is still invalid.
         if (result.ProbeStatus != PoseLibraryMetadataStatus.Valid)
             _notices.Failed(
                 "Retry: "
                 + StatusText(result.ProbeStatus!.Value, result.Detail));
-        // Either way the badge restates the CURRENT truth.
+        // Refresh the tile's status after either result.
         _library.RequestScan();
     }
 

@@ -211,13 +211,9 @@ public static class Interactive
             return;
         }
 
-        // An exception between Begin and End unwinds through EVERY enclosing
-        // finally: the inner owner dangles, and if the outer End threw here it
-        // would REPLACE the propagating exception — the log then shows only
-        // the mismatch and never the cause (2026-08-03, the shell masked the
-        // animation pane's real error for a whole session). When the owner is
-        // deeper in the stack this is that unwind: pop down to and through it
-        // and let the true exception keep travelling.
+        // During exception unwinding an inner owner may still be on the stack.
+        // Pop through it without throwing so End does not replace the original
+        // exception.
         for (int i = State.OwnerStack.Count - 1; i >= 0; i--)
         {
             if (State.OwnerStack[i] != owner)
@@ -347,14 +343,14 @@ public static class Interactive
     }
 
     /// <summary>
-    /// Keyboard ownership, which is NOT geometric. While the exclusive
-    /// chain is open its TOPMOST link owns the keyboard outright, whether
+    /// Keyboard ownership is not geometric. While the exclusive chain is open,
+    /// its topmost link owns the keyboard, whether
     /// or not that surface happens to cover the control: a popup off to
     /// one side still takes Enter away from the button behind it, and on
     /// the frame a surface CLAIMS the chain it has registered no rectangle
     /// at all, so geometry could not answer either way.
     ///
-    /// Only the chain TAIL owns it — an ancestor is not merely lower, it
+    /// Only the chain tail owns it; an ancestor is
     /// is inactive for the keyboard. A modal with a dropdown open inside
     /// it hands the keyboard to the dropdown, so the modal's own controls
     /// cannot be Entered from behind their child; they remain

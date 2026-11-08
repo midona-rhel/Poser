@@ -4,15 +4,12 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Transforms;
 
 /// <summary>
-/// The bounded undo/redo history of every kind of edit: transform patches,
-/// journal steps and scene-lifecycle actions (the entries are in
-/// HistoryEntry.cs). Capacity is read for each append, and zero clears both
-/// stacks while still notifying observers.
+/// Stores undo and redo steps for transforms, property edits, and scene changes.
+/// The current history limit is applied whenever a step is added.
 /// </summary>
 public sealed class EditHistory
 {
-    /// <summary>The depth used when no setting is supplied (tests, and the
-    /// parameterless construction the DI default would use).</summary>
+    /// <summary>History depth used when the caller supplies no setting.</summary>
     public const int DefaultCapacity = 500;
 
     private static readonly Func<int> FixedDefault = static () => DefaultCapacity;
@@ -23,14 +20,15 @@ public sealed class EditHistory
     private readonly Dictionary<SelectionId, Func<SelectionId?>> _lifecycleTargets = new();
     private LifecycleHistoryBatch? _batch;
 
-    /// <summary>Records one synchronous multi-entity command. Earlier value edits
-    /// are sealed first; only synchronous lifecycle and journal entries belong
-    /// to the batch. The callback must not schedule work or cross an await.</summary>
+    /// <summary>Records a command such as deleting a group as one undo step.
+    /// Finishes pending edits first. The callback must complete its changes
+    /// before returning so they belong to this batch.</summary>
     public void RecordLifecycleBatch(string description, Action removals)
     {
         ArgumentNullException.ThrowIfNull(removals);
         if (_batch is not null)
             throw new InvalidOperationException("A lifecycle batch is already recording.");
+        Appending?.Invoke();
         BeforeAppend?.Invoke();
         var batch = new LifecycleHistoryBatch(description);
         _batch = batch;
@@ -41,8 +39,8 @@ public sealed class EditHistory
         }
     }
 
-    /// <summary>Adds the structural half of the recording batch: it runs
-    /// before the batch's entries on redo and after them on undo.</summary>
+    /// <summary>Adds a step that runs first on redo and last on undo, such as
+    /// restoring a group's layout after its members have been recreated.</summary>
     public void AppendBatchPrologue(HistoryEntry entry)
     {
         if (_batch is not { } batch)
@@ -57,8 +55,8 @@ public sealed class EditHistory
         if (batch?.Build() is { } entry) Append(entry);
     }
 
-    /// <summary>Keep edits while their entity is deliberately absent. This is
-    /// history-only rebinding, never permission to reuse a stale public ID.</summary>
+    /// <summary>Keeps an entity's edits after deletion and connects them to
+    /// the replacement entity when undo recreates it.</summary>
     public void RetainLifecycleTarget(TransformTargetId target, Func<TransformTargetId?> current) =>
         RetainLifecycleEntity(target.ToSelectionId(), () => current()?.ToSelectionId());
 
@@ -94,7 +92,6 @@ public sealed class EditHistory
         }
     }
 
-    public event Action? PatchAppended;
     internal event Action? BeforeAppend;
 
     public EditHistory()
@@ -113,15 +110,13 @@ public sealed class EditHistory
     public string? UndoDescription => CanUndo ? _undo[^1].Description : null;
     public string? RedoDescription => CanRedo ? _redo[^1].Description : null;
 
-    /// <summary>The entry just appended, for observers that read it — the
-    /// action recorder. Observers cannot roll the append back.</summary>
+    /// <summary>Reports the recorded step to listeners such as the action recorder.</summary>
     public event Action<HistoryEntry>? Appended;
 
     /// <summary>An undo or redo was committed.</summary>
     public event Action? Stepped;
 
-    /// <summary>An entry is about to be appended: observers may append what
-    /// belongs before it.</summary>
+    /// <summary>Lets listeners record pending changes before the next step.</summary>
     public event Action? Appending;
 
     public void Append(HistoryEntry patch)
@@ -131,8 +126,7 @@ public sealed class EditHistory
         if (_batch is { } batch)
         {
             if (batch.TryAdd(patch)) return;
-            // An unexpected contextual/transform edit keeps its own replay
-            // semantics and ends collection, rather than hiding its context.
+            // Finish the batch before recording a step that needs its own replay context.
             FlushBatch();
         }
         int capacity = _capacity();
@@ -150,17 +144,7 @@ public sealed class EditHistory
                 _undo.RemoveAt(0);
             _redo.Clear();
         }
-        // Observers run after the history mutation and cannot roll it back.
-        if (PatchAppended is { } observers)
-            foreach (Action observer in observers.GetInvocationList())
-                try
-                {
-                    observer();
-                }
-                catch
-                {
-                    // Observers have no transaction authority or result channel.
-                }
+        // History is already updated. Notify each listener even if an earlier one fails.
         if (Appended is { } readers)
             foreach (Action<HistoryEntry> reader in readers.GetInvocationList())
                 try
@@ -169,7 +153,7 @@ public sealed class EditHistory
                 }
                 catch
                 {
-                    // Same rule: a reader cannot fail the append.
+                    // Continue notifying the remaining listeners.
                 }
     }
 
@@ -223,10 +207,9 @@ public sealed class EditHistory
             if (affected is null || affected.Count == 0) return null;
             var entities = affected.Select(id => EntityOf(ResolveLifecycleEntity(id))).Distinct().ToArray();
             if (!entities.Contains(selected)) continue;
-            // Lifecycle replay can remove the selected entity, leaving no live
-            // target for the opposite shortcut. Keep it global in both directions,
-            // but use its known footprint to skip it for unrelated entity edits.
-            // Shared steps likewise cannot be split or skipped for one member.
+            // Creating or deleting an entity uses global undo: deletion leaves
+            // nothing to select for redo. Edits shared by several entities also
+            // stay together in global history.
             return entities.Length == 1 && entry is not SceneLifecyclePatch ? entry : null;
         }
         return null;
@@ -238,26 +221,16 @@ public sealed class EditHistory
         if (entry.AffectedEntities is { } known) return known;
         if (entry is not TransformPatch patch) return null;
         var states = patch.Before.Concat(patch.After).ToArray();
-        // Attached targets depend on another entity's frame. Keep their edits
-        // ordered globally rather than treating the child as independent.
+        // A child transform depends on its parent, so their edits keep the global order.
         if (states.Any(state => state.Parent is not null)) return null;
         return states.Select(state => EntityOf(state.Target.ToSelectionId())).Distinct().ToArray();
     }
 
     /// <summary>
-    /// Drops every patch touching a target that is no longer current. An
-    /// explicitly pending target retains the whole patch without allowing
-    /// replay; its replacement is validated on a later reconciliation. A
-    /// patch is removed whole when ANY of its targets is stale (its restore
-    /// could never succeed); patches whose targets all remain current
-    /// survive, so replacing one slot never discards history that involves
-    /// only unaffected slots or actors.
-    ///
-    /// <para>A lifecycle entry is never stale by this rule and is never
-    /// dropped: it holds no target state, and the entity it names is
-    /// deliberately absent for exactly half of its life — an "add light"
-    /// entry whose light has been undone away is precisely the entry that
-    /// must survive to be redone.</para>
+    /// Reconnects transform edits to replacement bones after a redraw.
+    /// Edits wait while their targets are loading. If a target is gone for good,
+    /// the entire affected step is removed so undo keeps grouped edits together.
+    /// Entity creation and deletion keep their own steps for undo and redo.
     /// </summary>
     public void Reconcile(
         Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent,
@@ -266,10 +239,7 @@ public sealed class EditHistory
     {
         RefreshLifecycleTargets(_undo);
         RefreshLifecycleTargets(_redo);
-        // A patch whose targets went stale is first RE-KEYED: a bone edit
-        // survives the actor's redraw by naming the same bone on the new
-        // body, as Brio's whole-pose snapshot does (ruled 2026-09-03). Only
-        // a patch that cannot be re-keyed is dropped.
+        // Find the same bones on the replacement body before deciding which edits to drop.
         void Rekey(List<HistoryEntry> stack)
         {
             if (rekey is null)
@@ -316,17 +286,13 @@ public sealed class EditHistory
         {
             if (entry is not TransformPatch patch)
                 return false;
-            // A mixed patch can contain both a ready replacement and another
-            // slot still redrawing. Remap is atomic, so the ready target can
-            // still carry its old ID here; that alone must not drop the patch.
+            // A grouped edit waits until all replacement bones are ready.
+            // Keep already-found replacements while the others finish redrawing.
             bool Gone(TransformTargetState state) => !isCurrent(state.Target)
                 && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId())
                 && (!patch.AwaitingTargets || rekey?.Invoke(state.Target) is null)
                 && isPending?.Invoke(state.Target) != true;
-            bool staleTarget = patch.Before.Any(Gone) || patch.After.Any(Gone);
-            if (!staleTarget)
-                return false;
-            return true;
+            return patch.Before.Any(Gone) || patch.After.Any(Gone);
         }
         Rekey(_undo);
         Rekey(_redo);
@@ -334,17 +300,15 @@ public sealed class EditHistory
         _redo.RemoveAll(entry => Stale(entry));
     }
 
-    /// <summary>Forgets one entry wherever it sits, without an event: the
-    /// journal's answer to a restore that outlived its place.</summary>
+    /// <summary>Removes an undo or redo step after its restore has become obsolete.</summary>
     public void Drop(HistoryEntry entry)
     {
         _undo.Remove(entry);
         _redo.Remove(entry);
     }
 
-    /// <summary>Drops transform edits for an entity that a lifecycle release
-    /// leaves absent and cannot safely restore. A grouped edit is removed as
-    /// one action when any member names that entity.</summary>
+    /// <summary>Removes transform steps for a permanently removed target.
+    /// A grouped step is removed together if it includes that target.</summary>
     public void DropTransformsFor(TransformTargetId target)
     {
         bool Touches(HistoryEntry entry) => entry is TransformPatch patch
@@ -355,17 +319,8 @@ public sealed class EditHistory
     }
 
     /// <summary>
-    /// Raised whenever both stacks are emptied — by <see cref="Clear"/>, and
-    /// equally by the undo-off branch of <see cref="Append"/>, which empties
-    /// them just as thoroughly.
-    ///
-    /// <para>A lifecycle entry closes over state its owner keeps beside the
-    /// stack — the slot that re-binds an entity across a destroy/respawn pair
-    /// — and that state is meaningless once the entries naming it are gone.
-    /// Announcing the emptying keeps the answer in ONE place: whoever put
-    /// state behind an entry drops it here, rather than every site that
-    /// empties the stacks having to remember a second sweep. This class's own
-    /// Append forgot exactly that, which is the point.</para>
+    /// Raised when history is cleared or its limit is set to zero during an edit.
+    /// Listeners release saved state, such as entity slots kept for redo.
     /// </summary>
     public event Action? Cleared;
 
@@ -388,8 +343,7 @@ public sealed class EditHistory
                 }
                 catch
                 {
-                    // Observers have no transaction authority or result
-                    // channel, exactly as for PatchAppended.
+                    // Continue notifying the remaining listeners.
                 }
     }
 }

@@ -21,10 +21,8 @@ public sealed record TransformTargetState(
 {
     public TransformParent? Parent { get; init; }
     /// <summary>
-    /// The frozen animated/reference model rotation beneath the authored
-    /// layers, captured with the state. Counterpart-aware mirroring rebases
-    /// transferred deltas through these baselines so opposing bind frames
-    /// cannot flip an adjustment backward.
+    /// Model-space rotation before authored pose edits, captured with this state.
+    /// Mirroring uses it to account for the two bones' different starting orientations.
     /// </summary>
     public Quaternion AnimatedBaselineRotation { get; init; } = Quaternion.Identity;
 }
@@ -44,9 +42,3 @@ public readonly record struct TransformPortResult(
         string detail) =>
         new(status, detail);
 }
-
-/// <summary>
-/// Native boundary used by serialized Application/framework-thread transform
-/// transitions. Implementations may synchronously call observers; Application
-/// rejects any mutation reentered through those callbacks.
-/// </summary>

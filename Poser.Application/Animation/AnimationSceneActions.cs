@@ -7,13 +7,8 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// Scene-wide animation commands.
-///
-/// Each action captures the actor-id set ONCE, from the snapshot at the
-/// moment the command begins, and works only that list. An actor that
-/// appears while the command runs is not swept up in it, and an actor
-/// that leaves fails its own entry rather than aborting the rest — so the
-/// result reports exactly which actors were affected and which were not.
+/// Runs animation commands on a snapshot of the scene's actors.
+/// Actors without animation control are skipped; individual command failures are collected.
 /// </summary>
 public sealed class AnimationSceneActions
 {
@@ -27,10 +22,8 @@ public sealed class AnimationSceneActions
     }
 
     /// <summary>
-    /// Skipped actors are reported separately from failures and are NOT
-    /// counted as attempted: an actor that cannot be animated at all was
-    /// never a target, and folding it into the attempt count makes a
-    /// complete run look partial.
+    /// Counts attempted and successful commands separately from actors skipped
+    /// for lack of animation control. A skipped actor does not make Success false.
     /// </summary>
     public readonly record struct SceneActionReport(
         int Attempted,
@@ -52,7 +45,9 @@ public sealed class AnimationSceneActions
         }
     }
 
-    /// <summary>The actor set this command owns, frozen before any work.</summary>
+    /// <summary>
+    /// Copies the actor IDs and names before the command begins.
+    /// </summary>
     private IReadOnlyList<ActorDescriptorId> Capture()
     {
         var snapshot = _scene.Snapshot;

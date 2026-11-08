@@ -5,8 +5,7 @@ using Poser.Domain.Identity;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Native references stay here; workflow/history retain only receipts.
-/// Weak keys release entries when their last workflow/history owner goes away.</summary>
+/// <summary>Keeps native entities behind session-scoped weak handles.</summary>
 internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession)
 {
     private sealed class Entry(object entity)
@@ -61,12 +60,12 @@ internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession
     public void Remove<T>(SceneEntityHandle handle, SceneEntityKind kind,
         Func<T, T?> resolveHistory, Action<T> remove) where T : class
     {
-        // Only a history inverse follows a proven lifecycle alias. Ordinary
-        // receipt reads still resolve the exact original runtime instance.
+        // Removal follows a history replacement when one exists. Other handle
+        // reads continue to refer to the original runtime instance.
         if (Resolve<T>(handle, kind) is not { } original) return;
         if (resolveHistory(original) is { } current) remove(current);
-        // Retained only by history's weak receipt, for a later scene redo.
-        // Ordinary pending-operation reads must not resolve a removed entity.
+        // History can retain the weak handle for redo, but normal reads must
+        // no longer resolve the removed entity.
         if (_entities.TryGetValue(handle, out var entry)) entry.Removed = true;
     }
 

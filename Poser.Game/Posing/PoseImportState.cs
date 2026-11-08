@@ -68,9 +68,8 @@ internal sealed class PendingPoseImport
     /// <summary>Driven-bone correction rounds run so far.</summary>
     public int DrivenRounds;
     /// <summary>Ordered import targets and their pre-edit states —
-    /// captured before anything was written, so a failure restores
-    /// exactly what was there and success has a Before half that needs
-    /// no re-reading.</summary>
+    /// captured before each target is first changed. Rollback uses these
+    /// states and reports any restore failures.</summary>
     public required List<TransformTargetId> Order;
     public required Dictionary<TransformTargetId, TransformTargetState> Before;
     /// <summary>Targets the synchronous reset cleared. A reset bone that
@@ -79,11 +78,8 @@ internal sealed class PendingPoseImport
     public required HashSet<TransformTargetId> Resets;
     /// <summary>Targets an action (or the model edit) actually wrote.</summary>
     public readonly HashSet<TransformTargetId> Written = new();
-    /// <summary>Fires exactly once when an import <see cref="PoseImportCapture.Begin(PoseImportOperation, PoseImportPlan, bool, bool, string?)"/>
-    /// returned Ok for finishes — with true after the history entry
-    /// landed, false after a rollback. A Begin that returned Fail never
-    /// fires it; a pending import dropped by Dispose does not either
-    /// (session teardown restores animation state wholesale).</summary>
+    /// <summary>Completion callback: true for an applied receipt, false for
+    /// other terminal states, including failed or incomplete rollback.</summary>
     public Action<bool>? OnFinished;
     public Action<OperationReceipt>? OnReceipt;
     /// <summary>The import targets the pose library's hidden preview
@@ -91,8 +87,8 @@ internal sealed class PendingPoseImport
     /// spend the user's undo stack.</summary>
     public required bool PreviewTarget;
     /// <summary>The caller asked for no history entry
-    /// (<see cref="PoseImportOptions.SuppressHistory"/>). Its one caller
-    /// is an undo restoring a despawned actor's pose: that import is
+    /// (<see cref="PoseImportOptions.SuppressHistory"/>). For example, undo
+    /// may restore a despawned actor's pose: that import is
     /// already inside the history's own walk, and an append there would
     /// clear the redo stack the walk had just pushed onto.</summary>
     public bool SuppressHistory;
@@ -153,33 +149,9 @@ internal sealed class PoseImportHeadRestore
     public required string Bone;
     public required TransformTargetId Target;
 
-    /// <summary>The pre-import head absolute the restore stage writes
-    /// back (position-only; rotation reverts through the stack pop).
-    ///
-    /// THE SPACE IS THE FIX (repeated-apply head drift, user
-    /// 2026-08-10). Begin seeds the cached <c>LastRawTransform</c>,
-    /// which is the last settled frame BEFORE the rewind: the facade's
-    /// bracket pauses the actor and the settle tick rewinds every
-    /// paused control to LocalTime 0 on the very tick it calls Begin
-    /// (PoseImportCoordinator.Begin), so no pass has evaluated the
-    /// rewound animation yet. Every other write in this chain diffs
-    /// against the REWOUND in-pass basis, and the final flatten bakes
-    /// its stacks against that same rewound basis — so restoring the
-    /// head to a pre-rewind absolute baked
-    /// (anim(pause frame) − anim(LocalTime 0)) into the head position
-    /// ON TOP of the previous apply's settled state, once per apply:
-    /// progressive head drift whenever the animation ran between
-    /// applies. <c>ApplyBone</c> therefore overwrites the seed
-    /// with the bone's own apply-pass basis — anim(rewound) ⊕ the
-    /// pre-import stacks the expression reset deliberately leaves on
-    /// the head — which IS the pre-import head expressed in the
-    /// chain's one basis. Apply N+1 then restores exactly apply N's
-    /// settled head and the restore delta rejects as near-identity.
-    /// Brio's pre-rewind capture (tempPose) matches its own brief
-    /// bracket — it hands speed back +2 ticks after the import call
-    /// (ActionTimelineCapability.cs:169-175), before its reconcile
-    /// ever reads the pose; Poser holds the pause through reconcile
-    /// and flatten, so the in-pass basis is the only consistent
-    /// space.</summary>
+    /// <summary>Head position to restore after the expression write. Begin seeds
+    /// this from the cache; ApplyBone replaces it with the current pass's basis.
+    /// Using the older, pre-rewind cache would add the animation's movement to
+    /// the head on repeated imports. Rotation is restored by removing the stack.</summary>
     public required Transform PreImport;
 }

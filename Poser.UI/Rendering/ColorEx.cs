@@ -5,7 +5,7 @@ using Dalamud.Bindings.ImGui;
 namespace Poser.UI;
 
 /// <summary>
-/// THE color-math home. Compositing, interpolation and alpha helpers used
+/// Compositing, interpolation, and alpha helpers used
 /// by chrome painters and tags. Independent of <see cref="Theme"/>; works
 /// on raw <see cref="Vector4"/> / U32 values.
 /// </summary>
@@ -30,11 +30,8 @@ public static class ColorEx
     }
 
     /// <summary>
-    /// THE opacity multiply: scales a color's alpha by <paramref name="opacity"/>.
-    /// This is the canonical spelling for every "fade this color" site —
-    /// disabled states, hover dimming, secondary text — so the operation
-    /// reads the same everywhere. It does NOT decide WHICH opacity a
-    /// control uses; that stays at the call site.
+    /// Scales a color's alpha by <paramref name="opacity"/>. The caller chooses
+    /// the opacity.
     /// </summary>
     /// <summary>Near-black or near-white, whichever reads on the colour.</summary>
     public static Vector4 ContrastText(this Vector4 color)

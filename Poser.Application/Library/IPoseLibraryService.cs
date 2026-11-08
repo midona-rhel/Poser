@@ -4,9 +4,8 @@ using Poser.Domain.Library;
 namespace Poser.Application.Library;
 
 /// <summary>
-/// Scans the configured pose roots off-thread and publishes the result as ONE
-/// immutable snapshot. Nothing is scanned until a caller asks: plugin load pays
-/// nothing, and no frame may touch the file system.
+/// Scans configured folders in the background and publishes a snapshot for the UI.
+/// RequestScan starts or requests another scan; reading Snapshot does not scan the disk.
 /// </summary>
 public interface IPoseLibraryService : IDisposable
 {

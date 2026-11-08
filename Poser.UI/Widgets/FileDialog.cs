@@ -20,31 +20,28 @@ using static Poser.UI.Widgets.WindowFrameWidgets;
 namespace Poser.UI.Widgets;
 
 /// <summary>
-/// The file surface: the shared <see cref="WindowFrame"/> is the whole
-/// chassis — chrome, title bar, navigation band, quick rail and footer —
-/// and this fills the rectangles it hands back. A navigation callback is
-/// invoked only after the dialog has closed.
-///
-/// <para>THE PUBLIC SHAPE IS FROZEN: the constructor, <see cref="Open"/>
-/// and <see cref="Draw"/> are what four call sites already speak.</para>
+/// File browser with navigation, search, optional preview, and caller-supplied panels.
+/// Confirmed file selections are delivered after the dialog closes; folder navigation
+/// happens while it is open.
 /// </summary>
 public sealed class FileDialog
 {
-    /// <summary>The navigation band's affordance size — the window
-    /// chassis' own close-action square, so back/forward/up read as one
-    /// family with the title bar's X above them.</summary>
+    /// <summary>
+    /// Logical size of Back, Forward, and Up buttons.
+    /// </summary>
     private const float NavActionSize = 24f;
 
-    /// <summary>The modified column. Wide enough for
-    /// <see cref="ModifiedFormat"/> in the mono readout face, which is the
-    /// one string it ever holds.</summary>
+    /// <summary>
+    /// Logical width reserved for the modified-date text.
+    /// </summary>
     private const float ModifiedColumnWidth = 92f;
 
     /// <summary>A row's leading mark, on the list-row band.</summary>
     private const float EntryIconSlot = 22f;
 
-    /// <summary>A rail row's glyph slot: a 2px left margin, then a
-    /// row-height square; the label starts where it ends.</summary>
+    /// <summary>
+    /// Left margin before a quick-access row's icon.
+    /// </summary>
     private const float QuickIconMargin = 2f;
 
     /// <summary>The row highlight's corner.</summary>
@@ -54,11 +51,7 @@ public sealed class FileDialog
     private const float PreviewCaptionHeight = 20f;
 
     /// <summary>
-    /// What a <see cref="RailPanel"/> may take of the rail, at least and at
-    /// most. The panel is handed everything the quick list does not need,
-    /// held between these: below the floor a real options stack is unusable,
-    /// and above the ceiling the destinations it sits under are crushed —
-    /// both ends scroll inside their own region rather than growing.
+    /// The optional rail panel receives 40–60% of rail height; the quick list uses the rest.
     /// </summary>
     private const float RailFooterMinShare = 0.4f;
     private const float RailFooterMaxShare = 0.6f;
@@ -103,9 +96,9 @@ public sealed class FileDialog
     private readonly bool _isSaveMode;
     private readonly string _id;
 
-    /// <summary>The dialog's fixed identities, minted ONCE with the
-    /// instance id they hang off — a surface that re-interpolates its ids
-    /// allocates for every frame it stays open.</summary>
+    /// <summary>
+    /// Stable widget IDs built once for this dialog instance.
+    /// </summary>
     private readonly string _surfaceId;
     private readonly string _navId;
     private readonly string _pathId;
@@ -124,10 +117,9 @@ public sealed class FileDialog
     private readonly List<FileListingEntry> _entries = new();
     private readonly List<FileListingEntry> _scratch = new();
 
-    /// <summary>The history stack pair. BACK holds the folders walked away
-    /// from, newest last; FORWARD holds the ones walked back past, and is
-    /// cleared by any navigation that is not a step through it — which is
-    /// the whole of the browser rule.</summary>
+    /// <summary>
+    /// Visited folders, newest last. Ordinary navigation clears the forward history.
+    /// </summary>
     private readonly List<string> _back = new();
     private readonly List<string> _forward = new();
 
@@ -145,8 +137,9 @@ public sealed class FileDialog
     /// folder or confirms a file. Save dialogs retain explicit confirmation.</summary>
     public bool SingleClickActivation { get; set; }
 
-    /// <summary>The draft the path editor holds. It is the FIELD's value
-    /// every frame; committing it is what navigates.</summary>
+    /// <summary>
+    /// Path-field draft. Navigation occurs when the edited field is committed.
+    /// </summary>
     private string _pathEdit = string.Empty;
 
     /// <summary>The memoized preview and the path it was resolved for. The
@@ -179,20 +172,14 @@ public sealed class FileDialog
     }
 
     /// <summary>
-    /// The preview seam. The dialog knows nothing about what a pose or a
-    /// character file LOOKS like — the game-side provider renders it — so
-    /// the surface asks for a texture whenever the selection changes and
-    /// grows its right column only while one comes back. A dialog with no
-    /// provider never shows the column at all.
+    /// Optional preview provider, called when the selected path changes. A returned
+    /// preview takes space from the file-list area; it does not widen the window.
     /// </summary>
     public Func<string, FilePreviewResult?>? FilePreview;
 
     /// <summary>
-    /// The caller's own columns, left to right, right of the file list.
-    /// They are part of the dialog's SIZE — the window opens wider by
-    /// exactly what they ask for — and part of its chrome: each stands
-    /// behind the same rule the frame bridges its rail with. Stated once
-    /// by the consumer; the dialog never mutates the list.
+    /// Caller-supplied columns, drawn left-to-right after the file list. Their requested
+    /// widths and separators are added to the dialog's initial width.
     /// </summary>
     public readonly List<FileSidePanel> SidePanels = new();
 
@@ -206,30 +193,19 @@ public sealed class FileDialog
     public Action<string?>? BeforeFrame;
 
     /// <summary>
-    /// The caller's own panel UNDER the quick-access list, filling the rest
-    /// of the navigation rail. Its <see cref="FileSidePanel.Width"/> is a
-    /// MINIMUM rail width rather than a column of its own — the rail widens
-    /// to it, and the dialog widens by the difference — and its draw is
-    /// handed the box in screen space exactly as a side panel's is, content
-    /// inset and scrolling included.
+    /// Optional panel below quick-access folders. Its Width is a minimum rail width;
+    /// the dialog's initial width grows by any increase over the normal rail.
     /// </summary>
     public FileSidePanel? RailPanel;
 
     /// <summary>
-    /// The caller's own full-width band UNDER the columns region and above
-    /// the footer. <see cref="FileSidePanel.Width"/> is reinterpreted as
-    /// the band's logical HEIGHT — the dialog opens taller by exactly that
-    /// plus the band's own top rule, the columns keep their height, and
-    /// the draw is handed the band's box in screen space exactly as a side
-    /// panel's is.
+    /// Optional band above the footer. Its Width is used as logical height, adding
+    /// that height and a separator to the dialog's initial size.
     /// </summary>
     public FileSidePanel? BottomPanel;
 
     /// <summary>
-    /// Logical height ADDED to the dialog's window, all of it going to the
-    /// columns region — a consumer whose preview column wants more body
-    /// than the theme's default states it here. Zero for every plain
-    /// dialog.
+    /// Additional logical height requested for the dialog body.
     /// </summary>
     public float ExtraHeight;
 
@@ -241,8 +217,9 @@ public sealed class FileDialog
 
     public bool IsOpen => _open;
 
-    /// <summary>What the panels add to the dialog's width: the columns and
-    /// the rule each one stands behind, logical.</summary>
+    /// <summary>
+    /// Total logical width requested by side panels and their separators.
+    /// </summary>
     private float PanelWidth()
     {
         float total = 0f;
@@ -253,21 +230,22 @@ public sealed class FileDialog
         return total;
     }
 
-    /// <summary>The rail's logical width, rule included: its own, or the
-    /// footer panel's when that asks for more.</summary>
+    /// <summary>
+    /// Normal rail width, increased to the optional rail panel's requested width.
+    /// </summary>
     private float RailWidth() => MathF.Max(
         ActiveTheme.FileDialog.RailWidth,
         RailPanel?.Width ?? 0f);
 
-    /// <summary>What the widened rail adds to the dialog — the browser
-    /// keeps its own width whatever the rail carries, exactly as a side
-    /// panel's column does.</summary>
+    /// <summary>
+    /// Extra initial width needed by a wider rail panel.
+    /// </summary>
     private float RailExtra() =>
         RailWidth() - ActiveTheme.FileDialog.RailWidth;
 
-    /// <summary>What the bottom band adds to the dialog's height: the
-    /// band's own height plus its opening rule, logical. The columns keep
-    /// their height whatever the consumer bolts on under them.</summary>
+    /// <summary>
+    /// Initial height added for the bottom panel and separator.
+    /// </summary>
     private float BottomExtra() =>
         BottomPanel is { } panel ? panel.Width + 1f : 0f;
 
@@ -304,7 +282,7 @@ public sealed class FileDialog
     }
 
     /// <summary>
-    /// Points the dialog at a folder and clears everything a session owns.
+    /// Sets the initial directory and clears selection, preview, filename, and navigation history.
     /// </summary>
     private void Rehome(string initialPath)
     {
@@ -385,8 +363,8 @@ public sealed class FileDialog
         DrawFooterFill(rects.Footer, confirmLabel, scale);
     }
 
-    /// <summary>Asking the provider is a SELECTION-change edge, not a frame
-    /// one: the column would otherwise cost a host render every frame.
+    /// <summary>
+    /// Refreshes the preview only when the selected path changes.
     /// </summary>
     private void ResolvePreview()
     {
@@ -401,9 +379,7 @@ public sealed class FileDialog
     // ── the frame's slots ────────────────────────────────────────────────
 
     /// <summary>
-    /// The navigation band: the history pair, the parent step, and the path
-    /// editor filling everything they leave. History wears PLAIN left/right
-    /// arrows — the undo pair means edit history, not travel (user).
+    /// Draws Back, Forward, Up, and the editable current path.
     /// </summary>
     private void DrawNavigation(WindowFrameRect band, float scale)
     {
@@ -431,11 +407,8 @@ public sealed class FileDialog
             null,
             ActionBarSeparator.None);
 
-        // The editor takes the band's whole middle: past the three actions,
-        // ending at the PAGE inset — the same trailing inset the preview
-        // box and every column's content stand behind, so the field's
-        // right edge lines up with the panels below it (user round:
-        // the header inset left it hanging short).
+        // Place the path field after the three navigation buttons and align its
+        // right edge with the content inset below.
         float control = theme.Controls.ComfortableHeight * scale;
         float pathX = band.Min.X + inset + (NavActionSize * scale + gap) * 3f;
         float pathWidth = band.Max.X - theme.Page.Inset * scale - pathX;
@@ -451,25 +424,21 @@ public sealed class FileDialog
                 Width = UiWidth.Fixed(MathF.Max(1f, pathWidth / scale)),
             },
             placeholder: "Path");
-        // Committing is leaving the field having edited it — Enter
-        // deactivates a native InputText, so one test covers both the
-        // keypress and the click away.
+        // Commit when ImGui reports that the edited field was deactivated.
         if (ImGui.IsItemDeactivatedAfterEdit())
             CommitPath();
     }
 
-    /// <summary>The rail's content: the frame owns the band and its rule,
-    /// this owns the inset, the rows, and the split when a footer panel
-    /// stands under them.</summary>
+    /// <summary>
+    /// Draws quick-access folders above the optional rail panel.
+    /// </summary>
     private void DrawQuick(WindowFrameRect rail, float scale)
     {
         Theme theme = ActiveTheme;
         float inset = theme.Page.Inset;
         WindowFrameRect list = DrawRailFooter(rail, scale);
         int picked = -1;
-        // The region reaches the rail's right edge so the bar sits
-        // guttered there — the gutter is the rows' trailing inset, not a
-        // second right margin (the library rail's contract).
+        // Use the scrollbar gutter as the trailing inset, without a second margin.
         ImGui.SetCursorScreenPos(list.Min + new Vector2(inset * scale));
         ScrollRegion(
             _quickId,
@@ -510,19 +479,14 @@ public sealed class FileDialog
                 }
             },
             edgePadding: ActiveTheme.Spacing.Two);
-        // Applied after the region closes: travelling refills the listing
-        // the loop is walking.
+        // Navigate after drawing the quick-access list.
         if (picked >= 0)
             Travel(_quick[picked].Path);
     }
 
     /// <summary>
-    /// Seats <see cref="RailPanel"/> at the BOTTOM of the rail and returns
-    /// what is left for the quick list. The panel takes everything the
-    /// destinations do not need — they are a known count of rows, so the
-    /// split is measured, not guessed — held between the two shares so
-    /// neither side can crush the other; both scroll inside their own box.
-    /// The seam is the frame's own rule, run the rail's full width.
+    /// Places the optional panel at the rail bottom, using the quick-list height to
+    /// choose its share within the configured 40–60% bounds.
     /// </summary>
     private WindowFrameRect DrawRailFooter(WindowFrameRect rail, float scale)
     {
@@ -569,8 +533,7 @@ public sealed class FileDialog
                 scale);
         }
 
-        // Carved right to left, so the FIRST panel lands nearest the
-        // listing: a consumer's declaration order reads left to right.
+        // Allocate columns from the right so declaration order displays left-to-right.
         for (int i = SidePanels.Count - 1; i >= 0; i--)
         {
             FileSidePanel panel = SidePanels[i];
@@ -627,8 +590,9 @@ public sealed class FileDialog
             SelectedFile);
     }
 
-    /// <summary>A column's left edge — the same rule the frame bridges its
-    /// rail with, run the body's full height.</summary>
+    /// <summary>
+    /// Draws a vertical separator across the body height.
+    /// </summary>
     private static void ColumnRule(
         float x, WindowFrameRect body, float rule) =>
         ImGui.GetWindowDrawList().AddRectFilled(
@@ -637,9 +601,8 @@ public sealed class FileDialog
             ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
 
     /// <summary>
-    /// The explorer. NO right padding on the region: the bar sits on the
-    /// window edge and IS the right inset; the row box bleeds under it
-    /// while the pill and its content stop a gutter early.
+    /// Draws fixed search/sort controls above the scrolling folder listing.
+    /// The scrollbar gutter supplies the listing's right margin.
     /// </summary>
     private void DrawEntries(WindowFrameRect body, float scale)
     {
@@ -727,9 +690,7 @@ public sealed class FileDialog
                             ? TablerIcon.Folder
                             : TablerIcon.FileText);
 
-                    // The date breathes off the pill's right edge, which
-                    // itself stops a gutter early — the library rail's
-                    // badge math, so the readout never rides the bar.
+                    // Keep the modified date before the scrollbar gutter and row padding.
                     float readoutWidth = ModifiedColumnWidth * scale;
                     float readoutX = hit.ScreenMax.X - gutter
                         - theme.Spacing.Four * scale - readoutWidth;
@@ -766,9 +727,7 @@ public sealed class FileDialog
     }
 
     /// <summary>
-    /// The preview column. The image is aspect-fitted into whatever the
-    /// caption leaves: the host renders a portrait or a landscape and the
-    /// column has to seat either without cropping.
+    /// Fits the preview image without cropping and reserves space for its caption.
     /// </summary>
     private static void DrawPreview(
         WindowFrameRect column, in FilePreviewResult preview, float scale)
@@ -815,9 +774,7 @@ public sealed class FileDialog
     }
 
     /// <summary>
-    /// The footer's left slot STRETCHES: the name a save is about, or the
-    /// name a load has chosen, reaching the actions. It starts one action
-    /// gap past the header inset, where the bar's empty left cluster ends.
+    /// Draws the save filename or selected-file label before Cancel and confirmation.
     /// </summary>
     private void DrawFooterFill(
         WindowFrameRect footer, string confirmLabel, float scale)
@@ -871,19 +828,14 @@ public sealed class FileDialog
 
     // ── row primitives ───────────────────────────────────────────────────
 
-    /// <summary>The row's own box, which is the region's FULL width: the
-    /// gutter is the row's TRAILING inset, so the box bleeds under the bar
-    /// while the pill and its content stop a gutter early — the
-    /// ShellSidebar/library-rail contract.</summary>
+    /// <summary>
+    /// Row hit width, including the scrollbar gutter. Painted content excludes the gutter.
+    /// </summary>
     private static float RowWidth(ScrollRegionScope region) =>
         region.ContentWidth + ActiveTheme.Scrollbar.GutterWidth;
 
     /// <summary>
-    /// One list row: the reserve at the FULL row width, the highlight
-    /// stopping <paramref name="gutter"/> early so the pill's right edge
-    /// stays visible beside the scroll bar. Rows stack flush at the row
-    /// height — the ambient vertical spacing is the surrounding flow's,
-    /// not the list's.
+    /// Reserves a row with no vertical gap and paints its highlight before the scrollbar gutter.
     /// </summary>
     private static InteractionResult Row(
         string id, float width, float gutter, bool selected, float scale)
@@ -927,9 +879,9 @@ public sealed class FileDialog
             },
             besideIcon: true);
 
-    /// <summary>Band-centered text, constrained ONLY on overflow: the
-    /// truncate clip's snapped edge shaves a fitting run's descender
-    /// otherwise.</summary>
+    /// <summary>
+    /// Centers text vertically and applies truncation only if it exceeds the available width.
+    /// </summary>
     private static void Fitted(
         Vector2 min, Vector2 band, string text, in TextStyle style,
         bool besideIcon)
@@ -944,8 +896,9 @@ public sealed class FileDialog
                 TextAlign.Start, besideIcon);
     }
 
-    /// <summary>The listing's stand-in line — an unreadable folder's
-    /// message or an empty one's — on a row-shaped band.</summary>
+    /// <summary>
+    /// Draws the empty-folder or read-error message in place of listing rows.
+    /// </summary>
     private static void Status(
         ScrollRegionScope region, string text, Vector4 color, float scale)
     {
@@ -969,10 +922,9 @@ public sealed class FileDialog
     private string? SelectedFile =>
         _selectedIsDirectory ? null : _selectedPath;
 
-    /// <summary>The modified column's one string. The widget toolkit cannot see
-    /// the app's <c>LibraryStamp</c> — it references nothing — so the
-    /// format is restated here; it must stay identical, a browser row and
-    /// a library tile show the same fact about the same file.</summary>
+    /// <summary>
+    /// Modified-date display shared by file-browser and library rows.
+    /// </summary>
     private const string ModifiedFormat = "yy-MM-dd HH:mm";
 
     private static string Modified(DateTime stamp) =>
@@ -1004,8 +956,9 @@ public sealed class FileDialog
             Confirm();
     }
 
-    /// <summary>A navigation the USER asked for: it remembers where it came
-    /// from and forfeits whatever was ahead.</summary>
+    /// <summary>
+    /// Navigates to a different folder, adding the old path to Back and clearing Forward.
+    /// </summary>
     private void Travel(string path)
     {
         if (string.Equals(path, _currentPath, StringComparison.OrdinalIgnoreCase))
@@ -1074,9 +1027,7 @@ public sealed class FileDialog
             path = selected;
         }
 
-        // Close BEFORE the callback, exactly as the imperative dialog did:
-        // a consumer that opens the second dialog from the first's callback
-        // must not be fighting a window that is still up.
+        // Deliver the callback after closing, so it can open another dialog.
         _open = false;
         _pendingSelect = path;
     }
@@ -1159,9 +1110,8 @@ public sealed class FileDialog
 }
 
 /// <summary>
-/// The real disk. The hidden-attribute suppression lives here because it is
-/// the FILESYSTEM's notion of what exists; everything the dialog decides —
-/// order, extension filter, the error line — is above the seam.
+/// Reads local folders and files, omitting Hidden entries. Sorting and extension
+/// filtering belong to FileDialog; hidden entries still exist on disk.
 /// </summary>
 internal sealed class LocalFileListing : IFileListingSource
 {

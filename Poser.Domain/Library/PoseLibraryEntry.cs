@@ -1,26 +1,26 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace Poser.Domain.Library;
 
 /// <summary>
-/// What a scanned file IS. The browser shows one kind at a time, so this is the
-/// dimension its type tabs filter on.
+/// File type used to group and filter Library entries.
 /// </summary>
 public enum PoseLibraryEntryKind : byte
 {
     /// <summary>A <c>.pose</c> or Anamnesis <c>.cmp</c>.</summary>
     Pose,
 
-    /// <summary>A Mare character file. Carries no pose metadata at all — no
-    /// author, no tags, no preview — so the scan never opens one.</summary>
-    Mcdf,
+    /// <summary>
+    /// A Mare character file, without pose author, tags, or thumbnail metadata.
+    /// </summary>
+        Mcdf,
 
-    /// <summary>An <c>.xivs</c> whole scene. Its metadata is observed
-    /// through the scene codec, so a listing can never advertise a scene the
-    /// load would reject.</summary>
-    Scene,
+    /// <summary>
+    /// An .xivs scene. The scanner reads its metadata with the scene codec.
+    /// </summary>
+        Scene,
 
     /// <summary>An <c>.xiva</c> actor entry: the scene container restricted
     /// to one actor. Read through the same codec as a scene.</summary>
@@ -41,10 +41,10 @@ public enum PoseLibraryEntryKind : byte
     /// restricted to one overlay node.</summary>
     Overlay,
 
-    /// <summary>An <c>.xivg</c> group entry: the scene container
-    /// restricted to one named group's members, the group riding along.
-    /// Read through the same codec as a scene.</summary>
-    Group,
+    /// <summary>
+    /// An .xivg file containing a named group and its members.
+    /// </summary>
+        Group,
 
     /// <summary>An <c>.xivw</c> world-object entry: one object saved as a
     /// spawnable copy. Read through the same codec as a scene.</summary>
@@ -54,13 +54,8 @@ public enum PoseLibraryEntryKind : byte
 }
 
 /// <summary>
-/// The ONE way Poser writes a timestamp a user reads. Two-digit year: a tile
-/// caption, a rail heading and a metadata line are all narrow, and the century
-/// is the least informative part of a date nobody reads from 1900. Sortable
-/// order (year first) is kept, because these strings sit in lists.
-/// <para>A format that names a file or folder ON DISK is NOT one of these —
-/// those stay four-digit, because a stored name is parsed back and a two-digit
-/// year is ambiguous forever.</para>
+/// Compact date formats for Library labels. File and folder names use separate
+/// formats with four-digit years so they can be parsed without century ambiguity.
 /// </summary>
 public static class LibraryStamp
 {
@@ -119,9 +114,8 @@ public sealed class PoseLibrarySourceSnapshot
 }
 
 /// <summary>
-/// One library file the scan found. Every string the browser reads per frame is
-/// minted here, at scan time, because the grid touches all of them on each
-/// keystroke and may allocate nothing while doing it.
+/// A scanned Library file. Search keys and display labels are prepared during
+/// the scan to avoid repeatedly formatting them while drawing or filtering.
 /// </summary>
 public sealed class PoseLibraryEntry
 {
@@ -170,7 +164,9 @@ public sealed class PoseLibraryEntry
 
     public PoseLibraryMetadataStatus MetadataStatus { get; init; }
 
-    /// <summary>Short diagnostic suitable for a future recovery surface.</summary>
+    /// <summary>
+    /// Explanation of a metadata read failure.
+    /// </summary>
     public string MetadataDetail { get; init; } = string.Empty;
 
     /// <summary>An Anamnesis <c>.cmp</c> file; carries no metadata.</summary>
@@ -181,19 +177,14 @@ public sealed class PoseLibraryEntry
     /// every other kind.</summary>
     public string SceneContents { get; init; } = string.Empty;
 
-    /// <summary>Where a <see cref="PoseLibraryEntryKind.Scene"/> entry was
-    /// captured, as its own document recorded it. Empty for every other kind,
-    /// and for a scene written before scenes recorded a place — a listing
-    /// groups those by their day alone rather than inventing a place.</summary>
+    /// <summary>
+    /// Place recorded in the scene, or empty if the file has no place information.
+    /// </summary>
     public string ScenePlace { get; init; } = string.Empty;
 
-    /// <summary>When a <see cref="PoseLibraryEntryKind.Scene"/> entry says it
-    /// was captured, as its own document recorded it. Null for every other
-    /// kind, and for a scene written before scenes recorded it — a listing
-    /// then falls back to <see cref="Modified"/>, which is when the FILE last
-    /// changed rather than when the scene was taken. Both halves of a "where
-    /// and when" heading must come from the document wherever the document
-    /// answers, or a copied file files under a day it was never captured on.
+    /// <summary>
+    /// Capture time recorded in the scene. If absent, the browser falls back to
+    /// Modified, which can change when the file is copied or edited.
     /// </summary>
     public DateTimeOffset? SceneCapturedAt { get; init; }
 
@@ -224,7 +215,8 @@ public sealed class PoseLibraryFolder
     /// <summary>0 for a source root, +1 per nesting level.</summary>
     public required int Depth { get; init; }
 
-    /// <summary>Recursive file count at and below this folder, both kinds.
+    /// <summary>
+    /// Total file count in this folder and all its subfolders.
     /// </summary>
     public int Count { get; init; }
 
@@ -232,10 +224,8 @@ public sealed class PoseLibraryFolder
     /// below this folder.</summary>
     public int PoseCount { get; init; }
 
-    /// <summary>Recursive <see cref="PoseLibraryEntryKind.Mcdf"/> count at and
-    /// below this folder. Both per-kind counts are recursive, so a folder with
-    /// none of a kind has no descendant of that kind either — which is what
-    /// lets a browser tab drop the whole subtree and keep a valid tree.
+    /// <summary>
+    /// MCDF file count in this folder and all its subfolders.
     /// </summary>
     public int McdfCount { get; init; }
 
@@ -243,28 +233,30 @@ public sealed class PoseLibraryFolder
     /// and below this folder, on the same recursive contract.</summary>
     public int SceneCount { get; init; }
 
-    /// <summary>Recursive object-entry count — actors, lights and cameras
-    /// together, because they share one browser tab — on the same recursive
-    /// contract.</summary>
+    /// <summary>
+    /// Object-entry count in this folder and all its subfolders, for the Objects tab.
+    /// </summary>
     public int ObjectsCount { get; init; }
 }
 
 /// <summary>
-/// One immutable result of a scan. Readers take the whole snapshot in a single
-/// reference read; it is never mutated after publication.
+/// Result of a Library scan. Collections are copied before the result is shared
+/// so readers can use the snapshot while another scan runs.
 /// </summary>
 public sealed class PoseLibrarySnapshot
 {
     public required int Revision { get; init; }
 
-    /// <summary>Monotonic request generation represented by this publication.
-    /// A stale or disposed worker never publishes its generation.</summary>
+    /// <summary>
+    /// Scan request number used to reject results from an older scan.
+    /// </summary>
     public required long Generation { get; init; }
 
     public required PoseLibraryScanResult TerminalResult { get; init; }
 
-    /// <summary>Configured sources beyond the observation bound. Their
-    /// omission is an explicit failure, never a successful empty scan.</summary>
+    /// <summary>
+    /// Configured sources omitted because the scan reached its source limit.
+    /// </summary>
     public int SkippedSourceCount { get; init; }
 
     /// <summary>Sorted by folder order, then <c>NameLower</c> ordinal.</summary>

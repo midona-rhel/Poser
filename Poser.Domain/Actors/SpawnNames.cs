@@ -1,12 +1,9 @@
 namespace Poser.Domain.Actors;
 
 /// <summary>
-/// In-game object names for Poser-spawned bodies. The spawn's self-directed
-/// appearance copy makes Penumbra identify the clone by its OWN name, and
-/// Penumbra only accepts a player name of two parts (one space), each 2-15
-/// characters, an uppercase A-Z first letter and lowercase a-z, apostrophe or
-/// hyphen after it. A digit fails (InvalidIdentifier, 16) and Glamourer then
-/// cannot read the actor either (#427), so every slot gets a letters-only name.
+/// Creates the internal game names for spawned actors. These use two words
+/// without digits for compatibility with Penumbra's player-name validation
+/// (see #427). The displayed scene name can be different.
 /// </summary>
 public static class SpawnNames
 {
@@ -23,9 +20,8 @@ public static class SpawnNames
         "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety",
     };
 
-    /// <summary>"Poser One".."Poser Nineteen" for 1-19 (unchanged), "Poser Zero",
-    /// "Poser Twenty".."Poser Ninety-nine", then "Poser X" + base-26 letters
-    /// (at least two) for 100 and up: "Poser Xaa", "Poser Xab", ...</summary>
+    /// <summary>Uses spelled-out numbers below 100, then a unique letter code
+    /// such as "Poser Xaa". Negative slot numbers are rejected.</summary>
     public static string ForSlot(int index)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(index);
@@ -43,8 +39,7 @@ public static class SpawnNames
             return ones == 0 ? tens : $"{tens}-{Ones[ones].ToLowerInvariant()}";
         }
 
-        // No English number word starts with X, so this series cannot meet
-        // the spelled-out one. int.MaxValue needs 7 letters: 8 with the X.
+        // The X prefix keeps these codes distinct from the number words.
         var value = index - 100;
         var letters = new Stack<char>();
         do

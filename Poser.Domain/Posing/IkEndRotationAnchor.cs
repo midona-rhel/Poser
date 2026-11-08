@@ -3,16 +3,17 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Domain.Posing;
 
-/// <summary>Where a Two Joint end bone stood when End rotation was last
-/// switched, in the solve frame: the forearm or shin, the end bone, and the
-/// user's own end rotation then. Held, the end keeps that rotation; following,
-/// it turns as the forearm has turned since. Either way the switch itself
-/// moves nothing.</summary>
+/// <summary>
+/// Rotations captured when the Two Joint end-rotation mode changes. Forearm
+/// is the preceding bone (for example, a forearm or shin); End is the end
+/// bone; Authored is the user's rotation at that time.
+/// </summary>
 public readonly record struct IkEndRotationAnchor(Quaternion Forearm, Quaternion End, Quaternion Authored)
 {
-    /// <summary>Held: the end bone's rotation relative to the held target's,
-    /// fixed at the first solve after the switch, so a turning target bone or
-    /// prop still turns the end. Null until then.</summary>
+    /// <summary>
+    /// End-bone rotation relative to the held target, captured on the first solve
+    /// after the mode switch. Null means it has not been captured yet.
+    /// </summary>
     public Quaternion? HeldOffset { get; init; }
 
     public bool IsValid => Valid(Forearm) && Valid(End) && Valid(Authored)
@@ -21,9 +22,10 @@ public readonly record struct IkEndRotationAnchor(Quaternion Forearm, Quaternion
     private static bool Valid(Quaternion value) =>
         TransformMath.IsFinite(value) && value.LengthSquared() > 1e-8f;
 
-    /// <summary>The end bone's rotation now, with the user's rotation since
-    /// the switch on top. <paramref name="forearm"/> is the solved forearm
-    /// this frame; null while the end is held.</summary>
+    /// <summary>
+    /// Applies the user's rotation change since capture. A supplied forearm
+    /// rotation also makes the end follow that bone's rotation change.
+    /// </summary>
     public Quaternion Resolve(Quaternion authored, Quaternion? forearm)
     {
         var held = End * Quaternion.Inverse(Authored) * authored;

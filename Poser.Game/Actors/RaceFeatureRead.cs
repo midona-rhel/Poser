@@ -7,10 +7,9 @@ using Poser.Game.Core;
 namespace Poser.Game;
 
 /// <summary>
-/// The one customize byte the skeleton itself needs: <c>RaceFeatureType</c>,
-/// which for a Viera says which of the four ear sets the character wears
-/// (Ktisis reads exactly this through <c>ActorEntity.TryGetEarId</c>). The
-/// rendered Human takes precedence over base character data after appearance IPC.
+/// Reads the rendered customize data used to select Viera ear skeletons.
+/// The rendered Human takes precedence over base character data because
+/// appearance integrations may update only the draw object.
 /// </summary>
 public static unsafe class RaceFeatureRead
 {
@@ -18,10 +17,8 @@ public static unsafe class RaceFeatureRead
     private const byte VieraRace = 8;
 
     /// <summary>
-    /// <c>RaceFeatureType</c>'s slot in the 26-byte customize array —
-    /// <c>CustomizeIndex</c>'s ordering, which the array IS. The struct names
-    /// only some of its bytes, so the ear value is read by index; the index is
-    /// stated here once rather than at the read.
+    /// <c>RaceFeatureType</c>'s slot in the 26-byte customize array.
+    /// The native struct does not expose this byte as a named field.
     /// </summary>
     private const int RaceFeatureTypeIndex = 22;
 

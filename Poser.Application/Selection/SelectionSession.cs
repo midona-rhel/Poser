@@ -41,18 +41,10 @@ public sealed class SelectionScope
     public ActorId? PrimaryActor => Primary?.OwningActor;
 
     /// <summary>
-    /// A persistent companion for every selection — Ktisis' sibling link
-    /// (SelectManager.cs:209-223), which resolves a bone's <c>_l</c>/<c>_r</c>
-    /// counterpart so an edit, a reset or a flip covers both sides without a
-    /// second click. Null (the default) is no companion at all.
-    ///
-    /// <para>Two properties this scope guarantees and the resolver must not
-    /// have to think about: the companion joins BEFORE the change is
-    /// published, so no listener ever observes the half-selection; and it
-    /// never takes the ANCHOR, so a shift-range that follows still runs from
-    /// the row the user actually clicked. Removal is symmetric — the pair
-    /// leaves together, or the mode could strand a half-pair no click could
-    /// have produced.</para>
+    /// Optionally supplies a paired selection, such as a bone's left/right
+    /// counterpart. Select and Add include a compatible partner before notifying
+    /// listeners, without changing the clicked anchor. Remove removes both.
+    /// Range selection and reconciliation do not add partners.
     /// </summary>
     public Func<SelectionId, SelectionId?>? CompanionResolver { get; set; }
 
@@ -106,16 +98,9 @@ public sealed class SelectionScope
     }
 
     /// <summary>
-    /// Drops EVERYTHING that belongs to one actor — the actor row, its bones,
-    /// and its bone groups, which all carry the same
-    /// <see cref="SelectionId.ActorLineage"/>.
-    ///
-    /// <para>It exists because a destroy path must never leave the selection
-    /// pointing at something that no longer exists. Removing the actor row
-    /// alone is not enough: a selected BONE outlives its actor just as
-    /// happily, and every surface that reads the selection would then resolve
-    /// a skeleton that has been freed. One notification for the whole lineage,
-    /// so no listener observes a half-cleared actor.</para>
+    /// Removes every selection with this actor's logical ID, including bones
+    /// and bone groups, then sends one notification. Removing only the actor
+    /// row would leave stale selections after actor destruction.
     /// </summary>
     public void RemoveActorLineage(Guid lineage)
     {
@@ -240,11 +225,8 @@ public sealed class SelectionScope
 
     private static bool IsCompatible(SelectionId left, SelectionId right)
     {
-        // Bones group only with bones of their own actor — posing stays a
-        // per-skeleton concern. Scene ENTITIES group freely across kinds:
-        // the anonymous group is any entities selected together, and the
-        // same-kind rule that stood here was exactly what stopped a light
-        // joining an actor (2026-08-30).
+        // Bones may span skeleton slots but must belong to the same logical actor.
+        // Scene entities can be selected together across kinds.
         if (left.Kind == SceneEntityKind.Bone
             || right.Kind == SceneEntityKind.Bone)
             return left.Kind == right.Kind
@@ -256,8 +238,8 @@ public sealed class SelectionScope
     }
 }
 
-/// <summary>Stable-id selection authority. Entities group freely across
-/// kinds (the anonymous group); bones group per skeleton.</summary>
+/// <summary>Owns the live selection. Entity kinds may be mixed; selected bones
+/// must belong to the same logical actor.</summary>
 public sealed class SelectionSession
 {
     private readonly SelectionScope _live;

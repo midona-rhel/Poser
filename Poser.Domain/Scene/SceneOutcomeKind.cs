@@ -1,10 +1,9 @@
 namespace Poser.Domain.Scene;
 
-/// <summary>What one scene outcome row is about: an entity, or one restored
-/// part of one. Every kind has a label and a next step, and both switches
-/// below are exhaustive with no default arm — CS8509 is an error in this
-/// project, so a new kind cannot ship without saying what the user can do
-/// about it.</summary>
+/// <summary>
+/// The entity or restored setting described by a scene-load result row.
+/// Add a label and recovery suggestion below when adding a kind.
+/// </summary>
 public enum SceneOutcomeKind
 {
     Actor,
@@ -53,18 +52,8 @@ public static class SceneOutcomeKinds
     };
 
     /// <summary>
-    /// The ONE next step a refused row offers. A refusal detail says what
-    /// happened; this says what the user can do about it, and the result list
-    /// and the operation log both read it from here so they never disagree.
-    /// It is keyed on the kind rather than written at each refusal site: the
-    /// reason varies with the failure, but the recovery is a property of the
-    /// thing that did not come back. A site with a genuinely better step
-    /// states its own and this leaves it alone.
-    /// <para>The per-kind steps assume the load kept what it made: several
-    /// tell the user to select an actor or companion that is in the scene.
-    /// When the operation left nothing behind (rolled back or cancelled,
-    /// e.g. by leaving GPose), that is false, and the one honest step is to
-    /// load again (#501).</para>
+    /// Default recovery suggestion for this kind of result. If the load kept nothing,
+    /// ask the user to reload rather than edit objects that no longer exist.
     /// </summary>
     public static string Remedy(this SceneOutcomeKind kind, bool keptInScene = true) =>
         keptInScene ? KeptRemedy(kind) : NothingKept;

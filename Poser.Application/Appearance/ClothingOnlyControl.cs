@@ -4,7 +4,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Appearance;
 
-/// <summary>One admission, lifetime and outcome owner for UI, scene and bridge requests.</summary>
+/// <summary>Runs clothing-only redraw requests from the UI, scene loader, and
+/// debug bridge. Cancels requests when their actor leaves or GPose ends.</summary>
 public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
 {
     private readonly IClothingOnlyRuntimePort _runtime;
@@ -12,7 +13,7 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
     private readonly IEventBus _events;
     private readonly SemaphoreSlim _applyGate = new(1, 1);
     private readonly object _gate = new();
-    private readonly HashSet<CancellationTokenSource> _pending = new();
+    private readonly Dictionary<CancellationTokenSource, ActorId> _pending = new();
     private bool _closed;
 
     public ClothingOnlyControl(IClothingOnlyRuntimePort runtime, ISessionGenerationSource sessions, IEventBus events)
@@ -26,8 +27,8 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
     public bool IsHuman(ActorId actor) => _runtime.IsHuman(actor);
     public bool IsApplied(ActorId actor) => _runtime.IsApplied(actor);
 
-    // No separate history here: scene load owns its transaction; interactive
-    // clothing-only retains the existing redraw-to-restore behavior.
+    // Scene loads record their own history. Interactive requests rely on the
+    // redraw service to restore the previous state.
     public async Task<string?> Apply(ActorId actor, CancellationToken cancellation)
     {
         var session = _sessions.ActiveSessionGeneration;
@@ -36,7 +37,7 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
         lock (_gate)
         {
             if (_closed) return "Clothing-only is shutting down.";
-            _pending.Add(operation);
+            _pending.Add(operation, actor);
         }
         bool entered = false;
         try
@@ -59,22 +60,22 @@ public sealed class ClothingOnlyControl : IInvisibleSkinService, IDisposable
         }
     }
 
-    // SessionLifecycleCoordinator has already withdrawn the session token.
-    // Reuse that admission owner; this event cancels work already in flight.
-    private void OnExit(GPoseExitingEvent _) => CancelPending();
-
-    private void CancelPending()
+    public void Reconcile(Func<ActorId, bool> isCurrent)
     {
-        // Keep sources alive while cancelling; each operation removes and disposes
-        // its own source only after native cleanup finishes.
+        // Cancelling an actor's work leaves requests for other actors alone.
+        // Each operation removes and disposes its token after native cleanup.
         lock (_gate)
-            foreach (var operation in _pending.ToArray()) operation.Cancel();
+            foreach (var (operation, actor) in _pending.ToArray())
+                if (!isCurrent(actor)) operation.Cancel();
+        _runtime.Reconcile(isCurrent);
     }
+
+    private void OnExit(GPoseExitingEvent _) => Reconcile(_ => false);
 
     public void Dispose()
     {
         lock (_gate) _closed = true;
         _events.Unsubscribe<GPoseExitingEvent>(OnExit);
-        CancelPending();
+        Reconcile(_ => false);
     }
 }

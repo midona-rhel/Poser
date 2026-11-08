@@ -3,8 +3,8 @@ using Dalamud.Bindings.ImGui;
 
 namespace Poser.UI.Widgets;
 
-/// <summary>Raises the value-edit seam on <see cref="UiContext"/>: edit
-/// began and ended around a change, commit when a control commits.</summary>
+/// <summary>Reports value-edit lifecycle events through <see cref="UiContext"/>:
+/// an edit begins and ends around each change, and commits with the control.</summary>
 public static class ValueEdits
 {
     public static void ChangeValue(string id, Action change)
@@ -23,7 +23,7 @@ public static class ValueEdits
             UiContext.Current.RaiseValueEditingIdle();
     }
 
-    /// <summary>The control's own commit callback, then the shared seam.</summary>
+    /// <summary>Runs the control's commit callback, then reports the shared commit event.</summary>
     public static void Commit(string id, Action? onCommit = null)
     {
         onCommit?.Invoke();

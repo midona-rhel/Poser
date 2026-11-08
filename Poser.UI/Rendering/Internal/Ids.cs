@@ -3,14 +3,9 @@ using System.Collections.Generic;
 namespace Poser.UI;
 
 /// <summary>
-/// The library's id-string memo. ImGui identity is a STRING, and the
+/// Memoizes ImGui identity strings. Composition surfaces otherwise create
 /// composition surfaces mint one per row, per segment and per item on every
-/// frame they draw — so the interpolation, not the drawing, is the product's
-/// dominant steady-state allocation, idle frames included. Every call here
-/// returns the SAME instance for the same parts, so a warm surface allocates
-/// nothing, and the string is byte-identical to the interpolation it replaces
-/// — which is what lets a call site adopt the memo without moving one
-/// hit-test, one scroll identity or one animation channel.
+/// frame they draw. Each key returns the same string instance until eviction.
 ///
 /// <para>Single-threaded by construction: every caller runs inside an ImGui
 /// draw call, on the one framework thread that owns the context — the same
@@ -18,7 +13,7 @@ namespace Poser.UI;
 /// make.</para>
 ///
 /// <para>Bounded by wholesale eviction: a store that reaches
-/// <see cref="Capacity"/> is CLEARED rather than swept. Each entry is a pure
+/// <see cref="Capacity"/> is cleared rather than swept. Each entry is a pure
 /// function of its key, so dropping one costs a re-mint and nothing else; and
 /// the caller sets that actually grow without bound — a file dialog's
 /// per-path row ids, a picker's per-item ids — are exactly the ones whose

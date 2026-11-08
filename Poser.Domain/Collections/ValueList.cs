@@ -3,11 +3,9 @@ using System.Collections;
 namespace Poser.Domain.Collections;
 
 /// <summary>
-/// An immutable list with structural equality: two lists are equal when they
-/// hold equal elements (<see cref="EqualityComparer{T}.Default"/>) in the same
-/// order. A record that stores its list members as ValueList gets content
-/// equality from its compiler-generated Equals, so a new field can never be
-/// left out of a hand-written comparison.
+/// A list whose membership cannot change after creation. Equality compares
+/// elements in order using their normal equality rules, rather than comparing
+/// list references. Mutable objects inside the list are not copied or frozen.
 /// </summary>
 public sealed class ValueList<T> : IReadOnlyList<T>, IEquatable<ValueList<T>>
 {

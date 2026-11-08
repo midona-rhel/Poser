@@ -165,8 +165,6 @@ public sealed class AnimationOwnershipTests
             {
                 case "IsSupported":
                     return true;
-                case "get_SupportsForceLoop":
-                    return true;
                 case "TimelineSlot":
                     return (ushort)args![0]! switch
                     {

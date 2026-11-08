@@ -116,11 +116,12 @@ the user's end rotation, and holding or following continues from there. Other
 solvers retain Keep rotation; its saved value never overrides Two Joint's End
 rotation, including after the native solve.
 
-A fresh target capture (enabling, switching the target mode, picking a target
-bone or entity) is seated on the first solve onto the endpoint as the solve sees
-it, plus the user's IK offset, so it moves nothing where Customize+ scales the
-body after the solve. History keeps an Actor anchor's unseated mark, so a redo
-seats again.
+Enabling a chain captures its starting pose.
+The first solve aligns that capture with the solver's coordinate frame, including
+when Customize+ changes the displayed body scale afterwards.
+Changing an active chain's World, Actor, Bone or Entity target converts its existing held point.
+Its position and rotation stay the same; only what it follows changes.
+Undo and Redo retain the captured target along with the setting.
 
 Scene entity targets follow props, scenery/world objects, lights and VFX through
 their exact stable scene IDs; they do not need a skeleton. Attachment captures
@@ -161,9 +162,10 @@ no separate root/tip position fields. One drag is one history step.
 Older scenes may store the span, anchors and portable handle reference; their
 reader still restores these after scene entities exist. New saves follow the
 [baked snapshot contract](files-and-transfer.md#storage-and-library).
-Previews snapshot constraints into their own model frame. The live Bake action
-writes the solved pose and disables the chains. Undo restores the previous
-authored edits and live chains; Redo restores the baked pose and disables them.
+Previews snapshot constraints into their own model frame. Bake writes only the
+selected chain's solved bones and disables that chain. Other chains keep their
+targets and settings. Undo restores the selected chain and its previous edits;
+Redo restores its baked pose and disables it again.
 
 ### IK colliders
 

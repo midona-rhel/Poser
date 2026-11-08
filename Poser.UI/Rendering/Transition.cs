@@ -56,7 +56,7 @@ public readonly struct Transition
         if (t <= 0f) return 0f;
         if (t >= 1f) return 1f;
 
-        float u = t; // good initial guess for near-linear curves
+        float u = t; // Near-linear curves converge quickly from linear progress.
         for (int i = 0; i < 8; i++)
         {
             float x = Cubic(u, BezierX1, BezierX2) - t;

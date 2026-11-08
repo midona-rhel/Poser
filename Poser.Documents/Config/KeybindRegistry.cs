@@ -50,10 +50,8 @@ public enum KeybindPreset
 public sealed record KeybindAction(string Id, string Group, string Help);
 
 /// <summary>
-/// THE bindable-action list and the three chord sets it can be dressed in.
-/// One home: the runtime binder builds its delegates against this order, the
-/// settings page draws these rows, and the hover badges resolve through it —
-/// an action that is not here is not bindable anywhere.
+/// Lists every bindable action and the default chords for each preset. The
+/// runtime binder, settings page, and shortcut labels all use this list.
 ///
 /// <para>Ids are the persisted keys and are frozen: the seven original ids
 /// are the ones a pre-dual-slot config already holds, so renaming one would
@@ -208,11 +206,9 @@ public static class KeybindRegistry
         };
 
     /// <summary>
-    /// A COMPLETE binding set for the preset: every registered action, in
-    /// registry order. A preset is a statement about all of them, so an
-    /// action the reference does not have lands unbound rather than keeping
-    /// whatever the user had — the exception being Poser's own defaults,
-    /// which are what "unbound here" is measured against.
+    /// Returns every registered action in registry order. Actions absent from
+    /// the selected preset are returned unbound; applying a preset does not
+    /// preserve their previous chords.
     /// </summary>
     public static Dictionary<string, KeybindSlots> Bindings(
         KeybindPreset preset)
@@ -257,12 +253,9 @@ public static class KeybindRegistry
     public readonly record struct SlotRef(string ActionId, int Slot);
 
     /// <summary>
-    /// Every slot that shares its chord with another slot, mapped to the
-    /// OTHER actions holding it. Both sides are reported — a conflict is a
-    /// property of the pair, not of whichever row was edited last — and an
-    /// action's own two slots conflict with each other exactly as two
-    /// different actions do, because binding the same chord twice to one
-    /// action is equally a mistake.
+    /// Returns each slot whose parsed chord is used by another slot. Both
+    /// slots are reported, including duplicate primary and secondary chords
+    /// on the same action.
     ///
     /// <para>Unbound slots never conflict: "nothing" is not a chord.</para>
     /// </summary>
