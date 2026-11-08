@@ -397,11 +397,6 @@ public sealed class PoseLibraryViewModel
     /// <summary>Whether this tab allows changing a tile's favorite state.</summary>
     public bool CanFavorite = true;
 
-    /// <summary>The LIVE pane width while the grid is resize-stepped; the
-    /// bar rows and rules track this so right-aligned clusters do not jump
-    /// between steps. Zero means "same as the handed size".</summary>
-    public float ChromeWidth;
-
     /// <summary>A tag chip; null clears the filter.</summary>
     public Action<string?>? OnTagFilter;
 
@@ -537,14 +532,9 @@ public static class PoseLibraryView
     private static readonly Action<string> IgnoreQuery = static _ => { };
     private static readonly Action<int> IgnoreSort = static _ => { };
 
-    /// <summary>
-    /// Fills the rectangle the shell hands the pane. The geometry is DERIVED
-    /// from that rectangle and nothing else — no window size, no design size —
-    /// so the library reflows with the workspace like every other pane.
-    /// </summary>
+    /// <summary>Draws the Library within the current pane rectangle.</summary>
     public static void Draw(PoseLibraryViewModel vm, Vector2 origin, Vector2 size)
     {
-        ArgumentNullException.ThrowIfNull(vm);
         if (!(size.X > 0f) || !(size.Y > 0f))
             return;
         var theme = ActiveTheme;
@@ -580,10 +570,8 @@ public static class PoseLibraryView
         vm.SaveSceneClick ??= () => vm.OnSaveScene?.Invoke();
         vm.EditMetadataClick ??= () => vm.OnEditMetadata?.Invoke(vm.Selected);
 
-        float chromeMaxX = origin.X
-            + (vm.ChromeWidth > 0f ? vm.ChromeWidth : size.X);
         var rects = Bands(
-            vm, origin, size, scale, theme, chromeMaxX);
+            vm, origin, size, scale, theme);
         DrawBand(vm, rects.Band, scale, theme);
         DrawRail(vm, rects.Rail, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
@@ -594,30 +582,19 @@ public static class PoseLibraryView
             vm.OnApplyTile?.Invoke(vm.Selected);
     }
 
-    /// <summary>
-    /// The pane's bands, and the ink that separates them. This is pane
-    /// STRUCTURE, not window chrome: two rules and the rail's raised slab, all
-    /// measured from the handed rectangle. There is exactly ONE bottom row on
-    /// every tab, so the body's bottom rule sits directly above it.
-    /// </summary>
+    /// <summary>Lays out the toolbar, folders, grid and footer within the pane.</summary>
     private static WindowFrameRects Bands(
         PoseLibraryViewModel vm,
         Vector2 origin,
         Vector2 size,
         float scale,
-        Theme theme,
-        float chromeMaxX)
+        Theme theme)
     {
-        // The GRID lives at the (possibly stepped) handed width; the bar
-        // rows and their rules track the LIVE pane edge, so the right-
-        // aligned clusters stop jumping between resize steps.
         var max = origin + size;
         float rule = MathF.Max(1f, scale);
         float bandBottom = MathF.Min(max.Y, origin.Y + BandHeight * scale);
         float rowTop = MathF.Max(
             bandBottom, max.Y - theme.Floating.ModalBarHeight * scale);
-        // ONE bottom row on every tab (user: everything on one row), so no
-        // second band exists and no tab can grow one.
         // The rail never takes more than half the pane: a narrow workspace
         // keeps a grid rather than becoming a folder list.
         float railWidth = vm.ShowRail
@@ -628,11 +605,11 @@ public static class PoseLibraryView
         uint separator = Packed(theme.FormSeparator);
         draw.AddRectFilled(
             new Vector2(origin.X, bandBottom - rule),
-            new Vector2(chromeMaxX, bandBottom),
+            new Vector2(max.X, bandBottom),
             separator);
         draw.AddRectFilled(
             new Vector2(origin.X, rowTop),
-            new Vector2(chromeMaxX, rowTop + rule),
+            new Vector2(max.X, rowTop + rule),
             separator);
 
         var rail = new WindowFrameRect(
@@ -656,14 +633,14 @@ public static class PoseLibraryView
         return new WindowFrameRects
         {
             Band = new WindowFrameRect(
-                origin, new Vector2(chromeMaxX, bandBottom - rule)),
+                origin, new Vector2(max.X, bandBottom - rule)),
             Rail = rail,
             Body = new WindowFrameRect(
                 new Vector2(origin.X + railWidth, bandBottom),
                 new Vector2(max.X, rowTop)),
             Footer = new WindowFrameRect(
                 new Vector2(origin.X, rowTop + rule),
-                new Vector2(chromeMaxX, max.Y)),
+                new Vector2(max.X, max.Y)),
         };
     }
 
@@ -1068,20 +1045,14 @@ public static class PoseLibraryView
         if (!(body.Size.X > 0f) || !(body.Size.Y > 0f))
             return;
 
-        // No source ever yielded a folder, which is a CONFIGURATION answer
-        // rather than an empty filter. The binder decides it: the auto-save tab
-        // browses no configured source at all.
+        // A Library with no sources needs the setup prompt instead of an empty search result.
         if (vm.ShowNoSources)
         {
             DrawNoSources(vm, body, scale, theme);
             return;
         }
 
-        // The strip is reserved only when it has something to STATE. An empty
-        // strip is not a neutral gap: it takes a band off the grid and paints
-        // a rule under it, which reads as a second footer above the real one.
-        // The auto-save tab showed exactly that on every selection, because
-        // its rows carry no author and no tags by nature.
+        // Reserve space for metadata only when the selected entry has something to show.
         bool selected = vm.Selected >= 0 && vm.Selected < vm.Tiles.Count
             && HasStripContent(vm.Tiles[vm.Selected]);
         float strip = selected ? InfoStripHeight : 0f;
@@ -1104,8 +1075,7 @@ public static class PoseLibraryView
                 theme);
     }
 
-    /// <summary>The configuration empty state: the honest reason, and the one
-    /// affordance that fixes it.</summary>
+    /// <summary>Explains how to add a Library source and provides the Settings button.</summary>
     private static void DrawNoSources(
         PoseLibraryViewModel vm, WindowFrameRect body, float scale, Theme theme)
     {
@@ -1151,13 +1121,7 @@ public static class PoseLibraryView
             id: SettingsId);
     }
 
-    /// <summary>
-    /// The grid, drawn from the band list. Headers make the content MIXED
-    /// height, which the clipper cannot step through directly — so it steps a
-    /// uniform grid of tile-row slots and the slot map turns its reported band
-    /// into a band range, exactly as <see cref="ShellSidebar"/> does for its
-    /// tree.
-    /// </summary>
+    /// <summary>Draws the visible rows. The slot map lets the clipper handle group headers and cards of different heights.</summary>
     private static void DrawGrid(
         PoseLibraryViewModel vm, ScrollRegionScope region)
     {
@@ -1192,9 +1156,7 @@ public static class PoseLibraryView
                 // A header's box runs from the first tile column to under the
                 // scroll bar; its own content stops a gutter early.
                 float width = MathF.Max(1f, usable + inset) * scale;
-                // The grid's ground is an ITEM under the tiles: a press on
-                // empty ground starts a marquee and never moves the window;
-                // the tiles, drawn after, take their own hover.
+                // Empty grid space starts selection; cards drawn above it handle their own clicks.
                 vm.TileRects.Clear();
                 ImGui.InvisibleButton(
                     "##grid-ground",
@@ -1231,9 +1193,7 @@ public static class PoseLibraryView
                     origin + new Vector2(0f, vm.BandsHeight * scale));
                 ImGui.Dummy(Vector2.Zero);
             }
-            // Trailing breathing is INVISIBLE to ImGui's scroll extent — no
-            // item covers it — so max-scroll would pin the last row to the
-            // viewport edge without this.
+            // Include the bottom padding in the scrollable height.
             ImGui.Dummy(new Vector2(0f, pad));
         }
         finally
@@ -1273,12 +1233,7 @@ public static class PoseLibraryView
                 theme);
     }
 
-    /// <summary>
-    /// One collapsible group header: the section language the shell sidebar
-    /// uses, scaled to the grid. The box bleeds under the scroll bar while the
-    /// pill and its content stop a gutter early, and the count breathes off
-    /// that edge — the rail's rule, applied here.
-    /// </summary>
+    /// <summary>Draws a collapsible group heading and its item count.</summary>
     private static void GroupHeader(
         PoseLibraryViewModel vm,
         int index,
@@ -1347,11 +1302,7 @@ public static class PoseLibraryView
             vm.OnToggleGroup?.Invoke(index);
     }
 
-    /// <summary>
-    /// The band list and the clipper's slot map. Rebuilt ONLY when the binder
-    /// says the visible set moved, or when the grid's own geometry did — a warm
-    /// frame reads both lists unchanged.
-    /// </summary>
+    /// <summary>Rebuilds rows when the entries, column count or card height change.</summary>
     private static void BuildBands(
         PoseLibraryViewModel vm, int columns, float pitchY, Theme theme)
     {
@@ -1391,8 +1342,7 @@ public static class PoseLibraryView
         }
 
         vm.BandsHeight = y;
-        // The clipper's grid is the TILE row pitch, and the tail is folded into
-        // the last slot, so its seek can never overshoot the content height.
+        // Include the final partial row in the last clipping slot.
         vm.SlotCount = Math.Max(1, (int)(y / pitchY));
         var slots = vm.Slots;
         slots.Clear();
@@ -1423,14 +1373,7 @@ public static class PoseLibraryView
         return y;
     }
 
-    /// <summary>
-    /// One tile. Two reserves, the STAR FIRST: <see cref="Interactive"/>
-    /// defers overlap entirely to ImGui's own hovered-id rule, so submission
-    /// order alone would leave the outcome at that rule's mercy. The star's
-    /// rectangle is therefore also tested geometrically, and every outcome is
-    /// routed through that test — the favourite toggle wins its own square
-    /// under EITHER policy, and the tile keeps its hover fill either way.
-    /// </summary>
+    /// <summary>Draws a card with selection, favorite and apply actions.</summary>
     private static void Tile(
         PoseLibraryViewModel vm,
         int index,
@@ -1502,9 +1445,7 @@ public static class PoseLibraryView
 
             if (tile.Favorite && vm.CanFavorite)
             {
-                // A favorite is FILLED and warning-yellow — Tabler's OWN
-                // filled twin, through the icon pipeline; a hand-rolled
-                // star polygon shipped once and read as nonsense.
+                // Keep favorites visible when the card is not hovered.
                 IconIn(
                     starMin, starMax, "star-filled", theme.Warning);
             }

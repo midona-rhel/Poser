@@ -10,7 +10,6 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility;
 using Poser.Application.Integration;
 using Poser.Application.Transforms;
 using Poser.Domain.Operations;
@@ -41,17 +40,6 @@ public sealed partial class PoseLibraryPane
     /// same tile: a second apply of the SAME tile is swallowed rather than
     /// importing twice.</summary>
     private const double ReactivationSwallow = 0.35;
-
-    /// <summary>Logical pixels between reflows while the workspace is being
-    /// resized.</summary>
-    private const float ResizeStep = 32f;
-
-    /// <summary>Hysteresis on BOTH edges of stepping: consecutive frames the
-    /// size must MOVE before stepping engages, and consecutive frames it must
-    /// HOLD before the exact size is adopted. Pointer deltas arrive in
-    /// bursts, so a single delta-free frame mid-drag is not a release.
-    /// </summary>
-    private const int DragStreakFrames = 3;
 
     private const string AllKey = "##pose-library-all";
 
@@ -230,20 +218,6 @@ public sealed partial class PoseLibraryPane
     private int _rangeStart = -1;
 
     private int _rangeEnd = -1;
-
-    // Resize stepping state (StepResize). Only the WIDTH is ever stepped, so
-    // the standing layout is a single X.
-    private Vector2 _handedSize;
-
-    private float _steppedX;
-
-    private float _layoutX;
-
-    private int _changedStreak;
-
-    private int _stillStreak;
-
-    private bool _stepping;
 
     /// <summary>Whether the current tiles were built with extensions on
     /// their labels; changing Settings rebuilds them.</summary>
@@ -499,10 +473,7 @@ public sealed partial class PoseLibraryPane
         SyncStatus();
         SyncPreview();
 
-        // The grid reflows at resize steps; the bar rows track the live
-        // width through ChromeWidth so their clusters do not jump.
-        _vm.ChromeWidth = size.X;
-        PoseLibraryView.Draw(_vm, origin, StepResize(size));
+        PoseLibraryView.Draw(_vm, origin, size);
         DrawTileMenu();
         _renameModal.Draw();
         _metadataEditor.Draw();
@@ -571,55 +542,6 @@ public sealed partial class PoseLibraryPane
     private readonly List<string> _tileModified = [];
 
     private readonly List<string> _tileContents = [];
-
-    /// <summary>
-    /// Resize stepping: a drag on the window edge reflows the pane only at
-    /// <see cref="ResizeStep"/> boundaries — per-pixel reflow of the grid
-    /// while dragging cost whole frames. Two constraints shape it. Only the
-    /// WIDTH is stepped: the width is what lays the grid's columns out, while
-    /// the height only moves the clipper — and stepping the height bounced
-    /// the footer block off the true bottom edge by up to a step, which read
-    /// as the footer flipping between one and two rows. And stepping engages
-    /// AND releases on a <see cref="DragStreakFrames"/> streak: pointer
-    /// deltas arrive in bursts, so releasing on the first delta-free frame
-    /// flapped the layout between the exact and the floored size for the
-    /// whole drag. A one-off change (entering the mode, a snapped window)
-    /// never engages and adopts the exact size immediately.
-    /// </summary>
-    private Vector2 StepResize(Vector2 size)
-    {
-        bool moved = size != _handedSize;
-        _handedSize = size;
-        if (moved)
-        {
-            _stillStreak = 0;
-            if (++_changedStreak >= DragStreakFrames)
-                _stepping = true;
-        }
-        else if (++_stillStreak >= DragStreakFrames)
-        {
-            _stepping = false;
-            _changedStreak = 0;
-        }
-
-        if (!_stepping)
-        {
-            _layoutX = size.X;
-            _steppedX = 0f;
-            return size;
-        }
-
-        float step = ResizeStep * ImGuiHelpers.GlobalScale;
-        float stepped = MathF.Floor(size.X / step) * step;
-        // Only cross a boundary; a sub-step wiggle keeps the standing layout
-        // as long as it still fits the handed rect.
-        if (stepped != _steppedX || _layoutX > size.X)
-        {
-            _steppedX = stepped;
-            _layoutX = MathF.Min(MathF.Max(stepped, 1f), size.X);
-        }
-        return new Vector2(_layoutX, size.Y);
-    }
 
     /// <summary>The workspace moved on. The decoded thumbnails are a cache of
     /// what was on screen, and the icon size is persisted here rather than on
