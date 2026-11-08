@@ -1605,6 +1605,11 @@ public sealed partial class DebugBridge : IDisposable
                             if (query.GetValueOrDefault("action") == "read")
                                 return JsonSerializer.Serialize(new { actorId = id.ToString(), config = current },
                                     new JsonSerializerOptions { IncludeFields = true });
+                            if (query.GetValueOrDefault("action") == "defaults")
+                            {
+                                var reset = _ikConfiguration.ResetDefaults(target);
+                                return Json(new { ok = reset.Success, reset.Detail });
+                            }
                             var next = current with
                             {
                                 Enabled = !query.TryGetValue("enabled", out var en) || en != "0",
