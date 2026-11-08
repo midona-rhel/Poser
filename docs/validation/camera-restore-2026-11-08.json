@@ -1,0 +1,2016 @@
+{
+  "head": "6e074df7",
+  "beforeFix": [
+    {
+      "id": "e63a30f9c8b847c7ab2c5e93d0ab2e76@0",
+      "Name": "Main Camera",
+      "Kind": 0,
+      "IsDefault": true,
+      "IsLive": false,
+      "IsLocked": false,
+      "MovementEnabled": true,
+      "MovementSpeed": 0.03,
+      "MouseSensitivity": 0.1,
+      "Angle": {
+        "X": 0.23154515,
+        "Y": -0.6033455
+      },
+      "Pan": {
+        "X": 0,
+        "Y": 0
+      },
+      "Roll": 0,
+      "Zoom": 8,
+      "FoV": 0,
+      "PositionOffset": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "TargetOffset": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "WorldPosition": {
+        "X": 93.33802,
+        "Y": 3.536385,
+        "Z": -134.79796
+      },
+      "FixedPosition": null,
+      "Position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "Rotation": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "TargetActorName": "",
+      "IsTargetLocked": false
+    },
+    {
+      "id": "cc88c49d734e46a7a53067699bdd10eb@0",
+      "Name": "Main Camera",
+      "Kind": 0,
+      "IsDefault": false,
+      "IsLive": false,
+      "IsLocked": false,
+      "MovementEnabled": true,
+      "MovementSpeed": 0.03,
+      "MouseSensitivity": 0.1,
+      "Angle": {
+        "X": 0.23154515,
+        "Y": -0.6033455
+      },
+      "Pan": {
+        "X": 0,
+        "Y": 0
+      },
+      "Roll": 0,
+      "Zoom": 8,
+      "FoV": 0,
+      "PositionOffset": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "TargetOffset": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "WorldPosition": {
+        "X": 93.33802,
+        "Y": 3.536385,
+        "Z": -134.79796
+      },
+      "FixedPosition": null,
+      "Position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "Rotation": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "TargetActorName": "",
+      "IsTargetLocked": false
+    },
+    {
+      "id": "5bc3a5eb54804246995fb844df42d73b@0",
+      "Name": "Main Camera",
+      "Kind": 0,
+      "IsDefault": false,
+      "IsLive": true,
+      "IsLocked": false,
+      "MovementEnabled": true,
+      "MovementSpeed": 0.03,
+      "MouseSensitivity": 0.1,
+      "Angle": {
+        "X": 0.23154567,
+        "Y": -0.6033455
+      },
+      "Pan": {
+        "X": 0,
+        "Y": 0
+      },
+      "Roll": 0,
+      "Zoom": 3.75,
+      "FoV": 0,
+      "PositionOffset": {
+        "X": 7.6293945E-06,
+        "Y": -1.04904175E-05,
+        "Z": 0
+      },
+      "TargetOffset": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "WorldPosition": {
+        "X": 93.33802,
+        "Y": 3.5363812,
+        "Z": -134.79796
+      },
+      "FixedPosition": null,
+      "Position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "Rotation": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "TargetActorName": "",
+      "IsTargetLocked": false
+    }
+  ],
+  "manual": {
+    "inactive_and_active_after_load": {
+      "view": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": -121.78083,
+          "Y": -72.41226,
+          "Z": 82.58858
+        },
+        "X": {
+          "X": 0.9733128,
+          "Y": -0.14565535,
+          "Z": 0.17733192,
+          "W": 0
+        },
+        "Y": {
+          "X": 9.64167E-09,
+          "Y": 0.77274793,
+          "Z": 0.634713,
+          "W": 0
+        },
+        "Z": {
+          "X": -0.22948223,
+          "Y": -0.6177743,
+          "Z": 0.7521255,
+          "W": 0
+        },
+        "W": {
+          "X": -121.78083,
+          "Y": -72.41226,
+          "Z": 82.58858,
+          "W": 1
+        },
+        "M11": 0.9733128,
+        "M12": -0.14565535,
+        "M13": 0.17733192,
+        "M14": 0,
+        "M21": 9.64167E-09,
+        "M22": 0.77274793,
+        "M23": 0.634713,
+        "M24": 0,
+        "M31": -0.22948223,
+        "M32": -0.6177743,
+        "M33": 0.7521255,
+        "M34": 0,
+        "M41": -121.78083,
+        "M42": -72.41226,
+        "M43": 82.58858,
+        "M44": 1
+      },
+      "projection": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573
+        },
+        "X": {
+          "X": 1.0183668,
+          "Y": 0,
+          "Z": 0,
+          "W": 0
+        },
+        "Y": {
+          "X": 0,
+          "Y": 2.432765,
+          "Z": 0,
+          "W": 0
+        },
+        "Z": {
+          "X": 0,
+          "Y": 0,
+          "Z": -1.0000572,
+          "W": -1
+        },
+        "W": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573,
+          "W": 0
+        },
+        "M11": 1.0183668,
+        "M12": 0,
+        "M13": 0,
+        "M14": 0,
+        "M21": 0,
+        "M22": 2.432765,
+        "M23": 0,
+        "M24": 0,
+        "M31": 0,
+        "M32": 0,
+        "M33": -1.0000572,
+        "M34": -1,
+        "M41": 0,
+        "M42": 0,
+        "M43": -0.20000573,
+        "M44": 0
+      },
+      "cameras": [
+        {
+          "id": "47b60df2d6c848a992188691141fcfb4@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": true,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363927,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "66798a1e8fc6450393ef71610e7d60d5@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154515,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 8,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 94.14113,
+            "Y": 5.9478545,
+            "Z": -131.39174
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "a8a6a483849541f8a45d6e0559c21708@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": true,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 7.6293945E-06,
+            "Y": -1.04904175E-05,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363812,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        }
+      ]
+    },
+    "resave_roundtrip": {
+      "view": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": -121.78083,
+          "Y": -72.41226,
+          "Z": 82.58858
+        },
+        "X": {
+          "X": 0.9733128,
+          "Y": -0.14565535,
+          "Z": 0.17733192,
+          "W": 0
+        },
+        "Y": {
+          "X": 9.64167E-09,
+          "Y": 0.77274793,
+          "Z": 0.634713,
+          "W": 0
+        },
+        "Z": {
+          "X": -0.22948223,
+          "Y": -0.6177743,
+          "Z": 0.7521255,
+          "W": 0
+        },
+        "W": {
+          "X": -121.78083,
+          "Y": -72.41226,
+          "Z": 82.58858,
+          "W": 1
+        },
+        "M11": 0.9733128,
+        "M12": -0.14565535,
+        "M13": 0.17733192,
+        "M14": 0,
+        "M21": 9.64167E-09,
+        "M22": 0.77274793,
+        "M23": 0.634713,
+        "M24": 0,
+        "M31": -0.22948223,
+        "M32": -0.6177743,
+        "M33": 0.7521255,
+        "M34": 0,
+        "M41": -121.78083,
+        "M42": -72.41226,
+        "M43": 82.58858,
+        "M44": 1
+      },
+      "projection": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573
+        },
+        "X": {
+          "X": 1.0183668,
+          "Y": 0,
+          "Z": 0,
+          "W": 0
+        },
+        "Y": {
+          "X": 0,
+          "Y": 2.432765,
+          "Z": 0,
+          "W": 0
+        },
+        "Z": {
+          "X": 0,
+          "Y": 0,
+          "Z": -1.0000572,
+          "W": -1
+        },
+        "W": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573,
+          "W": 0
+        },
+        "M11": 1.0183668,
+        "M12": 0,
+        "M13": 0,
+        "M14": 0,
+        "M21": 0,
+        "M22": 2.432765,
+        "M23": 0,
+        "M24": 0,
+        "M31": 0,
+        "M32": 0,
+        "M33": -1.0000572,
+        "M34": -1,
+        "M41": 0,
+        "M42": 0,
+        "M43": -0.20000573,
+        "M44": 0
+      },
+      "cameras": [
+        {
+          "id": "47b60df2d6c848a992188691141fcfb4@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": true,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363812,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "99745be428424ce39e8deee2f7449ee6@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363927,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "9f83024a26904d91845e977bfcc59e5d@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154515,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 8,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 94.14113,
+            "Y": 5.9478545,
+            "Z": -131.39174
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "bcc87d88c9714ca6bb9d54e0631f8abb@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": true,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 7.6293945E-06,
+            "Y": -1.4305115E-05,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363812,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        }
+      ]
+    },
+    "zoom_still_moves": {
+      "id": "bcc87d88c9714ca6bb9d54e0631f8abb@0",
+      "Name": "Main Camera",
+      "Kind": 0,
+      "IsDefault": false,
+      "IsLive": true,
+      "IsLocked": false,
+      "MovementEnabled": true,
+      "MovementSpeed": 0.03,
+      "MouseSensitivity": 0.1,
+      "Angle": {
+        "X": 0.23154438,
+        "Y": -0.6033455
+      },
+      "Pan": {
+        "X": 0,
+        "Y": 0
+      },
+      "Roll": 0,
+      "Zoom": 5,
+      "FoV": 0,
+      "PositionOffset": {
+        "X": 7.6293945E-06,
+        "Y": -1.4305115E-05,
+        "Z": 0
+      },
+      "TargetOffset": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "WorldPosition": {
+        "X": 93.57423,
+        "Y": 4.2456326,
+        "Z": -133.79611
+      },
+      "FixedPosition": null,
+      "Position": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "Rotation": {
+        "X": 0,
+        "Y": 0,
+        "Z": 0
+      },
+      "TargetActorName": "",
+      "IsTargetLocked": false
+    },
+    "free_active_roundtrip": {
+      "view": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": -121.780785,
+          "Y": -71.35152,
+          "Z": 82.18248
+        },
+        "X": {
+          "X": 0.9733129,
+          "Y": -0.14357284,
+          "Z": 0.17902169,
+          "W": 0
+        },
+        "Y": {
+          "X": -1.1624582E-08,
+          "Y": 0.7801125,
+          "Z": 0.6256392,
+          "W": 0
+        },
+        "Z": {
+          "X": -0.22948185,
+          "Y": -0.6089427,
+          "Z": 0.7592936,
+          "W": 0
+        },
+        "W": {
+          "X": -121.780785,
+          "Y": -71.35152,
+          "Z": 82.18248,
+          "W": 1
+        },
+        "M11": 0.9733129,
+        "M12": -0.14357284,
+        "M13": 0.17902169,
+        "M14": 0,
+        "M21": -1.1624582E-08,
+        "M22": 0.7801125,
+        "M23": 0.6256392,
+        "M24": 0,
+        "M31": -0.22948185,
+        "M32": -0.6089427,
+        "M33": 0.7592936,
+        "M34": 0,
+        "M41": -121.780785,
+        "M42": -71.35152,
+        "M43": 82.18248,
+        "M44": 1
+      },
+      "projection": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573
+        },
+        "X": {
+          "X": 1.0183668,
+          "Y": 0,
+          "Z": 0,
+          "W": 0
+        },
+        "Y": {
+          "X": 0,
+          "Y": 2.432765,
+          "Z": 0,
+          "W": 0
+        },
+        "Z": {
+          "X": 0,
+          "Y": 0,
+          "Z": -1.0000572,
+          "W": -1
+        },
+        "W": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573,
+          "W": 0
+        },
+        "M11": 1.0183668,
+        "M12": 0,
+        "M13": 0,
+        "M14": 0,
+        "M21": 0,
+        "M22": 2.432765,
+        "M23": 0,
+        "M24": 0,
+        "M31": 0,
+        "M32": 0,
+        "M33": -1.0000572,
+        "M34": -1,
+        "M41": 0,
+        "M42": 0,
+        "M43": -0.20000573,
+        "M44": 0
+      },
+      "cameras": [
+        {
+          "id": "47b60df2d6c848a992188691141fcfb4@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": true,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "bcb087831a4241c0a6913966e3d855aa@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363812,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "77b97a87cf4b4f7ebcc94bafba701983@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363927,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "a0b7743025c84ec49934314eacdcb992@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154515,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 8,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 94.14113,
+            "Y": 5.9478545,
+            "Z": -131.39174
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "abdb6d3c8dcb46f7833d8d749f40445e@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154438,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 5,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 7.6293945E-06,
+            "Y": -1.4305115E-05,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "14622bfd820e4631ab79d0b69ef7a440@0",
+          "Name": "Free camera 1",
+          "Kind": 1,
+          "IsDefault": false,
+          "IsLive": true,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154438,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 1.4901161E-08,
+          "Zoom": 5,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "Rotation": {
+            "X": 0.2315453,
+            "Y": 0.67595065,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        }
+      ]
+    }
+  },
+  "autosave": {
+    "snapshot": {
+      "status": "Written",
+      "Detail": "Snapshotted 1 actors, 0 objects, 0 lights and 6 cameras.",
+      "Path": "C:\\Users\\Midona\\AppData\\Roaming\\XIVLauncher\\pluginConfigs\\Poser\\SceneAutoSaves\\2026-11-08\\21-36-19 Scene.xivs",
+      "evidence": []
+    },
+    "before": {
+      "view": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": -109.75068,
+          "Y": -88.74901,
+          "Z": 82.18248
+        },
+        "X": {
+          "X": 0.9838389,
+          "Y": 0.003489375,
+          "Z": 0.17902169,
+          "W": 0
+        },
+        "Y": {
+          "X": -0.11657855,
+          "Y": 0.7713527,
+          "Z": 0.6256392,
+          "W": 0
+        },
+        "Z": {
+          "X": -0.13590577,
+          "Y": -0.63639826,
+          "Z": 0.7592936,
+          "W": 0
+        },
+        "W": {
+          "X": -109.75068,
+          "Y": -88.74901,
+          "Z": 82.18248,
+          "W": 1
+        },
+        "M11": 0.9838389,
+        "M12": 0.003489375,
+        "M13": 0.17902169,
+        "M14": 0,
+        "M21": -0.11657855,
+        "M22": 0.7713527,
+        "M23": 0.6256392,
+        "M24": 0,
+        "M31": -0.13590577,
+        "M32": -0.63639826,
+        "M33": 0.7592936,
+        "M34": 0,
+        "M41": -109.75068,
+        "M42": -88.74901,
+        "M43": 82.18248,
+        "M44": 1
+      },
+      "projection": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573
+        },
+        "X": {
+          "X": 1.0183668,
+          "Y": 0,
+          "Z": 0,
+          "W": 0
+        },
+        "Y": {
+          "X": 0,
+          "Y": 2.432765,
+          "Z": 0,
+          "W": 0
+        },
+        "Z": {
+          "X": 0,
+          "Y": 0,
+          "Z": -1.0000572,
+          "W": -1
+        },
+        "W": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573,
+          "W": 0
+        },
+        "M11": 1.0183668,
+        "M12": 0,
+        "M13": 0,
+        "M14": 0,
+        "M21": 0,
+        "M22": 2.432765,
+        "M23": 0,
+        "M24": 0,
+        "M31": 0,
+        "M32": 0,
+        "M33": -1.0000572,
+        "M34": -1,
+        "M41": 0,
+        "M42": 0,
+        "M43": -0.20000573,
+        "M44": 0
+      },
+      "cameras": [
+        {
+          "id": "47b60df2d6c848a992188691141fcfb4@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": true,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "bcb087831a4241c0a6913966e3d855aa@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363812,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "77b97a87cf4b4f7ebcc94bafba701983@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363927,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "a0b7743025c84ec49934314eacdcb992@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154515,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 8,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 94.14113,
+            "Y": 5.9478545,
+            "Z": -131.39174
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "abdb6d3c8dcb46f7833d8d749f40445e@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154438,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 5,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 7.6293945E-06,
+            "Y": -1.4305115E-05,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "14622bfd820e4631ab79d0b69ef7a440@0",
+          "Name": "Free camera 1",
+          "Kind": 1,
+          "IsDefault": false,
+          "IsLive": true,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154438,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0.15,
+          "Zoom": 5,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "Rotation": {
+            "X": 0.2315453,
+            "Y": 0.67595065,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        }
+      ]
+    },
+    "after": {
+      "view": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": -109.75068,
+          "Y": -88.74901,
+          "Z": 82.18248
+        },
+        "X": {
+          "X": 0.9838389,
+          "Y": 0.003489375,
+          "Z": 0.17902169,
+          "W": 0
+        },
+        "Y": {
+          "X": -0.11657855,
+          "Y": 0.7713527,
+          "Z": 0.6256392,
+          "W": 0
+        },
+        "Z": {
+          "X": -0.13590577,
+          "Y": -0.63639826,
+          "Z": 0.7592936,
+          "W": 0
+        },
+        "W": {
+          "X": -109.75068,
+          "Y": -88.74901,
+          "Z": 82.18248,
+          "W": 1
+        },
+        "M11": 0.9838389,
+        "M12": 0.003489375,
+        "M13": 0.17902169,
+        "M14": 0,
+        "M21": -0.11657855,
+        "M22": 0.7713527,
+        "M23": 0.6256392,
+        "M24": 0,
+        "M31": -0.13590577,
+        "M32": -0.63639826,
+        "M33": 0.7592936,
+        "M34": 0,
+        "M41": -109.75068,
+        "M42": -88.74901,
+        "M43": 82.18248,
+        "M44": 1
+      },
+      "projection": {
+        "IsIdentity": false,
+        "Translation": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573
+        },
+        "X": {
+          "X": 1.0183668,
+          "Y": 0,
+          "Z": 0,
+          "W": 0
+        },
+        "Y": {
+          "X": 0,
+          "Y": 2.432765,
+          "Z": 0,
+          "W": 0
+        },
+        "Z": {
+          "X": 0,
+          "Y": 0,
+          "Z": -1.0000572,
+          "W": -1
+        },
+        "W": {
+          "X": 0,
+          "Y": 0,
+          "Z": -0.20000573,
+          "W": 0
+        },
+        "M11": 1.0183668,
+        "M12": 0,
+        "M13": 0,
+        "M14": 0,
+        "M21": 0,
+        "M22": 2.432765,
+        "M23": 0,
+        "M24": 0,
+        "M31": 0,
+        "M32": 0,
+        "M33": -1.0000572,
+        "M34": -1,
+        "M41": 0,
+        "M42": 0,
+        "M43": -0.20000573,
+        "M44": 0
+      },
+      "cameras": [
+        {
+          "id": "47b60df2d6c848a992188691141fcfb4@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": true,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "aca3ae7400a74f97baed59ddebff9343@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "0fa7ac54b0bd4beb8be0f4426257c14e@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363812,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "00951ca925664bacae15939304c0f6fc@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154567,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 3.75,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.33802,
+            "Y": 3.5363927,
+            "Z": -134.79796
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "6da8925f0efd45e2a322f4a9ab984a25@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154515,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 8,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 94.14113,
+            "Y": 5.9478545,
+            "Z": -131.39174
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "c39e882a4af144b18b145a3abf5b2da4@0",
+          "Name": "Main Camera",
+          "Kind": 0,
+          "IsDefault": false,
+          "IsLive": false,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154438,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0,
+          "Zoom": 5,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 7.6293945E-06,
+            "Y": -1.4305115E-05,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        },
+        {
+          "id": "30af9442d5ba4416a17dad1d8bc63b39@0",
+          "Name": "Free camera 1",
+          "Kind": 1,
+          "IsDefault": false,
+          "IsLive": true,
+          "IsLocked": false,
+          "MovementEnabled": true,
+          "MovementSpeed": 0.03,
+          "MouseSensitivity": 0.1,
+          "Angle": {
+            "X": 0.23154438,
+            "Y": -0.6033455
+          },
+          "Pan": {
+            "X": 0,
+            "Y": 0
+          },
+          "Roll": 0.15,
+          "Zoom": 5,
+          "FoV": 0,
+          "PositionOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "TargetOffset": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "WorldPosition": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "FixedPosition": null,
+          "Position": {
+            "X": 93.57423,
+            "Y": 4.2456326,
+            "Z": -133.79611
+          },
+          "Rotation": {
+            "X": 0.2315453,
+            "Y": 0.67595065,
+            "Z": 0
+          },
+          "TargetActorName": "",
+          "IsTargetLocked": false
+        }
+      ]
+    },
+    "positionError": 0.0
+  }
+}
