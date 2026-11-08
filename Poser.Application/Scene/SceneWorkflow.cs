@@ -389,12 +389,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 return;
             }
 
-            // Store world objects as spawned copies so loading does not depend
-            // on finding the same borrowed objects in the current map.
-            if (scene.WorldObjects != null)
-                foreach (var spawnable in scene.WorldObjects)
-                    spawnable.Spawned = true;
-
             SceneSaveNarrowing.ApplyEntryName(scene, options.EntryName);
 
             // Build appearance packages before the policy removes failed packages.

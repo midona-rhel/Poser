@@ -1200,6 +1200,11 @@ public sealed class SceneWorkflowTests
         Assert.Contains("1 object", load.Progress!.Outcome!.Detail);
         Assert.DoesNotContain("0 objects", load.Progress.Outcome.Detail);
         Assert.False(scene.WorldObjects[0].Spawned);
+        runtime.CapturedScene = () => scene;
+        Assert.True(load.BeginSave("saved-housing.xivs").Success);
+        await load.Drain;
+        AssertApplied(load);
+        Assert.False(scene.WorldObjects[0].Spawned);
     }
 
     [Fact]
