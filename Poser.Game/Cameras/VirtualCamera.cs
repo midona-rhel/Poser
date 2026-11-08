@@ -177,7 +177,8 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
             // that the update hook will apply when this camera becomes live.
             if (FixedPosition is { } pinned)
                 return pinned + PositionOffset + TargetOffset;
-            return _lastWorldPosition;
+            // A loaded camera keeps its saved position until its first live update.
+            return PendingOrbitPosition ?? _lastWorldPosition;
         }
     }
 

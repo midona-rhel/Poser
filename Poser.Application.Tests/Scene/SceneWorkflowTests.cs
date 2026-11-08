@@ -40,6 +40,18 @@ public sealed class SceneWorkflowTests
         Assert.Contains("CreateCamera", runtime.Calls);
         Assert.DoesNotContain("ApplyDefaultCamera", runtime.Calls);
         Assert.NotNull(runtime.LastLiveCamera);
+
+        scene.Actors.Add(Actor("Subject", out var subject));
+        scene.Cameras[0].TargetActorKey = subject;
+        scene.Cameras[0].TargetActorName = "Subject";
+        var unavailableTarget = new FakeRuntime { ReadResult = scene };
+        using var partialLoad = Workflow(unavailableTarget);
+        Assert.True(partialLoad.BeginLoad("autosave.xivs",
+            new SceneLoadOptions { IncludeActors = false }).Success);
+        await partialLoad.Drain;
+        Assert.NotNull(unavailableTarget.LastLiveCamera);
+        Assert.Contains(partialLoad.Progress!.Outcome!.Entities,
+            result => result.Kind == SceneOutcomeKind.Camera && !result.Restored);
     }
 
     private sealed class ParentRuntime : IParentingRuntime

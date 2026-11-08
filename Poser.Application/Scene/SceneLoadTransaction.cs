@@ -814,13 +814,13 @@ internal sealed class SceneLoadTransaction(
                     continue;
                 }
 
+                if (camera.IsLive)
+                    liveCamera = token;
+
                 if (camera.TargetActorKey is { } targetKey)
                 {
-                    // The document validated this reference; it can only
-                    // miss here if the target actor never drew or this
-                    // load was told to leave the actors out — then the
-                    // camera is restored and its target refused BY NAME.
-                    if (!_actorTokens.ContainsKey(targetKey))
+                    // Loading cameras without actors still restores the saved view.
+                    if (!_actorTokens.TryGetValue(targetKey, out var targetActor))
                     {
                         _entities.Add(new SceneEntityOutcome(
                             SceneOutcomeKind.Camera, camera.Camera!.Name, false,
@@ -830,7 +830,7 @@ internal sealed class SceneLoadTransaction(
                         continue;
                     }
                     var targetDetail = materializer.SetCameraTarget(
-                        token, _actorTokens[targetKey],
+                        token, targetActor,
                         camera.TargetActorName, camera.IsTargetLocked);
                     if (targetDetail != null)
                     {
@@ -842,10 +842,6 @@ internal sealed class SceneLoadTransaction(
                     }
                 }
 
-                if (camera.IsLive)
-                {
-                    liveCamera = token;
-                }
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.Camera, camera.Camera!.Name, true));
                 _done++;

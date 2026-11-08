@@ -119,6 +119,7 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
             TargetOffset = new System.Numerics.Vector3(2, 0, 0),
         };
         var nativeEye = new System.Numerics.Vector3(3, 4, 5);
+        Assert.Equal(camera.PendingOrbitPosition, CameraDocument.CaptureScene(camera).OrbitPosition);
         camera.RestoreOrbitPosition(nativeEye);
         Assert.Equal(new System.Numerics.Vector3(20, 5, 10),
             nativeEye + camera.PositionOffset + camera.TargetOffset);
