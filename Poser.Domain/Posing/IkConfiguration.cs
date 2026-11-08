@@ -10,9 +10,7 @@ public enum IkSolver
     /// Solves a chain by repeatedly reaching from its tip toward its root and back.
     /// </summary>
     Fabrik,
-    /// <summary>A rope: both ends known, the links' total length fixed,
-    /// the slack hanging as a catenary in the vertical plane through the
-    /// ends; straight when the ends are further apart than the rope.</summary>
+    /// <summary>Keeps the chain's length and lets slack hang between its ends.</summary>
     Rope,
 }
 
@@ -183,7 +181,7 @@ public sealed record IkChainConfig(
     }
 
     /// <summary>
-    /// Default arm or leg settings, including Two Joint and enabled end rotation.
+    /// Default arm or leg settings: Two Joint with the hand or foot rotation held in place.
     /// </summary>
     public static IkChainConfig DefaultsFor(bool isArm, bool enabled = false) => new(
         Enabled: enabled,
@@ -223,13 +221,6 @@ public sealed record IkChainDefinition
         string? SecondTwist,
         bool IsArm)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(Endpoint);
-        ArgumentNullException.ThrowIfNull(EndpointAliases);
-        if (EndpointAliases.Any(string.IsNullOrWhiteSpace))
-            throw new ArgumentException(
-                "IK endpoint aliases cannot be blank.",
-                nameof(EndpointAliases));
-
         this.Endpoint = Endpoint;
         this.EndpointAliases = Array.AsReadOnly(EndpointAliases.ToArray());
         this.FirstJoint = FirstJoint;

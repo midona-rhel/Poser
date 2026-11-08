@@ -103,6 +103,8 @@ internal sealed unsafe class IkHeldTargets
         IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null,
         bool useSolveFrame = false)
     {
+        if (useSolveFrame && ik.SolveTarget is { } lastTarget)
+            return lastTarget;
         if (pose != null && !ik.PreviewModelSpace
             && (ik.SeatPending || ik.Config.ActorAnchor is { Unseated: true }))
             Seat(ik, endpoint, authoredPosition, authoredRotation, pose);
@@ -116,8 +118,10 @@ internal sealed unsafe class IkHeldTargets
                     * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } actorAnchor })
         {
-            return actorAnchor.Resolve(authoredPosition, authoredRotation,
+            var actorTarget = actorAnchor.Resolve(authoredPosition, authoredRotation,
                 useSolveFrame ? ik.SolveParentFrame : ActorParentFrame(endpoint, actorAnchor, pose));
+            if (pose != null) ik.SolveTarget = actorTarget;
+            return actorTarget;
         }
         Vector3 worldPosition;
         Quaternion worldRotation;
@@ -154,10 +158,7 @@ internal sealed unsafe class IkHeldTargets
         if (!Matrix4x4.Invert(modelFrame.ToMatrix(), out var toModel)) return null;
         var position = Vector3.Transform(worldPosition, toModel)
             + (authoredPosition - capture.Translation);
-        // System.Numerics quaternion products apply rotations right-to-left: the world rotation is
-        // frame * model (model first, then the actor's frame), so model =
-        // frame⁻¹ * world. The authored turn since capture rides on the
-        // end, where the delta stack puts it.
+        // Remove the actor's world rotation, then apply the bone's edits since capture.
         var frame = modelFrame.Rotation;
         if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(frame) || frame.LengthSquared() < 1e-6f)
             return null;
@@ -166,6 +167,7 @@ internal sealed unsafe class IkHeldTargets
             * Quaternion.Inverse(capture.RotationDelta) * authoredRotation);
         if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(position) || !global::Poser.Domain.Transforms.TransformMath.IsFinite(rotation))
             return null;
+        if (pose != null) ik.SolveTarget = (position, rotation);
         return (position, rotation);
     }
 
@@ -179,8 +181,7 @@ internal sealed unsafe class IkHeldTargets
         if (native == null)
             return;
         var end = BoneApplyPass.ReadTransform(native);
-        // The solve holds back the IK offset the displayed pose applies as a
-        // move (a chain enabled again after a drag); the target keeps it.
+        // Include the existing handle offset when enabling IK after a drag.
         var target = ik.PendingRetarget?.Position ?? end.Position + authoredPosition;
         var rotation = ik.PendingRetarget?.Rotation ?? end.Rotation;
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
@@ -199,8 +200,7 @@ internal sealed unsafe class IkHeldTargets
             ik.SeatPending = false;
             return;
         }
-        // World, Bone, Entity: shift the capture so it resolves onto the end bone.
-        // The resolve below must not seat again.
+        // Resolve once without entering Seat again, then adjust the captured offset.
         ik.SeatPending = false;
         if (ik.HeldCapture is not { } capture
             || ResolveHeld(ik, endpoint, authoredPosition, authoredRotation, pose) is not { } resolved)

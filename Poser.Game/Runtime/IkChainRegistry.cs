@@ -40,6 +40,7 @@ internal sealed class IkChainState
     public bool SeatPending;
     // A target change keeps this solver-space point until its new anchor is read during evaluation.
     public (Vector3 Position, Quaternion Rotation)? PendingRetarget;
+    public (Vector3 Position, Quaternion Rotation)? SolveTarget;
     /// <summary>World, Bone, Entity: the first bone above the chain and its frame
     /// as the last solve saw it, so a displayed drag converts into the solve's
     /// frame (Customize+ scales the body after the solve).</summary>
@@ -247,6 +248,7 @@ internal sealed unsafe partial class IkChainRegistry
         state.Config = config.Normalized();
         state.SeatPending = false;
         state.PendingRetarget = null;
+        state.SolveTarget = null;
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
         {
             state.HeldCapture = config.ActorAnchor is { } actorAnchor
@@ -429,15 +431,7 @@ internal sealed unsafe partial class IkChainRegistry
         return definition != null && ResolveChain(bone, definition).TwoJointAvailable;
     }
 
-    public void ClearIkConfigurations(ISkeleton skeleton)
-    {
-        var key = SkeletonKey.Of(skeleton);
-        foreach (var chainKey in _ikChains.Keys
-                     .Where(chainKey => chainKey.Skeleton == key)
-                     .ToArray())
-            if (_ikChains.Remove(chainKey, out var chain)) chain.CollisionState.Dispose();
-
-    }
+    public void ClearIkConfigurations(ISkeleton skeleton) => Purge(SkeletonKey.Of(skeleton));
 
     public bool HasEnabledChains(SkeletonKey key)
     {
@@ -452,7 +446,7 @@ internal sealed unsafe partial class IkChainRegistry
     private static (SkeletonKey Skeleton, int Partial, int Bone) ChainKey(IBone bone) =>
         (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex);
 
-    /// <summary>Resolves the chain inside the endpoint's OWN skeleton and
+    /// <summary>Resolves the chain inside the endpoint's skeleton and
     /// partial; missing optional twists resolve to native index -1 and a
     /// missing mandatory joint makes Two Joint unavailable.</summary>
     private static Poser.Domain.Posing.IkResolvedChain ResolveChain(
