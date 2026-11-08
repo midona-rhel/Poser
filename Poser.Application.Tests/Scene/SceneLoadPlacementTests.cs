@@ -23,6 +23,10 @@ public sealed class SceneLoadPlacementTests
     public void An_entry_without_a_saved_anchor_lands_its_centre_on_the_current_anchor()
     {
         var scene = TwoProps();
+        scene.Cameras.Add(new SceneCamera
+        {
+            Key = Guid.NewGuid(), Camera = new CameraFile { OrbitPosition = new Vector3(15, 0, 0) },
+        });
         var notes = new List<string>();
         var options = new SceneLoadOptions
         {
@@ -34,6 +38,7 @@ public sealed class SceneLoadPlacementTests
 
         Assert.Equal(new Vector3(-5, 0, 5), scene.Props[0].Transform.Position);
         Assert.Equal(new Vector3(5, 0, 5), scene.Props[1].Transform.Position);
+        Assert.Equal(new Vector3(0, 0, 5), scene.Cameras[0].Camera!.OrbitPosition);
         Assert.Equal(
             new[]
             {

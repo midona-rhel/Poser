@@ -114,7 +114,7 @@ public sealed class CameraPane
     public void OpenLoad()
     {
         _folder.Open(_loadBrowser, path => _scenePane.LoadEntry(
-            path, global::Poser.Domain.Scene.ObjectPlacementMode.AsSaved));
+            path, _configuration.Config.DefaultSpawnPlacement));
     }
 
     /// <summary>Frames one exact actor through the live orbit camera. The

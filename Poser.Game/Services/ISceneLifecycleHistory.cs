@@ -22,7 +22,7 @@ public interface ISceneLifecycleHistory
     void DestroyCamera(IVirtualCamera camera);
     IActor? SpawnActor(string description, Func<IActor?> spawn, IActor? source = null, string? name = null);
     void WhenPosable(IActor actor, Action<IActor> act);
-    IActor? SpawnActorWithPose( string description, Func<IActor?> spawn, IActor source);
+    IActor? SpawnActorWithPose( string description, Func<IActor?> spawn, IActor source, System.Numerics.Vector3? position = null);
     bool DespawnActor(IActor actor);
     bool DespawnActor(IActor actor, out string? note);
     object? SpawnProp();

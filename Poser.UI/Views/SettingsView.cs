@@ -623,11 +623,11 @@ public static partial class SettingsView
         }, divider: false);
         page.Section("Spawning", form =>
             form.Dropdown(
-                "Library entries land",
+                "Placement",
                 SpawnPlacementLabels,
                 vm.DefaultSpawnPlacement,
                 next => vm.DefaultSpawnPlacement = next,
-                help: "Where an actor, object or scene from the library appears when you load it"));
+                help: "Where new entities, duplicates and loaded files appear. Scenes saved on this map default to As saved."));
         page.Section("Auto-save", form =>
         {
             bool saving = vm.AutoSaveEnabled;

@@ -24,7 +24,8 @@ public interface ISceneCreation
     SceneCreationResult CreateProp(PropModel? model = null);
     SceneCreationResult CreateOverlay(OverlayNodeKind kind);
     SceneCreationResult CreateCollider(IkColliderShape shape);
-    SceneCreationResult CreateWorldObject(string path, PoseTransform placement);
+    SceneCreationResult CreateWorldObject(string path);
     SceneCreationResult Duplicate(SelectionId source, bool withPose = false);
+    IReadOnlyDictionary<SelectionId, SceneCreationResult> DuplicateMany(IReadOnlyList<SelectionId> sources, bool withPose = false);
     SelectionId? Resolve(SceneEntityHandle handle, bool requirePose = false);
 }

@@ -9,8 +9,7 @@ namespace Poser.Application.Library;
 public interface ILibrarySceneActions
 {
     Outcome LoadScene(string path, ObjectPlacementMode placement);
-    Outcome SpawnEntry(string path, PoseLibraryEntryKind kind, ObjectPlacementMode placement,
-        bool fallbackToSaved = false);
+    Outcome SpawnEntry(string path, PoseLibraryEntryKind kind, ObjectPlacementMode placement);
     Outcome SpawnPose(string path, PoseImportOptions options);
 }
 
@@ -29,19 +28,17 @@ public sealed class LibrarySceneActions(
         return scenes.BeginLoad(path, options);
     }
 
-    public Outcome SpawnEntry(string path, PoseLibraryEntryKind kind, ObjectPlacementMode placement,
-        bool fallbackToSaved = false)
+    public Outcome SpawnEntry(string path, PoseLibraryEntryKind kind, ObjectPlacementMode placement)
     {
-        // Adding a saved entry must not clear the scene, even if the user enabled
-        // that option for full-scene loads. Overlays and environment need no anchor.
+        // Entry loads add to the scene. The full-scene clear option stays separate.
         var options = new SceneLoadOptions();
         if (kind == PoseLibraryEntryKind.Overlay)
             options = SceneLoadOptions.Only(SceneCategories.Overlays);
         else if (kind == PoseLibraryEntryKind.Environment)
-            options = SceneLoadOptions.Only(SceneCategories.Environment);
-        else if (anchors.TryCurrentFor(placement, out var position, out var yaw, out var refusal))
+            return scenes.BeginLoad(path, SceneLoadOptions.Only(SceneCategories.Environment));
+        if (anchors.TryCurrentFor(placement, out var position, out var yaw, out var refusal))
             options = options with { Placement = placement, PlacementPosition = position, PlacementYaw = yaw };
-        else if (!fallbackToSaved)
+        else
             return Outcome.Fail(refusal ?? "The placement anchor is unavailable.");
         return scenes.BeginLoad(path, options);
     }

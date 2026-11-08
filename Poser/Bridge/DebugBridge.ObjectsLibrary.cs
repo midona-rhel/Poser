@@ -227,18 +227,13 @@ public sealed partial class DebugBridge
             if (!Enum.TryParse<ObjectPlacementMode>(query.GetValueOrDefault("placement", "AsSaved"), true,
                     out var placement) || !Enum.IsDefined(placement))
                 return new { accepted = false, outcome = "Refused", reason = "Unknown placement mode.", path };
-            bool fallbackToSaved = false;
-            if (query.TryGetValue("fallbackToSaved", out var fallback)
-                && !TryBoolean(fallback, out fallbackToSaved))
-                return new { accepted = false, outcome = "Refused",
-                    reason = "fallbackToSaved must be true, false, 1 or 0.", path };
             var before = ParentProbeEntities().Select(entity => entity.Id.ToString()).ToHashSet();
-            var result = BridgeLibraryActions.SpawnEntry(path, kind, placement, fallbackToSaved);
+            var result = BridgeLibraryActions.SpawnEntry(path, kind, placement);
             // Loading is asynchronous. The caller polls /scene and diffs /parenting;
             // IDs cannot truthfully be reported before the production load commits.
             return new { accepted = result.Success, path, kind = kind.ToString(),
                 outcome = result.Success ? "Pending" : "Refused", reason = result.Detail,
-                placement = placement.ToString(), fallbackToSaved,
+                placement = placement.ToString(),
                 existingStableIds = before.ToArray() };
         }
         return new { accepted = false, outcome = "Refused", reason = "Unknown library-entry action.", path };

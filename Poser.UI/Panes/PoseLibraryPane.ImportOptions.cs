@@ -48,7 +48,8 @@ public sealed partial class PoseLibraryPane
                 {
                     if (IsSceneTile(_vm.Selected) && _vm.Selected >= 0)
                         _scenePreferences.SetPlacement(_vm.Tiles[_vm.Selected].Id, _placementChoices[next]);
-                    else _placement.Mode = _placementChoices[next];
+                    _config.Config.DefaultSpawnPlacement = _placementChoices[next];
+                    _config.Save();
                 }
             };
         }

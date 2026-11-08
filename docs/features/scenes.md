@@ -58,7 +58,7 @@ Loading only selected categories skips links whose endpoints were not restored,
 leaving the admitted child at its saved placement. Screen overlays cannot be
 endpoints; scene validation rejects those links before any native creation.
 Generated body colliders use this contract; Detach makes an individual part static.
-Duplicating an entity retains its parent and local offset as part of the
+Duplicating an entity retains its parent, adjusting the offset if placement moves it, as part of the
 creation history entry, alongside its copied properties.
 
 ## Lifecycle history
@@ -605,3 +605,20 @@ outside scene save and load.
 Poser intentionally keeps absolute stored values and additive default loading,
 while Brio and Ktisis use destructive best-effort loads. These are deliberate
 compatibility choices, not claims about the other formats.
+
+## Placement when adding entities
+
+The Placement setting is shared by the Library, file dialogs and spawn menu.
+It also applies to duplicates and actors created from MCDFs. Changing it in
+Settings or a load control changes the same saved preference.
+
+As saved keeps file positions and duplicate positions; new entities use their
+usual starting position. In front of camera places content three metres ahead.
+Relative modes keep a file's saved camera or actor offset. New entities have no
+saved anchor, so they land at the current camera or selected actor. Group copies
+keep their spacing and move their centre to the chosen position. Screen overlays
+keep their screen coordinates; colliders use world placement.
+
+Full scenes saved on the current map still default to As saved. A scene's explicit
+placement choice takes precedence over that map default. Entry loads report a
+missing anchor rather than silently using a different placement mode.

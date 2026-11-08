@@ -176,12 +176,11 @@ public sealed class ScenePane
         _folder.Open(_entryBrowser,
             path => LoadEntry(path, _config.Config.DefaultSpawnPlacement));
 
-    /// <summary>Uses the Library's entry loader and reports errors in this pane.
-    /// File imports keep their saved position when the requested anchor is unavailable.</summary>
+    /// <summary>Uses the Library's placement and entry loader, reporting failures in this pane.</summary>
     public void LoadEntry(string path, global::Poser.Domain.Scene.ObjectPlacementMode mode)
     {
         var result = _libraryScene.SpawnEntry(path,
-            Poser.Documents.Library.LibraryScanner.KindOf(path), mode, fallbackToSaved: true);
+            Poser.Documents.Library.LibraryScanner.KindOf(path), mode);
         if (!result.Success)
             _notices.Refused(result.Detail ?? "The entry could not be loaded.");
     }
@@ -740,7 +739,12 @@ public sealed class ScenePane
         var mode = _preferences.PlacementFor(_loadPath ?? string.Empty, savedTerritory,
             _place.Current.TerritoryId, _config.Config.DefaultSpawnPlacement);
         form.Dropdown("Placement", ScenePlacementLabels, (int)mode,
-            next => { if (_loadPath is { } selected) _preferences.SetPlacement(selected, (ObjectPlacementMode)next); },
+            next =>
+            {
+                if (_loadPath is { } selected) _preferences.SetPlacement(selected, (ObjectPlacementMode)next);
+                _config.Config.DefaultSpawnPlacement = (ObjectPlacementMode)next;
+                _config.Save();
+            },
             help: "Defaults to As saved when this scene was saved on the current map",
             disabled: disabled || _loadPath is null);
     }

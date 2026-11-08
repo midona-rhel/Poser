@@ -518,12 +518,6 @@ internal static class ServiceRegistration
         services.AddStartable<CleanSceneLifecycle>(StartStage.SceneLifecycle);
         services.AddSingleton<Game.Scene.PlacementAnchorSource>();
         services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
-        services.AddSingleton(sp => new global::Poser.Documents.Files.ObjectPlacementPreferences
-        {
-            // The session's live choice starts at the configured default.
-            Mode = sp.GetRequiredService<ConfigurationService>()
-                .Config.DefaultSpawnPlacement,
-        });
         services.AddSingleton<TargetSyncService>();
         services.AddStartable<TargetSyncService>(StartStage.TargetSync);
         services.AddSingleton<Game.Input.GPoseMouseTargetHook>();

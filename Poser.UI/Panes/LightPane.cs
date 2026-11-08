@@ -31,7 +31,7 @@ public sealed class LightPane
     private readonly ISceneCreation _creation;
 
     private readonly EntityActions _entityActions;
-    private readonly ObjectPlacementPreferences _placement;
+    private readonly Poser.Application.Settings.ConfigurationService _configuration;
     private readonly ITransformFacade _cleanTransforms;
     private readonly IViewportReads _viewport;
     private readonly ICameraProjection _camera;
@@ -94,7 +94,7 @@ public sealed class LightPane
         PropertiesContext properties,
         ISceneCreation creation,
         EntityActions entityActions,
-        ObjectPlacementPreferences placement,
+        Poser.Application.Settings.ConfigurationService configuration,
         ITransformFacade cleanTransforms,
         IViewportReads viewport,
         ICameraProjection camera,
@@ -113,7 +113,7 @@ public sealed class LightPane
         _creation = creation;
         _scenePane = scenePane;
         _entityActions = entityActions;
-        _placement = placement;
+        _configuration = configuration;
         _cleanTransforms = cleanTransforms;
         // Placement is selected in the load dialog beside the chosen file.
         _loadBrowser.BottomPanel =
@@ -147,7 +147,7 @@ public sealed class LightPane
     /// <summary>The placement band's labels, positional against
     /// <see cref="ObjectPlacementMode"/>.</summary>
     private static readonly string[] PlacementModeLabels =
-        ["As saved", "Relative to camera", "Relative to actor"];
+        ["As saved", "Relative to camera", "Relative to actor", "In front of camera"];
 
     private const float PlacementBandHeight = 56f;
 
@@ -157,17 +157,12 @@ public sealed class LightPane
         float inset = ActiveTheme.Page.Inset * scale;
         ImGui.SetCursorScreenPos(
             new Vector2(origin.X + inset, origin.Y + inset));
-        SegmentedControl(
-            "##light-placement-mode",
-            PlacementModeLabels,
-            (int)_placement.Mode,
-            next => _placement.Mode = (ObjectPlacementMode)next,
-            itemHelp: index => index switch
-            {
-                1 => "Keeps the saved offset from the camera",
-                2 => "Keeps the saved offset from the selected actor",
-                _ => "Exactly where it was saved",
-            });
+        DropdownWidgets.Dropdown(
+            "##light-placement-mode", PlacementModeLabels,
+            (int)_configuration.Config.DefaultSpawnPlacement,
+            next => { _configuration.Config.DefaultSpawnPlacement = (ObjectPlacementMode)next; _configuration.Save(); },
+            style: new ControlStyle { Width = UiWidth.Region((size.X - inset * 2) / scale) },
+            help: "Placement for new entities, duplicates and loaded files");
     }
 
     /// <summary>Opens the load dialog from outside the pane — the add-entity
@@ -175,7 +170,7 @@ public sealed class LightPane
     public void OpenLoad()
     {
         _folder.Open(_loadBrowser,
-            path => _scenePane.LoadEntry(path, _placement.Mode));
+            path => _scenePane.LoadEntry(path, _configuration.Config.DefaultSpawnPlacement));
     }
 
     /// <summary>

@@ -151,7 +151,7 @@ internal sealed class ActorLifecycleOwner
     /// restore freezes the copy. Later undo/redo uses the state captured at removal.
     /// </summary>
     public IActor? SpawnActorWithPose(
-        string description, Func<IActor?> spawn, IActor source)
+        string description, Func<IActor?> spawn, IActor source, System.Numerics.Vector3? position = null)
     {
         var name = _actors.GetName(source);
         var bodyProfile = _actors.CaptureBodyProfile(source);
@@ -181,8 +181,7 @@ internal sealed class ActorLifecycleOwner
             if (ReferenceEquals(_slots.CurrentInstance(slot), actor))
                 _actors.Restore(actor, captured, () => ReferenceEquals(_slots.CurrentInstance(slot), actor));
         }
-        // Profile shaping establishes the target skeleton's basis. Its
-        // completion is an apply-frame barrier, not merely IPC acceptance.
+        // Restore the pose after the body profile has changed the skeleton.
         bodyProfile?.Invoke(actor, () => { profileReady = true; RestoreWhenReady(); });
         _actors.CapturePoseForCopy(source, captured =>
         {
@@ -191,7 +190,12 @@ internal sealed class ActorLifecycleOwner
                 _actors.Note($"Duplicate: the pose of '{name}' could not be read, so the copy keeps its own pose.");
                 return;
             }
-            posed = captured.Value with { FreezePoseOnRestore = true };
+            posed = captured.Value with
+            {
+                FreezePoseOnRestore = true,
+                Placement = position is { } point
+                    ? captured.Value.Placement with { Position = point } : captured.Value.Placement,
+            };
             RestoreWhenReady();
         });
         return actor;

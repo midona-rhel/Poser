@@ -96,7 +96,7 @@ internal static class SceneLoadPlacement
     }
 
     /// <summary>The average position of placed actors, props, unattached lights,
-    /// spawned world objects, free cameras, and overlay colliders.
+    /// spawned world objects, cameras with a saved position, and overlay colliders.
     /// Returns null when none have a placement.</summary>
     public static Vector3? ContentCentroid(SceneFile scene)
     {
@@ -126,9 +126,13 @@ internal static class SceneLoadPlacement
                 counted++;
             }
         foreach (var camera in scene.Cameras)
-            if (camera.Camera is { Kind: CameraKind.Free } document)
+            if (camera.Camera is { } document)
             {
-                sum += document.Position;
+                Vector3? position = document.Kind == CameraKind.Free ? document.Position
+                    : document.OrbitPosition ?? (document.FixedPosition is { } pin
+                        ? pin + document.PositionOffset + camera.TargetOffset : null);
+                if (position is not { } point) continue;
+                sum += point;
                 counted++;
             }
         foreach (var overlay in scene.Overlays ?? [])

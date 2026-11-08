@@ -75,9 +75,19 @@ public sealed class TransformParenting(IParentingRuntime runtime, EditHistory hi
         _links.Remove(history.ResolveLifecycleEntity(child));
     }
 
-    /// <summary>Creation owns the history entry; a duplicate inherits its source's attachment and offset.</summary>
-    public bool Copy(SelectionId source, SelectionId copy) =>
-        Read(source) is not { } link || Import(copy, Rebind(link)!);
+    /// <summary>Copies the attachment. A repositioned duplicate gets an offset
+    /// that keeps it at its new location.</summary>
+    public bool Copy(SelectionId source, SelectionId copy, bool preserveWorld = false)
+    {
+        if (Rebind(Read(source)) is not { } link) return true;
+        if (preserveWorld)
+        {
+            runtime.BeginRead();
+            if (runtime.Read(copy) is not { } world || runtime.Read(link.Target) is not { } parent) return false;
+            link = link with { Offset = TransformParent.Local(world, parent) };
+        }
+        return Import(copy, link);
+    }
 
     private void Set(SelectionId child, TransformParent? link)
     {

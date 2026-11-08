@@ -203,8 +203,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         _actorOwner.WhenPosable(actor, act);
 
     public IActor? SpawnActorWithPose(
-        string description, Func<IActor?> spawn, IActor source) =>
-        _actorOwner.SpawnActorWithPose(description, spawn, source);
+        string description, Func<IActor?> spawn, IActor source, System.Numerics.Vector3? position = null) =>
+        _actorOwner.SpawnActorWithPose(description, spawn, source, position);
 
     /// <summary>
     /// Removes an owned actor through the shared state capture, regardless of

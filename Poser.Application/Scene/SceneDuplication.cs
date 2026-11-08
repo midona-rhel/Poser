@@ -31,8 +31,8 @@ public sealed class SceneDuplication(
         if (_groups.ActiveSelection(_selection.Selected) is { } group)
             DuplicateGroup(group, withPose);
         else
-            foreach (var id in _selection.Selected.ToArray())
-                DuplicateEntity(id, withPose);
+            foreach (var result in _creation.DuplicateMany(_selection.Selected.ToArray(), withPose).Values)
+                Report(result);
     }
 
     public void DuplicateAndSelect(SelectionId id, bool withPose = false)
@@ -46,8 +46,14 @@ public sealed class SceneDuplication(
     private SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose)
     {
         var result = _creation.Duplicate(id, withPose);
-        if (result.Handle is null) _notices.Failed(result.Detail ?? "The entity could not be duplicated.");
+        Report(result);
         return result.Handle;
+    }
+
+    private void Report(SceneCreationResult result)
+    {
+        if (result.Handle is null)
+            _notices.Failed(result.Detail ?? "The entity could not be duplicated.");
     }
 
     // ── duplicating groups ───────────────────────────────────────────────
@@ -71,13 +77,14 @@ public sealed class SceneDuplication(
 
     private const int GroupCopyPatience = 120;
 
-    /// <summary>Copies the group and everything beneath it into a new
-    /// group with the next name in its series, seated right after the original at the
-    /// same level, gates and all.</summary>
+    /// <summary>Copies the group beside the original in the sidebar, keeping its
+    /// layout, nested groups, visibility and paused state.</summary>
     public void DuplicateGroup(SceneGroup group, bool withPose)
     {
         if (_sessions.ActiveSessionGeneration is not { } session) return;
-        var copy = CopyGroupTree(group, withPose);
+        var copies = _creation.DuplicateMany(_groups.Descendants(group).ToArray(), withPose);
+        foreach (var result in copies.Values) Report(result);
+        var copy = CopyGroupTree(group, copies);
         copy.Session = session;
         copy.Parent = group.ParentId;
         if (group.ParentId is { } parentId && _groups.Find(parentId) is { } parent)
@@ -87,7 +94,7 @@ public sealed class SceneDuplication(
         _groupCopies.Add(copy);
     }
 
-    private GroupCopy CopyGroupTree(SceneGroup group, bool withPose)
+    private GroupCopy CopyGroupTree(SceneGroup group, IReadOnlyDictionary<SelectionId, SceneCreationResult> copies)
     {
         var copy = new GroupCopy
         {
@@ -97,11 +104,11 @@ public sealed class SceneDuplication(
             Night = group.Night,
         };
         foreach (var member in group.Members)
-            if (DuplicateEntity(member, withPose) is { } made)
+            if (copies.TryGetValue(member, out var result) && result.Handle is { } made)
                 copy.Members.Add(made);
         foreach (var childId in group.Children)
             if (_groups.Find(childId) is { } child)
-                copy.Children.Add(CopyGroupTree(child, withPose));
+                copy.Children.Add(CopyGroupTree(child, copies));
         return copy;
     }
 

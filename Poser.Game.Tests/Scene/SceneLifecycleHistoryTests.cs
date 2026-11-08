@@ -102,14 +102,14 @@ public sealed class SceneLifecycleHistoryTests
         world.Actors.Edit(source, sourcePose);
         world.Actors.DeferredCaptures = new();
         var copy = world.Lifecycle.SpawnActorWithPose("Copy pose",
-            () => world.Actors.Spawn("Copy"), source)!;
+            () => world.Actors.Spawn("Copy"), source, new Vector3(20, 4, -10))!;
 
-        // Nothing is restored from a read that has not happened yet.
+        // The copy waits for the source pose before restoring it.
         Assert.False(world.Actors.StateOf(copy).FreezePoseOnRestore);
         var capture = Assert.Single(world.Actors.DeferredCaptures);
         capture(sourcePose);
         Assert.True(world.Actors.StateOf(copy).FreezePoseOnRestore);
-        Assert.Equal(sourcePose.Placement, world.Actors.StateOf(copy).Placement);
+        Assert.Equal(sourcePose.Placement with { Position = new Vector3(20, 4, -10) }, world.Actors.StateOf(copy).Placement);
 
         // A failed read leaves the copy as spawned and says so.
         world.Actors.DeferredCaptures.Clear();

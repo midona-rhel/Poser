@@ -109,7 +109,6 @@ public sealed partial class PoseLibraryPane
     private readonly ISceneWorkflow _scenes;
 
 
-    private readonly ObjectPlacementPreferences _placement;
 
     private readonly LibraryDetailsPanel _details;
 
@@ -316,7 +315,6 @@ public sealed partial class PoseLibraryPane
         PropertiesContent properties,
         IPosePreview preview,
         ISceneWorkflow scenes,
-        ObjectPlacementPreferences placement,
         EnvironmentControl environment,
         UserNotices notices,
         ICharacterFiles characterFiles,
@@ -339,7 +337,6 @@ public sealed partial class PoseLibraryPane
         _imports = imports;
         _libraryScene = libraryScene;
         _scenes = scenes;
-        _placement = placement;
         _details = new(environment);
         _selection = selection;
         _scene = scene;
@@ -492,10 +489,7 @@ public sealed partial class PoseLibraryPane
 
     // ── the objects inspector rail ───────────────────────────────────────
 
-    /// <summary>The modes on offer, positional against the dropdown. ALL
-    /// four, always (ruled 2026-08-31): an entry without a saved anchor no
-    /// longer refuses a relative mode — the load anchors on the content's
-    /// centroid, landing it on the current camera or actor.</summary>
+    /// <summary>Placement choices in the order shown in the dropdown.</summary>
     private readonly List<ObjectPlacementMode> _placementChoices = [];
 
     private readonly List<string> _placementChoiceLabels = [];
@@ -532,9 +526,9 @@ public sealed partial class PoseLibraryPane
         {
             var path = _vm.Tiles[index].Id;
             return _scenePreferences.PlacementFor(path, _sceneTerritories.GetValueOrDefault(path),
-                _place.Current.TerritoryId, _placement.Mode);
+                _place.Current.TerritoryId, _config.Config.DefaultSpawnPlacement);
         }
-        return _placement.Mode;
+        return _config.Config.DefaultSpawnPlacement;
     }
 
     /// <summary>Per-tile stamps for the info rail, parallel to the tile
