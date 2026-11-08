@@ -43,16 +43,12 @@ public sealed class PlacementAnchorSource : IPlacementAnchorSource
         };
     }
 
-    /// <summary>Reads the primary selected actor, or the first actor when the
-    /// primary selection is not an actor. Returns null if that actor's transform
-    /// cannot be read; it does not try other actors as a fallback.</summary>
+    /// <summary>Reads the selected actor or the owner of the selected bone.
+    /// With another entity selected, uses the first actor in the scene.</summary>
     public PlacementAnchorData? ActorAnchorNow()
     {
-        ActorId? anchor = _scene.Selection.Primary is
-            { Kind: Poser.Domain.Identity.SceneEntityKind.Actor,
-                Actor: { } selected }
-            ? selected
-            : null;
+        var selected = _scene.Selection.Primary;
+        ActorId? anchor = selected?.Actor ?? selected?.Bone?.Skeleton.Actor;
         if (anchor is null)
         {
             foreach (var descriptor in _scene.Snapshot.Actors)

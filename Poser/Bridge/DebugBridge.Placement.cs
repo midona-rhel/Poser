@@ -37,7 +37,7 @@ public sealed partial class DebugBridge
         IReadOnlyDictionary<SelectionId, SceneCreationResult>? copies = null;
         if (query.TryGetValue("duplicate", out var keys))
         {
-            var ids = keys.Split(',').Select(ResolveSelection).ToArray();
+            var ids = keys.Split(',').Select(ResolveLibrarySelection).ToArray();
             if (ids.Any(id => id == null)) return new { error = "Unknown duplicate source." };
             copies = _creation.DuplicateMany(ids.Select(id => id!.Value).ToArray(),
                 withPose: query.GetValueOrDefault("posed") == "true");
