@@ -38,6 +38,8 @@ internal sealed class IkChainState
     /// <summary>The first solve must align this displayed capture with its input pose.
     /// Customize+ can scale the displayed body after IK runs.</summary>
     public bool SeatPending;
+    // A target change keeps this solver-space point until its new anchor is read during evaluation.
+    public (Vector3 Position, Quaternion Rotation)? PendingRetarget;
     /// <summary>World, Bone, Entity: the first bone above the chain and its frame
     /// as the last solve saw it, so a displayed drag converts into the solve's
     /// frame (Customize+ scales the body after the solve).</summary>
@@ -244,6 +246,7 @@ internal sealed unsafe partial class IkChainRegistry
             config = config with { ActorAnchor = null };
         state.Config = config.Normalized();
         state.SeatPending = false;
+        state.PendingRetarget = null;
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
         {
             state.HeldCapture = config.ActorAnchor is { } actorAnchor
@@ -316,8 +319,8 @@ internal sealed unsafe partial class IkChainRegistry
             TargetMode = Poser.Domain.Posing.IkTargetMode.Bone,
         };
         state.HeldCapture = capture;
-        state.SeatPending = capture is { Unseated: true };
-        if (state.SeatPending) RetakeEndAnchor(endpoint, state);
+        state.SeatPending = capture != null;
+        if (capture is { Unseated: true }) RetakeEndAnchor(endpoint, state);
         return null;
     }
 
@@ -356,8 +359,8 @@ internal sealed unsafe partial class IkChainRegistry
         state.TargetEntity = target;
         state.Config = state.Config with { TargetMode = IkTargetMode.Entity };
         state.HeldCapture = state.Config.Enabled ? capture : null;
-        state.SeatPending = state.HeldCapture is { Unseated: true };
-        if (state.SeatPending) RetakeEndAnchor(endpoint, state);
+        state.SeatPending = state.HeldCapture != null;
+        if (capture is { Unseated: true }) RetakeEndAnchor(endpoint, state);
         return null;
     }
 

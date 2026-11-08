@@ -90,6 +90,7 @@ internal sealed unsafe class IkHeldTargets
         }
         if (tip is not { } point)
             return null;
+        if (previous != null) previous.PendingRetarget = converted;
         return new HeldTarget(
             point.Position - followed.Position,
             Quaternion.Normalize(Quaternion.Inverse(followed.Rotation) * point.Rotation),
@@ -180,7 +181,8 @@ internal sealed unsafe class IkHeldTargets
         var end = BoneApplyPass.ReadTransform(native);
         // The solve holds back the IK offset the displayed pose applies as a
         // move (a chain enabled again after a drag); the target keeps it.
-        var target = end.Position + authoredPosition;
+        var target = ik.PendingRetarget?.Position ?? end.Position + authoredPosition;
+        var rotation = ik.PendingRetarget?.Rotation ?? end.Rotation;
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
         {
             var seated = anchor with
@@ -206,7 +208,7 @@ internal sealed unsafe class IkHeldTargets
             ik.SeatPending = ik.HeldCapture != null;
             return;
         }
-        var rotationDelta = Quaternion.Normalize(authoredRotation * Quaternion.Inverse(end.Rotation)
+        var rotationDelta = Quaternion.Normalize(authoredRotation * Quaternion.Inverse(rotation)
             * resolved.Rotation * Quaternion.Inverse(authoredRotation) * capture.RotationDelta);
         var shifted = capture with
         {
@@ -214,7 +216,10 @@ internal sealed unsafe class IkHeldTargets
             RotationDelta = rotationDelta,
         };
         if (TransformMath.IsFinite(shifted.Translation) && TransformMath.IsFinite(shifted.RotationDelta))
+        {
             ik.HeldCapture = shifted;
+            ik.PendingRetarget = null;
+        }
         else
             ik.SeatPending = true;
     }

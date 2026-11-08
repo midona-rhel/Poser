@@ -1639,9 +1639,11 @@ public sealed partial class DebugBridge : IDisposable
                             if (query.GetValueOrDefault("action") is "bone" or "entity" &&
                                 FindActor(query.GetValueOrDefault("targetActor", "0")) is { } followed)
                             {
-                                if (query.GetValueOrDefault("action") == "entity" && _bindings.GetActorId(followed) is { } followedId)
+                                if (query.GetValueOrDefault("action") == "entity")
                                 {
-                                    var picked = _ikConfiguration.SetEntityTarget(target, SelectionId.ForActor(followedId));
+                                    var followedLight = _sceneSession.Snapshot.Lights.FirstOrDefault();
+                                    if (followedLight == null) return Json(new { error = "Spawn a test light first." });
+                                    var picked = _ikConfiguration.SetEntityTarget(target, SelectionId.ForLight(followedLight.Id));
                                     return Json(new { ok = picked.Success, picked.Detail });
                                 }
                                 var targetBone = _skeletons.GetSkeletons(followed).SelectMany(s => s.Bones)
