@@ -6,7 +6,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Game.Overlays;
 using Poser.Application.Lifecycle;
-using Poser.Application.Transforms;
+using Poser.Game.Transforms;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 
@@ -29,7 +29,7 @@ public sealed class SceneCreation : ISceneCreation
     private readonly SceneRuntimeHandles _handles;
     private readonly IPlacementAnchorSource _anchors;
     private readonly Application.Settings.ConfigurationService _configuration;
-    private readonly IParentingRuntime _transforms;
+    private readonly ParentingRuntime _transforms;
     private readonly IVirtualCameraService _cameras;
     private readonly ILightingService _lighting;
     private readonly IOverlayNodeService _overlays;
@@ -39,7 +39,7 @@ public sealed class SceneCreation : ISceneCreation
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, IPlacementAnchorSource anchors, Application.Settings.ConfigurationService configuration, IParentingRuntime transforms, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
+        IEntityBindings bindings, ISkeletonService skeletons, IPlacementAnchorSource anchors, Application.Settings.ConfigurationService configuration, ParentingRuntime transforms, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
         Application.Integration.IntegrationSelectors integration, IPluginLog log,
         Application.Transforms.TransformParenting parenting)
     {
@@ -145,7 +145,6 @@ public sealed class SceneCreation : ISceneCreation
         if (result.Handle is not { } handle) return result;
         void Apply()
         {
-            if (Resolve(handle) is not { } target) return;
             if (position is { } point)
             {
                 if (entity is Cameras.VirtualCamera camera)
@@ -155,11 +154,12 @@ public sealed class SceneCreation : ISceneCreation
                         camera.FixedPosition = point - camera.PositionOffset - camera.TargetOffset;
                     else camera.PendingOrbitPosition = point;
                 }
-                else if (_transforms.Read(target) is not { } transform
-                    || !_transforms.Write(target, transform with { Position = point }))
+                else if (_transforms.ReadEntity(entity) is not { } transform
+                    || !_transforms.WriteEntity(entity, transform with { Position = point }))
                     _log.Warning("The new entity could not be placed.");
             }
-            if (source is { } original && !_parenting.Copy(original, target, preserveWorld: position != null))
+            if (source is { } original && Resolve(handle) is { } target
+                && !_parenting.Copy(original, target, preserveWorld: position != null))
                 _log.Warning("The duplicated entity could not inherit its source's parent.");
         }
         // Native spawning sets the actor's position. Place it and copy its

@@ -241,7 +241,8 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<TransformRuntimePort>();
-        services.AddSingleton<IParentingRuntime, ParentingRuntime>();
+        services.AddSingleton<ParentingRuntime>();
+        services.AddSingleton<IParentingRuntime>(sp => sp.GetRequiredService<ParentingRuntime>());
         services.AddSingleton<TransformParenting>();
         services.AddSingleton<ITransformParenting>(sp => sp.GetRequiredService<TransformParenting>());
         services.AddSingleton<ITransformRuntimePort>(sp => new ParentedTransformPort(
