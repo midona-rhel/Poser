@@ -1,0 +1,251 @@
+[
+  {
+    "test": "InFrontOfCamera actor",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera light",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera prop",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera collider",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera camera",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera orbit",
+    "error": 4.011234228123119e-06,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera minion",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera world",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToSelectedActor actor",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToSelectedActor light",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToSelectedActor prop",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToSelectedActor collider",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToSelectedActor camera",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToSelectedActor orbit",
+    "error": 3.5400000000102017e-07,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera actor",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera light",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera prop",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera collider",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera camera",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "As saved posed duplicate",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "Placed posed duplicate",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera light",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera light",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "Group centre",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "Group spacing",
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera light",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "Creation undo redo",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera light",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "light file AsSaved",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "light file InFrontOfCamera",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera orbit",
+    "error": 1.0499523801776519e-05,
+    "passed": true
+  },
+  {
+    "test": "orbit file AsSaved",
+    "error": 6.220128605718212e-06,
+    "passed": true
+  },
+  {
+    "test": "orbit file InFrontOfCamera",
+    "error": 1.0049875624282135e-05,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera collider",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "collider file AsSaved",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "collider file InFrontOfCamera",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera mount",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "MCDF spawn and import placement",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera actor",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "Selected bone uses its actor",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToSelectedActor light",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera camera",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera orbit",
+    "error": 1.4221462657767034e-05,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera camera",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "RelativeToCamera orbit",
+    "error": 2.097617696921431e-05,
+    "passed": true
+  },
+  {
+    "test": "Camera duplicate",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "Light file relative actor offset",
+    "error": 2.0097183471152322e-14,
+    "passed": true
+  },
+  {
+    "test": "InFrontOfCamera camera",
+    "error": 0.0,
+    "passed": true
+  },
+  {
+    "test": "Free camera file relative position",
+    "error": 6.660330323267016e-06,
+    "passed": true
+  },
+  {
+    "test": "Free camera file relative heading",
+    "error": 5.386896990700052e-07,
+    "passed": true
+  }
+]
