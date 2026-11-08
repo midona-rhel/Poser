@@ -32,14 +32,11 @@ internal sealed class IkChainState
 {
     public required Poser.Domain.Posing.IkChainConfig Config;
     public Poser.Domain.Posing.IkResolvedChain Chain;
-    /// <summary>The held target: World mode keeps the tip's world
-    /// point, Bone mode keeps the tip's world OFFSET from the target
-    /// bone. Translation is the authored delta at capture, so a later
-    /// drag moves the target by exactly what was dragged.</summary>
+    /// <summary>The held point and the edits already included in it.
+    /// Bone and Entity modes store an offset from the selected target.</summary>
     public HeldTarget? HeldCapture;
-    /// <summary>A capture taken from the displayed pose, not yet put onto the
-    /// end bone as the solve sees it (Customize+ scales the body after the
-    /// solve, so the two can differ): the first solve seats it.</summary>
+    /// <summary>The first solve must align this displayed capture with its input pose.
+    /// Customize+ can scale the displayed body after IK runs.</summary>
     public bool SeatPending;
     /// <summary>World, Bone, Entity: the first bone above the chain and its frame
     /// as the last solve saw it, so a displayed drag converts into the solve's
@@ -309,21 +306,18 @@ internal sealed unsafe partial class IkChainRegistry
             var stored = SetIkConfiguration(endpoint, config);
             if (stored != null)
                 return stored;
-            _ikChains.TryGetValue(key, out state);
-            if (state == null)
-                return "This bone cannot use IK.";
+            state = _ikChains[key];
         }
+        var capture = state.Config.Enabled ? _held.CaptureBoneOffset(endpoint, target, state) : null;
         state.TargetBone = target;
         state.TargetEntity = null;
         state.Config = state.Config with
         {
             TargetMode = Poser.Domain.Posing.IkTargetMode.Bone,
         };
-        state.HeldCapture = state.Config.Enabled
-            ? _held.CaptureBoneOffset(endpoint, target)
-            : null;
-        state.SeatPending = state.HeldCapture != null;
-        RetakeEndAnchor(endpoint, state);
+        state.HeldCapture = capture;
+        state.SeatPending = capture is { Unseated: true };
+        if (state.SeatPending) RetakeEndAnchor(endpoint, state);
         return null;
     }
 
@@ -348,9 +342,6 @@ internal sealed unsafe partial class IkChainRegistry
         var config = GetIkConfiguration(endpoint);
         if (config == null)
             return "This bone cannot use IK.";
-        var capture = _held.CaptureEntityOffset(endpoint, target);
-        if (capture == null)
-            return "The IK endpoint or scene target is not drawn.";
         if (!_ikChains.TryGetValue(ChainKey(endpoint), out var state))
         {
             var error = SetIkConfiguration(endpoint, config);
@@ -358,12 +349,15 @@ internal sealed unsafe partial class IkChainRegistry
                 return error;
             state = _ikChains[ChainKey(endpoint)];
         }
+        var capture = _held.CaptureEntityOffset(endpoint, target, state);
+        if (capture == null)
+            return "The IK endpoint or scene target is not drawn.";
         state.TargetBone = null;
         state.TargetEntity = target;
         state.Config = state.Config with { TargetMode = IkTargetMode.Entity };
         state.HeldCapture = state.Config.Enabled ? capture : null;
-        state.SeatPending = state.HeldCapture != null;
-        RetakeEndAnchor(endpoint, state);
+        state.SeatPending = state.HeldCapture is { Unseated: true };
+        if (state.SeatPending) RetakeEndAnchor(endpoint, state);
         return null;
     }
 

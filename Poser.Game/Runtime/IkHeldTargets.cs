@@ -40,23 +40,12 @@ internal sealed unsafe class IkHeldTargets
         _bindings = bindings;
     }
 
-    public HeldTarget? CaptureEntityOffset(IBone endpoint, SelectionId target)
+    public HeldTarget? CaptureEntityOffset(IBone endpoint, SelectionId target, IkChainState? previous = null)
     {
-        RefreshCache(endpoint);
-        if (BoneWorld.Of(endpoint) is not { } tip
-            || ResolveIkEntityTransform(_bindings, target) is not { } anchor)
-            return null;
-        var authored = _stacks.GetIkModification(endpoint);
-        // As in Bone mode, position is a world-space offset; only the held
-        // orientation follows the anchor's rotation, with no scale inheritance.
-        return new HeldTarget(tip.Position - anchor.Position,
-            Quaternion.Normalize(Quaternion.Inverse(anchor.Rotation) * tip.Rotation),
-            authored?.Position ?? Vector3.Zero,
-            authored?.Rotation ?? Quaternion.Identity);
+        return CaptureOffset(endpoint, ResolveIkEntityTransform(_bindings, target), previous);
     }
 
-    /// <summary>World mode's capture: the tip's world position and
-    /// rotation now, with the authored deltas they were taken under.</summary>
+    /// <summary>Captures the tip's world transform and the bone edits already included in it.</summary>
     public HeldTarget? CaptureWorld(IBone endpoint)
     {
         RefreshCache(endpoint);
@@ -69,28 +58,46 @@ internal sealed unsafe class IkHeldTargets
             authored?.Rotation ?? Quaternion.Identity);
     }
 
-    /// <summary>Bone mode's capture: the tip's world offset and rotation
-    /// RELATIVE to the target bone now, with the authored deltas.</summary>
-    public HeldTarget? CaptureBoneOffset(IBone endpoint, IBone target)
+    /// <summary>Captures the held point relative to another bone.</summary>
+    public HeldTarget? CaptureBoneOffset(IBone endpoint, IBone target, IkChainState? previous = null)
     {
-        RefreshCache(endpoint);
+        _ = target.LastTransform;
         RefreshCache(target);
-        if (global::Poser.Game.Entities.BoneWorld.Of(endpoint) is not { } tip
-            || global::Poser.Game.Entities.BoneWorld.Of(target) is not { } anchor)
-            return null;
-        var authored = _stacks.GetIkModification(endpoint);
-        return new HeldTarget(
-            tip.Position - anchor.Position,
-            Quaternion.Normalize(Quaternion.Inverse(anchor.Rotation) * tip.Rotation),
-            authored?.Position ?? Vector3.Zero,
-            authored?.Rotation ?? Quaternion.Identity);
+        return CaptureOffset(endpoint, BoneWorld.Of(target), previous);
     }
 
-    /// <summary>The held target in the endpoint's model space this frame:
-    /// the captured world point and rotation (World) or the target bone's
-    /// world transform with the captured offsets (Bone), brought into model
-    /// space through the skeleton's matrix, then moved and turned by what
-    /// was authored since capture. Null when it cannot be resolved.</summary>
+    // Changing what a chain follows preserves its held point in the solver's frame.
+    // A newly enabled chain starts at the displayed bone and is aligned on its first solve.
+    private HeldTarget? CaptureOffset(IBone endpoint, Transform? anchor, IkChainState? previous)
+    {
+        if (anchor is not { } followed) return null;
+        var authored = _stacks.GetIkModification(endpoint) ?? Transform.Identity;
+        Transform? tip;
+        var converted = previous is { Config.Enabled: true }
+            ? ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, useSolveFrame: true)
+            : null;
+        if (converted is { } held && endpoint.Skeleton is Skeleton skeleton)
+        {
+            var frame = skeleton.GetModelTransform();
+            tip = new Transform(Vector3.Transform(held.Position, frame.ToMatrix()),
+                Quaternion.Normalize(frame.Rotation * held.Rotation), Vector3.One);
+        }
+        else
+        {
+            _ = endpoint.LastTransform;
+            RefreshCache(endpoint);
+            tip = BoneWorld.Of(endpoint);
+        }
+        if (tip is not { } point)
+            return null;
+        return new HeldTarget(
+            point.Position - followed.Position,
+            Quaternion.Normalize(Quaternion.Inverse(followed.Rotation) * point.Rotation),
+            authored.Position, authored.Rotation) { Unseated = converted == null };
+    }
+
+    /// <summary>Resolves the held target into solver coordinates, including edits made since capture.
+    /// Returns null when its actor or target is unavailable.</summary>
     public (Vector3 Position, Quaternion Rotation)? ResolveHeld(
         IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null,
         bool useSolveFrame = false)
@@ -161,10 +168,8 @@ internal sealed unsafe class IkHeldTargets
         return (position, rotation);
     }
 
-    /// <summary>Puts a fresh capture onto the end bone as this solve sees it,
-    /// before anything is solved: enabling a chain or switching its target
-    /// moves nothing, even where Customize+ scales the body after the solve
-    /// and the displayed pose the capture read is not the solve's.</summary>
+    /// <summary>Aligns a newly enabled target with the bone before solving.
+    /// Customize+ can scale the displayed pose after this stage.</summary>
     private void Seat(IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose)
     {
         // Each path clears its mark only once seated: a target that cannot be
@@ -214,9 +219,7 @@ internal sealed unsafe class IkHeldTargets
             ik.SeatPending = true;
     }
 
-    /// <summary>A bone the apply pass never visits (no stack) keeps a
-    /// stale cached transform. Refreshes bones already marked as wanted; callers
-    /// must read LastTransform first when the requested bone may be unmarked.</summary>
+    /// <summary>Refreshes requested bone transforms. Read LastTransform first to request a new bone.</summary>
     internal static void RefreshCache(IBone bone)
     {
         if (bone.Skeleton is global::Poser.Game.Entities.Skeleton skeleton && skeleton.IsValid)
@@ -238,10 +241,7 @@ internal sealed unsafe class IkHeldTargets
         ik.SolveParentFrame = native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
     }
 
-    /// <summary>A drag on a World, Bone or Entity held end, in the solve's frame:
-    /// the displayed body can be scaled after the solve (Customize+), so the same
-    /// move shown is larger than the solve's. The conversion an Actor anchor makes
-    /// through its parent.</summary>
+    /// <summary>Converts a displayed drag into the solver's coordinates using the parent's scale.</summary>
     public Vector3 ToSolveDelta(IkChainState ik, Vector3 step)
     {
         if (ik.SolveParent is not { } parent || ik.SolveParentFrame is not { } solve)
@@ -300,8 +300,7 @@ internal sealed unsafe class IkHeldTargets
         return config;
     }
 
-    /// <summary>The forearm and end bone as they stand now, and the user's
-    /// own end rotation: what an End rotation switch continues from.</summary>
+    /// <summary>Captures the forearm, hand and authored rotation when End rotation changes.</summary>
     public IkEndRotationAnchor? CaptureEndAnchor(IBone endpoint, int secondJoint)
     {
         var forearm = endpoint.Skeleton.Bones.FirstOrDefault(b => b.PartialId == endpoint.PartialId

@@ -29,15 +29,12 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     private readonly TransformGestureService _gestures;
     private readonly IPluginLog _log;
 
-    /// <summary>One slot skeleton's share of a bake: the file collection the
-    /// snapshot put its bones in, and the exact targets the bake owns on it
-    /// (keyed the way the apply pass identifies a bone).</summary>
+    /// <summary>The saved pose and bone IDs for the selected chain.</summary>
     private sealed class SlotBake
     {
         public required ISkeleton Skeleton;
         public required Dictionary<string, PoseFile.BoneData> Collection;
         public required Dictionary<(int Partial, int Index), TransformTargetId> Covered;
-        public bool Ended;
         public bool Executed;
     }
 
@@ -45,14 +42,11 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     {
         public required long Generation;
         public required TransformTargetId Target;
-        public required IActor Actor;
-        public required List<SlotBake> Slots;
-        /// <summary>Ordered bake targets and their pre-clear states — captured
-        /// before mutation for history and attempted rollback.</summary>
+        public required IkChainConfig Config;
+        public required SlotBake Slot;
+        /// <summary>Bone edits saved before baking, in application order.</summary>
         public required List<TransformTargetId> Order;
         public required Dictionary<TransformTargetId, TransformTargetState> Before;
-        /// <summary>Enabled chain configurations saved for attempted restoration.</summary>
-        public required List<(IBone Bone, IkChainConfig Config)> Chains;
         /// <summary>Targets an action actually appended a stack to.</summary>
         public readonly HashSet<TransformTargetId> Written = new();
         public string? Failure;
@@ -83,17 +77,13 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         _posing.TransitiveActionsEnded += OnTransitiveActionsEnded;
     }
 
-    /// <summary>The bake's own status line: "in flight" until the pass has run
-    /// the actions and the history entry has landed, then the reason if it
-    /// failed, cleared on success. Carries its target so it cannot survive
-    /// onto another bone's IK section.</summary>
+    /// <summary>Progress or failure text for the selected bone. Cleared when baking succeeds.</summary>
     public (TransformTargetId Target, string Text)? Note { get; private set; }
 
-    /// <summary>Whether the bake still owns its pending slot.</summary>
+    /// <summary>True until the bake finishes or times out.</summary>
     public bool IsPending => _pending != null;
 
-    /// <summary>Whether the endpoint is enabled, resolves to a multi-bone chain,
-    /// and has a captured target or authored translation to bake.</summary>
+    /// <summary>True when the selected bone has an enabled chain with at least two bones.</summary>
     public bool CanBake(TransformTargetId target)
     {
         if (_pending != null)
@@ -104,8 +94,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             return false;
         if (_posing.GetIkConfiguration(endpoint) is not { Enabled: true } config)
             return false;
-        return AffectedBones(endpoint, config).Count > 1 &&
-               HasSolveInput(endpoint, config);
+        return AffectedBones(endpoint, config).Count > 1;
     }
 
     /// <summary>The bones changed by baking the selected chain.</summary>
@@ -139,107 +128,63 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         if (_bindings.Resolve(boneId) is not { Success: true, Value: { } endpoint })
             return GestureResult.Fail(
                 $"Bone {boneId.CanonicalName} did not resolve.");
-        var actor = endpoint.Skeleton.Actor;
-        if (_bindings.GetActorId(actor) is not { } actorId)
-            return GestureResult.Fail("This bone's actor has no stable binding.");
-
         var config = _posing.GetIkConfiguration(endpoint);
         if (config is not { Enabled: true })
-            return GestureResult.Fail("This chain is not armed.");
+            return GestureResult.Fail("This chain is not enabled.");
 
         var affected = AffectedBones(endpoint, config);
         if (affected.Count <= 1)
             return GestureResult.Fail("This chain does not resolve on this skeleton.");
-        if (!HasSolveInput(endpoint, config))
-            return GestureResult.Fail("This chain has not solved anything yet.");
+        var slot = endpoint.Skeleton;
+        var snapshot = _poseFiles.CreatePoseFile([slot], affected.Contains);
+        if (CollectionFor(snapshot, slot.Slot) is not { Count: > 0 } collection)
+            return GestureResult.Fail("The chain has no pose data to bake.");
 
-        ISkeleton[] slots = [endpoint.Skeleton];
-        var snapshot = _poseFiles.CreatePoseFile(slots, affected.Contains);
-
-        // Every bone the bake may touch is captured before it touches any of
-        // them, so a failure restores the exact pre-bake stacks and a success
-        // already holds the Before half of its history entry.
         var bake = new Bake
         {
             Generation = ++_generation,
             Target = target,
-            Actor = actor,
-            Slots = new List<SlotBake>(slots.Length),
-            Order = new List<TransformTargetId>(),
-            Before = new Dictionary<TransformTargetId, TransformTargetState>(),
-            Chains = new List<(IBone, IkChainConfig)>(),
-        };
-
-        foreach (var slot in slots)
-        {
-            if (CollectionFor(snapshot, slot.Slot) is not { Count: > 0 } collection)
-                continue;
-            var covered = new Dictionary<(int, int), TransformTargetId>();
-            foreach (var bone in slot.Bones)
-            {
-                if (!affected.Contains(bone))
-                    continue;
-                if (bone is VirtualBone)
-                    continue;
-                // The snapshot's own predicate (Brio's export skips these, so
-                // its import never sees them either).
-                if (bone.IsPartialRoot && !bone.IsSkeletonRoot)
-                    continue;
-                if (!collection.ContainsKey(bone.BoneName))
-                    continue;
-                if (_bindings.GetBoneId(bone) is not { } id)
-                    continue;
-                var boneTarget = TransformTargetId.ForBone(id);
-                if (bake.Before.ContainsKey(boneTarget))
-                    continue;
-                var captured = _runtime.Capture(boneTarget);
-                if (!captured.Success || captured.State is not { } state)
-                    continue;
-                bake.Before[boneTarget] = state;
-                bake.Order.Add(boneTarget);
-                covered[(bone.PartialId, bone.BoneIndex)] = boneTarget;
-            }
-
-            if (covered.Count == 0)
-                continue;
-            bake.Slots.Add(new SlotBake
+            Config = config,
+            Slot = new SlotBake
             {
                 Skeleton = slot,
                 Collection = collection,
-                Covered = covered,
-            });
-        }
+                Covered = new(),
+            },
+            Order = new(),
+            Before = new(),
+        };
 
-        if (bake.Slots.Count == 0)
-            return GestureResult.Fail("No bone of this actor could be bound for a bake.");
+        // Capture every included bone before changing the chain, so Undo can restore it.
+        foreach (var bone in affected)
+        {
+            if (!collection.ContainsKey(bone.BoneName))
+                continue;
+            if (_bindings.GetBoneId(bone) is not { } id)
+                return GestureResult.Fail($"{bone.BoneName} is no longer available.");
+            var boneTarget = TransformTargetId.ForBone(id);
+            var captured = _runtime.Capture(boneTarget);
+            if (!captured.Success || captured.State is not { } state)
+                return GestureResult.Fail(captured.Detail ?? $"Could not capture {bone.BoneName}.");
+            bake.Before.Add(boneTarget, state);
+            bake.Order.Add(boneTarget);
+            bake.Slot.Covered.Add((bone.PartialId, bone.BoneIndex), boneTarget);
+        }
+        if (bake.Order.Count == 0)
+            return GestureResult.Fail("The chain has no bones available to bake.");
         if (_posing.SetIkConfiguration(endpoint, config with { Enabled = false }) is { } disableError)
             return GestureResult.Fail(disableError);
-        bake.Chains.Add((endpoint, config));
 
-        // Replace the selected chain's manual edits with its solved pose.
-        foreach (var slot in bake.Slots)
-        {
-            var poseInfo = _posing.GetPoseInfo(slot.Skeleton);
-            foreach (var bone in slot.Skeleton.Bones)
-            {
-                if (bone is VirtualBone ||
-                    !slot.Covered.ContainsKey((bone.PartialId, bone.BoneIndex)))
-                    continue;
-                poseInfo
-                    .GetPoseInfo(bone.BoneName, bone.PartialId)
+        // Replace only this chain's manual edits. Named service layers remain active.
+        var poseInfo = _posing.GetPoseInfo(slot);
+        foreach (var bone in affected)
+            if (bake.Slot.Covered.ContainsKey((bone.PartialId, bone.BoneIndex)))
+                poseInfo.GetPoseInfo(bone.BoneName, bone.PartialId)
                     .RestoreInteractiveStacks(Array.Empty<BonePoseTransformInfo>());
-            }
-        }
 
-        // Apply each saved bone after its parent's edits on the next pass.
         _pending = bake;
-        foreach (var slot in bake.Slots)
-        {
-            var scope = slot;
-            _posing.RegisterTransitiveAction(
-                scope.Skeleton,
-                (bone, poseInfo) => ApplyBone(bake, scope, bone, poseInfo));
-        }
+        _posing.RegisterTransitiveAction(slot,
+            (bone, info) => ApplyBone(bake, bake.Slot, bone, info));
 
         Note = (target, "Baking the solved limb into the pose…");
         _framework.RunOnTick(
@@ -248,17 +193,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         return GestureResult.Ok();
     }
 
-    /// <summary>
-    /// Brio's <c>PoseImporter.ApplyBone</c> (Game/Posing/PoseImporter.cs:9-87),
-    /// running inside the apply pass. The bone's own slot collection supplies
-    /// the absolute; the basis is <c>bone.LastRawTransform</c> exactly as the
-    /// pass has just refreshed it; the delta is appended as a new stack that
-    /// the pass applies immediately.
-    ///
-    /// Brio's near-identity early-out (PoseInfo.cs:89-90) is ported with it: a
-    /// bone whose snapshot already matches its basis must not gain a stack, or
-    /// every bone of the skeleton would come out of a bake marked as edited.
-    /// </summary>
+    /// <summary>Applies a saved bone transform against the raw pose refreshed by this evaluation.</summary>
     private void ApplyBone(
         Bake bake,
         SlotBake slot,
@@ -270,21 +205,13 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             if (!slot.Covered.TryGetValue(
                     (bone.PartialId, bone.BoneIndex), out var boneTarget))
                 return;
-            if (!slot.Collection.TryGetValue(bone.BoneName, out var fileBone))
-                return;
-
+            var fileBone = slot.Collection[bone.BoneName];
             var desired = _posing.ToApplySpace(bone, fileBone);
             var basis = bone.LastRawTransform;
             if (TransformMath.IsApproximatelyIdentityDelta(BonePoseInfo.Diff(desired, basis)))
                 return;
 
-            // Brio passes TransformComponents.All as the new stack's
-            // propagation (PoseImporter.cs:35 → PoseInfo.Apply's `propagation`
-            // argument), so a baked bone carries its children with it exactly
-            // as the pose it replaced did.
-            // A bone with no usable basis (a chain link the game left at a
-            // zero rotation) cannot take a delta; it is left as it is and
-            // the rest of the bake lands.
+            // Propagate the baked transform to children, as an ordinary full-pose import does.
             if (poseInfo.Apply(desired, basis, TransformComponents.All) == null)
             {
                 _log.Warning($"IK bake: {bone.BoneName} produced a non-finite delta and was left out.");
@@ -294,35 +221,19 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         }
         catch (Exception ex)
         {
-            // A throw here is inside the physics detour; swallow it into the
-            // bake's own failure so the pass stays intact and the whole edit
-            // rolls back on completion.
+            // Report the error after leaving the native callback, then restore the pose.
             bake.Failure ??= $"{bone.BoneName}: {ex.Message}";
         }
     }
 
-    /// <summary>Raised from the native hooks when the interval that owned a
-    /// batch ends. Records only — the completion itself needs the framework
-    /// thread.</summary>
+    /// <summary>Schedules completion on the framework thread after the native pose callback ends.</summary>
     private void OnTransitiveActionsEnded(TransitiveActionOutcome outcome)
     {
         if (_pending is not { } bake)
             return;
-        var complete = true;
-        var known = false;
-        foreach (var slot in bake.Slots)
-        {
-            if (ReferenceEquals(slot.Skeleton, outcome.Skeleton) && !slot.Ended)
-            {
-                slot.Ended = true;
-                slot.Executed = outcome.Executed;
-                known = true;
-            }
-            if (!slot.Ended)
-                complete = false;
-        }
-        if (!known || !complete || bake.Completing)
+        if (!ReferenceEquals(bake.Slot.Skeleton, outcome.Skeleton) || bake.Completing)
             return;
+        bake.Slot.Executed = outcome.Executed;
         bake.Completing = true;
         _framework.RunOnTick(() => Complete(bake.Generation));
     }
@@ -335,12 +246,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         Complete(generation);
     }
 
-    /// <summary>
-    /// The framework-thread half: by now the pass has run the actions and every
-    /// baked stack is in place. Capture the after-states of what actually
-    /// changed and append ONE history entry — or, on any failure, restore every
-    /// captured target and re-arm the chains as best effort, appending nothing.
-    /// </summary>
+    /// <summary>Records the completed bake as one undo step, or restores the original pose on failure.</summary>
     private void Complete(long generation)
     {
         if (_pending is not { } bake || bake.Generation != generation)
@@ -348,17 +254,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         _pending = null;
 
         var failure = bake.Failure;
-        if (failure == null)
-        {
-            foreach (var slot in bake.Slots)
-            {
-                if (!slot.Executed)
-                {
-                    failure = "The apply pass never ran the bake.";
-                    break;
-                }
-            }
-        }
+        if (failure == null && !bake.Slot.Executed)
+            failure = "The apply pass never ran the bake.";
 
         if (failure == null)
         {
@@ -375,12 +272,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         Rollback(bake);
     }
 
-    /// <summary>
-    /// One undoable entry covering exactly the bones the bake changed: those
-    /// whose authored stacks it cleared, and those an action wrote. A bone that
-    /// had nothing and received nothing is not part of the edit and is left out
-    /// of the patch.
-    /// </summary>
+    /// <summary>Records changed bone edits together with the chain being disabled.</summary>
     private string? AppendHistory(Bake bake)
     {
         var before = new List<TransformTargetState>();
@@ -388,8 +280,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         foreach (var boneTarget in bake.Order)
         {
             var state = bake.Before[boneTarget];
-            // HasOverride is set by the capture to "this bone had authored
-            // layers", i.e. exactly the bones step 2 cleared.
+            // Include bones whose previous edits were cleared, as well as newly written bones.
             if (!state.HasOverride && !bake.Written.Contains(boneTarget))
                 continue;
             var captured = _runtime.Capture(boneTarget);
@@ -399,27 +290,15 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             after.Add(current);
         }
 
-        if (before.Count == 0)
-            return "The bake changed nothing.";
-
-        // One step, one inverse: undoing the bake puts the bones back AND
-        // re-arms the chains it disarmed; redoing it bakes the bones and
-        // disarms them again.
+        // Undo restores both the bone edits and the enabled chain.
         _history.Append(new JournalStep(
             "Bake IK",
-            () => RestoreStates(before) && RearmChains(bake),
-            () =>
-            {
-                if (!RestoreStates(after))
-                    return false;
-                foreach (var (bone, config) in bake.Chains)
-                    if (_posing.SetIkConfiguration(bone, config with { Enabled = false }) != null)
-                        return false;
-                return true;
-            })
+            () => RestoreStates(before) && SetChainEnabled(bake, true),
+            () => RestoreStates(after) && SetChainEnabled(bake, false))
         {
             AffectedEntities = before.Concat(after)
-                .Select(state => EditHistory.EntityOf(state.Target.ToSelectionId())).Distinct().ToArray(),
+                .Select(state => EditHistory.EntityOf(state.Target.ToSelectionId()))
+                .Append(EditHistory.EntityOf(bake.Target.ToSelectionId())).Distinct().ToArray(),
         });
         return null;
     }
@@ -439,8 +318,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         return landed;
     }
 
-    /// <summary>Puts back every captured stack and re-arms every chain the bake
-    /// disarmed. Restore failures are logged; this is a best-effort rollback.</summary>
+    /// <summary>Restores the captured bone edits and enables the selected chain again.</summary>
     private void Rollback(Bake bake)
     {
         foreach (var boneTarget in bake.Order)
@@ -458,30 +336,20 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             }
         }
 
-        RearmChains(bake);
+        SetChainEnabled(bake, true);
     }
 
-    /// <summary>Re-arms every chain the bake disarmed, on the bones that
-    /// still bind. True when every bound chain took its configuration.</summary>
-    private bool RearmChains(Bake bake)
+    /// <summary>Restores the selected chain's settings with the requested Enabled value.</summary>
+    private bool SetChainEnabled(Bake bake, bool enabled)
     {
-        bool armed = true;
-        foreach (var (bone, config) in bake.Chains)
-        {
-            if (_bindings.GetBoneId(bone) is null)
-                continue;
-            if (_posing.SetIkConfiguration(bone, config) is { } rearm)
-            {
-                _log.Warning($"IK bake could not re-arm {bone.BoneName}: {rearm}");
-                armed = false;
-            }
-        }
-        return armed;
+        if (bake.Target.Bone is not { } id || _bindings.Resolve(id) is not { Success: true, Value: { } bone })
+            return false;
+        var failure = _posing.SetIkConfiguration(bone, bake.Config with { Enabled = enabled });
+        if (failure != null) _log.Warning($"IK bake: {failure}");
+        return failure == null;
     }
 
-    /// <summary>The per-slot collection a snapshot puts a slot's bones in —
-    /// the same mapping <see cref="IPoseFileService.CreatePoseFile"/> writes
-    /// through, and Brio's slot switch in <c>PoseImporter.ApplyBone</c>.</summary>
+    /// <summary>Selects the pose-file section for the skeleton's slot.</summary>
     private static Dictionary<string, PoseFile.BoneData>? CollectionFor(
         PoseFile poseFile,
         PoseSlot slot) => slot switch
@@ -494,13 +362,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             _ => null,
         };
 
-    /// <summary>
-    /// The bones the solver actually moves. Two Joint moves the resolved
-    /// definition (joints, optional twists, endpoint); CCD moves the endpoint
-    /// and its parents to the configured depth, so its set is the walked
-    /// hierarchy — mirroring <c>IKService.GetBonesToDepth</c> — not the
-    /// definition. Ordered root-first, deduplicated.
-    /// </summary>
+    /// <summary>Returns the bones moved by the selected solver, including Two Joint twist bones.</summary>
     internal static List<IBone> AffectedBones(IBone endpoint, IkChainConfig config)
     {
         if (config.Solver == IkSolver.Ccd)
@@ -520,22 +382,11 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             return result;
         }
         if (config.Solver != IkSolver.TwoJoint)
-        {
-            var walked = new List<IBone> { endpoint };
-            var current = endpoint.ParentBone;
-            while (current != null && walked.Count < config.CcdDepth + 1)
-            {
-                walked.Add(current);
-                current = current.ParentBone;
-            }
-            for (var i = walked.Count - 1; i >= 0; i--)
-                Add(walked[i]);
             return result;
-        }
 
         if (IkChains.ForEndpoint(endpoint.BoneName) is not { } definition)
             return result;
-        // Same skeleton, same partial as the endpoint — never another slot.
+        // Named joints belong to the endpoint's skeleton partial.
         var skeleton = endpoint.Skeleton as Skeleton;
         IBone? ByName(string? name) => name == null
             ? null
@@ -548,17 +399,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         return result;
     }
 
-    /// <summary>Captured targets solve even without an authored translation.</summary>
-    private bool HasSolveInput(IBone endpoint, IkChainConfig config) =>
-        config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null } ||
-        config.ActorAnchor != null ||
-        config.TargetMode != IkTargetMode.Actor ||
-        _posing.GetModification(endpoint) is { } modification &&
-        modification.Position != System.Numerics.Vector3.Zero;
-
-    /// <summary>A pending bake never outlives the session: its registered
-    /// completion tracking is dropped here. This method does not roll back
-    /// changes or invalidate callbacks already registered with the posing service.</summary>
+    /// <summary>Removes the completion listener when the plugin unloads.</summary>
     public void Dispose()
     {
         _posing.TransitiveActionsEnded -= OnTransitiveActionsEnded;

@@ -139,8 +139,7 @@ internal sealed unsafe partial class IkChainRegistry
         RefreshCache(source);
         var authored = _stacks.GetIkModification(source) ?? Transform.Identity;
         var model = source.LastTransform;
-        if (mode is IkTargetMode.Actor or IkTargetMode.World
-            && config.Fabrik is { } control && control.Handle.Mode != mode
+        if (config.Enabled && config.Fabrik is { } control
             && ResolveFabrikTarget(endpoint, control.Handle, true) is { } held)
             model = _stacks.FromApplySpace(endpoint, new Transform(held.Position, held.Rotation, model.Scale));
         if (mode == IkTargetMode.Actor)

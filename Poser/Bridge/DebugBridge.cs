@@ -1557,7 +1557,15 @@ public sealed partial class DebugBridge : IDisposable
                     var exported = capture.ExportPose(id, posePath);
                     return Json(new { ok = exported.Success, exported.Detail });
                 }
-                var imported = imports.ImportPose(id, posePath, Documents.Files.PoseImportOptions.Default);
+                var options = Documents.Files.PoseImportOptions.Default;
+                if (query.GetValueOrDefault("full") == "1")
+                {
+                    options.ApplyPosition = true;
+                    options.ApplyScale = true;
+                    options.ResetBeforeImport = true;
+                    options.FreezeOnImport = true;
+                }
+                var imported = imports.ImportPose(id, posePath, options);
                 return Json(new { ok = imported.Success, imported.Detail });
             }
             case "/library":

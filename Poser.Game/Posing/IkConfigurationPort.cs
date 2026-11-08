@@ -37,8 +37,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         _log = log;
     }
 
-    /// <summary>The set as a journal step: the previous configuration is
-    /// the inverse. Only a landed set is journaled.</summary>
+    /// <summary>Applies the settings and records the resulting captured target for Undo and Redo.</summary>
     public Outcome Set(TransformTargetId target, IkChainConfig config)
     {
         _journal.Seal();
@@ -54,8 +53,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         return result;
     }
 
-    /// <summary>Eligibility is the runtime's own answer rather than a name
-    /// test: Get returns a configuration only for supported live targets.</summary>
+    /// <summary>True when the runtime supports IK for this bone.</summary>
     public bool IsSupported(TransformTargetId target) => Get(target) != null;
 
     public IReadOnlyList<IkChainSummary> Chains(SkeletonId skeleton)
@@ -94,8 +92,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
 
     private const string GestureActive = "IK configuration rejected: a transform gesture is active.";
 
-    /// <summary>A replayed IK write. An active transform gesture ends by
-    /// itself, so replay reports that refusal as Busy and can retry.</summary>
+    /// <summary>Returns Busy while a transform gesture owns the bone, so history can wait for it to finish.</summary>
     private Outcome Written(Func<Outcome> write)
     {
         if (_gestures.ActiveGesture != null)
@@ -185,9 +182,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         if (current == null)
             return Outcome.Fail(
                 $"Bone {boneId.CanonicalName} cannot use IK.");
-        // Reset Defaults preserves the chain's Enabled state. A bone with no
-        // declared chain resets to the CCD defaults, which are the only ones
-        // it can hold.
+        // Keep Enabled while restoring the limb or general-chain defaults.
         var definition = IkChains.ForEndpoint(boneId.CanonicalName);
         return Set(target, definition == null
             ? IkChainConfig.DefaultsForChain(current.Enabled)

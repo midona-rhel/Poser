@@ -116,10 +116,10 @@ the user's end rotation, and holding or following continues from there. Other
 solvers retain Keep rotation; its saved value never overrides Two Joint's End
 rotation, including after the native solve.
 
-Enabling a chain or picking a target bone or entity captures its starting pose.
+Enabling a chain captures its starting pose.
 The first solve aligns that capture with the solver's coordinate frame, including
 when Customize+ changes the displayed body scale afterwards.
-Switching between World and Actor instead converts the existing held target.
+Changing an active chain's World, Actor, Bone or Entity target converts its existing held point.
 Its position and rotation stay the same; only what it follows changes.
 Undo and Redo retain the captured target along with the setting.
 
