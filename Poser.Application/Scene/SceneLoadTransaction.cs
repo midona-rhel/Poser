@@ -225,12 +225,6 @@ internal sealed class SceneLoadTransaction(
                 _entities.Add(new SceneEntityOutcome(refusal.Kind, refusal.Name, false, refusal.Detail));
         }
 
-        // Saved world objects load as spawned copies, including older files
-        // that marked them as borrowed map objects.
-        if (scene.WorldObjects != null)
-            foreach (var entry in scene.WorldObjects)
-                entry.Spawned = true;
-
         // The per-category views. An excluded category is an EMPTY view
         // rather than a flag consulted at each of its phases: every phase
         // then reads one list, and a category can never be half-skipped.
@@ -424,13 +418,12 @@ internal sealed class SceneLoadTransaction(
                     SceneOutcomeKind.Overlay, name, true, detail));
             }
 
-            // Read converted these entries to spawned copies. A failed adoption
-            // records that object's failure without rolling back the rest of the load.
+            // A missing map object is reported beside the rest of the loaded scene.
             foreach (var worldObject in _worldObjects)
             {
                 string name = materializer.WorldObjectName(worldObject.Path);
                 var token = materializer.AdoptWorldObject(
-                    worldObject, out var detail);
+                    worldObject, _scene.TerritoryId, out var detail);
                 if (token is null)
                 {
                     _entities.Add(new SceneEntityOutcome(
@@ -440,7 +433,8 @@ internal sealed class SceneLoadTransaction(
                 }
                 operation.BorrowedWorldObjects.Add(token);
                 _worldObjectTokens[worldObject.Key] = token;
-                _spawnedWorldObjects.Add((token, name));
+                if (worldObject.Spawned) _spawnedWorldObjects.Add((token, name));
+                else _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.WorldObject, name, true, detail));
             }
             return null;
         });

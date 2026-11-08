@@ -407,6 +407,37 @@ public sealed class WorldObjectService : IDisposable
     internal void KeepUnloaded(AdoptedWorldObject handle) =>
         _loadingFurniture.Keep(handle);
 
+    public AdoptedWorldObject? FindBorrowed(string path, Vector3 mapPosition) =>
+        _adopted.Find(item => !item.Spawned && item.IsValid
+            && MatchesSavedObject(item.Path, item.InitialPlacement.Position, path, mapPosition));
+
+    private static bool MatchesSavedObject(string resource, Vector3 position, string path, Vector3 mapPosition) =>
+        string.Equals(resource, path, StringComparison.OrdinalIgnoreCase)
+        && Vector3.DistanceSquared(position, mapPosition) <= 0.0001f;
+
+    public AdoptedWorldObject? RestoreBorrowed(string path, Vector3 mapPosition, Transform placement,
+        bool visible, out string? detail)
+    {
+        // Use the original placement even when an earlier load moved the object.
+        var handle = FindBorrowed(path, mapPosition);
+        if (handle == null)
+        {
+            foreach (var row in _port.Enumerate())
+                if (!IsAdopted(row.Address) && MatchesSavedObject(row.Path, row.Placement.Position, path, mapPosition))
+                {
+                    handle = Adopt(row.Address);
+                    break;
+                }
+        }
+        detail = handle == null ? "The original map object could not be found at its saved position." : null;
+        if (handle != null)
+        {
+            handle.Transform = placement;
+            handle.Visible = visible;
+        }
+        return handle;
+    }
+
     public AdoptedWorldObject? Adopt(nint address)
         => Adopt(address, null, out _);
 

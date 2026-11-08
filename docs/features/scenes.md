@@ -358,7 +358,9 @@ out of its group), and parent links (a missing parent bone or a refused link
 leaves the entity where it was saved). A refused actor spawn names its cause,
 such as a full actor table. A borrowed world object is matched by
 model path and map placement in the current territory, never by pointer or
-object index. Rollback releases its claim.
+object index. Reloading reuses that object, including when it was moved or hidden.
+Undo releases a newly borrowed object; for an existing borrow, it restores the
+edits from before the load. An object missing from the map is reported and skipped.
 
 The sidebar and Scenes tab show progress, cancellation, results, refusals, and
 recovery information. The load probe uses the same file reader in the

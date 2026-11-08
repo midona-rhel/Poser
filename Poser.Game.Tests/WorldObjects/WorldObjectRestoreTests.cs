@@ -178,6 +178,24 @@ public sealed class WorldObjectRestoreTests
         world.Port.Kill(dead);
         Assert.Null(world.Service.Adopt(dead));
         Assert.Equal(0, world.Port.Writes);
+
+        var elsewhere = world.Port.Add("bg/tree.mdl", Moved);
+        for (int load = 0; load < 2; load++)
+        {
+            var restored = world.Service.RestoreBorrowed("bg/tree.mdl", Placed.Position, Moved, false, out var detail);
+            Assert.Null(detail);
+            Assert.Equal(address, restored!.Address);
+            Assert.False(restored.Spawned);
+            Assert.False(world.Port.VisibleOf(address));
+            Assert.True(world.Port.VisibleOf(elsewhere));
+            Assert.Same(restored, world.Service.RestoreBorrowed("bg/tree.mdl", Placed.Position, Moved, false, out _));
+            Assert.True(world.Service.Release(restored));
+            Assert.Equal(Placed, world.Port.PlacementOf(address));
+            Assert.True(world.Port.VisibleOf(address));
+        }
+        Assert.Null(world.Service.RestoreBorrowed("bg/missing.mdl", Placed.Position, Moved, false, out var missing));
+        Assert.NotNull(missing);
+        Assert.Empty(world.Service.Adopted);
     }
 
     [Theory]

@@ -36,11 +36,10 @@ public interface ISceneMaterializer
     SceneEntityHandle? SpawnOverlay(SceneOverlay data, out string? detail);
 
     /// <summary>
-    /// Restores one world-object entry by spawning its path with the
-    /// placement and state the file recorded. Null with a stated detail when
-    /// it cannot be spawned.
+    /// Restores saved edits to the original map object, or spawns a copy
+    /// for an object the scene owns. Returns a reason if restoration fails.
     /// </summary>
-    SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail);
+    SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, uint territory, out string? detail);
 
     /// <summary>Waits, within <paramref name="bound"/>, for spawned world
     /// objects whose models are still streaming (housing furniture). Answers

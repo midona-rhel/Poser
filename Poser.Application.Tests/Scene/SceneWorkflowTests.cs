@@ -581,7 +581,7 @@ public sealed class SceneWorkflowTests
             return Token($"overlay:{name}");
         }
 
-        public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, out string? detail)
+        public SceneEntityHandle? AdoptWorldObject(SceneWorldObject data, uint territory, out string? detail)
         {
             Record($"AdoptWorldObject:{data.Path}");
             detail = null;
@@ -1199,6 +1199,7 @@ public sealed class SceneWorkflowTests
         AssertApplied(load);
         Assert.Contains("1 object", load.Progress!.Outcome!.Detail);
         Assert.DoesNotContain("0 objects", load.Progress.Outcome.Detail);
+        Assert.False(scene.WorldObjects[0].Spawned);
     }
 
     [Fact]
