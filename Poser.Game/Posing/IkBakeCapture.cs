@@ -13,23 +13,16 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 
-/// <summary>Captures the solved pose, clears captured interactive layers and IK
-/// settings, then re-imports the pose inside the apply pass, following Brio's IK
-/// bake approach. Each bone's delta uses the basis after parent edits. Named
-/// service layers remain active so their contribution is not baked in twice.</summary>
+/// <summary>Turns one chain's solved bones into ordinary pose edits.
+/// Other chains and named service layers keep running.</summary>
 public sealed class IkBakeCapture : IDisposable, IIkBake
 {
-    /// <summary>Framework ticks a registered batch is given to reach a pass
-    /// before the bake gives up and rolls back. The batch normally lands in
-    /// the very next pass; this only exists so a skeleton that stops updating
-    /// (gpose ends mid-bake, the actor is redrawn) cannot leave the bake
-    /// pending — and the chains disarmed — forever.</summary>
+    /// <summary>Stop waiting if the actor disappears or stops updating during the bake.</summary>
     private const int CompletionTimeoutTicks = 60;
 
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly IBonePosingService _posing;
-    private readonly ISkeletonService _skeletons;
     private readonly IPoseFileService _poseFiles;
     private readonly ITransformRuntimePort _runtime;
     private readonly EditHistory _history;
@@ -73,7 +66,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         IFramework framework,
         StableBindingRegistry bindings,
         IBonePosingService posing,
-        ISkeletonService skeletons,
         IPoseFileService poseFiles,
         ITransformRuntimePort runtime,
         EditHistory history,
@@ -83,7 +75,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         _framework = framework;
         _bindings = bindings;
         _posing = posing;
-        _skeletons = skeletons;
         _poseFiles = poseFiles;
         _runtime = runtime;
         _history = history;
@@ -117,10 +108,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
                HasSolveInput(endpoint, config);
     }
 
-    /// <summary>The bones the solver moves for this target — the limb a bake
-    /// is about. The bake itself writes the whole skeleton, as Brio's does;
-    /// this is what the UI names. Empty when the target is
-    /// not an armed, resolvable chain.</summary>
+    /// <summary>The bones changed by baking the selected chain.</summary>
     public IReadOnlyList<BoneId> AffectedChain(TransformTargetId target)
     {
         if (target.Bone is not { } boneId ||
@@ -133,10 +121,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     }
 
     /// <summary>
-    /// Brio's <c>ResetIK</c>, in order and on one tick: export the solved
-    /// skeleton, clear the stacks, disarm, register the per-bone import for the
-    /// next pass. Ok means the bake is armed and its actions are queued, not
-    /// that they have run — <see cref="Note"/> carries the outcome.
+    /// Captures the selected chain, disables it, and applies its saved pose on
+    /// the next evaluation. Note reports when the bake finishes or fails.
     /// </summary>
     public GestureResult Begin(TransformTargetId target)
     {
@@ -167,13 +153,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         if (!HasSolveInput(endpoint, config))
             return GestureResult.Fail("This chain has not solved anything yet.");
 
-        var slots = _skeletons.GetSkeletons(actor);
-        if (slots.Count == 0)
-            return GestureResult.Fail("This actor has no skeleton to bake.");
-
-        // STEP 1 — Brio SkeletonPosingCapability.cs:134-135. Taken HERE, while
-        // the chain is still solving: these absolutes ARE the solved pose.
-        var snapshot = _poseFiles.CreatePoseFile(slots);
+        ISkeleton[] slots = [endpoint.Skeleton];
+        var snapshot = _poseFiles.CreatePoseFile(slots, affected.Contains);
 
         // Every bone the bake may touch is captured before it touches any of
         // them, so a failure restores the exact pre-bake stacks and a success
@@ -183,7 +164,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             Generation = ++_generation,
             Target = target,
             Actor = actor,
-            Slots = new List<SlotBake>(slots.Count),
+            Slots = new List<SlotBake>(slots.Length),
             Order = new List<TransformTargetId>(),
             Before = new Dictionary<TransformTargetId, TransformTargetState>(),
             Chains = new List<(IBone, IkChainConfig)>(),
@@ -196,6 +177,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             var covered = new Dictionary<(int, int), TransformTargetId>();
             foreach (var bone in slot.Bones)
             {
+                if (!affected.Contains(bone))
+                    continue;
                 if (bone is VirtualBone)
                     continue;
                 // The snapshot's own predicate (Brio's export skips these, so
@@ -229,10 +212,11 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
         if (bake.Slots.Count == 0)
             return GestureResult.Fail("No bone of this actor could be bound for a bake.");
-        // The snapshots are ready; pending ownership is assigned after clearing.
+        if (_posing.SetIkConfiguration(endpoint, config with { Enabled = false }) is { } disableError)
+            return GestureResult.Fail(disableError);
+        bake.Chains.Add((endpoint, config));
 
-        // STEP 2 — clear the authored stacks of every covered bone. Named
-        // service layers stay: see the class remarks.
+        // Replace the selected chain's manual edits with its solved pose.
         foreach (var slot in bake.Slots)
         {
             var poseInfo = _posing.GetPoseInfo(slot.Skeleton);
@@ -247,20 +231,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             }
         }
 
-        // STEP 3 — IK back to defaults on every chain of every slot.
-        foreach (var slot in bake.Slots)
-        {
-            foreach (var bone in slot.Skeleton.Bones)
-            {
-                if (bone is VirtualBone)
-                    continue;
-                if (_posing.GetIkConfiguration(bone) is { Enabled: true } armed)
-                    bake.Chains.Add((bone, armed));
-            }
-            _posing.ClearIkConfigurations(slot.Skeleton);
-        }
-
-        // STEP 4 — register the per-bone import for the next pass.
+        // Apply each saved bone after its parent's edits on the next pass.
         _pending = bake;
         foreach (var slot in bake.Slots)
         {
@@ -434,7 +405,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         // One step, one inverse: undoing the bake puts the bones back AND
         // re-arms the chains it disarmed; redoing it bakes the bones and
         // disarms them again.
-        var slots = bake.Slots.Select(slot => slot.Skeleton).ToArray();
         _history.Append(new JournalStep(
             "Bake IK",
             () => RestoreStates(before) && RearmChains(bake),
@@ -442,8 +412,9 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             {
                 if (!RestoreStates(after))
                     return false;
-                foreach (var skeleton in slots)
-                    _posing.ClearIkConfigurations(skeleton);
+                foreach (var (bone, config) in bake.Chains)
+                    if (_posing.SetIkConfiguration(bone, config with { Enabled = false }) != null)
+                        return false;
                 return true;
             })
         {

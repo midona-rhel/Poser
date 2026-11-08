@@ -1542,6 +1542,24 @@ public sealed partial class DebugBridge : IDisposable
                         }
                 return Json(new { error = "no such bone" });
             }
+            case "/posefile":
+            {
+                var imports = (Application.Posing.IPoseImportCommands)_services.GetService(typeof(Application.Posing.IPoseImportCommands))!;
+                if (query.GetValueOrDefault("action") == "read")
+                    return Json(new { busy = imports.IsImportBusy, bakePending = _ikBake.IsPending, bakeNote = _ikBake.Note?.Text });
+                var path = query.GetValueOrDefault("path", "");
+                if (!Path.IsPathFullyQualified(path))
+                    return Json(new { error = "An absolute pose path is required." });
+                if (query.GetValueOrDefault("action") == "export")
+                {
+                    if (File.Exists(path)) return Json(new { error = "Choose a new diagnostic export file." });
+                    var capture = (Application.Posing.IPoseFileCapture)_services.GetService(typeof(Application.Posing.IPoseFileCapture))!;
+                    var exported = capture.ExportPose(id, path);
+                    return Json(new { ok = exported.Success, exported.Detail });
+                }
+                var imported = imports.ImportPose(id, path, PoseImportOptions.Default);
+                return Json(new { ok = imported.Success, imported.Detail });
+            }
             case "/library":
             {
                 // A full rescan, timed: how long the listing takes for
@@ -1609,6 +1627,21 @@ public sealed partial class DebugBridge : IDisposable
                             {
                                 var reset = _ikConfiguration.ResetDefaults(target);
                                 return Json(new { ok = reset.Success, reset.Detail });
+                            }
+                            if (query.GetValueOrDefault("action") is "bone" or "entity" &&
+                                FindActor(query.GetValueOrDefault("targetActor", "0")) is { } followed)
+                            {
+                                if (query.GetValueOrDefault("action") == "entity" && _bindings.GetActorId(followed) is { } followedId)
+                                {
+                                    var picked = _ikConfiguration.SetEntityTarget(target, SelectionId.ForActor(followedId));
+                                    return Json(new { ok = picked.Success, picked.Detail });
+                                }
+                                var targetBone = _skeletons.GetSkeletons(followed).SelectMany(s => s.Bones)
+                                    .FirstOrDefault(b => b.BoneName == query.GetValueOrDefault("targetName") && b.PartialId == 0);
+                                if (targetBone == null || _bindings.GetBoneId(targetBone) is not { } followedBone)
+                                    return Json(new { error = "Target bone not found." });
+                                var bonePicked = _ikConfiguration.SetBoneTarget(target, followedBone);
+                                return Json(new { ok = bonePicked.Success, bonePicked.Detail });
                             }
                             var next = current with
                             {
