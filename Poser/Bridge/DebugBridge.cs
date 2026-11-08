@@ -535,7 +535,7 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 return Json(global::Poser.Documents.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
             }
-            case "/placement": return Json(PlacementCommand(query));
+            case "/placement": return JsonSerializer.Serialize(PlacementCommand(query), new JsonSerializerOptions { IncludeFields = true });
             case "/selection":
             {
                 if (query.TryGetValue("entities", out var entityKeys))
@@ -2227,3 +2227,4 @@ public sealed partial class DebugBridge : IDisposable
     }
 }
 #endif
+
