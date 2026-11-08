@@ -1,0 +1,591 @@
+[
+  {
+    "solver": "TwoJoint",
+    "test": "enabling preserves pose",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 2.216203059338617e-06,
+        "degrees": 5.4721496101172777e-05
+      },
+      "j_ude_b_r": {
+        "metres": 2.8449956063327224e-06,
+        "degrees": 0.00018483361422815065
+      },
+      "j_te_r": {
+        "metres": 5.377555206593723e-06,
+        "degrees": 3.3850806167077473e-05
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "fixture stable before switch",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "switch to Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 6.999999996315509e-09,
+        "degrees": 6.389056940260397e-06
+      },
+      "j_ude_b_r": {
+        "metres": 5.000000000143778e-08,
+        "degrees": 1.4983666681503321e-05
+      },
+      "j_te_r": {
+        "metres": 5.000000002919336e-08,
+        "degrees": 2.4148365394514667e-06
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "undo Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "redo Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "switch to World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 1.4999999999043556e-08,
+        "degrees": 0.0004540759640471558
+      },
+      "j_ude_b_r": {
+        "metres": 1.8635986692939511e-06,
+        "degrees": 0.0005622447895739285
+      },
+      "j_te_r": {
+        "metres": 2.9849716916375415e-06,
+        "degrees": 1.1066171232981565e-05
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "undo World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "redo World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "undo swivel",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "TwoJoint",
+    "test": "redo swivel",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Ccd",
+    "test": "fixture stable before switch",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Ccd",
+    "test": "switch to Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 1.7141178488068958e-06,
+        "degrees": 0.00023337243189130945
+      },
+      "j_ude_b_r": {
+        "metres": 7.473700555949862e-06,
+        "degrees": 0.00035136494024071824
+      },
+      "j_te_r": {
+        "metres": 8.203555387748707e-06,
+        "degrees": 2.578339869758786e-05
+      }
+    }
+  },
+  {
+    "solver": "Ccd",
+    "test": "undo Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Ccd",
+    "test": "redo Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Ccd",
+    "test": "switch to World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 2.466395953608096e-06,
+        "degrees": 0.003292841920297188
+      },
+      "j_ude_b_r": {
+        "metres": 1.1768559809972187e-05,
+        "degrees": 0.0032020586822341175
+      },
+      "j_te_r": {
+        "metres": 8.629558563467655e-06,
+        "degrees": 1.01019860158646e-05
+      }
+    }
+  },
+  {
+    "solver": "Ccd",
+    "test": "undo World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Ccd",
+    "test": "redo World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Fabrik",
+    "test": "fixture stable before switch",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Fabrik",
+    "test": "switch to Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Fabrik",
+    "test": "undo Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 2.721382571521845e-05
+      }
+    }
+  },
+  {
+    "solver": "Fabrik",
+    "test": "redo Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Fabrik",
+    "test": "switch to World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 2.721382571521845e-05
+      }
+    }
+  },
+  {
+    "solver": "Fabrik",
+    "test": "undo World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Fabrik",
+    "test": "redo World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Rope",
+    "test": "fixture stable before switch",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Rope",
+    "test": "switch to Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Rope",
+    "test": "undo Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 6.000000003780759e-09,
+        "degrees": 0.0007523446394871184
+      },
+      "j_ude_b_r": {
+        "metres": 3.1200160256572944e-06,
+        "degrees": 0.0007422470622772046
+      },
+      "j_te_r": {
+        "metres": 3.167964646293204e-06,
+        "degrees": 1.0526028440638417e-05
+      }
+    }
+  },
+  {
+    "solver": "Rope",
+    "test": "redo Actor",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Rope",
+    "test": "switch to World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 6.000000003780759e-09,
+        "degrees": 0.0007523446394871184
+      },
+      "j_ude_b_r": {
+        "metres": 3.1200160256572944e-06,
+        "degrees": 0.0007422470622772046
+      },
+      "j_te_r": {
+        "metres": 3.167964646293204e-06,
+        "degrees": 1.0526028440638417e-05
+      }
+    }
+  },
+  {
+    "solver": "Rope",
+    "test": "undo World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  },
+  {
+    "solver": "Rope",
+    "test": "redo World",
+    "passed": true,
+    "errors": {
+      "j_ude_a_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_ude_b_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      },
+      "j_te_r": {
+        "metres": 0.0,
+        "degrees": 0.0
+      }
+    }
+  }
+]
