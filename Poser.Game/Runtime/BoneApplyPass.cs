@@ -343,6 +343,16 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             {
                 // The channels the driver didn't write stay neutral (no-op deltas).
                 var delta = stack.Transform;
+                if (stack.Frame == TransformFrame.BoneLocal)
+                {
+                    // This pass runs after the face is attached to the posed head.
+                    // Translate its stored offsets into that attached frame first.
+                    var origin = _stacks.FromApplySpace(bone, Transform.Identity);
+                    var offset = _stacks.FromApplySpace(bone,
+                        new Transform(delta.Position, Quaternion.Identity, delta.Scale));
+                    delta.Position = offset.Position - origin.Position;
+                    delta.Scale = offset.Scale;
+                }
                 if (!channels.HasFlag(TransformComponents.Position)) delta.Position = Vector3.Zero;
                 if (!channels.HasFlag(TransformComponents.Rotation)) delta.Rotation = Quaternion.Identity;
                 if (!channels.HasFlag(TransformComponents.Scale)) delta.Scale = Vector3.Zero;

@@ -124,6 +124,16 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
             ? _handles.Track(SceneEntityKind.Actor, player)
             : null;
 
+    public SceneEntityHandle? FindMatchingActor(SceneActor data, IReadOnlyCollection<SceneEntityHandle> used)
+    {
+        var hash = data.IdentityHash ?? SceneActorNames.Hash(SceneActorNames.Resolve(data));
+        var taken = used.Select(handle => _handles.Resolve(handle)).ToHashSet();
+        var actor = _actors.Actors.FirstOrDefault(candidate => candidate.Address != nint.Zero
+            && !candidate.IsCompanion && !_spawns.IsSpawnedActor(candidate)
+            && !taken.Contains(candidate) && SceneActorNames.Hash(candidate.Name) == hash);
+        return actor == null ? null : _handles.Track(SceneEntityKind.Actor, actor);
+    }
+
     // ── props and overlays ───────────────────────────────────────────────
 
     public SceneEntityHandle? SpawnProp(SceneProp data, out string? detail)

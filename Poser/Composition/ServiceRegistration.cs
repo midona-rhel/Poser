@@ -456,7 +456,8 @@ internal static class ServiceRegistration
                 sp.GetRequiredService<Application.Integration.ICustomizePlusPort>(),
                 sp.GetRequiredService<Documents.Mcdf.IMcdfFileBoundary>(),
                 sp.GetRequiredService<ISessionGenerationSource>(),
-                sp.GetRequiredService<Application.Integration.IntegrationOwnership>());
+                sp.GetRequiredService<Application.Integration.IntegrationOwnership>(),
+                sp.GetRequiredService<System.Lazy<IPoseSnapshotPort>>());
             // The MCDF hard limits are config-backed with conservative
             // defaults; read once at composition.
             var limits = sp.GetRequiredService<Application.Settings.ConfigurationService>()

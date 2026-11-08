@@ -268,9 +268,6 @@ internal sealed class SceneLoadTransaction(
         AppendSkipNote("overlays", options.IncludeOverlays, scene.Overlays?.Count ?? 0);
         AppendSkipNote("world objects", options.IncludeWorldObjects, scene.WorldObjects?.Count ?? 0);
         AppendSkipNote("the environment", options.IncludeEnvironment, scene.Environment is null ? 0 : 1);
-        foreach (var actor in _actors)
-            if (actor.AppearanceNotSaved)
-                _notes.Add(SceneSavePolicy.AppearanceNotSavedNote(actor.Name));
         // Scenes saved before #229 carry FABRIK chains beside a pose that
         // already holds their baked result; restoring them would restart
         // a solver over it.
@@ -329,6 +326,10 @@ internal sealed class SceneLoadTransaction(
             if (Guard() is { } stop)
                 return stop;
 
+            foreach (var actor in _actors)
+                if (materializer.FindMatchingActor(actor, _actorTokens.Values.ToArray()) is { } existing)
+                    _actorTokens[actor.Key] = existing;
+
             if (options.ClearExistingScene)
             {
                 // The clear cannot be undone, so a load that cannot even
@@ -341,7 +342,8 @@ internal sealed class SceneLoadTransaction(
                 operation.SessionCleared = true;
                 // A scene that holds the user's own character keeps it, so the
                 // load can put it back instead of spawning a copy.
-                if (sceneState.ClearScene(keepLocalPlayer: _actors.Any(actor => actor.LocalPlayer))
+                if (sceneState.ClearScene(keepLocalPlayer: _actors.Any(actor => actor.LocalPlayer && actor.IdentityHash == null),
+                        keepActors: _actorTokens.Values.ToArray())
                     .Summary() is { } cleared)
                     _notes.Add(cleared);
             }
@@ -363,21 +365,28 @@ internal sealed class SceneLoadTransaction(
                 operation.DefaultCameraBaseline =
                     materializer.CaptureDefaultCameraState();
 
+            int actorNumber = 0;
             foreach (var actor in _actors)
             {
+                actorNumber++;
+                if (_actorTokens.ContainsKey(actor.Key)) continue;
                 // The user's own character is reused, never spawned or removed by
                 // a rollback; a copy is spawned only when it is not in the scene.
-                if (actor.LocalPlayer && materializer.FindLocalPlayer() is { } player)
+                if (actor.LocalPlayer && actor.IdentityHash == null && materializer.FindLocalPlayer() is { } player)
                 {
                     _actorTokens[actor.Key] = player;
                     continue;
                 }
+                if (actor.IdentityHash != null)
+                    actor.Name = $"Actor {actorNumber}";
                 var token = materializer.SpawnActor(actor, out var detail);
                 if (token is null)
                     return $"Actor '{actor.Name}' could not be spawned: " +
                         $"{detail ?? "the spawn failed."}";
                 operation.SpawnedActors.Add(token);
                 _actorTokens[actor.Key] = token;
+                if (actor.AppearanceNotSaved)
+                    _notes.Add(SceneSavePolicy.AppearanceNotSavedNote(actor.Name));
             }
 
             foreach (var prop in _props)

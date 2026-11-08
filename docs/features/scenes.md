@@ -2,12 +2,13 @@
 
 ## Load history
 
-Actor names in scene files are authored display nicknames (or the native name
-when no nickname exists), never the temporary anonymous UI mask. Loading applies
-the saved name through the session nickname owner after actor binding is ready,
-before pose import, so a refused pose or placement cannot discard the name;
-resave and load redo preserve it. Native actor names remain unchanged because
-external appearance providers use them as identity.
+Anonymous mode saves numbered actor labels, including when a nickname contains
+a real character name. With anonymous mode off, saves use the displayed name.
+Original GPose characters also carry a SHA-256 hash of their normalized name.
+Loading matches that hash to existing characters before clearing or spawning;
+each live character is used at most once. Older files can match by their saved
+name. Unmatched entries spawn as before. Native actor names remain unchanged
+because external appearance providers use them as identity.
 New captures mark names as display names. Unmarked legacy names use the normal
 object-index cleanup; authored numeric suffixes in marked files remain intact.
 

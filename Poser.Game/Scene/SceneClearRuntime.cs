@@ -45,7 +45,7 @@ internal sealed class SceneClearRuntime(
     /// With keepLocalPlayer, the user's own character stays, for a load that puts
     /// it back where the scene had it.
     /// </summary>
-    public SceneClearOutcome ClearScene(bool keepLocalPlayer = false)
+    public SceneClearOutcome ClearScene(bool keepLocalPlayer = false, IReadOnlySet<object?>? keepActors = null)
     {
         int actorCount = 0;
         var refused = new List<string>();
@@ -58,7 +58,7 @@ internal sealed class SceneClearRuntime(
             if (actor.ActorKind is ActorKind.Companion or ActorKind.Mount or ActorKind.Ornament
                 || actor.Address == nint.Zero || !actors.Actors.Contains(actor))
                 continue;
-            if (keepLocalPlayer && actors.IsLocalPlayer(actor))
+            if ((keepLocalPlayer && actors.IsLocalPlayer(actor)) || keepActors?.Contains(actor) == true)
                 continue;
             // Gaze and appearance are released BEFORE the delete, while the
             // actor still exists to release them against; Brio does the same

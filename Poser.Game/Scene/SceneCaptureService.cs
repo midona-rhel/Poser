@@ -26,6 +26,15 @@ namespace Poser.Game.Scene;
 /// </summary>
 public sealed class SceneCaptureService
 {
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<IActor,
+        System.Runtime.CompilerServices.StrongBox<string>> _savedIdentities = new();
+
+    internal void RememberIdentity(IActor actor, string? hash)
+    {
+        _savedIdentities.Remove(actor);
+        if (hash != null) _savedIdentities.Add(actor, new(hash));
+    }
+
     private readonly IFramework _framework;
     private readonly IActorManager _actors;
     private readonly ISkeletonService _skeletons;
@@ -265,16 +274,16 @@ public sealed class SceneCaptureService
             var entry = new SceneActor
             {
                 Key = key,
-                // Save the name the user sees: their nickname, or the anonymous
-                // name while Anonymous mode is on, so a shared scene never
-                // carries a character's real name.
-                Name = Bounded(_configuration.GetDisplayName(key, actor.Name), $"Actor {key:N}"),
+                // Anonymous saves use numbered labels even when a nickname contains a real name.
+                Name = _configuration.Config.Display.AnonymousMode
+                    ? $"Actor {scene.Actors.Count + 1}"
+                    : Bounded(_configuration.GetDisplayName(key, actor.Name), $"Actor {scene.Actors.Count + 1}"),
+                IdentityHash = !_spawns.IsSpawnedActor(actor)
+                    ? SceneActorNames.Hash(actor.Name)
+                    : _savedIdentities.TryGetValue(actor, out var savedIdentity) ? savedIdentity.Value : null,
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
                 SpawnedKind = spawnedKind,
-                // Every loaded character is a clone of the local player, so
-                // anyone else's look exists only in an appearance package.
-                // Marked here and settled by the save policy, which is the
-                // step that knows whether a package survived.
+                // An unmatched character needs a saved appearance to restore their look.
                 AppearanceNotSaved = spawnedKind is null && !_actors.IsLocalPlayer(actor),
                 LocalPlayer = spawnedKind is null && _actors.IsLocalPlayer(actor),
                 NameIsDisplayName = true,

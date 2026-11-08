@@ -45,6 +45,11 @@ Customize+ Reset deletes Poser's temporary profile by its recorded ID; the
 provider then uses the actor's normal saved profile. Foreign Glamourer locks
 are refused before changes.
 
+Applying an MCDF to a posed actor captures the pose before changing appearance
+and restores it against the replacement skeleton before reporting success.
+Fresh, unposed actors skip this restore; scene loading applies their saved pose
+after appearance is ready.
+
 Fresh spawns clear retained Glamourer appearance after native self-identification
 and model assignment, within the original deferred-draw window. Slot-based native
 names can retain a previous occupant's model override even when the requested

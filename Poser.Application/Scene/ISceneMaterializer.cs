@@ -26,6 +26,9 @@ public interface ISceneMaterializer
     /// as theirs. Null when it is not in the scene; the load then spawns a copy.</summary>
     SceneEntityHandle? FindLocalPlayer();
 
+    /// <summary>Finds the saved character among live GPose actors, excluding actors already used by this load.</summary>
+    SceneEntityHandle? FindMatchingActor(SceneActor data, IReadOnlyCollection<SceneEntityHandle> used);
+
     /// <summary>Spawns one prop with its transform and visibility.</summary>
     SceneEntityHandle? SpawnProp(SceneProp data, out string? detail);
 

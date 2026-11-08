@@ -1,6 +1,7 @@
 using System.Reflection;
 using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
+using Poser.Application.Transforms;
 using Poser.Documents.Mcdf;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
@@ -17,11 +18,15 @@ public sealed class McdfHistoryTests
         var files = new Files { Body = true };
         var port = DispatchProxy.Create<IIntegrationRuntimeFake, Runtime>();
         var runtime = (Runtime)(object)port;
-        using var integration = new IntegrationGraph(port, files, sessions);
+        var poses = new Poses(runtime);
+        using var integration = new IntegrationGraph(port, files, sessions, poses);
         var actor = ActorId.New();
         Assert.True(integration.Mcdf.BeginImport(actor, "original.mcdf").Success);
         await integration.Mcdf.CurrentCompletion;
         Assert.True(integration.Mcdf.Progress!.Outcome!.Success, integration.Mcdf.Progress.Outcome.Detail);
+        Assert.Equal(actor.LogicalId, poses.Restored!.Lineage);
+        Assert.Equal(0, poses.ProfilesAtCapture);
+        Assert.Equal(1, poses.ProfilesAtRestore);
         var captured = integration.Selectors.TryCaptureHistory(actor);
         Assert.True(captured.Success, captured.Detail);
         Assert.NotNull(captured.Value!.McdfResources);
@@ -187,6 +192,27 @@ public sealed class McdfHistoryTests
     private sealed class Sessions : ISessionGenerationSource
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
+    }
+
+    private sealed class Poses(Runtime runtime) : IPoseSnapshotPort
+    {
+        public int ProfilesAtCapture;
+        public int ProfilesAtRestore;
+        public ActorSnapshot? Restored;
+
+        public ActorSnapshot? Capture(Guid lineage)
+        {
+            ProfilesAtCapture = runtime.AppliedProfiles.Count;
+            return new ActorSnapshot(lineage, new object(), []);
+        }
+
+        public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
+        {
+            ProfilesAtRestore = runtime.AppliedProfiles.Count;
+            Restored = snapshot;
+            finished(true);
+            return true;
+        }
     }
 
     public class Runtime : DispatchProxy

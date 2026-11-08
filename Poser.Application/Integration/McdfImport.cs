@@ -73,7 +73,8 @@ internal sealed class McdfImport(
     // ── Import ───────────────────────────────────────────────────────────
 
     internal async Task Run(
-        McdfOperation operation, string path, CancellationToken cancellation, McdfPackage? retained, McdfOperationDirectory? retainedDirectory)
+        McdfOperation operation, string path, CancellationToken cancellation, McdfPackage? retained, McdfOperationDirectory? retainedDirectory,
+        bool preservePose)
     {
         var actor = operation.Target;
         string fileName = operation.FileName;
@@ -205,7 +206,7 @@ internal sealed class McdfImport(
             // Preserve the posed result across a change of race, face, or skeleton.
             // The old bone offsets were calculated against the previous appearance.
             var savedPose = await actors.OnFrameworkThread(() =>
-                Guard() == null ? poses?.Value.CaptureForAppearanceChange(actor.LogicalId) : null);
+                preservePose && Guard() == null ? poses?.Value.CaptureForAppearanceChange(actor.LogicalId) : null);
 
             // Check provider availability on the framework thread before applying data.
             Step(McdfPhase.Preparing, filesTotal, bytesTotal);

@@ -681,15 +681,21 @@ public sealed class SceneWorkflowTests
         public string? LoadPreflight(int actors) => Preflight;
 
         public bool KeptLocalPlayer;
+        public IReadOnlyCollection<SceneEntityHandle>? KeptActors;
+        public string? MatchingHash;
 
-        public SceneClearOutcome ClearScene(bool keepLocalPlayer = false)
+        public SceneClearOutcome ClearScene(bool keepLocalPlayer = false, IReadOnlyCollection<SceneEntityHandle>? keepActors = null)
         {
             Record("ClearScene");
             KeptLocalPlayer = keepLocalPlayer;
+            KeptActors = keepActors;
             return new(2, 1, 0, 3, 1);
         }
 
         public SceneEntityHandle? FindLocalPlayer() => Token("actor:player");
+        public SceneEntityHandle? FindMatchingActor(SceneActor data, IReadOnlyCollection<SceneEntityHandle> used) =>
+            MatchingHash != null && data.IdentityHash == MatchingHash
+                && !used.Any(handle => _names[handle] == "actor:matched") ? Token("actor:matched") : null;
 
         public void DestroyActor(SceneEntityHandle actor) => Destroy(actor);
         public void DestroyProp(SceneEntityHandle prop) => Destroy(prop);
@@ -884,6 +890,15 @@ public sealed class SceneWorkflowTests
         Assert.DoesNotContain("actor:player", runtime.Destroyed);
         Assert.True(load.Progress!.Outcome!.SessionCleared);
         Assert.Contains("actor table is full", load.Progress.Outcome.Detail);
+
+        me.IdentityHash = SceneActorNames.Hash("Matching Character");
+        var matching = new FakeRuntime { ReadResult = SceneWith(me), MatchingHash = me.IdentityHash };
+        using var matchedLoad = Workflow(matching);
+        Assert.True(matchedLoad.BeginLoad("shot.xivs", clearFirst).Success);
+        await matchedLoad.Drain;
+        Assert.True(matchedLoad.Progress!.Outcome!.Success);
+        Assert.Single(matching.KeptActors!);
+        Assert.DoesNotContain(matching.Calls, call => call.StartsWith("SpawnActor"));
     }
 
     // ── issue #433: a committed load is one consistent history step ──────

@@ -14,5 +14,7 @@ public sealed class SceneActorNamesTests
         var actor = new SceneActor { Name = name, NameIsDisplayName = authored };
         var copy = JsonSerializer.Deserialize<SceneActor>(JsonSerializer.Serialize(actor))!;
         Assert.Equal(expected, SceneActorNames.Resolve(copy));
+        Assert.Equal(SceneActorNames.Hash("Matching Character"), SceneActorNames.Hash("matching character (201)"));
+        Assert.NotEqual(SceneActorNames.Hash("Matching Character"), SceneActorNames.Hash("Other Character"));
     }
 }

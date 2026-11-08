@@ -137,9 +137,10 @@ public sealed class McdfTransaction
             new McdfProgress(actor, fileName, kind, firstPhase, 0, 0, 0, 0, true, null),
             out cancellation);
 
-    public IntegrationResult BeginImport(ActorId actor, string path) => BeginImport(actor, path, null);
+    public IntegrationResult BeginImport(ActorId actor, string path, bool preservePose = true) =>
+        BeginImport(actor, path, null, preservePose);
 
-    private IntegrationResult BeginImport(ActorId actor, string path, McdfPackage? retained)
+    private IntegrationResult BeginImport(ActorId actor, string path, McdfPackage? retained, bool preservePose = true)
     {
         if (AdmissionGate() is { } refused)
             return refused;
@@ -152,7 +153,7 @@ public sealed class McdfTransaction
             McdfPhase.Reading, out var cancellation);
         operation.SourcePath = path;
         _import.Track(operation);
-        _flight.Run(() => _import.Run(operation, path, cancellation, retained, retainedDirectory));
+        _flight.Run(() => _import.Run(operation, path, cancellation, retained, retainedDirectory, preservePose));
         return IntegrationResult.Ok();
     }
 

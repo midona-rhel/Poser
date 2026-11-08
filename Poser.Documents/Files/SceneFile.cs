@@ -294,6 +294,10 @@ public class SceneActor
 
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>Hash of the original character name, used to find them in GPose without saving their name.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IdentityHash { get; set; }
+
     /// <summary>Older captures stored native names with temporary object-index suffixes.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool NameIsDisplayName { get; set; }

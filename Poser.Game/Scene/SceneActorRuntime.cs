@@ -254,6 +254,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         if (_bindings.GetActorId(target) is not { } id)
             return "The actor is no longer bound.";
         // Native names remain untouched: appearance providers identify by them.
+        _appearance.RememberActorIdentity(target, data.IdentityHash);
         _configuration.SetNickname(id.LogicalId, SceneActorNames.Resolve(data));
         return null;
     }

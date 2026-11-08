@@ -101,6 +101,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         _historyAppearanceFiles.Dispose();
     }
 
+    internal void RememberActorIdentity(IActor actor, string? hash) => _capture.RememberIdentity(actor, hash);
+
     public string? ArmSceneCapture(
         Guid sceneId,
         string? description,
@@ -544,7 +546,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 if (target == null) return "The actor is no longer available.";
                 if (_bindings.GetActorId(target) is not { } id)
                     return "The actor has no stable identity to import a character file onto.";
-                var started = _mcdf.BeginImport(id, source);
+                // The scene restores its saved pose after all appearances are ready.
+                var started = _mcdf.BeginImport(id, source, preservePose: false);
                 if (!started.Success)
                     return started.Detail ?? "The character file import was refused.";
                 // The transaction publishes a Pending receipt inside admission, so

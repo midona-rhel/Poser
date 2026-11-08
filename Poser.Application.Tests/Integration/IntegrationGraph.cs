@@ -1,5 +1,6 @@
 using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
+using Poser.Application.Transforms;
 using Poser.Documents.Mcdf;
 
 namespace Poser.Application.Tests.Integration;
@@ -14,10 +15,12 @@ public interface IIntegrationRuntimeFake
 /// <summary>The integration owners wired as composition wires them.</summary>
 internal sealed class IntegrationGraph : IDisposable
 {
-    public IntegrationGraph(IIntegrationRuntimeFake port, IMcdfFileBoundary files, ISessionGenerationSource sessions)
+    public IntegrationGraph(IIntegrationRuntimeFake port, IMcdfFileBoundary files, ISessionGenerationSource sessions,
+        IPoseSnapshotPort? poses = null)
     {
         Ownership = new IntegrationOwnership(port, port);
-        Mcdf = new McdfTransaction(port, port, port, port, files, sessions, Ownership);
+        Mcdf = new McdfTransaction(port, port, port, port, files, sessions, Ownership,
+            poses == null ? null : new Lazy<IPoseSnapshotPort>(() => poses));
         Reset = new IntegrationReset(port, port, port, port, Ownership, Mcdf);
         Selectors = new IntegrationSelectors(port, port, port, port, Ownership, Mcdf, Reset);
     }
