@@ -32,3 +32,10 @@ rewritten and its repeated dictionary lookup removed.
 User check: save two different camera views with the second active, load the
 scene, save again, and load again. Both views should keep their positions; the
 second should be active. Zoom should still work. User acceptance is pending.
+
+Repeated live verification passed after the user's request to test it. Switching
+to the restored inactive camera put it within 0.000006 game units of its saved
+position. A newly generated autosave restored an identical rendered view matrix.
+Manual save/load, another save/load, active-camera selection and zoom passed again.
+Deployment hashes still matched, autosave settings were restored, and the recent
+log contained no errors or exceptions. See [repeat measurements](camera-restore-repeat-2026-11-08.json).
