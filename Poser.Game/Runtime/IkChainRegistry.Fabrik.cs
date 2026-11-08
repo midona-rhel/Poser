@@ -21,9 +21,7 @@ internal sealed unsafe partial class IkChainRegistry
             return config.EndAnchor == null ? config : config with { EndAnchor = null };
         bool switched = previous != null && previous.EnforceEndRotation != config.EnforceEndRotation;
         bool reenabled = previous is { Enabled: false } && config.EndAnchor != null;
-        // A held end is relative to the held target; a new target retakes where it stands.
-        bool retargeted = previous != null && previous.TargetMode != config.TargetMode && config.EndAnchor != null;
-        if (!config.Enabled || !(switched || reenabled || retargeted))
+        if (!config.Enabled || !(switched || reenabled))
             return config;
         var chain = ResolveChain(endpoint, definition);
         return chain.TwoJointAvailable && _held.CaptureEndAnchor(endpoint, chain.SecondJoint) is { } anchor
@@ -36,6 +34,9 @@ internal sealed unsafe partial class IkChainRegistry
         config = PrepareEndAnchor(endpoint, config, previous);
         if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope))
         {
+            if (config.Enabled && previous is { Enabled: true } && previous.TargetMode != config.TargetMode
+                && _ikChains.TryGetValue(ChainKey(endpoint), out var state))
+                config = _held.ChangeTargetMode(state, endpoint, config);
             // Prepare before the value journal captures its after-state too:
             // changing CCD depth changes which parent owns the target frame.
             return config.Enabled && config.TargetMode == IkTargetMode.Actor
@@ -43,6 +44,10 @@ internal sealed unsafe partial class IkChainRegistry
                     && (config.Solver != previous.Solver || config.CcdDepth != previous.CcdDepth))
                 ? config with { ActorAnchor = _held.CaptureActorAnchor(endpoint, config) } : config;
         }
+        if (config.Fabrik is { } control && config.TargetMode is IkTargetMode.Actor or IkTargetMode.World
+            && control.Handle.Mode != config.TargetMode
+            && CaptureFabrikTarget(endpoint, config.TargetMode) is { } handle)
+            config = config with { Fabrik = control with { Handle = handle } };
         if (config.Fabrik == null && config.Enabled
             || config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
                 && (config.ParentDepth != previous.ParentDepth || config.ChildDepth != previous.ChildDepth))
@@ -134,6 +139,10 @@ internal sealed unsafe partial class IkChainRegistry
         RefreshCache(source);
         var authored = _stacks.GetIkModification(source) ?? Transform.Identity;
         var model = source.LastTransform;
+        if (mode is IkTargetMode.Actor or IkTargetMode.World
+            && config.Fabrik is { } control && control.Handle.Mode != mode
+            && ResolveFabrikTarget(endpoint, control.Handle, true) is { } held)
+            model = _stacks.FromApplySpace(endpoint, new Transform(held.Position, held.Rotation, model.Scale));
         if (mode == IkTargetMode.Actor)
             return new(mode, model.Position, model.Rotation, authored.Position, authored.Rotation);
         if (source.Skeleton is not Skeleton skeleton) return null;

@@ -92,12 +92,13 @@ internal sealed unsafe class IkHeldTargets
     /// space through the skeleton's matrix, then moved and turned by what
     /// was authored since capture. Null when it cannot be resolved.</summary>
     public (Vector3 Position, Quaternion Rotation)? ResolveHeld(
-        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null)
+        IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null,
+        bool useSolveFrame = false)
     {
         if (pose != null && !ik.PreviewModelSpace
             && (ik.SeatPending || ik.Config.ActorAnchor is { Unseated: true }))
             Seat(ik, endpoint, authoredPosition, authoredRotation, pose);
-        if (pose != null && ik.Config.TargetMode != IkTargetMode.Actor)
+        if (pose != null)
             RecordSolveParent(ik, endpoint, pose);
         if (ik.HeldCapture is not { } capture)
             return null;
@@ -107,7 +108,8 @@ internal sealed unsafe class IkHeldTargets
                     * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } actorAnchor })
         {
-            return actorAnchor.Resolve(authoredPosition, authoredRotation, ActorParentFrame(endpoint, actorAnchor, pose));
+            return actorAnchor.Resolve(authoredPosition, authoredRotation,
+                useSolveFrame ? ik.SolveParentFrame : ActorParentFrame(endpoint, actorAnchor, pose));
         }
         Vector3 worldPosition;
         Quaternion worldRotation;
@@ -268,6 +270,34 @@ internal sealed unsafe class IkHeldTargets
             ParentName = parent?.BoneName, ParentPartial = parent?.PartialId ?? 0,
             ParentTransform = parent == null ? null : AnchorPose(_stacks.ToApplySpace(parent, parent.LastTransform)),
         };
+    }
+
+    public IkChainConfig ChangeTargetMode(IkChainState previous, IBone endpoint, IkChainConfig config)
+    {
+        var authored = _stacks.GetIkModification(endpoint) ?? Transform.Identity;
+        if (ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, useSolveFrame: true) is not { } target)
+            return config;
+        // Convert the solver's held target, rather than recapturing the pose before IK bends the limb.
+        if (config.TargetMode == IkTargetMode.Actor && config.ActorAnchor == null)
+            return config with
+            {
+                ActorAnchor = CaptureActorAnchor(endpoint, config) with
+                {
+                    Position = target.Position, Rotation = target.Rotation,
+                    ParentTransform = previous.SolveParentFrame, Unseated = false,
+                },
+            };
+        if (config.TargetMode == IkTargetMode.World && config.WorldAnchor == null
+            && endpoint.Skeleton is Skeleton skeleton)
+        {
+            var frame = skeleton.GetModelTransform();
+            return config with
+            {
+                WorldAnchor = new HeldTarget(Vector3.Transform(target.Position, frame.ToMatrix()),
+                    Quaternion.Normalize(frame.Rotation * target.Rotation), authored.Position, authored.Rotation),
+            };
+        }
+        return config;
     }
 
     /// <summary>The forearm and end bone as they stand now, and the user's

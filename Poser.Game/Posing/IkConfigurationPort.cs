@@ -43,12 +43,6 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     {
         _journal.Seal();
         var before = Get(target);
-        if (config is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control }
-            && config.TargetMode is IkTargetMode.Actor or IkTargetMode.World
-            && control.Handle.Mode != config.TargetMode
-            && target.Bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } endpoint }
-            && _bonePosing.CaptureFabrikTarget(endpoint, config.TargetMode) is { } handle)
-            config = config with { Fabrik = control with { Handle = handle } };
         var result = Write(target, config);
         config = Get(target) ?? config; // Record captured endpoints, not the uncaptured request.
         if (!result.Success || before is null || before == config)

@@ -63,6 +63,9 @@ public sealed record IkChainConfig(
     public int ChildDepth { get; init; }
     public FabrikControl? Fabrik { get; init; }
     public IkActorAnchor? ActorAnchor { get; init; }
+    /// <summary>The held world target saved by Undo, including an initial capture awaiting its first solve.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public HeldTarget? WorldAnchor { get; init; }
     /// <summary>Two Joint: the end bone as it stood at the last End rotation
     /// switch. Null until the first switch.</summary>
     public IkEndRotationAnchor? EndAnchor { get; init; }
