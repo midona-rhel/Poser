@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.9.24-beta — Scene autosaves and reliable restoration
+
+### Scenes and autosaves
+
+- Changed autosaves to save the whole scene, including the main camera.
+- Moved old pose autosaves into a separate legacy section.
+- Made scenes load As saved by default when you are on the same map.
+- Fixed saved camera positions and restored the camera that was active when saving.
+- Kept existing characters in their scene slots when loading, including with Anonymous mode on.
+- Kept real character names out of scene saves when Anonymous mode is on.
+- Fixed reloaded scenes failing to hide the same borrowed map objects.
+- Saved animation state by default, including playback position and paused state.
+
+### MCDF and imports
+
+- Kept the pose and eyes in place when applying an MCDF.
+- Made MCDF files faster to save.
+- Added an option to add an imported MCDF to the Library.
+- Added Import from clipboard to the Import menus.
+- Made spawning, duplicating and importing entities use the same Placement setting.
+
+### IK and posing
+
+- Kept limbs in place when switching IK targets and undoing those changes.
+- Fixed Bake affecting other IK chains instead of only the selected chain.
+- Fixed pose exports changing poses with active IK.
+- Fixed Reset All leaving a changed actor model in place.
+
+### Interface and undo
+
+- Fixed Library cards flickering and getting cut off while resizing.
+- Kept camera movement and grouped edits as separate undo steps.
+
 ## 0.9.23-beta — Better colliders and steadier posing
 
 ### Colliders
