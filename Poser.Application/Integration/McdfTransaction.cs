@@ -3,6 +3,7 @@ using Poser.Documents.Mcdf;
 using Poser.Domain.Operations;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
+using Poser.Application.Transforms;
 
 namespace Poser.Application.Integration;
 
@@ -48,14 +49,15 @@ public sealed class McdfTransaction
         ICustomizePlusPort customizePlus,
         IMcdfFileBoundary files,
         ISessionGenerationSource sessions,
-        IntegrationOwnership ownership)
+        IntegrationOwnership ownership,
+        Lazy<IPoseSnapshotPort>? poses = null)
     {
         _actors = actors;
         _files = files;
         _sessions = sessions;
         _ownership = ownership;
         _teardown = new McdfTeardown(actors, penumbra, glamourer, customizePlus, files, sessions, ownership);
-        _import = new McdfImport(actors, penumbra, glamourer, customizePlus, files, sessions, ownership, _teardown, _flight);
+        _import = new McdfImport(actors, penumbra, glamourer, customizePlus, files, sessions, ownership, _teardown, _flight, poses);
         _export = new McdfExport(penumbra, glamourer, files, ownership, _flight);
     }
 

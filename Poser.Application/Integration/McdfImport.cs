@@ -3,6 +3,7 @@ using Poser.Documents.Mcdf;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Operations;
+using Poser.Application.Transforms;
 
 namespace Poser.Application.Integration;
 
@@ -20,7 +21,8 @@ internal sealed class McdfImport(
     ISessionGenerationSource sessions,
     IntegrationOwnership ownership,
     McdfTeardown teardown,
-    SingleFlightOwner<McdfOperation, McdfProgress> flight)
+    SingleFlightOwner<McdfOperation, McdfProgress> flight,
+    Lazy<IPoseSnapshotPort>? poses)
 {
     private McdfOperation? _inFlight;
 
@@ -200,6 +202,11 @@ internal sealed class McdfImport(
                 }
             }
 
+            // Preserve the posed result across a change of race, face, or skeleton.
+            // The old bone offsets were calculated against the previous appearance.
+            var savedPose = await actors.OnFrameworkThread(() =>
+                Guard() == null ? poses?.Value.CaptureForAppearanceChange(actor.LogicalId) : null);
+
             // Check provider availability on the framework thread before applying data.
             Step(McdfPhase.Preparing, filesTotal, bytesTotal);
             var prepared = await actors.OnFrameworkThread(() =>
@@ -347,6 +354,20 @@ internal sealed class McdfImport(
             {
                 await FailAsync(failure);
                 return;
+            }
+
+            if (savedPose != null)
+            {
+                var restored = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var started = await actors.OnFrameworkThread(() =>
+                    Guard() == null && poses!.Value.Restore(savedPose,
+                        () => Guard() == null && actors.IsResolvable(actor),
+                        ok => restored.TrySetResult(ok)));
+                if (!started || !await restored.Task.WaitAsync(cancellation))
+                {
+                    await FailAsync("The character's pose could not be restored after applying its appearance.");
+                    return;
+                }
             }
 
             // After all components succeed, check cancellation and actor identity again.

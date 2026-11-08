@@ -73,6 +73,11 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort, IDisposable
     public ActorSnapshot? CaptureAuthored(Guid lineage)
         => Capture(lineage, authoredOnly: true);
 
+    public ActorSnapshot? CaptureForAppearanceChange(Guid lineage) =>
+        Live(lineage) is { } actor && _skeletons.GetSkeletons(actor)
+            .Any(s => s.Bones.Any(_posing.HasModifications))
+            ? Capture(lineage) : null;
+
     private ActorSnapshot? Capture(Guid lineage, bool authoredOnly)
     {
         if (Live(lineage) is not { } actor)
