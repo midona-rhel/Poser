@@ -30,7 +30,7 @@ public sealed partial class DebugBridge
                 "camera" => _creation.CreateCamera(CameraKind.Free),
                 "orbit" => _creation.CreateCamera(CameraKind.Game),
                 "collider" => _creation.CreateCollider(IkColliderShape.Sphere),
-                "overlay" => _creation.CreateOverlay(OverlayNodeKind.Line),
+                "overlay" => _creation.CreateOverlay(OverlayNodeKind.Talk),
                 "world" when query.TryGetValue("path", out var path) => _creation.CreateWorldObject(path),
                 _ => new(null, "Unknown creation kind or missing world-object path."),
             };
@@ -60,3 +60,4 @@ public sealed partial class DebugBridge
     }
 }
 #endif
+
