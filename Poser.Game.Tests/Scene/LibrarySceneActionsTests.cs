@@ -25,7 +25,7 @@ public sealed class LibrarySceneActionsTests
             Substitute.For<ISceneCreation>(), Substitute.For<IPendingSceneCreation>());
         actions.SpawnEntry("group.xivs", PoseLibraryEntryKind.Group, ObjectPlacementMode.RelativeToCamera);
         scene.Received().BeginLoad("group.xivs", Arg.Is<SceneLoadOptions>(o =>
-            !o.ClearExistingScene && o.PlacementPosition == new Vector3(3, 4, 5) && o.PlacementYaw == 1.25f));
+            !o.ClearExistingScene && !o.ReuseExistingActors && o.PlacementPosition == new Vector3(3, 4, 5) && o.PlacementYaw == 1.25f));
         actions.LoadScene("scene.xivs", ObjectPlacementMode.AsSaved);
         scene.Received().BeginLoad("scene.xivs", Arg.Is<SceneLoadOptions>(o => o.ClearExistingScene));
     }

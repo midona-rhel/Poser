@@ -709,6 +709,12 @@ public sealed class SceneWorkflowTests
             MatchingHash != null && data.IdentityHash == MatchingHash
                 && !used.Any(handle => _names[handle] == "actor:matched") ? Token("actor:matched") : null;
 
+        public Action CaptureActorRestore(SceneEntityHandle actor)
+        {
+            Record($"Capture:{TokenName(actor)}");
+            return () => Record($"Restore:{TokenName(actor)}");
+        }
+
         public void DestroyActor(SceneEntityHandle actor) => Destroy(actor);
         public void DestroyProp(SceneEntityHandle prop) => Destroy(prop);
         public void DestroyOverlay(SceneEntityHandle overlay) => Destroy(overlay);
@@ -900,6 +906,7 @@ public sealed class SceneWorkflowTests
         Assert.True(runtime.KeptLocalPlayer);
         Assert.DoesNotContain("SpawnActor:Me", runtime.Calls);
         Assert.DoesNotContain("actor:player", runtime.Destroyed);
+        Assert.Contains("Restore:actor:player", runtime.Calls);
         Assert.True(load.Progress!.Outcome!.SessionCleared);
         Assert.Contains("actor table is full", load.Progress.Outcome.Detail);
 
@@ -910,7 +917,15 @@ public sealed class SceneWorkflowTests
         await matchedLoad.Drain;
         Assert.True(matchedLoad.Progress!.Outcome!.Success);
         Assert.Single(matching.KeptActors!);
+        Assert.Contains("Capture:actor:matched", matching.Calls);
         Assert.DoesNotContain(matching.Calls, call => call.StartsWith("SpawnActor"));
+
+        var entry = new FakeRuntime { ReadResult = SceneWith(me), MatchingHash = me.IdentityHash };
+        using var entryLoad = Workflow(entry);
+        Assert.True(entryLoad.BeginLoad("actor.xivs", new() { ReuseExistingActors = false }).Success);
+        await entryLoad.Drain;
+        Assert.Contains(entry.Calls, call => call.StartsWith("SpawnActor"));
+        Assert.DoesNotContain(entry.Calls, call => call.StartsWith("Capture:"));
     }
 
     // ── issue #433: a committed load is one consistent history step ──────

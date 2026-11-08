@@ -304,15 +304,9 @@ internal sealed class SceneLoadTransaction(
             _overlays.Count + _worldObjects.Count +
             (_environment is null ? 0 : 1);
 
-        // Every entity that other phases depend on. Actor spawn failures are
-        // structural: pose and relationships cannot proceed against a hole.
-        //
-        // The destroy-first clear runs at the head of the same framework
-        // action, so nothing this load creates can be caught by the sweep
-        // that was meant to precede it. It is deliberately OUTSIDE the
-        // rollback ledger: rollback undoes what this operation CREATED, and
-        // no ledger can resurrect an actor the user asked to be rid of —
-        // which is why the clear reports what it cost.
+        // Capture reused actors before clearing or restoring the scene. Undo
+        // puts those actors back and removes the entities this load creates.
+        // Entities removed by Clear scene remain outside the load's undo.
         Step(ScenePhase.SpawningEntities);
         bool refusedBeforeClear = false;
         var spawnFailure = await sceneState.OnFramework(() =>
@@ -320,14 +314,20 @@ internal sealed class SceneLoadTransaction(
             if (Guard() is { } stop)
                 return stop;
 
-            foreach (var actor in _actors)
-                if (materializer.FindMatchingActor(actor, _actorTokens.Values.ToArray()) is { } existing)
+            if (options.ReuseExistingActors)
+                foreach (var actor in _actors)
+                {
+                    var existing = materializer.FindMatchingActor(actor, _actorTokens.Values.ToArray());
+                    if (existing == null && actor.LocalPlayer && actor.IdentityHash == null)
+                        existing = materializer.FindLocalPlayer();
+                    if (existing == null) continue;
+                    operation.ActorRestores.Add(materializer.CaptureActorRestore(existing));
                     _actorTokens[actor.Key] = existing;
+                }
 
             if (options.ClearExistingScene)
             {
-                // The clear cannot be undone, so a load that cannot even
-                // start its required steps refuses BEFORE it.
+                // Check actor capacity before clearing the current scene.
                 if (sceneState.LoadPreflight(_actors.Count) is { } preflight)
                 {
                     refusedBeforeClear = true;
@@ -342,9 +342,7 @@ internal sealed class SceneLoadTransaction(
                     _notes.Add(cleared);
             }
 
-            // From the first native step to the terminal, the pose slot
-            // is this load's: a library or inspector import refuses
-            // instead of superseding the import an actor is waiting on.
+            // Keep other pose imports out while this scene is restoring actors.
             actorRestore.HoldPoseImports(true);
 
             // A baseline is captured only for what this load will WRITE:
@@ -364,13 +362,6 @@ internal sealed class SceneLoadTransaction(
             {
                 actorNumber++;
                 if (_actorTokens.ContainsKey(actor.Key)) continue;
-                // The user's own character is reused, never spawned or removed by
-                // a rollback; a copy is spawned only when it is not in the scene.
-                if (actor.LocalPlayer && actor.IdentityHash == null && materializer.FindLocalPlayer() is { } player)
-                {
-                    _actorTokens[actor.Key] = player;
-                    continue;
-                }
                 if (actor.IdentityHash != null)
                     actor.Name = $"Actor {actorNumber}";
                 var token = materializer.SpawnActor(actor, out var detail);

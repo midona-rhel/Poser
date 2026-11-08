@@ -4,7 +4,7 @@ namespace Poser.Application.Scene;
 
 /// <summary>
 /// Removes a load's groups and parent links, restores environment and camera
-/// baselines, then releases its entities in reverse order within each kind.
+/// baselines, releases created entities, and restores actors reused by the load.
 /// Used both when a load aborts and when the user undoes a committed load.
 /// </summary>
 internal sealed class SceneLoadRollback(
@@ -87,6 +87,12 @@ internal sealed class SceneLoadRollback(
         Release(operation.SpawnedActors, materializer.DestroyActor,
             "actor", failures);
 
+        foreach (var restore in operation.ActorRestores)
+        {
+            try { restore(); }
+            catch (Exception ex) { failures.Add($"actor restore: {ex.Message}"); }
+        }
+        operation.ActorRestores.Clear();
         return failures.Count == 0 ? null : string.Join("; ", failures);
     }
 

@@ -30,6 +30,7 @@ internal sealed class SceneOperation : SingleFlightOperation
     // What THIS operation created, in creation order; rollback walks
     // these in reverse. Receipts contain no native references.
     public readonly List<SceneEntityHandle> SpawnedActors = new();
+    public readonly List<Action> ActorRestores = new();
     public readonly List<SceneEntityHandle> SpawnedProps = new();
     public readonly List<SceneEntityHandle> StagedOverlays = new();
     public readonly List<SceneEntityHandle> SpawnedLights = new();

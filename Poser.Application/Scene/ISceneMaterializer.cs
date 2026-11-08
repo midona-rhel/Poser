@@ -29,6 +29,9 @@ public interface ISceneMaterializer
     /// <summary>Finds the saved character among live GPose actors, excluding actors already used by this load.</summary>
     SceneEntityHandle? FindMatchingActor(SceneActor data, IReadOnlyCollection<SceneEntityHandle> used);
 
+    /// <summary>Captures an existing actor so undo can restore it without removing it.</summary>
+    Action CaptureActorRestore(SceneEntityHandle actor);
+
     /// <summary>Spawns one prop with its transform and visibility.</summary>
     SceneEntityHandle? SpawnProp(SceneProp data, out string? detail);
 

@@ -48,6 +48,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     private readonly Poser.Application.Integration.IntegrationReset _integration;
     private readonly IActorManager _actors;
     private readonly IPlaceService _place;
+    private readonly IActorLifecycle _actorState;
+    private readonly AnimationSession _animation;
     private sealed record BorrowedBaseline(WorldObjectState State);
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SceneEntityHandle, BorrowedBaseline> _borrowedBaselines = new();
 
@@ -74,7 +76,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         Poser.Application.Integration.IntegrationReset integration,
         IActorManager actors,
         Poser.Application.Selection.SelectionSession selection,
-        IPluginLog log, IPlaceService place)
+        IPluginLog log, IPlaceService place, SceneLifecycleHistory lifecycle, AnimationSession animation)
     {
         _handles = handles;
         _history = history;
@@ -94,6 +96,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         _selection = selection;
         _log = log;
         _place = place;
+        _actorState = lifecycle.ActorStatePort;
+        _animation = animation;
     }
 
     public string WorldObjectName(string path) => WorldObjects.WorldObjectService.DisplayName(path);
@@ -134,6 +138,24 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
             && !candidate.IsCompanion && !_spawns.IsSpawnedActor(candidate)
             && !taken.Contains(candidate) && SceneActorNames.Hash(candidate.Name) == hash);
         return actor == null ? null : _handles.Track(SceneEntityKind.Actor, actor);
+    }
+
+    public Action CaptureActorRestore(SceneEntityHandle token)
+    {
+        var actor = _handles.Require<IActor>(token, SceneEntityKind.Actor);
+        var state = _actorState.Read(actor);
+        var name = _actorState.GetName(actor);
+        var id = _bindings.GetActorId(actor)!.Value;
+        var animation = _animation.Capture(id);
+        return () =>
+        {
+            bool Current() => ReferenceEquals(_handles.Resolve(token), actor) && _actors.IsAvailable(actor);
+            if (!Current()) return;
+            _actorState.SetName(actor, name);
+            var restored = _animation.Restore(id, animation);
+            if (!restored.Success) _log.Warning(restored.Detail ?? "The actor's animation could not be restored.");
+            _actorState.Restore(actor, state, Current);
+        };
     }
 
     // ── props and overlays ───────────────────────────────────────────────

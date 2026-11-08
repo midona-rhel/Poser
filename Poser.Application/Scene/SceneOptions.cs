@@ -94,6 +94,9 @@ public sealed record SceneLoadOptions
     /// </summary>
     public bool ClearExistingScene { get; init; }
 
+    /// <summary>Restore matching characters when loading a scene; Library entries spawn copies.</summary>
+    public bool ReuseExistingActors { get; init; } = true;
+
     public bool IncludeActors { get; init; } = true;
     public bool IncludeProps { get; init; } = true;
     public bool IncludeLights { get; init; } = true;

@@ -31,7 +31,7 @@ public sealed class LibrarySceneActions(
     public Outcome SpawnEntry(string path, PoseLibraryEntryKind kind, ObjectPlacementMode placement)
     {
         // Entry loads add to the scene. The full-scene clear option stays separate.
-        var options = new SceneLoadOptions();
+        var options = new SceneLoadOptions { ReuseExistingActors = false };
         if (kind == PoseLibraryEntryKind.Overlay)
             options = SceneLoadOptions.Only(SceneCategories.Overlays);
         else if (kind == PoseLibraryEntryKind.Environment)
