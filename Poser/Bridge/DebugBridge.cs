@@ -1547,17 +1547,17 @@ public sealed partial class DebugBridge : IDisposable
                 var imports = (Application.Posing.IPoseImportCommands)_services.GetService(typeof(Application.Posing.IPoseImportCommands))!;
                 if (query.GetValueOrDefault("action") == "read")
                     return Json(new { busy = imports.IsImportBusy, bakePending = _ikBake.IsPending, bakeNote = _ikBake.Note?.Text });
-                var path = query.GetValueOrDefault("path", "");
-                if (!Path.IsPathFullyQualified(path))
+                var posePath = query.GetValueOrDefault("path", "");
+                if (!Path.IsPathFullyQualified(posePath))
                     return Json(new { error = "An absolute pose path is required." });
                 if (query.GetValueOrDefault("action") == "export")
                 {
-                    if (File.Exists(path)) return Json(new { error = "Choose a new diagnostic export file." });
+                    if (File.Exists(posePath)) return Json(new { error = "Choose a new diagnostic export file." });
                     var capture = (Application.Posing.IPoseFileCapture)_services.GetService(typeof(Application.Posing.IPoseFileCapture))!;
-                    var exported = capture.ExportPose(id, path);
+                    var exported = capture.ExportPose(id, posePath);
                     return Json(new { ok = exported.Success, exported.Detail });
                 }
-                var imported = imports.ImportPose(id, path, PoseImportOptions.Default);
+                var imported = imports.ImportPose(id, posePath, Documents.Files.PoseImportOptions.Default);
                 return Json(new { ok = imported.Success, imported.Detail });
             }
             case "/library":
