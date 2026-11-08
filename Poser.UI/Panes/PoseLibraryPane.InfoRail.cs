@@ -7,9 +7,8 @@ public sealed partial class PoseLibraryPane
     public float DrawInfoRail(Vector2 origin, Vector2 size)
     {
         int selected = _vm.Selected;
-        bool hasTile = selected >= 0 && selected < _vm.Tiles.Count && selected < _tileModified.Count;
-        return _details.DrawInfoRail(origin, size, hasTile ? _vm.Tiles[selected] : null,
-            hasTile ? _tileModified[selected] : "", hasTile ? _tileContents[selected] : "");
+        bool hasTile = selected >= 0 && selected < _vm.Tiles.Count;
+        return _details.DrawInfoRail(origin, size, hasTile ? _vm.Tiles[selected] : null);
     }
 
     public void DrawObjectsRail(Vector2 origin, Vector2 size)
