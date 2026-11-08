@@ -149,7 +149,12 @@ public sealed class SceneCreation : ISceneCreation
         switch (entity)
         {
             case IActor actor:
-                _posing.SetTransformOverride(actor, _posing.GetEffectiveTransform(actor) with { Position = point });
+                // The spawn finishes positioning the native actor before this callback.
+                _lifecycle.WhenPosable(actor, ready =>
+                {
+                    if (!_posing.SetTransformOverride(ready, _posing.GetEffectiveTransform(ready) with { Position = point }))
+                        _log.Warning("The new actor could not be placed.");
+                });
                 break;
             case ILight light:
                 light.Transform = light.Transform with { Position = point };
