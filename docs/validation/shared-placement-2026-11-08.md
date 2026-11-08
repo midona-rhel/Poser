@@ -37,3 +37,27 @@ historical placement prose was removed.
 UI check: change Settings → Spawning → Placement, then add an actor and a light,
 duplicate a group, and load a camera file. Compare In front of camera with Relative
 to actor. The same choice should apply throughout, and group spacing should stay intact.
+
+
+## Consolidation follow-up
+
+Spawning now uses the existing world-transform reader and writer for actors,
+lights, props, world objects and colliders, and the existing group-centre calculation.
+Actor creation uses the same creation path as the other entities. Cameras retain
+their camera-specific position handling.
+
+The first attempt exposed a real ordering requirement: a new light has no scene ID
+when creation returns. The shared transform implementation now accepts the object
+at creation time. ID-based callers resolve their object and use that same code.
+This replaces the duplicate transform switches in spawning.
+
+Candidate `49a42eca` passed the Release build and all 906 existing tests. No tests
+were added or removed. All six runtime assemblies matched the live output.
+The repeated bridge checks passed for all three placement modes, minion/world-object
+creation, posed copies, group spacing and creation undo/redo. The placement setting
+was restored. [Numerical results](shared-placement-cleanup-2026-11-08.json).
+
+The guard review retained the native thread/session checks, missing-anchor checks,
+and transform validation. It removed the repeated actor-creation checks and redundant
+empty-group check. Comments explain the object-before-ID ordering and why actors wait
+until native spawning finishes. UI behavior is unchanged; the earlier UI check applies.
