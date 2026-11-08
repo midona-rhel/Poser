@@ -6,6 +6,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
 using Poser.Game.Overlays;
 using Poser.Application.Lifecycle;
+using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
 
@@ -28,7 +29,7 @@ public sealed class SceneCreation : ISceneCreation
     private readonly SceneRuntimeHandles _handles;
     private readonly IPlacementAnchorSource _anchors;
     private readonly Application.Settings.ConfigurationService _configuration;
-    private readonly IPosingService _posing;
+    private readonly IParentingRuntime _transforms;
     private readonly IVirtualCameraService _cameras;
     private readonly ILightingService _lighting;
     private readonly IOverlayNodeService _overlays;
@@ -38,7 +39,7 @@ public sealed class SceneCreation : ISceneCreation
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
-        IEntityBindings bindings, ISkeletonService skeletons, IPlacementAnchorSource anchors, Application.Settings.ConfigurationService configuration, IPosingService posing, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
+        IEntityBindings bindings, ISkeletonService skeletons, IPlacementAnchorSource anchors, Application.Settings.ConfigurationService configuration, IParentingRuntime transforms, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
         Application.Integration.IntegrationSelectors integration, IPluginLog log,
         Application.Transforms.TransformParenting parenting)
     {
@@ -51,7 +52,7 @@ public sealed class SceneCreation : ISceneCreation
         _skeletons = skeletons;
         _anchors = anchors;
         _configuration = configuration;
-        _posing = posing;
+        _transforms = transforms;
         _cameras = cameras;
         _lighting = lighting;
         _overlays = overlays;
@@ -73,17 +74,13 @@ public sealed class SceneCreation : ISceneCreation
 
     public SceneCreationResult CreateActor(ActorCreationRequest request)
     {
-        if (!CanCreate) return new(null, "Actor creation requires an active GPose session.");
-        if (!TryPlacement(out var position, out var refusal)) return new(null, refusal);
         var catalog = request.Catalog;
-        var actor = _lifecycle.SpawnActor(
+        return Create(SceneEntityKind.Actor, () => _lifecycle.SpawnActor(
             catalog is { } item ? $"Add {item.Name}" : request.ReserveCompanionSlot
                 ? "Add actor with companion slot" : "Add actor",
             () => catalog is { } entry ? _spawn.SpawnCatalogActor(entry)
                 : _spawn.SpawnNewActor(request.ReserveCompanionSlot, request.ModelCharaId),
-            name: catalog?.Name);
-        Place(actor, position);
-        return Track(SceneEntityKind.Actor, actor);
+            name: catalog?.Name));
     }
 
     public SceneCreationResult CreateLight(LightKind kind) =>
@@ -121,9 +118,7 @@ public sealed class SceneCreation : ISceneCreation
         if (!CanCreate) return new(null, "Creation requires an active GPose session.");
         Vector3? position = null;
         if (spatial && !TryPlacement(out position, out var refusal, unsavedDefault)) return new(null, refusal);
-        var entity = create();
-        Place(entity, position);
-        return Track(kind, entity);
+        return Finish(kind, create(), position);
     }
 
     private bool TryPlacement(out Vector3? position, out string? refusal, ObjectPlacementMode? unsavedDefault = null)
@@ -143,41 +138,35 @@ public sealed class SceneCreation : ISceneCreation
         return true;
     }
 
-    private void Place(object? entity, Vector3? position)
+    private SceneCreationResult Finish(SceneEntityKind kind, object? entity, Vector3? position,
+        SelectionId? source = null)
     {
-        if (position is not { } point) return;
-        switch (entity)
+        var result = Track(kind, entity);
+        if (result.Handle is not { } handle) return result;
+        void Apply()
         {
-            case IActor actor:
-                // The spawn finishes positioning the native actor before this callback.
-                _lifecycle.WhenPosable(actor, ready =>
+            if (Resolve(handle) is not { } target) return;
+            if (position is { } point)
+            {
+                if (entity is Cameras.VirtualCamera camera)
                 {
-                    if (!_posing.SetTransformOverride(ready, _posing.GetEffectiveTransform(ready) with { Position = point }))
-                        _log.Warning("The new actor could not be placed.");
-                });
-                break;
-            case ILight light:
-                light.Transform = light.Transform with { Position = point };
-                break;
-            case IPropHandle prop:
-                prop.Transform = prop.Transform with { Position = point };
-                break;
-            case IWorldObject world:
-                world.Transform = world.Transform with { Position = point };
-                break;
-            case Cameras.VirtualCamera camera:
-                if (camera.Kind == CameraKind.Free) camera.Position = point;
-                else if (camera.FixedPosition != null)
-                    camera.FixedPosition = point - camera.PositionOffset - camera.TargetOffset;
-                else camera.PendingOrbitPosition = point;
-                break;
-            case OverlayNodeHandle { State.Collider: { } collider } overlay:
-                overlay.State = overlay.State with
-                {
-                    Collider = collider with { Transform = collider.Transform with { Position = point } },
-                };
-                break;
+                    if (camera.Kind == CameraKind.Free) camera.Position = point;
+                    else if (camera.FixedPosition != null)
+                        camera.FixedPosition = point - camera.PositionOffset - camera.TargetOffset;
+                    else camera.PendingOrbitPosition = point;
+                }
+                else if (_transforms.Read(target) is not { } transform
+                    || !_transforms.Write(target, transform with { Position = point }))
+                    _log.Warning("The new entity could not be placed.");
+            }
+            if (source is { } original && !_parenting.Copy(original, target, preserveWorld: position != null))
+                _log.Warning("The duplicated entity could not inherit its source's parent.");
         }
+        // Native spawning sets the actor's position. Place it and copy its
+        // attachment after that finishes, so the attachment uses the new position.
+        if (entity is IActor actor) _lifecycle.WhenPosable(actor, _ => Apply());
+        else Apply();
+        return result;
     }
 
     public SceneCreationResult Duplicate(SelectionId source, bool withPose = false) =>
@@ -192,34 +181,28 @@ public sealed class SceneCreation : ISceneCreation
             foreach (var source in sources) results[source] = new(null, "Duplication requires an active GPose session.");
             return results;
         }
-        var positions = sources.ToDictionary(id => id, ReadPosition);
-        var points = positions.Values.OfType<Vector3>().ToArray();
+        var transforms = sources.ToDictionary(id => id, ReadTransform);
+        var placed = transforms.Values.OfType<PoseTransform>().ToArray();
         Vector3? anchor = null;
-        if (points.Length > 0 && !TryPlacement(out anchor, out var refusal))
+        if (placed.Length > 0 && !TryPlacement(out anchor, out var refusal))
         {
             foreach (var source in sources) results[source] = new(null, refusal);
             return results;
         }
-        var offset = anchor is { } point && points.Length > 0
-            ? point - points.Aggregate(Vector3.Zero, (sum, value) => sum + value) / points.Length
+        var offset = anchor is { } point
+            ? point - GroupTransformBaseline.Centroid(placed)
             : (Vector3?)null;
         // Capture the anchor once so creating a camera cannot move later copies.
         foreach (var source in sources)
             results[source] = DuplicateAt(source, withPose,
-                offset is { } delta && positions[source] is { } position ? position + delta : null);
+                offset is { } delta && transforms[source] is { } transform ? transform.Position + delta : null);
         return results;
     }
 
-    private Vector3? ReadPosition(SelectionId source) => source switch
-    {
-        { Actor: { } id } when _bindings.Resolve(id).Value is { } actor => _posing.GetEffectiveTransform(actor).Position,
-        { Light: { } id } => _bindings.Resolve(id).Value?.Transform.Position,
-        { Camera: { } id } => _bindings.Resolve(id).Value?.WorldPosition,
-        { Prop: { } id } => _bindings.Resolve(id).Value?.Transform.Position,
-        { WorldObject: { } id } => _bindings.Resolve(id).Value?.Transform.Position,
-        { Overlay: { } id } => _bindings.Resolve(id).Value?.State.Collider?.Transform.Position,
-        _ => null,
-    };
+    private PoseTransform? ReadTransform(SelectionId source) => source.Camera is { } id
+        ? _bindings.Resolve(id).Value is { } camera
+            ? PoseTransform.Identity with { Position = camera.WorldPosition } : null
+        : _transforms.Read(source);
 
     private SceneCreationResult DuplicateAt(SelectionId source, bool withPose, Vector3? position)
     {
@@ -239,11 +222,7 @@ public sealed class SceneCreation : ISceneCreation
                 && world.Path.Contains('/') => _lifecycle.CloneWorldObject(world),
             _ => null,
         };
-        Place(copy, position);
-        var result = Track(source.Kind, copy);
-        if (result.Handle is { } handle && Resolve(handle) is { } target && !_parenting.Copy(source, target, preserveWorld: position != null))
-            _log.Warning("The duplicated entity could not inherit its source's parent.");
-        return result;
+        return Finish(source.Kind, copy, position, source);
     }
 
     private IActor? DuplicateActor(IActor source, bool withPose, Vector3? position)
@@ -272,9 +251,7 @@ public sealed class SceneCreation : ISceneCreation
                 if (!_actors.IsAvailable(source) || !_actors.IsAvailable(target)) return;
                 _spawn.CopyDrawnAppearance(source, target);
                 _spawn.CopyEquipmentVisibility(source, target);
-                // Native customize bytes contain palette indices, not custom
-                // shader colours/opacity. Copy those through their provider,
-                // without reapplying equipment or requesting another redraw.
+                // Copy custom colours and opacity through their appearance provider.
                 if (parameters != null && _bindings.GetActorId(target) is { } targetId)
                 {
                     var applied = _integration.ApplyStateJson(targetId, parameters);
