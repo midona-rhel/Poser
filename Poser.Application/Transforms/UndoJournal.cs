@@ -79,6 +79,10 @@ public sealed class UndoJournal
     public string? UndoDescription => _history.UndoDescription;
     public string? RedoDescription => _history.RedoDescription;
 
+    /// <summary>A global undo is about to pick its step. A change that is still
+    /// settling, such as a camera move, is recorded now, so this undo takes it back.</summary>
+    public event Action? Undoing;
+
     public GestureResult Undo() => UndoCore(null);
     public GestureResult Undo(SelectionId entity) => UndoCore(entity);
 
@@ -88,6 +92,7 @@ public sealed class UndoJournal
             return recovered;
         if (IsRestoring)
             return GestureResult.Fail("A restore is still applying.");
+        if (entity is null) Undoing?.Invoke();
         var entry = _history.PeekUndo(entity);
         if (entry == null)
             return GestureResult.Fail(entity is null ? "Nothing to undo." : "No independent undo step for this entity. Creation, removal, shared or scene-wide steps require global undo.");
