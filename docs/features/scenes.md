@@ -310,17 +310,6 @@ operation is running.
 A camera target keeps the exact actor it was saved with and whether that link was
 locked. It is never moved to an actor that replaced the original.
 
-## Centering the live camera
-
-**Center camera** on an actor frames it once with the live GPose orbit camera. It
-uses the actor's mid-body point as drawn and a distance worked out from its height,
-within limits. It keeps the view direction and every target, follow, link and
-ownership setting. It never creates a camera and never changes a parent.
-
-It is refused before any camera write for a free, locked or pinned camera, and for
-an actor that is unavailable, stale, hidden or not drawn. It is in the actor menu
-and in the Inspector under Actor → Camera.
-
 ## Autosave
 
 Autosave writes one `.xivs` scene each time the scene has changed, under

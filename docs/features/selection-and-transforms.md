@@ -226,10 +226,15 @@ by something plausible.
 
 ## Camera movement
 
-**Center camera on actor** moves the current orbit view to the actor's mid-body
-point as drawn. It does not change zoom, field of view, direction or what the
-camera follows, and it does not refit the actor to the frame. Close framing on a
-bone is a separate action.
+**Center camera on actor** moves the live orbit view to the actor's mid-body point
+as drawn, which is half its height. It does not change zoom, field of view,
+direction or what the camera follows, and it does not refit the actor to the frame.
+It never creates a camera and never changes a parent. Close framing on a bone is a
+separate action.
+
+It is refused before any camera write for a free, locked or pinned camera, and for
+an actor that is unavailable, hidden or not drawn. It is in the actor menu and in
+the Inspector under Actor → Camera.
 
 A new free camera takes its position, direction and roll from the view as it is
 drawn. That keeps the view when you spawn from another free camera or from a Main
