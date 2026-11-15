@@ -1,219 +1,301 @@
 # Runtime appearance
 
-Poser owns opacity, whole-model tint for Character, MainHand, and OffHand, and
-the granular wet-surface override, and explicit custom skin, hair, highlight,
-left-eye, right-eye, mouth, and feature colours. Opacity is
-separate from visibility; zero opacity does not invoke the visibility action.
-Glamourer and other external systems own equipment, customization, dyes,
-materials, and saved designs.
+## What Poser controls
 
-Clothing-only is recorded explicitly in scene actor data, independently of
-embedded appearance resources. Load reapplies it after appearance redraws and
-before the pose/readiness barrier. Ordinary redraw restores the body and clears
-the effective clothing-only state. Older scenes omit the flag and load normally;
-their former clothing-only intent cannot be inferred reliably from an MCDF.
-UI, bridge and scene requests share ClothingOnlyControl. It tracks requests by
-actor and cancels them when that actor leaves or GPose ends. After publishing
-a refreshed actor list, it forgets clothing-only state for departed actors.
-When queried, clothing-only state is checked against the current model so a
-redraw is reflected immediately. Forgetting state does not free a game model;
-CharacterModelNative alone releases the hidden hair, face and tail slots.
+Poser itself controls:
 
-The native port removes temporary collection materials after each redraw,
-including cancellation. Unexpected removal failures are reported without a
-retry queue. A deleted collection needs no cleanup. Cancelling a request does
-not mean its asynchronous cleanup has already finished.
+- opacity;
+- a whole-model tint for the character, the main-hand weapon and the off-hand
+  weapon;
+- the wet-surface override;
+- custom colours for skin, hair, highlights, each eye, mouth and facial feature.
 
-For each field, Poser captures the incoming value once before its first
-successful edit. Restore gives the field back only after native success. A
-failure stays owned and retryable. Reset Appearance, Reset All, GPose exit,
-disposal, and actor departure use the same restore path. Actor generations
-prevent an old capture from writing to a replacement.
+Opacity is separate from visibility. Setting opacity to zero does not hide the
+actor through the visibility action.
 
-Presentation writes run on the framework thread against the current model
-instance. A missing weapon model is unavailable, not redirected. Opacity,
-tint, and wetness stay enforced while owned. Model-id changes use the same
-baseline and restore rule and trigger the needed redraw. Presentation state is
-session-only: it is not pose data, a named layer, a transform gesture, or a
-second history.
+Glamourer and other plugins control equipment, customisation, dyes, materials and
+saved designs.
 
-External appearance targets one actor at a time. It can apply a Penumbra
-collection, a Glamourer design with default API flags and no persistent lock,
-or a temporary copy of a saved Customize+ profile. Collection and Glamourer
-state are captured before the first change so Reset can restore them.
-Customize+ Reset deletes Poser's temporary profile by its recorded ID; the
-provider then uses the actor's normal saved profile. Foreign Glamourer locks
-are refused before changes.
+## Owning and restoring a value
 
-Applying an MCDF to a posed actor captures the pose before changing appearance
-and restores it against the replacement skeleton before reporting success.
-Fresh, unposed actors skip this restore; scene loading applies their saved pose
-after appearance is ready.
+For each field, Poser captures the value it found once, before its first successful
+edit.
 
-Fresh spawns clear retained Glamourer appearance after native self-identification
-and model assignment, within the original deferred-draw window. Slot-based native
-names can retain a previous occupant's model override even when the requested
-native model ID is correct. This initialization precedes scene appearance/pose
-restoration; it is not a later corrective redraw. It targets only the exact owned
-spawn, never its source, and never unlocks foreign state. The name-based clear
-requires a generated Poser name with no other live actor sharing it. Duplicates
-then apply their source's external appearance to the new body before first draw:
-reverting the reused slot restores stale base data, and Glamourer's apply can
-refuse a retained non-human state without reporting failure. Native equipment/customization copy
-alone does not replace an old IPC model override. The source must still be current;
-read/write refusals do not unlock either actor or change the source. A duplicate
-may read a Poser-held MCDF source using Poser's owner key after an unkeyed refusal;
-it still writes the new target unkeyed and never reads through a foreign hold.
+- Restoring gives the field back only after the game write succeeds. A failed
+  restore stays owned and can be retried.
+- Reset Appearance, Reset All, leaving GPose, unloading and an actor leaving all use
+  that same restore.
+- A capture taken from one actor is never written to the actor that replaced it.
 
-New non-player catalog models discard the player's inherited weapon model IDs
-before first draw, matching Brio's empty catalog weapon appearance. Hidden
-weapons are not absent weapons and can alter a monster's ground shadow.
-Ordinary duplicates retain their source equipment; catalog initialization does
-not run when copying an actor or later changing its model.
+Writes run on the framework thread against the current model. A weapon model that
+isn't there is unavailable, and the write is not sent somewhere else. Opacity, tint
+and wetness are kept in force while Poser owns them. Changing the model ID uses the
+same capture and restore, and triggers the redraw it needs.
 
-Copying without pose retains the source's active Customize+ profile contents as
-an owned temporary profile on the copy, independent of animation and pose.
-Saved source profiles are read through the same active-ID/JSON API Brio uses;
-Poser-owned temporary profiles use their retained JSON. The source is not changed.
-Posed copies already carry the body shape in their captured transforms and do not
-apply the profile again. Lifecycle history retains the copied profile contents.
-Both duplicate modes also copy Glamourer shader parameters, including custom
-face-paint RGB and opacity, without reapplying equipment/customization or
-triggering an additional redraw.
-History also captures a duplicate's Poser-owned collection redirects and meta
-through the existing spawn collection owner. It never treats an unknown temporary
-collection as owned; external takeover makes restoration refuse without displacement.
-Choosing an installed collection on a duplicate releases only its Poser-owned
-temporary assignment. Reset and history retain its original redirects and meta
-through that same owner; other plugins' temporary assignments remain protected.
-An MCDF may temporarily replace that proven duplicate assignment. Its native owner
-keeps the inherited collection alive and reattaches it on cleanup only if the exact
-actor remains and no newer external assignment has taken over.
-MCDF export uses that same profile capture: retained Poser-owned JSON takes
-precedence over the external saved-profile query. Customize+ 6.x does not expose
-temporary profiles through that query, even when it returns a saved profile.
-Poser cannot detect or preserve another plugin's temporary profile through
-these APIs. Applying a temporary profile replaces the previous temporary
-profile in Customize+; cleanup deletes only the ID Poser created.
-Export never reapplies a profile to read it.
+These values last for the session only. They are not pose data, a named layer, a
+transform drag or a second history.
 
-Glamourer access is actor-generation scoped: editable, Poser-held,
-foreign-held, or unavailable. A refused unkeyed read is probed read-only
-with Poser's key; only another key refusal identifies a foreign hold.
-The API does not identify the owning plugin, so the UI never guesses its
-name. One top-of-pane status disables dependent appearance actions while
-keeping Open in Glamourer and the independent opacity, tint, and wetness controls available.
-Selected-actor access refreshes at most once per second; actor changes
-invalidate it. Commands independently check fresh access, and unkeyed
-native writes arbitrate acquisition races. No probe unlocks or claims a
-state. Custom-colour commands and native enforcement independently require fresh
-editable access for the exact actor generation. Poser's keyed MCDF recovery remains separate; failed restores keep
-their baseline and pending cleanup evidence until recovery succeeds.
+## Clothing-only
 
-MCDF import temporarily owns extracted resources and integration state until
-the collection is gone and redraw allows cleanup. A failed barrier remains
-owned evidence for Reset MCDF. Glamourer locks created by MCDF are released
-before the captured state is restored, including the by-name path after a
-clone is gone; failure of either part keeps the operation owned.
+Clothing-only is saved explicitly with the actor in a scene, separately from any
+embedded appearance. Loading applies it again after the appearance redraws and
+before the scene waits for the pose. An ordinary redraw brings the body back and
+clears it. Older scenes have no such flag and load normally. Whether they used
+clothing-only can't be worked out reliably from an MCDF.
 
-The MCDF collection is a load-only assignment: after the appearance redraw,
-it is released so subsequent animations resolve through the actor's normal
-collection, matching Brio's MCDF application order. The loaded appearance and
-extracted files remain owned until reset/teardown and its redraw barrier;
-history retains those files through the existing resource owner. Releasing
-the assignment neither redraws away the imported appearance nor deletes files.
+The UI, the debug bridge and scene loading all go through `ClothingOnlyControl`.
 
-The Actor tab has three views under one pill. General is what the
-actor is in the scene: model, opacity, tints, wet surface, collection,
-design, body profile, character file. Appearance is how it looks, through
-Glamourer's state: race, clan and gender (each redraws, so each is a
-disruptive step), height and body sliders, the face, hair, tail and face
-paint off the character-making sheet's own tiles, the named options, the
-facial features as icon toggles, and the colours off the palettes the
-game's own UI shows (the human colour file). A single value is a step
-that folds while a slider drags; separate palette picks are separate steps.
-Customization requests retain the full value set for Glamourer's structural
-validation, but apply only requested fields and required body structure.
-Snapshot shader parameters and material edits never accompany a palette edit;
-pre-existing external overrides are not cleared. Refused writes do not append
-or fold history, and refused inverses retain their step and failure detail for
-retry. Equipment is what it wears, through
-Glamourer's IPC only: a design to apply, save or revert; the outfit verbs; a card per
-slot with the item, its two dyes and the ids behind it; the facewear; the
-hat, visor and weapon switches; and, closed, the raw model ids. An item
-id is Glamourer's: a sheet row, zero for nothing, a sentinel under the
-32-bit ceiling for nothing-per-slot and smallclothes, and above it a
-packed model id (model, weapon type, variant), which is how a slot wears
-what no item names and how a weapon wears a prop. Every change is one
-journal step whose inverse is the slot's previous state, read before the
-write. The cards carry no verbs: right-click on an item's icon, a dye box
-or the facewear removes it, "None" leads the dye and facewear lists, and
-Remove all takes everything off. Without Glamourer the view disables in
-place and says why.
+- It tracks requests per actor and cancels them when the actor leaves or GPose
+  ends.
+- After the actor list refreshes, it forgets the state of actors that left.
+- When asked, it checks the state against the current model, so a redraw shows up
+  at once.
+- Forgetting the state does not free a game model. Only `CharacterModelNative`
+  releases the hidden hair, face and tail slots.
 
-Fixed game palettes show every entry in eight row-major columns, with its
-zero-based native index on the swatch. No sorting, gap compaction, scroll
-viewport, or padded rows may change that shape. Popup bounds follow the
-complete grid; small displays compact it uniformly. Packed ABGR UI colours,
-clan/gender blocks, and the separate alpha ranges retain the Ktisis UI-palette
-interpretation rather than Brio's shader-colour blocks.
+Temporary collection materials are removed after each redraw, including when the
+request was cancelled. A removal that fails unexpectedly is reported and not
+retried. A deleted collection needs no cleanup. Cancelling a request does not mean
+its cleanup has finished.
 
-Hair previews use the matching race/clan/gender HairMakeType menu's explicit
-CharaMakeCustomize references and retain FeatureID as the selection/write
-identity, following Brio's reference-based lookup rather than assuming a
-contiguous range. The older menu is a fallback when that sheet is unavailable.
-Model-only additions remain selectable with an honest missing-image fallback.
-Pending images retry on subsequent frames; failed lookups retry after a short
-delay and never permanently blacklist a valid option.
+## Collections, designs and body profiles
 
-An MCDF is never rendered on a CharaView preview body. The library inspector
-may read its header without extraction or claiming an actor. Open in Glamourer
-is outbound navigation only. The Actor tab is actor-scoped. An attached
-nonhuman body has only General: visibility, opacity, character tint, wetness,
-reset, and owner-routed Change/Detach. It never exposes model-id, customize,
-equipment, external appearance, or character-file editors.
+External appearance is applied to one actor at a time. Poser can apply:
 
-Both attachment and spawn catalogs admit ornaments with a nonzero model and
-representable nonzero row ID even when `Ornament.Singular` is empty. Names use
-Dalamud's localized ornament action-string evaluator, then `Ornament {id}` as
-a fallback, matching Brio's catalog compatibility rule. Identity stays
-`(CompanionKind, row ID)`; a missing display name never removes a valid parasol.
+- a Penumbra collection;
+- a Glamourer design, with the default options and no lasting lock;
+- a temporary copy of a saved Customize+ profile.
 
-Slot-capable actor owners use a person icon with a bottom-right box in the
-same icon cell; ordinary actors stay plain and attached children keep their
-kind icons. Actor > General and the context menu share attachment controls.
-Duplicating an actor reserves an empty usable slot regardless of the source's
-slot capability; it does not implicitly copy the source attachment.
+The collection and the Glamourer state are captured before the first change, so
+Reset can restore them. Resetting Customize+ deletes Poser's temporary profile by
+its recorded ID, and Customize+ then uses the actor's normal saved profile. If
+another plugin holds a Glamourer lock, Poser refuses before changing anything.
+
+## Applying an MCDF
+
+Applying an MCDF to a posed actor captures the pose first and restores it onto the
+new skeleton before reporting success. A new actor with no pose skips this. Scene
+loading applies the saved pose once the appearance is ready.
+
+While an import is in progress Poser owns the extracted files and the changes it
+made in other plugins. That lasts until the collection is gone and a redraw lets
+the cleanup run. If that step fails, what is left stays recorded for Reset MCDF.
+Glamourer locks made by the MCDF are released before the captured state is
+restored, including by name after a copy is gone. If either part fails, the import
+stays owned.
+
+The MCDF's collection is only needed for loading. After the appearance redraw it is
+released, so later animations resolve through the actor's normal collection. The
+loaded appearance and the extracted files stay owned until reset or teardown, and
+undo history keeps those files. Releasing the collection does not redraw the
+imported look away and does not delete files.
+
+An MCDF is never drawn on a preview body. The library inspector may read its header
+without extracting it or claiming an actor.
+
+## New actors and duplicates
+
+### New actors
+
+A new actor has any Glamourer appearance left in its slot cleared before its first
+draw. The game names actors by slot, so a slot can keep the previous occupant's
+model override even when the requested model ID is correct. This happens before the
+scene's appearance and pose are restored. It is not a corrective redraw afterwards.
+
+- It targets only the actor Poser spawned, never its source.
+- It never unlocks another plugin's state.
+- Clearing by name needs a name Poser generated that no other live actor shares.
+
+A new model from the non-player catalog drops the weapon model IDs it inherited
+from the player before its first draw. A hidden weapon is still a weapon and can
+change a monster's ground shadow. Ordinary duplicates keep their source's
+equipment, and this step does not run when copying an actor or changing its model
+later.
+
+### Duplicates
+
+A duplicate has its source's external appearance applied to the new body before its
+first draw. Reverting the reused slot would bring back stale data, and Glamourer can
+refuse a kept non-human state without reporting a failure. Copying equipment and
+customisation in the game alone does not replace an old model override.
+
+- The source must still be current. A refused read or write never unlocks either
+  actor or changes the source.
+- A duplicate may read an MCDF look that Poser itself holds, using Poser's key,
+  after an unkeyed read is refused. It still writes the new actor without a key and
+  never reads through another plugin's hold.
+
+Copying without pose gives the copy the source's active Customize+ profile as a
+temporary profile Poser owns. That is independent of animation and pose, and the
+source is not changed. A posed copy already has the body shape in its captured
+bones and does not apply the profile again. Undo history keeps the copied profile.
+
+Both kinds of duplicate also copy Glamourer's shader values, including custom face
+paint colour and opacity. That does not reapply equipment or customisation and does
+not cause another redraw.
+
+### Collections on duplicates
+
+- Undo history keeps a duplicate's collection redirects and metadata that Poser
+  owns. It never treats an unknown temporary collection as its own. If another
+  plugin took over, restoring is refused and nothing is displaced.
+- Choosing an installed collection on a duplicate releases only the temporary
+  assignment Poser owns. Reset and history keep its original redirects and
+  metadata. Other plugins' temporary assignments are protected.
+- An MCDF may temporarily replace a duplicate's assignment. The inherited collection
+  is kept alive and attached again on cleanup, but only if the same actor is still
+  there and no newer assignment from outside has taken over.
+
+### Customize+ profiles in exports
+
+MCDF export uses the same profile capture. A profile Poser holds takes precedence
+over asking Customize+ for the saved one. Customize+'s 6.x API does not return
+temporary profiles from that query, even when it returns a saved one. So Poser can't
+detect or preserve another plugin's temporary profile. Applying a temporary profile
+replaces the previous temporary one in Customize+, and cleanup deletes only the ID
+Poser created. Exporting never applies a profile again just to read it.
+
+## Glamourer access
+
+For each actor, Glamourer access is one of four states: editable, held by Poser,
+held by another plugin, or unavailable.
+
+- When a read without a key is refused, Poser tries a read-only check with its own
+  key. Only a second refusal means another plugin holds the actor.
+- Glamourer does not say which plugin that is, so the UI never guesses a name.
+- One status line at the top of the pane disables the appearance actions that
+  depend on it. Open in Glamourer and the opacity, tint and wetness controls stay
+  available.
+- Access for the selected actor is refreshed at most once a second, and again when
+  the actor changes. Every command checks again for itself.
+- No check ever unlocks or claims a state.
+- Custom colours need fresh editable access for that exact actor, both when you
+  edit and while Poser keeps the colour in force.
+
+Recovering an MCDF with Poser's key is separate. A restore that fails keeps its
+captured state and its pending cleanup until recovery succeeds.
+
+## The Actor tab
+
+The Actor tab has three views under one pill.
+
+**General** is what the actor is in the scene: model, opacity, tints, wet surface,
+collection, design, body profile and character file.
+
+**Appearance** is how it looks, through Glamourer:
+
+- race, clan and gender (each one redraws the actor, so each is a disruptive step);
+- height and the body sliders;
+- face, hair, tail and face paint, shown with the character creator's own tiles;
+- the named options, and the facial features as icon toggles;
+- colours from the same palettes the game's UI shows.
+
+One value is one undo step, and a slider drag folds into a single step. Separate
+palette picks are separate steps. A customisation request sends the full set of
+values so Glamourer can validate it, but applies only the fields you changed and the
+body structure they need. A palette edit never carries shader values or material
+edits with it, and overrides that were already there are not cleared. A refused
+write adds nothing to history. A refused undo keeps its step and the reason, so it
+can be retried.
+
+**Equipment** is what the actor wears, through Glamourer only:
+
+- a design to apply, save or revert, and the outfit actions;
+- a card per slot with the item, its two dyes and the IDs behind it;
+- facewear;
+- the hat, visor and weapon switches;
+- the raw model IDs, closed by default.
+
+An item ID is Glamourer's. It is a sheet row, zero for nothing, a special value just
+below the 32-bit limit for "nothing in this slot" and smallclothes, and above that a
+packed model ID (model, weapon type, variant). The packed form is how a slot wears
+something no item names, and how a weapon wears a prop.
+
+Every change is one undo step, and undoing it puts back the slot as it was read
+before the write. The cards have no buttons: right-click an item icon, a dye box or
+the facewear to remove it. "None" is first in the dye and facewear lists, and
+Remove all takes everything off. Without Glamourer the view is disabled in place
+and says why.
+
+Open in Glamourer only takes you there. The Actor tab always shows one actor.
+
+### Palettes
+
+A fixed game palette shows every entry in eight columns, row by row, with its
+zero-based game index on the swatch. Nothing may change that shape: no sorting, no
+closing of gaps, no scrolling area and no padded rows. The popup is as large as the
+whole grid, and small displays shrink it evenly. Packed ABGR colours, the clan and
+gender blocks and the separate alpha ranges are read the way Ktisis reads the UI
+palette, not as Brio's shader-colour blocks.
+
+### Hair previews
+
+Hair previews come from the HairMakeType menu for the actor's race, clan and gender.
+The option keeps its FeatureID as the identity that is selected and written. The
+options are looked up by reference, not assumed to be one continuous range. The
+older menu is used when that sheet isn't available.
+
+- Hair added only as a model can still be picked and shows an honest "no image".
+- An image that is still loading is tried again on later frames.
+- A failed lookup is tried again after a short delay. A valid option is never ruled
+  out for good.
+
+### Attached bodies and ornaments
+
+An attached nonhuman body has only General: visibility, opacity, character tint,
+wetness, reset, and Change or Detach through its owner. It never shows the model
+ID, customisation, equipment, external appearance or character-file editors.
+
+Both the attachment catalog and the spawn catalog include ornaments that have a
+model and a usable row ID even when the game gives them no name. The name comes
+from the game's localised ornament action text, then falls back to `Ornament {id}`.
+An ornament is identified by its kind and row ID. A missing name never removes a
+valid parasol.
+
+An actor that can hold an attachment shows a person icon with a small box at the
+bottom right. Ordinary actors stay plain, and attached children keep the icon of
+their kind. Actor > General and the context menu share the attachment controls.
+Duplicating an actor reserves a free usable slot whether or not the source could
+hold an attachment. It does not copy the source's attachment.
+
+## Custom colours
+
+A custom colour is something you set, kept separately from what Poser reads off the
+shader. Opening the picker claims nothing. Editing turns that channel on, and it
+stays in force over palette edits until you reset it.
+
+- The picker allows brightness above one. Mouth also has linear alpha.
+- Right-click a custom swatch to reset it.
+- Each channel is one small group with the colour and its reset. An accent outline
+  marks a channel that is set, and its tooltip explains the reset.
+- The palette and custom-colour groups keep two columns as the panel resizes. Face
+  cards and shape controls keep their two-column rows at the smallest window size.
+- There are no material, specular, muscle or separate exposure controls.
+
+### Resetting a channel
+
+Resetting a channel writes the colour that was captured back into the current
+shader values straight away, then gives up only that channel. It asks for no redraw
+and no reset from another plugin. The capture is kept for later edits and for
+restoring when the actor leaves.
+
+- A write that fails keeps the colour you set and the capture, and adds nothing to
+  history.
+- Undoing the first custom edit, or redoing a Reset, restores the captured colour.
+  Undoing a Reset restores the custom colour.
+- Every write checks it has the exact actor and fresh access. Other channels and
+  shader values are left alone.
+
+Resetting the whole presentation records every colour you set and every capture. If
+any field refuses to restore, the undo for it keeps its recovery information and
+stays in history. A step for an actor that no longer exists does nothing and is
+never sent to the actor that replaced it.
 
 ## The look goes back
 
-Custom colours are nullable intent, separate from observed shader readings.
-Opening their picker claims nothing; an edit enables that channel. Like Brio's
-explicit shader override, it remains enforced over palette edits until Reset.
-RGB uses the shared HDR-capable picker, allowing numeric brightness above one;
-mouth also exposes linear alpha. Right-click a custom swatch to reset its
-override. Palette and custom-colour groups retain two columns as the panel
-resizes, spreading the available width without changing row membership.
-Face cards and shape controls retain their minimum-window two-column rows.
-No material, specular, muscle, or separate exposure controls are included.
-
-A channel Reset synchronously writes its captured incoming colour into the
-current shader buffer, then relinquishes only that channel. No redraw or provider
-reset is requested. Its original capture remains available for later edits and
-lifecycle restoration. Failed writes retain intent/capture and do not append or
-move history. Undo of the first custom edit and redo of Reset restore the capture;
-undo of Reset restores the custom value. Exact-generation and fresh access checks
-apply to every native write, and unrelated channels and shader lanes stay untouched.
-Each channel uses one compact colour-and-reset group; an accent outline marks
-active custom intent and its tooltip explains the reset.
-The existing whole-presentation Reset records all nullable intent and original
-captures. Its inverse retains recovery evidence and stays in history if any
-field refuses restoration. Dead-generation value steps follow the existing
-no-op journal policy and never redirect to a replacement actor.
-
-The first wardrobe, customize, or custom-colour write on an actor takes its look: the
-Glamourer state as it stands is captured once. Revert, the actor leaving
-the scene, and GPose ending put that state back, by the exact object
-while it exists and by the character's name once it has left GPose. This
-is what Brio and Ktisis do on exit, and the reason an actor no longer
-walks out of GPose in the gear it was given there.
+The first wardrobe, customisation or custom-colour write on an actor captures its
+Glamourer state once, as it stands. Revert, the actor leaving the scene and leaving
+GPose all put that state back. They do it by the exact game object while it exists,
+and by the character's name once it has left GPose. Brio and Ktisis do the same on
+exit. It is why an actor no longer walks out of GPose in the gear it was given
+there.
