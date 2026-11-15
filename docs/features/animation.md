@@ -98,8 +98,8 @@ same frame in either direction:
 Poser's pause and resume reach the layer timelines, props, animation controls and
 the actor's effects on one tick. Paused effects freeze.
 
-A redraw from any source brings Full body, Upper body and a held Facial timeline back on
-their frame, props included.
+A redraw from any source brings Full body, Upper body and a held Facial timeline
+back on their frame, props included.
 
 Timelines with whole-number frames, and game builds where the layout check fails,
 use the older scrub that writes the clock directly.

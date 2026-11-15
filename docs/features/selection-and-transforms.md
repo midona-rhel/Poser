@@ -132,14 +132,12 @@ purpose so the world gizmo's pivot can be drawn. Copies and imported lights keep
 the transform they came with.
 
 **Move to camera** in the light inspector and the light's context menu places the
-light the same way. It keeps
-the scale and is one undo step.
+light the same way. It keeps the scale and is one undo step.
 
 For other entities, groups and selections of several entities, **Move to camera**
-moves what you chose so that its centre is 2.5
-yalms in front of the camera. It only moves: rotation and scale stay, and several
-entities or a group keep their spacing. It is one undo step, and it is refused when
-nothing movable is selected.
+moves what you chose so that its centre is 2.5 yalms in front of the camera. It only
+moves: rotation and scale stay, and several entities or a group keep their spacing.
+It is one undo step, and it is refused when nothing movable is selected.
 
 ## Group transforms
 

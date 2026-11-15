@@ -379,7 +379,7 @@ Poser runs one scene load at a time in a GPose session. The steps are:
 4. wait again, because importing a character file redraws the actor;
 5. relationships;
 6. wait for companion bodies;
-7. freeze;
+7. saved animation, or a freeze when the scene has none;
 8. pose and transforms, the owner first and then its companion;
 9. presentation and gaze;
 10. cameras;
