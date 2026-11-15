@@ -278,27 +278,6 @@ public static class FloatingMenu
         return new Vector2(rightX, top);
     }
 
-    /// <summary>Includes the submenu in the menu window bounds.</summary>
-    internal static (Vector2 Min, Vector2 Size) HostBounds(
-        Vector2 parentMin,
-        Vector2 parentSize,
-        bool hasSubmenu,
-        Vector2 submenuMin,
-        Vector2 submenuSize,
-        float hostMargin)
-    {
-        var unionMin = parentMin;
-        var unionMax = parentMin + parentSize;
-        if (hasSubmenu)
-        {
-            unionMin = Vector2.Min(unionMin, submenuMin);
-            unionMax = Vector2.Max(unionMax, submenuMin + submenuSize);
-        }
-
-        var margin = new Vector2(hostMargin, hostMargin);
-        return (unionMin - margin, unionMax - unionMin + margin * 2f);
-    }
-
     private static float HeightFor(ContextMenuItem[] items, float s)
     {
         float height = ActiveTheme.Floating.MenuPadding * 2f * s;

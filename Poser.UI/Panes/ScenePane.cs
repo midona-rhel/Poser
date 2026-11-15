@@ -349,11 +349,6 @@ public sealed class ScenePane
             NotifyTerminal(progress, outcome, receipt);
     }
 
-    /// <summary>
-    /// Refreshes the Library when the Scene workspace opens so newly saved files appear.
-    /// </summary>
-    public void OnShown() => _library.RequestScan();
-
     /// <summary>Opens the Library window; supplied by the application shell.</summary>
     public Action? OpenLibrary;
 

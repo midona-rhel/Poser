@@ -93,8 +93,6 @@ public static class AnimationTimelines
     public const ushort Idle = 3;
     /// <summary>The neutral facial timeline.</summary>
     public const ushort StraightFace = 604;
-    public const ushort DrawWeapon = 1;
-    public const ushort SheatheWeapon = 2;
     /// <summary>Battle idle, used when the weapon is drawn.</summary>
     public const ushort BattleIdle = 34;
     /// <summary>First and last speech timeline offered as a lip override.</summary>
