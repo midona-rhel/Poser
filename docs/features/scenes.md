@@ -108,8 +108,9 @@ follows its owner's pose.
 
 - Your bone edits are restored directly. The evaluated animation frame is not
   exported and imported again, and bones you never touched stay untouched.
-- Animation is not brought back: no timeline, frame, speed or loop. You handle
-  animation after undo or redo. Scene files do keep animation, as described below.
+- Animation is not brought back: no timeline, frame, speed or loop. Only whether
+  the actor was paused is kept. You handle animation after undo or redo. Scene
+  files do keep animation, as described below.
 - An actor whose appearance Glamourer can't read at all (for example
   `ActorNotFound`) is still removed. The step is recorded without its Glamourer
   state, the notice says so, and undo brings the actor back with the appearance it
@@ -320,7 +321,8 @@ Autosave does not export mod packages again and again.
 
 - The first save waits one interval.
 - An empty or unchanged scene makes no backup.
-- A scene save or load in progress postpones the attempt.
+- A scene save or load in progress, or a write still running, skips that turn. The
+  save is not queued.
 - The scene backup count is the one count shown. The old optional-scene toggle is
   ignored: Enabled now controls scene autosave.
 
@@ -431,9 +433,11 @@ The per-actor steps wait their turn. They do not refuse because something is bus
 
 ### Clearing the session
 
-Clearing the session removes everything in it, actors included. An actor Poser
-spawned is removed through Poser's own record of what it spawned. A borrowed actor
-is removed through the game's scene table. A companion body leaves with its owner.
+Clearing the session removes everything in it, actors included. A clear before a
+load keeps the actors that load is going to reuse, and your own character when the
+scene holds it. An actor Poser spawned is removed through Poser's own record of what
+it spawned. A borrowed actor is removed through the game's scene table. A companion
+body leaves with its owner.
 
 Before an actor is deleted, its gaze is released and its appearance reverted while
 it still exists. If another actor was looking at an entity that leaves the scene,
@@ -450,10 +454,10 @@ such family to deselect.
 
 One place decides this: the load policy on `SceneLoadTransaction`.
 
-**Required steps stop the load.** These are reading the file, the session staying
-the same, cancellation and creating each actor. Poser then removes only what it
-created, in reverse order. A refused actor spawn names its cause, such as a full
-actor table.
+**Required steps stop the load.** These are reading the file, working out the
+placement, the session staying the same, cancellation and creating each actor. Poser
+then removes only what it created, in reverse order. A refused actor spawn names its
+cause, such as a full actor table.
 
 **Everything else is optional.** A failure becomes a named refusal listed beside
 what did load:

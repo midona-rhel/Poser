@@ -133,6 +133,7 @@ name starts the export. Cancelling goes back to the options.
 - A standard bone that has been moved to another parent refuses the export, because
   its samples would not fit.
 - Hair and cloth physics, equipment and gaze tracking are not exported.
+- Only humanoid actors can be exported, and not while a pose import is running.
 
 ### Other races
 

@@ -195,8 +195,9 @@ palette picks are separate steps. A customisation request sends the full set of
 values so Glamourer can validate it, but applies only the fields you changed and the
 body structure they need. A palette edit never carries shader values or material
 edits with it, and overrides that were already there are not cleared. A refused
-write adds nothing to history. A refused undo keeps its step and the reason, so it
-can be retried.
+write adds nothing to history. An undo that is refused because the actor is held in
+Glamourer keeps its step and the reason, so it can be retried. An undo refused for
+any other reason is kept once, and dropped if the next try is refused too.
 
 **Equipment** is what the actor wears, through Glamourer only:
 

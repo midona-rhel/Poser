@@ -49,7 +49,8 @@ import before changing anything.
 - If a write fails, it tries to restore every value it changed.
 - If the restore can't finish, it keeps the recovery information and does not add
   the import to undo history.
-- A successful import is one undo step.
+- A successful import is one undo step. An import that changed nothing adds none.
+- Starting another import cancels one that is still running.
 - Copy, stash and apply follow the same rule.
 
 ### The pose file browser
@@ -218,10 +219,11 @@ duplicate entries and payload hashes. It verifies both the older 40-digit SHA-1
 hashes and the current 64-digit BLAKE3 ones. New exports use BLAKE3, as current
 Lightless and Brio do.
 
-Only one MCDF import runs for an actor at a time. Poser applies the temporary
-Penumbra, Glamourer and Customize+ changes after the redraw. A failure or a cancel
-removes them in reverse order. If the cleanup can't finish, Reset MCDF can still
-finish it.
+Only one MCDF operation runs at a time, for all actors together: an import, an
+export or a reset. A second one is refused until the first has finished. Poser
+applies the temporary Penumbra, Glamourer and Customize+ changes after the redraw. A
+failure or a cancel removes them in reverse order. If the cleanup can't finish,
+Reset MCDF can still finish it.
 
 Export only reads data, reports resources it skipped, and writes the destination
 safely. The appearance rules are in [runtime-appearance.md](runtime-appearance.md).

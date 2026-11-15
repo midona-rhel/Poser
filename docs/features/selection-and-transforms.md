@@ -316,8 +316,9 @@ once, and separate clicks are never merged.
 ### What is never a step
 
 - Selection.
-- Transport: play, pause, scrub and speed, for actors and world effects alike.
-  Choosing a timeline and toggling loop are steps.
+- Transport of world effects and scenery: pausing an effect, changing its speed and
+  pausing scenery animation. An actor's play, pause, speed and scrub are steps, and
+  so are choosing a timeline and toggling loop.
 - Anything on a locked camera.
 
 ### Locks
@@ -341,11 +342,12 @@ Every write reports whether it worked.
 What happens to a refused step is decided per step, the same way for global undo,
 undo for the selected entity and each part of a removal:
 
-- **kept for another try**: a value write that reports a refusal, a restore that
-  redraws, a group restore waiting for its members, and by default creating and
-  removing entities;
-- **dropped on the second refusal in a row**: a value write that throws, and other
-  steps;
+- **kept for another try**: a value write refused for a passing reason (the actor is
+  held in Glamourer, or a drag is under way), a restore that redraws, Reset All, a
+  group restore waiting for its members, a scene load while another scene operation
+  is running, and by default creating and removing entities;
+- **dropped on the second refusal in a row**: a value write refused for any other
+  reason or one that throws, and other steps;
 - **dropped at once**: when it can never work, such as a borrowed world object that
   can't be restored, or a removal whose parts were all dropped.
 
