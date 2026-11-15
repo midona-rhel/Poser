@@ -157,7 +157,8 @@ goes one past the highest number in use.
 - There is no shared counter. `Camera 1` and `Actor 1` can both exist.
 - Names that differ only in case share one series.
 - A source with no number counts as the first, so its copy is 2.
-- Borrowing doesn't rename the borrowed entity. A spawned copy is a new entity and
+- Borrowing a map object or an effect doesn't rename it. A borrowed world light is
+  a copy, so it is numbered (`World Light 1`). A spawned copy is a new entity and
   is numbered.
 - Actor numbering changes the nickname shown, not the game name Penumbra uses.
 - Loading and restoring from history keep the names that were written.
@@ -603,8 +604,10 @@ does not check or change the current weather.
 
 - Holding writes the weather before the game's environment update. It does not keep
   restarting the transition.
-- Releasing gives control back to the game. Changing territory and logging out
-  release a hold. Leaving GPose follows Restore on exit.
+- Releasing stops the hold. The weather stays as it is until the game next changes
+  it. It does not jump back to what the game had before the hold.
+- Changing territory and logging out release a hold. Leaving GPose follows Restore
+  on exit.
 - What a weather looks like still depends on what the game can load in the current
   place.
 - The game may reject a weather that isn't on the territory's list and fall back to
