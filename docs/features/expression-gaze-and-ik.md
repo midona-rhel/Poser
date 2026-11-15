@@ -2,66 +2,94 @@
 
 ## Expression
 
-Expression catalogs use Ktisis testing data at
-[847f3673](https://github.com/ktisis-tools/Ktisis/commit/847f3673), including
-face-specific blinks and symmetric brows. If a race catalog is
-missing, the feature is unavailable; Poser does not substitute another race.
-Unknown face numbers use the first face in that same catalog, as Ktisis does.
-Expression changes move with the head. Poser replaces its expression layer when
-the expression changes and removes it when cleared. Manual face layers are left
-alone. Missing parts are hidden rather than applied to another bone.
-The new catalogs are parent-local deltas, resolved against the live Havok parent
-during application; they must not be interpreted as the old head-relative data.
-As in Ktisis, translations use that parent, rotations post-multiply the bone
-in catalog priority order, and scale factors multiply the authored baseline.
-Only the new catalog is offered; legacy Sneer definitions are not retained.
-`tools/Update-ExpressionCatalogs.ps1` reproduces the normalized data from that ref.
+The expression catalogs come from Ktisis's testing data at
+[847f3673](https://github.com/ktisis-tools/Ktisis/commit/847f3673). They include
+blinks made for each face and symmetric brows. `tools/Update-ExpressionCatalogs.ps1`
+rebuilds them from that commit. This is the only catalog Poser offers.
 
-Combine L/R controls layout; Link L/R writes equal weights to both sides as one
-gesture, with each original value restored on undo. Unlocked uses signed,
-unbounded numeric drags. Bounds belong to the control, never history replay.
-Changing these UI modes does not change the authored weights. Reset zeroes
-blends against the authored base face, without redraw or reference-pose reset.
+If a race has no catalog, expressions are unavailable for it. Poser does not
+borrow another race's catalog. A face number the catalog doesn't know uses the
+first face in that race's catalog.
+
+An expression is one layer on the face. Poser replaces it when the expression
+changes and removes it when the expression is cleared. Face edits you made by hand
+are left alone. A part the face doesn't have is hidden, not applied to another
+bone. Expression changes move with the head.
+
+Catalog values are changes relative to each bone's parent, read against the live
+parent when they are applied. Positions use that parent. Rotations are applied to
+the bone in the catalog's priority order. Scale factors multiply the bone's own
+scale. They are not the older head-relative values and must not be read as such.
+
+### Controls
+
+- **Combine L/R** only changes the layout.
+- **Link L/R** writes the same weight to both sides as one drag. Undo gives each
+  side back its own earlier value.
+- **Unlocked** lets you drag past the normal range, in either direction.
+- The limits belong to the control. Undo and redo never apply them.
+- Changing these modes does not change the weights you set.
+- **Reset** sets the blends to zero on top of the face as you posed it. It does not
+  redraw the actor or reset the reference pose.
 
 ## Gaze
 
-Actor-wide gaze controls live in Pose > Other; expressions live in Pose >
-Expression. The selection inspector contains neither section. Pinned Properties
-windows retain their own actor target while these controls share actor state.
+The gaze controls for the whole actor are in Pose > Other. Expressions are in
+Pose > Expression. A pinned Properties window keeps its own actor, and these
+controls share that actor's state.
 
-Gaze has Off, Forward, Camera, Point, and Actor modes. Eyes, Head, and Body can
-be controlled separately, and each can lock its current target. Point mode has
-one shared anchor plus per-part points, numeric editing, and camera snap. It
-uses the world gizmo, not the bone gizmo. Native look-at updates are not edits;
-user gaze edits use the shared value journal, with one step per point drag.
-History scope and ownership are in [application-state.md](../architecture/application-state.md).
+Gaze has five modes: Off, Forward, Camera, Point and Actor. Eyes, Head and Body can
+be set separately, and each can lock its current target.
 
-Gaze state is keyed by the actor's stable binding id, and Actor mode remembers
-its target the same way. A GPose clone shares its source's game object id, so
-two player-seeded actors hold independent gaze and may look at each other; the
-game object id is only the value written into the native target. Writes outside
-indices 201–439 are refused.
+Point mode has one shared anchor and a point for each part. You can type the
+numbers or snap a point to the camera. It uses the world gizmo, not the bone gizmo.
 
-Releasing a part stops Poser writes and lets the game control that part again.
-An empty mask remembers the configured mode, target and points; disabling a
-part clears its lock. Off remembers the target and points but clears locks;
-`ResetGaze` clears the remembered state. Leaving Actor mode also clears the game's target id.
+The game's own look-at updates are not edits. Your gaze edits go into undo history,
+one step per point drag. History scope and ownership are in
+[application-state.md](../architecture/application-state.md).
 
-A missing target stays recorded and is marked stale. Poser stops enforcing it,
-does not resume on id reuse, and clears it only when a live target is chosen.
-Missing gaze signatures or hooks produce an unavailable state before native or
-event side effects.
+### Which actor
 
-Pose-aware gaze is an opt-in actor setting, saved with scene gaze and journaled.
-Old scenes default off. Camera and Point targets, including their locked points,
-retain world-space intent; Actor and Forward modes keep their existing behavior.
-The pose pass measures the same native head/body frames before and after authored
-transforms, then inverse-maps the next native target through that change. It never
-compares yesterday's gaze output with today's pose or rewrites stored target
-points. Native gaze remains responsible for solving and its angular limits.
-Missing, replaced, stale or singular frames fall back to the unmodified target.
-The correction measures Poser's update-phase pose, not later render-only edits
-from other plugins.
+Gaze is stored per actor under Poser's own actor ID, and Actor mode remembers its
+target the same way. A GPose copy shares its source's game object ID, so two actors
+made from the same player keep separate gaze and can look at each other. The game
+object ID is only the value written into the game's target field. Poser refuses to
+write gaze outside object indices 201–439.
+
+### Releasing and turning off
+
+Releasing a part stops Poser writing to it, and the game controls it again.
+
+- With no part selected, the mode, target and points are remembered.
+- Turning a part off clears its lock.
+- Off remembers the target and points but clears the locks.
+- `ResetGaze` clears what was remembered.
+- Leaving Actor mode also clears the game's target ID.
+
+### Missing targets
+
+A target that disappears stays recorded and is marked stale. Poser stops enforcing
+it, does not resume if the ID is used again, and only clears it when you choose a
+live target.
+
+If the game functions gaze needs can't be found, gaze shows as unavailable before
+anything is written or announced.
+
+### Pose-aware gaze
+
+Pose-aware gaze is an actor setting you opt into. It is saved with the scene's gaze
+and is in undo history. Old scenes load with it off.
+
+With it on, Camera and Point targets, and their locked points, keep meaning the
+same place in the world while you pose the head and body. Actor and Forward modes
+behave as they did.
+
+Each pose pass measures the head and body frames before and after your pose edits,
+then moves the next gaze target back through that change. It never compares an
+earlier frame's gaze with the current pose, and it never rewrites stored points.
+The game still solves the gaze and applies its angle limits. If a frame is missing,
+replaced, stale or can't be inverted, the target is used unchanged. The correction
+measures Poser's own pose, not later render-time edits from other plugins.
 
 ## IK
 
@@ -202,105 +230,154 @@ chain's bones, far ends and handle; they still load, after the scene's entities
 exist. New saves follow the
 [baked snapshot contract](files-and-transfer.md#storage-and-library).
 
-### IK colliders
+## IK colliders
 
-Colliders are world-space overlay entities, not native game objects or dialogue
-UI nodes. Plane, box, cylinder, cone, capsule and sphere share the overlay lifecycle, selection,
-history and scene-file storage. Their Overlay page controls shape, collision
-participation, transform locking, visibility and face opacity; the inspector and
-world gizmo edit their transform. Hiding a collider does not disable collision.
-Planes are finite and two-sided. Rounded surfaces are polygonal but their mesh
-seams are not outlined; sharp rims and box/plane edges are.
-An actor's **Create collider** action creates a named group
-of at most 48 ordinary capsules/spheres for recognized humanoid body chains and tails.
-Limbs follow their bone axes; torso, head, hands and feet may use the surface's
-long axis. Breast regions use the same surface fit. Joint spheres are added only where endcaps
-do not already cover the joint, using the smaller adjacent radius.
-Each part can be edited or removed
-individually; creating the group is one undo step. Each part is automatically
-parented to its corresponding bone and follows posing/animation. Dimensions
-remain those fitted at capture time, including the final native Customize+ scaling;
-changing proportions afterward requires regenerating the group. Parenting is
-rigid and must not apply the captured bone scale a second time.
-Use Detach for a static part; relationships
-and missing-parent behavior follow [transform parenting](scenes.md#transform-parenting).
-All skin influences contribute to anatomical ownership, summing helper-bone
-weights before filtering. Triangle-area-weighted, bounded surface samples fit
-center, radius and stem in the bone's rotation frame, balancing penetration
-against excess clearance rather than using extreme or mean vertex bounds.
-For free-axis sections, covariance/bone directions seed a bounded angular
-refinement; they do not lock the final orientation. Limb axes remain bone-aligned.
-Free-axis regions may use two capsules when splitting the measured surface
-reduces whole-region squared fitting error by at least 25%. Error is measured
-against the union, including excess clearance inside either capsule. Nearly
-round regions retain one part; all parts share the region's bone owner and the
-existing 48-part actor budget. This changes generation, not saved colliders.
-Racial deformation uses the original game resource identity, not a mod's disk filename.
-Resource matching normalizes separators and ignores case while retaining the
-resolved file separately. Unidentified or conflicting mod identities refuse
-capture rather than silently skipping deformation. Auxiliary human `b0003_top`
-models are not skin surfaces and are excluded (also excluded by Meddle's
-character exporter); material-hidden body skin remains eligible.
-Visible triangles with unresolved skin bones are omitted, never fitted with
-partial weights or guessed replacement bones. Valid regions still generate;
-the capture reports omitted triangles/bones and regions without enough samples.
-No usable surface means no collider group is created.
-Hair, ears and skirt chains do not inflate the fit; each recognized tail segment
-has its own bone owner. This is a coarse body approximation, not exact clothing
-collision; unknown or over-budget rigs refuse capture. No actor triangles enter
-the physics world. Capsule scale Y is total tip-to-tip length; its round radius
-uses the smallest scale dimension, also used by spheres, never a polygonal hull.
-Analytic physics inputs do not build display meshes; dimension changes rebuild
-only affected obstacle shapes rather than every collider in the chain's world.
-Capsule editing exposes radius and endcap-center spacing instead of independent
-XYZ scale. Radius edits preserve spacing; the local longitudinal handle changes
-spacing while preserving radius, stopping at a sphere. Uniform scaling (Scale
-center or Universal white outer circle) multiplies radius and spacing equally.
-World translation/rotation remain available; capsule dimension handles are local.
-The inspector uses the same dimensions. Edits retain the existing total-length
-Y / diameter XZ storage, history and collision geometry; old files are unchanged.
-Human capture applies the actor's resolved racial deformer per model before
-posed skinning, so shared-race equipment lines up with its actor skeleton.
-Existing saved triangle-mesh captures remain supported and are not silently
-rewritten. They draw silhouette and open-boundary lines only, without triangle
-fill or internal wireframe, and retain their two-sided surface contacts.
-The reader supports V5 and V6 bone tables using Penumbra's documented V6 layout;
-unmapped bones or unsupported vertex formats refuse capture instead of silently
-substituting an unposed model. Native reads precede background file parsing and
-skinning; creation returns to the framework thread.
-Racial deformation supports models on sibling branches of the active PBD tree:
-convert from the model through the common ancestor into the actor's race before
-posed skinning. Missing ancestry or non-invertible source deformation refuses
-capture rather than silently dropping a model or substituting identity.
-Overlay tessellation is independent of collision geometry. Shared translucent
-triangle edges are not anti-aliased individually, which would expose mesh seams.
+Colliders are overlay entities placed in the world. They are not game objects. The
+shapes are plane, box, cylinder, cone, capsule and sphere. They share the overlay's
+lifecycle, selection, undo history and scene-file storage.
 
-FABRIK and Rope opt into all enabled colliders through the chain's Colliders
-switch. Bone width is the diameter of every segment, in world yalms, independent
-of actor scale; only dragging that slider shows the temporary width overlay.
-Bepu runs a headless world per collision-enabled chain: rigid capsule links,
-ball-socket joints and positional targets, with fixed substeps and continuous
-collision detection. Link lengths come from the authored span, not Rope's sampled
-curve. The physics world retains the last route while dragging; it is not rebuilt
-from an obstacle-free FABRIK/catenary result each frame. Only the authored scene
-colliders participate, not other chains or native game geometry. Rope settles
-downward; FABRIK adds no gravity. Settled bodies sleep. Two Joint and CCD are unchanged.
-Continuation belongs to the exact live chain; solver/span/swivel changes and
-disabling collisions reset it. Removal, GPose exit and unload dispose its native
-buffers. Another actor or preview never shares it. Snapshots capture the visible
-route as the receiving skeleton's authored seed, not physics velocities.
-Bone frames share a root roll reference and are transported along the solved
-span, preserving authored relative roll. Links must not independently accumulate
-roll from their motion history or adopt a round capsule's free spin. The root
-frame continues smoothly when folding backwards.
-The selected handle has limited pulling force so a taut wrapped span can stop
-short of its target. FABRIK/Rope translation edits clamp their authored target to
-the span's distance limits; rejected drag travel is discarded so reversing responds
-immediately. Collision lag does not feed back into that target.
-Dragging starts from the visible gizmo position, which can differ from the held
-target after contact. Reach limiting uses that frozen input position, and the
-accepted point is converted back to an authored offset; solved motion during the
-gesture does not move its input baseline.
-Conflicting anchors or inserting geometry through an already
-pinned chain can remain unresolved; collision is not a guarantee that every
-requested arrangement is physically possible.
+The Overlay page sets a collider's shape, whether it collides, its transform lock,
+its visibility and how see-through its faces are. The inspector and the world gizmo
+move it. Hiding a collider does not stop it colliding.
+
+Planes have a finite size and two sides. Rounded surfaces are drawn from polygons,
+but their mesh seams are not outlined. Sharp rims and the edges of boxes and planes
+are.
+
+### Body colliders
+
+An actor's **Create collider** action makes a named group of at most 48 capsules
+and spheres. It covers the body chains and tails Poser recognises on humanoids.
+
+- Limbs follow their bone's axis. The torso, head, hands and feet may use the long
+  axis of the surface. Breasts use the same surface fit.
+- A sphere is added at a joint only where the neighbouring end caps don't already
+  cover it. It uses the smaller of the two radii.
+- Each part can be edited or removed on its own. Creating the group is one undo
+  step.
+- Each part is parented to its bone and follows posing and animation. The parenting
+  is rigid and does not apply the bone's captured scale a second time.
+- Sizes are those fitted when the group was made, including Customize+ scaling at
+  that time. If the proportions change afterwards, make the group again.
+- Use Detach for a part that should stay put. Relationships and missing parents
+  follow [transform parenting](scenes.md#transform-parenting).
+- Hair, ears and skirt chains do not enlarge the fit. Each recognised tail segment
+  has its own bone.
+
+This is a rough body shape, not exact clothing collision. A rig Poser doesn't know,
+or one that needs more than 48 parts, is refused. None of the actor's triangles
+enter the physics world.
+
+### How the fit is made
+
+Every bone the skin is weighted to counts toward which body part owns a piece of
+surface. Helper-bone weights are added up before filtering.
+
+Surface samples are weighted by triangle area and limited in number. They fit the
+centre, radius and length in the bone's rotation frame. The fit trades penetration
+against extra clearance. It does not use the extreme or the average of the vertices.
+
+Where the axis is free, the spread of the surface and the bone directions give a
+starting angle, which is then refined within limits. They do not fix the final
+direction. Limb axes stay on the bone.
+
+A free-axis region may use two capsules when splitting it cuts the fitting error of
+the whole region by at least 25%. The error is measured against both capsules
+together, including extra clearance inside either. Nearly round regions keep one
+part. All parts share the region's bone and count toward the 48. This changes how
+groups are generated, not colliders that are already saved.
+
+### Reading the actor's models
+
+Racial deformation is looked up by the game's original resource, not by a mod's
+file name on disk. Matching ignores case and slash direction, and the resolved file
+is kept separately. If a mod's identity can't be worked out, or two conflict, the
+capture is refused rather than skipping the deformation.
+
+The actor's racial deformer is applied to each model before posed skinning, so gear
+shared between races lines up with the skeleton. Models on sibling branches of the
+deformer tree are converted through the common ancestor into the actor's race. A
+missing ancestor, or a deformation that can't be inverted, refuses the capture.
+
+The extra human `b0003_top` models are not skin and are left out. Body skin hidden
+by a material still counts.
+
+Visible triangles whose skin bones can't be resolved are left out. They are never
+fitted with part of their weights or with guessed bones. Regions that are valid
+still get colliders. The capture reports the triangles and bones it left out and
+the regions with too few samples. With no usable surface, no group is made.
+
+The model reader supports V5 and V6 bone tables, using Penumbra's documented V6
+layout. Unmapped bones or unsupported vertex formats refuse the capture instead of
+using an unposed model. The game is read first, the files are parsed and skinned in
+the background, and creation returns to the framework thread.
+
+### Capsule size and editing
+
+A capsule's scale Y is its full tip-to-tip length. Its radius uses the smallest
+scale dimension, as a sphere's does. Physics uses the exact round shape, not the
+polygons that are drawn.
+
+Physics shapes do not build display meshes. Changing a size rebuilds only the shapes
+it affects, not every collider in the chain's world.
+
+Capsule editing shows a radius and the spacing between the end-cap centres, not
+separate X, Y and Z scales.
+
+- Changing the radius keeps the spacing.
+- The handle along the capsule changes the spacing and keeps the radius. It stops
+  when the capsule becomes a sphere.
+- Uniform scaling (the Scale centre, or the white outer circle in Universal)
+  multiplies both.
+- Moving and rotating in the world still work. The size handles are local.
+- The inspector uses the same sizes.
+
+Storage stays as total length in Y and diameter in X and Z, with the same history
+and collision geometry, so old files are unchanged.
+
+Triangle-mesh colliders saved by older versions still work and are not rewritten.
+They draw only outline and open-edge lines, with no fill or inner wireframe, and
+still collide on both sides.
+
+How smoothly a collider is drawn is separate from its collision shape. Shared edges
+of see-through triangles are not smoothed one by one, because that would show the
+mesh seams.
+
+### Collisions for FABRIK and Rope
+
+A chain's Colliders switch makes it collide with every enabled collider. Bone width
+is the diameter of every segment, in world yalms, whatever the actor's scale. The
+width overlay shows only while you drag that slider.
+
+Each chain with collisions has its own physics world: rigid capsule links, ball
+joints and position targets, with fixed substeps and continuous collision
+detection. Link lengths come from the chain as captured, not from Rope's sampled
+curve.
+
+- The world keeps the last route while you drag. It is not rebuilt each frame from
+  a solve without obstacles.
+- Only the scene's colliders take part, not other chains or the game's geometry.
+- Rope settles downward. FABRIK has no gravity. Bodies at rest sleep.
+- The physics state belongs to that one live chain. Changing the solver, depth or
+  swivel, or turning collisions off, resets it. Removing the chain, leaving GPose
+  and unloading free its buffers. Another actor or a preview never shares it.
+- A snapshot stores the route you see as the receiving skeleton's starting shape.
+  It does not store velocities.
+
+Bone frames share one roll reference at the root and are carried along the solved
+chain, keeping the roll each bone was given. A link never builds up roll from how
+it moved, and never picks up a round capsule's free spin. The root frame stays
+smooth when the chain folds back.
+
+The handle pulls with limited force, so a taut chain wrapped around something can
+stop short of its target. A drag is limited to the chain's reach, and travel past
+it is thrown away, so dragging back responds at once. Lag caused by collision does
+not feed back into the target.
+
+A drag starts from where the gizmo is, which after contact can differ from the held
+target. The reach limit uses that start position for the whole drag, and the
+accepted point is stored as an offset. Movement from the solve during the drag does
+not move the start.
+
+Conflicting anchors, or pushing geometry through a chain that is already pinned,
+can stay unresolved. Collision does not promise that every arrangement is possible.
