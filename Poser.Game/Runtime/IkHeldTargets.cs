@@ -172,7 +172,8 @@ internal sealed unsafe class IkHeldTargets
     }
 
     /// <summary>Aligns a newly enabled target with the bone before solving.
-    /// Customize+ can scale the displayed pose after this stage.</summary>
+    /// Customize+ edits the pose after this stage, so a capture taken from the screen is not
+    /// where the solver sees the bone.</summary>
     private void Seat(IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose)
     {
         // Each path clears its mark only once seated: a target that cannot be
@@ -248,43 +249,59 @@ internal sealed unsafe class IkHeldTargets
 
     /// <summary>
     /// How a move in the pose the last solve produced appears on screen, and the reverse.
-    /// Customize+ changes the pose after the solve, so a drag measured on screen is not the
-    /// distance the solver has to move the target.
-    /// The bone above the chain gives the turn and the shape of the scale. Customize+ can scale
-    /// that bone without scaling the bones below it, so the size comes from the limb itself:
-    /// its length on screen over its solved length.
-    /// Both are identity before the first solve and when the limb has no usable length.
+    /// Customize+ edits the pose after the solve. An edit that is passed down (Propagate) moves
+    /// every bone below the edited one: scaled along the model axes about that bone, by the
+    /// bone's scale or its separate child scale, then turned about it. An edit that is not
+    /// passed down changes only its own bone. So no bone's own scale says how the limb below it
+    /// is displayed.
+    /// This measures it instead: the linear map that carries each step from bone to bone, from
+    /// the bone above the chain down to the end, from the solved pose to the screen. Where the
+    /// steps don't span a direction (a straight limb), the limb's length on screen over its
+    /// solved length is used.
+    /// Both are identity before the first solve, for a chain whose parent is in another partial,
+    /// and when the map can't be inverted.
     /// </summary>
     public (Matrix4x4 ToDisplayed, Matrix4x4 ToSolve) DisplayedFrame(IkChainState ik, IBone endpoint)
     {
-        if (ik.SolveParent is not { } parent || ik.SolveParentFrame is not { } solve)
-            return (Matrix4x4.Identity, Matrix4x4.Identity);
-        var members = NativeIkMembers(endpoint, ik.Config);
-        _ = parent.LastTransform;
-        foreach (var member in members) _ = member.LastTransform;
+        var none = (Matrix4x4.Identity, Matrix4x4.Identity);
+        if (ik.SolveParent is not { } parent || ik.SolveParentFrame == null)
+            return none;
+        var bones = NativeIkMembers(endpoint, ik.Config);
+        bones.Insert(0, parent);
+        foreach (var bone in bones) _ = bone.LastTransform;
         RefreshCache(parent);
-        var frame = new IkActorAnchor(Vector3.Zero, Quaternion.Identity, Vector3.Zero, Quaternion.Identity)
-            { ParentTransform = solve }
-            .FrameDelta(AnchorPose(_stacks.ToApplySpace(parent, parent.LastTransform)));
-        // The limb's length on screen, and the length it would have there if the parent's
-        // scale reached it.
-        float displayed = 0, expected = 0;
-        for (int i = 1; i < members.Count; i++)
+        // Least squares for the map in "solved step × map = displayed step":
+        // (Σ solvedᵀ solved) × map = Σ solvedᵀ displayed.
+        Matrix4x4 solvedSquare = default, solvedByDisplayed = default;
+        float solvedLength = 0, displayedLength = 0;
+        for (int i = 1; i < bones.Count; i++)
         {
-            displayed += Vector3.Distance(
-                _stacks.ToApplySpace(members[i - 1], members[i - 1].LastTransform).Position,
-                _stacks.ToApplySpace(members[i], members[i].LastTransform).Position);
-            expected += Vector3.TransformNormal(
-                _stacks.ToApplySpace(members[i], members[i].LastRawTransform).Position
-                - _stacks.ToApplySpace(members[i - 1], members[i - 1].LastRawTransform).Position, frame).Length();
+            var solved = _stacks.ToApplySpace(bones[i], bones[i].LastRawTransform).Position
+                - _stacks.ToApplySpace(bones[i - 1], bones[i - 1].LastRawTransform).Position;
+            var displayed = _stacks.ToApplySpace(bones[i], bones[i].LastTransform).Position
+                - _stacks.ToApplySpace(bones[i - 1], bones[i - 1].LastTransform).Position;
+            solvedSquare += Outer(solved, solved);
+            solvedByDisplayed += Outer(solved, displayed);
+            solvedLength += solved.Length();
+            displayedLength += displayed.Length();
         }
-        float size = displayed / expected;
-        var toDisplayed = frame * Matrix4x4.CreateScale(size);
-        // Zero-scaled bones exist (a limb hidden by Customize+, a collapsed leash link). They
-        // leave no length to compare and no way back from the screen.
-        return float.IsFinite(size) && size > 0 && Matrix4x4.Invert(toDisplayed, out var toSolve)
-            ? (toDisplayed, toSolve) : (Matrix4x4.Identity, Matrix4x4.Identity);
+        // A weak pull toward the plain length ratio settles the directions the steps don't span.
+        float pull = 1e-4f * (solvedSquare.M11 + solvedSquare.M22 + solvedSquare.M33) / 3;
+        if (!Matrix4x4.Invert(solvedSquare + Matrix4x4.CreateScale(pull), out var inverse))
+            return none;
+        var toDisplayed = inverse
+            * (solvedByDisplayed + Matrix4x4.CreateScale(pull * displayedLength / solvedLength));
+        // Zero-scaled bones exist (a limb hidden by Customize+, a collapsed leash link) and give a
+        // map with no way back. A solver that returned NaN gives a NaN map, which Invert accepts.
+        return float.IsFinite(toDisplayed.GetDeterminant()) && Matrix4x4.Invert(toDisplayed, out var toSolve)
+            ? (toDisplayed, toSolve) : none;
     }
+
+    private static Matrix4x4 Outer(Vector3 a, Vector3 b) => new(
+        a.X * b.X, a.X * b.Y, a.X * b.Z, 0,
+        a.Y * b.X, a.Y * b.Y, a.Y * b.Z, 0,
+        a.Z * b.X, a.Z * b.Y, a.Z * b.Z, 0,
+        0, 0, 0, 0);
 
     public IkActorAnchor CaptureActorAnchor(IBone endpoint, IkChainConfig config)
     {

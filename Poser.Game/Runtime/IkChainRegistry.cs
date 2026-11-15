@@ -36,14 +36,13 @@ internal sealed class IkChainState
     /// Bone and Entity modes store an offset from the selected target.</summary>
     public HeldTarget? HeldCapture;
     /// <summary>The first solve must align this displayed capture with its input pose.
-    /// Customize+ can scale the displayed body after IK runs.</summary>
+    /// Customize+ edits the pose after IK runs, so the displayed pose is not the solver's.</summary>
     public bool SeatPending;
     // A target change keeps this solver-space point until its new anchor is read during evaluation.
     public (Vector3 Position, Quaternion Rotation)? PendingRetarget;
     public (Vector3 Position, Quaternion Rotation)? SolveTarget;
     /// <summary>The first bone above the chain and its frame as the last solve saw it.
-    /// An Actor target follows it, and a drag measured on screen is converted through it
-    /// (Customize+ changes the pose after the solve).</summary>
+    /// An Actor target follows it. The frame is null until a solve has run.</summary>
     public IBone? SolveParent;
     public PoseTransform? SolveParentFrame;
     public IBone? TargetBone;

@@ -107,11 +107,14 @@ With constraints disabled, translation remains unrestricted. Zero-translation
 edits never clamp an existing target; rotation and scale cannot move the handle.
 
 The reach is measured in the pose the solver produced, so the limb can always be
-pulled straight. Customize+ changes the pose after the solve, so a drag is
-converted from the screen to the solver's pose first. The size of that
-conversion comes from the limb itself: its length on screen over its solved
-length. A Customize+ scale on the bone above the limb that isn't passed down to
-the limb therefore doesn't shorten the drag or the reach.
+pulled straight. Customize+ edits the pose after the solve
+(see [Customize+ and the displayed pose](../architecture/posing-runtime.md#customize-and-the-displayed-pose)),
+so a drag is converted from the screen to the solver's pose first. The
+conversion is measured, not read from any bone's scale: Poser compares how the
+limb's bones sit relative to each other on screen and in the solved pose, from
+the bone above the limb down to its end. That follows a scale passed down from
+any bone above the limb, including a different scale per axis, and ignores a
+scale that isn't passed down.
 
 Two Joint's End rotation is the sole orientation switch in every target mode:
 off (the default) keeps the endpoint's rotation while the limb is solved or
@@ -124,8 +127,8 @@ solvers retain Keep rotation; its saved value never overrides Two Joint's End
 rotation, including after the native solve.
 
 Enabling a chain captures its starting pose.
-The first solve aligns that capture with the solver's coordinate frame, including
-when Customize+ changes the displayed body scale afterwards.
+The first solve aligns that capture with the solver's pose. Customize+ edits the
+pose afterwards, so what is on screen is not what the solver works on.
 Changing an active chain's World, Actor, Bone or Entity target converts its existing held point.
 Its position and rotation stay the same; only what it follows changes.
 Undo and Redo retain the captured target along with the setting.
