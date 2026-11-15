@@ -119,8 +119,8 @@ disk, Poser keeps both paths as recovery information.
 
 ### Where files go
 
-Poses, Scenes and MCDFs default to folders under `Documents/Poser` and show in
-their Library tabs. Auto-saves default to the plugin's configuration folder and
+Poses, Scenes, MCDFs and Objects default to folders under `Documents/Poser` and show in
+the Library. Auto-saves default to the plugin's configuration folder and
 show in the Library's Auto-saves tab. File browsers open in the matching folder.
 Light and camera files use Documents.
 

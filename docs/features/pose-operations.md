@@ -49,10 +49,18 @@ partner bone's own frame.
 
 ## Reset, copy and stash
 
-Reset clears the bones you posed (the interactive `BonePose`) but keeps named
-layers. Reset All also restores expression and gaze, resets every pose region and
-turns IK off. Placement, the stash, tools and which sections are open all survive.
+Reset clears your edits on the chosen bones: the whole pose, or only the body, the
+face or the hair.
 
-Copy, stash and apply use `PortablePose`. They happen completely or not at all, and
-they are in undo history. They clear empty overrides on the destination. When
-nothing matched, they say so instead of doing nothing.
+Reset All puts the whole actor back in one history step. In order it resets the
+expression, the gaze, every pose region and IK, then Poser's animation, its
+presentation changes, a changed model and the appearance applied through other
+plugins. A part that fails is named, and the rest still runs. Placement, the stash,
+tools and which sections are open all survive.
+
+Copy, stash and apply use `PortablePose`. They are in undo history, and they clear
+empty overrides on the destination.
+
+- Bones the destination doesn't have are skipped and named in the result.
+- A saved bone that matches more than one destination bone refuses the whole apply.
+- When nothing matched, they say so instead of doing nothing.
