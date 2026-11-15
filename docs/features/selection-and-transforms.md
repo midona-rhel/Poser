@@ -126,13 +126,20 @@ whether it is applied is read from that mask.
 
 ## Placing at the camera
 
-New lights and **Move to camera** both place the entity one yalm in front of the
-camera, with its local +Z along the view. Brio and Ktisis put lights exactly at the
-eye. Poser keeps the offset on purpose so the world gizmo's pivot can be drawn.
+A new light is placed one yalm in front of the camera, with its local +Z along the
+view. Brio and Ktisis put lights exactly at the eye. Poser keeps the offset on
+purpose so the world gizmo's pivot can be drawn. Copies and imported lights keep
+the transform they came with.
 
-Move keeps the scale and is one undo step. The light inspector and the light's
-context menu run the same command. Copies and imported lights keep the transform
-they came with.
+**Move to camera** in the light inspector and the light's context menu places the
+light the same way. It keeps
+the scale and is one undo step.
+
+For other entities, groups and selections of several entities, **Move to camera**
+moves what you chose so that its centre is 2.5
+yalms in front of the camera. It only moves: rotation and scale stay, and several
+entities or a group keep their spacing. It is one undo step, and it is refused when
+nothing movable is selected.
 
 ## Group transforms
 
@@ -233,8 +240,10 @@ It never creates a camera and never changes a parent. Close framing on a bone is
 separate action.
 
 It is refused before any camera write for a free, locked or pinned camera, and for
-an actor that is unavailable, hidden or not drawn. It is in the actor menu and in
-the Inspector under Actor → Camera.
+an actor that is unavailable, hidden or not drawn. It is in the actor's context
+menu. A camera's context menu has Look at tracked actor, and the camera inspector
+has Recenter. Recenter centres on the actor the camera follows, then the game's
+target, then the selected bone or actor, then a tracked bone.
 
 A new free camera takes its position, direction and roll from the view as it is
 drawn. That keeps the view when you spawn from another free camera or from a Main

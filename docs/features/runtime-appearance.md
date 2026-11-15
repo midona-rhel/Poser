@@ -23,7 +23,7 @@ edit.
 
 - Restoring gives the field back only after the game write succeeds. A failed
   restore stays owned and can be retried.
-- Reset Appearance, Reset All, leaving GPose, unloading and an actor leaving all use
+- Reset on the Appearance row, Reset All, leaving GPose, unloading and an actor leaving all use
   that same restore.
 - A capture taken from one actor is never written to the actor that replaced it.
 
