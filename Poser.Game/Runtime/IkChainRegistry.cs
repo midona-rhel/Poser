@@ -38,6 +38,9 @@ internal sealed class IkChainState
     /// <summary>The first solve must align this displayed capture with its input pose.
     /// Customize+ edits the pose after IK runs, so the displayed pose is not the solver's.</summary>
     public bool SeatPending;
+    /// <summary>An unseated FABRIK chain has sat out its one frame, so the raw caches now hold
+    /// the pose it starts from.</summary>
+    public bool FabrikWaited;
     // A target change keeps this solver-space point until its new anchor is read during evaluation.
     public (Vector3 Position, Quaternion Rotation)? PendingRetarget;
     public (Vector3 Position, Quaternion Rotation)? SolveTarget;
@@ -244,8 +247,13 @@ internal sealed unsafe partial class IkChainRegistry
             || state.HeldCapture == null;
         if (mode != IkTargetMode.Actor || !config.Enabled || config.Solver is IkSolver.Fabrik or IkSolver.Rope)
             config = config with { ActorAnchor = null };
+        // The limb can be posed while the chain is off, so its capture is taken again when it
+        // comes back. Undoing the switch-off restores the chain it recorded, as it was.
+        if (!config.Enabled && config.Fabrik is { Unseated: false } resting)
+            config = config with { Fabrik = resting with { Unseated = true } };
         state.Config = config.Normalized();
         state.SeatPending = false;
+        state.FabrikWaited = false;
         state.PendingRetarget = null;
         state.SolveTarget = null;
         if (mode == Poser.Domain.Posing.IkTargetMode.Actor)
@@ -284,6 +292,14 @@ internal sealed unsafe partial class IkChainRegistry
             state.HeldCapture = state.TargetEntity is { } entity
                 ? _held.CaptureEntityOffset(bone, entity) : null;
             state.SeatPending = state.HeldCapture != null;
+        }
+
+        // FABRIK and Rope hold their own handle. A held target would only make the pass run
+        // a Two Joint hold on the end bone that FABRIK then overwrites.
+        if (config.Solver is IkSolver.Fabrik or IkSolver.Rope)
+        {
+            state.HeldCapture = null;
+            state.SeatPending = false;
         }
 
         _ikChains[key] = state;

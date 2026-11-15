@@ -33,6 +33,13 @@ public sealed record FabrikControl(
     /// </summary>
     public FabrikReferenceBone[]? ReferenceBones { get; init; }
 
+    /// <summary>
+    /// The chain must be captured again before it is solved: it was taken while the chain was
+    /// not solving, or the chain has been off since. The solver leaves it alone for one frame,
+    /// then captures it from the pose that frame produced. History keeps this pending state.
+    /// </summary>
+    public bool Unseated { get; init; }
+
     public bool TrySelectSpan(IReadOnlyList<(string Name, int Partial)> members, int handleIndex, out FabrikControl selected)
     {
         selected = this;

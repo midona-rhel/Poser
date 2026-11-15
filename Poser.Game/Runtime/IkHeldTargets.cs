@@ -109,7 +109,7 @@ internal sealed unsafe class IkHeldTargets
         if (pose != null)
             RecordSolveParent(ik, endpoint, pose);
         if (pose != null && !ik.PreviewModelSpace
-            && (ik.SeatPending || ik.Config.ActorAnchor is { Unseated: true }))
+            && (ik.SeatPending || ik.Config.ActorAnchor is { Unseated: true } or { ParentUnseated: true }))
             Seat(ik, endpoint, authoredPosition, authoredRotation, pose);
         if (ik.HeldCapture is not { } capture)
             return null;
@@ -187,13 +187,20 @@ internal sealed unsafe class IkHeldTargets
         var rotation = ik.PendingRetarget?.Rotation ?? end.Rotation;
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
         {
-            var seated = anchor with
-            {
-                Position = target, Rotation = end.Rotation,
-                AuthoredPosition = authoredPosition, AuthoredRotation = authoredRotation,
-                ParentTransform = anchor.ParentName == null ? null : ik.SolveParentFrame,
-                Unseated = false,
-            };
+            // A target converted from FABRIK or Rope keeps its point and only reads the parent.
+            var seated = anchor.ParentUnseated
+                ? anchor with
+                {
+                    ParentTransform = anchor.ParentName == null ? null : ik.SolveParentFrame,
+                    ParentUnseated = false,
+                }
+                : anchor with
+                {
+                    Position = target, Rotation = end.Rotation,
+                    AuthoredPosition = authoredPosition, AuthoredRotation = authoredRotation,
+                    ParentTransform = anchor.ParentName == null ? null : ik.SolveParentFrame,
+                    Unseated = false,
+                };
             if (!seated.IsValid)
                 return;
             ik.Config = ik.Config with { ActorAnchor = seated };
@@ -324,16 +331,36 @@ internal sealed unsafe class IkHeldTargets
     public IkChainConfig ChangeTargetMode(IkChainState previous, IBone endpoint, IkChainConfig config)
     {
         var authored = _stacks.GetIkModification(endpoint) ?? Transform.Identity;
-        if (ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, lastSolved: true) is not { } target)
-            return config;
         // Convert the solver's held target, rather than recapturing the pose before IK bends the limb.
+        return ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, lastSolved: true) is { } target
+            ? AnchorAt(endpoint, config, target, previous.SolveParentFrame) : config;
+    }
+
+    /// <summary>Puts a Two Joint or CCD target on the end bone where the last solve left it.
+    /// For a chain coming from FABRIK or Rope, which keep no held target of their own.</summary>
+    public IkChainConfig AnchorOnSolvedEnd(IBone endpoint, IkChainConfig config)
+    {
+        var end = _stacks.ToApplySpace(endpoint, endpoint.LastRawTransform);
+        var parent = NativeIkMembers(endpoint, config).FirstOrDefault()?.ParentBone;
+        // An anchor kept from an earlier Two Joint period describes a pose that has since changed.
+        return AnchorAt(endpoint, config with { ActorAnchor = null, WorldAnchor = null },
+            (end.Position, end.Rotation),
+            parent?.PartialId == endpoint.PartialId
+                ? AnchorPose(_stacks.ToApplySpace(parent, parent.LastRawTransform)) : null,
+            parentUnseated: true);
+    }
+
+    private IkChainConfig AnchorAt(IBone endpoint, IkChainConfig config,
+        (Vector3 Position, Quaternion Rotation) target, PoseTransform? parentFrame, bool parentUnseated = false)
+    {
+        var authored = _stacks.GetIkModification(endpoint) ?? Transform.Identity;
         if (config.TargetMode == IkTargetMode.Actor && config.ActorAnchor == null)
             return config with
             {
                 ActorAnchor = CaptureActorAnchor(endpoint, config) with
                 {
                     Position = target.Position, Rotation = target.Rotation,
-                    ParentTransform = previous.SolveParentFrame, Unseated = false,
+                    ParentTransform = parentFrame, Unseated = false, ParentUnseated = parentUnseated,
                 },
             };
         if (config.TargetMode == IkTargetMode.World && config.WorldAnchor == null

@@ -90,14 +90,15 @@ Two Joint/CCD Actor targets follow the first parent outside the solved chain.
 Rotating or moving that parent, or any of its ancestors, carries the target;
 changing a joint inside the chain does not feed back into it. Actor-root motion
 also carries the target. Existing handle offsets follow the captured parent frame,
-while new drags are converted from current model axes. Native Actor captures
-are configuration state retained by undo/redo; disabling clears them and a fresh
-enable captures the current point. World/Bone/Entity anchors retain their existing
-coordinate frames. IK bake disables the
+while new drags are converted from current model axes. World/Bone/Entity anchors
+retain their existing coordinate frames. IK bake disables the
 chain, waits for the pose to settle, and writes affected bones as one
-raw-baseline history entry. Disabling keeps tuning and clears only fixed
-capture. Reset Defaults keeps Enabled, Reset Bone keeps IK, and Reset All
-disables and clears every chain.
+raw-baseline history entry. Reset Defaults keeps Enabled, Reset Bone keeps IK,
+and Reset All disables and clears every chain.
+
+Disabling a chain keeps its tuning and drops what it captured, for every solver.
+The limb can be posed while the chain is off, so enabling it captures the limb
+as it stands then. Undoing the switch-off restores the chain as it was.
 
 Constrained Two Joint/CCD handle translation is clipped to the live chain's
 reach before it enters authored state or the gizmo's drag accumulator. Two Joint
@@ -126,11 +127,17 @@ the user's end rotation, and holding or following continues from there. Other
 solvers retain Keep rotation; its saved value never overrides Two Joint's End
 rotation, including after the native solve.
 
-Enabling a chain captures its starting pose.
-The first solve aligns that capture with the solver's pose. Customize+ edits the
-pose afterwards, so what is on screen is not what the solver works on.
+Enabling a chain moves nothing. Its starting pose is captured in the pose the
+solver works on, not the one on screen, which Customize+ has edited afterwards.
+Two Joint and CCD take it on their first solve. FABRIK and Rope leave the limb
+alone for one frame and take it from the pose that frame produced.
 Changing an active chain's World, Actor, Bone or Entity target converts its existing held point.
 Its position and rotation stay the same; only what it follows changes.
+Switching the solver keeps the end bone where it is. FABRIK and Rope start from
+the pose Two Joint or CCD left, never from an older capture. Two Joint and CCD
+aim at the end bone where FABRIK or Rope left it. A bone only the old solver
+owned, such as the clavicle under FABRIK's default depth, goes back to its pose,
+and the middle joints follow the new solver.
 Undo and Redo retain the captured target along with the setting.
 
 Scene entity targets follow props, scenery/world objects, lights and VFX through
@@ -154,13 +161,13 @@ active IK chain and never implicitly connect. Two Joint and CCD are unchanged.
 Depth edits select from a bounded reference captured before solving: up to 50
 parents and 50 unambiguous children around the handle. Removed members retain
 their original geometry and actor-model anchors, so decreasing then increasing
-depth cannot recapture shortened Rope chords or accumulate display-frame offsets.
+depth cannot recapture shortened Rope chords.
 The reference is authored configuration carried by history, not a global cache;
 copies/previews start their own reference. Existing saved spans without a reference
 retain their authored members when first expanded. If a skeleton rebuild adds a
 requested member outside the captured reference, the depth edit is rejected
-without changing configuration/history. Reset IK and reselect its solver to capture
-the new skeleton deliberately; never silently recapture solved geometry. Collision continuation is
+without changing configuration/history. A depth edit never recaptures solved
+geometry; turn the chain off and on to capture the new skeleton. Collision continuation is
 described below. The handle
 is constrained to the reach of both spans; taut spans cannot be stretched by a
 drag. FABRIK bends each side iteratively; Rope retains its hanging-curve solve
