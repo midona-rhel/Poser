@@ -2,30 +2,37 @@
 
 ## Basic mode
 
-Basic mode has one selection: General Full Body.
+Basic mode is the General section of the Animation tab. It plays one animation and
+has a Loop switch, a Play emote start switch and the Stance controls.
 
-- **Choose** only stages a catalog row.
-- **Apply** captures the actor's current Base state and then plays that exact row.
-- **Reset** restores the Base state captured by the first successful Apply. That
-  capture never changes afterwards.
+- **Choose animation** only stages a catalog row.
+- **Apply** captures the actor's current state and then plays the row. For an
+  emote it plays the version the game uses for how the actor is now (standing,
+  sitting, mounted and so on), on the layer that version belongs to. An emote with
+  no version for the current posture is refused, with the reason.
+- **Reset** restores the state captured by the first successful Apply. That
+  capture never changes afterwards. Reset also turns Loop off.
 
-An emote at index zero can use the game's intro and loop. Actions and raw timelines
-use the timeline route.
+With Play emote start on, an emote's first entry uses the game's intro and loop.
+Actions and raw timelines use the timeline route.
+
+While Advanced is on, Choose, Apply, Reset and Loop in this section are disabled.
 
 ## Advanced mode
 
-Advanced mode shows five layers: Full Body, Upper Body, Facial, Additive and Lips.
-While Advanced is off the controls stay visible but do nothing.
+Advanced mode shows five layers: Full body, Upper body, Facial, Additive and Lips.
+While Advanced is off the layers stay visible but are disabled.
 
 Each layer keeps the exact catalog row you chose, writes only its own game slot,
-and restores the state captured just before its first successful write. Full Body
-and Upper Body have scrub and their own Loop switch. The other layers don't,
-because they have no stable animation control to map to.
+and restores the state captured just before its first successful write. Every
+layer has Speed, Weight and Scrub with a play/pause button. Every layer except
+Lips has its own Loop switch.
 
 Entering Advanced only changes the view. It does not reset or replay the actor.
-Leaving Advanced restores what the layers took over before the mode changes. That
-restore is done layer by layer on purpose: if a later layer fails, Advanced stays
-selected and the layers already restored stay restored.
+Leaving Advanced releases a held expression and restores what the layers took over,
+before the mode changes. That restore is done layer by layer on purpose: if a
+later layer fails, Advanced stays selected and the layers already restored stay
+restored.
 
 The mode belongs to one actor and is shared by every Properties window showing it.
 Catalog drafts and which pickers are open stay with each window.
@@ -33,18 +40,20 @@ Catalog drafts and which pickers are open stay with each window.
 ## Attached bodies
 
 An attached body that is backed by a character uses the same animation backend with
-fewer controls: Base choose, apply and reset, whole-actor speed and play/pause, and
-Base scrub. Stance, weapon, position lock, expressions, looping and the advanced
-layers are not offered for it.
+fewer controls: Choose, Apply and Reset for its one animation, whole-actor speed and
+play/pause, and scrub. Stance, weapon, position lock, expressions, looping and the
+advanced layers are not offered for it.
 
 ## Looping
 
-Full Body loop uses the game's forced Base field. Writing another layer clears that
+Full body loop uses the game's forced Base field. Writing another layer clears that
 force, writes the layer, then sets the force again.
 
-Upper Body loop replays the last Upper Body timeline that was applied.
+Loop on another layer repeats the timeline that layer's Apply played last. Turning
+the switch on while that timeline is no longer playing only remembers the choice.
+It does not start anything.
 
-Turning Loop off stops the replay without changing the current frame. Reset
+Turning Loop off stops the repeat without changing the current frame. Reset
 releases the loop and restores the captured layer.
 
 ## Scenes
@@ -54,17 +63,22 @@ A scene saves each actor's animation unless the save turns that off. See
 
 ## Expressions
 
-Expression Preview on the Pose tab and Apply on the Advanced Facial layer both hold
-an expression (`HoldExpression`). Their Reset both release it (`ReleaseExpression`).
+Preview on the Pose tab's Expression row holds an expression on its first frame
+(`HoldExpression`). Reset on that row releases it (`ReleaseExpression`).
+
+The Advanced Facial layer is an ordinary layer. Apply there releases a held
+expression and plays the animation with Loop on. Reset on the Facial layer releases
+a held expression too.
 
 Releasing clears the Facial speed, plays Straight Face (604), clears the speed
 again, then restores the Facial timeline and speed that were captured.
 
-Apply schedules at most one identical retry 500 ms later, and only if the session,
-actor, binding and exact selection are all still the same. The retry does not check
-what the face shows, so a paused actor can still need a second click.
+Preview schedules at most one identical retry 500 ms later, and only if the
+session, actor, binding and exact selection are all still the same. The retry does
+not check what the face shows, so a paused actor can still need a second click.
 
-The Pose tab also has Bake, which writes the expression into pose history.
+The Expression row also has Bake expression, which writes the face into pose
+history.
 
 ## Scrubbing
 
@@ -84,13 +98,13 @@ same frame in either direction:
 Poser's pause and resume reach the layer timelines, props, animation controls and
 the actor's effects on one tick. Paused effects freeze.
 
-A redraw from any source brings Base, Upper Body and a held Facial timeline back on
+A redraw from any source brings Full body, Upper body and a held Facial timeline back on
 their frame, props included.
 
 Timelines with whole-number frames, and game builds where the layout check fails,
 use the older scrub that writes the clock directly.
 
-## Static idle export (in development, #304)
+## Static idle export
 
 Actor context menu → More → Export Idle Pose asks for a name, a standing `/cpose`
 slot and which races and genders to export for. Only the actor's own race and
