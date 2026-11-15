@@ -271,6 +271,9 @@ zoom and offset, and roll and field of view.
 
 - If another step is added while a move is still settling, the move is recorded
   first, up to the last framing seen.
+- Ctrl+Z while a move is still settling records the move first and takes it back,
+  so the camera returns to where it last rested. Redo, and undo for the selected
+  entity, do not record it.
 - Poser's own camera edits, undo, redo and switching cameras reset the resting
   framing and are not recorded as a move.
 - A locked camera never records anything.
