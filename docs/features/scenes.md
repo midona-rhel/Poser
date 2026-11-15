@@ -1,624 +1,794 @@
-﻿# Scenes
+# Scenes
 
 ## Load history
 
-Anonymous mode saves numbered actor labels, including when a nickname contains
-a real character name. With anonymous mode off, saves use the displayed name.
-Original GPose characters also carry a SHA-256 hash of their normalized name.
-Loading matches that hash to existing characters before clearing or spawning;
-each live character is used at most once. Older files can match by their saved
-name. Unmatched entries spawn as before. Native actor names remain unchanged
-because external appearance providers use them as identity.
-New captures mark names as display names. Unmarked legacy names use the normal
-object-index cleanup; authored numeric suffixes in marked files remain intact.
+### Names in saved scenes
 
-Every committed scene load — complete, or partial with named refusals —
-records one undo step. Undo removes that load's created entities, groups and
-imported parent links, runs the same gaze and appearance teardown a clear
-runs on each removed actor, and restores its captured baselines, including
-the default camera's followed actor and the live camera. Redo reads the file
-again additively (it never clears the session a second time), retargets the
-same step to the new load, and lands only when that load commits; a replay
-that rolls back reports why and stays redoable. Repeated undo never uses an
-earlier load's emptied cleanup lists. Undo while another scene operation runs
-is refused and the step kept. Clearing existing scene content before a load
-remains destructive. Loaded groups and their transform baselines are restored
-before completion, even with the sidebar closed; a member whose binding does
-not arrive in time is left out of its group by name.
-Actor imports wait for a bound character skeleton, not merely a ready weapon.
-Embedded actor and companion poses stay frozen and suppress their own history;
-the scene-load entry is their only undo boundary.
-Attached companions restore their own captured model placement after their
-bones, not just the owner's placement. Their embedded absolute model transform
-receives the same scene rebase as the owner; bone-local poses are not rebased.
+- With Anonymous mode on, a save stores numbered actor labels, also when a nickname
+  contains a real character name. With it off, a save stores the name shown.
+- Original GPose characters also carry a SHA-256 hash of their normalised name.
+  Loading matches that hash to characters already in the scene before it clears or
+  spawns anything. Each live character is matched at most once.
+- Older files can match by their saved name. Entries that match nothing spawn as
+  before.
+- The game's own actor names are never changed, because other plugins use them to
+  identify the actor.
+- New saves mark their names as display names. Older, unmarked names get the usual
+  clean-up of the object number. Number suffixes you wrote in a marked file are
+  kept.
+
+### Undoing a load
+
+Every scene load that is committed records one undo step. That includes a load that
+was only partly applied and named what it refused.
+
+**Undo** removes the entities, groups and parent links that load created. It runs
+the same gaze and appearance clean-up on each removed actor that clearing the scene
+runs. It restores what the load had captured, including which actor the default
+camera followed and the live camera.
+
+**Redo** reads the file again and adds to the scene. It never clears the session a
+second time. The step now points at the new load and counts only when that load
+commits. If the replay rolls back, it says why and can be redone again.
+
+- Repeated undo never reuses the emptied clean-up lists of an earlier load.
+- Undo is refused while another scene operation is running, and the step is kept.
+- Clearing the existing scene before a load is still destructive.
+
+### What a load waits for
+
+- Loaded groups and their starting transforms are restored before the load
+  finishes, also with the sidebar closed. A member whose binding doesn't arrive in
+  time is left out of its group and named.
+- An actor import waits for the character's skeleton to be bound, not just for a
+  weapon to be ready.
+- Poses embedded for actors and companions stay frozen and record no history of
+  their own. The scene-load step is their only undo point.
+- An attached companion gets its own saved placement back after its bones, not just
+  its owner's placement. Its saved model transform is moved with the scene the same
+  way the owner's is. Poses stored relative to bones are not moved.
 
 ## Transform parenting
 
-Parenting is independent of sidebar grouping. Actors, props, scenery/VFX,
-lights and IK colliders can follow another entity or an actor bone. The shared
-application owner stores a stable target and a position/rotation offset;
-attaching preserves world placement, and detaching leaves the child in place.
-Scale belongs to the child and is not inherited. Screen overlays and cameras
-are not transform-parenting participants. Existing light attachments import
-into this same owner; they do not retain a separate following loop.
+Parenting is separate from grouping in the sidebar. Actors, props, scenery, VFX,
+lights and IK colliders can follow another entity or a bone on an actor. Screen
+overlays and cameras can't take part.
 
-Numeric and gizmo edits update the child's offset. Undo/Redo restores that
-offset against the parent's current frame. Multi-entity edits and restoration
-write parents before children. Cycles, including an actor attached to its own
-bone or companion, are refused. Locks prevent editing relationships, not
-following their parents. Missing parents hold children at their last position;
-only lifecycle-history rebinding can redirect a removed entity to its restored
-instance. Bone redraw rebinding stays within the exact actor, slot and name.
+- A parent link stores a stable target and an offset in position and rotation.
+- Attaching keeps the child where it is in the world. Detaching leaves it in place.
+- Scale belongs to the child and is not inherited.
+- Light attachments from older files become ordinary parent links.
 
-Scenes store entity keys and bone names, never live handles. Relationships load
-after entity/pose readiness, within the existing scene transaction. Companion
-references identify the saved owner's attachment. Saving without a parent
-keeps the child's current placement as a static object and reports the omission.
-Loading only selected categories skips links whose endpoints were not restored,
-leaving the admitted child at its saved placement. Screen overlays cannot be
-endpoints; scene validation rejects those links before any native creation.
-Generated body colliders use this contract; Detach makes an individual part static.
-Duplicating an entity retains its parent, adjusting the offset if placement moves it, as part of the
-creation history entry, alongside its copied properties.
+### Editing a child
+
+Typing a value or dragging the gizmo changes the child's offset. Undo and redo
+restore that offset against where the parent is now. Edits and restores of several
+entities write parents before children.
+
+- Loops are refused, including an actor attached to its own bone or companion.
+- A lock stops the relationship being edited. It does not stop the child following.
+- If the parent goes missing, the child stays at its last position. Only undoing
+  the removal can point the child at the restored parent.
+- After a redraw a bone link is matched again to the same actor, slot and bone
+  name, and nothing else.
+
+### In scene files
+
+A scene stores entity keys and bone names, never live handles.
+
+- Links are restored after the entities and poses are ready, inside the same load.
+- A link to a companion names the saved owner's attachment.
+- Saving a child whose parent isn't saved keeps the child's current placement as a
+  static object and reports the missing link.
+- Loading only some categories skips links whose other end wasn't loaded. The child
+  that was loaded stays at its saved placement.
+- A screen overlay can't be either end of a link. Such a link is rejected before
+  anything is created.
+- Generated body colliders use these rules. Detach makes one part static.
+- Duplicating an entity keeps its parent and adjusts the offset if placement moves
+  the copy. That is part of the creation step, with its copied properties.
 
 ## Lifecycle history
 
-Each entity family has a typed lifecycle owner over the same transform
-history. A slot is the identity shared by every history entry for one entity:
-removal captures the latest state into that slot, and restoration rebinds the
-slot to the newly created instance before later entries or actor readiness
-callbacks use it. Clearing transform history clears every owner's instance
-mapping with it.
+Creating and removing entities is undone through the same history as transforms.
+Each entity has a slot in that history, shared by every step about it. Removing an
+entity saves its latest state into the slot. Restoring it points the slot at the
+newly created entity before later steps or readiness callbacks use it. Clearing
+transform history clears these slots too.
 
-Removal captures the entity as last edited, not its original spawn arguments.
-Actor restoration creates a fresh body, applies captured appearance/equipment,
-collection and Poser body-profile values, then waits for its skeleton and bone
-bindings before applying placement, pose, presentation, gaze and IK. Companion
-state follows the owner's pose. Lifecycle history restores authored bone-transform
-stacks directly, like Brio's pose history, rather than exporting and re-importing
-the evaluated animation frame. Untouched bones remain untouched. Animation is not
-recovered: no timeline, frame, speed or loop restoration, and no added freeze policy.
-The user handles animation after undo/redo. Scene files keep animation, as described
-below. A repeated removal captures the latest edits again. An actor whose
-appearance Glamourer cannot read at all (for example `ActorNotFound`) is still
-removed: the entry is recorded without its Glamourer state, the removal notice
-says so, and undo brings the actor back with its spawn appearance. A foreign
-Glamourer hold or a busy character-file operation still refuses removal.
+### Removing and restoring an actor
 
-Camera removal includes tracking, target and lock settings; light removal
-includes its bone attachment as well as emission, shadow and texture values.
-External targets that no longer exist are not replaced by unrelated entities.
-World-light acquisition/release preserves the edited copy separately from the
-original world's baseline. Undo reacquires only the same native incarnation;
-scenery/VFX reclaim uses the same identity rule, never address presence alone.
-Light, camera, prop, overlay and world-object history share lifecycle-slot
-property replay: resolve the slot's current instance when replaying an edit.
-Property sessions request only the typed history-resolver interface, not the
-whole lifecycle controller; the shared value journal owns the replay policy.
-Lights, props, collider overlays and world objects retain their transform
-targets before removal publishes a scene refresh.
-Earlier edits survive acquisition undo/redo and removal undo/redo. Expired public
-selection IDs and acquisition receipts never redirect to the restored instance.
-Duplicate collections retain their resolved resource paths and meta values;
-restoration creates a new owned collection rather than reusing its deleted ID.
-A duplicate's temporary collection is deleted by its GUID even when the clone's
-slot vanished first, and the delete's result code is checked, so none outlives
-its clone and a later spawn at the same address never inherits a stale one.
-MCDF history reuses its package reference; it is not a portable appearance export.
-Embedded scene packages stay staged until the GPose session ends or the plugin
-unloads, so deleting an actor does not invalidate its history's appearance source.
+Removal captures the actor as last edited, not as it was spawned. A second removal
+captures the latest edits again.
+
+Restoring creates a new body and applies the captured appearance and equipment,
+collection and Poser body profile. It then waits for the skeleton and bone bindings
+before applying placement, pose, presentation, gaze and IK. A companion's state
+follows its owner's pose.
+
+- Your bone edits are restored directly. The evaluated animation frame is not
+  exported and imported again, and bones you never touched stay untouched.
+- Animation is not brought back: no timeline, frame, speed or loop. You handle
+  animation after undo or redo. Scene files do keep animation, as described below.
+- An actor whose appearance Glamourer can't read at all (for example
+  `ActorNotFound`) is still removed. The step is recorded without its Glamourer
+  state, the notice says so, and undo brings the actor back with the appearance it
+  spawned with.
+- Removal is still refused while another plugin holds the actor in Glamourer, or
+  while a character-file operation is busy.
+
+### Other entities
+
+- Removing a camera saves its tracking, target and lock. Removing a light saves its
+  bone attachment as well as its emission, shadow and texture values.
+- A target that no longer exists is never replaced by an unrelated entity.
+- Borrowing and releasing a world light keeps your edited copy separate from the
+  world's original. Undo takes back only the same game object. Scenery and VFX
+  follow the same rule, and an object merely being at the same address is not
+  enough.
+- When an edit is replayed for a light, camera, prop, overlay or world object, it
+  is applied to whatever entity the slot points at now.
+- Lights, props, collider overlays and world objects keep their transform targets
+  until after the removal has refreshed the scene.
+- Earlier edits survive undo and redo of borrowing and of removal. Expired
+  selection IDs and borrow receipts never lead to the restored entity.
+
+### Collections and packages
+
+- A duplicate's collection keeps its resolved file paths and metadata. Restoring it
+  creates a new collection Poser owns. It does not reuse the deleted one's ID.
+- A duplicate's temporary collection is deleted by its GUID, also when the copy's
+  slot went first, and the result of the delete is checked. So no collection
+  outlives its copy, and a later spawn at the same address never inherits a stale
+  one.
+- MCDF history reuses its package. It is not a portable appearance export.
+- Packages embedded in a scene stay unpacked until the GPose session ends or the
+  plugin unloads, so deleting an actor doesn't remove what its history needs.
 
 ## Created entity names
 
-Created actors, cameras, lights, props, overlays, world objects and groups
-share a numbered-name policy. Each entity family looks at its current names:
-keep the source stem and advance beyond its highest existing numeric suffix.
-`Key 1` and `Key 3` therefore produce `Key 4`, even when copying `Key 1`;
-deleting a middle entry does not fill that gap. There is no global counter:
-`Camera 1` and `Actor 1` can coexist. Case-only differences share a series.
-An unnumbered source counts as the first entry; its copy starts at 2.
-Borrowing does not rename the borrowed entity. A spawned copy is a new entity
-and uses the shared rule. Actor numbering changes the display nickname, not
-the native game name used by Penumbra. Loading and history restoration retain
-authored names instead of allocating a new number.
+New actors, cameras, lights, props, overlays, world objects and groups are numbered
+the same way. Each kind looks at its own current names, keeps the source's name and
+goes one past the highest number in use.
+
+- `Key 1` and `Key 3` give `Key 4`, also when copying `Key 1`. Deleting one in the
+  middle does not free its number.
+- There is no shared counter. `Camera 1` and `Actor 1` can both exist.
+- Names that differ only in case share one series.
+- A source with no number counts as the first, so its copy is 2.
+- Borrowing doesn't rename the borrowed entity. A spawned copy is a new entity and
+  is numbered.
+- Actor numbering changes the nickname shown, not the game name Penumbra uses.
+- Loading and restoring from history keep the names that were written.
 
 ## Borrowed world actors
 
-World-actor acquisition history retains the exact observed identity inside
-the Game control owner, even while the held actor is absent from discovery.
-Redo revalidates that observation, not a remembered native address. A missing
-actor, reused address or changed kind refuses acquisition; undo of an already
-gone actor does not release its replacement.
-Release captures the actor's lifecycle state and name, then restores captured
-presentation baselines while the actor is still
-bound. Undo reclaims that same actor and restores the saved scene state without
-new history entries. Deferred pose restoration stops if the claim is released.
-Borrowed actors sit outside the client-object range spawns resolve through,
-so their adoption record owns visibility: hiding sets the character alpha to 0
-and showing restores the alpha it had when hidden. Release, GPose exit and
-unload give a hidden body back the alpha it was borrowed with, the same
-baseline presentation restores.
+History for borrowing a world actor remembers exactly which actor it saw, also
+while that actor is out of range. Redo checks that observation again, not a
+remembered address. If the actor is missing, its address was reused or its kind
+changed, borrowing is refused. Undoing the borrow of an actor that is already gone
+does not release whatever replaced it.
+
+Releasing captures the actor's state and name, then restores what Poser changed
+about its presentation while the actor is still bound. Undo takes the same actor
+back and restores the saved state without adding history. A pose restore that was
+waiting stops if the actor is released.
+
+Borrowed actors are outside the object range that spawned actors use, so the
+borrow record handles their visibility. Hiding sets the character's alpha to 0, and
+showing restores the alpha it had. Releasing, leaving GPose and unloading give a
+hidden body back the alpha it was borrowed with.
 
 ## Scene files
 
-Saved groups may include world-space IK colliders, including nested groups.
-The spawn browser offers saved groups in every category after fixed actions and
-before individual library entries; a mixed group does not belong only to Actors.
+### What a scene holds
 
-An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
-with embedded poses, objects, lights, cameras, environment, overlays, adopted
-world objects, relationships, and optional world toggles. An actor can store
-model id, catalog kind, companion attachment and pose, visibility, absolute
-transform, gaze, and an appearance payload. A minion, mount or ornament spawned
-as an actor respawns through the catalog by its saved kind; older files without
-a kind load it as a character. Every loaded character is a clone of the local
-player, so an actor other than the player saved without an appearance payload
-is noted at save and again at load: it comes back wearing the player's look. Permanent Penumbra collections are local GUID
-references, restored and redrawn before companions and poses, as in Brio's
-`ActorDTO.PenumbraCollection`/`SceneService`. They do not package mods. Only
-a collection chosen for the actor is saved: every plain spawn is assigned the
-player's collection, and wearing it is inheriting, so it is not recorded. On
-load an actor already wearing the saved collection (an older file that recorded
-the player's) is left alone with no redraw; the rest are assigned and redrawn
-in parallel, not one barrier after another.
-An embedded appearance payload takes precedence over a saved collection. If a
-saved collection GUID is absent locally, loading succeeds and keeps that actor's
-inherited local collection, with one informational notice and named actor details.
-It never guesses a replacement by collection name. Collection-list IPC errors,
-assignment/redraw failures, and invalid appearance packages remain real failures;
-they are not treated as missing local collections.
-Temporary collection IDs are not saved; those require the modded-appearance
-payload. Older files without collection references retain their existing load
-behavior. Other appearance remains external.
+An `.xivs` scene is a container. Inside it, `scene.json` is the document: versioned
+JSON with a stable `SceneId`. It holds actors with their poses, objects, lights,
+cameras, the environment, overlays, borrowed world objects, relationships and
+optional world toggles.
 
-An `.xivs` is a CONTAINER, not a JSON file. `scene.json` inside it is the
-document; each appearance payload is its own stored entry under `appearance/`,
-named by its content hash so two actors wearing the same package share one
-copy. Payload entries are written and read as streams, so a scene carrying
-hundreds of megabytes of appearance still has a small document and never puts
-that payload in memory.
+Each appearance payload is its own entry under `appearance/`, named by a hash of
+its contents, so two actors wearing the same package share one copy. Payloads are
+read and written as streams. A scene with hundreds of megabytes of appearance still
+has a small document and never loads that payload into memory.
 
-Library entries (`.xiva`, `.xivl`, `.xivc`, `.xivp`, `.xivw`, `.xivo`,
-`.xivg`, `.xive`) are the same container narrowed to one entity, group or the
-environment. A reference to an actor the entry left out is cleared with a named
-note: a gaze or camera target is dropped, and an attached light is saved at its
-world placement. A camera entry without the session default creates a new
-camera on load. `.xivl` and `.xivc` files written as bare JSON by older builds
-are still read, as a one-light or one-camera entry; nothing writes that form.
+An actor can store its model ID, catalog kind, companion attachment and pose,
+visibility, placement, gaze and an appearance payload.
 
-File-pane and Library entry imports use the same additive loader. File-pane
-imports fall back to saved coordinates if their chosen placement anchor is
-unavailable; Library imports report the unavailable anchor instead. Neither
-inherits the full-scene option to clear the existing scene.
+- A minion, mount or ornament spawned as an actor comes back through the catalog by
+  its saved kind. Older files with no kind load it as a character.
+- Every loaded character is a copy of the local player. An actor other than the
+  player that was saved without an appearance payload is pointed out when saving
+  and again when loading: it will come back wearing the player's look.
 
-`.xivs` is the only scene format Poser has; anything else is not a scene and is
-not listed, opened or migrated. The file viewer states the format, the version
-and the size before a load, and the size includes the appearance payloads.
+Saved groups may include IK colliders and nested groups. The spawn browser offers
+saved groups in every category, after the fixed actions and before the single
+library entries. A mixed group does not belong to Actors alone.
 
-**Format versioning.** Every scene document (and every library entry, which is
-the same document) carries an integer `FileVersion`; `SceneFile.CurrentVersion`
-is what this build writes, and every write stamps it. Bump it for ANY change an
-older reader would lose or misread — a new member, a new enum name, a changed
-meaning — not only for breaking ones: an older build skips unknown members and
-would silently destroy them on re-save, and fails a whole file on an unknown
-enum name. Readers accept every version from `SceneFile.MinimumVersion` (2, the
-first `.xivs`) through the current one, defaulting members an older version
-lacks, and refuse a newer version as a typed Future outcome ("saved by a newer
-Poser … update Poser to open it") before anything changes the game. Version 3
-covers groups, parent links, overlays, world-object extras and anchors that
-shipped under 2. Older readers report a version-3 file as Future rather than
-dropping those members. Version 4 adds the optional saved animation and bone
-edits (below). Pose files follow Brio's `FileVersion` the same way:
-only a format version above `PoseFile.CurrentFileVersion` is Future. The
-`Version` string is the author's free-text pose version and never decides
-support.
+`.xivs` is the only scene format. Anything else is not a scene and is not listed,
+opened or converted. Before a load, the file viewer shows the format, the version
+and the size, including the appearance payloads.
 
-The only size refusal is the MCDF importer's own per-package ceiling: a package
-Poser could not import back is one there is no point saving. There is no
-whole-document appearance budget. Past a threshold the outcome WARNS how large
-the scene became; it never refuses and never silently saves without the payload
-the user asked for. A save that could not build a requested payload reports a
-partial result, not a success.
+### Penumbra collections
 
-Placements in the file are absolute. An optional origin records a capture
-anchor for relative loading; it is not needed to read the stored numbers.
-Territory id and capture-time place name are optional metadata. Missing place
-data is never guessed. Unsupported versions, oversized input, and a malformed
-document — its identity, collection caps, text, camera live/default rules, or
-the group and parent graph — fail before Poser changes the game. An entity
-whose own data is invalid (a name over 256 characters, a non-finite value, a
-character-file payload whose entry is not the one its digest names) is left out
-of the load by name and the rest of the scene loads; a bad character file or
-gaze drops only that part of its actor. Writes stay strict. The description is
-prose and allows 4096 characters.
+A permanent Penumbra collection is saved as a reference to a local collection. It
+does not package mods. On load it is assigned and the actor redrawn before
+companions and poses.
 
-Capture does not change the scene. It refreshes pose data, takes the document
-on the framework thread, then validates and writes it in the background. A
-capture waits while pose import uses the shared refresh slot. Scene autosave
-uses its own root and retention and skips a name while a scene operation runs.
-Camera targets retain their exact saved actor relationship and whether that
-relationship was locked; stale actor generations are never rebound.
+- Only a collection you chose for the actor is saved. Every plain spawn gets the
+  player's collection, and wearing that is inheriting it, so it is not recorded.
+- An actor already wearing the saved collection is left alone, with no redraw. The
+  others are assigned and redrawn at the same time, not one after another.
+- An embedded appearance payload takes precedence over a saved collection.
+- If the saved collection doesn't exist on this machine, the load still succeeds
+  and the actor keeps the collection it inherited. One notice names the actors
+  affected. Poser never picks a replacement by collection name.
+- A failure to list collections, to assign one or to redraw, and an invalid
+  appearance package, are real failures. They are not treated as a missing
+  collection.
+- Temporary collections are not saved. Those need the modded-appearance payload.
+- Older files with no collection references load as they always did.
+
+Other appearance stays with the other plugins.
+
+### Library entries
+
+Library entries (`.xiva`, `.xivl`, `.xivc`, `.xivp`, `.xivw`, `.xivo`, `.xivg`,
+`.xive`) are the same container, holding one entity, one group or the environment.
+
+- A reference to an actor the entry left out is cleared, with a note that names it.
+  A gaze or camera target is dropped. An attached light is saved at its place in
+  the world.
+- A camera entry without the session's default camera creates a new camera on load.
+- `.xivl` and `.xivc` files that older builds wrote as plain JSON are still read,
+  as one light or one camera. Nothing writes that form any more.
+
+Importing an entry from the file pane or from the Library uses the same loader,
+which adds to the scene. If the chosen placement anchor isn't available, a
+file-pane import falls back to the saved coordinates and a Library import reports
+the problem. Neither can clear the existing scene.
+
+### Format versions
+
+Every scene document and library entry carries a whole-number `FileVersion`.
+`SceneFile.CurrentVersion` is what this build writes, and every write stamps it.
+
+Raise the version for any change an older reader would lose or misread: a new
+member, a new enum name or a changed meaning, not only breaking changes. An older
+build skips members it doesn't know and would destroy them when saving again, and
+it fails a whole file on an enum name it doesn't know.
+
+- Readers accept every version from `SceneFile.MinimumVersion` (2, the first
+  `.xivs`) to the current one, and fill in defaults for members an older version
+  lacks.
+- A newer version is refused before anything changes in the game, with a message
+  to update Poser.
+- Version 3 covers groups, parent links, overlays, world-object extras and anchors
+  that shipped under 2. Older readers refuse a version-3 file as too new, so they
+  don't drop those members.
+- Version 4 adds the optional saved animation and bone edits described below.
+
+Pose files follow Brio's `FileVersion` the same way: only a version above
+`PoseFile.CurrentFileVersion` is too new. The `Version` text is the author's own
+label for the pose and never decides whether the file is supported.
+
+### Size
+
+The only size limit is the MCDF importer's own limit per package. A package Poser
+could not import back is not worth saving. There is no limit on the appearance in a
+whole scene. Past a threshold the save warns how large the scene became. It never
+refuses, and it never quietly saves without a payload you asked for. A save that
+could not build a payload you asked for reports a partial result, not a success.
+
+### What a load checks
+
+Placements in the file are absolute. An optional origin records where the scene was
+captured, for loading it relative to somewhere else. It isn't needed to read the
+numbers. The territory ID and the place name at capture are optional, and missing
+place data is never guessed.
+
+A file fails before Poser changes the game when its version isn't supported, when
+it is too large, or when the document is malformed: its identity, its collection
+limits, its text, the rules for live and default cameras, or the group and parent
+graph.
+
+An entity whose own data is invalid is left out of the load and named, and the rest
+loads. That means a name over 256 characters, a number that isn't finite, or a
+character-file payload that isn't the one its hash names. A bad character file or a
+bad gaze drops only that part of its actor. Writing stays strict. The description
+is free text of up to 4096 characters.
+
+### Capture
+
+Capturing a scene does not change it. It refreshes the pose data, takes the
+document on the framework thread, then checks and writes it in the background. A
+capture waits while a pose import is using the shared refresh. Scene autosave has
+its own folder and its own count of kept files, and skips a turn while a scene
+operation is running.
+
+A camera target keeps the exact actor it was saved with and whether that link was
+locked. It is never moved to an actor that replaced the original.
 
 ## Centering the live camera
 
-Actor "Center camera" is a one-shot framing action on the current live GPose
-orbit camera. It uses the actor's drawn mid-body pivot and a height-derived,
-clamped distance while preserving view orientation and every target, follow,
-link, and ownership field. It never creates a camera or changes parentage.
-Free, locked, pinned, unavailable, stale, hidden, and undrawn actors are
-refused before any camera write; the action is available from the actor menu
-and the Inspector's Actor → Camera section.
+**Center camera** on an actor frames it once with the live GPose orbit camera. It
+uses the actor's mid-body point as drawn and a distance worked out from its height,
+within limits. It keeps the view direction and every target, follow, link and
+ownership setting. It never creates a camera and never changes a parent.
+
+It is refused before any camera write for a free, locked or pinned camera, and for
+an actor that is unavailable, stale, hidden or not drawn. It is in the actor menu
+and in the Inspector under Actor → Camera.
 
 ## Autosave
 
-Autosave writes one `.xivs` scene per changed snapshot under
-`<configDir>/SceneAutoSaves/<yyyy-MM-dd>`, using the normal scene capture and
-atomic file writer. It includes actors and poses, scene objects, lights, cameras,
-environment and relationships. Appearance references follow ordinary scene
-capture; autosave does not repeatedly export portable mod packages.
-Orbit cameras include their rendered position, restored once as a translation
-of the native orbit so zoom and rotation remain interactive. Explicit position
-pins remain pins. Loading a saved main camera creates
-a separate camera; it never applies the saved document to the session's main
-camera. Its saved live flag, target and scene relationships refer to that new
-camera, which is removed by load undo. This also applies to manual scene loads.
-Older files without a saved absolute position can restore only the orbit state
-they contain; their original world position cannot be reconstructed reliably.
-The first save waits one interval. Empty or unchanged scenes create no backup;
-a scene save/load in progress defers the attempt. The existing scene retention
-count is the single visible backup count. The old optional-scene toggle is
-ignored: Enabled now governs scene autosave.
+Autosave writes one `.xivs` scene each time the scene has changed, under
+`<configDir>/SceneAutoSaves/<yyyy-MM-dd>`. It uses the normal scene capture and
+safe file write. It includes actors and poses, scene objects, lights, cameras, the
+environment and relationships. Appearance is handled as in an ordinary capture.
+Autosave does not export mod packages again and again.
 
-The Autosaves library opens on Scene autosaves and loads them without an actor
-target. Legacy poses is a separate read-only source of old backups: its inactive
-capture and writer services have been removed. Old status files are ignored:
-a recorded unfinished write does not establish corruption or provide a recovery
-action. Searches stay within the selected autosave subtree. On GPose exit, deferred captures are invalidated;
-the last completed snapshot is retained rather than starting a capture while
-actors are being torn down. Delete backups on exit clears scene snapshots after
-any active disk write; an already queued writer cannot recreate them afterward.
-Failures remain visible in the Autosaves footer and log. A queued write is not
-proof of a durable backup.
+- The first save waits one interval.
+- An empty or unchanged scene makes no backup.
+- A scene save or load in progress postpones the attempt.
+- The scene backup count is the one count shown. The old optional-scene toggle is
+  ignored: Enabled now controls scene autosave.
+
+### Cameras in saved scenes
+
+This applies to manual scene loads too.
+
+- An orbit camera saves the position it was drawn at. On load that is applied once
+  as a shift of the orbit, so zoom and rotation still work. A position you pinned
+  stays pinned.
+- Loading a saved main camera creates a separate camera. The saved document is
+  never applied to the session's main camera. Its saved live flag, target and
+  relationships belong to that new camera, and undoing the load removes it.
+- Older files with no saved position can restore only the orbit they contain. Where
+  the camera was in the world can't be worked out reliably.
+
+### The Auto-saves tab
+
+The Auto-saves tab opens on scene autosaves and loads them without needing an
+actor. Legacy poses is a separate, read-only list of old backups. Searches stay
+inside the selected part of the list.
+
+- Old status files are ignored. A recorded unfinished write does not mean a file is
+  corrupt and offers nothing to recover.
+- On leaving GPose, captures that were waiting are dropped. The last finished
+  snapshot is kept, and no capture starts while actors are being removed.
+- Delete backups on exit clears the scene snapshots after any write that is in
+  progress. A write that was queued can't recreate them afterwards.
+- Failures stay visible in the tab's footer and in the log. A queued write is not
+  proof that a backup exists.
 
 ## Loading a scene
 
-The library and scene file dialog default to **As saved** when a scene's
-nonzero territory ID matches the current map. Other or unknown maps use the
-configured spawn placement. An explicit placement choice is held for that file
-for the session and wins over this default. The load resolves the default
-against the actual document before placing anything; history stores the resolved
-choice, not a rule that could move the scene differently on redo.
+### Where the scene is placed
 
-Poser runs one scene load at a time for the current GPose session. The phases
-are:
+The Library and the scene file dialog default to **As saved** when the scene's
+territory ID is set and matches the current map. On another map, or an unknown one,
+they use the spawn placement from settings. A placement you pick yourself is
+remembered for that file for the session and wins over the default.
 
-`set up actors, objects, overlay nodes, and borrowed map objects` →
-readiness → character files → readiness → relationships → wait for companion
-bodies → freeze → pose and transforms (owner, then companion) →
-presentation and gaze → cameras → lights → environment and world toggles.
+The load works out the default against the actual file before it places anything.
+History stores the placement that was used, not a rule that could put the scene
+somewhere else on redo.
 
-Readiness means POSE-ready, not merely alive: the slot skeletons exist, the
-actor binding names this exact generation, and the bone bindings have been
-republished for these skeleton instances. Bone ids are published by the binding
-registry's own commit pass, so after a redraw the skeleton service hands out
-new bone objects while the registry still holds the previous ones, and every
-bone resolves to null until that pass runs. The barrier polls, so a skeleton
-mid-publication is waited for. The bound is per actor: an actor still not
-pose-ready when it runs out stays in the session, is named in the result, and
-leaves every later phase; the other actors load on. A spawned actor's first
-draw is held until the game reports it ready, for as long as the spawn lives,
-so a busy frame delays the body rather than losing it. A companion body is
-waited for with the same three-part test.
+Loading relative to the saved origin moves the whole scene before anything is done
+in the game. A Library placement, at the camera or at an actor, replaces that for
+the load, so the content is moved once.
 
-The per-actor steps wait for shared single-flight slots instead of refusing on
-a busy one. Each pose import waits, within its bound, for the pose slot (an
-import, IK bake or open transform gesture); from its first native step to its
-terminal the load holds that slot, so pose imports it did not start (library,
-inspector, presets) are refused rather than superseding its own. An import
-that does not finish within its bound, or whose load is cancelled, is
-cancelled by its operation id and never left armed. Character-file imports
-wait for the MCDF slot — which a clear-first load's own teardown can hold for
-seconds — and report it busy only at the bound. Housing furniture is waited
-for until its model streams in; one still loading at the readiness bound is
-kept and named in the result, never released afterwards. Every wait honours
-cancellation, and a cancelled load always ends Cancelled.
+### Order of a load
 
-Each phase checks that the load is still running and belongs to the same
-session. Character files come before body-dependent state because import
-redraws the actor. Loads add to the current session by default. Clearing the
-session is outside rollback, so a clear-first load first checks it can spawn
-at all (a local player exists) and refuses without clearing when it cannot; a
-rollback after the clear reads "the session was already cleared". Relative
-loading moves the whole scene from its saved origin before game work. A
-library placement (at the camera or an actor) replaces relative loading for
-that load, so content is moved once.
+Poser runs one scene load at a time in a GPose session. The steps are:
 
-Clearing the session removes everything it holds, actors included: an actor
-Poser spawned goes through its ownership ledger, an adopted one through the
-native scene table; a companion body leaves with its owner. Before either
-delete the actor's gaze is released and its
-appearance reverted, while it still exists to release them against; an Entity
-gaze target that LEAVES the scene is kept by id and marked stale, so another
-actor's intent to look at it is refused by name rather than scrubbed. A
-cleanup that fails is named in the outcome and the removal still proceeds.
+1. set up actors, objects, overlays and borrowed map objects;
+2. wait until they are ready;
+3. character files;
+4. wait again, because importing a character file redraws the actor;
+5. relationships;
+6. wait for companion bodies;
+7. freeze;
+8. pose and transforms, the owner first and then its companion;
+9. presentation and gaze;
+10. cameras;
+11. lights;
+12. environment and world toggles.
 
-No destroy path leaves the selection pointing at something that is gone. Each
-removed actor deselects its whole lineage — the actor, its bones and its bone
-groups — and emptying the session drops the selection entirely, because props,
-overlays, lights, cameras and borrowed objects carry no lineage of their own.
+Each step checks that the load is still running and belongs to the same session.
 
-What a failure costs is decided in one place, the load policy on
-`SceneLoadTransaction`. Required steps — reading the file, the session staying the
-same, cancellation, and creating each actor — stop the load: Poser removes only
-what it created, in reverse order. Everything else is optional and becomes a
-named refusal beside what did restore: an actor that never became pose-ready,
-appearance, companions, gaze, pose, objects, cameras, lights, environment,
-sidebar groups and order (a member that did not bind in time is left
-out of its group), and parent links (a missing parent bone or a refused link
-leaves the entity where it was saved). A refused actor spawn names its cause,
-such as a full actor table. A borrowed world object is matched by
-model path and map placement in the current territory, never by pointer or
-object index. Reloading reuses that object, including when it was moved or hidden.
-Undo releases a newly borrowed object; for an existing borrow, it restores the
-edits from before the load. An object missing from the map is reported and skipped.
+A load adds to the current session by default. Clearing the session first can't be
+rolled back. So a load that clears first checks that it can spawn at all, meaning
+there is a local player, and refuses without clearing when it can't. A rollback
+after the clear says "the session was already cleared".
 
-The sidebar and Scenes tab show progress, cancellation, results, refusals, and
-recovery information. The load probe uses the same file reader in the
+### Ready means ready to pose
+
+An actor is ready when it can be posed, not merely when it exists:
+
+- its slot skeletons exist;
+- the actor binding names this exact body;
+- its bone bindings have been published again for these skeletons.
+
+After a redraw the bones don't resolve until the binding registry has published
+them, so the load keeps checking and waits for a skeleton that is still being
+published.
+
+- The time limit is per actor. An actor that still isn't ready when it runs out
+  stays in the session, is named in the result, and takes no part in later steps.
+  The other actors carry on.
+- A spawned actor's first draw is held until the game says it is ready, for as long
+  as the spawn lives. A busy frame delays the body. It does not lose it.
+- A companion body is waited for with the same three checks.
+
+### Waiting instead of refusing
+
+The per-actor steps wait their turn. They do not refuse because something is busy.
+
+- A pose import waits, within its time limit, while another import, an IK bake or a
+  drag is under way. From its first write to its end the load holds that turn, so
+  pose imports it didn't start (from the library, the inspector or presets) are
+  refused and can't override it.
+- An import that doesn't finish in time, or whose load was cancelled, is cancelled.
+  It is never left waiting to fire.
+- A character-file import waits for the MCDF turn, which the load's own clearing can
+  hold for seconds. It reports busy only when the time limit runs out.
+- Housing furniture is waited for until its model has loaded. A piece still loading
+  at the limit is kept and named in the result. It is never released afterwards.
+- Every wait stops when the load is cancelled, and a cancelled load always ends as
+  Cancelled.
+
+### Clearing the session
+
+Clearing the session removes everything in it, actors included. An actor Poser
+spawned is removed through Poser's own record of what it spawned. A borrowed actor
+is removed through the game's scene table. A companion body leaves with its owner.
+
+Before an actor is deleted, its gaze is released and its appearance reverted while
+it still exists. If another actor was looking at an entity that leaves the scene,
+that target is kept by ID and marked stale, and the gaze is refused by name later.
+It is not erased. A clean-up that fails is named in the outcome, and the removal
+still goes ahead.
+
+Nothing is left selected that no longer exists. Each removed actor deselects itself,
+its bones and its bone groups. Emptying the session clears the selection
+completely, because props, overlays, lights, cameras and borrowed objects have no
+such family to deselect.
+
+### What a failure costs
+
+One place decides this: the load policy on `SceneLoadTransaction`.
+
+**Required steps stop the load.** These are reading the file, the session staying
+the same, cancellation and creating each actor. Poser then removes only what it
+created, in reverse order. A refused actor spawn names its cause, such as a full
+actor table.
+
+**Everything else is optional.** A failure becomes a named refusal listed beside
+what did load:
+
+- an actor that never became ready to pose;
+- appearance, companions, gaze and pose;
+- objects, cameras, lights and the environment;
+- sidebar groups and their order (a member that didn't bind in time is left out of
+  its group);
+- parent links (a missing parent bone or a refused link leaves the entity where it
+  was saved).
+
+### Borrowed map objects in a load
+
+A borrowed world object is matched by its model path and its place on the current
+map, never by address or object number.
+
+- Loading again reuses that object, also when it was moved or hidden.
+- Undo releases an object the load borrowed. For one that was already borrowed, it
+  restores the edits from before the load.
+- An object missing from the map is reported and skipped.
+
+### Progress and results
+
+The sidebar and the Scenes tab show progress, cancelling, results, refusals and
+recovery information. Checking a file before loading uses the same reader, in the
 background.
 
-Every terminal writes one correlated Scene operation line plus one line per
-entity with its kind, scene name, outcome, reason and next step. A refused
-entity carries both a reason and a corrective action, and neither is truncated
-in the result list. An entity restored with a caveat (a missing gobo, a changed
-character file, a model still streaming) is listed with its caveat and logged
-at Information. Every outcome kind has its next step; the kinds are an enum
-whose label and remedy switches do not build with a kind missing. Completion and failure are also announced once through the
-normal Dalamud notification channel; the per-entity detail stays in the Scene
-tab rather than being repeated in a notification.
+Every finished load writes one Scene operation line to the log and one line per
+entity with its kind, name, outcome, reason and next step.
 
-The Scene workspace and the file dialogs are two mounts of one answer. The save
-options and the load options are editable in both and stored once for the
-session, so an option is never reachable only from inside a file browser. The
-appearance switch is off by default, is never persisted, and is never inferred
-from a previous save. The workspace states what the next save will weigh,
-updating as the options change; the appearance figure is a sum of real package
-sizes, because the container stores them raw.
+- A refused entity has both a reason and something to do about it. Neither is cut
+  short in the result list.
+- An entity restored with a caveat (a missing gobo, a changed character file, a
+  model still loading) is listed with that caveat.
+- Every kind of outcome has a next step. Adding a kind without one does not build.
+- Completion and failure are also announced once as a Dalamud notification. The
+  detail for each entity stays in the Scene tab.
 
-The workspace manages the LIVE scene. Browsing saved scenes — recent files and
-automatic snapshots — belongs to the Library, which already scans the scene
-extension.
+### Save and load options
 
-World VFX claims retain their observed kind independently of a readable
-filename. Adoption captures Playing, Paused, or Inactive playback and refuses
-when native playback is unavailable or ambiguous; release restores that exact
-state. Transform writes place the effect, notify, and re-cull without
-replaying it on every drag tick; this avoids repeated playback restarts, while
-paused and inactive effects remain stopped. Native effects may still impose
-their own emission behavior after a move; the contract does not promise a
-universal particle-origin refresh. Spawned
-effect resource-path claims are case-insensitive, reference-counted, and live
-until the last exact teardown; failed creation and failed teardown retain or
-roll back ownership rather than reporting success.
+The Scene workspace and the file dialogs show the same save and load options. They
+can be edited in both and are stored once for the session, so no option is only
+reachable from inside a file browser.
 
-World acquisition retains exact-instance rollback until its scene identity is
-published. Only then does it append history and issue a claim. Binding timeout,
-session cancellation or resolution failure rolls back through the native owner,
-without acquisition/removal history entries. A refused cleanup stays pending
-for framework-thread retry; it never authorizes mutation of a replacement body.
+- The appearance switch is off by default. It is never saved and never guessed from
+  an earlier save.
+- The workspace shows how large the next save will be and updates as the options
+  change. The appearance figure adds up the real package sizes, because the
+  container stores them uncompressed.
 
-Borrowing a live BG/VFX object remains supported. Undo first enumerates the
-current world graph, then reads the candidate's incarnation and compares it
-with the identity captured at release; it never probes a saved address before
-the graph confirms that address is live. A missing or mismatched candidate
-skips that history entry with a reason, allowing older history to continue.
-BG identity uses the observed allocation generation and cannot distinguish a
-same-address, same-resource replacement if the native resource pointer is
-reused unchanged. Earlier edits remain available across release and restoration;
-transform history is discarded only when restoring that source fails permanently.
-Group restoration preflights all members, so a
-borrowed refusal cannot leave owned members partially restored. Bulk release
-records only confirmed removals; claims that refuse release remain live with
-their acquisition history. A partial redo keeps successful removals recorded
-and retries only members still present. In a mixed group, the owned members
-remain released when the group restore is refused, and that group's related
-history is discarded; recreate those owned objects manually. Owned-only
-groups, Poser-owned world-object spawns, and borrowed world-light restoration
-keep their existing restore behavior.
+The workspace manages the live scene. Browsing saved scenes, recent files and
+automatic snapshots is the Library's job.
 
-Respawning a world object keeps its old native and stable handle while the
-replacement loads hidden. Completion includes model readiness and applicable
-settings (placement, visibility, opacity, stain/night state or VFX playback/colour).
-The latest authored settings are applied before old-body teardown. Undyeable
-models do not wait for a stain buffer; raw spawned scenery does not load animation
-data. No readiness or property replay remains owed after successful replacement.
-After 15 seconds without readiness, a refusal, release, GPose exit or unload,
-the replacement is cancelled. Failed cleanup retains exact-incarnation authority
-for retry; a reused address never authorizes destruction of a replacement.
-An initial BG model-resource attachment belongs to the same allocation generation.
+### Borrowing world effects and objects
+
+**Effects.** A borrowed world VFX keeps the kind it was seen as, whether or not its
+file name can be read. Borrowing records whether it was playing, paused or
+inactive, and is refused when playback can't be read or is unclear. Releasing
+restores that exact state.
+
+Moving an effect places it, tells the game and updates culling. It does not replay
+the effect on every tick of a drag, so the effect doesn't keep restarting, and
+paused and inactive effects stay stopped. An effect may still behave in its own way
+after a move. Poser does not promise that every particle source moves.
+
+Claims on a spawned effect's resource path ignore case, are counted, and last until
+the final teardown of that exact effect. A failed creation or teardown keeps or
+rolls back the claim. It is never reported as a success.
+
+**Borrowing.** A borrow can be rolled back exactly until its place in the scene has
+been published. Only then is a history step added and a claim issued. A binding
+that times out, a cancelled session or a failed lookup rolls the borrow back
+without adding steps. A clean-up that is refused waits to be tried again on the
+framework thread. It never allows changes to a body that replaced the original.
+
+**Undo of a release.** Undo first lists the objects currently in the world, then
+reads the candidate and compares it with what was recorded at release. It never
+reads a saved address before the list confirms that address is live.
+
+- A candidate that is missing or doesn't match skips that step with a reason, and
+  older history carries on.
+- For scenery, identity uses the object's allocation generation. It can't tell a
+  replacement apart when the same address holds the same resource and the game
+  reused the resource pointer unchanged.
+- Earlier edits stay available across release and restore. Transform history is
+  dropped only when restoring that object fails for good.
+
+**Groups.** Restoring a group checks every member first, so a refused borrowed
+object can't leave Poser's own members half restored.
+
+- Releasing several objects records only the removals that were confirmed. Claims
+  that refuse stay live with their history.
+- A partial redo keeps the removals that worked and retries only members still
+  present.
+- In a mixed group, Poser's own members stay released when the group restore is
+  refused, and that group's history is dropped. Recreate those objects by hand.
+- Groups of only Poser's objects, world objects Poser spawned and borrowed world
+  lights restore as they did before.
+
+**Respawning.** Respawning a world object keeps its old body and its stable handle
+while the replacement loads hidden. It is complete when the model is ready and its
+settings are applied: placement, visibility, opacity, stain or night state, or VFX
+playback and colour. The latest settings are applied before the old body is
+removed.
+
+- A model that can't be dyed doesn't wait for dye data. Raw spawned scenery doesn't
+  load animation data.
+- Nothing is left to do after a successful replacement.
+- The replacement is cancelled after 15 seconds without becoming ready, on a
+  refusal, on release, on leaving GPose and on unload.
+- A failed clean-up keeps its right to retry on that exact object. A reused address
+  never allows a replacement to be destroyed.
 
 ## Borrowed world lights
 
-Acquiring a world light creates an editable native copy and suppresses the
-original, following Ktisis's `LightModule.AddFromOverworld`. Game-authored
-updates therefore do not overwrite the user's emission settings. The copy
-retains its own projected-texture reference; toggling it off/on preserves
-intensity. It remains a Light in the sidebar regardless of ownership.
-Release, GPose exit and unload restore the original visibility and destroy
-only the copy. Other source properties are untouched. Source destruction
-removes the copy without restoring into a replacement at the same address;
-the original's observed generation remains the authority for restoration.
+Borrowing a world light makes a copy you can edit and hides the original, as Ktisis
+does. So the game's own updates don't overwrite your settings.
+
+- The copy keeps its own projected texture. Turning it off and on keeps its
+  intensity.
+- It shows as a Light in the sidebar, whoever owns it.
+- Releasing, leaving GPose and unloading show the original again and destroy only
+  the copy. Nothing else on the original is touched.
+- If the original is destroyed, the copy is removed. Nothing is restored into
+  whatever now sits at the same address.
 
 ## Light controls and outlines
 
-Area-light Skew X/Y tilt the throw around the local X/Y axes; they do not
-rotate the emitter. Native fields and saved values retain their existing
-degree/radian boundary. The outline uses the same X-pitch/Y-yaw convention
-as Ktisis; this corrects presentation without swapping stored values.
-Spotlight outlines keep a fixed perceived slant length so the full 0–180°
-cone range stays bounded. This does not clamp the authored angle or light range.
+Skew X and Skew Y on an area light tilt where the light is thrown, around the
+light's local X and Y axes. They do not rotate the light itself. Stored values keep
+their existing units. The outline uses the same pitch and yaw convention as Ktisis,
+which corrects what is drawn without swapping the stored values.
+
+A spotlight's outline keeps a fixed apparent slant length, so the whole 0–180° cone
+range stays on screen. That does not limit the angle or the range you set.
 
 ## Weather ownership
 
-Picking a weather requests that ID and enables hold, including None (0). The territory/all-weathers
-switch filters choices only; it does not validate or change the current ID.
-Holding follows Ktisis's pre-environment-update write, not a repeated transition
-restart. Release returns control to the game; territory change and logout
-release holds, while GPose exit follows Restore on exit. Weather-specific visual
-assets remain dependent on what the game can load in the current location.
-The native update may reject an off-list choice back to None; the same result
-was observed using Brio's one-write/territory-update suppression mechanism.
-This is an accepted limitation, not a promise that every listed weather works
-in every zone. The all-weathers filter remains available.
+Picking a weather asks for that weather and holds it, including None (0). The
+switch between this territory's weathers and all weathers only filters the list. It
+does not check or change the current weather.
+
+- Holding writes the weather before the game's environment update. It does not keep
+  restarting the transition.
+- Releasing gives control back to the game. Changing territory and logging out
+  release a hold. Leaving GPose follows Restore on exit.
+- What a weather looks like still depends on what the game can load in the current
+  place.
+- The game may reject a weather that isn't on the territory's list and fall back to
+  None. That is an accepted limit. Poser does not promise every listed weather
+  works in every zone.
 
 ## Housing interior brightness
 
-Interior brightness is a transient Environment override, independent of held
-lighting sections and furniture Night state. It is available only while the
-game exposes a live indoor housing territory. The first edit captures that
-territory's current target; explicit release, GPose exit, logout, and plugin
-unload restore it while that original binding is still valid. A territory
-change invalidates ownership without writing through the newly resolved room.
+Interior brightness is a temporary Environment override. It is separate from held
+lighting sections and from furniture's Night state. It is available only while you
+are in an indoor housing area.
 
-The override writes only the game's current target, transition speed, and
-transition flag. It never changes the player's saved housing lighting level.
-Scene and environment-library files intentionally do not persist this value:
-loading a picture must not acquire a location-specific housing override.
+- The first edit captures the area's current brightness. Releasing it, leaving
+  GPose, logging out and unloading restore that, as long as you are still in the
+  same area.
+- Changing area drops the override without writing to the new room.
+- It writes only the game's current target, transition speed and transition flag.
+  It never changes the lighting level saved for your house.
+- Scene and environment files do not save this value on purpose. Loading a picture
+  must not take over the lighting of whatever house you are in.
 
 ## Portable appearance
 
-`Modded appearance` makes a save PORTABLE: the scene carries each actor's
-appearance package bytes, not a path. Poser embeds the package it already owns
-for an actor, and creates one from the actor's live Glamourer, Penumbra and
-Customize+ state through the MCDF exporter when it owns none. An actor whose
-package cannot be produced is saved with no appearance and named in a note, and
-the save reports a partial result — a path, a temporary collection, or any
-other live handle is not a portable save.
+`Modded appearance` makes a save portable: the scene carries each actor's
+appearance package itself, not a path to it.
 
-Restoring an embedded payload streams the container entry into one owned
-temporary file retained for the session and imports it through the same MCDF
-transaction a hand-driven import uses. The entry must be the one its recorded
-SHA-256 names, and the bytes are hashed while they are staged: a payload that
-does not match its digest is refused by name, never imported.
+- Poser embeds the package it already holds for an actor. When it holds none, it
+  makes one from the actor's live Glamourer, Penumbra and Customize+ state with the
+  MCDF exporter.
+- An actor whose package can't be made is saved with no appearance and named in a
+  note, and the save reports a partial result. A path, a temporary collection or
+  any other live handle does not make a save portable.
 
-A scene load's character-file import and a save's appearance export are
-children of that load or save. When the parent's bound expires or it is
-cancelled, it cancels the child by its own operation id, never the shared
-slot, so a newer operation is never touched. It then waits up to 15 seconds
-for the child to stop. Once cancelled, the child's remaining phases refuse
-and roll back, so a late completion cannot change the actor. A staged
-package or export file is deleted only after its child stops. A child that
-outlives that wait has its file deleted when it does stop, and the outcome
-and log say so. A child that committed before the matched cancel is a
-successful import. While the parent waits, the scene pane reads
-"Cancelling…" rather than holding the last step.
+### Restoring a package
 
-Plugin unload does not drain: the framework thread is blocked in disposal,
-so the drain's framework hop could never run. Disposal cancels the children
-directly first, the parent returns at once, and the MCDF transaction's own
-bounded drain joins the child.
+Restoring copies the package out of the scene into one temporary file Poser keeps
+for the session, and imports it the same way an import by hand works. The entry
+must be the one its recorded SHA-256 names, and the bytes are hashed as they are
+copied. A package that doesn't match is refused by name and never imported.
+
+### Cancelling
+
+A character-file import during a load, and an appearance export during a save,
+belong to that load or save.
+
+- When the load or save times out or is cancelled, it cancels exactly its own
+  import or export, never a newer one.
+- It then waits up to 15 seconds for it to stop. While it waits, the scene pane
+  says "Cancelling…".
+- Once cancelled, the rest of the import refuses and rolls back, so finishing late
+  can't change the actor.
+- The temporary package or export file is deleted only after the import or export
+  has stopped. If that takes longer than the wait, the file is deleted when it does
+  stop, and the result and the log say so.
+- An import that had already committed before the cancel counts as a success.
+
+On plugin unload nothing is waited for through the framework thread, because that
+thread is busy unloading. Unload cancels the imports and exports directly, and the
+MCDF import's own limited wait finishes them.
 
 ## Appearance identity
 
-Every appearance capture records the SHA-256 of the package's bytes, on both
-portable and reference saves. The checksum is the identity; the filename and
-the path are not.
+Every appearance capture records the SHA-256 of the package's bytes, for portable
+saves and for saves that only reference a package. That hash is the identity. The
+file name and the path are not.
 
 A reference is resolved in this order:
 
-1. An embedded portable payload, when the scene has one.
-2. The MCDF library, searched for a package whose bytes match the recorded
-   checksum. A package that was renamed, filed into a subfolder, or downloaded
-   again elsewhere still matches, and the load says where it found it.
-3. The recorded path, when the library has no match. A file still at that path
-   whose bytes no longer match the checksum is applied with a named warning.
+1. An embedded package, when the scene has one.
+2. The MCDF library, searched for a package with the same hash. A package that was
+   renamed, moved into a subfolder or downloaded again somewhere else still
+   matches, and the load says where it was found.
+3. The recorded path, when the library has no match. If the file there no longer
+   has the same hash, it is applied with a warning that names it.
 4. Otherwise a refusal that states both things that were tried.
 
-The index hashes lazily — nothing is read until a load asks for a checksum, and
-the search stops at the first match — and caches each digest against the path,
-byte length and last-write time it was read from, so a package replaced in
-place cannot serve its old digest. The cache is in memory for the session,
-because the library keeps no derived state on disk. There is no startup pass.
+Nothing is hashed until a load asks for a hash, and the search stops at the first
+match. Each hash is remembered with the file's path, size and last-write time, so a
+package replaced in place can't answer with its old hash. That memory lasts for the
+session only, and nothing is scanned at startup.
 
 ## Furniture
 
-Furniture is a spawned world object addressed by its canonical housing `.sgb`
-path, with names/categories/icons from the indoor and outdoor housing sheets.
-It uses the same transform, visibility, duplicate, history, scene, and object-library
-controls as scenery. Stain zero means the furnishing's default; a custom tint
-takes precedence. Choosing a stain clears that tint in the same history edit.
+Furniture is a spawned world object identified by its housing `.sgb` path. Names,
+categories and icons come from the indoor and outdoor housing sheets. It uses the
+same transform, visibility, duplicate, history, scene and library controls as
+scenery.
 
-The backend follows Brio's `SGLService`/`FurnitureObject`: one owned shared-group
-layout contains the furnishing's entire child graph. Children are not independent
-borrow candidates. Graphics edits wait for layout readiness; a fresh load that
-times out after 15 seconds is removed, unless a scene load already named it as
-still loading and kept it. Release/GPose exit tears down the owning
-layout, never individual children. Raw BG debug controls do not apply. Furniture's
-Night toggle applies the scenery day/night byte only to its BG child models,
-not to the owning layout or its light nodes. Its visible effect is asset-dependent.
+- Stain zero means the furnishing's default colour. A custom tint takes precedence
+  over a stain. Choosing a stain clears the tint in the same undo step.
+- Furniture has its own Couch spawn category and its own inspector. It uses the
+  equipment dye picker, with one stain channel.
+- Lights built into a furnishing each have an on/off control in the inspector and
+  the context menu. Their states survive duplicating, undo history and saving. They
+  are identified by their path inside the furnishing, not by an address.
 
-Furniture has its own Couch spawn category and Furniture inspector. It shares
-the equipment dye picker (one native furniture stain channel). Embedded lights
-have individual on/off controls in the inspector and context menu. Their states
-survive duplication, lifecycle history, and scene/library saving, addressed by
-child paths within the same furniture asset rather than native pointers.
+### How a furnishing is built
 
-Deferred world-object model replacements retain their initiating operation's
-validity until commit. History invalidation cancels the hidden replacement on
-the framework thread before the original body is destroyed; rejecting only
-the later history callback is not sufficient. Failed replay still completes
-its journal callback so subsequent undo/redo is not left waiting.
+One layout that Poser owns holds the furnishing and all its parts, as in Brio. The
+parts can't be borrowed separately.
+
+- Edits to how it looks wait until the layout is ready. A new furnishing that
+  hasn't loaded after 15 seconds is removed, unless a scene load has already named
+  it as still loading and kept it.
+- Releasing it, or leaving GPose, removes the whole layout, never single parts.
+- The raw scenery debug controls don't apply.
+- The Night toggle sets the day/night value only on the furnishing's model parts,
+  not on the layout or its lights. What you see depends on the asset.
+
+When a world object's model is being replaced, the replacement stays tied to the
+operation that started it until it is committed. If history is cleared meanwhile,
+the hidden replacement is cancelled on the framework thread before the original is
+destroyed. A replay that fails still reports back, so later undo and redo aren't
+left waiting.
 
 ## A scene keeps its animation unless the save turns it off
 
-A scene saves what each actor is doing by default: the save dialog's
-**Animation** option (also in the library save and the Scene page; scene
-snapshots follow it) starts on. It saves, per actor and per attached mount,
-minion or ornament:
-- `Animation`: each layer Poser played (timeline, playing or ended, loop,
-  speed, weight, the frame of a paused layer and how far a running one had
-  played), plus the whole-actor speed, the held expression, lips, stance,
-  weapon, position lock and the advanced mode.
-- `PoseEdits`: only the user's own bone edits, as the offsets the animation's
-  frame is moved by (the authored pose stacks), never the frame underneath.
+By default a scene saves what each actor is doing. The **Animation** option in the
+save dialog starts on. It is also in the library save and on the Scene page, and
+scene snapshots follow it.
 
-Such an actor loads by playing that state again: paused layers land on their
-frame, running ones carry on from where they were (files saved before this was
-recorded restart them), and paused actors stay paused. Its edits then go back on
-top in place of the baked pose import, so it keeps playing and the edits ride
-the animation. The baked `Pose` is still written, as the picture for an actor
-whose animation can't be restored.
+For each actor, and each attached mount, minion or ornament, it saves:
 
-A timeline id resolves against the LOADING client's own game and mod list, so
-the same file can play something different on another machine. Turning the
-option off saves only the picture: every restored actor is then stopped at
-speed 0 before its pose is applied, and the pose lands on a held frame, so the
-same file gives the same picture on every client.
+- `Animation`: every layer Poser played, with its timeline, whether it was playing
+  or had ended, loop, speed and weight, the frame of a paused layer and how far a
+  running one had played. Also the whole-actor speed, the held expression, lips,
+  stance, weapon, position lock and whether Advanced mode was on.
+- `PoseEdits`: only your own bone edits, stored as offsets on top of the
+  animation's frame. The frame underneath is never stored.
 
-A saved Detached gaze is restored before pose import samples its native basis;
-detaching afterward changes the chest/neck baseline beneath the imported deltas
-and accumulates drift across save/load. Active gaze targets still restore after
-the actors' poses and placement, when their targets are available.
+### Loading with animation
 
-This does not touch the Animation tab, expression hold, or anything else
-outside scene save and load.
+The actor plays that state again. Paused layers land on their frame, running ones
+carry on from where they were, and paused actors stay paused. Files saved before
+the progress was recorded restart their running layers.
 
-Poser intentionally keeps absolute stored values and additive default loading,
-while Brio and Ktisis use destructive best-effort loads. These are deliberate
-compatibility choices, not claims about the other formats.
+Your edits then go back on top, in place of importing the baked pose. So the actor
+keeps playing and your edits move with the animation. The baked `Pose` is still
+written, as the picture to use for an actor whose animation can't be restored.
+
+A timeline ID is looked up in the game and mod list of whoever loads the file. The
+same file can therefore play something different on another machine.
+
+### Loading without animation
+
+Turning the option off saves only the picture. Every restored actor is stopped at
+speed 0 before its pose is applied, and the pose lands on a held frame. The same
+file then gives the same picture on every machine.
+
+### Gaze
+
+A saved Detached gaze is restored before the pose import reads its starting pose.
+Detaching afterwards would change the chest and neck under the imported edits and
+build up drift over repeated saves and loads. Active gaze targets are still
+restored after the actors' poses and placement, once their targets exist.
+
+None of this affects the Animation tab, a held expression or anything else outside
+saving and loading scenes.
+
+Poser stores absolute values and adds to the scene by default. Brio and Ktisis
+replace the scene and do the best they can. That is a deliberate difference.
 
 ## Placement when adding entities
 
-The Placement setting is shared by the Library, file dialogs and spawn menu.
-It also applies to duplicates and actors created from MCDFs. Changing it in
-Settings or a load control changes the same saved preference.
+The Placement setting is shared by the Library, the file dialogs and the spawn
+menu. It also applies to duplicates and to actors created from MCDFs. Changing it
+in Settings or in a load control changes the same saved preference.
 
-As saved keeps file positions and duplicate positions; new entities use their
-usual starting position. In front of camera places content three metres ahead.
-Relative modes keep a file's saved camera or actor offset. New entities have no
-saved anchor, so they land at the current camera or selected actor. Group copies
-keep their spacing and move their centre to the chosen position. Screen overlays
-keep their screen coordinates; colliders use world placement.
+- **As saved** keeps positions from the file and keeps a duplicate where its source
+  is. New entities use their usual starting position.
+- **In front of camera** places the content three metres ahead.
+- The relative modes keep a file's saved offset from the camera or an actor. A new
+  entity has no saved anchor, so it lands at the current camera or the selected
+  actor.
+- A copied group keeps its spacing and moves its centre to the chosen position.
+- Screen overlays keep their screen coordinates. Colliders are placed in the world.
 
-Full scenes saved on the current map still default to As saved. A scene's explicit
-placement choice takes precedence over that map default. Entry loads report a
-missing anchor rather than silently using a different placement mode.
+A full scene saved on the current map still defaults to As saved, and a placement
+you chose for that scene wins over the map default. Loading a library entry reports
+a missing anchor. It does not quietly use a different placement.
