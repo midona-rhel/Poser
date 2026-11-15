@@ -217,8 +217,9 @@ the file is applied, then the existing chains carry on. The bones below an IK li
 are imported against the pose without IK, so they keep their place relative to it.
 
 Resetting the pose keeps the offset of a handle a chain is holding. Undo and redo
-restore both together. Reset Defaults keeps Enabled, Reset Bone keeps IK, and Reset
-All turns off and clears every chain.
+restore both together. Reset in the IK section puts the default settings back and
+keeps Enabled. Reset bone keeps the chain. Reset All turns off and clears every
+chain.
 
 Bake writes the selected chain's solved bones into the pose and turns that chain
 off. It waits for the pose to settle first and is one undo step. Other chains keep
