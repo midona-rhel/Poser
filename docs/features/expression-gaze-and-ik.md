@@ -106,6 +106,13 @@ including old out-of-reach offsets, so the first reverse step moves inward.
 With constraints disabled, translation remains unrestricted. Zero-translation
 edits never clamp an existing target; rotation and scale cannot move the handle.
 
+The reach is measured in the pose the solver produced, so the limb can always be
+pulled straight. Customize+ changes the pose after the solve, so a drag is
+converted from the screen to the solver's pose first. The size of that
+conversion comes from the limb itself: its length on screen over its solved
+length. A Customize+ scale on the bone above the limb that isn't passed down to
+the limb therefore doesn't shorten the drag or the reach.
+
 Two Joint's End rotation is the sole orientation switch in every target mode:
 off (the default) keeps the endpoint's rotation while the limb is solved or
 swivelled, following the held target's rotation in Bone, Entity and World mode;

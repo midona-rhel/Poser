@@ -74,7 +74,7 @@ internal sealed unsafe class IkHeldTargets
         var authored = _stacks.GetIkModification(endpoint) ?? Transform.Identity;
         Transform? tip;
         var converted = previous is { Config.Enabled: true }
-            ? ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, useSolveFrame: true)
+            ? ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, lastSolved: true)
             : null;
         if (converted is { } held && endpoint.Skeleton is Skeleton skeleton)
         {
@@ -98,18 +98,19 @@ internal sealed unsafe class IkHeldTargets
     }
 
     /// <summary>Resolves the held target into solver coordinates, including edits made since capture.
+    /// With <paramref name="lastSolved"/>, returns the target the last solve used when there is one.
     /// Returns null when its actor or target is unavailable.</summary>
     public (Vector3 Position, Quaternion Rotation)? ResolveHeld(
         IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null,
-        bool useSolveFrame = false)
+        bool lastSolved = false)
     {
-        if (useSolveFrame && ik.SolveTarget is { } lastTarget)
+        if (lastSolved && ik.SolveTarget is { } lastTarget)
             return lastTarget;
+        if (pose != null)
+            RecordSolveParent(ik, endpoint, pose);
         if (pose != null && !ik.PreviewModelSpace
             && (ik.SeatPending || ik.Config.ActorAnchor is { Unseated: true }))
             Seat(ik, endpoint, authoredPosition, authoredRotation, pose);
-        if (pose != null)
-            RecordSolveParent(ik, endpoint, pose);
         if (ik.HeldCapture is not { } capture)
             return null;
         if (ik.PreviewModelSpace)
@@ -118,8 +119,7 @@ internal sealed unsafe class IkHeldTargets
                     * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } actorAnchor })
         {
-            var actorTarget = actorAnchor.Resolve(authoredPosition, authoredRotation,
-                useSolveFrame ? ik.SolveParentFrame : ActorParentFrame(endpoint, actorAnchor, pose));
+            var actorTarget = actorAnchor.Resolve(authoredPosition, authoredRotation, ik.SolveParentFrame);
             if (pose != null) ik.SolveTarget = actorTarget;
             return actorTarget;
         }
@@ -190,7 +190,7 @@ internal sealed unsafe class IkHeldTargets
             {
                 Position = target, Rotation = end.Rotation,
                 AuthoredPosition = authoredPosition, AuthoredRotation = authoredRotation,
-                ParentTransform = anchor.ParentName == null ? null : ActorParentFrame(endpoint, anchor, pose),
+                ParentTransform = anchor.ParentName == null ? null : ik.SolveParentFrame,
                 Unseated = false,
             };
             if (!seated.IsValid)
@@ -246,19 +246,46 @@ internal sealed unsafe class IkHeldTargets
         ik.SolveParentFrame = native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
     }
 
-    /// <summary>Converts a displayed drag into the solver's coordinates using the parent's scale.</summary>
-    public Vector3 ToSolveDelta(IkChainState ik, Vector3 step)
+    /// <summary>
+    /// How a move in the pose the last solve produced appears on screen, and the reverse.
+    /// Customize+ changes the pose after the solve, so a drag measured on screen is not the
+    /// distance the solver has to move the target.
+    /// The bone above the chain gives the turn and the shape of the scale. Customize+ can scale
+    /// that bone without scaling the bones below it, so the size comes from the limb itself:
+    /// its length on screen over its solved length.
+    /// Both are identity before the first solve and when the limb has no usable length.
+    /// </summary>
+    public (Matrix4x4 ToDisplayed, Matrix4x4 ToSolve) DisplayedFrame(IkChainState ik, IBone endpoint)
     {
         if (ik.SolveParent is not { } parent || ik.SolveParentFrame is not { } solve)
-            return step;
+            return (Matrix4x4.Identity, Matrix4x4.Identity);
+        var members = NativeIkMembers(endpoint, ik.Config);
         _ = parent.LastTransform;
+        foreach (var member in members) _ = member.LastTransform;
         RefreshCache(parent);
-        var shown = AnchorPose(_stacks.ToApplySpace(parent, parent.LastTransform));
         var frame = new IkActorAnchor(Vector3.Zero, Quaternion.Identity, Vector3.Zero, Quaternion.Identity)
-            { ParentName = parent.BoneName, ParentPartial = parent.PartialId, ParentTransform = solve };
-        var converted = frame.ToReferenceDelta(step, shown);
-        return TransformMath.IsFinite(converted) ? converted : step;
+            { ParentTransform = solve }
+            .FrameDelta(AnchorPose(_stacks.ToApplySpace(parent, parent.LastTransform)));
+        // The limb's length on screen, and the length it would have there if the parent's
+        // scale reached it.
+        float displayed = 0, expected = 0;
+        for (int i = 1; i < members.Count; i++)
+        {
+            displayed += Vector3.Distance(
+                _stacks.ToApplySpace(members[i - 1], members[i - 1].LastTransform).Position,
+                _stacks.ToApplySpace(members[i], members[i].LastTransform).Position);
+            expected += Vector3.TransformNormal(
+                _stacks.ToApplySpace(members[i], members[i].LastRawTransform).Position
+                - _stacks.ToApplySpace(members[i - 1], members[i - 1].LastRawTransform).Position, frame).Length();
+        }
+        float size = displayed / expected;
+        var toDisplayed = frame * Matrix4x4.CreateScale(size);
+        // Zero-scaled bones exist (a limb hidden by Customize+, a collapsed leash link). They
+        // leave no length to compare and no way back from the screen.
+        return float.IsFinite(size) && size > 0 && Matrix4x4.Invert(toDisplayed, out var toSolve)
+            ? (toDisplayed, toSolve) : (Matrix4x4.Identity, Matrix4x4.Identity);
     }
+
     public IkActorAnchor CaptureActorAnchor(IBone endpoint, IkChainConfig config)
     {
         var members = NativeIkMembers(endpoint, config);
@@ -280,7 +307,7 @@ internal sealed unsafe class IkHeldTargets
     public IkChainConfig ChangeTargetMode(IkChainState previous, IBone endpoint, IkChainConfig config)
     {
         var authored = _stacks.GetIkModification(endpoint) ?? Transform.Identity;
-        if (ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, useSolveFrame: true) is not { } target)
+        if (ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, lastSolved: true) is not { } target)
             return config;
         // Convert the solver's held target, rather than recapturing the pose before IK bends the limb.
         if (config.TargetMode == IkTargetMode.Actor && config.ActorAnchor == null)
@@ -319,25 +346,5 @@ internal sealed unsafe class IkHeldTargets
             _stacks.ToApplySpace(endpoint, endpoint.LastTransform).Rotation,
             (_stacks.GetIkModification(endpoint) ?? Transform.Identity).Rotation);
         return anchor.IsValid ? anchor : null;
-    }
-
-    public PoseTransform? ActorParentFrame(IBone endpoint, IkActorAnchor anchor, hkaPose* pose = null)
-    {
-        if (anchor.ParentName == null) return null;
-        var parent = endpoint.Skeleton.Bones.FirstOrDefault(b => b.PartialId == anchor.ParentPartial
-            && b.BoneName == anchor.ParentName);
-        if (parent == null) return null;
-        // During evaluation, caches may precede an edited grandparent. Read
-        // this pass's model transform; the chosen parent is outside the solve.
-        if (pose != null && parent.PartialId == endpoint.PartialId)
-        {
-            var native = Poser.Game.Entities.NativePoseRead.Model(pose, parent.BoneIndex);
-            return native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
-        }
-        // An off-screen parent need not have a recent display cache. Mark it
-        // wanted before refreshing, including on the first drag after rotation.
-        _ = parent.LastTransform;
-        RefreshCache(parent);
-        return AnchorPose(_stacks.ToApplySpace(parent, parent.LastTransform));
     }
 }
