@@ -525,6 +525,15 @@ public sealed unsafe partial class AnimationNativeState
             return Outcome.Fail("Full body reset is unavailable: a required game function was not found.");
         bool loop = mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop;
         bool sameMode = character->Mode == mode && character->ModeParam == param;
+        // Already in the captured state (a layer reset that never touched the Full
+        // body): clearing the slot would hand a row held in Normal mode, such as a
+        // standing pose replayed after a redraw, to the base-idle pick.
+        if (sameMode && character->Timeline.BaseOverride == baseOverride
+            && character->Timeline.TimelineSequencer.TimelineIds[0] == slotTimeline)
+        {
+            _gposeMotion.GiveBack(character, mode, param, baseOverride, slotTimeline);
+            return Outcome.Ok();
+        }
         if (!sameMode)
             LeaveForFullBody(character);
         character->Timeline.BaseOverride = loop ? (ushort)0 : baseOverride;
