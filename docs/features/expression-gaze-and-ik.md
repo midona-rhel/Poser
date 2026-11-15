@@ -65,124 +65,142 @@ from other plugins.
 
 ## IK
 
-Two Joint and CCD use the game's Havok solvers; FABRIK and Rope use managed
-solvers. Relative translation edits or held targets drive solving during pose
-application. Solver iterations are not history: authored deltas and configuration
-are. Configuration belongs to one skeleton instance.
+### Solvers
 
-Imported pose transforms do not edit IK targets (Brio likewise marks imported
-stacks IK-disabled). Held chains solve against the combined explicit handle
-edits, not each imported stack. Reset first clears the pose while retaining a
-held handle's offset in the same stack snapshot used by undo/redo.
-The importer suspends solving for its actor while it measures and applies the
-file, then resumes the existing constraints. Descendants are imported against
-the unconstrained parent pose, so they remain relative when IK resumes.
-Held handle translations are solver targets, never direct pre-solve tip writes.
+Poser has four IK solvers. Two Joint and CCD are the game's own. FABRIK and Rope
+are Poser's.
 
-A bone is eligible when it has a non-hidden parent in the same skeleton and
-partial, matching native CCD's pose boundary; FABRIK and Rope also allow
-a bone with same-partial children. Two Joint uses its slot-local limb; other
-eligible bones default to FABRIK. Chain settings cannot change during a gesture.
-CCD affected-bone reporting uses that same pose-bounded chain, not the display
-hierarchy's links between partials; structural roots inside the pose remain included.
+A bone can use IK when it has a visible parent in the same part of its skeleton.
+FABRIK and Rope can also start from a bone that has children in that part. Hands
+and feet default to Two Joint. Every other bone that can use IK defaults to
+FABRIK.
 
-Two Joint/CCD Actor targets follow the first parent outside the solved chain.
-Rotating or moving that parent, or any of its ancestors, carries the target;
-changing a joint inside the chain does not feed back into it. Actor-root motion
-also carries the target. Existing handle offsets follow the captured parent frame,
-while new drags are converted from current model axes. World/Bone/Entity anchors
-retain their existing coordinate frames. IK bake disables the
-chain, waits for the pose to settle, and writes affected bones as one
-raw-baseline history entry. Reset Defaults keeps Enabled, Reset Bone keeps IK,
-and Reset All disables and clears every chain.
+IK settings belong to one skeleton. They can't be changed in the middle of a
+drag. Two active chains can't share a bone, and chains never join up on their own.
 
-Disabling a chain keeps its tuning and drops what it captured, for every solver.
-The limb can be posed while the chain is off, so enabling it captures the limb
-as it stands then. Undoing the switch-off restores the chain as it was.
+CCD reports the bones it moves from its own chain. It does not follow the display
+links between skeleton parts, and it includes hidden root bones inside the part.
 
-Constrained Two Joint/CCD handle translation is clipped to the live chain's
-reach before it enters authored state or the gizmo's drag accumulator. Two Joint
-also applies the configured hinge-angle reach limits. Excess travel is discarded,
-including old out-of-reach offsets, so the first reverse step moves inward.
-With constraints disabled, translation remains unrestricted. Zero-translation
-edits never clamp an existing target; rotation and scale cannot move the handle.
+### What is saved and undone
+
+A chain is solved again every frame. Undo records the handle edits and the
+settings, never the solver's result. One drag is one undo step.
+
+Dragging the handle moves the solver's target. The end bone itself is never moved
+first, because that would change the limb's length.
+
+### Targets
+
+A chain holds its end bone on a target. The target mode decides what the target
+follows.
+
+- **Actor.** For Two Joint and CCD the target follows the first bone above the
+  chain, everything above that bone, and the actor itself. Bending a joint inside
+  the chain does not move it. For FABRIK and Rope it is a fixed point in the
+  actor's model.
+- **World.** The target stays at a point in the world while the actor moves.
+- **Bone** and **Entity.** The target follows another bone, or a prop, scenery
+  object, light or effect. It keeps the offset and relative rotation the end bone
+  had when the target was picked. Moving the end bone changes that offset. The
+  target's scale is not inherited. Keep rotation decides whether the end bone
+  turns with the target.
+
+A target that goes missing stays recorded and is never swapped for another one.
+The chain stops solving until you pick a new target or choose Detach, which holds
+the current world point.
+
+Changing the target of an active chain keeps the end bone where it is. Only what
+it follows changes.
+
+### Enabling, disabling and switching solver
+
+Enabling a chain moves nothing. The chain captures the limb in the pose the solver
+works on, not the pose on screen, which Customize+ has edited afterwards (see
+[Customize+ and the displayed pose](../architecture/posing-runtime.md#customize-and-the-displayed-pose)).
+Two Joint and CCD capture on their first solve. FABRIK and Rope leave the limb
+alone for one frame and capture from the pose that frame produced.
+
+Disabling a chain keeps its settings and drops what it captured. The limb can be
+posed while the chain is off, so enabling it again captures the limb as it stands
+then. Undoing the switch-off restores the chain as it was.
+
+Switching the solver keeps the end bone where it is. FABRIK and Rope start from
+the pose Two Joint or CCD left, never from an older capture. Two Joint and CCD aim
+at the end bone where FABRIK or Rope left it. A bone only the old solver owned,
+such as the clavicle under FABRIK's default depth, goes back to its pose, and the
+middle joints follow the new solver.
+
+Undo and redo restore the captured target together with the setting.
+
+### Reach and drags
+
+With Constraints on, a Two Joint or CCD handle can't be dragged past the limb's
+reach. Two Joint also keeps to its hinge limits. Travel past the limit is thrown
+away, so dragging back moves the limb at once. With Constraints off the handle
+moves freely. Rotating or scaling the end bone never moves the handle.
 
 The reach is measured in the pose the solver produced, so the limb can always be
-pulled straight. Customize+ edits the pose after the solve
-(see [Customize+ and the displayed pose](../architecture/posing-runtime.md#customize-and-the-displayed-pose)),
-so a drag is converted from the screen to the solver's pose first. The
-conversion is measured, not read from any bone's scale: Poser compares how the
-limb's bones sit relative to each other on screen and in the solved pose, from
-the bone above the limb down to its end. That follows a scale passed down from
-any bone above the limb, including a different scale per axis, and ignores a
+pulled straight. A drag is measured on screen and converted to that pose first.
+The conversion is measured, not read from any bone's scale: Poser compares how the
+limb's bones sit relative to each other on screen and in the solved pose, from the
+bone above the limb down to its end. That follows a scale Customize+ passes down
+from any bone above the limb, including a different scale per axis, and ignores a
 scale that isn't passed down.
 
-Two Joint's End rotation is the sole orientation switch in every target mode:
-off (the default) keeps the endpoint's rotation while the limb is solved or
-swivelled, following the held target's rotation in Bone, Entity and World mode;
-on lets it turn with the solved limb. The stored `EnforceEndRotation` keeps its
-meaning (true holds), so the switch shows its inverse and saved chains behave as
-saved. Switching moves nothing: the switch records the forearm, the endpoint and
-the user's end rotation, and holding or following continues from there. Other
-solvers retain Keep rotation; its saved value never overrides Two Joint's End
-rotation, including after the native solve.
+### End rotation
 
-Enabling a chain moves nothing. Its starting pose is captured in the pose the
-solver works on, not the one on screen, which Customize+ has edited afterwards.
-Two Joint and CCD take it on their first solve. FABRIK and Rope leave the limb
-alone for one frame and take it from the pose that frame produced.
-Changing an active chain's World, Actor, Bone or Entity target converts its existing held point.
-Its position and rotation stay the same; only what it follows changes.
-Switching the solver keeps the end bone where it is. FABRIK and Rope start from
-the pose Two Joint or CCD left, never from an older capture. Two Joint and CCD
-aim at the end bone where FABRIK or Rope left it. A bone only the old solver
-owned, such as the clavicle under FABRIK's default depth, goes back to its pose,
-and the middle joints follow the new solver.
-Undo and Redo retain the captured target along with the setting.
+Two Joint has one switch for how the end bone turns. Off, the default, keeps the
+end bone's rotation while the limb is solved or swivelled. With a World, Bone or
+Entity target it follows the target's rotation. On lets the end bone turn with the
+limb.
 
-Scene entity targets follow props, scenery/world objects, lights and VFX through
-their exact stable scene IDs; they do not need a skeleton. Attachment captures
-the tip's current world-space position offset and relative rotation, matching
-Bone mode. Moving the tip edits that offset; target scale is not inherited.
-Keep rotation controls orientation following. Missing targets remain recorded
-and unavailable, never rebound to a replacement; choose another target or
-Detach to hold the current world point. Inspector targeting uses the existing
-IK configuration control, while the runtime resolves the live transform.
+Flipping the switch moves nothing. Saved chains behave as saved: the stored value
+`EnforceEndRotation` means "hold", so the switch shows its opposite. The other
+solvers use Keep rotation, which never overrides Two Joint's switch.
 
-FABRIK and Rope use Parent depth and Child depth around the selected bone;
-that bone remains the only transform handle and target. Each far end is anchored
-in actor-model space. Zero disables a side; the two depths total at most 50
-links. Defaults are Parent 3 / Child 0, preserving the old ancestor traversal.
-There are no direction or endpoint modes.
-Child traversal stops at a fork rather than choosing a branch; both walks stop
-at hidden bones or a partial boundary. Active chains cannot overlap another
-active IK chain and never implicitly connect. Two Joint and CCD are unchanged.
+### FABRIK and Rope
 
-Depth edits select from a bounded reference captured before solving: up to 50
-parents and 50 unambiguous children around the handle. Removed members retain
-their original geometry and actor-model anchors, so decreasing then increasing
-depth cannot recapture shortened Rope chords.
-The reference is authored configuration carried by history, not a global cache;
-copies/previews start their own reference. Existing saved spans without a reference
-retain their authored members when first expanded. If a skeleton rebuild adds a
-requested member outside the captured reference, the depth edit is rejected
-without changing configuration/history. A depth edit never recaptures solved
-geometry; turn the chain off and on to capture the new skeleton. Collision continuation is
-described below. The handle
-is constrained to the reach of both spans; taut spans cannot be stretched by a
-drag. FABRIK bends each side iteratively; Rope retains its hanging-curve solve
-on each side. Swivel rotates the bend of each span without moving its endpoints.
-Actor targets are model-space points; World targets are world points;
-bone/entity targets are world offsets without inherited scale. Missing references
-suspend solving. The ordinary bone controls edit the selected handle—there are
-no separate root/tip position fields. One drag is one history step.
-Older scenes may store the span, anchors and portable handle reference; their
-reader still restores these after scene entities exist. New saves follow the
+FABRIK and Rope take a number of bones above the selected bone (Parent depth) and
+below it (Child depth). The selected bone is the only handle. Each far end stays
+where it was in the actor's model. Zero turns a side off. The two depths add up to
+at most 50 bones. The default is 3 above and 0 below.
+
+The walk downward stops at a fork instead of picking a branch. Both walks stop at
+a hidden bone or at the end of the skeleton part.
+
+FABRIK bends each side. Rope lets each side hang. Swivel turns the bend of each
+side without moving its ends. The handle can't be dragged past the reach of both
+sides, and a taut side can't be stretched.
+
+Changing the depth picks from the bones captured when the chain was enabled, up to
+50 on each side. Bones you take out keep their captured shape, so lowering the
+depth and raising it again gives the same limb back. A depth change never captures
+the solved limb again. If the skeleton was rebuilt and now has a bone outside what
+was captured, the depth change is refused and nothing changes. Turn the chain off
+and on to capture the new skeleton. Copies and previews capture their own.
+
+The ordinary bone controls edit the handle. There are no separate fields for the
+far ends.
+
+### Importing, resetting and baking
+
+Importing a pose does not move IK targets. Solving is paused for that actor while
+the file is applied, then the existing chains carry on. The bones below an IK limb
+are imported against the pose without IK, so they keep their place relative to it.
+
+Resetting the pose keeps the offset of a handle a chain is holding. Undo and redo
+restore both together. Reset Defaults keeps Enabled, Reset Bone keeps IK, and Reset
+All turns off and clears every chain.
+
+Bake writes the selected chain's solved bones into the pose and turns that chain
+off. It waits for the pose to settle first and is one undo step. Other chains keep
+their targets and settings. Undo brings back the chain and its earlier edits. Redo
+bakes it again.
+
+Previews copy the chains into their own model. Older scenes may store a FABRIK
+chain's bones, far ends and handle; they still load, after the scene's entities
+exist. New saves follow the
 [baked snapshot contract](files-and-transfer.md#storage-and-library).
-Previews snapshot constraints into their own model frame. Bake writes only the
-selected chain's solved bones and disables that chain. Other chains keep their
-targets and settings. Undo restores the selected chain and its previous edits;
-Redo restores its baked pose and disables it again.
 
 ### IK colliders
 
