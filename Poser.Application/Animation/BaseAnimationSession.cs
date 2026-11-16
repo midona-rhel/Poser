@@ -41,18 +41,16 @@ internal sealed class BaseAnimationSession
             return Outcome.Fail("This animation layer is not selectable.");
         if (timeline == 0)
             return Outcome.Fail("Choose an animation first.");
-        if (slot is not AnimationSlot.Base and not AnimationSlot.Lips &&
-            _timeline.TimelineSlot(timeline) != slot)
+        // The game decides which layer an animation plays on. One whose layer it
+        // doesn't name plays on the Full body. Lips takes any animation.
+        var layer = _timeline.TimelineSlot(timeline) ?? AnimationSlot.Base;
+        if (slot != AnimationSlot.Lips && layer != slot)
             return Outcome.Fail(
-                $"Timeline {timeline} does not route to {AnimationSlots.DisplayName(slot)}.");
+                $"Animation {timeline} does not play on the {AnimationSlots.DisplayName(slot)} layer.");
 
         _store.Mutate(actor, o => o with { SelectedSlots = o.SelectedSlots.With(slot, timeline) });
         return Outcome.Ok();
     }
-
-    /// <summary>The Full body no longer repeats: Poser stops tracking its loop.</summary>
-    private void ForgetBaseLoop(ActorId actor) =>
-        _store.Mutate(actor, o => o with { LoopedSlots = o.LoopedSlots.Without(AnimationSlot.Base) });
 
     /// <summary>The tracked loops with the Full body repeating <paramref name="timeline"/>, or not repeating.</summary>
     private static IReadOnlyDictionary<AnimationSlot, ushort> WithBaseLoop(
@@ -61,19 +59,6 @@ internal sealed class BaseAnimationSession
             ? owned.LoopedSlots.With(AnimationSlot.Base, timeline)
             : owned.LoopedSlots.Without(AnimationSlot.Base);
 
-    /// <summary>
-    /// Turns the Full body repeat back on after a layer write. If the game refuses,
-    /// Poser stops tracking the loop and the failure is returned.
-    /// </summary>
-    private Outcome? RearmBaseRepeat(ActorId actor, ushort timeline, string failure)
-    {
-        var rearmed = _timeline.SetForceLoop(actor, timeline);
-        if (rearmed.Success)
-            return null;
-        ForgetBaseLoop(actor);
-        return Outcome.Fail($"{failure} {rearmed.Detail ?? "repeat arm failed."}");
-    }
-
     private Outcome PlayBaseCore(
         ActorId actor,
         ushort timeline,
@@ -81,48 +66,19 @@ internal sealed class BaseAnimationSession
         bool loopWanted)
     {
         if (_store.Suspended() is { } blocked) return blocked;
-        bool armRepeat = loopWanted;
-        // If turning repeat on fails, go back to what is playing now, not to
-        // what played before Poser's first change.
-        var rollbackCapture = armRepeat && before.BaseCapture != null
-            ? _timeline.CaptureBase(actor)
-            : null;
         var result = _timeline.PlayBase(actor, timeline, before.BaseCapture, out var captured);
         if (!result.Success)
             return result;
-        if (armRepeat)
-        {
-            var armed = _timeline.SetForceLoop(actor, timeline);
-            if (!armed.Success)
-            {
-                // PlayBase captures when nothing was captured before, so one of these is set.
-                var rolledBack = _timeline.RestoreBase(
-                    actor, (rollbackCapture ?? captured ?? before.BaseCapture).Value);
-                if (rolledBack.Success)
-                    return armed;
-
-                // The animation changed and could not be put back. Keep the
-                // original capture so Reset can try again.
-                var ownedCapture = before.BaseCapture ?? captured ?? rollbackCapture;
-                _store.Mutate(actor, o => o with
-                {
-                    BaseCapture = o.BaseCapture ?? ownedCapture,
-                    BaseTimeline = timeline,
-                    LoopedSlots = o.LoopedSlots.Without(AnimationSlot.Base),
-                });
-                return Outcome.Fail(
-                    $"{armed.Detail ?? "Repeat arm failed."} " +
-                    $"Rollback failed: {rolledBack.Detail ?? "base restore failed."}");
-            }
-        }
-        if (captured is { } taken)
-            _store.Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
+        // The game only repeats animations that belong to the Full body. One
+        // that it will not repeat keeps playing, and the refusal is returned.
+        var repeat = loopWanted ? _timeline.SetForceLoop(actor, timeline) : Outcome.Ok();
         _store.Mutate(actor, o => o with
         {
+            BaseCapture = o.BaseCapture ?? captured,
             BaseTimeline = timeline,
-            LoopedSlots = WithBaseLoop(o, armRepeat, timeline),
+            LoopedSlots = WithBaseLoop(o, loopWanted && repeat.Success, timeline),
         });
-        return Outcome.Ok();
+        return repeat;
     }
 
     public Outcome BlendCore(
@@ -154,17 +110,13 @@ internal sealed class BaseAnimationSession
                 return cleared;
         }
 
+        // Turning the repeat back on cannot be refused: the actor was just found,
+        // and the game accepted this same animation as a repeat before.
         var result = _timeline.Blend(actor, timeline, current.BaseCapture, out var captured);
+        if (suspendBaseRepeat)
+            _timeline.SetForceLoop(actor, suspendedTimeline);
         if (!result.Success)
-        {
-            if (suspendBaseRepeat &&
-                RearmBaseRepeat(actor, suspendedTimeline,
-                    $"{result.Detail ?? "Blend failed."} Repeat restore failed:") is { } alsoFailed)
-                return alsoFailed;
             return result;
-        }
-        // The layer is playing. Record what it replaced before turning the
-        // Full body repeat back on, because that can still fail.
         if (captured is { } taken)
             _store.Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
         if (captureSlot)
@@ -174,10 +126,6 @@ internal sealed class BaseAnimationSession
                 ? o
                 : o with { SlotCaptures = o.SlotCaptures.With(landed, incoming) });
         }
-        if (suspendBaseRepeat &&
-            RearmBaseRepeat(actor, suspendedTimeline,
-                "Layer playback landed, but full-body repeat could not be restored:") is { } notRearmed)
-            return notRearmed;
         return Outcome.Ok();
     }
 
@@ -192,11 +140,10 @@ internal sealed class BaseAnimationSession
         var current = _store.For(actor);
         if (!on && current.LoopedSlots.ContainsKey(slot))
         {
-            var cleared = slot == AnimationSlot.Base
-                ? _timeline.SetForceLoop(actor, 0)
-                : _timeline.ClearSlotLoop(actor, slot);
-            if (!cleared.Success)
-                return cleared;
+            if (slot != AnimationSlot.Base)
+                _timeline.ClearSlotLoop(actor, slot);
+            else if (_timeline.SetForceLoop(actor, 0) is { Success: false } actorGone)
+                return actorGone;
         }
         _store.Mutate(actor, o => on
             ? o with { LoopWantedSlots = o.LoopWantedSlots.With(slot) }
@@ -285,40 +232,18 @@ internal sealed class BaseAnimationSession
         bool armRepeat = before.LoopWantedSlots.Contains(AnimationSlot.Base);
         // CaptureBase only returns nothing when the actor is gone, and then both play routes below fail too.
         var firstCapture = before.BaseCapture ?? _timeline.CaptureBase(actor);
-        var rollbackCapture = before.BaseCapture != null
-            ? _timeline.CaptureBase(actor)
-            : firstCapture;
         var played = _timeline.PlayEmote(actor, entry.EmoteId, timeline);
         // If the emote can't start from its intro, play its animation directly.
         if (!played.Success)
             return PlayBaseCore(actor, timeline, before, armRepeat);
-        if (armRepeat)
-        {
-            var armed = _timeline.SetForceLoop(actor, timeline);
-            if (!armed.Success)
-            {
-                // The emote played, so the actor exists and both captures are set.
-                var baseline = (rollbackCapture ?? before.BaseCapture).Value;
-                var rolledBack = _timeline.RestoreBase(actor, baseline);
-                if (rolledBack.Success)
-                    return armed;
-                _store.Mutate(actor, o => o with
-                {
-                    BaseTimeline = timeline,
-                    BaseCapture = o.BaseCapture ?? baseline,
-                });
-                return Outcome.Fail(
-                    $"{armed.Detail ?? "Repeat arm failed."} " +
-                    $"Rollback failed: {rolledBack.Detail ?? "base restore failed."}");
-            }
-        }
+        var repeat = armRepeat ? _timeline.SetForceLoop(actor, timeline) : Outcome.Ok();
         _store.Mutate(actor, o => o with
         {
             BaseTimeline = timeline,
             BaseCapture = o.BaseCapture ?? firstCapture,
-            LoopedSlots = WithBaseLoop(o, armRepeat, timeline),
+            LoopedSlots = WithBaseLoop(o, armRepeat && repeat.Success, timeline),
         });
-        return Outcome.Ok();
+        return repeat;
     }
 
     public Outcome ResetBaseSelection(
@@ -377,11 +302,7 @@ internal sealed class BaseAnimationSession
         }
 
         if (current.LoopedSlots.ContainsKey(slot))
-        {
-            var loopCleared = _timeline.ClearSlotLoop(actor, slot);
-            if (!loopCleared.Success)
-                return loopCleared;
-        }
+            _timeline.ClearSlotLoop(actor, slot);
 
         bool preserveRepeat = current.LoopedSlots.TryGetValue(
             AnimationSlot.Base, out var repeated);
@@ -405,10 +326,9 @@ internal sealed class BaseAnimationSession
             baseRestored = _timeline.RestoreBase(actor, capture);
         }
 
-        if (preserveRepeat &&
-            RearmBaseRepeat(actor, repeated,
-                "Layer restore could not rearm full-body repeat:") is { } notRearmed)
-            return notRearmed;
+        // As in BlendCore: the actor was just found and the game accepted this repeat before.
+        if (preserveRepeat)
+            _timeline.SetForceLoop(actor, repeated);
         if (!restored.Success)
             return restored;
         if (baseRestored is { Success: false } baseFailure)
