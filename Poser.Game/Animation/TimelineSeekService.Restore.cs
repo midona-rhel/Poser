@@ -173,9 +173,11 @@ public sealed unsafe partial class TimelineSeekService
                 nint noBlend = 0;
                 foreach (var (slot, id, _) in restore.Slots)
                 {
-                    var played = slot == 0 && restore.QueuedLoop != 0
-                        ? _native.ReplayIntro(chara, id, restore.QueuedLoop)
-                        : _native.ReplayTimeline(chara, id);
+                    var played = Poser.Domain.Outcome.Ok();
+                    if (slot == 0 && restore.QueuedLoop != 0)
+                        _native.ReplayIntro(chara, id, restore.QueuedLoop);
+                    else
+                        played = _native.ReplayTimeline(chara, id);
                     if (!played.Success)
                         LogOnce($"restore-play:{id}", $"[TimelineSeek] redraw restore could not replay {id}: {played.Detail}");
                     else if (noBlend == 0)
