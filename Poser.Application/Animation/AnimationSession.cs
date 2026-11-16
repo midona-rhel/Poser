@@ -673,26 +673,21 @@ public sealed class AnimationSession : IAnimationPlayback
                 facial.SelectedSlots.ContainsKey(AnimationSlot.Facial) ||
                 facial.SlotCaptures.ContainsKey(AnimationSlot.Facial))
             {
-                if (facial.SlotWeights.ContainsKey(AnimationSlot.Facial) &&
-                    SetSlotWeight(actor, AnimationSlot.Facial, 1f) is { Success: false } weight)
-                    return weight;
-                if (facial.LoopWantedSlots.Contains(AnimationSlot.Facial) &&
-                    _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false) is { Success: false } loop)
-                    return loop;
+                // Weight 1 and Loop off only release what Poser holds; neither can fail.
+                if (facial.SlotWeights.ContainsKey(AnimationSlot.Facial))
+                    SetSlotWeight(actor, AnimationSlot.Facial, 1f);
+                if (facial.LoopWantedSlots.Contains(AnimationSlot.Facial))
+                    _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false);
                 return _expression.ReleaseExpressionCore(actor);
             }
         }
 
-        var failures = new List<string>();
         // Restore weight and nonzero speed overrides before the animation.
         // Keep a zero-speed override so resetting the layer does not resume it.
+        // Weight 1 only releases Poser's hold, which cannot fail.
         var beforeReset = OverridesFor(actor);
         if (beforeReset.SlotWeights.ContainsKey(slot))
-        {
-            var weight = SetSlotWeight(actor, slot, 1f);
-            if (!weight.Success)
-                return weight;
-        }
+            SetSlotWeight(actor, slot, 1f);
         if (beforeReset.SlotSpeedCaptures.ContainsKey(slot)
             && beforeReset.SlotSpeeds.GetValueOrDefault(slot) != 0f)
         {
@@ -700,7 +695,7 @@ public sealed class AnimationSession : IAnimationPlayback
             if (!speed.Success)
                 return speed;
         }
-        Outcome selection = slot switch
+        return slot switch
         {
             AnimationSlot.Base => _base.ResetBaseSelection(actor),
             AnimationSlot.Lips => SelectedFor(actor, slot) != null
@@ -708,11 +703,6 @@ public sealed class AnimationSession : IAnimationPlayback
                 : Outcome.Ok(),
             _ => _base.ResetBlendSelection(actor, slot),
         };
-        if (!selection.Success)
-            failures.Add(selection.Detail ?? "Layer restore failed.");
-        return failures.Count == 0
-            ? Outcome.Ok()
-            : Outcome.Fail(string.Join("; ", failures));
     }
 
     // ── Physics (one global patch, held by the scene) ─────────────────
@@ -838,9 +828,10 @@ public sealed class AnimationSession : IAnimationPlayback
             return Outcome.Ok();
         }
 
-        // Each aspect is released only when its restore succeeded. What
-        // fails stays owned, so a later Reset retries it instead of the
-        // override being silently abandoned on a still-live actor.
+        // The actor was found just above. Releases that only fail for a missing
+        // actor (loops, speeds, weights, lips, position lock) are not checked.
+        // A restore that can fail for another reason is released only when it
+        // succeeded; what fails stays owned, so a later Reset retries it.
         var failures = new List<string>();
         var remaining = owned;
 
@@ -857,21 +848,21 @@ public sealed class AnimationSession : IAnimationPlayback
         // very restore below is removing.
         if (owned.LoopedSlots.Count > 0 || owned.LoopWantedSlots.Count > 0)
         {
-            bool cleared = !owned.LoopedSlots.ContainsKey(AnimationSlot.Base) ||
-                Try(_timeline.SetForceLoop(actor, 0));
-            if (cleared)
+            if (owned.LoopedSlots.ContainsKey(AnimationSlot.Base))
+                _timeline.SetForceLoop(actor, 0);
+            _timeline.ClearLoops(actor);
+            remaining = remaining with
             {
-                _timeline.ClearLoops(actor);
-                remaining = remaining with
-                {
-                    LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
-                    LoopWantedSlots = new HashSet<AnimationSlot>(),
-                };
-            }
+                LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
+                LoopWantedSlots = new HashSet<AnimationSlot>(),
+            };
         }
 
-        if (owned.OverallSpeed != null && Try(_speedPort.ClearOverallSpeed(actor)))
+        if (owned.OverallSpeed != null)
+        {
+            _speedPort.ClearOverallSpeed(actor);
             remaining = remaining with { OverallSpeed = null };
+        }
 
         // Restore captured non-base timelines.
         if (owned.SlotCaptures.Count > 0)
@@ -940,18 +931,16 @@ public sealed class AnimationSession : IAnimationPlayback
             };
         }
 
-        if (owned.SlotWeights.Count > 0)
+        foreach (var slot in owned.SlotWeights.Keys)
         {
-            foreach (var slot in owned.SlotWeights.Keys)
-                if (Try(_speedPort.ClearSlotWeight(actor, slot)))
-                    remaining = remaining with { SlotWeights = remaining.SlotWeights.Without(slot) };
+            _speedPort.ClearSlotWeight(actor, slot);
+            remaining = remaining with { SlotWeights = remaining.SlotWeights.Without(slot) };
         }
 
-        if (owned.SlotSpeedCaptures.Count > 0)
+        foreach (var (slot, restore) in owned.SlotSpeedCaptures)
         {
-            foreach (var (slot, restore) in owned.SlotSpeedCaptures)
-                if (Try(_speedPort.ClearSlotSpeed(actor, slot, restore)))
-                    remaining = remaining.WithoutSlotSpeed(slot);
+            _speedPort.ClearSlotSpeed(actor, slot, restore);
+            remaining = remaining.WithoutSlotSpeed(slot);
         }
 
         if (owned.StanceCaptureValue is { } stance &&
@@ -960,8 +949,9 @@ public sealed class AnimationSession : IAnimationPlayback
         if (owned.WeaponCapture is { } weapon &&
             Try(_stancePort.SetWeaponDrawn(actor, weapon)))
             remaining = remaining with { WeaponCapture = null };
-        if (owned.LipsCapture is { } lips && Try(_timeline.SetLips(actor, lips)))
+        if (owned.LipsCapture is { } lips)
         {
+            _timeline.SetLips(actor, lips);
             remaining = remaining with
             {
                 SelectedSlots = remaining.SelectedSlots.Without(AnimationSlot.Lips),
@@ -981,8 +971,11 @@ public sealed class AnimationSession : IAnimationPlayback
                 selected.Remove(AnimationSlot.Lips);
             remaining = remaining with { SelectedSlots = selected };
         }
-        if (owned.PositionLock && Try(_stancePort.SetPositionLock(actor, false)))
+        if (owned.PositionLock)
+        {
+            _stancePort.SetPositionLock(actor, false);
             remaining = remaining with { PositionLock = false };
+        }
 
         if (!remaining.HasAny)
         {
