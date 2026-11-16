@@ -36,7 +36,6 @@ internal sealed class BaseAnimationSession
     public Outcome ChooseSlot(
         ActorId actor, AnimationSlot slot, ushort timeline)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         if (!AnimationSlots.Selectable.Contains(slot))
             return Outcome.Fail("This animation layer is not selectable.");
         if (timeline == 0)
@@ -65,7 +64,6 @@ internal sealed class BaseAnimationSession
         AnimationOverrides before,
         bool loopWanted)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var result = _timeline.PlayBase(actor, timeline, before.BaseCapture, out var captured);
         if (!result.Success)
             return result;
@@ -84,7 +82,6 @@ internal sealed class BaseAnimationSession
     public Outcome BlendCore(
         ActorId actor, ushort timeline, AnimationSlot? landing)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
         bool suspendBaseRepeat = landing is { } target && target != AnimationSlot.Base &&
             current.LoopedSlots.ContainsKey(AnimationSlot.Base);
@@ -133,7 +130,6 @@ internal sealed class BaseAnimationSession
     public Outcome SetSlotLoop(
         ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
         if (!on && current.LoopedSlots.ContainsKey(slot))
         {
@@ -224,7 +220,6 @@ internal sealed class BaseAnimationSession
     private Outcome PlayBaseEmoteCore(
         ActorId actor, TimelineEntry entry, AnimationOverrides before)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         ushort timeline = (ushort)entry.TimelineId;
         bool armRepeat = before.LoopWantedSlots.Contains(AnimationSlot.Base);
         // CaptureBase only returns nothing when the actor is gone, and then both play routes below fail too.
@@ -425,7 +420,6 @@ internal sealed class BaseAnimationSession
 
     private Outcome SetLipsCore(ActorId actor, ushort timeline)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
         // Read only returns nothing when the actor is gone, and then the write below fails too.
         ushort? captured = current.LipsCapture == null

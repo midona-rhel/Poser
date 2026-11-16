@@ -33,7 +33,6 @@ internal sealed class HeldExpressionSession
     /// <summary>Applies an expression and immediately pins its facial frame.</summary>
     public Outcome HoldExpression(ActorId actor, ushort timeline)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         // A held expression stands still, so the Facial layer's Loop (Animation tab) ends.
         if (_store.For(actor).LoopWantedSlots.Contains(AnimationSlot.Facial))
             _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false);
@@ -75,14 +74,9 @@ internal sealed class HeldExpressionSession
         return Outcome.Ok();
     }
 
-    /// <summary>Releases a held facial expression.</summary>
+    /// <summary>Releases a held facial expression and puts back the face that
+    /// played before Poser's first change.</summary>
     public Outcome ReleaseExpression(ActorId actor)
-    {
-        if (_store.Suspended() is { } blocked) return blocked;
-        return ReleaseExpressionCore(actor);
-    }
-
-    public Outcome ReleaseExpressionCore(ActorId actor)
     {
         var current = _store.For(actor);
         ushort? active = current.HeldExpression;

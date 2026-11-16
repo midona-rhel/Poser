@@ -28,7 +28,6 @@ internal sealed class SpeedAnimationSession
 
     public Outcome SetSpeed(ActorId actor, float speed)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var result = _port.SetOverallSpeed(actor, speed);
         if (!result.Success)
             return result;
@@ -38,7 +37,6 @@ internal sealed class SpeedAnimationSession
 
     public Outcome ClearSpeed(ActorId actor)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var result = _port.ClearOverallSpeed(actor);
         if (!result.Success)
             return result;
@@ -117,17 +115,9 @@ internal sealed class SpeedAnimationSession
         return ClearSpeed(actor);
     }
 
-    /// <summary>Moves every paused animation back to its first frame.</summary>
-    public Outcome RewindPausedControls(ActorId actor)
-    {
-        if (_store.Suspended() is { } blocked) return blocked;
-        return _port.RewindPausedControls(actor);
-    }
-
     public Outcome SetSlotSpeed(
         ActorId actor, AnimationSlot slot, float speed, float? firstCapture = null)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
         // Without a reading the actor is gone, and the port write below fails too.
         float live = current.SlotSpeeds.TryGetValue(slot, out var ownedSpeed)
@@ -151,7 +141,6 @@ internal sealed class SpeedAnimationSession
 
     public Outcome ClearSlotSpeed(ActorId actor, AnimationSlot slot)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
         float restore = current.SlotSpeedCaptures.TryGetValue(slot, out var captured)
             ? captured
