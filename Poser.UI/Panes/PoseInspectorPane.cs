@@ -658,13 +658,12 @@ public partial class PoseInspectorPane : IDisposable
                     next => _openTranslation = next,
                     _cameraPane.DrawRailTranslation,
                     divider: false);
-                if (_cameraPane.RailHasTracking)
-                    stack.Section(
-                        "camera-tracking",
-                        "Tracking",
-                        _openCameraTracking,
-                        next => _openCameraTracking = next,
-                        _cameraPane.DrawRailTracking);
+                stack.Section(
+                    "camera-tracking",
+                    "Tracking",
+                    _openCameraTracking,
+                    next => _openCameraTracking = next,
+                    _cameraPane.DrawRailTracking);
             }
             stack.Finish();
             return;
@@ -2482,18 +2481,12 @@ public partial class PoseInspectorPane : IDisposable
         });
         void Resets(ActionScope actions)
         {
-            if (boneId is { } resetId)
+            if (boneId != null)
             {
                 var selectedCount = SelectedBoneIds().Count;
                 actions.Button(
                     "Bone",
-                    () =>
-                    {
-                        if (SelectedBoneIds().Count > 0)
-                            ResetSelectedBones();
-                        else
-                            _poseCommands.ResetBone(TransformTargetId.ForBone(resetId), boneName);
-                    },
+                    ResetSelectedBones,
                     help: selectedCount > 1
                         ? $"Reset the pose of all {selectedCount} selected bones"
                         : "Reset this bone's pose");
@@ -2722,14 +2715,11 @@ public partial class PoseInspectorPane : IDisposable
         else if (bones.Count == 1)
             _poseCommands.ResetBone(
                 TransformTargetId.ForBone(bones[0]), bones[0].CanonicalName);
-        else if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
-            _poseCommands.ResetBone(TransformTargetId.ForBone(boneId), boneId.CanonicalName);
     }
 
     public void SelectChildren()
     {
         var selected = SelectedBoneIds();
-        if (selected.Count == 0) return;
         var selectedSet = selected.ToHashSet();
         foreach (var group in selected.GroupBy(bone => bone.Skeleton))
         {
