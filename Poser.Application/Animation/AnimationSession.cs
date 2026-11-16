@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain;
 using Poser.Domain.Animation;
+using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.World;
@@ -72,10 +73,7 @@ public sealed class AnimationSession : IAnimationPlayback
     {
         if (_store.CommandsSuspended || SelectedFor(actor, slot) == null)
             return;
-        _store.Mutate(actor, o => o with
-        {
-            EndedSlots = new Dictionary<AnimationSlot, float>(o.EndedSlots) { [slot] = seconds },
-        });
+        _store.Mutate(actor, o => o with { EndedSlots = o.EndedSlots.With(slot, seconds) });
     }
 
     /// <summary>The length in seconds of a layer the game ended, or null while it
@@ -109,14 +107,9 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     private void ForgetEnded(ActorId actor, AnimationSlot slot) =>
-        _store.Mutate(actor, o =>
-        {
-            if (!o.EndedSlots.ContainsKey(slot))
-                return o;
-            var ended = new Dictionary<AnimationSlot, float>(o.EndedSlots);
-            ended.Remove(slot);
-            return o with { EndedSlots = ended };
-        });
+        _store.Mutate(actor, o => o.EndedSlots.ContainsKey(slot)
+            ? o with { EndedSlots = o.EndedSlots.Without(slot) }
+            : o);
 
     public AnimationOverrides OverridesFor(ActorId actor) => _store.For(actor);
 
@@ -387,10 +380,7 @@ public sealed class AnimationSession : IAnimationPlayback
             if (now.Live)
                 note(_timeline.ClearSlotTimeline(actor, slot), $"end {name}");
             _timeline.SetLayerOwned(actor, slot, false);
-            _store.Mutate(actor, o => o with
-            {
-                EndedSlots = new Dictionary<AnimationSlot, float>(o.EndedSlots) { [slot] = length },
-            });
+            _store.Mutate(actor, o => o with { EndedSlots = o.EndedSlots.With(slot, length) });
         }
         else if (!now.Live || !sameAnimation)
         {
@@ -557,11 +547,9 @@ public sealed class AnimationSession : IAnimationPlayback
             : _speedPort.SetSlotWeight(actor, slot, weight);
         if (!result.Success)
             return result;
-        _store.Mutate(actor, o =>
+        _store.Mutate(actor, o => o with
         {
-            var weights = new Dictionary<AnimationSlot, float>(o.SlotWeights);
-            if (weight >= 1f) weights.Remove(slot); else weights[slot] = weight;
-            return o with { SlotWeights = weights };
+            SlotWeights = weight >= 1f ? o.SlotWeights.Without(slot) : o.SlotWeights.With(slot, weight),
         });
         return Outcome.Ok();
     }
@@ -997,11 +985,9 @@ public sealed class AnimationSession : IAnimationPlayback
         if (owned.BaseCapture is { } capture && Try(_timeline.RestoreBase(actor, capture)) &&
             remaining.HeldExpression == null && remaining.SlotCaptures.Count == 0)
         {
-            var selected = new Dictionary<AnimationSlot, ushort>(remaining.SelectedSlots);
-            selected.Remove(AnimationSlot.Base);
             remaining = remaining with
             {
-                SelectedSlots = selected,
+                SelectedSlots = remaining.SelectedSlots.Without(AnimationSlot.Base),
                 BaseCapture = null,
                 BaseTimeline = null,
             };
@@ -1009,31 +995,16 @@ public sealed class AnimationSession : IAnimationPlayback
 
         if (owned.SlotWeights.Count > 0)
         {
-            var weights = new Dictionary<AnimationSlot, float>(remaining.SlotWeights);
             foreach (var slot in owned.SlotWeights.Keys)
                 if (Try(_speedPort.ClearSlotWeight(actor, slot)))
-                    weights.Remove(slot);
-            remaining = remaining with { SlotWeights = weights };
+                    remaining = remaining with { SlotWeights = remaining.SlotWeights.Without(slot) };
         }
 
         if (owned.SlotSpeedCaptures.Count > 0)
         {
-            var speeds = new Dictionary<AnimationSlot, float>(remaining.SlotSpeeds);
-            var captures = new Dictionary<AnimationSlot, float>(remaining.SlotSpeedCaptures);
-            var resume = new Dictionary<AnimationSlot, float>(remaining.SlotResumeSpeeds);
             foreach (var (slot, restore) in owned.SlotSpeedCaptures)
                 if (Try(_speedPort.ClearSlotSpeed(actor, slot, restore)))
-                {
-                    speeds.Remove(slot);
-                    captures.Remove(slot);
-                    resume.Remove(slot);
-                }
-            remaining = remaining with
-            {
-                SlotSpeeds = speeds,
-                SlotSpeedCaptures = captures,
-                SlotResumeSpeeds = resume,
-            };
+                    remaining = remaining.WithoutSlotSpeed(slot);
         }
 
         if (owned.StanceCaptureValue is { } stance &&
@@ -1044,11 +1015,9 @@ public sealed class AnimationSession : IAnimationPlayback
             remaining = remaining with { WeaponCapture = null };
         if (owned.LipsCapture is { } lips && Try(_timeline.SetLips(actor, lips)))
         {
-            var selected = new Dictionary<AnimationSlot, ushort>(remaining.SelectedSlots);
-            selected.Remove(AnimationSlot.Lips);
             remaining = remaining with
             {
-                SelectedSlots = selected,
+                SelectedSlots = remaining.SelectedSlots.Without(AnimationSlot.Lips),
                 LipsCapture = null,
                 Lips = null,
             };

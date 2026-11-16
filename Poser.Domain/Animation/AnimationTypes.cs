@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Domain.Collections;
 
 namespace Poser.Domain.Animation;
 
@@ -280,6 +281,15 @@ public sealed record AnimationOverrides
     public bool? WeaponCapture { get; init; }
 
     public static AnimationOverrides None { get; } = new();
+
+    /// <summary>This state without the layer's speed override, the speed it had
+    /// before the override, and the speed its Play button returns to.</summary>
+    public AnimationOverrides WithoutSlotSpeed(AnimationSlot slot) => this with
+    {
+        SlotSpeeds = SlotSpeeds.Without(slot),
+        SlotSpeedCaptures = SlotSpeedCaptures.Without(slot),
+        SlotResumeSpeeds = SlotResumeSpeeds.Without(slot),
+    };
 
     /// <summary>True when Poser owns anything that must be restored.</summary>
     public bool HasAny =>

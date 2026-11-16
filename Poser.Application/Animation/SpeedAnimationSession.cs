@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain;
 using Poser.Domain.Animation;
+using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
@@ -135,23 +136,15 @@ internal sealed class SpeedAnimationSession
         var result = _port.SetSlotSpeed(actor, slot, speed);
         if (!result.Success)
             return result;
-        _store.Mutate(actor, o =>
+        // Play returns to the last speed above zero: the new one, or the one being paused.
+        float resume = speed > 0f ? speed : live;
+        _store.Mutate(actor, o => o with
         {
-            var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds) { [slot] = speed };
-            var captures = new Dictionary<AnimationSlot, float>(o.SlotSpeedCaptures);
-            if (!captures.ContainsKey(slot))
-                captures[slot] = firstCapture ?? live;
-            var resume = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
-            if (speed > 0f)
-                resume[slot] = speed;
-            else if (live > 0f)
-                resume[slot] = live;
-            return o with
-            {
-                SlotSpeeds = speeds,
-                SlotSpeedCaptures = captures,
-                SlotResumeSpeeds = resume,
-            };
+            SlotSpeeds = o.SlotSpeeds.With(slot, speed),
+            SlotSpeedCaptures = o.SlotSpeedCaptures.ContainsKey(slot)
+                ? o.SlotSpeedCaptures
+                : o.SlotSpeedCaptures.With(slot, firstCapture ?? live),
+            SlotResumeSpeeds = resume > 0f ? o.SlotResumeSpeeds.With(slot, resume) : o.SlotResumeSpeeds,
         });
         return Outcome.Ok();
     }
@@ -166,21 +159,7 @@ internal sealed class SpeedAnimationSession
         var result = _port.ClearSlotSpeed(actor, slot, restore);
         if (!result.Success)
             return result;
-        _store.Mutate(actor, o =>
-        {
-            var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds);
-            speeds.Remove(slot);
-            var captures = new Dictionary<AnimationSlot, float>(o.SlotSpeedCaptures);
-            captures.Remove(slot);
-            var resume = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
-            resume.Remove(slot);
-            return o with
-            {
-                SlotSpeeds = speeds,
-                SlotSpeedCaptures = captures,
-                SlotResumeSpeeds = resume,
-            };
-        });
+        _store.Mutate(actor, o => o.WithoutSlotSpeed(slot));
         return Outcome.Ok();
     }
 

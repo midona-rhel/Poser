@@ -3,13 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain;
 using Poser.Domain.Animation;
+using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// Selects and plays animation timelines, manages repeat, and saves original
-/// values for Reset. Selecting a timeline alone does not start playback.
+/// Chooses, plays, loops and resets the animation on each of an actor's layers.
+/// It records what a layer played before Poser's first change, so Reset can put
+/// that back. Choosing an animation never plays it.
 /// </summary>
 internal sealed class BaseAnimationSession
 {
@@ -30,7 +32,7 @@ internal sealed class BaseAnimationSession
             : null;
     }
 
-    /// <summary>Stages a selection without reading or writing native state.</summary>
+    /// <summary>Remembers the chosen animation. Nothing in the game is read or changed.</summary>
     public Outcome ChooseSlot(
         ActorId actor, AnimationSlot slot, ushort timeline)
     {
@@ -44,15 +46,32 @@ internal sealed class BaseAnimationSession
             return Outcome.Fail(
                 $"Timeline {timeline} does not route to {AnimationSlots.DisplayName(slot)}.");
 
-        _store.Mutate(actor, o =>
-        {
-            var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots)
-            {
-                [slot] = timeline,
-            };
-            return o with { SelectedSlots = selected };
-        });
+        _store.Mutate(actor, o => o with { SelectedSlots = o.SelectedSlots.With(slot, timeline) });
         return Outcome.Ok();
+    }
+
+    /// <summary>The Full body no longer repeats: Poser stops tracking its loop.</summary>
+    private void ForgetBaseLoop(ActorId actor) =>
+        _store.Mutate(actor, o => o with { LoopedSlots = o.LoopedSlots.Without(AnimationSlot.Base) });
+
+    /// <summary>The tracked loops with the Full body repeating <paramref name="timeline"/>, or not repeating.</summary>
+    private static IReadOnlyDictionary<AnimationSlot, ushort> WithBaseLoop(
+        AnimationOverrides owned, bool repeat, ushort timeline) =>
+        repeat
+            ? owned.LoopedSlots.With(AnimationSlot.Base, timeline)
+            : owned.LoopedSlots.Without(AnimationSlot.Base);
+
+    /// <summary>
+    /// Turns the Full body repeat back on after a layer write. If the game refuses,
+    /// Poser stops tracking the loop and the failure is returned.
+    /// </summary>
+    private Outcome? RearmBaseRepeat(ActorId actor, ushort timeline, string failure)
+    {
+        var rearmed = _timeline.SetForceLoop(actor, timeline);
+        if (rearmed.Success)
+            return null;
+        ForgetBaseLoop(actor);
+        return Outcome.Fail($"{failure} {rearmed.Detail ?? "repeat arm failed."}");
     }
 
     private Outcome PlayBaseCore(
@@ -63,8 +82,8 @@ internal sealed class BaseAnimationSession
     {
         if (_store.Suspended() is { } blocked) return blocked;
         bool armRepeat = loopWanted;
-        // If enabling repeat fails, roll back to the animation playing now,
-        // rather than the one captured at the session's first change.
+        // If turning repeat on fails, go back to what is playing now, not to
+        // what played before Poser's first change.
         var rollbackCapture = armRepeat && before.BaseCapture != null
             ? _timeline.CaptureBase(actor)
             : null;
@@ -76,25 +95,20 @@ internal sealed class BaseAnimationSession
             var armed = _timeline.SetForceLoop(actor, timeline);
             if (!armed.Success)
             {
-                // PlayBase captures when nothing was captured before, so one is set.
+                // PlayBase captures when nothing was captured before, so one of these is set.
                 var rolledBack = _timeline.RestoreBase(
                     actor, (rollbackCapture ?? captured ?? before.BaseCapture).Value);
                 if (rolledBack.Success)
                     return armed;
 
-                // Playback changed, but restoring it failed. Keep the original
-                // restore point so Reset can retry instead of abandoning it.
+                // The animation changed and could not be put back. Keep the
+                // original capture so Reset can try again.
                 var ownedCapture = before.BaseCapture ?? captured ?? rollbackCapture;
-                _store.Mutate(actor, o =>
+                _store.Mutate(actor, o => o with
                 {
-                    var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-                    loops.Remove(AnimationSlot.Base);
-                    return o with
-                    {
-                        BaseCapture = o.BaseCapture ?? ownedCapture,
-                        BaseTimeline = timeline,
-                        LoopedSlots = loops,
-                    };
+                    BaseCapture = o.BaseCapture ?? ownedCapture,
+                    BaseTimeline = timeline,
+                    LoopedSlots = o.LoopedSlots.Without(AnimationSlot.Base),
                 });
                 return Outcome.Fail(
                     $"{armed.Detail ?? "Repeat arm failed."} " +
@@ -103,18 +117,10 @@ internal sealed class BaseAnimationSession
         }
         if (captured is { } taken)
             _store.Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
-        _store.Mutate(actor, o =>
+        _store.Mutate(actor, o => o with
         {
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            if (armRepeat)
-                loops[AnimationSlot.Base] = timeline;
-            else
-                loops.Remove(AnimationSlot.Base);
-            return o with
-            {
-                BaseTimeline = timeline,
-                LoopedSlots = loops,
-            };
+            BaseTimeline = timeline,
+            LoopedSlots = WithBaseLoop(o, armRepeat, timeline),
         });
         return Outcome.Ok();
     }
@@ -130,17 +136,17 @@ internal sealed class BaseAnimationSession
             ? current.LoopedSlots[AnimationSlot.Base]
             : (ushort)0;
 
-        // Capture the previous layer before changing repeat or playback.
+        // Record what the layer plays now, before anything changes.
         bool captureSlot = landing is { } slot &&
             slot != AnimationSlot.Base &&
             !current.SlotCaptures.ContainsKey(slot);
-        // Without a reading the actor is gone, and the writes below fail too.
+        // Read only returns nothing when the actor is gone, and then the writes below fail too.
         ushort incoming = captureSlot
             ? _timeline.Read(actor)?.TimelineFor(landing!.Value) ?? 0
             : (ushort)0;
 
-        // SetTimelineId clears the global force while routing by native slot.
-        // Release it for the layer write, then restore the same Base force.
+        // Playing a layer makes the game drop the Full body repeat. Turn the
+        // repeat off first and back on afterwards.
         if (suspendBaseRepeat)
         {
             var cleared = _timeline.SetForceLoop(actor, 0);
@@ -151,67 +157,36 @@ internal sealed class BaseAnimationSession
         var result = _timeline.Blend(actor, timeline, current.BaseCapture, out var captured);
         if (!result.Success)
         {
-            if (suspendBaseRepeat)
-            {
-                var restored = _timeline.SetForceLoop(actor, suspendedTimeline);
-                if (!restored.Success)
-                {
-                    _store.Mutate(actor, o =>
-                    {
-                        var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-                        loops.Remove(AnimationSlot.Base);
-                        return o with { LoopedSlots = loops };
-                    });
-                    return Outcome.Fail(
-                        $"{result.Detail ?? "Blend failed."} Repeat restore failed: " +
-                        (restored.Detail ?? "full-body repeat arm failed."));
-                }
-            }
+            if (suspendBaseRepeat &&
+                RearmBaseRepeat(actor, suspendedTimeline,
+                    $"{result.Detail ?? "Blend failed."} Repeat restore failed:") is { } alsoFailed)
+                return alsoFailed;
             return result;
         }
-        // The layer changed. Save its original values before the
-        // independent Base-force rearm can fail.
+        // The layer is playing. Record what it replaced before turning the
+        // Full body repeat back on, because that can still fail.
         if (captured is { } taken)
             _store.Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
         if (captureSlot)
         {
             var landed = landing!.Value;
-            _store.Mutate(actor, o =>
-            {
-                if (o.SlotCaptures.ContainsKey(landed))
-                    return o;
-                var slots = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures)
-                {
-                    [landed] = incoming,
-                };
-                return o with { SlotCaptures = slots };
-            });
+            _store.Mutate(actor, o => o.SlotCaptures.ContainsKey(landed)
+                ? o
+                : o with { SlotCaptures = o.SlotCaptures.With(landed, incoming) });
         }
-        if (suspendBaseRepeat)
-        {
-            var restored = _timeline.SetForceLoop(actor, suspendedTimeline);
-            if (!restored.Success)
-            {
-                _store.Mutate(actor, o =>
-                {
-                    var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-                    loops.Remove(AnimationSlot.Base);
-                    return o with { LoopedSlots = loops };
-                });
-                return Outcome.Fail(
-                    "Layer playback landed, but full-body repeat could not be " +
-                    $"restored: {restored.Detail ?? "repeat arm failed."}");
-            }
-        }
+        if (suspendBaseRepeat &&
+            RearmBaseRepeat(actor, suspendedTimeline,
+                "Layer playback landed, but full-body repeat could not be restored:") is { } notRearmed)
+            return notRearmed;
         return Outcome.Ok();
     }
 
-    /// <summary>Sets repeat intent for one slot.</summary>
+    /// <summary>Turns Loop on or off for one layer.</summary>
     public Outcome SetSlotLoop(
         ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
         if (_store.Suspended() is { } blocked) return blocked;
-        // Lips plays through the lips override, not through Apply's slot targets.
+        // Lips has no Apply step, so there is no applied animation to repeat.
         if (slot == AnimationSlot.Lips)
             return Outcome.Fail("Repeat is unavailable for lips.");
         var current = _store.For(actor);
@@ -223,30 +198,20 @@ internal sealed class BaseAnimationSession
             if (!cleared.Success)
                 return cleared;
         }
-        _store.Mutate(actor, o =>
-        {
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
-            if (on)
-                wanted.Add(slot);
-            else
+        _store.Mutate(actor, o => on
+            ? o with { LoopWantedSlots = o.LoopWantedSlots.With(slot) }
+            : o with
             {
-                loops.Remove(slot);
-                wanted.Remove(slot);
-            }
-            return o with
-            {
-                LoopedSlots = loops,
-                LoopWantedSlots = wanted,
-            };
-        });
+                LoopedSlots = o.LoopedSlots.Without(slot),
+                LoopWantedSlots = o.LoopWantedSlots.Without(slot),
+            });
         if (!on)
             return Outcome.Ok();
 
         if (slot != AnimationSlot.Base)
         {
-            // The switch may resume ownership only when Apply's last target
-            // is still live; it never starts or retargets the layer's playback.
+            // Loop only takes effect on the animation Apply played last, and
+            // only while it is still playing. The switch never starts one.
             ushort layerTarget = current.AppliedSlots.GetValueOrDefault(slot);
             ushort layerLive = _timeline.Read(actor)?.TimelineFor(slot) ?? 0;
             if (layerTarget == 0 || layerLive != layerTarget)
@@ -254,22 +219,16 @@ internal sealed class BaseAnimationSession
             var layerArmed = _timeline.SetSlotLoop(actor, slot, layerTarget);
             if (!layerArmed.Success)
                 return layerArmed;
-            _store.Mutate(actor, o => o with
-            {
-                LoopedSlots = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
-                {
-                    [slot] = layerTarget,
-                },
-            });
+            _store.Mutate(actor, o => o with { LoopedSlots = o.LoopedSlots.With(slot, layerTarget) });
             return Outcome.Ok();
         }
 
-        // With no timeline, remember the repeat preference without starting one.
-        // Otherwise use the explicit timeline or the Base animation Poser applied.
+        // With no animation to repeat, only the choice is remembered. Otherwise
+        // repeat the given animation, or the Full body animation Poser applied.
         ushort target = timeline != 0 ? timeline : current.BaseTimeline ?? 0;
         if (target == 0)
             return Outcome.Ok();
-        // Without a capture the actor is gone, and arming repeat fails too.
+        // CaptureBase only returns nothing when the actor is gone, and then turning repeat on fails too.
         var captured = current.BaseCapture == null ? _timeline.CaptureBase(actor) : null;
         var armed = _timeline.SetForceLoop(actor, target);
         if (!armed.Success)
@@ -277,14 +236,10 @@ internal sealed class BaseAnimationSession
         _store.Mutate(actor, o => o with
         {
             BaseCapture = o.BaseCapture ?? captured,
-            LoopedSlots = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
-            {
-                [AnimationSlot.Base] = target,
-            },
+            LoopedSlots = o.LoopedSlots.With(AnimationSlot.Base, target),
         });
         return Outcome.Ok();
     }
-
 
     public Outcome ApplySelectedSlotCore(
         ActorId actor, AnimationSlot slot, TimelineEntry? entry = null)
@@ -311,28 +266,14 @@ internal sealed class BaseAnimationSession
         if (!result.Success)
             return result;
 
-        _store.Mutate(actor, o =>
-        {
-            var applied = new Dictionary<AnimationSlot, ushort>(o.AppliedSlots)
-            {
-                [slot] = selected,
-            };
-            return o with { AppliedSlots = applied };
-        });
+        _store.Mutate(actor, o => o with { AppliedSlots = o.AppliedSlots.With(slot, selected) });
         if (!_store.For(actor).LoopWantedSlots.Contains(slot))
             return Outcome.Ok();
 
         var armed = _timeline.SetSlotLoop(actor, slot, selected);
         if (!armed.Success)
             return armed;
-        _store.Mutate(actor, o =>
-        {
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
-            {
-                [slot] = selected,
-            };
-            return o with { LoopedSlots = loops };
-        });
+        _store.Mutate(actor, o => o with { LoopedSlots = o.LoopedSlots.With(slot, selected) });
         return Outcome.Ok();
     }
 
@@ -340,29 +281,30 @@ internal sealed class BaseAnimationSession
         ActorId actor, TimelineEntry entry, AnimationOverrides before)
     {
         if (_store.Suspended() is { } blocked) return blocked;
+        ushort timeline = (ushort)entry.TimelineId;
         bool armRepeat = before.LoopWantedSlots.Contains(AnimationSlot.Base);
-        // Without a capture the actor is gone, and both play routes below fail too.
+        // CaptureBase only returns nothing when the actor is gone, and then both play routes below fail too.
         var firstCapture = before.BaseCapture ?? _timeline.CaptureBase(actor);
         var rollbackCapture = before.BaseCapture != null
             ? _timeline.CaptureBase(actor)
             : firstCapture;
-        var played = _timeline.PlayEmote(actor, entry.EmoteId, (ushort)entry.TimelineId);
-        // If the emote call fails, try its timeline directly, without the intro.
+        var played = _timeline.PlayEmote(actor, entry.EmoteId, timeline);
+        // If the emote can't start from its intro, play its animation directly.
         if (!played.Success)
-            return PlayBaseCore(actor, (ushort)entry.TimelineId, before, armRepeat);
+            return PlayBaseCore(actor, timeline, before, armRepeat);
         if (armRepeat)
         {
-            var armed = _timeline.SetForceLoop(actor, (ushort)entry.TimelineId);
+            var armed = _timeline.SetForceLoop(actor, timeline);
             if (!armed.Success)
             {
-                // The emote played, so the actor resolved and both captures are set.
+                // The emote played, so the actor exists and both captures are set.
                 var baseline = (rollbackCapture ?? before.BaseCapture).Value;
                 var rolledBack = _timeline.RestoreBase(actor, baseline);
                 if (rolledBack.Success)
                     return armed;
                 _store.Mutate(actor, o => o with
                 {
-                    BaseTimeline = (ushort)entry.TimelineId,
+                    BaseTimeline = timeline,
                     BaseCapture = o.BaseCapture ?? baseline,
                 });
                 return Outcome.Fail(
@@ -370,19 +312,11 @@ internal sealed class BaseAnimationSession
                     $"Rollback failed: {rolledBack.Detail ?? "base restore failed."}");
             }
         }
-        _store.Mutate(actor, o =>
+        _store.Mutate(actor, o => o with
         {
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            if (armRepeat)
-                loops[AnimationSlot.Base] = (ushort)entry.TimelineId;
-            else
-                loops.Remove(AnimationSlot.Base);
-            return o with
-            {
-                BaseTimeline = (ushort)entry.TimelineId,
-                BaseCapture = o.BaseCapture ?? firstCapture,
-                LoopedSlots = loops,
-            };
+            BaseTimeline = timeline,
+            BaseCapture = o.BaseCapture ?? firstCapture,
+            LoopedSlots = WithBaseLoop(o, armRepeat, timeline),
         });
         return Outcome.Ok();
     }
@@ -408,21 +342,18 @@ internal sealed class BaseAnimationSession
         }
         _store.Mutate(actor, o =>
         {
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            loops.Remove(AnimationSlot.Base);
-            var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
-            if (!preserveLoopIntent)
-                wanted.Remove(AnimationSlot.Base);
-            var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
-            selected.Remove(AnimationSlot.Base);
+            var selected = o.SelectedSlots.Without(AnimationSlot.Base);
+            // Another layer Poser changed still needs the capture for its own Reset.
             bool baseStillNeeded = selected.Count > 0 || o.SlotCaptures.Count > 0;
             return o with
             {
                 SelectedSlots = selected,
                 BaseTimeline = null,
                 BaseCapture = baseStillNeeded ? o.BaseCapture : null,
-                LoopedSlots = loops,
-                LoopWantedSlots = wanted,
+                LoopedSlots = o.LoopedSlots.Without(AnimationSlot.Base),
+                LoopWantedSlots = preserveLoopIntent
+                    ? o.LoopWantedSlots
+                    : o.LoopWantedSlots.Without(AnimationSlot.Base),
             };
         });
         return Outcome.Ok();
@@ -435,14 +366,12 @@ internal sealed class BaseAnimationSession
             return Outcome.Ok();
         if (!current.SlotCaptures.TryGetValue(slot, out var incoming))
         {
-            // Choose is staging-only, so an unapplied row has nothing native to undo.
-            _store.Mutate(actor, o =>
+            // The animation was chosen but never applied, so there is nothing
+            // in the game to put back.
+            _store.Mutate(actor, o => o with
             {
-                var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
-                selected.Remove(slot);
-                var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
-                wanted.Remove(slot);
-                return o with { SelectedSlots = selected, LoopWantedSlots = wanted };
+                SelectedSlots = o.SelectedSlots.Without(slot),
+                LoopWantedSlots = o.LoopWantedSlots.Without(slot),
             });
             return Outcome.Ok();
         }
@@ -467,8 +396,8 @@ internal sealed class BaseAnimationSession
             ? _timeline.Blend(actor, incoming, current.BaseCapture, out _)
             : RestoreEmptySlot(actor, slot, current);
 
-        // A blend restore uses the mode-changing sequencer route. Put the
-        // captured base back when no explicit Base selection should remain.
+        // Putting a layer back can disturb the Full body. Restore the Full body
+        // too, unless Poser is playing its own Full body animation.
         Outcome? baseRestored = null;
         if (restored.Success && current.BaseTimeline == null &&
             current.BaseCapture is { } capture)
@@ -476,21 +405,10 @@ internal sealed class BaseAnimationSession
             baseRestored = _timeline.RestoreBase(actor, capture);
         }
 
-        Outcome? repeatRestored = null;
-        if (preserveRepeat)
-            repeatRestored = _timeline.SetForceLoop(actor, repeated);
-        if (repeatRestored is { Success: false } repeatFailure)
-        {
-            _store.Mutate(actor, o =>
-            {
-                var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-                loops.Remove(AnimationSlot.Base);
-                return o with { LoopedSlots = loops };
-            });
-            return Outcome.Fail(
-                $"Layer restore could not rearm full-body repeat: " +
-                (repeatFailure.Detail ?? "repeat arm failed."));
-        }
+        if (preserveRepeat &&
+            RearmBaseRepeat(actor, repeated,
+                "Layer restore could not rearm full-body repeat:") is { } notRearmed)
+            return notRearmed;
         if (!restored.Success)
             return restored;
         if (baseRestored is { Success: false } baseFailure)
@@ -498,24 +416,17 @@ internal sealed class BaseAnimationSession
 
         _store.Mutate(actor, o =>
         {
-            var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
-            selected.Remove(slot);
-            var captures = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures);
-            captures.Remove(slot);
-            var applied = new Dictionary<AnimationSlot, ushort>(o.AppliedSlots);
-            applied.Remove(slot);
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            loops.Remove(slot);
-            var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
-            wanted.Remove(slot);
+            var selected = o.SelectedSlots.Without(slot);
+            var captures = o.SlotCaptures.Without(slot);
             return o with
             {
                 SelectedSlots = selected,
-                AppliedSlots = applied,
+                AppliedSlots = o.AppliedSlots.Without(slot),
                 SlotCaptures = captures,
-                LoopedSlots = loops,
-                LoopWantedSlots = wanted,
+                LoopedSlots = o.LoopedSlots.Without(slot),
+                LoopWantedSlots = o.LoopWantedSlots.Without(slot),
                 HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
+                // Nothing of Poser's is left on this actor's layers: drop the Full body capture.
                 BaseCapture = o.BaseTimeline == null && selected.Count == 0 && captures.Count == 0
                     ? null
                     : o.BaseCapture,
@@ -524,20 +435,21 @@ internal sealed class BaseAnimationSession
         return Outcome.Ok();
     }
 
+    /// <summary>Stops a layer that played nothing before Poser's first change.</summary>
     private Outcome RestoreEmptySlot(
         ActorId actor, AnimationSlot slot, AnimationOverrides current)
     {
         var reading = _timeline.Read(actor);
         var immediateBase = _timeline.CaptureBase(actor);
-        // Zero the slot's own id entries first: a bare cancel left them and
-        // the base restore below re-scheduled the layer from them. This fails
-        // when the actor is gone, which is the only case without a reading.
+        // Stop the layer and clear its animation ID. Without that, restoring the
+        // Full body below would start the layer again. This only fails when the
+        // actor is gone, which is also the only time there is no reading.
         var cancelled = _timeline.ClearSlotTimeline(actor, slot);
         if (!cancelled.Success)
             return cancelled;
 
-        // Replaying surviving layers would restart them. Read back after the
-        // cancel and replay only layers whose timeline is no longer present.
+        // Stopping one layer can stop others. Start again only the layers that
+        // stopped: replaying one that still plays would restart it.
         var after = _timeline.Read(actor)!;
         var failures = new List<string>();
         var retrySlots = new Dictionary<AnimationSlot, ushort>();
@@ -564,13 +476,13 @@ internal sealed class BaseAnimationSession
             if (!baseRestored.Success)
                 failures.Add(baseRestored.Detail ?? "Base rollback failed.");
         }
+        // Remember the layers that could not be started again, so their Reset can.
         if (failures.Count > 0)
             _store.Mutate(actor, o =>
             {
                 var captures = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures);
                 foreach (var (failedSlot, timeline) in retrySlots)
-                    if (!captures.ContainsKey(failedSlot))
-                        captures[failedSlot] = timeline;
+                    captures.TryAdd(failedSlot, timeline);
                 return o with
                 {
                     SlotCaptures = captures,
@@ -582,11 +494,9 @@ internal sealed class BaseAnimationSession
             : Outcome.Fail(string.Join("; ", failures));
     }
 
-    // ── Lips ─────────────────────────────────────────────────────────
-
     /// <summary>
-    /// Sets the lip override. Selecting None restores the captured incoming
-    /// timeline because zero is a native "no speech timeline" value.
+    /// Sets the lip movement. Choosing None puts back what the lips did before,
+    /// because writing zero would mean "no speech" to the game.
     /// </summary>
     public Outcome SetLips(ActorId actor, ushort timeline)
     {
@@ -600,7 +510,7 @@ internal sealed class BaseAnimationSession
     {
         if (_store.Suspended() is { } blocked) return blocked;
         var current = _store.For(actor);
-        // Without a reading the actor is gone, and the write below fails too.
+        // Read only returns nothing when the actor is gone, and then the write below fails too.
         ushort? captured = current.LipsCapture == null
             ? _timeline.Read(actor)?.LipsOverride
             : null;
@@ -621,28 +531,18 @@ internal sealed class BaseAnimationSession
         var current = _store.For(actor);
         if (current.Lips == null && current.LipsCapture == null)
         {
-            _store.Mutate(actor, o =>
-            {
-                var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
-                selected.Remove(AnimationSlot.Lips);
-                return o with { SelectedSlots = selected };
-            });
+            _store.Mutate(actor, o => o with { SelectedSlots = o.SelectedSlots.Without(AnimationSlot.Lips) });
             return Outcome.Ok();
         }
         ushort target = current.LipsCapture ?? 0;
         var result = _timeline.SetLips(actor, target);
         if (!result.Success)
             return result;
-        _store.Mutate(actor, o =>
+        _store.Mutate(actor, o => o with
         {
-            var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
-            selected.Remove(AnimationSlot.Lips);
-            return o with
-            {
-                SelectedSlots = selected,
-                Lips = null,
-                LipsCapture = null,
-            };
+            SelectedSlots = o.SelectedSlots.Without(AnimationSlot.Lips),
+            Lips = null,
+            LipsCapture = null,
         });
         return Outcome.Ok();
     }

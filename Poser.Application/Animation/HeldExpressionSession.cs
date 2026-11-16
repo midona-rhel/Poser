@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain;
 using Poser.Domain.Animation;
+using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
@@ -57,18 +58,11 @@ internal sealed class HeldExpressionSession
                 actor, AnimationSlot.Facial, restore);
             if (!unpinned.Success)
                 return unpinned;
-            _store.Mutate(actor, o =>
+            _store.Mutate(actor, o => o with
             {
-                var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds);
-                speeds.Remove(AnimationSlot.Facial);
-                var resumes = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
-                resumes.Remove(AnimationSlot.Facial);
-                return o with
-                {
-                    SlotSpeeds = speeds,
-                    SlotResumeSpeeds = resumes,
-                    HeldExpression = null,
-                };
+                SlotSpeeds = o.SlotSpeeds.Without(AnimationSlot.Facial),
+                SlotResumeSpeeds = o.SlotResumeSpeeds.Without(AnimationSlot.Facial),
+                HeldExpression = null,
             });
         }
 
@@ -146,22 +140,7 @@ internal sealed class HeldExpressionSession
                       (replayed.Detail ?? repinned.Detail ?? "facial hold failed.")));
         }
 
-        _store.Mutate(actor, o =>
-        {
-            var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds);
-            speeds.Remove(AnimationSlot.Facial);
-            var speedCaptures = new Dictionary<AnimationSlot, float>(o.SlotSpeedCaptures);
-            speedCaptures.Remove(AnimationSlot.Facial);
-            var resumes = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
-            resumes.Remove(AnimationSlot.Facial);
-            return o with
-            {
-                SlotSpeeds = speeds,
-                SlotSpeedCaptures = speedCaptures,
-                SlotResumeSpeeds = resumes,
-                HeldExpression = null,
-            };
-        });
+        _store.Mutate(actor, o => o.WithoutSlotSpeed(AnimationSlot.Facial) with { HeldExpression = null });
         return Outcome.Ok();
     }
 
