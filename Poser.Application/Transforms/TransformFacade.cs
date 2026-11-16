@@ -1,5 +1,7 @@
 using System.Numerics;
+using Poser.Application.Posing;
 using Poser.Application.Scene;
+using Poser.Application.Settings;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
@@ -16,6 +18,9 @@ public sealed class TransformFacade : ITransformFacade
 
     private readonly UndoJournal _journal;
     private readonly ValueJournal _values;
+    private readonly ConfigurationService _configuration;
+    private readonly EditorState _editor;
+    private readonly IPoseInteraction _interaction;
 
     public TransformFacade(
         SceneSession scene,
@@ -23,8 +28,14 @@ public sealed class TransformFacade : ITransformFacade
         TransformCommandService commands,
         UndoJournal journal,
         GroupTransformCoordinator groups,
-        ValueJournal values)
+        ValueJournal values,
+        ConfigurationService configuration,
+        EditorState editor,
+        IPoseInteraction interaction)
     {
+        _configuration = configuration;
+        _editor = editor;
+        _interaction = interaction;
         _scene = scene;
         _gestures = gestures;
         _commands = commands;
@@ -44,6 +55,67 @@ public sealed class TransformFacade : ITransformFacade
     public bool CanRedo => _journal.CanRedo;
     public string? UndoDescription => _journal.UndoDescription;
     public string? RedoDescription => _journal.RedoDescription;
+
+    /// <summary>
+    /// Starts a drag from a gizmo. The caller says what is dragged, with which
+    /// tool and around which pivot. The rest is decided here, so every gizmo
+    /// behaves the same: whether linked and paired bones come along, how a group
+    /// scales, and what the undo step is called.
+    /// </summary>
+    public GestureResult BeginDrag(
+        IReadOnlyList<TransformTargetId> targets,
+        TransformOperation operation,
+        TransformSpace space,
+        PivotMode pivotMode = PivotMode.PerTarget,
+        Vector3? customPivot = null,
+        IReadOnlyList<SelectionId>? selection = null)
+    {
+        var settings = _configuration.Config;
+        bool bones = targets[0].Kind == TransformTargetKind.Bone;
+        return Begin(targets, operation, space, pivotMode, customPivot,
+            description: DragName(targets),
+            includeLinkedBones: bones && _interaction.LinkedBonesEnabled,
+            symmetryFor: bones ? SymmetryFor : null,
+            relativeSecondaryBones: bones && settings.RelativeSecondaryBones,
+            groupScale: settings.Gizmo.GroupScale,
+            selection: selection);
+    }
+
+    /// <summary>How a bone's paired bone follows: its own setting when per-bone
+    /// symmetry is on, otherwise the toolbar's symmetry mode.</summary>
+    private TransformDeltaMode? SymmetryFor(string boneName)
+    {
+        var settings = _configuration.Config;
+        return BoneSymmetry.EffectiveMode(
+            settings.PerBoneSymmetry,
+            settings.BoneSymmetryOverrides,
+            settings.AutoLinkPairedBones,
+            _editor.SymmetryMode,
+            boneName) switch
+        {
+            Domain.Preferences.SymmetryMode.Copy => TransformDeltaMode.Direct,
+            Domain.Preferences.SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
+            _ => null,
+        };
+    }
+
+    /// <summary>The undo step's name for a drag, such as "Transform 3 bones".</summary>
+    private static string DragName(IReadOnlyList<TransformTargetId> targets)
+    {
+        var kind = targets[0].Kind;
+        string noun = targets.Any(target => target.Kind != kind)
+            ? "thing"
+            : kind switch
+            {
+                TransformTargetKind.Actor => "actor",
+                TransformTargetKind.Light => "light",
+                TransformTargetKind.Prop => "object",
+                TransformTargetKind.WorldObject => "world object",
+                TransformTargetKind.Collider => "IK collider",
+                _ => "bone",
+            };
+        return $"Transform {targets.Count} {noun}{(targets.Count == 1 ? "" : "s")}";
+    }
 
     /// <summary>
     /// Stable-id gesture entry: expands linked-bone and symmetry partners

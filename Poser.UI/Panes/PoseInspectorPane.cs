@@ -2974,40 +2974,8 @@ public partial class PoseInspectorPane : IDisposable
                 return;
         }
 
-        var begin = _cleanTransforms.Begin(
-            targets,
-            operation,
-            DomainSpace.World,
-            pivotMode,
-            customPivot,
-            description:
-                $"Transform {targets.Count} {targets[0].Kind switch
-                {
-                    TransformTargetKind.Actor => "actor",
-                    TransformTargetKind.Light => "light",
-                    TransformTargetKind.Prop => "object",
-                    TransformTargetKind.WorldObject => "world object",
-                    TransformTargetKind.Collider => "IK collider",
-                    _ => "bone",
-                }}{(targets.Count == 1 ? "" : "s")}",
-            includeLinkedBones:
-                targets[0].Kind == TransformTargetKind.Bone &&
-                _interaction.LinkedBonesEnabled,
-            symmetryFor: targets[0].Kind == TransformTargetKind.Bone
-                ? SymmetryDeltaFor
-                : null,
-            relativeSecondaryBones:
-                targets[0].Kind == TransformTargetKind.Bone &&
-                _configuration.Config
-                    .RelativeSecondaryBones,
-            groupScale: IsMultiEntitySelection
-                ? _configuration.Config.Gizmo.GroupScale
-                : global::Poser.Domain.Transforms.GroupScaleMode.SizesAndSpacing,
-            groupId: IsMultiEntitySelection
-                ? _groups.MatchingSelection(_selection.Selected)?.Id
-                : null,
-            groupTransform: IsMultiEntitySelection,
-            selection: _selection.Selected);
+        var begin = _cleanTransforms.BeginDrag(
+            targets, operation, DomainSpace.World, pivotMode, customPivot, _selection.Selected);
         if (!begin.Success || begin.GestureId is not { } gesture)
             return;
 
@@ -3176,24 +3144,5 @@ public partial class PoseInspectorPane : IDisposable
 
     private ActorDescriptor? OwningActor() =>
         OwningActorId() is { } actor ? _scene.Snapshot.FindActor(actor) : null;
-
-    /// <summary>The per-bone symmetry resolver, the gizmo's twin.</summary>
-    private System.Nullable<DomainDeltaMode> SymmetryDeltaFor(
-        string canonicalName)
-    {
-        var configuration =
-            _configuration.Config;
-        return Domain.Posing.BoneSymmetry.EffectiveMode(
-            configuration.PerBoneSymmetry,
-            configuration.BoneSymmetryOverrides,
-            configuration.AutoLinkPairedBones,
-            _editorState.SymmetryMode,
-            canonicalName) switch
-        {
-            SymmetryMode.Copy => DomainDeltaMode.Direct,
-            SymmetryMode.Mirror => DomainDeltaMode.Mirrored,
-            _ => null,
-        };
-    }
 
 }

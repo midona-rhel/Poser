@@ -1223,34 +1223,8 @@ public class GizmoOverlayWindow : Window
             cleanPivotMode = PivotMode.Centroid;
         }
 
-        var begin = _cleanTransforms.Begin(
-            targets,
-            operation,
-            space,
-            cleanPivotMode,
-            cleanCustomPivot,
-            description: targetType switch
-            {
-                GizmoTargetType.Collider => "Transform IK collider",
-                GizmoTargetType.Bone =>
-                    $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}",
-                GizmoTargetType.Light =>
-                    $"Transform {targets.Count} light{(targets.Count == 1 ? "" : "s")}",
-                GizmoTargetType.Prop =>
-                    $"Transform {targets.Count} object{(targets.Count == 1 ? "" : "s")}",
-                GizmoTargetType.Mixed =>
-                    $"Transform {targets.Count} things",
-                GizmoTargetType.WorldObject =>
-                    $"Transform {targets.Count} world object{(targets.Count == 1 ? "" : "s")}",
-                _ =>
-                    $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
-            },
-            includeLinkedBones: isBone && _poseInteraction.LinkedBonesEnabled,
-            symmetryFor: isBone ? SymmetryDeltaFor : null,
-            relativeSecondaryBones: isBone &&
-                _configuration.Config
-                    .RelativeSecondaryBones,
-            groupScale: _configuration.Config.Gizmo.GroupScale);
+        var begin = _cleanTransforms.BeginDrag(
+            targets, operation, space, cleanPivotMode, cleanCustomPivot);
         if (!begin.Success || begin.GestureId is not { } gestureId)
         {
             _log.Verbose(
@@ -1529,24 +1503,6 @@ public class GizmoOverlayWindow : Window
                 ScaleFactor(start.Scale.X, desired.Scale.X),
                 ScaleFactor(start.Scale.Y, desired.Scale.Y),
                 ScaleFactor(start.Scale.Z, desired.Scale.Z)));
-    }
-    /// <summary>Uses the bone override when enabled, otherwise the toolbar symmetry mode.</summary>
-    private System.Nullable<TransformDeltaMode> SymmetryDeltaFor(
-        string canonicalName)
-    {
-        var configuration =
-            _configuration.Config;
-        return Domain.Posing.BoneSymmetry.EffectiveMode(
-            configuration.PerBoneSymmetry,
-            configuration.BoneSymmetryOverrides,
-            configuration.AutoLinkPairedBones,
-            _editorState.SymmetryMode,
-            canonicalName) switch
-        {
-            SymmetryMode.Copy => TransformDeltaMode.Direct,
-            SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
-            _ => null,
-        };
     }
 
 }
