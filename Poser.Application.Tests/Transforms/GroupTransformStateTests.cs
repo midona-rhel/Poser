@@ -131,7 +131,7 @@ public sealed class GroupTransformStateTests
         Assert.Same(before, f.Snapshot);
         Assert.False(f.History.CanUndo);
         f.FailRestore = false;
-        Assert.True(f.Service.RetryRecovery(f.Service.PendingRecovery!).Success);
+        Assert.True(f.Service.RecoverPending()!.Value.Success);
         Assert.True(before.ContentEquals(f.Snapshot));
         Assert.Null(f.Service.PendingRecovery);
         Assert.Equal(before.Expected, f.Live);

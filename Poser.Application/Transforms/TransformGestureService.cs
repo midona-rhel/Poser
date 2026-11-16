@@ -109,35 +109,19 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return GestureResult.Fail("Entity group gestures require a world-space centroid.");
         if (command.Targets.Count == 0)
             return GestureResult.Fail("A transform gesture requires a target.");
-        if (command.Targets.Distinct().Count() != command.Targets.Count)
-            return GestureResult.Fail("A transform gesture contains duplicate targets.");
         if (!IsHomogeneous(command.Targets))
             return GestureResult.Fail("Transform targets must be homogeneous.");
         if (command.PivotMode == PivotMode.Custom &&
             (command.CustomPivot is not { } supplied ||
              !TransformMath.IsFinite(supplied)))
             return GestureResult.Fail("A custom pivot must be finite.");
-        if (command.TargetModes != null &&
-            command.TargetModes.Keys.Any(
-                target => !command.Targets.Contains(target)))
-            return GestureResult.Fail(
-                "A transform target mode references an unknown target.");
 
         var captured = new List<TransformTargetState>(command.Targets.Count);
         foreach (var target in command.Targets)
         {
             if (!_scene.Contains(target))
                 return GestureResult.Fail($"Target {target} is stale.");
-            TransformPortResult result;
-            try
-            {
-                result = _runtime.Capture(target);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not capture {target}", exception, captured);
-            }
+            var result = _runtime.Capture(target);
             if (!result.Success || result.State == null)
                 return GestureResult.Fail(
                     result.Detail ?? $"Could not capture {target}.");
@@ -336,20 +320,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         foreach (var index in Enumerable.Range(0, active.Before.Count)
             .OrderBy(i => _runtime.DependencyDepth(active.Before[i].Target)))
         {
-            TransformPortResult result;
-            try
-            {
-                result = _runtime.ApplyAbsolute(
-                    active.Before[index],
-                    desired[index]);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not transform {active.Before[index].Target}",
-                    exception,
-                    active.Before);
-            }
+            var result = _runtime.ApplyAbsolute(active.Before[index], desired[index]);
             if (result.Success)
                 continue;
 
@@ -395,18 +366,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var after = new List<TransformTargetState>(active.Before.Count);
         foreach (var before in active.Before)
         {
-            TransformPortResult result;
-            try
-            {
-                result = _runtime.Capture(before.Target);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not capture final state for {before.Target}",
-                    exception,
-                    active.Before);
-            }
+            var result = _runtime.Capture(before.Target);
             if (!result.Success || result.State == null)
             {
                 var rollback = RecoverGesture(active);
@@ -487,14 +447,13 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
-    /// Runs one direction of the synchronous entry <see cref="UndoJournal"/>
-    /// peeked, through the shared transition and recovery barrier, and commits
-    /// it only when it lands. A refused entry remains available to retry.
+    /// Runs one direction of the entry <see cref="UndoJournal"/> peeked and
+    /// commits it only when it lands. A refused entry remains available to
+    /// retry. The journal has already finished any pending put-back first.
     /// </summary>
     public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
     {
         var verb = undo ? "undo" : "redo";
-        if (PendingRecovery != null) return new(RecoveryRequired(PendingRecovery), false);
         using var transition = TryEnterTransition();
         if (transition == null) return new(Busy(), false);
         if (_active != null) return new(GestureResult.Fail($"Cancel the active gesture before {verb}."), false);
@@ -532,7 +491,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity)
     {
-        if (PendingRecovery != null) return new(RecoveryRequired(PendingRecovery), false);
         using var transition = TryEnterTransition();
         if (transition == null) return new(Busy(), false);
         if (_active != null) return new(GestureResult.Fail("Cancel the active gesture before undo or redo."), false);
@@ -570,24 +528,13 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
-    /// The only mutation accepted while recovery is pending. Replays every
-    /// originally requested state in order and replaces the receipt on another
-    /// partial failure; complete recovery clears the mutation barrier.
+    /// Undo and redo call this first. With a put-back still pending it tries
+    /// that put-back again instead, and returns its result; otherwise null.
     /// </summary>
-    public GestureResult RetryRecovery(TransformRecoveryReceipt recovery)
+    public GestureResult? RecoverPending()
     {
         if (PendingRecovery is not { } pending)
-        {
-            return GestureResult.Fail(
-                "No transform recovery is pending.");
-        }
-        if (!ReferenceEquals(pending, recovery))
-            return GestureResult.Fail(
-                "The supplied recovery receipt is stale; use the current " +
-                "pending recovery.") with
-            {
-                Recovery = pending,
-            };
+            return null;
         using var transition = TryEnterTransition();
         if (transition == null)
             return Busy();
@@ -597,11 +544,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             {
                 Recovery = pending,
             };
-
-        var retried = AttemptRecovery(
-            recovery.Attempts.Select(attempt => attempt.RequestedState).ToArray(),
-            _recoveryCompleted, _recoveryRemap);
-        return RecoveryResult(retried);
+        return RecoveryResult(Retry(pending));
     }
 
     internal TransformRecoveryReceipt AttemptRecovery(
@@ -624,9 +567,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         }
         return recovery;
     }
-
-    public GestureResult? RecoverPending() =>
-        PendingRecovery is { } pending ? RetryRecovery(pending) : null;
 
     private GestureResult RestorePatch(TransformPatch patch, bool before, Action commit)
     {
@@ -660,19 +600,18 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         using var transition = TryEnterTransition();
         if (transition == null)
             return false;
-        var retried = AttemptRecovery(
-            pending.Attempts.Select(attempt => attempt.RequestedState).ToArray(),
-            _recoveryCompleted, _recoveryRemap);
-        return retried.Complete;
+        return Retry(pending).Complete;
     }
 
+    private TransformRecoveryReceipt Retry(TransformRecoveryReceipt pending) =>
+        AttemptRecovery(
+            pending.Attempts.Select(attempt => attempt.RequestedState).ToArray(),
+            _recoveryCompleted, _recoveryRemap);
+
     /// <summary>
-    /// Restores an operation-owned exact snapshot through the same ordered
-    /// recovery barrier used by gesture cancellation. This is intentionally
-    /// the only public recovery entry point for another application workflow:
-    /// incomplete evidence remains the identity-bound <see
-    /// cref="PendingRecovery"/> token and must be retried through
-    /// <see cref="RetryRecovery"/>.
+    /// Puts back transforms another operation saved (a pose import that
+    /// failed part-way). If some cannot be put back yet, they become the
+    /// <see cref="PendingRecovery"/> that later edits retry first.
     /// </summary>
     public GestureResult RestoreForOperation(
         IReadOnlyList<TransformTargetState> states)
@@ -731,24 +670,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 _groupTransforms.Put(GroupTransformKey.For(active.Command.GroupId,
                     restored.Expected.Keys), restored);
         }, remap: true);
-
-    /// <summary>
-    /// A thrown port call is mutation-unknown, exactly like an explicit
-    /// failure: every supplied frozen baseline is attempted in order, the
-    /// gesture disarms so stale baselines never feed a later tick, and
-    /// incomplete recovery arms the <see cref="PendingRecovery"/> barrier.
-    /// </summary>
-    private GestureResult ThrownFailureAfterRecovery(
-        string operation,
-        Exception exception,
-        IReadOnlyList<TransformTargetState> baselines)
-    {
-        var recovery = _active is { } active ? RecoverGesture(active) : AttemptRecovery(baselines);
-        _active = null;
-        return FailureAfterRecovery(
-            $"{operation}: {exception.Message}",
-            recovery);
-    }
 
     private static GestureResult FailureAfterRecovery(
         string primaryFailure,
