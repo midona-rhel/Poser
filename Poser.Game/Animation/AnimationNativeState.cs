@@ -120,14 +120,10 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>The row the slot was asked to play (ClientStructs TimelineIds, seq+0xE0):
-    /// the one the base pick compares. For slot 0 it runs ahead of
-    /// <see cref="StartedId"/> while the row is queued.</summary>
+    /// the one the base pick compares. For slot 0 it is set while the row is still
+    /// queued, before the slot starts it.</summary>
     internal static ushort RequestedId(ActionTimelineSequencer* sequencer, int slot) =>
         sequencer->TimelineIds[slot];
-
-    /// <summary>The row StartSlot last started on the slot (seq+0xFC).</summary>
-    internal static ushort StartedId(ActionTimelineSequencer* sequencer, int slot) =>
-        *(ushort*)((byte*)sequencer + NativeFields.ActionTimelineSequencer_SlotStartedIds + 2 * slot);
 
     /// <summary>Slot 0's queued second row (seq+0x152; an emote's loop after its intro).</summary>
     internal static ushort QueuedId(ActionTimelineSequencer* sequencer) =>
@@ -156,12 +152,11 @@ public sealed unsafe partial class AnimationNativeState
     private static extern bool ReadProcessMemory(
         nint process, nint address, void* buffer, nint size, out nint read);
 
-    /// <summary>Whether ReadProcessMemory can copy this range (up to 0x160 bytes).</summary>
+    /// <summary>Whether ReadProcessMemory can copy this range (a few hundred bytes at most:
+    /// the copy goes to the stack).</summary>
     internal static bool RegionReadable(nint address, int size)
     {
-        if (size > 0x160)
-            return false;
-        byte* scratch = stackalloc byte[0x160];
+        byte* scratch = stackalloc byte[size];
         return ReadProcessMemory((nint)(-1), address, scratch, size, out var read) && read == size;
     }
 
@@ -264,7 +259,7 @@ public sealed unsafe partial class AnimationNativeState
     /// <summary>A pose kind's pose count (the base pose and each pose emote) from the
     /// game's table, or null when the table isn't available.</summary>
     internal int? PoseCount(int kind) =>
-        _cposeTable == null || kind is < 0 or >= CPoseKinds
+        _cposeTable == null
             ? null
             : 1 + _cposeTable[kind * CPoseEntrySize + CPoseCountOffset];
 
@@ -337,13 +332,13 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>Every Havok animation control on the actor's body skeleton (each
-    /// partial's animated skeleton 0) with its partial and array index; false without
-    /// a skeleton.</summary>
-    internal static bool ForEachControl(Character* character, ControlVisitor visit)
+    /// partial's animated skeleton 0) with its partial and array index. None while
+    /// the actor has no drawn body (during a redraw).</summary>
+    internal static void ForEachControl(Character* character, ControlVisitor visit)
     {
         var skeleton = BodySkeleton(character);
         if (skeleton == null)
-            return false;
+            return;
         for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
         {
             var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
@@ -356,7 +351,6 @@ public sealed unsafe partial class AnimationNativeState
                     visit(p, c, control);
             }
         }
-        return true;
     }
 
     private static bool Bound(
@@ -539,19 +533,18 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>Enters a loop mode and keeps the placement Poser gave the actor: the
-    /// chair's enter hook sets the sit height into DrawOffset/CameraOffset. False when
-    /// the game's mode function was not found. Not for the real player.</summary>
-    internal bool EnterLoopMode(Character* character, CharacterModes mode, byte param)
+    /// chair's enter hook sets the sit height into DrawOffset/CameraOffset. Does nothing
+    /// when the game's mode function was not found. Not for the real player.</summary>
+    internal void EnterLoopMode(Character* character, CharacterModes mode, byte param)
     {
         if (_characterSetMode == null)
-            return false;
+            return;
         var drawOffset = character->DrawOffset;
         var cameraOffset = character->CameraOffset;
         _characterSetMode(character, (int)mode, param);
         character->DrawOffset = drawOffset;
         character->CameraOffset = cameraOffset;
         ClearEmoteCancelPending(character);
-        return true;
     }
 
     /// <summary>Stops GPose replaying the actor's recorded motion before a stance
@@ -564,7 +557,7 @@ public sealed unsafe partial class AnimationNativeState
     /// independent, so unless the row plays on Upper Body itself the bit is
     /// cleared for this call only and restored: nothing else in the call reads
     /// it (the transition doesn't; StartSlot reads bit 0), and it all runs on
-    /// this thread.
+    /// the framework thread.
     /// </summary>
     private bool WithUpperKept(ushort timeline, Func<bool> play)
     {
@@ -581,18 +574,13 @@ public sealed unsafe partial class AnimationNativeState
 #if DEBUG
         _probeOurWrite = true;
 #endif
-        try
-        {
-            return play();
-        }
-        finally
-        {
-            if (rowFlags != null)
-                *rowFlags |= 4;
+        bool played = play();
+        if (rowFlags != null)
+            *rowFlags |= 4;
 #if DEBUG
-            _probeOurWrite = false;
+        _probeOurWrite = false;
 #endif
-        }
+        return played;
     }
 
     /// <summary>The game's posture (EmoteController::GetPosture): 0 standing, 1 ground
