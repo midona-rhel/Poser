@@ -122,14 +122,7 @@ public class PoseRailPane
                     id: "rail-multi-camera",
                     help: "Place the selection in front of the camera",
                     style: ControlStyle.Workspace))
-            {
-                var look = _camera.GetLookDirection();
-                if (look.LengthSquared() < 1e-6f)
-                    look = Vector3.UnitZ;
-                _inspector.GroupMoveTowards(
-                    _camera.GetCameraPosition()
-                    + Vector3.Normalize(look) * 2.5f);
-            }
+                _inspector.MoveSelectionToCamera();
             if (_inspector.CanGroupDeselect)
             {
                 ImGui.SameLine(0f, 6f * s);

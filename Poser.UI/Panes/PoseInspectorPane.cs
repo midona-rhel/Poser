@@ -213,6 +213,7 @@ public partial class PoseInspectorPane : IDisposable
         OverlayPane overlayPane,
         SkeletonOverlayPresentation overlayPresentation,
         UserNotices notices,
+        ISelectionPlacement placement,
         global::Poser.Application.Scene.SceneGroups groups,
         GroupTransformCoordinator groupCoordinator,
         ParentingSection parentingSection,
@@ -229,6 +230,7 @@ public partial class PoseInspectorPane : IDisposable
         _groupCoordinator = groupCoordinator;
         _overlayPresentation = overlayPresentation;
         _notices = notices;
+        _placement = placement;
         _ikPort = ikPort;
         _ikBake = ikBake;
         _cameraPane = cameraPane;
@@ -252,6 +254,7 @@ public partial class PoseInspectorPane : IDisposable
     private readonly OverlayPane _overlayPane;
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly UserNotices _notices;
+    private readonly ISelectionPlacement _placement;
     private bool _openCameraTracking = true;
 
     // Cache transform resolution by selection and scene revision.
@@ -552,23 +555,10 @@ public partial class PoseInspectorPane : IDisposable
         return (_multiHeadWho, _multiHeadSub);
     }
 
-    /// <summary>One undoable translate: the whole selection moves so its
-    /// centroid lands at <paramref name="goal"/>, every member keeping its
-    /// offset from the others.</summary>
-    public void GroupMoveTowards(Vector3 goal)
+    public void MoveSelectionToCamera()
     {
-        if (!_groupCoordinator.Resolve(_selection.Selected, out var targets, out _)
-            || !_groupCoordinator.TryReadSelection(
-                _selection.Selected, _configuration.Config.Gizmo.GroupScale, out var current, out _))
-            return;
-        var begin = _cleanTransforms.Begin(targets, DomainOperation.Translate,
-            DomainSpace.World, DomainPivot.Centroid, description: "Move to camera",
-            selection: _selection.Selected);
-        if (!begin.Success || begin.GestureId is not { } gestureId) return;
-        var update = _cleanTransforms.Update(gestureId,
-            new DomainDelta(goal - current.Position, Quaternion.Identity, Vector3.One));
-        if (update.Success) _cleanTransforms.Commit(gestureId);
-        else _cleanTransforms.Cancel(gestureId);
+        var result = _placement.MoveToCamera(_selection.Selected);
+        if (!result.Success) _notices.Failed("Move to camera", result.Detail ?? "The move was refused.");
     }
 
     private readonly PropertiesContext _properties;

@@ -1,7 +1,6 @@
 using Poser.Application.Selection;
 using Poser.Domain.Transforms;
 using System;
-using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -32,9 +31,7 @@ public sealed class LightPane
 
     private readonly EntityActions _entityActions;
     private readonly Poser.Application.Settings.ConfigurationService _configuration;
-    private readonly ITransformFacade _cleanTransforms;
-    private readonly IViewportReads _viewport;
-    private readonly ICameraProjection _camera;
+    private readonly ISelectionPlacement _placement;
     private readonly ITextureProvider _textures;
 
     /// <summary>Where this pane's verb outcomes go; the page itself states
@@ -95,9 +92,7 @@ public sealed class LightPane
         ISceneCreation creation,
         EntityActions entityActions,
         Poser.Application.Settings.ConfigurationService configuration,
-        ITransformFacade cleanTransforms,
-        IViewportReads viewport,
-        ICameraProjection camera,
+        ISelectionPlacement placement,
         ITextureProvider textures,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
@@ -114,12 +109,10 @@ public sealed class LightPane
         _scenePane = scenePane;
         _entityActions = entityActions;
         _configuration = configuration;
-        _cleanTransforms = cleanTransforms;
+        _placement = placement;
         // Placement is selected in the load dialog beside the chosen file.
         _loadBrowser.BottomPanel =
             new FileSidePanel(PlacementBandHeight, DrawPlacementBand);
-        _viewport = viewport;
-        _camera = camera;
         _textures = textures;
         // The library is embedded and fixed by the time the pane composes,
         // so its count is the walk and its names are the captions.
@@ -567,38 +560,11 @@ public sealed class LightPane
             () => RequestDestroyAll?.Invoke(), variant: ButtonVariant.Danger), alignRight: true);
     }
 
-    /// <summary>Uses the same camera-relative placement as a new light,
-    /// recorded as one absolute transform command.</summary>
-    public void MoveToCamera(LightId lightId)
+    private void MoveToCamera(LightId lightId)
     {
-        var forward = _camera.GetLookDirection();
-        if (forward == Vector3.Zero)
-        {
-            _notices.Failed("Move to camera: the camera could not be read.");
-            return;
-        }
-
-        var scale =
-            _viewport.GetModelTransform(TransformTargetId.ForLight(lightId))
-                is { } current
-                ? current.Scale
-                : Vector3.One;
-        var placement = LightPlacement.FromCamera(_camera.GetCameraPosition(), forward, scale);
-        if (!Domain.Transforms.PoseTransform.TryCreate(
-                placement.Position,
-                placement.Rotation,
-                placement.Scale,
-                out var target,
-                out var invalid))
-        {
-            _notices.Failed($"Move to camera: {invalid}");
-            return;
-        }
-
-        var moved = _cleanTransforms.SetAbsolute(
-            TransformTargetId.ForLight(lightId), target, "Move light to camera");
+        var moved = _placement.MoveToCamera([SelectionId.ForLight(lightId)]);
         if (!moved.Success)
-            _notices.Failed($"Move to camera: {moved.Detail}");
+            _notices.Failed("Move to camera", moved.Detail ?? "The light could not be moved.");
     }
 
     // ── HDR colour mapping ───────────────────────────────────────────────

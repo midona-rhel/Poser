@@ -403,13 +403,10 @@ public sealed partial class PropertiesContent
         });
     }
 
-    /// <summary>One undoable translate: the whole selection moves so its
-    /// centroid lands in front of the camera, every member keeping its
-    /// offset from the others.</summary>
     private void MoveSelectionToCamera()
     {
         var result = _placement.MoveToCamera(_selection.Selected);
-        if (!result.Success) _notices.Failed(result.Detail ?? "Move to camera was refused.");
+        if (!result.Success) _notices.Failed("Move to camera", result.Detail ?? "The move was refused.");
     }
 
     public void DrawTabContent(Vector2 origin, Vector2 size)

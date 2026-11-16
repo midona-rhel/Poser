@@ -193,7 +193,7 @@ internal sealed partial class EntityContextMenus
             if (!items.Any(item => item.Label == "Move to camera"))
             {
                 items.Add(new("Move to camera", TablerIcon.Camera, disabled: !movable));
-                actions.Add(() => ReportPlacement(_placement.MoveToCamera([id])));
+                actions.Add(() => MoveToCamera([id]));
             }
             AddReset("Rotation", () => ReportPlacement(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Rotate)), "Zero rotation; keep position and scale");
             if (id.Light == null)
