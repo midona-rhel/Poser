@@ -45,17 +45,6 @@ the preview actor's own skeleton; targets are sampled in source model space
 and held in preview model space. Preview orbit/pan moves that isolated frame,
 not the live scene. No preview constraint retains a live entity or bone target.
 
-## The stash
-
-There is one stash. Stash on the Pose tab, Stash in an actor's menu and
-Export ▸ To stash all keep the pose as it looks on screen, the same capture
-Export writes to a file, and replace what was stashed before. Apply stash puts
-the whole pose on an actor in one click, as Ktisis does: rotations and
-positions of the body, face and weapons, without scale and without moving the
-actor. From stash, in the Import menu, imports the same pose like a file,
-through the options set there. The stash is not saved and lasts until Poser
-unloads.
-
 ## Anamnesis character appearance
 
 The character-file library and actor import picker read `.chara` alongside

@@ -32,5 +32,6 @@ Symmetry Link moves the world delta into the partner's local frame.
 
 Reset clears the interactive `BonePose` but keeps named layers. Reset All also
 restores expression and gaze, resets every pose region, and disarms IK.
-Placement, the stash, tools, and disclosure survive. The stash is described in
-[files and transfer](files-and-transfer.md#the-stash).
+Placement, stash, tools, and disclosure survive. Copy, stash, and apply use
+`PortablePose`, are atomic and history-integrated, clear empty destination
+overrides, and report zero matches as an explicit refusal.
