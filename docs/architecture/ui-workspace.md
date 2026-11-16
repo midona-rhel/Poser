@@ -1,397 +1,77 @@
 # UI workspace
 
-`UiWindowSet` keeps the workspace windows and their draw order: the main
-window, settings, spawn browser, gizmo and skeleton overlays, detached sidebar
-and toolbar parts, frame profiler, and reference pictures.
-The skeleton overlay starts enabled for each session. Selected bones remain
-visible as anchors when the global overlay mask hides other bones.
+`Poser.UI` is everything the user sees: the windows, the tabs of the Properties
+panel, the sidebar and its menus, the skeleton and gizmo overlays drawn over the
+game, and the shared controls they are built from. It draws with Dalamud's ImGui.
+It does not touch the game: it reads from and sends commands to
+`Poser.Application` (see [product-and-boundaries.md](product-and-boundaries.md)).
 
-What's new opens on loading a newer plugin version, independently of the main
-workspace and GPose. Application remembers the highest presented version only
-after the UI draws it; same-version reloads and downgrades do not repeat it.
-The dismissible, non-modal window contains short user-facing release highlights,
-not test reports. It neither dims the background nor blocks other windows or
-the game, and does not change the first-run acceptance gate.
+## The folders
 
-Reference pictures are part of the product. Each picture keeps its visibility,
-opacity, placement, and window. It can be duplicated. A hidden picture stays
-hidden as the workspace opens and closes, and a dismissed window is removed
-after its draw pass.
+| Folder | What is in it |
+|---|---|
+| `Windows` | One class per window: the main window, Settings, the Library, the spawn browser, pop-out Properties windows, reference pictures, and the two overlays. |
+| `Views` | What draws inside a window. The window gathers what to show and the view draws it. `AppShellView` is the main window's frame. |
+| `Panes` | The pages and sections of the Properties panel, one class per subject: posing, animation, appearance, lights, cameras, environment, scene, the Library and the others. |
+| `Composition` | The sidebar rows, the right-click menus and the removal dialog. |
+| `Widgets` | The shared controls: buttons, sliders, text fields, menus, forms, file dialogs. |
+| `Rendering`, `Primitives`, `Icons` | Drawing boxes, shadows, text and icons, and the colour themes. |
 
-The UI owns filters, disclosure, hover, picker state, formatting, and widget
-interaction. It does not own selection, game baselines, pose accumulation,
-undo, or entity identity. Rows carry stable ids and use the current viewport
-for positions. Expanding a tree does not change selection.
+## How it is put together
 
-Body and Face each expose a locked built-in Default map; it is never stored
-as an editable preset. The editor selects, creates and deletes custom presets.
-Switching presets requires saving or discarding edits. Concurrent edits and
-deletes cannot silently overwrite a preset changed in another window.
+`UIManager` hooks Dalamud's draw call and draws every window once per frame.
+`UiWindowSet` holds the windows and the order they are drawn in.
 
-Bone-map presets are reusable Body or Face layouts, not actor-instance state
-or overlay visibility presets. Entries carry a portable slot/partial/name key,
-map-section identity and normalized UI coordinates; never native indices or
-actor generations. Missing entries stay stored. Ambiguous portable keys do not
-resolve to an arbitrary native bone. Body and Face names are independent.
-Editing uses a detached draft. Reset position uses its initial layout; default
-position uses the built-in layout. Save checks that the source preset has not
-changed or disappeared in another editor before replacing it. These edits do
-not alter a pose or enter the scene transform journal. Standard-race humanoid
-NPCs share these presets. Other rigs get a reference-pose projection map
-without presets. Reference joints are read once per skeleton generation without
-applying a pose. Terminal single-child chains of at least twelve bones have
-separate numbered, connected rows; their length cannot shrink the remaining body.
-The chain section repeats its actual parent as a selectable attachment anchor.
-Best view scores front/side/top projections of the remaining body, not outlier
-chains. Degenerate geometry uses a contour-packed tidy tree; the user can also
-choose that view. Bounded proximity relaxation retains the projected body shape,
-followed by hard minimum spacing in logical UI pixels. This is not full PRISM.
-The canvas grows vertically instead of rescaling that spacing away. Connectors
-always use actual direct parents on the same section. Layout runs only for rig,
-view, dot-size or viewport changes, never animation. Map hover publishes an exact bone for one frame of overlay
-feedback; it neither changes selection nor the persistent visibility mask.
-Mirroring swaps map interaction targets, never the saved layout identities.
-The editor's separate mirror-placement action adds or repositions the actual
-same-slot/partial opposite bone horizontally about mapped paired parents,
-the nearest mapped common ancestor, or the panel center in that order. It
-preserves height and refuses out-of-map placements rather than breaking symmetry.
-New starts from the base template; Copy duplicates the selected layout, including
-unavailable entries. Both immediately create uniquely named custom presets;
-Cancel discards subsequent draft edits, not that new preset. Save commits without
-closing, Discard restores the saved version, and Confirm saves then closes.
-Default remains immutable. Map/list context actions share the same draft;
-removing a subtree changes only layout entries, never the actor's skeleton.
-Background selection is saved with the preset but replaces only illustration
-pixels; it never changes coordinates or imports another race's bone list.
-Auto keeps the map's own art (the Body page's five pictures, the Face page's
-race head); any single pose picture (Body, Armor, Hands, Tail, Toes or one of the
-four heads) can back either kind of map, drawn once across the map area with its
-own proportions kept and centred; None draws no art.
-Built-in Body and race/ear-specific Face templates have stable reserved IDs.
-Copies retain their base template (coordinate space and reset baseline).
-Automatic map selection resolves a separate Body/Face assignment for race and
-gender, falling back to native race selection if unset or deleted. Pickers show
-the resolved preset's name, never a selectable "Automatic" placeholder. Explicit
-selection is local to a Properties pane and resets on actor changes; editors
-remain pinned to their original actor/template. Standard humanoid NPCs follow
-the same rules. All built-in templates stay locked, including in persistence.
-Bone context menus expose Preset → Body/Face → Add, Add with mirror, Remove and
-Remove with children. Actions update the selected map immediately, creating a
-uniquely named copy when its template is locked. An already open matching editor
-receives these changes in its draft with live preview; only Save/Confirm commits
-that draft. Context actions never silently save unrelated pending editor changes.
-The shared sidebar finds open drafts across Properties hosts by exact actor and
-map kind, preferring its own editor then the most recently opened or switched
-matching editor. Closing or disposing a host removes it from this lookup; the
-registry does not own windows or share their selection and disclosure state.
-The map editor shares the manipulation/camera fade, including artwork and bone
-markers. Its hidden host remains alive to preserve placement and draft state but
-neither paints nor intercepts input; rearranging map points does not trigger it.
+The main window and each pop-out Properties window get their own set of panes.
+`PresentationScope` in `Poser/Composition/PropertiesContentFactory.cs` creates
+them when the window opens and disposes them when it closes. Panes are never
+shared between windows, so each window keeps its own open tab, scroll position
+and pickers. All windows send their edits to the same commands and the same undo
+history. A pop-out keeps showing the thing it was opened for, even when the
+selection moves on. Pop-outs close when GPose ends.
 
-The workspace shell composes independent sidebar and entity-menu owners.
-Sidebar caches and disclosure stay with the sidebar; clicked menu targets and
-menu disclosure stay with the menu composer. Neither owns workflow progression.
-Shared placement, duplication, removal and group gates use application commands.
+The main window's frame owns the scroll area, the margin and the scrollbar gutter.
+A pane draws into the space it is given and does not set up its own.
 
-Library navigation and grid rows are separate from the selected-file details and
-metadata-editor drafts. Application owns additive entry loading, pose-spawn
-continuation, entity/group save admission, file-operation policy and favorites;
-Documents performs scans and
-safe writes. Autosave browsing scans continue independently of panel visibility.
-The Library grid, scrollbar and toolbar use the current pane width during
-resizing. Grid rows are rebuilt when the column count or entries change.
+## What the interface keeps
 
-Inspector and Properties read the current selection independently when drawing.
-Changing selection retargets both panels; collapsing, hiding or switching tabs
-in one must not stop the other from updating. Reopening a panel reads the current
-selection, not the target it last displayed.
+The interface keeps only how things are shown: search text, which rows and
+sections are expanded, hover, scroll position, open pickers and unsaved drafts in
+editors. Selection, undo history and anything about the game live in
+`Poser.Application` ([application-state.md](application-state.md)).
 
-Properties pop-outs pin their displayed entity, not a private selection cursor.
-Window drop shadows keep the same neutral color, opacity, offset and softness
-across application color themes; surface colors do not redefine elevation.
-The main window's title has a one-pixel outline; pinned pop-out titles use a
-filled pin instead. Title text and its outline stay within the band left by
-the mode selector and window actions.
-Bone and gaze selections pin their owning actor. Bone clicks, clear,
-range selection and highlights use the global workspace selection in every host.
-An actor pin edits that actor's currently selected bones, but never follows
-selection to another actor. Each host owns tabs, searches, scroll, drafts,
-picker identities and gestures; commands and history remain application-owned.
-A pinned group supplies the same complete membership to transform readings,
-frame lookup and edit admission. The active workspace group cannot substitute
-its baseline or members; locks and stale-member refusal still apply.
-Pinned group Properties and Inspectors omit Deselect; their command also refuses
-to clear workspace selection. Only the live group host owns that action.
-A pin keeps its logical target through removal and rebinds only through the
-scene's identity rules. Missing targets cannot dispatch edits or silently follow selection.
-Pop-outs contain no workspace sidebar/Inspector detachment controls, remain non-modal, and
-are discarded on GPose exit or plugin disposal. Closing a host releases only its
-own gesture and preview claim; submitted application operations continue.
-Each pop-out includes the shared Inspector rail, toggled by an arrow at the
-Properties area's bottom-right; the Inspector has no separate footer.
-The rail pins entity targets (always the actor root), while
-posing content still follows that actor's globally selected bones. Separate
-presentation graphs share commands/history, never mutable selection or gesture
-state. Collapsing the rail preserves content width and does not change other hosts.
-Every host's graph, the main window's included, is built by one presentation
-scope that creates and disposes its panes; pane types are never container
-singletons. The main window, its sidebar menus, the spawn browser and the
-library reach the main graph's panes, never a second copy.
-Main and popped-out Properties use the same minimum content width, adding
-only their currently attached Sidebar/Inspector columns to the outer width.
-Pop-outs follow the workspace's manipulation fade, retaining live shell-drag
-items while hidden so an Inspector gesture can complete normally.
-New pop-outs reuse the last moved/resized or newly opened pop-out's expanded
-size and cascade by a small offset, wrapping at the viewport work-area edges.
-This session-only placement memory survives closing individual hosts; collapsed
-height and unrelated windows' draw order never replace the remembered size.
+Some state that is not about drawing also lives here: which bones the skeleton
+overlay shows (`SkeletonOverlayPresentation`) and the bone-visibility presets,
+the reference pictures (`ReferenceImageSession`), the generated layout of the
+Body and Face maps (`GraphicalBonePane.Generated.cs`), and which shortcut runs
+which action (`PoserKeybinds`).
 
-Creation receipts, deferred pose application and group duplication progress on
-framework updates under Application ownership. Closing their initiating window
-neither cancels nor retargets them; session exit invalidates pending receipts.
-Group gate restoration is also application-owned, including during history replay.
+## Shared controls
 
-Hide UI suspends drawing without closing windows or cancelling Settings edits;
-showing it again preserves which panels were open. Unrelated configuration
-notifications do not reset panel visibility. Opening/closing the workspace or
-changing its attached/split layout still applies the requested layout.
+Each family of controls is one static class in `Widgets` (`ButtonWidgets`,
+`SliderWidgets`, `PageForm`, `FloatingMenu` and so on). Call sites import them
+with `using static`. Their state, such as the active theme, text and texture
+caches, and which control is being dragged, lives in one `UiContext` object
+instead of in static fields. A plugin reload therefore starts clean.
 
-Detached sidebar/Inspector X buttons and their menu Close actions close the
-window without reattaching it. Menu Open restores it; Attach changes the layout.
-Title-bar collapse leaves the bar visible and remains a separate action.
+`Interactive.Reserve` decides which control gets the mouse. Windows, menus,
+popovers, controls and the overlays all go through it, so a control under an open
+menu does not react to a click on the menu. Controls do not ask ImGui for hover or
+click state themselves.
 
-Opening Settings normally starts at General, scrolled to the top, with no search.
-Navigation is not persisted. Explicit Library/Skeleton settings shortcuts still
-open their named category at the top.
+Sliders, fields and colour pickers report when an edit is finished, which is what
+makes a drag one undo step (see [application-state.md](application-state.md#undo-and-redo)).
 
-Form section headers default to expanded. Disclosure preferences persist under
-stable page/section keys. Properties hosts snapshot those defaults when created;
-each then keeps its own disclosure state across actor changes. Toggling one
-host updates the saved default for future hosts, never another open window.
-Settings categories have separate keys even when section titles match. Search
-temporarily reveals matching content without changing saved disclosure.
-Refining Settings search debounces filtering without replaying a page-wide fade;
-unchanged results retain their visibility, focus, pending edits and scroll state.
-Inspector rail headers use this same contract, including IK, Gaze, Expression,
-Pose, Tracking and Placement, whether attached or detached.
+## Rules for changing the interface
 
-New explanatory or advisory text placed in a UI layout requires explicit user
-approval before implementation. Do not add free-standing notices as a substitute
-for correct behavior; propose the message and placement first.
-
-Numeric, text and colour controls use the shared value-edit and commit events;
-the [journal contract](../features/selection-and-transforms.md#the-journal)
-defines when those edits enter history.
-
-Keep IK gizmo visible is enabled by default and exempts an enabled IK endpoint
-from the manipulation fade. It does not override explicitly hidden entity handles
-or Alt suspension. Other gizmos retain the ordinary hide-while-manipulating rule.
-
-UI → Visibility → Hide handles by default starts off and persists across restarts.
-Untouched world handles and their gizmos follow this default; explicit per-entity
-or group Show/Hide choices take precedence for the session. Selection does not
-reveal a hidden handle or gizmo. Inspector controls and skeleton/bone visibility
-are independent and remain usable.
-
-Entity context menus put supported sidebar controls first (handle, camera/target,
-visibility, playback and locking), then everyday actions, rename/duplicate and
-related submenus. A single action stays direct rather than acquiring a submenu;
-Reset groups multiple reset commands. Unsupported capabilities are not
-invented to fill rows. Rotation/scale reset preserves the other components,
-including position, and uses the same application transform/history path as
-ordinary edits. Bone and skeleton/category menus use Select, Visibility and
-Reset submenus. Bone presets apply to the owning actor, including when opened
-from a bone or branch; Head excludes the separately toggleable Face detail set.
-Jaw and Jaw Only sit directly under Head in the tree and stock presets; other
-mouth bones keep their existing categories. This does not change native parenting.
-The Ktisis tree (`KtisisBoneCategories`) is the only bone grouping: the sidebar,
-stock presets, the inspector matrix's "More" sections, the multi-bone header and
-category search all read it, and bones it doesn't list show under Other.
-`BoneInfoService` supplies only curated names and the NSFW set; pose-import
-filters keep their own Brio-style name prefixes.
-Skeleton Settings selects default presets for the character skeleton root's
-Wand action, immediately left of its eye. One click shows exactly the union of
-checked presets within that skeleton's scope; no matching defaults disables the
-action and never clears the mask. The eye only hides/restores its remembered
-subset; Show all actor bones always shows everything. There is no automatic-on-show
-mode. Bone/category and weapon-slot rows have no default-preset action. Preset
-default checks persist across stock-list updates; saving Settings does not mutate
-the current mask. All windows observe the same actor visibility state.
-In context menus, Save actions, Create collider,
-Export Idle Pose and category-wide destruction live under More when there are
-multiple secondary actions; sidebar and viewport use the same composition.
-Properties panels expose file, library and lifetime actions as direct buttons,
-not a More dropdown; bulk destruction stays separate from file actions.
-In context menus, More uses
-the three-dot icon and precedes the final Destroy/Delete/Release action. Category-wide
-destruction (lights, cameras, objects, and overlays) opens a dialog with the target count
-and what is released or protected; only its explicit confirmation runs the
-captured operation. Cancel, Escape, and closing the dialog do nothing. Single
-entity actions and automatic session teardown retain their existing routes.
-
-Context menus use the clicked target; only right-clicking a member of an
-existing multi-selection offers selection-wide commands. Opening another
-target replaces the old menu. Removal drops that target from selection, not
-unrelated entities. Library list rebuilds dismiss index-based menus.
-Equivalent commands share labels and current capability gates; a changed
-menu shape dismisses stale rows rather than dispatching their old indices.
-Nested branches share one menu lifetime and retain their ancestors while the
-pointer enters descendants. Deeper leaves bind explicit target commands rather
-than reinterpreting a two-level row index; Pose export uses this same path.
-
-Tree disclosure belongs to the clicked branch, including descendants that
-have not been drawn yet. Search temporarily reveals matches and disables
-disclosure commands. Skeleton/weapon-slot menus identify their own bones;
-whole-actor pose commands are explicitly labelled Actor, while
-Skeleton settings opens the shared settings page. Shared sections reuse the
-existing commands, not a second settings or pose state.
-
-The shell owns the content origin, inset, scrollbar gutter, and content mode.
-Panes use the content box they receive. Scroll position includes both the
-active strip and tab. Detaching the sidebar or toolbar leaves the attached
-content and inspector geometry in place. Collapse leaves the title bar.
-
-The sidebar and inspector each retain their last detached position and expanded
-size in configuration. First detach seats a panel where it was attached;
-reattaching does not overwrite its detached placement. Subsequent detach and
-restart restore that placement. Geometry is saved after a move/resize finishes,
-not on every drag frame, and title-bar collapse does not replace the expanded size.
-
-The separate toolbar has its own session-only compact state. Double-click
-the Poser/GPose brand/status region to show only that content and shrink the
-toolbar horizontally; repeat to restore its content-sized width. Single-click
-and drag still move the toolbar. Hidden actions are not drawn or interactive.
-Main-window collapse, detached panes and their geometry are unaffected.
-
-Shared file dialogs keep a fixed search row above the file-list column. The
-search glyph aligns with the row glyphs, independently of input padding.
-Search filters cached current-directory names case-insensitively, including
-folders, after extension filtering; it never walks subfolders or rescans per
-keystroke. Navigation and reopening clear the query. A filtered-out selection
-clears its preview and confirmation state; a separately typed save name stays.
-
-Pose import options use a movable, explicitly closable window. Import/export
-option and file section labels never disclose or inherit saved collapse state.
-The file browser reserves
-the face-warning row so changing files cannot move the list or confirmation bar.
-Properties group Import, Import from file, and Library in a labelled Import row,
-with Export and Export to file in a labelled Export row. The file shortcuts open their browsers directly;
-Import and Export open their general options/menus. These actions capture their host actor; opening the library
-from that host seeds its explicit apply target without changing scene selection.
-Every pose-import entry point supplies its actor explicitly. The import window
-names and retains that exact actor generation through preview and application;
-selection changes cannot retarget it, and a missing actor never falls back to
-another. Library preview, import options and Apply share its resolved target.
-
-Configurable pose shortcuts cover Import, Import from file, Export, Export to
-file, Copy/Paste through the pose clipboard, and actor Play/Pause. They ship
-unbound in every preset and use the existing two-slot binding/conflict settings.
-They target the globally selected actor (or selected bones belonging only to
-that actor), regardless of focused main/pinned/Library window. Mixed targets,
-missing actors and unavailable capabilities do nothing; no host fallback occurs.
-File actions capture that actor when invoked. Text entry suppresses shortcuts,
-held keys do not repeat actions, and dialog actions reveal their main-shell host.
-
-Short action submenus inherit the floating menu's theme-defined entrance and
-exit motion. Closing submenus remain painted only for their exit interval and
-immediately leave hit testing and navigation.
-
-Library source creation uses one name-and-Browse row. Browse requires a nonblank
-name; choosing a folder immediately adds that named source to the Settings draft.
-Cancelling the chooser leaves the name untouched and adds nothing. Settings Save
-applies the draft; Settings Cancel discards it.
-
-Spawn browsing keeps predefined actions first, library entries second, then
-the existing catalog order. With an active search, each source group orders
-categories as actors, lights, cameras, furniture, props, scenery, VFX, overlays.
-Action order stays fixed within its category; other matches rank name prefixes
-then alphabetically within each category. Sorting changes visible row indices,
-not the backing activation identities. Each row carries typed dispatch and its
-category/source; catalog offsets never determine the action. Furniture has its own import actions;
-world-entry library filters distinguish scenery, furniture and VFX despite
-their shared file extension.
-
-Pages default to a readable content-width cap. Actor opts into the
-shared responsive policy: it fills the host's content box after the leading
-inset, retains the host's trailing scrollbar gutter, and wraps cell groups
-when each label/control track would become too narrow. Paired rows stack at
-their shared minimum width. Fixed-size icons stay fixed within those tracks;
-text-oriented pages retain their existing width policy.
-
-Built-in form labels stay on one line and must fit at the supported minimum
-window size and UI scale. Truncation remains a defensive fallback, not a layout
-strategy; do not introduce word wrapping or taller label rows to hide sizing
-errors. Right-aligned switches leave the intervening space available to their
-labels. Paired rows budget for the page's label-column width before forming
-two tracks, and paired cells share enough label space for both labels.
-
-A sequence of peer controls uses a responsive grid when hardcoded semantic
-row breaks would leave uneven or wasted space. This does not flatten content
-whose pairing or hierarchy carries meaning. The grid preserves source and
-reading order. Each label and its controls or actions form one indivisible
-group; an action never wraps away from the value it owns.
-
-The set's common intrinsic minimum is its widest label, the label gap, and its
-fixed or intrinsic controls. The actual pane content box determines the largest
-column count that can hold that minimum, and equal tracks distribute the groups.
-Changing width adds or drops columns; a narrow layout becomes one whole group.
-The final row contains only real entries, with no invisible fillers, reserved
-empty cells, or semantic partitions that strand one item.
-
-Icons, swatches, and compact actions keep their natural size. Extra width goes
-to tracks and spacing instead of stretching them into bars. Labels truncate
-only after the whole group can no longer retain its natural label width. The
-owning page provides scrolling; a repeated-control grid does not add an inner
-scroll merely to preserve a preferred column count. Appearance Colours and
-Custom colours are the current example of this shared pattern.
-
-Responsive-grid audits check normal, narrow, and wide panes in game for order,
-wrapping, clipping or overlap, attached actions, and unused space. Visual
-acceptance remains manual under the [testing contract](../process/testing.md).
-
-The widget toolkit is first-party UI work. `Poser.UI.Widgets` supplies the
-shared controls, text, icons, placement, scrolling, and motion as one static
-class per widget family (`ButtonWidgets`, `TextWidgets`, `FloatingMenu`, …);
-call sites import them with `using static`. Their mutable state (active
-theme, text and texture caches, interaction, menu, help and animation state,
-the texture uploader and log) lives in one `UiContext`. The host registers it
-with its texture uploader and log. The service provider owns it, resolving it
-before presentation graphs so reverse disposal releases it after panes and
-windows. `UIManager` detaches Draw and input callbacks first without disposing
-shared widget state: closing editors still dismisses menus through the context.
-Context disposal releases its textures and uninstalls it; the host resets no
-UI statics.
-App views hold no mutable statics either: state the windows and panes share
-(the hide-while-manipulating fade and gizmo pointer hold, overlay bone picking,
-the transform clipboard) and the frame profiler are container singletons
-injected where they are used, overlay hand-offs live on
-`SkeletonOverlayPresentation`, and a shell's retained draw state rides its
-`AppShellViewModel`. `Interactive.Reserve`
-owns hit testing, keyboard activation, pointer ownership, occlusion, and drag
-completion. A drag ends once; a swallowed press has no drag end. Popovers,
-menus, and floating surfaces use the same input chain.
-Theme typography, including semibold release headings, belongs to the font
-registry's startup and theme-switch warm set so first-open layout does not
-measure fallback fonts while requesting a new atlas bake.
-Popup input ownership uses the caller's ImGui-scoped identity, so identical
-controls in different windows cannot release or take each other's popup claim.
-
-Movable hosts disable native background dragging and reserve only their actual
-title strip after drawing its controls. That pointer owner keeps a drag until
-release, including outside the strip. Content, tabs, inspector and footer never
-initiate movement. This is local to Poser; global ImGui preferences are unchanged.
-
-Dialogs use ordinary movable windows, not ImGui modal popups. They never dim
-the game or claim full-screen/exclusive input; only their visible bounds
-participate in window interaction. Enter/Escape shortcuts belong to the focused
-dialog, not another window or a nested picker. Closing the first-run notice
-does not accept it or disable shortcuts; the unaccepted notice returns next
-plugin session. Separate naming-dialog instances have distinct window IDs.
-
-Diagnostics stay with the surface whose state they describe. Completed actions
-use `UserNotices`, while visible state changes do not need a second success
-message. The workspace shows the current application state and operation
-results.
-Contract tests cover the current selection, layout, scrolling, input, gizmo,
-picker, preview, pose, MCDF, scene, and lifecycle boundaries. In-game Poser is
-the visual check for manual acceptance.
+- Dialogs are ordinary movable windows, not ImGui modal popups. They do not dim
+  the game or block other windows.
+- Messages about a finished action (a save, a refused import) go through
+  `UserNotices`, which shows them as Dalamud notifications. A change the user can
+  already see needs no message.
+- Do not add explanatory or warning text to a layout without the owner's
+  approval. Fix the behaviour instead.
+- Labels stay on one line and must fit at the smallest supported window size.
+  Do not wrap them or make rows taller to hide a sizing problem.
+- Interface changes are checked by looking at them in the game, not by unit tests
+  (see [testing](../process/testing.md)).
