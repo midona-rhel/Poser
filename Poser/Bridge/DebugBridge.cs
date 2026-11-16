@@ -1405,7 +1405,7 @@ public sealed partial class DebugBridge : IDisposable
                     "reset" => _poseCommands.Reset(id,
                         Enum.Parse<Domain.Posing.PoseRegion>(query.GetValueOrDefault("region", "All"), true)),
                     "mirror" => _poseCommands.Mirror(id),
-                    "stash" => _poseCommands.Stash(id, actor.Name),
+                    "stash" => _poseCommands.Stash(id),
                     "applystash" => _poseCommands.ApplyStash(id),
                     _ => Domain.Posing.PoseEditResult.Fail("Unknown pose edit."),
                 };

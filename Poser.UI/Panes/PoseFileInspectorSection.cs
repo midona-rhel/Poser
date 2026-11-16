@@ -43,6 +43,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private bool _typeExpression;
 
     private readonly IPoseImportCommands _imports;
+    private readonly IPoseCommands _poseCommands;
     private readonly SceneSession _scene;
     private readonly SelectionScope _selection;
     private readonly Application.Settings.ConfigurationService _config;
@@ -91,16 +92,13 @@ public sealed class PoseFileInspectorSection : IDisposable
     private string? _lastImportPath;
     private PoseFile? _lastImportPose;
 
-    // This stash holds a full PoseFile; the facade stash holds a PortablePose.
-    private PoseFile? _poseStash;
-    private DateTimeOffset? _poseStashedAt;
-
     private bool HasLastImport => _lastImportPath != null || _lastImportPose != null;
 
     public event Action<ActorId?>? OnLibraryRequested;
 
     public PoseFileInspectorSection(
         IPoseImportCommands imports,
+        IPoseCommands poseCommands,
         SceneSession scene,
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
@@ -116,6 +114,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         _notices = notices;
         _idleExport = idleExport;
         _imports = imports;
+        _poseCommands = poseCommands;
         _scene = scene;
         _capture = capture;
         _selection = properties.Selection;
@@ -349,7 +348,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             case 0: OpenExport(actorId); break;
             case 1: OpenExportToLibrary(actorId); break;
             case 3: CopyToClipboard(actorId); break;
-            case 4: StashPose(actorId); break;
+            case 4: _poseCommands.Stash(actorId); break;
         }
     }
 
@@ -1001,10 +1000,11 @@ public sealed class PoseFileInspectorSection : IDisposable
                             : "Nothing has been imported yet");
                     actions.Button(
                         "From stash", ImportFromStash,
-                        disabled: _poseStash == null,
-                        help: _poseStash == null
-                            ? "Nothing is stashed — use Export ▸ To stash first"
-                            : $"Apply the stashed pose (stashed {_poseStashedAt:HH:mm:ss} UTC)");
+                        disabled: !_poseCommands.HasStash,
+                        help: _poseCommands.HasStash
+                            ? "Apply the stashed pose through the options set here. "
+                                + $"Stashed from {_poseCommands.StashedFrom} at {_poseCommands.StashedAt:HH:mm:ss} UTC."
+                            : "Nothing stashed yet");
                 });
                 if (withPresets)
                     form.Actions("Presets", actions =>
@@ -1995,29 +1995,8 @@ public sealed class PoseFileInspectorSection : IDisposable
             _notices.Refused(NoActorText);
             return;
         }
-        if (_poseStash is not { } pose)
-        {
-            _notices.Refused("Nothing is stashed.");
-            return;
-        }
-        ImportLoadedPose(actorId, pose, "Import stashed pose", "Stash");
-    }
-
-    private void StashPose(ActorId actorId)
-    {
-        var armed = _capture.CapturePoseFile(actorId, pose =>
-        {
-            if (pose == null)
-            {
-                _notices.Failed("Stash: the pose could not be captured.");
-                return;
-            }
-            _poseStash = pose;
-            _poseStashedAt = DateTimeOffset.UtcNow;
-            _notices.Done("Pose stashed.");
-        });
-        if (!armed.Success)
-            _notices.Failed($"Stash: {armed.Detail}");
+        // The button is disabled until something is stashed.
+        ImportLoadedPose(actorId, _poseCommands.StashedPose!, "Import stashed pose", "From stash");
     }
 
     public void OpenExport(ActorId actorId)
