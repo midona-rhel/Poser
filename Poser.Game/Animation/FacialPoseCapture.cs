@@ -444,11 +444,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
             applied = _transforms.SetAbsoluteMany(
                 writes,
                 "Bake expression into the pose",
-                rawBaseline: true,
-                cancellationRequested: () =>
-                    DisposeRequested ||
-                    !ReferenceEquals(_pending, pending) ||
-                    !IsCurrentToken(pending));
+                rawBaseline: true);
         }
         catch (Exception exception)
         {

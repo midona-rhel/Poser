@@ -11,8 +11,6 @@ namespace Poser.Application.Transforms;
 /// </summary>
 public sealed class TransformCommandService
 {
-    private const string Cancelled = "Transform application was cancelled.";
-
     private readonly SceneSession _scene;
     private readonly ITransformRuntimePort _runtime;
     private readonly EditHistory _history;
@@ -46,28 +44,20 @@ public sealed class TransformCommandService
     /// Sets several transforms as one undo step, parents before children. Used
     /// where one action moves many bones, such as baking an expression into the
     /// pose. Targets that are not listed are left alone.
-    /// <paramref name="cancellationRequested"/> is asked between writes and once
-    /// more before the step is recorded. A cancel puts everything back and
-    /// records nothing.
     /// </summary>
     public GestureResult SetAbsoluteMany(
         IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
         string description,
-        bool rawBaseline = false,
-        Func<bool>? cancellationRequested = null)
+        bool rawBaseline = false)
     {
         if (Enter(out var transition) is { } refused)
             return refused;
         using (transition)
-        {
-            if (writes.Count == 0)
-                return GestureResult.Fail("Nothing to apply.");
             return Change(
                 writes.Select(write => write.Target).ToArray(),
                 (before, index) => _runtime.ApplyAbsolute(before, writes[index].Desired, rawBaseline),
                 description, "Could not transform", "transform",
-                parentsFirst: true, cancellationRequested);
-        }
+                parentsFirst: true);
     }
 
     /// <summary>Lets the game place these actors again, as one undo step.</summary>
@@ -78,16 +68,10 @@ public sealed class TransformCommandService
         if (Enter(out var transition) is { } refused)
             return refused;
         using (transition)
-        {
-            if (targets.Count == 0)
-                return GestureResult.Fail("No actors were supplied.");
-            if (targets.Any(target => target.Kind != TransformTargetKind.Actor))
-                return GestureResult.Fail("Only actor transforms can clear model overrides.");
             return Change(
-                targets.Distinct().ToArray(),
+                targets,
                 (before, _) => _runtime.Restore(before with { HasOverride = false }),
                 description, "Could not clear actor override", "reset");
-        }
     }
 
     /// <summary>
@@ -121,20 +105,15 @@ public sealed class TransformCommandService
         string description,
         string writeFailure,
         string afterWhat,
-        bool parentsFirst = false,
-        Func<bool>? cancellationRequested = null)
+        bool parentsFirst = false)
     {
-        bool IsCancelled() => cancellationRequested?.Invoke() == true;
-
         var before = new List<TransformTargetState>(targets.Count);
         foreach (var target in targets)
         {
-            var captured = Try(() => Capture(target), $"Could not capture {target}");
+            var captured = Capture(target);
             if (!captured.Success || captured.State == null)
-                return GestureResult.Fail(captured.Detail!);
+                return GestureResult.Fail(captured.Detail ?? $"Could not capture {target}.");
             before.Add(captured.State);
-            if (IsCancelled())
-                return PutBack(Cancelled, before);
         }
 
         var order = Enumerable.Range(0, before.Count);
@@ -142,30 +121,21 @@ public sealed class TransformCommandService
             order = order.OrderBy(index => _runtime.DependencyDepth(before[index].Target));
         foreach (int index in order)
         {
-            if (IsCancelled())
-                return PutBack(Cancelled, before);
-            var target = before[index].Target;
-            var written = Try(() => write(before[index], index), $"{writeFailure} {target}");
-            if (IsCancelled())
-                return PutBack(Cancelled, before);
+            var written = write(before[index], index);
             if (!written.Success)
-                return PutBack(written.Detail ?? $"{writeFailure} {target}.", before);
+                return PutBack(written.Detail ?? $"{writeFailure} {before[index].Target}.", before);
         }
 
         var after = new List<TransformTargetState>(before.Count);
         foreach (var state in before)
         {
-            string failure = $"Could not capture {state.Target} after {afterWhat}";
-            var captured = Try(() => _runtime.Capture(state.Target), failure);
+            var captured = _runtime.Capture(state.Target);
             if (!captured.Success || captured.State == null)
-                return PutBack(captured.Detail ?? $"{failure}.", before);
+                return PutBack(
+                    captured.Detail ?? $"Could not capture {state.Target} after {afterWhat}.", before);
             after.Add(captured.State);
-            if (IsCancelled())
-                return PutBack(Cancelled, before);
         }
 
-        if (IsCancelled())
-            return PutBack(Cancelled, before);
         _history.Append(new TransformPatch(description, before, after));
         return GestureResult.Ok();
     }
@@ -177,20 +147,6 @@ public sealed class TransformCommandService
                 TransformPortStatus.StaleTarget,
                 $"Target {target} is stale.");
         return _runtime.Capture(target);
-    }
-
-    /// <summary>Runs one call into the game. An exception becomes a failed result.</summary>
-    private static TransformPortResult Try(Func<TransformPortResult> call, string failure)
-    {
-        try
-        {
-            return call();
-        }
-        catch (Exception exception)
-        {
-            return TransformPortResult.Fail(
-                TransformPortStatus.NativeUnavailable, $"{failure}: {exception.Message}");
-        }
     }
 
     /// <summary>Restores the values read before the edit and reports the failure.</summary>
