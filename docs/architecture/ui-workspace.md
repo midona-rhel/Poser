@@ -390,9 +390,7 @@ plugin session. Separate naming-dialog instances have distinct window IDs.
 
 Diagnostics stay with the surface whose state they describe. Completed actions
 use `UserNotices`, while visible state changes do not need a second success
-message. An action that did not work is reported through `UserNotices.Report`
-under the name on the control the person used ("Save design: reason"): a
-yellow warning when the person can fix the reason, a red error otherwise. The workspace shows the current application state and operation
+message. The workspace shows the current application state and operation
 results.
 Contract tests cover the current selection, layout, scrolling, input, gizmo,
 picker, preview, pose, MCDF, scene, and lifecycle boundaries. In-game Poser is
