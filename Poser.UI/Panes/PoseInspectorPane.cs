@@ -701,13 +701,14 @@ public partial class PoseInspectorPane : IDisposable
 
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } railBone })
         {
-            if (_ikPort.IsSupported(TransformTargetId.ForBone(railBone)))
+            // Bones with no parent to bend, and virtual bones, have no IK.
+            if (_ikPort.Get(TransformTargetId.ForBone(railBone)) is { } ikConfig)
                 stack.Section(
                     "ik",
                     "IK",
                     _openIk,
                     next => _openIk = next,
-                    DrawIk);
+                    form => DrawIk(form, railBone, ikConfig));
         }
         else if (_primary is
                  { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget })
@@ -2010,9 +2011,8 @@ public partial class PoseInspectorPane : IDisposable
                 boneLabel,
                 () =>
                 {
-                    if (actorDescriptor == null || BuildBoneChoices == null)
-                        return;
-                    _ikBoneChoices = BuildBoneChoices(actorDescriptor);
+                    // The button is disabled until an actor is chosen.
+                    _ikBoneChoices = BuildBoneChoices!(actorDescriptor!);
                     var options = new PickerOptions<global::Poser.UI.BoneChoice>
                     {
                         Query = IkBoneSearch,
@@ -2088,8 +2088,8 @@ public partial class PoseInspectorPane : IDisposable
                     _ikPort.SetFabrikTarget(endpoint, IkTargetMode.World);
                     return;
                 }
-                if (_ikPort.Get(endpoint) is { } config
-                    && _ikPort.Set(endpoint, config with { TargetMode = IkTargetMode.World })
+                // The IK section is drawn only for a bone whose chain reads.
+                if (_ikPort.Set(endpoint, _ikPort.Get(endpoint)! with { TargetMode = IkTargetMode.World })
                         is { Success: false } failed)
                     _notices.Failed($"IK target: {failed.Detail}");
             }, disabled: current == null, help: "Hold the endpoint at its current world position");
@@ -2105,29 +2105,28 @@ public partial class PoseInspectorPane : IDisposable
         }
     }
 
-    private void DrawIk(FormScope form)
+    // Writes below re-read the chain so the rest of this frame shows the
+    // stored values. The bone resolved when the rail read its chain this
+    // frame, so the re-read cannot come back empty.
+    private void DrawIk(FormScope form, BoneId boneId, IkChainConfig config)
     {
-        if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
-            return;
         var ikTarget = TransformTargetId.ForBone(boneId);
-        var config = _ikPort.Get(ikTarget);
 
         void Apply(Domain.Posing.IkChainConfig next)
         {
             var result = _ikPort.Set(ikTarget, next);
             if (result.Success)
-                config = _ikPort.Get(ikTarget);
+                config = _ikPort.Get(ikTarget)!;
             else _notices.Failed($"IK: {result.Detail}");
         }
 
         void Adjust(Domain.Posing.IkChainConfig next)
         {
             if (_ikPort.Adjust(ikTarget, next).Success)
-                config = _ikPort.Get(ikTarget);
+                config = _ikPort.Get(ikTarget)!;
         }
 
-        bool eligible = config != null;
-        bool armed = config?.Enabled == true;
+        bool armed = config.Enabled;
         bool canBake = armed && _ikBake.CanBake(ikTarget);
 
         DrawIkChainList(form, boneId, ikTarget);
@@ -2135,13 +2134,7 @@ public partial class PoseInspectorPane : IDisposable
         form.Switch(
             "Live IK",
             armed,
-            next =>
-            {
-                if (config != null)
-                    Apply(config with { Enabled = next });
-            },
-            disabled: !eligible,
-            help: eligible ? null : "This bone has no parent for IK to bend");
+            next => Apply(config with { Enabled = next }));
         form.Actions(string.Empty, actions =>
         {
             actions.Button(
@@ -2149,22 +2142,19 @@ public partial class PoseInspectorPane : IDisposable
                 () =>
                 {
                     _ikPort.ResetDefaults(ikTarget);
-                    config = _ikPort.Get(ikTarget);
-                },
-                disabled: !eligible);
+                    config = _ikPort.Get(ikTarget)!;
+                });
             actions.Button(
                 "Bake",
                 () =>
                 {
                     if (_ikBake.Begin(ikTarget) is { Success: false } failed)
                         _notices.Failed($"Bake: {failed.Detail}");
-                    config = _ikPort.Get(ikTarget);
+                    config = _ikPort.Get(ikTarget)!;
                 },
                 disabled: !canBake);
         });
         ForwardBakeNote();
-        if (config == null)
-            return;
 
         bool twoJointAvailable = _ikPort.IsTwoJointAvailable(ikTarget);
         var solverItems = twoJointAvailable
@@ -2264,9 +2254,8 @@ public partial class PoseInspectorPane : IDisposable
                 next => Apply(config with { EnforceEndRotation = !next }),
                 help: "On: the hand or foot turns with the limb as the IK moves or swivels it. Off: it keeps its rotation");
 
-            var definition =
-                Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName);
-            bool isArm = definition?.IsArm ?? true;
+            // The IK service stores Two Joint only on arm and leg endpoints.
+            bool isArm = Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!.IsArm;
             var labels = isArm ? ArmJointLabels : LegJointLabels;
             var helps = isArm ? ArmJointHelp : LegJointHelp;
             form.Slider(
@@ -2444,8 +2433,7 @@ public partial class PoseInspectorPane : IDisposable
         foreach (var chain in chains)
             foreach (var id in _ikBake.AffectedChain(chain))
                 if (!bones.Contains(id)) bones.Add(id);
-        if (bones.Count > 0)
-            _overlayPresentation.SetVisible(bones, true);
+        _overlayPresentation.SetVisible(bones, true);
     }
 
 
