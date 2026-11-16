@@ -23,16 +23,13 @@ public sealed record BeginTransformGesture(
 
 /// <summary>
 /// Coordinates transform gestures, rollback recovery, and history entries.
-/// Callers serialize public transitions on the framework thread. The internal
-/// guard rejects synchronous reentry from a runtime callback; it does not make
-/// this class thread-safe.
+/// Every caller runs on the game's main thread, one call at a time.
 /// </summary>
 public sealed class TransformGestureService : IDisposable, IUndoRunner
 {
     private readonly SceneSession _scene;
     private readonly ITransformRuntimePort _runtime;
     private ActiveGestureState? _active;
-    private bool _transitionActive;
 
     private readonly GroupTransformState? _groupTransforms;
     private readonly IGroupTransformSource? _groupSource;
@@ -72,8 +69,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     private GroupTransformPresentation ReadGroupPresentation(Guid? named, IReadOnlyList<TransformTargetId> targets)
     {
-        // Never publish midway through native writes, rollback, or recovery.
-        if (_transitionActive || PendingRecovery != null) return default;
+        // While a put-back is pending, the members' live transforms may be partial.
+        if (PendingRecovery != null) return default;
         if (_active is not { } active) return new(true, null);
         if (active.GroupBefore is not { } before || active.Command.GroupId != named
             || active.SceneRevision != _scene.Revision || !before.HasSameMembership(targets)
@@ -96,9 +93,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
         if (_active != null)
             return GestureResult.Fail("A transform gesture is already active.");
         if (!Enum.IsDefined(command.GroupScale))
@@ -196,9 +190,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
         if (_active is not { } active || active.Id != gestureId)
             return GestureResult.Fail("Transform gesture is not active.");
         if (_scene.Revision != active.SceneRevision)
@@ -350,9 +341,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
         if (_active is not { } active || active.Id != gestureId)
             return GestureResult.Fail("Transform gesture is not active.");
         if (_scene.Revision != active.SceneRevision)
@@ -416,9 +404,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
         if (_active is not { } active || active.Id != gestureId)
             return GestureResult.Fail("Transform gesture is not active.");
         return CancelActive(active);
@@ -432,9 +417,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     public void ReconcileScene(Func<TransformTargetId, bool> isCurrent)
     {
         if (PendingRecovery != null)
-            return;
-        using var transition = TryEnterTransition();
-        if (transition == null)
             return;
         if (_active is not { } active)
             return;
@@ -454,8 +436,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
     {
         var verb = undo ? "undo" : "redo";
-        using var transition = TryEnterTransition();
-        if (transition == null) return new(Busy(), false);
         if (_active != null) return new(GestureResult.Fail($"Cancel the active gesture before {verb}."), false);
         Action commit = undo
             ? () => History.CommitUndo(entry, entity)
@@ -491,11 +471,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity)
     {
-        using var transition = TryEnterTransition();
-        if (transition == null) return new(Busy(), false);
         if (_active != null) return new(GestureResult.Fail("Cancel the active gesture before undo or redo."), false);
-        // The journal owns async snapshot completion; do not hold this
-        // synchronous transition across the import (rollback also needs it).
         return new(RunLifecycle(before ? step.Undo : step.Redo,
             $"Could not {(before ? "undo" : "redo")} {step.Description.ToLowerInvariant()}.",
             () => { }, step.FailureDetail), true);
@@ -504,8 +480,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     public GestureResult RunValueTransition(Action action)
     {
         if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
-        using var transition = TryEnterTransition();
-        if (transition == null) return Busy();
         if (_active != null) return GestureResult.Fail("Cancel the active gesture before changing actor values.");
         try { action(); return GestureResult.Ok(); }
         catch (Exception ex) { return GestureResult.Fail(ex.Message); }
@@ -516,12 +490,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         if (_groupCoordinator != null) _groupCoordinator.ReadPresentation = (_, _) => default;
         _scene.Selection.SelectionChanged -= OnSelectionChanged;
         if (PendingRecovery != null)
-            return;
-        // Dispose has no result channel for Busy. If a port callback violates
-        // the non-reentrant transition contract, unsubscribe but never start a
-        // second restore or replace recovery owned by the outer transition.
-        using var transition = TryEnterTransition();
-        if (transition == null)
             return;
         if (_active is { } active)
             CancelActive(active);
@@ -535,9 +503,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (PendingRecovery is not { } pending)
             return null;
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
         if (_active != null)
             return GestureResult.Fail(
                 "Cancel the active gesture before retrying recovery.") with
@@ -597,9 +562,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return true;
         if (_active != null)
             return false;
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return false;
         return Retry(pending).Complete;
     }
 
@@ -618,32 +580,13 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return Busy();
-        var recovery = AttemptRecovery(states);
-        return RecoveryResult(recovery);
+        return RecoveryResult(AttemptRecovery(states));
     }
 
     internal GestureResult? RecoveryBarrier() =>
         TryCompleteRecovery()
             ? null
             : RecoveryRequired(PendingRecovery!);
-
-    internal IDisposable? TryEnterTransition()
-    {
-        if (_transitionActive)
-            return null;
-        _transitionActive = true;
-        return new TransitionScope(this);
-    }
-
-    internal GestureResult Busy() =>
-        GestureResult.Fail(
-            "A transform application transition is busy.") with
-        {
-            Recovery = PendingRecovery,
-        };
 
     private GestureResult CancelActive(ActiveGestureState active)
     {
@@ -740,17 +683,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (PendingRecovery != null)
             return;
-        using var transition = TryEnterTransition();
-        if (transition == null)
-            return;
         if (_active is { } active)
             CancelActive(active);
-    }
-
-    private sealed class TransitionScope(
-        TransformGestureService owner) : IDisposable
-    {
-        public void Dispose() => owner._transitionActive = false;
     }
 
     private sealed record ActiveGestureState(

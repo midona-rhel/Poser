@@ -31,14 +31,9 @@ public sealed class TransformCommandService
     public GestureResult SetAbsolute(
         TransformTargetId target,
         PoseTransform desired,
-        string description)
-    {
-        if (Enter(out var transition) is { } refused)
-            return refused;
-        using (transition)
-            return Change([target], (before, _) => _runtime.ApplyAbsolute(before, desired),
-                description, "Could not transform", "transform");
-    }
+        string description) =>
+        Refusal() ?? Change([target], (before, _) => _runtime.ApplyAbsolute(before, desired),
+            description, "Could not transform", "transform");
 
     /// <summary>
     /// Sets several transforms as one undo step, parents before children. Used
@@ -48,51 +43,30 @@ public sealed class TransformCommandService
     public GestureResult SetAbsoluteMany(
         IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
         string description,
-        bool rawBaseline = false)
-    {
-        if (Enter(out var transition) is { } refused)
-            return refused;
-        using (transition)
-            return Change(
-                writes.Select(write => write.Target).ToArray(),
-                (before, index) => _runtime.ApplyAbsolute(before, writes[index].Desired, rawBaseline),
-                description, "Could not transform", "transform",
-                parentsFirst: true);
-    }
+        bool rawBaseline = false) =>
+        Refusal() ?? Change(
+            writes.Select(write => write.Target).ToArray(),
+            (before, index) => _runtime.ApplyAbsolute(before, writes[index].Desired, rawBaseline),
+            description, "Could not transform", "transform",
+            parentsFirst: true);
 
     /// <summary>Lets the game place these actors again, as one undo step.</summary>
     public GestureResult ClearActorOverrides(
         IReadOnlyList<TransformTargetId> targets,
-        string description)
-    {
-        if (Enter(out var transition) is { } refused)
-            return refused;
-        using (transition)
-            return Change(
-                targets,
-                (before, _) => _runtime.Restore(before with { HasOverride = false }),
-                description, "Could not clear actor override", "reset");
-    }
+        string description) =>
+        Refusal() ?? Change(
+            targets,
+            (before, _) => _runtime.Restore(before with { HasOverride = false }),
+            description, "Could not clear actor override", "reset");
 
     /// <summary>
-    /// Refuses while an earlier failed edit is still being put back, while another
-    /// edit is being applied, or during a drag. Otherwise the caller holds
-    /// <paramref name="transition"/> until its own edit is done.
+    /// Refuses while an earlier failed edit is still being put back, or during
+    /// a drag. A drag can be live here: an expression bake writes a few frames
+    /// after it starts, and a gizmo can be grabbed in between.
     /// </summary>
-    private GestureResult? Enter(out IDisposable? transition)
-    {
-        transition = null;
-        if (_gestures.RecoveryBarrier() is { } waiting)
-            return waiting;
-        transition = _gestures.TryEnterTransition();
-        if (transition == null)
-            return _gestures.Busy();
-        if (_gestures.ActiveGesture == null)
-            return null;
-        transition.Dispose();
-        transition = null;
-        return GestureResult.Fail("A transform gesture is active.");
-    }
+    private GestureResult? Refusal() =>
+        _gestures.RecoveryBarrier() ??
+        (_gestures.ActiveGesture != null ? GestureResult.Fail("A transform gesture is active.") : null);
 
     /// <summary>
     /// Reads every target, writes each one, reads them all again and records the

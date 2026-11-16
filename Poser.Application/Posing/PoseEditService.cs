@@ -63,17 +63,15 @@ public sealed class PoseEditService
     {
         if (RecoveryBarrier() is { } recoveryBarrier)
             return recoveryBarrier;
-        using var transition = _gestures.TryEnterTransition();
-        if (transition == null)
-            return PoseBusy();
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
-        return ResetWithinTransition(targets, region, description, recordHistory: true);
+        return ResetBones(targets, region, description, recordHistory: true);
     }
 
-    // Whole-actor Reset and undo call this while holding the edit transition.
-    internal PoseEditResult ResetWithinTransition(
+    // Reset all calls this directly: it has already refused a pending
+    // put-back or a drag, and records its own undo step.
+    internal PoseEditResult ResetBones(
         IReadOnlyList<TransformTargetId> targets, PoseRegion region,
         string description, bool recordHistory = false)
     {
@@ -109,9 +107,6 @@ public sealed class PoseEditService
     {
         if (RecoveryBarrier() is { } recoveryBarrier)
             return recoveryBarrier;
-        using var transition = _gestures.TryEnterTransition();
-        if (transition == null)
-            return PoseBusy();
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
@@ -145,9 +140,6 @@ public sealed class PoseEditService
     {
         if (RecoveryBarrier() is { } recoveryBarrier)
             return recoveryBarrier;
-        using var transition = _gestures.TryEnterTransition();
-        if (transition == null)
-            return PoseBusy();
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
@@ -300,13 +292,6 @@ public sealed class PoseEditService
             {
                 Recovery = recovery,
             };
-        using var transition = _gestures.TryEnterTransition();
-        if (transition == null)
-            return PoseCaptureResult.Fail(
-                "A transform application transition is busy.") with
-            {
-                Recovery = _gestures.PendingRecovery,
-            };
         if (_gestures.ActiveGesture != null)
             return PoseCaptureResult.Fail(
                 "A transform gesture is active.");
@@ -348,9 +333,6 @@ public sealed class PoseEditService
     {
         if (RecoveryBarrier() is { } recoveryBarrier)
             return recoveryBarrier;
-        using var transition = _gestures.TryEnterTransition();
-        if (transition == null)
-            return PoseBusy();
         ArgumentNullException.ThrowIfNull(pose);
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
@@ -599,13 +581,6 @@ public sealed class PoseEditService
                 Recovery = recovery,
             }
             : null;
-
-    private PoseEditResult PoseBusy() =>
-        PoseEditResult.Fail(
-            "A transform application transition is busy.") with
-        {
-            Recovery = _gestures.PendingRecovery,
-        };
 
     private static PoseEditResult FailureAfterRecovery(
         string primaryFailure,
