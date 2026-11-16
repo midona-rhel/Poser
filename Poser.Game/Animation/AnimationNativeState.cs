@@ -42,8 +42,8 @@ public sealed unsafe partial class AnimationNativeState
     private delegate nint ActionTimelineRowDelegate(uint id);
     private readonly ActionTimelineRowDelegate? _actionTimelineRow;
 
-    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
-    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.Emote>? _emoteSheet;
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline> _timelineSheet;
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.Emote> _emoteSheet;
     // TimelineContainer::PlayActionTimeline 0x1408BED60(container, first, second, params):
     // queues first (an emote's intro) and second (its loop) and plays first; the
     // sequencer plays second itself when first ends (the game's own intro → loop).
@@ -95,7 +95,7 @@ public sealed unsafe partial class AnimationNativeState
     // it is set so the option is the game's own object.
     private readonly nint _playEmoteOptionVtbl;
     private const int CPoseKinds = 8, CPoseEntrySize = NativeFields.EmoteControllerCPoseTable_EntrySize, CPoseCountOffset = NativeFields.EmoteControllerCPoseTable_Count;
-    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode> _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
     // HANDLES at sequencer+0x70 (Handle = { Data*, Flags }; Flags==0 means
@@ -330,7 +330,7 @@ public sealed unsafe partial class AnimationNativeState
     /// onto, or null when the row is missing or unmapped.</summary>
     internal AnimationSlot? TimelineSlot(ushort timeline)
     {
-        var stance = _timelineSheet?.GetRowOrDefault(timeline)?.Stance;
+        var stance = _timelineSheet.GetRowOrDefault(timeline)?.Stance;
         return stance is { } value && AnimationSlots.IsKnown(value)
             ? (AnimationSlot)value
             : null;
@@ -444,7 +444,7 @@ public sealed unsafe partial class AnimationNativeState
     {
         if (_setTimelineId == null || _characterSetMode == null)
             return Outcome.Fail("Timeline playback is unavailable.");
-        if (_timelineSheet?.GetRowOrDefault(timeline) == null)
+        if (_timelineSheet.GetRowOrDefault(timeline) == null)
             return Outcome.Fail("Timeline playback failed: the game has no such animation.");
         bool fullBody = TimelineSlot(timeline) is AnimationSlot.Base or null;
         if (fullBody && leaveLoop)
@@ -624,7 +624,7 @@ public sealed unsafe partial class AnimationNativeState
     internal bool? CanStartEmoteMode(Character* character, uint emoteMode)
     {
         if (_canPlayEmote == null || _getPosture == null
-            || _emoteModeSheet?.GetRowOrDefault(emoteMode) is not { } mode || mode.StartEmote.RowId == 0)
+            || _emoteModeSheet.GetRowOrDefault(emoteMode) is not { } mode || mode.StartEmote.RowId == 0)
             return null;
         int posture = _getPosture(&character->EmoteController);
         if (posture is not (3 or 5 or 6))
@@ -641,8 +641,7 @@ public sealed unsafe partial class AnimationNativeState
     /// </summary>
     internal ushort? EmotePostureRow(Character* character, uint emoteId)
     {
-        if (_getPosture == null || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
-            || emote.ActionTimeline.Count < 6)
+        if (_getPosture == null || _emoteSheet.GetRowOrDefault(emoteId) is not { } emote)
             return null;
         int index = _getPosture(&character->EmoteController) switch
         {
@@ -668,8 +667,7 @@ public sealed unsafe partial class AnimationNativeState
     internal bool PlayEmoteFromStart(Character* character, uint emoteId, ushort loop)
     {
         if (_characterSetMode == null || _cancelTimeline == null
-            || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
-            || emote.ActionTimeline.Count < 2)
+            || _emoteSheet.GetRowOrDefault(emoteId) is not { } emote)
             return false;
         if (IsRealPlayer(character))
             return PlayEmoteRows(character, emote, loop);
@@ -684,7 +682,7 @@ public sealed unsafe partial class AnimationNativeState
         // Pose emotes and paused loops without an EmoteMode need EmoteLoop mode
         // so the normal idle animation leaves them playing.
         if (emote.EmoteMode.RowId == 0
-            && (IsPoseEmote(emoteId) || _timelineSheet?.GetRowOrDefault(standingLoop)?.Pause == true))
+            && (IsPoseEmote(emoteId) || _timelineSheet.GetRowOrDefault(standingLoop)?.Pause == true))
             _characterSetMode(character, (int)CharacterModes.EmoteLoop, 0);
         // The game refuses an emote while a higher-priority animation occupies this slot.
         if (*(int*)((byte*)sequencer + Slot0PriorityOffset) > 1)
