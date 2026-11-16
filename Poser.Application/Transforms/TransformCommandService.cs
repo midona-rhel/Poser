@@ -70,8 +70,9 @@ public sealed class TransformCommandService
 
     /// <summary>
     /// Reads every target, writes each one, reads them all again and records the
-    /// undo step. A failed read before the first write changes nothing. Any
-    /// failure after that puts every target back.
+    /// undo step. A failed read or write changes nothing by itself. When a
+    /// write fails after earlier ones landed, those earlier targets are put
+    /// back: resetting several actors can stop at one whose parent is gone.
     /// </summary>
     private GestureResult Change(
         IReadOnlyList<TransformTargetId> targets,
@@ -93,11 +94,16 @@ public sealed class TransformCommandService
         var order = Enumerable.Range(0, before.Count);
         if (parentsFirst)
             order = order.OrderBy(index => _runtime.DependencyDepth(before[index].Target));
+        var written = new List<TransformTargetState>(before.Count);
         foreach (int index in order)
         {
-            var written = write(before[index], index);
-            if (!written.Success)
-                return PutBack(written.Detail ?? $"{writeFailure} {before[index].Target}.", before);
+            var result = write(before[index], index);
+            if (!result.Success)
+            {
+                string failure = result.Detail ?? $"{writeFailure} {before[index].Target}.";
+                return written.Count == 0 ? GestureResult.Fail(failure) : PutBack(failure, written);
+            }
+            written.Add(before[index]);
         }
 
         var after = new List<TransformTargetState>(before.Count);
@@ -123,10 +129,10 @@ public sealed class TransformCommandService
         return _runtime.Capture(target);
     }
 
-    /// <summary>Restores the values read before the edit and reports the failure.</summary>
-    private GestureResult PutBack(string failure, IReadOnlyList<TransformTargetState> before)
+    /// <summary>Restores targets this edit already changed and reports the failure.</summary>
+    private GestureResult PutBack(string failure, IReadOnlyList<TransformTargetState> written)
     {
-        var recovery = _gestures.AttemptRecovery(before);
+        var recovery = _gestures.AttemptRecovery(written);
         return GestureResult.Fail(TransformRecovery.AppendRollbackFailure(failure, recovery)) with
         {
             Recovery = recovery,
