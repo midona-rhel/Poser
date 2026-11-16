@@ -1,153 +1,91 @@
 # Posing runtime
 
-`Poser.Game` connects the application to the game. Framework-thread work,
-unsafe offsets, signatures, hooks, native handles, and lookup-only indices stay
-behind its ports. Those ports pass ids and values to the
-application. Host-side UI code still has some native address paths, so this
-rule does not describe every UI integration path yet; see
-[product-and-boundaries.md](product-and-boundaries.md).
+`Poser.Game` is the only project that touches the game. It reads and writes
+actors, skeletons, cameras, lights and map objects, installs Poser's game hooks,
+and calls Penumbra, Glamourer and Customize+. The rest of Poser talks to it
+through ids and plain values (see [application-state.md](application-state.md)).
+This page covers the rules that are easy to break when changing it.
 
-Before game access, runtime code resolves the current actor, skeleton, slot,
-and bone again. A stale or changed observation fails. A bone index helps find
-the bone and catch mismatches; it is not a portable id. Feature ports capture,
-apply, restore, and report using stable ids. `ViewportProjection` is a
-frame-scoped display value, not a gesture baseline.
+## The game's main thread
 
-Bone-to-world conversion uses the current slot's native renderer skeleton
-transform, including its completed height/scale. Do not reconstruct it from
-the mutable draw-object fields: Customize+ can write root scale after native
-skeleton update. Overlay, gizmos, IK and collider consumers share this frame,
-matching Ktisis `BoneNode.CalcMatrixWorld`; weapon slots retain their own frame.
+Game objects may only be read or written on the game's main thread, which
+Dalamud calls the framework thread. `StableBindingRegistry` in
+`Poser.Game/Bindings` turns an id back into the game object. It checks the
+thread and the id's generation on every lookup:
 
-Actor resolution rechecks the discovery-time object-table slot, address and
-game identity on the framework thread. Logout refuses before probing native
-bodies, even before the next discovery/exit notification. Auxiliary preview
-bodies obey the same rule. Bone resolution additionally verifies the current
-slot skeleton and bone instance; a cached registry entry alone is not liveness.
-The binding registry is the one place that enforces the framework thread and
-exact-generation identity: off-thread it resolves nothing and reports
-`WrongThread`, so callers do not repeat either check. Callers keep their own
-thread check only for native work that does not go through a resolve.
-Skeleton-cache reuse also checks each native partial's identity and bone count;
-resource completion can replace those while the outer model address stays put.
+- Off the main thread it finds nothing and says so (`WrongThread`).
+- If the id's generation is not the current one, it finds nothing.
 
-## Actor identity
+Callers therefore do not repeat either check. A cached object is not proof that
+it still exists: the registry also checks that the skeleton and bone it returns
+are the ones the game has now.
 
-An actor's identity is its GameObjectId AND its object-table index. The index
-is not decoration: a GPose clone shares its source's GameObjectId, so cloning
-the local player produces an actor the game calls the same thing as the player.
+Changes found inside a game hook are never handled there. They are queued and
+handled on the next framework update.
 
-Two actors sharing an identity share a binding lineage and the registry's
-per-actor bone keys. The second one bound overwrites the first, so every bone
-of the loser resolves to a BoneId that binds to the winner's bone object; the
-reference check then fails and the loser is bone-dead — no pose import, no
-overlay toggles — until something reorders the table. The index is unique among
-coexisting objects and stable while an actor holds its slot, which buys
-uniqueness without costing the continuity the lineage depends on.
+## Which actors are in the scene
 
-One formula, in ActorManager.ActorIdentity. The spawn service's fail-closed
-wrapper check reads it from there rather than restating it, because the two
-must agree exactly or a freshly spawned actor cannot be bound at all.
+GPose actors sit at places 201 to 439 in the game's object table
+(`Poser.Game/Core/GPoseObjectTable.cs`).
 
-## Pose ownership across redraws
+An actor is identified by its game object id together with its place in the
+object table. The place matters because a GPose copy of a character has the same
+game object id as the character it was copied from. `ActorManager.ActorIdentity`
+in `Poser.Game/Runtime/ActorManager.cs` is the one place this is worked out;
+spawning reads it from there.
 
-Authored pose stacks are keyed by actor and slot, then bone name and partial,
-not by the current skeleton instance. After a redraw, the next apply pass
-resolves those stacks against the slot's current skeleton. Writes refuse bone
-names that the live skeleton cannot resolve. Pose retention therefore requires
-neither a migration between skeleton instances nor a user setting.
+An actor Poser spawns has two different numbers. One is the slot the game's
+client-object manager gave it, used to delete it. The other is its place in the
+object table, used for the 201 to 439 check. Never use one for the other.
 
-## Object identity and lifetime
+Poser can also bring a character from the world into the scene. It works on that
+character directly. When the character is released, or GPose ends, Poser puts
+its body back where it stood and gives back its visibility; the game's own
+animation then takes over its pose again.
 
-A spawned client object has two indices. `CreateBattleCharacter` returns the
-ClientObjectManager slot used for manager lookup and deletion. The global
-`GameObject.ObjectIndex` is that slot plus 200 for client objects. GPose range
-checks, world discovery, preview bodies, and parent indices use the global
-object-table index. Never substitute one for the other.
+## How a pose is applied each frame
 
-Spawn ownership records the slot, address, verified `EntityId`, and a
-destruction stamp. Creation, reads, writes, delayed callbacks, and deletion
-recheck that record on the framework thread. An unresolved or uncertain delete
-stays pending and is retried only while the same occupant is proven. A record
-without a usable slot is never probed. These records last only for the session.
-The create/copy/model-before-draw/GPose order is an intentional Brio-compatible
-choice. Companion replacement follows Brio's `ActorSpawnService.CreateCompanion`
-order and one-frame readiness delay, while `ModelTransformService`-style transform
-ownership remains independent: an attachment change never creates an override.
+Every frame the game animates each skeleton. Poser hooks the game's bone physics
+update (`BoneApplyPass` in `Poser.Game/Runtime`). After the game's own update has
+run, and only in GPose, Poser:
 
-A character-backed minion, mount, or ornament in an owner's native slot is an
-ordinary actor state owner. Its descriptor carries both the exact owner
-`ActorId` and `CompanionKind`; its pose, transform, presentation, and animation
-state stay keyed to its own exact generation. Changing the slot never migrates
-active ownership to the replacement. Attach, change, and detach are the one
-exception: those lifetime verbs always resolve and write through the current
-exact owner. Non-character-backed ornaments fail discovery and remain
-owner-controlled.
+1. Applies the user's bone edits on top of what the game produced, then IK.
+2. Refreshes the skeleton's positions.
+3. Reattaches the partial skeletons (such as the face and hair) to the body.
+4. Refreshes the positions again.
 
-Overworld discovery is read-only and separate from the GPose scan. It exposes
-ids, rechecks the full observation before use, and can only be used to create a
-world-actor clone that Poser owns. Poser never adopts, mutates, or deletes the
-source actor.
+Bone edits are stored by actor, equipment slot and bone name (`SkeletonKey`,
+`PoseStackStore`), not by the game's skeleton object. When a redraw gives the
+actor a new skeleton, the next frame applies the same edits to it. A bone name
+the new skeleton does not have is skipped.
 
-## Native ordering
+Later in the frame, after the game updates the scene and before it renders,
+`SceneFramePhaseService` runs, in this order:
 
-Character model-ID assignment and render-slot release have one native mutation
-owner, `CharacterModelNative`. Spawn and redraw keep their lifecycle ordering but
-use that same boundary; feature services must not replace model slots directly.
-Slot removal releases the model through its native lifetime operation, never by
-overwriting a reference count or releasing only a nested resource. Source checks
-reject competing model writers and direct reference-count assignments in Game.
+1. Map objects whose animation the user paused are held where they are.
+2. Things attached to other things (parenting) are moved to follow.
+3. Poser's camera replaces the game's view.
 
-Directly owned scene allocations (props, background objects and VFX) share
-`OwnedSceneObjectLifetime` for cleanup-before-destruction, including rollback.
-Callers retain incarnation checks and ownership records. Manager-owned actors
-still release through ClientObjectManager; reference-counted models release
-through their native reference operation. These are different ownership contracts,
-not interchangeable variants of a generic delete.
+If that hook cannot be installed, steps 1 and 2 run on the framework update
+instead.
 
-The Game scene-frame owner runs native scene update, scenery animation anchors,
-transform parenting, then camera view replacement, in that order. Parenting
-also refreshes collider placement before the existing IK collision solve reads
-its shapes. It reads the current posed skeleton, not inspector-driven caches.
-If the render hook is unavailable,
-that same owner pumps anchors/parenting from the framework callback; no camera or UI
-component owns a second fallback. Scenery anchors explicitly watch, anchor,
-pause or await reanchoring; resuming adopts the frozen placement before the
-next native animation update. Repeated camera phases must not reinterpret the
-anchor's own output as fresh native motion or consume a pending reanchor.
+## Changing models and freeing objects
 
-Awaited Penumbra redraws register `GameObjectRedrawn` before requesting redraw,
-matching Brio's notification-based completion. The Game-owned barrier correlates
-the exact actor, object-table slot, session and pending operation, then requires
-the current character skeleton and published bindings. A drawable old body is
-not completion. Cancellation, disappearance, provider loss and timeout release
-the observation and return failure.
+- Character model ids and the release of a character's model slots are written
+  only by `CharacterModelNative` in `Poser.Game/Appearance`. Spawning and
+  redrawing go through it too.
+- Props, map objects and effects that Poser creates are freed only through
+  `OwnedSceneObjectLifetime` in `Poser.Game/Natives`. Spawned actors are deleted
+  through the game's client-object manager instead, and borrowed map objects are
+  given back, never freed.
 
-Animation, IK, and physics run before Poser's saved pose layers are reapplied.
-The runtime then refreshes caches, reparents, refreshes again, and publishes
-the final snapshot. A missing slot is normal. Replacing one slot releases only
-that slot's bindings, caches, and pose state.
+## Waiting for a redraw
 
-Displayed partial-bone transforms and pose files are post-reparent model-space
-values; stored interactive deltas apply before reparenting. The runtime captures
-each partial root's before/after attachment frame and converts visible edit,
-import and IK-bake targets before computing their deltas. Rotation, translation
-and inherited scale all participate. Existing stored layers are not reinterpreted.
-An in-pass raw head-restore target is already in apply space and is not converted.
-This makes the partial-space adjustment explicit, as Ktisis's partial importer
-does, instead of relying on repeated head reconciliation to correct a wrong-space
-write. Duplicates retain visible child scales unchanged; physics-local restores
-run parent-first after the main import completes, not alongside it on timer ticks.
+When Poser asks Penumbra to redraw an actor and must wait for it to finish
+(`ActorRedrawBarrier`, `PenumbraRedrawRuntime`), it listens for Penumbra's
+"redrawn" notice before asking. It then waits until the actor has its new body
+and skeleton. A body that can already be drawn is not enough. If the actor goes
+away, Penumbra is unloaded, or the wait times out, the redraw counts as failed.
 
-The CharaView preview body is outside the 201–439 GPose scan and has no scene
-descriptor. It enters through its bindings. Panes, pickers, and gizmos read the
-snapshot. Refresh checks both scene and auxiliary-binding changes.
-
-Pose deltas include `(Slot, BoneName, PartialId)`. Slot-blind and name-only
-lookups are invalid. Named producer layers replace their own entries. Normal
-reset and history keep them; Reset All removes them.
-
-Lifecycle and final autosave rules are in
-[application-state.md](application-state.md). File and MCDF rules are in
-[files-and-transfer.md](../features/files-and-transfer.md); scene rules are in
-[scenes.md](../features/scenes.md).
+Where Poser copies Brio's or Ktisis's order of game calls on purpose, the code
+says so beside the call.
