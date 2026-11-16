@@ -24,6 +24,8 @@ A mount, minion or ornament attached to an actor only has General.
 - **Clothing only** hides the actor's body, hair, face and tail, so only the
   clothes show. It works on human actors only. Redrawing the actor brings the body
   back. A saved scene remembers it.
+- The **Import** and **Export** rows load and save poses. See
+  [Pose files and transfer](files-and-transfer.md#importing-a-pose).
 
 ### Tint and wet surface
 
