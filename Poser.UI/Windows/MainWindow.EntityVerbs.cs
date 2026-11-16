@@ -79,18 +79,6 @@ public partial class MainWindow
         return null;
     }
 
-    /// <summary>Whether the look-at action has anything to do — the context
-    /// menu's "Look at tracked actor", distinct from the row seat's
-    /// Brio-style retarget action.</summary>
-    private bool CanRecenterOnTracked(CameraId id) =>
-        _cameraTargets.Read(id)?.CanCenterTrackedActor == true;
-
-    private void RecenterCameraOnTrackedActor(CameraId cameraId)
-    {
-        var result = _cameraTargets.CenterTrackedActor(cameraId);
-        if (!result.Success) _notices.Refused(result.Detail ?? "The camera could not move.");
-    }
-
     /// <summary>Whether the current selection is empty or every selected
     /// entity has <paramref name="parent"/> as its group (null = root).</summary>
     private bool SelectionParentIs(Guid? parent)
