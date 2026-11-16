@@ -187,8 +187,9 @@ public sealed unsafe partial class AnimationNativeState
         _log = log;
         _bindings = bindings;
 
-        // Resolve functions independently. Callers check the capabilities they require;
-        // optional helpers can be absent while another animation operation remains available.
+        // A function the scan can't find after a game patch stays null and Poser still
+        // loads: each caller checks the functions it needs, so only the features that
+        // use a missing function stop working.
         _setEmoteMode = ScanDelegate<SetEmoteModeDelegate>(
             sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetMode, "SetEmoteMode");
         _cancelTimeline = ScanDelegate<CancelTimelineDelegate>(
@@ -229,16 +230,9 @@ public sealed unsafe partial class AnimationNativeState
     private T? ScanDelegate<T>(ISigScanner scanner, string signature, string name)
         where T : Delegate
     {
-        try
-        {
-            if (scanner.TryScanText(signature, out var address) && address != nint.Zero)
-                return Marshal.GetDelegateForFunctionPointer<T>(address);
-            _log.Warning($"Animation: {name} signature not found; stance changes will fail explicitly.");
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"Animation: {name} scan failed ({ex.Message}); stance changes will fail explicitly.");
-        }
+        if (scanner.TryScanText(signature, out var address))
+            return Marshal.GetDelegateForFunctionPointer<T>(address);
+        _log.Warning($"Animation: {name} was not found in the game; the animation features that use it are off.");
         return null;
     }
 
