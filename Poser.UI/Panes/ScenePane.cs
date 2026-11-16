@@ -372,7 +372,7 @@ public sealed class ScenePane
                     placeholder: "Optional description",
                     disabled: busy);
                 form.Switch(
-                    "Include MCDFs",
+                    "Include appearance files",
                     SaveOptions.IncludeModdedAppearance,
                     next => SaveOptions = SaveOptions with
                     {
@@ -799,7 +799,7 @@ public sealed class ScenePane
                 disabled: false,
                 fullWidth: false,
                 new CheckItem(
-                    "Modded appearance",
+                    "Appearance files",
                     SaveOptions.IncludeModdedAppearance,
                     next => SaveOptions = SaveOptions with
                     {
