@@ -94,7 +94,6 @@ public partial class PoseInspectorPane : IDisposable
     private readonly FrameProfiler _profiler;
     private string? _transformClipboardNote;
     private Transform? _dragStart;
-    private Transform? _cleanModelStart;
     private Transform? _cleanDisplayedCurrent;
     private TransformGestureId? _cleanGesture;
 
@@ -437,13 +436,11 @@ public partial class PoseInspectorPane : IDisposable
                 return (Quaternion.Identity, Quaternion.Identity, false);
             Matrix4x4.Decompose(actorMatrix, out _, out var actorRotation, out _);
 
-            Transform model;
-            if (_cleanGesture != null)
-                model = transform;
-            else if (ViewportBoneModel(boneId) is { } live)
-                model = live;
-            else
-                return (Quaternion.Identity, Quaternion.Identity, false);
+            // The model matrix above resolved this same bone, so its model
+            // transform is readable too.
+            var model = _cleanGesture != null
+                ? transform
+                : ViewportBoneModel(boneId)!.Value;
 
             Quaternion frameWorld;
             if (_editorState.RotationPivot == Domain.Preferences.RotationPivot.Parent &&
@@ -477,7 +474,9 @@ public partial class PoseInspectorPane : IDisposable
         var (transform, canEdit) = ReadTransform();
         if (!canEdit) return;
         BeginTransformSession(transform, DomainOperation.Rotate);
-        if (_cleanGesture == null || _dragStart is not { } start)
+        // The gesture service can refuse to start, for example while another
+        // gesture is running.
+        if (_dragStart is not { } start)
             return;
         var rotation = Quaternion.Normalize(totalDelta * start.Rotation);
         _dragEuler = null; // the numeric wells re-derive from the quaternion
@@ -1522,8 +1521,7 @@ public partial class PoseInspectorPane : IDisposable
                 "Paste",
                 () =>
                 {
-                    if (_transformClipboard.Copied is not { } copied)
-                        return;
+                    var copied = _transformClipboard.Copied!.Value;
                     var written = _cleanTransforms.SetAbsolute(
                         target,
                         new Domain.Transforms.PoseTransform(
@@ -2719,7 +2717,6 @@ public partial class PoseInspectorPane : IDisposable
 
     public void ResetActorTransform()
     {
-        if (!IsActorSelection) return;
         _cleanTransforms.ClearActorOverrides(
             SelectedActorIds().Select(TransformTargetId.ForActor).ToList());
     }
@@ -2839,58 +2836,28 @@ public partial class PoseInspectorPane : IDisposable
         Transform displayedStart,
         DomainOperation operation)
     {
-        if (_cleanGesture != null || _gestureRestartSuppressed || _primary == null)
+        // Every edit calls this; only the first one of a drag starts it.
+        if (_cleanGesture != null)
             return;
 
-        if (EffectiveSelection() is not { } effective)
-        {
-            _dragStart ??= displayedStart;
-            return;
-        }
-
-        IReadOnlyList<TransformTargetId> targets;
-        Transform modelStart;
-        DomainPivot pivotMode;
+        // Callers start a drag only when ReadTransform allowed editing, and
+        // that requires this same effective selection.
+        var effective = EffectiveSelection()!;
+        var targets = effective.Targets;
+        // Several entities rotate around their shared centre; bones always
+        // rotate around their own joints.
+        var pivotMode = targets.Count > 1 && effective.Primary.Kind != TransformTargetKind.Bone
+            ? DomainPivot.Centroid
+            : DomainPivot.PerTarget;
         Vector3? customPivot = null;
-
-        switch (effective.Primary)
+        // A parent pivot is fixed where the parent stood when the drag began.
+        if (effective.Primary is { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId } &&
+            operation == DomainOperation.Rotate &&
+            _editorState.RotationPivot == Domain.Preferences.RotationPivot.Parent &&
+            ViewportParentModel(primaryBoneId)?.Position is { } frozenPivot)
         {
-            case { Kind: TransformTargetKind.Actor }:
-            case { Kind: TransformTargetKind.Light }:
-            case { Kind: TransformTargetKind.Prop }:
-            case { Kind: TransformTargetKind.WorldObject }:
-            case { Kind: TransformTargetKind.Collider }:
-            {
-                targets = effective.Targets;
-                modelStart = displayedStart;
-                // Multi-target rotations use the selection centroid.
-                pivotMode = targets.Count > 1
-                    ? DomainPivot.Centroid
-                    : DomainPivot.PerTarget;
-                break;
-            }
-
-            case { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId }:
-            {
-                if (ViewportBoneModel(primaryBoneId) is not { } primaryModel)
-                    return;
-                targets = effective.Targets;
-                modelStart = primaryModel;
-                pivotMode = DomainPivot.PerTarget;
-                // Parent pivots are fixed at gesture start.
-                if (operation == DomainOperation.Rotate &&
-                    _editorState.RotationPivot == Domain.Preferences.RotationPivot.Parent &&
-                    ViewportParentModel(primaryBoneId)?.Position is { } frozenPivot)
-                {
-                    pivotMode = DomainPivot.Custom;
-                    customPivot = frozenPivot;
-                }
-                break;
-            }
-
-            default:
-                _dragStart ??= displayedStart;
-                return;
+            pivotMode = DomainPivot.Custom;
+            customPivot = frozenPivot;
         }
 
         var begin = _cleanTransforms.BeginDrag(
@@ -2899,7 +2866,6 @@ public partial class PoseInspectorPane : IDisposable
             return;
 
         _dragStart = displayedStart;
-        _cleanModelStart = modelStart;
         _cleanDisplayedCurrent = displayedStart;
         _cleanGesture = gesture;
         _cleanGroupFrame = IsMultiEntitySelection ? _groupCoordinator.SelectionFrame(_selection.Selected) : null;
@@ -2908,15 +2874,9 @@ public partial class PoseInspectorPane : IDisposable
 
     private void ApplyTransformSession(Transform displayedAfter)
     {
-        if (!IsMultiEntitySelection && _primary?.Kind is not (SceneEntityKind.Actor or SceneEntityKind.GazeTarget or SceneEntityKind.Bone) &&
-            _primary is not { Kind: SceneEntityKind.Light } &&
-            _primary is not { Kind: SceneEntityKind.Prop } &&
-            _primary is not { Kind: SceneEntityKind.Overlay } &&
-            _primary is not { Kind: SceneEntityKind.WorldObject })
-            return;
-
+        // Nothing to apply when the gesture service refused the drag.
         if (_cleanGesture is not { } gesture ||
-            _cleanModelStart is not { } modelStart)
+            _dragStart is not { } modelStart)
             return;
 
         if (_primary?.Bone is { } bone && _cleanDisplayedCurrent is { } previous
@@ -2986,7 +2946,6 @@ public partial class PoseInspectorPane : IDisposable
         _dragEuler = null;
         _cleanGesture = null;
         _cleanGroupFrame = null;
-        _cleanModelStart = null;
         _cleanDisplayedCurrent = null;
         _scaleGestureAxis = -1;
         _scaleGestureAltApplied = false;
