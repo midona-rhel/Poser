@@ -112,11 +112,6 @@ public sealed partial class PoseLibraryPane
 
     private readonly LibraryDetailsPanel _details;
 
-    /// <summary>Positional against <see cref="ObjectPlacementMode"/>.</summary>
-    private static readonly string[] PlacementModeLabels =
-        ["As saved", "Relative to camera", "Relative to actor",
-         "In front of camera"];
-
 
 
 
@@ -498,14 +493,16 @@ public sealed partial class PoseLibraryPane
     {
         _placementChoices.Clear();
         _placementChoiceLabels.Clear();
-        _placementChoices.Add(ObjectPlacementMode.InFrontOfCamera);
-        _placementChoiceLabels.Add(PlacementModeLabels[3]);
-        _placementChoices.Add(ObjectPlacementMode.AsSaved);
-        _placementChoiceLabels.Add(PlacementModeLabels[0]);
-        _placementChoices.Add(ObjectPlacementMode.RelativeToCamera);
-        _placementChoiceLabels.Add(PlacementModeLabels[1]);
-        _placementChoices.Add(ObjectPlacementMode.RelativeToSelectedActor);
-        _placementChoiceLabels.Add(PlacementModeLabels[2]);
+        // The Library lists In front of camera first.
+        foreach (var mode in new[]
+                 {
+                     ObjectPlacementMode.InFrontOfCamera, ObjectPlacementMode.AsSaved,
+                     ObjectPlacementMode.RelativeToCamera, ObjectPlacementMode.RelativeToSelectedActor,
+                 })
+        {
+            _placementChoices.Add(mode);
+            _placementChoiceLabels.Add(PlacementLabels.For(mode));
+        }
     }
 
     private readonly SceneLoadPreferences _scenePreferences;

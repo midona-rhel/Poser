@@ -719,9 +719,6 @@ public sealed class ScenePane
     /// File currently highlighted in a load dialog, used for its placement choice.
     /// </summary>
     private string? _loadPath;
-    private static readonly string[] ScenePlacementLabels =
-        ["As saved", "Relative to camera", "Relative to selected actor", "In front of camera"];
-
     private void DrawSessionOptions(FormScope form, bool disabled)
     {
         form.Checkboxes(
@@ -738,7 +735,7 @@ public sealed class ScenePane
             savedTerritory = metadata?.TerritoryId ?? 0;
         var mode = _preferences.PlacementFor(_loadPath ?? string.Empty, savedTerritory,
             _place.Current.TerritoryId, _config.Config.DefaultSpawnPlacement);
-        form.Dropdown("Placement", ScenePlacementLabels, (int)mode,
+        form.Dropdown("Placement", PlacementLabels.All, (int)mode,
             next =>
             {
                 if (_loadPath is { } selected) _preferences.SetPlacement(selected, (ObjectPlacementMode)next);

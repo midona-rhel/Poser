@@ -5,10 +5,14 @@ using Poser.Domain.Transforms;
 namespace Poser.Application.Transforms;
 
 /// <summary>
-/// Non-interactive transform commands with exhaustive rollback evidence.
+/// Changes transforms from a typed value or a command, outside a drag. Each call
+/// is one undo step. If a write fails part-way, everything already written is put
+/// back. If that fails too, the result says so and later edits wait until it works.
 /// </summary>
 public sealed class TransformCommandService
 {
+    private const string Cancelled = "Transform application was cancelled.";
+
     private readonly SceneSession _scene;
     private readonly ITransformRuntimePort _runtime;
     private readonly EditHistory _history;
@@ -31,89 +35,20 @@ public sealed class TransformCommandService
         PoseTransform desired,
         string description)
     {
-        if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
-            return recoveryBarrier;
-        using var transition = _gestures.TryEnterTransition();
-        if (transition == null)
-            return _gestures.Busy();
-        if (_gestures.ActiveGesture != null)
-            return GestureResult.Fail(
-                "A transform gesture is active.");
-        TransformPortResult captured;
-        try
-        {
-            captured = Capture(target);
-        }
-        catch (Exception exception)
-        {
-            return ThrownFailureAfterRecovery(
-                $"Could not capture {target}",
-                exception,
-                Array.Empty<TransformTargetState>());
-        }
-        if (!captured.Success || captured.State == null)
-            return GestureResult.Fail(captured.Detail!);
-        var before = captured.State;
-
-        TransformPortResult applied;
-        try
-        {
-            applied = _runtime.ApplyAbsolute(before, desired);
-        }
-        catch (Exception exception)
-        {
-            return ThrownFailureAfterRecovery(
-                $"Could not transform {target}", exception, new[] { before });
-        }
-        if (!applied.Success)
-        {
-            var rollback = _gestures.AttemptRecovery(new[] { before });
-            return FailureAfterRecovery(
-                applied.Detail ?? $"Could not transform {target}.",
-                rollback);
-        }
-
-        TransformPortResult after;
-        try
-        {
-            after = _runtime.Capture(target);
-        }
-        catch (Exception exception)
-        {
-            return ThrownFailureAfterRecovery(
-                $"Could not capture {target} after transform",
-                exception,
-                new[] { before });
-        }
-        if (!after.Success || after.State == null)
-        {
-            var rollback = _gestures.AttemptRecovery(new[] { before });
-            return FailureAfterRecovery(
-                after.Detail ?? $"Could not capture {target}.",
-                rollback);
-        }
-
-        _history.Append(new TransformPatch(
-            description,
-            new[] { before },
-            new[] { after.State }));
-        return GestureResult.Ok();
+        if (Enter(out var transition) is { } refused)
+            return refused;
+        using (transition)
+            return Change([target], (before, _) => _runtime.ApplyAbsolute(before, desired),
+                description, "Could not transform", "transform");
     }
 
     /// <summary>
-    /// Writes several absolute transforms as ONE history entry. Used
-    /// where a single user act moves many bones at once — baking a facial
-    /// animation into the pose, for example — so undo puts all of them
-    /// back together instead of unwinding bone by bone.
-    ///
-    /// Every target is captured before anything is written, and any
-    /// failure attempts every captured baseline in order. Incomplete rollback
-    /// is returned as typed recovery evidence and blocks later mutations.
-    /// Targets not supplied are untouched, which is what leaves expression,
-    /// gaze, and unrelated manual edits intact.
-    /// A supplied cancellation probe is sampled between native calls and
-    /// immediately before history commit; cancellation restores every frozen
-    /// baseline and never starts a later write or appends a patch.
+    /// Sets several transforms as one undo step, parents before children. Used
+    /// where one action moves many bones, such as baking an expression into the
+    /// pose. Targets that are not listed are left alone.
+    /// <paramref name="cancellationRequested"/> is asked between writes and once
+    /// more before the step is recorded. A cancel puts everything back and
+    /// records nothing.
     /// </summary>
     public GestureResult SetAbsoluteMany(
         IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
@@ -121,183 +56,116 @@ public sealed class TransformCommandService
         bool rawBaseline = false,
         Func<bool>? cancellationRequested = null)
     {
-        if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
-            return recoveryBarrier;
-        using var transition = _gestures.TryEnterTransition();
-        if (transition == null)
-            return _gestures.Busy();
-        if (_gestures.ActiveGesture != null)
-            return GestureResult.Fail("A transform gesture is active.");
-        if (writes.Count == 0)
-            return GestureResult.Fail("Nothing to apply.");
-
-        var before = new List<TransformTargetState>(writes.Count);
-        foreach (var (target, _) in writes)
+        if (Enter(out var transition) is { } refused)
+            return refused;
+        using (transition)
         {
-            TransformPortResult captured;
-            try
-            {
-                captured = Capture(target);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not capture {target}", exception, before);
-            }
-            if (!captured.Success || captured.State == null)
-                return GestureResult.Fail(captured.Detail!);
-            before.Add(captured.State);
-            if (cancellationRequested?.Invoke() == true)
-                return CancelledAfterRecovery(before);
+            if (writes.Count == 0)
+                return GestureResult.Fail("Nothing to apply.");
+            return Change(
+                writes.Select(write => write.Target).ToArray(),
+                (before, index) => _runtime.ApplyAbsolute(before, writes[index].Desired, rawBaseline),
+                description, "Could not transform", "transform",
+                parentsFirst: true, cancellationRequested);
         }
-
-        foreach (int i in Enumerable.Range(0, writes.Count).OrderBy(i => _runtime.DependencyDepth(before[i].Target)))
-        {
-            if (cancellationRequested?.Invoke() == true)
-                return CancelledAfterRecovery(before);
-            TransformPortResult applied;
-            try
-            {
-                applied = _runtime.ApplyAbsolute(
-                    before[i], writes[i].Desired, rawBaseline);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not transform {writes[i].Target}",
-                    exception,
-                    before);
-            }
-            if (cancellationRequested?.Invoke() == true)
-                return CancelledAfterRecovery(before);
-            if (applied.Success)
-                continue;
-            var rollback = _gestures.AttemptRecovery(before);
-            return FailureAfterRecovery(
-                applied.Detail ?? $"Could not transform {writes[i].Target}.",
-                rollback);
-        }
-
-        var after = new List<TransformTargetState>(before.Count);
-        foreach (var state in before)
-        {
-            TransformPortResult captured;
-            try
-            {
-                captured = _runtime.Capture(state.Target);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not capture {state.Target} after transform",
-                    exception,
-                    before);
-            }
-            if (!captured.Success || captured.State == null)
-            {
-                var rollback = _gestures.AttemptRecovery(before);
-                return FailureAfterRecovery(
-                    captured.Detail ?? $"Could not capture {state.Target}.",
-                    rollback);
-            }
-            after.Add(captured.State);
-            if (cancellationRequested?.Invoke() == true)
-                return CancelledAfterRecovery(before);
-        }
-
-        if (cancellationRequested?.Invoke() == true)
-            return CancelledAfterRecovery(before);
-        _history.Append(new TransformPatch(description, before, after));
-        return GestureResult.Ok();
     }
 
+    /// <summary>Lets the game place these actors again, as one undo step.</summary>
     public GestureResult ClearActorOverrides(
         IReadOnlyList<TransformTargetId> targets,
         string description)
     {
-        if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
-            return recoveryBarrier;
-        using var transition = _gestures.TryEnterTransition();
+        if (Enter(out var transition) is { } refused)
+            return refused;
+        using (transition)
+        {
+            if (targets.Count == 0)
+                return GestureResult.Fail("No actors were supplied.");
+            if (targets.Any(target => target.Kind != TransformTargetKind.Actor))
+                return GestureResult.Fail("Only actor transforms can clear model overrides.");
+            return Change(
+                targets.Distinct().ToArray(),
+                (before, _) => _runtime.Restore(before with { HasOverride = false }),
+                description, "Could not clear actor override", "reset");
+        }
+    }
+
+    /// <summary>
+    /// Refuses while an earlier failed edit is still being put back, while another
+    /// edit is being applied, or during a drag. Otherwise the caller holds
+    /// <paramref name="transition"/> until its own edit is done.
+    /// </summary>
+    private GestureResult? Enter(out IDisposable? transition)
+    {
+        transition = null;
+        if (_gestures.RecoveryBarrier() is { } waiting)
+            return waiting;
+        transition = _gestures.TryEnterTransition();
         if (transition == null)
             return _gestures.Busy();
-        if (_gestures.ActiveGesture != null)
-            return GestureResult.Fail(
-                "A transform gesture is active.");
-        if (targets.Count == 0)
-            return GestureResult.Fail("No actors were supplied.");
-        if (targets.Any(target =>
-                target.Kind != TransformTargetKind.Actor))
-            return GestureResult.Fail(
-                "Only actor transforms can clear model overrides.");
+        if (_gestures.ActiveGesture == null)
+            return null;
+        transition.Dispose();
+        transition = null;
+        return GestureResult.Fail("A transform gesture is active.");
+    }
+
+    /// <summary>
+    /// Reads every target, writes each one, reads them all again and records the
+    /// undo step. A failed read before the first write changes nothing. Any
+    /// failure after that puts every target back.
+    /// </summary>
+    private GestureResult Change(
+        IReadOnlyList<TransformTargetId> targets,
+        Func<TransformTargetState, int, TransformPortResult> write,
+        string description,
+        string writeFailure,
+        string afterWhat,
+        bool parentsFirst = false,
+        Func<bool>? cancellationRequested = null)
+    {
+        bool IsCancelled() => cancellationRequested?.Invoke() == true;
 
         var before = new List<TransformTargetState>(targets.Count);
-        foreach (var target in targets.Distinct())
+        foreach (var target in targets)
         {
-            TransformPortResult captured;
-            try
-            {
-                captured = Capture(target);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not capture {target}", exception, before);
-            }
+            var captured = Try(() => Capture(target), $"Could not capture {target}");
             if (!captured.Success || captured.State == null)
                 return GestureResult.Fail(captured.Detail!);
             before.Add(captured.State);
+            if (IsCancelled())
+                return PutBack(Cancelled, before);
         }
 
-        foreach (var state in before)
+        var order = Enumerable.Range(0, before.Count);
+        if (parentsFirst)
+            order = order.OrderBy(index => _runtime.DependencyDepth(before[index].Target));
+        foreach (int index in order)
         {
-            var cleared = state with { HasOverride = false };
-            TransformPortResult result;
-            try
-            {
-                result = _runtime.Restore(cleared);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not clear actor override {state.Target}",
-                    exception,
-                    before);
-            }
-            if (result.Success)
-                continue;
-            var rollback = _gestures.AttemptRecovery(before);
-            return FailureAfterRecovery(
-                result.Detail ??
-                $"Could not clear actor override {state.Target}.",
-                rollback);
+            if (IsCancelled())
+                return PutBack(Cancelled, before);
+            var target = before[index].Target;
+            var written = Try(() => write(before[index], index), $"{writeFailure} {target}");
+            if (IsCancelled())
+                return PutBack(Cancelled, before);
+            if (!written.Success)
+                return PutBack(written.Detail ?? $"{writeFailure} {target}.", before);
         }
 
         var after = new List<TransformTargetState>(before.Count);
         foreach (var state in before)
         {
-            TransformPortResult captured;
-            try
-            {
-                captured = _runtime.Capture(state.Target);
-            }
-            catch (Exception exception)
-            {
-                return ThrownFailureAfterRecovery(
-                    $"Could not capture {state.Target} after reset",
-                    exception,
-                    before);
-            }
+            string failure = $"Could not capture {state.Target} after {afterWhat}";
+            var captured = Try(() => _runtime.Capture(state.Target), failure);
             if (!captured.Success || captured.State == null)
-            {
-                var rollback = _gestures.AttemptRecovery(before);
-                return FailureAfterRecovery(
-                    captured.Detail ??
-                    $"Could not capture {state.Target} after reset.",
-                    rollback);
-            }
+                return PutBack(captured.Detail ?? $"{failure}.", before);
             after.Add(captured.State);
+            if (IsCancelled())
+                return PutBack(Cancelled, before);
         }
 
+        if (IsCancelled())
+            return PutBack(Cancelled, before);
         _history.Append(new TransformPatch(description, before, after));
         return GestureResult.Ok();
     }
@@ -311,33 +179,27 @@ public sealed class TransformCommandService
         return _runtime.Capture(target);
     }
 
-    private static GestureResult FailureAfterRecovery(
-        string primaryFailure,
-        TransformRecoveryReceipt recovery) =>
-        GestureResult.Fail(TransformRecovery.AppendRollbackFailure(
-            primaryFailure,
-            recovery)) with
+    /// <summary>Runs one call into the game. An exception becomes a failed result.</summary>
+    private static TransformPortResult Try(Func<TransformPortResult> call, string failure)
+    {
+        try
+        {
+            return call();
+        }
+        catch (Exception exception)
+        {
+            return TransformPortResult.Fail(
+                TransformPortStatus.NativeUnavailable, $"{failure}: {exception.Message}");
+        }
+    }
+
+    /// <summary>Restores the values read before the edit and reports the failure.</summary>
+    private GestureResult PutBack(string failure, IReadOnlyList<TransformTargetState> before)
+    {
+        var recovery = _gestures.AttemptRecovery(before);
+        return GestureResult.Fail(TransformRecovery.AppendRollbackFailure(failure, recovery)) with
         {
             Recovery = recovery,
         };
-
-    private GestureResult ThrownFailureAfterRecovery(
-        string operation,
-        Exception exception,
-        IReadOnlyList<TransformTargetState> baselines)
-    {
-        var recovery = _gestures.AttemptRecovery(baselines);
-        return FailureAfterRecovery(
-            $"{operation}: {exception.Message}",
-            recovery);
-    }
-
-    private GestureResult CancelledAfterRecovery(
-        IReadOnlyList<TransformTargetState> baselines)
-    {
-        var recovery = _gestures.AttemptRecovery(baselines);
-        return FailureAfterRecovery(
-            "Transform application was cancelled.",
-            recovery);
     }
 }
