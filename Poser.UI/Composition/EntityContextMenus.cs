@@ -267,8 +267,7 @@ internal sealed partial class EntityContextMenus
     private bool CanRecenterOnTracked(CameraId id) => _cameraTargets.Read(id)?.CanCenterTrackedActor == true;
     private void RecenterCameraOnTrackedActor(CameraId id)
     {
-        var result = _cameraTargets.CenterTrackedActor(id);
-        if (!result.Success) _notices.Refused(result.Detail ?? "The camera could not move.");
+        _notices.Report(_cameraTargets.CenterTrackedActor(id), "Look at tracked actor", refusal: true);
     }
     private void OpenEntityRename(string title, string current, Action<string> apply) =>
         _names.Open(title, current, apply);

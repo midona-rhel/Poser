@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Scene;
 using System;
 using System.Collections.Generic;
@@ -502,7 +503,7 @@ public sealed partial class AppearancePane
             else if (saved.AppearanceRefusal is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.PoserHeld)
                 _accessAt = DateTime.MinValue;
             else
-                _notices.Failed($"Save design: {saved.Detail}");
+                _notices.Report(new Outcome(false, saved.Detail), "Save design");
         }, placeholder: "Design name");
     }
 

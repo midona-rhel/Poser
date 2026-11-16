@@ -24,8 +24,7 @@ public partial class PoseInspectorPane
             else
             {
                 _fabrikPicking = null;
-                if (_ikPort.SetFabrikTarget(target, mode) is { Success: false } failed)
-                    _notices.Failed($"IK target: {failed.Detail}");
+                _notices.Report(_ikPort.SetFabrikTarget(target, mode), "Target");
             }
         }, help: "The selected bone follows the actor, a world point, a bone or a scene entity");
         if (shownMode == IkTargetMode.Bone) DrawIkBoneTarget(form, endpoint, target, fabrik: true);

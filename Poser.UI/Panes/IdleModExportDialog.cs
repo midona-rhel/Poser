@@ -1,3 +1,4 @@
+using Poser.Domain;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -50,7 +51,7 @@ public sealed class IdleModExportDialog(IdleModExport export, UserNotices notice
                 _open = true;
             });
         }
-        catch (Exception ex) { await framework.RunOnFrameworkThread(() => notices.Failed("Idle export", ex.Message)); }
+        catch (Exception ex) { await framework.RunOnFrameworkThread(() => notices.Report(Outcome.Fail(ex.Message), "Export Idle Pose")); }
         finally { _loading = false; }
     }
 
@@ -132,7 +133,7 @@ public sealed class IdleModExportDialog(IdleModExport export, UserNotices notice
         }
         catch (Exception ex)
         {
-            await framework.RunOnFrameworkThread(() => { notices.Failed("Idle export", ex.Message); _open = true; });
+            await framework.RunOnFrameworkThread(() => { notices.Report(Outcome.Fail(ex.Message), "Save and Export"); _open = true; });
         }
     }
 }

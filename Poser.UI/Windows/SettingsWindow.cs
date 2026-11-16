@@ -343,7 +343,7 @@ public class SettingsWindow : Window
         {
             if (vm.Library.IsPending(source) || !vm.Library.StillSaved(source, _configuration.Config.Library))
             {
-                _notices.Refused("The source changed. Save or cancel pending edits and retry.");
+                _notices.Report(Outcome.Fail("The source changed. Save or cancel pending edits and retry."), "Open folder", refusal: true);
                 return;
             }
             var path = source.Path;
@@ -351,14 +351,14 @@ public class SettingsWindow : Window
             {
                 if (!System.IO.Directory.Exists(path))
                 {
-                    _notices.Failed($"Folder '{path}' is missing or inaccessible. No folder was created.");
+                    _notices.Report(Outcome.Fail($"Folder '{path}' is missing or inaccessible. No folder was created."), "Open folder");
                     return;
                 }
                 Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                _notices.Failed($"Could not open '{path}': {ex.Message}");
+                _notices.Report(Outcome.Fail($"Could not open '{path}': {ex.Message}"), "Open folder");
             }
         };
         vm.OnRetrySources = () =>
@@ -371,7 +371,7 @@ public class SettingsWindow : Window
             if (vm.Library.TryRepair(issue, _configuration.Config.Library, out var detail))
                 _notices.Done("Folder created. Retrying saved sources.");
             else
-                _notices.Failed(detail);
+                _notices.Report(Outcome.Fail(detail), "Create folder");
             _library.RequestScan();
         };
 
@@ -430,7 +430,7 @@ public class SettingsWindow : Window
         if (!_vm.Library.TryApply(_configuration.Config.Library, out var detail))
         {
             _vm.LibraryStatus = detail;
-            _notices.Refused(detail);
+            _notices.Report(Outcome.Fail(detail), "Save", refusal: true);
             _vm.Category = SettingsView.LibraryPage;
             return;
         }

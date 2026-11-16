@@ -1,3 +1,4 @@
+using Poser.Domain;
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -115,7 +116,7 @@ public sealed class IssueReportModal
     private void Failed(string detail)
     {
         _saving = false;
-        _notices.Failed("Issue report", detail);
+        _notices.Report(Outcome.Fail(detail), "Save report");
     }
 
     private static void Paragraph(string text, TextStyle style, float scale)

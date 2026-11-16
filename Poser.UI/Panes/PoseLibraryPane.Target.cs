@@ -1,3 +1,4 @@
+using Poser.Domain;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -125,7 +126,7 @@ public sealed partial class PoseLibraryPane
     {
         if (CurrentApplyTarget() is not { } actor)
         {
-            _notices.Refused("No actor to apply to.");
+            _notices.Report(Outcome.Fail("No actor to apply to."), "Apply", refusal: true);
             return;
         }
         ApplyTo(index, actor);

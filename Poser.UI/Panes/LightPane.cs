@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Application.Selection;
 using Poser.Domain.Transforms;
 using System;
@@ -158,12 +159,13 @@ public sealed class LightPane
             help: "Placement for new entities, duplicates and loaded files");
     }
 
-    /// <summary>Opens the load dialog from outside the pane — the add-entity
-    /// menu's "New light from file…".</summary>
-    public void OpenLoad()
+    /// <summary>Opens the light load dialog. <paramref name="control"/> is
+    /// the name of the button or row that opened it; a failure is reported
+    /// under it.</summary>
+    public void OpenLoad(string control)
     {
         _folder.Open(_loadBrowser,
-            path => _scenePane.LoadEntry(path, _configuration.Config.DefaultSpawnPlacement));
+            path => _scenePane.LoadEntry(path, _configuration.Config.DefaultSpawnPlacement, control));
     }
 
     /// <summary>
@@ -398,8 +400,7 @@ public sealed class LightPane
     private void ApplyGoboIndex(LightId? target, uint index)
     {
         if (target is not { } id || _values.Gobos.Count == 0) return;
-        var result = _values.ApplyGobo(id, Math.Min(index, (uint)(_values.Gobos.Count - 1)));
-        if (!result.Success) _notices.Failed($"Gobo: {result.Detail}");
+        _notices.Report(_values.ApplyGobo(id, Math.Min(index, (uint)(_values.Gobos.Count - 1))), "Gobo");
     }
 
     /// <summary>
@@ -500,7 +501,7 @@ public sealed class LightPane
     {
         form.Actions("Light file", actions =>
         {
-            actions.Button("Load", OpenLoad,
+            actions.Button("Load", () => OpenLoad("Load"),
                 help: "Add a light from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(light.Id));
             actions.Button("Save to library", () => _names.Open(
@@ -532,9 +533,9 @@ public sealed class LightPane
             actions.Button("Clone",
                 () =>
                 {
-                    if (_creation.Duplicate(SelectionId.ForLight(lightId)).Handle is null)
-                        _notices.Failed(
-                            "Clone: the light could not be created.");
+                    var clone = _creation.Duplicate(SelectionId.ForLight(lightId));
+                    if (clone.Handle is null)
+                        _notices.Report(new Outcome(false, clone.Detail), "Clone");
                 },
                 help: "Duplicate this light");
             // A borrowed native is never destructed: a captured light is given

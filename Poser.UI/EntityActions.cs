@@ -33,7 +33,7 @@ public sealed class EntityActions(SelectionEntityCommands commands, EntityLockCo
         }
         catch (Exception exception)
         {
-            notices.Failed("Remove", exception.Message);
+            notices.Report(Poser.Domain.Outcome.Fail(exception.Message), "Remove");
             return null;
         }
     }

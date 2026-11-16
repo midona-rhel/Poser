@@ -208,12 +208,12 @@ internal sealed partial class EntityContextMenus
                 var captured = region;
                 reset.Add(new(region == Domain.Posing.PoseRegion.All ? "Pose" : region.ToString(), TablerIcon.Refresh,
                     disabled: _scene.Snapshot.FindActor(actor)?.CharacterSkeleton == null, disruptive: true)
-                { OnInvoke = () => { var result = _cleanPose.Reset(actor, captured); if (!result.Success) _notices.Failed("Reset pose", result.Detail ?? "The pose could not be reset."); } });
+                { OnInvoke = () => _notices.Report(_cleanPose.Reset(actor, captured).Outcome, captured == Domain.Posing.PoseRegion.All ? "Reset pose" : "Reset " + captured.ToString().ToLowerInvariant()) });
             }
         }
         else if (id.Overlay is { } overlay && !worldEntity)
             reset.Add(new("Size and opacity", TablerIcon.Refresh)
-            { OnInvoke = () => { var result = _overlayControl.Set(overlay, Application.Presentation.OverlayProperties.Size, (1f, 1f)); if (!result.Success) _notices.Failed("Reset", result.Detail ?? "The overlay could not be reset."); } });
+            { OnInvoke = () => _notices.Report(_overlayControl.Set(overlay, Application.Presentation.OverlayProperties.Size, (1f, 1f)), "Reset size and opacity") });
         if (reset.Count == 0 || items.Any(item => item.Label == "Reset")) return;
         items.Add(new("Reset", TablerIcon.Refresh, submenuItems: reset.ToArray())); actions.Add(null);
     }

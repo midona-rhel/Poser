@@ -109,12 +109,13 @@ public sealed class CameraPane
         _loadBrowser.Draw();
     }
 
-    /// <summary>Opens the load dialog from outside the pane — the cameras
-    /// header's "New camera from file…".</summary>
-    public void OpenLoad()
+    /// <summary>Opens the camera load dialog. <paramref name="control"/> is
+    /// the name of the button or row that opened it; a failure is reported
+    /// under it.</summary>
+    public void OpenLoad(string control)
     {
         _folder.Open(_loadBrowser, path => _scenePane.LoadEntry(
-            path, _configuration.Config.DefaultSpawnPlacement));
+            path, _configuration.Config.DefaultSpawnPlacement, control));
     }
 
     /// <summary>Frames one exact actor through the live orbit camera. The
@@ -637,7 +638,7 @@ public sealed class CameraPane
     {
         form.Actions("Camera file", actions =>
         {
-            actions.Button("Load", OpenLoad,
+            actions.Button("Load", () => OpenLoad("Load"),
                 help: "Add a camera from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(camera.Id));
             actions.Button("Save to library", () => _names.Open(
@@ -660,8 +661,7 @@ public sealed class CameraPane
                     var clone = _creation.Duplicate(SelectionId.ForCamera(camera.Id));
                     if (clone.Handle == null)
                     {
-                        _notices.Failed(
-                            "Clone: the camera could not be created.");
+                        _notices.Report(new Outcome(false, clone.Detail), "Clone");
                         return;
                     }
                     _pendingCreation.SelectWhenReady(clone.Handle);

@@ -421,7 +421,7 @@ public sealed partial class AppearancePane
                     () =>
                     {
                         if (!_companions.OpenAttachPicker(actor))
-                            _notices.Refused("The attachment relationship changed.");
+                            _notices.Report(Outcome.Fail("The attachment relationship changed."), state.Occupied ? "Change" : "Attach", refusal: true);
                     },
                     variant: ButtonVariant.Disruptive);
                 if (state.Occupied)
@@ -430,7 +430,7 @@ public sealed partial class AppearancePane
                         () =>
                         {
                             if (!_companions.Detach(actor))
-                                _notices.Refused("The attachment relationship changed.");
+                                _notices.Report(Outcome.Fail("The attachment relationship changed."), "Detach", refusal: true);
                         },
                         variant: ButtonVariant.Disruptive);
             }));
@@ -567,7 +567,7 @@ public sealed partial class AppearancePane
             ModelChanged(_integration.SetModel(id, next), "Model id");
             return;
         }
-        _notices.Refused("Model id must be a whole number.");
+        _notices.Report(Outcome.Fail("Must be a whole number."), "Model id", refusal: true);
     }
 
     /// <summary>Reports a model change and reads the numeric field again.</summary>
@@ -723,8 +723,7 @@ public sealed partial class AppearancePane
             "Body profile" => _integration.SetBodyProfile(target, pick.Item.Id, pick.Item.Name),
             _ => IntegrationResult.Ok(),
         };
-        if (!picked.Success)
-            _notices.Failed($"{pick.Item.Name}: {picked.Detail}");
+        _notices.Report(picked.Outcome, pick.Owner);
         _readoutAt = DateTime.MinValue;
     }
 
@@ -771,13 +770,7 @@ public sealed partial class AppearancePane
         form.Actions("Appearance", actions =>
         {
             actions.Button("Open in Glamourer",
-                () =>
-                {
-                    var opened = _integration.OpenGlamourer(actor);
-                    if (!opened.Success)
-                        _notices.Failed(
-                            $"Open in Glamourer: {opened.Detail}");
-                },
+                () => _notices.Report(_integration.OpenGlamourer(actor).Outcome, "Open in Glamourer"),
                 disabled: !glamourer.Available,
                 help: glamourer.Available ? null : glamourer.Detail);
             actions.Button("Redraw",
@@ -793,7 +786,7 @@ public sealed partial class AppearancePane
                 {
                     var failure = await _invisibleSkin.Apply(actor, System.Threading.CancellationToken.None);
                     if (failure != null)
-                        await _framework.RunOnFrameworkThread(() => _notices.Failed(failure));
+                        await _framework.RunOnFrameworkThread(() => _notices.Report(Outcome.Fail(failure), "Clothing only"));
                 },
                 disabled: !human,
                 help: human ? null : "Only human actors can hide their body",
@@ -1085,7 +1078,7 @@ public sealed partial class AppearancePane
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             var result = _characterFiles.Spawn(chosen);
             if (result.Handle is { } body) select(body);
-            else _notices.Failed(result.Detail ?? "The actor could not be spawned.");
+            else _notices.Report(new Outcome(false, result.Detail), "Actor from character file");
             if (result.Handle is not null) AddToLibraryIfChosen(chosen);
         });
     }
@@ -1115,7 +1108,7 @@ public sealed partial class AppearancePane
             _framework.RunOnFrameworkThread(() =>
             {
                 if (added.Success) _notices.Note(added.Detail ?? "Added to your library.");
-                else _notices.Failed(added.Detail ?? "The character file could not be added to your library.");
+                else _notices.Report(added, "Also add to library");
             });
         }, TaskScheduler.Default);
     }
@@ -1149,8 +1142,7 @@ public sealed partial class AppearancePane
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             var begun = _characterFiles.Export(
                 actor, chosen, $"{description} — exported by Poser");
-            if (!begun.Success)
-                _notices.Failed($"Export: {begun.Detail}");
+            _notices.Report(begun.Outcome, "Export");
         });
     }
 

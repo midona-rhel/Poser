@@ -216,7 +216,7 @@ internal sealed partial class EntityContextMenus
                 }
                 else
                 {
-                    _notices.Failed($"'{name}' could not be destroyed.");
+                    _notices.Report(Domain.Outcome.Fail($"'{name}' could not be destroyed."), "Destroy");
                 }
             });
         }
@@ -273,7 +273,7 @@ internal sealed partial class EntityContextMenus
         catch (Exception ex)
         {
             _log.Error(ex, "Actor collider capture failed");
-            _notices.Refused("Create collider", ex.Message);
+            _notices.Report(Domain.Outcome.Fail(ex.Message), "Create collider", refusal: true);
         }
     }
 
