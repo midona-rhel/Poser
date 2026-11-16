@@ -403,11 +403,8 @@ public sealed partial class PropertiesContent
         });
     }
 
-    private void MoveSelectionToCamera()
-    {
-        var result = _placement.MoveToCamera(_selection.Selected);
-        if (!result.Success) _notices.Failed("Move to camera", result.Detail ?? "The move was refused.");
-    }
+    private void MoveSelectionToCamera() =>
+        _notices.Report(_placement.MoveToCamera(_selection.Selected).Outcome, "Move to camera");
 
     public void DrawTabContent(Vector2 origin, Vector2 size)
     {

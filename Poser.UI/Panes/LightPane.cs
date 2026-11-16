@@ -560,12 +560,8 @@ public sealed class LightPane
             () => RequestDestroyAll?.Invoke(), variant: ButtonVariant.Danger), alignRight: true);
     }
 
-    private void MoveToCamera(LightId lightId)
-    {
-        var moved = _placement.MoveToCamera([SelectionId.ForLight(lightId)]);
-        if (!moved.Success)
-            _notices.Failed("Move to camera", moved.Detail ?? "The light could not be moved.");
-    }
+    private void MoveToCamera(LightId lightId) =>
+        _notices.Report(_placement.MoveToCamera([SelectionId.ForLight(lightId)]).Outcome, "Move to camera");
 
     // ── HDR colour mapping ───────────────────────────────────────────────
 

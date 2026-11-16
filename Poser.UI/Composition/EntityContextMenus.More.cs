@@ -195,13 +195,13 @@ internal sealed partial class EntityContextMenus
                 items.Add(new("Move to camera", TablerIcon.Camera, disabled: !movable));
                 actions.Add(() => MoveToCamera([id]));
             }
-            AddReset("Rotation", () => ReportPlacement(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Rotate)), "Zero rotation; keep position and scale");
+            AddReset("Rotation", () => _notices.Report(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Rotate).Outcome, "Reset rotation"), "Zero rotation; keep position and scale");
             if (id.Light == null)
-                AddReset("Scale", () => ReportPlacement(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Scale)), "Unit scale; keep position and rotation");
+                AddReset("Scale", () => _notices.Report(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Scale).Outcome, "Reset scale"), "Unit scale; keep position and rotation");
         }
         if (id.Actor is { } actor)
         {
-            AddReset("Placement overrides", () => ReportPlacement(_transforms.ClearActorOverrides([TransformTargetId.ForActor(actor)])), "Release this actor's authored world placement");
+            AddReset("Placement overrides", () => _notices.Report(_transforms.ClearActorOverrides([TransformTargetId.ForActor(actor)]).Outcome, "Reset placement overrides"), "Release this actor's authored world placement");
             reset.Add(ContextMenuItem.Separator);
             foreach (var region in Enum.GetValues<Domain.Posing.PoseRegion>())
             {
@@ -216,10 +216,5 @@ internal sealed partial class EntityContextMenus
             { OnInvoke = () => { var result = _overlayControl.Set(overlay, Application.Presentation.OverlayProperties.Size, (1f, 1f)); if (!result.Success) _notices.Failed("Reset", result.Detail ?? "The overlay could not be reset."); } });
         if (reset.Count == 0 || items.Any(item => item.Label == "Reset")) return;
         items.Add(new("Reset", TablerIcon.Refresh, submenuItems: reset.ToArray())); actions.Add(null);
-    }
-
-    private void ReportPlacement(Domain.Transforms.GestureResult result)
-    {
-        if (!result.Success) _notices.Failed("Placement", result.Detail ?? "The transform could not be changed.");
     }
 }

@@ -54,6 +54,16 @@ public sealed class UserNotices : global::Poser.Application.Presentation.IUserNo
 
     public void Refused(string verb, string detail) => Refused(verb + ": " + detail);
 
+    /// <summary>The one way a pane reports how an action went: nothing when it
+    /// worked, "Action: reason" when it did not, or "Action failed." when no
+    /// reason was given. Returns whether it worked.</summary>
+    public bool Report(Poser.Domain.Outcome result, string action)
+    {
+        if (!result.Success)
+            Failed(string.IsNullOrWhiteSpace(result.Detail) ? action + " failed." : action + ": " + result.Detail);
+        return result.Success;
+    }
+
     public void Removal(SelectionRemovalResult result)
     {
         // A removal that landed can still lose something its undo cannot restore.

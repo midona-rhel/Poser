@@ -155,21 +155,15 @@ public sealed class ScenePane
     private float _optionsBandHeight = 92f;
 
     public bool SaveEntry(SelectionId target, string displayName) =>
-        ReportLibrarySave(_librarySave.SaveEntry(target, displayName));
+        _notices.Report(_librarySave.SaveEntry(target, displayName), "Save to library");
 
     /// <summary>A pane's "Save to file…": the same entry save, written to
     /// the path the dialog chose.</summary>
     public bool SaveEntryTo(SelectionId target, string path) =>
-        ReportLibrarySave(_librarySave.SaveEntryTo(target, path));
+        _notices.Report(_librarySave.SaveEntryTo(target, path), "Save to file");
 
     public bool SaveGroupEntry(IReadOnlyList<SelectionId> members, string displayName) =>
-        ReportLibrarySave(_librarySave.SaveGroup(members, displayName));
-
-    private bool ReportLibrarySave(Outcome result)
-    {
-        if (!result.Success) _notices.Refused(result.Detail ?? "The library save could not start.");
-        return result.Success;
-    }
+        _notices.Report(_librarySave.SaveGroup(members, displayName), "Save to library");
 
     /// <summary>Opens an entry file using the configured spawn placement.</summary>
     public void OpenEntryLoad() =>
@@ -322,7 +316,7 @@ public sealed class ScenePane
                 var name = _librarySaveName.Trim();
                 if (name.Length == 0)
                     name = "Scene";
-                ReportLibrarySave(_librarySave.SaveScene(name, SaveOptions));
+                _notices.Report(_librarySave.SaveScene(name, SaveOptions), "Save to library");
                 _librarySaveOpen = false;
             }
         });

@@ -276,11 +276,8 @@ internal sealed partial class EntityContextMenus
     private bool SaveOwnedActorEntry(ActorId actorId, string name) =>
         _scenePane.SaveEntry(SelectionId.ForActor(actorId), name);
 
-    private void MoveToCamera(IReadOnlyList<SelectionId> targets)
-    {
-        var result = _placement.MoveToCamera(targets);
-        if (!result.Success) _notices.Failed("Move to camera", result.Detail ?? "The move was refused.");
-    }
+    private void MoveToCamera(IReadOnlyList<SelectionId> targets) =>
+        _notices.Report(_placement.MoveToCamera(targets).Outcome, "Move to camera");
 
     private void DestroySelection() => _ = _entityActions.Remove(_selection.Selected.ToArray());
 }
