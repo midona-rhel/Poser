@@ -70,16 +70,7 @@ internal sealed class HeldExpressionSession
         var held = _speed.SetSlotSpeed(
             actor, AnimationSlot.Facial, 0f, speedCapture);
         if (!held.Success)
-        {
-            // Facial is selected here, so a Facial slot reset is exactly
-            // the expression release.
-            var rollback = ReleaseExpressionCore(actor);
-            return rollback.Success
-                ? held
-                : Outcome.Fail(
-                    $"{held.Detail ?? "Expression hold failed."} " +
-                    $"Restore failed: {rollback.Detail}");
-        }
+            return held;
         _store.Mutate(actor, o => o with { HeldExpression = timeline });
         return Outcome.Ok();
     }
@@ -100,7 +91,7 @@ internal sealed class HeldExpressionSession
             active = selected;
         // Nothing is chosen for the face. Only a Facial speed Poser set can
         // be left to undo.
-        if (active is not { } held)
+        if (active == null)
             return current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial)
                 ? _speed.ClearSlotSpeed(actor, AnimationSlot.Facial)
                 : Outcome.Ok();
@@ -122,24 +113,10 @@ internal sealed class HeldExpressionSession
         var restored = straight.Success
             ? _base.ResetBlendSelection(actor, AnimationSlot.Facial)
             : straight;
-        if (!restored.Success)
-        {
-            // Keep the saved restore values and try to put the held expression
-            // back. A later Reset can then retry the failed restoration.
-            var replayed = _base.BlendCore(actor, held, AnimationSlot.Facial);
-            var repinned = replayed.Success
-                ? _speedPort.SetSlotSpeed(actor, AnimationSlot.Facial, 0f)
-                : replayed;
-            return Outcome.Fail(
-                (restored.Detail ?? "Expression release failed.") +
-                (replayed.Success && repinned.Success
-                    ? string.Empty
-                    : $" Hold rollback failed: " +
-                      (replayed.Detail ?? repinned.Detail ?? "facial hold failed.")));
-        }
-
+        // The face is no longer held, whether or not the game put the earlier
+        // face back. After a failure Reset can be pressed again.
         _store.Mutate(actor, o => o.WithoutSlotSpeed(AnimationSlot.Facial) with { HeldExpression = null });
-        return Outcome.Ok();
+        return restored;
     }
 
     /// <summary>The expression currently held on the face, if any.</summary>
