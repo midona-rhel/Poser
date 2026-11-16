@@ -1,66 +1,55 @@
 # Pose operations
 
-## Duplicate with pose
-
-Duplicate with pose copies the skeleton as it is drawn, including the visible head
-and face and any solved IK. It does not change the source actor's own pose data.
-
-The copy is a frozen pose. It does not carry over the running animation, the gaze
-or what Customize+ is driving.
-
-- The copy freezes itself when it is restored, whatever the ordinary import setting
-  says.
-- Physics sway you haven't edited keeps simulating. Your edits to physics bones are
-  kept.
-- Scales on the root bones of skeleton parts are restored separately. They are not
-  applied a second time as an inherited scale.
-- The live copy identifies bones by slot, skeleton part and name, not through a
-  file that only has names. The first restore waits for those slots and their
-  bindings, then detaches gaze before the import reads its settled starting pose.
-- A paused posed duplicate that undo brings back keeps its frozen starting pose.
-  That does not bring animation playback back.
-
-## Reading the pose
-
-Poser reads the game's pose through the read-only path. The game's writable bone
-accessors are for writes only. Even one that doesn't pass a change down marks the
-pose as changed, so they are never used for display, capture or solver reads.
-
-## One-off edits
-
-Each one-off edit captures its targets, works out the change and writes it to the
-game.
-
-- If it fails, it tries to put back every value it captured.
-- If that can't finish, the recovery information and ownership stay available, and
-  the failed edit is not added to history.
-- A successful edit adds one history step.
-- Edits are refused during a live drag. They use the same restore path as undo and
-  redo.
+The pose actions are in the **Pose** section on the **Other** page of the Pose tab.
+Each change below is one undo step.
 
 ## Mirror and Flip
 
-Mirror and Flip use the YZ plane.
+- **Mirror edits** swaps your edits between the left and right side of the actor.
+  Bones in the middle, such as the spine, are mirrored onto themselves. The
+  actor's facing is mirrored too. Bones you never edited keep following the
+  animation.
+- **Flip bone** mirrors only the selected bone's own edit. It is also in the
+  bone's right-click menu. It does nothing on a bone you have not edited.
 
-Mirror moves your edits across through the two sides' frozen animated poses, swaps
-paired bones in one step, and mirrors centre bones onto themselves. Symmetry Mirror
-uses the same reflection. Symmetry Link moves the world-space change into the
-partner bone's own frame.
+## Reset
 
-## Reset, copy and stash
+The **Reset** row clears your edits:
 
-Reset clears your edits on the chosen bones: the whole pose, or only the body, the
-face or the hair.
+- **Bone** resets the selected bones.
+- **Body**, **Face** and **Hair** reset only that part of the actor.
+- **All** puts the whole actor back, as described below.
 
-Reset All puts the whole actor back in one history step. In order it resets the
-expression, the gaze, every pose region and IK, then Poser's animation, its
-presentation changes, a changed model and the appearance applied through other
-plugins. A part that fails is named, and the rest still runs. Placement, the stash,
-tools and which sections are open all survive.
+The bone's right-click menu also has **Reset › Bone** and **Reset › Bone and
+descendants**.
 
-Copy, stash and apply use `PortablePose`. They are in undo history, and they clear
-empty overrides on the destination.
+### Reset All
 
-- Bones the destination doesn't have are skipped and named in the result.
-- A saved bone that matches more than one destination bone refuses the whole apply.
-- When nothing matched, they say so instead of doing nothing.
+**All** resets, in this order: the expression, the gaze, the pose, IK, the
+animation, the appearance changes Poser made, a changed model, and the appearance
+applied through other plugins.
+
+- If one part can't be reset, Poser names it and still resets the rest.
+- The actor's place in the world and the stashed pose are kept.
+
+## Stash
+
+**Stash** remembers the actor's pose. **Apply stash** puts it on another actor (or
+the same one).
+
+- Stashing again replaces what was stashed before.
+- Hover Apply stash to see which actor the pose came from and when.
+- Bones the other actor doesn't have are skipped and named in the message.
+- If no bone matches, Apply stash says so and changes nothing.
+
+## Duplicate with pose
+
+Right-click an actor and choose **Duplicate › Duplicate with pose**. The copy
+appears with the pose the actor has on screen, including the face and any IK.
+
+- The copy is frozen in that pose. It does not play the actor's animation and does
+  not copy where it looks.
+- Hair and clothing you have not posed keep moving with physics. The ones you
+  posed keep your pose.
+- The copy gets the same Customize+ body shape as the original.
+- The original actor is not changed.
