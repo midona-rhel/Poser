@@ -71,7 +71,7 @@ public sealed class AnimationSession : IAnimationPlayback
     /// </summary>
     private void OnLayerEnded(ActorId actor, AnimationSlot slot, float seconds)
     {
-        if (CommandsSuspended || SelectedFor(actor, slot) == null)
+        if (SelectedFor(actor, slot) == null)
             return;
         _store.Mutate(actor, o => o with { EndedSlots = o.EndedSlots.With(slot, seconds) });
     }
