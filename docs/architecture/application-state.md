@@ -1,292 +1,100 @@
 # Application state
 
-`Poser.Application` keeps the current scene, selection, edits, undo history,
-session information, and recovery information. It stores ids and values, not
-game addresses, native entities, or live UI state.
+`Poser.Application` keeps what Poser knows about the current scene: which actors,
+lights, cameras and objects are in it, what is selected, the undo history, and
+whether a GPose session is running. It holds ids and plain values only. It never
+holds a game address or a game object. `Poser.Game` turns an id back into the
+game object each time something needs it (see [posing-runtime.md](posing-runtime.md)).
 
-`ActorId` includes an actor's generation. `SkeletonId` also includes its slot
-and slot generation, so replacing a weapon does not replace the character
-slot. `BoneId` identifies its skeleton, partial, native index, and canonical
-name. Commands require the current generation and refuse stale targets.
+## Ids
 
-`SceneSession` provides one scene snapshot and a revision. `Contains` is the
-staleness check. `SelectionSession` owns ordered stable-id selection. Selection
-scopes preserve compatibility groups and anchors. Filters, disclosure, hover,
-and picker lifetime stay in the UI.
+Every thing in the scene has an id from `Poser.Domain/Identity/StableIds.cs`.
+An id has two parts: one that stays the same for as long as the thing is in the
+scene, and a generation number.
 
-Shared entity verbs read capabilities for the exact current `SelectionId`;
-they never promote a stale generation. The application read exposes only
-pointer-free visibility and removal capability, while the host resolves the id
-again for live visibility and before acting. Sidebar toggles and group baseline
-capture use that live value so repeated input cannot wait on snapshot refresh.
-Sidebar, context-menu and Selection inspector visibility share the same command
-and value journal. Deferred inspector commands capture ids and recheck their
-current capabilities when dispatched. Removal keeps
-each entity's destroy or release owner and lifecycle history. Adopted actors,
-borrowed lights and world objects, default cameras, and locked-group members
-retain their separate ownership rules.
-Owned actor removal captures its current state even when scene loading created
-the actor or its original creation entry has been cleared. Restoration does not
-depend on replaying the original spawn action or retaining its source actor.
+- When the game replaces an actor's body, for example during a redraw, the actor
+  keeps its id but its generation goes up.
+- A skeleton id adds the equipment slot it belongs to, with its own generation.
+  Swapping a weapon changes the weapon's skeleton, not the body's.
+- A bone id names its skeleton, its place in the skeleton and its game name.
 
-Inspector, multi-selection and category removal capture exact IDs at confirmation and
-dispatch one batch through the same application command. The Game adapter
-rechecks ownership, membership and group locks on the framework thread; world
-releases retain claim bookkeeping. Only confirmed removals leave selection.
-Per-item outcomes distinguish removed, already absent, refused and failed.
-The UI reports refusals through existing notices, not inline state text.
-Single-entity inspectors use this same route and never clear unrelated selection.
-Successful removal inverses form one history entry, even if another member
-refuses. Earlier unfinished value edits are sealed separately. This batch is
-synchronous: it never stays open across an await or captures unrelated edits.
+A command that carries an old generation is refused. It never moves on to
+whatever replaced its target.
 
-Native discovery runs on the framework thread. Notifications only request a
-refresh; the framework update runs at most one per frame, never inside the
-publisher, so a load that spawns N actors costs one rebuild. Notifications
-during that pass wait for the next frame. Skeleton changes found inside native
-hooks are queued and published on the next update. While idle, a bone-free
-signature (actor slots, attachments, row fields and bone-naming policy) is polled
-once a second and a descriptor refresh runs only when it moves. Naming changes
-refresh all detached labels without rebuilding native skeletons or changing ids.
-Event payloads are value snapshots, never
-live lists or native wrappers. Unchanged structure and auxiliary bindings
-publish nothing. GPose exit cancels old pending work before requesting the exit
-scene and drops the session's actor lineages; disposal stops queued refresh
-callbacks altogether.
+## The scene and the selection
 
-One drag or typed transform edit is one gesture. It captures each baseline
-once, then applies total deltas from those values. If a write fails, the
-gesture attempts to restore every captured baseline. If restore cannot finish,
-the recovery information and ownership stay available for retry; the failed
-gesture is not added to success history. Cancel and undo/redo use the same
-restore path, and discrete edits cannot interleave with a live gesture.
-Ordinary history replays recorded edits; animation changes never trigger an
-implicit whole-pose recovery mode. Whole-state restoration is an explicit
-command inverse, not a second selectable history implementation.
-Scene-load redo preserves its groups' runtime identities and rebinds their
-members through the same history-only identity resolver as transform edits.
-Group baselines and remembered visibility/play/night flags follow those members;
-ordinary commands and pending receipts still refuse stale IDs. A separate import
-of the same file creates independent groups.
+`SceneSession` holds one picture of the scene at a time, with a revision number.
+`Poser.Game` finds actors, skeletons and objects on the game's main thread and
+hands `SceneSession` a new picture when something changes. However many changes
+arrive in one frame, it builds at most one new picture per frame. While nothing
+happens it checks once a second whether actors, their equipment slots or what is
+attached to them changed.
 
-`PortablePose` does not depend on an actor. It uses bone paths and keys, keeps
-duplicate-name variants in order, and uses game indices only to find bones.
-Name-only legacy entries match by name; an ambiguous match fails rather than
-broadcasting. Game access
-goes through [posing-runtime.md](posing-runtime.md).
+`SelectionSession` holds what is selected, in the order it was selected. The
+interface keeps only how things are shown: search filters, which rows are
+expanded, hover, and open pickers.
 
-Spawn search, library actor creation and entity duplication use the shared
-creation interface. Deferred UI work keeps session-scoped receipts; only Game
-retains the bodies and resolves them after binding. Appearance-copy ordering,
-posed-copy initialization and lifecycle history are not implemented per window.
-Creation does not change selection: each caller selects its resolved receipt.
+## Undo and redo
 
-Expression gestures and their inverses live in Application and retain actor IDs;
-Game owns catalog resolution and native expression layers. Inspector and body/face
-maps read detached actor/skeleton/bone descriptors. Propagation settings, IK
-translation limits and bake-chain reads cross ID-only contracts; no native bone
-or mutable pose-info instance is retained by these surfaces.
+There is one undo history, `EditHistory`, for transforms, property edits and
+scene changes such as adding or removing things. It keeps up to 500 steps by
+default; the limit is a setting (`UndoDepth`).
 
-World gizmos and skeleton/light/collider overlays also consume ID-only reads.
-Game resolves each bulk bone-position request once against the exact skeleton;
-caller-owned masks keep hidden bones out of the hot read path. The UI retains
-only display values, projects them through `ICameraProjection`, and owns drawing,
-hit-testing and gesture input. Collider reads preserve their immutable geometry
-identity for rendering caches; copying mesh arrays every frame is not required.
+- A drag is one undo step, from press to release. A typed value is one step,
+  from clicking into the field to leaving it. The next touch of the same control
+  starts a new step.
+- A command that changes several things at once, such as deleting a group, is
+  one step.
+- If an undo or redo fails, the step stays so the user can try again. Most
+  steps are dropped if they fail a second time.
+- Undo selected entity (Alt+Z) undoes the latest change to the selected thing
+  only. Undo (Ctrl+Z) undoes the latest change to anything.
+- When a removed actor or object comes back through undo, its later steps follow
+  the new copy.
 
-Prop, scenery, furniture and VFX editors read detached values and send exact IDs
-through `ISceneObjectControl`; Game resolves native objects and writes their
-declared properties through the shared value journal. Picker targets and deferred callbacks cannot follow a replacement
-generation or a newly selected entity. Native respawn and diagnostic offsets
-stay behind that boundary, rather than in editor closures.
+The history is cleared when GPose ends.
 
-Camera follow, recenter and bone tracking share `ICameraTargetControl`.
-For these actions, the pane, sidebar and picker retain IDs and detached readings;
-Game owns native target fallback, stale-reference pruning and exact-generation
-checks. Follow remains distinct from recentering, which changes framing only.
-Selection-follow and stale tracking reconciliation advance on the framework
-thread even when the camera pane or main window is hidden.
-Tracking mode values keep their existing serialized numbers.
-Camera property rows and the inspector joystick use detached `ICameraControl`
-readings and the same value journal. A joystick gesture retains its initial
-camera ID; changing selection cannot redirect a held gesture. Native units
-and ownership reset baselines remain backend values. Portrait edits capture
-both the mode and roll so undo restores the authored framing.
-Camera and light file dialogs save and load library entries: the save is the
-library entry save written to the chosen path, and the load is the scene load.
-The native document mapping is shared with scene capture and history, not
-implemented in presentation.
+## Starting and stopping Poser
 
-Overlay properties and the inspector pad use detached readings and exact IDs
-through `IOverlayControl`, retaining the existing shared value journal.
-Pad gestures and deferred icon picks keep their original target; a changed
-selection or replacement generation cannot redirect the edit. Collider property
-commands update the current backend value, not an older UI snapshot.
+`Poser/Poser.cs` starts Poser in this order:
 
-Light properties, gobo picks and bone attachments also use detached readings
-and exact IDs. Retained pickers edit their opening target, never the current
-selection. Light file dialogs use creation receipts; Game owns native capture,
-placement and application, sharing the document mapping with scene/history.
-Import applies the file before recording the shared creation history step.
+1. Build the service container. It checks at build time that every service can
+   be created.
+2. Load the settings and apply the colour theme.
+3. Start the services that must run before the interface draws. Each feature
+   registers its own; `StartStage` in `Poser/Composition/Startables.cs` is the
+   one list of their order.
+4. Load the fonts, start drawing the interface, and register `/poser`.
 
-Animation panes use the application's playback and journal-action interfaces;
-they own picker/filter state, not native bindings or framework callbacks.
-Held-expression preview/retry and bake admission belong to the Game boundary.
-The bounded retry retains its exact actor, session and native binding, so hiding
-the pane does not stop it and replacing its target cannot redirect it.
+If any step fails, what was already started is undone in reverse.
 
-Equipment and customization commands own their history in Application behind
-ID-only controls. The panel retains picker/display state, not undo baselines;
-structural body changes capture fresh customization values before redrawing.
-Their inverse includes dependent fields normalized by the appearance provider;
-ordinary palette/slider edits still restore only their edited fields.
-Game supplies external-provider calls and exact-generation availability through
-the existing integration runtime. Failed equipment inverses retain their failure
-and remain retryable, including partially restored outfits.
+When Poser unloads, it first ends the GPose session as if the user had left
+GPose (see below). It then removes `/poser`, stops drawing the interface, and
+only then releases the fonts. Last, the container releases every service in the
+reverse of the order it created them.
 
-Appearance-changing history uses the same complete non-animation snapshot as
-Reset All and lifecycle restoration. Capture failure refuses mutation; the redo
-state is captured on first undo, after pending redraw/import and later edits have
-settled. It never captures the old body immediately after requesting redraw.
-Replay restores external appearance/model before pose-dependent state. The
-journal advances only after completion, retains failed entries for retry, and
-cancels work when its actor, session or history operation no longer applies.
-Inherited collection assignments remain inherited; absent C+ overrides remove
-owned temporary profiles rather than leaving the later override active.
+## GPose sessions
 
-Actor visibility/presentation and companion changes also journal in Application.
-UI holds exact IDs and detached slot readings; Game resolves native bodies on
-every read/write. A companion pick revalidates the original subject and owner,
-while its history follows that owner's slot because the operation replaces the
-child. Replay never retains the previous native actor wrapper. Refused writes
-and inverses use the shared value-journal failure handling.
+Each time the user enters GPose, `SessionLifecycleCoordinator` starts a new
+session. Work that was started in an earlier session is ignored when it
+finishes late.
 
-Character-file dialogs and library actions share `ICharacterFiles`. Application
-owns format routing, spawn readiness and appearance history; Documents validates
-and converts `.chara`/Glamourer data without game access. Pending imports retain
-the creation receipt and validated document, never a UI selection or native body.
-The framework advances readiness independently of window drawing; session changes,
-unload or a 30-second readiness timeout discard pending work without retargeting.
-MCDF execution and recovery remain owned by the existing integration transaction.
+When GPose ends, Poser:
 
-Scene pose reset/flip/mirror/transfer use `IPoseCommands` with exact actor and
-bone generations. Application selects the participating skeleton slots and owns
-history through the shared pose edit/transfer services. Region resets are
-Character-only; whole-pose reset and transfer span all present bone slots.
-Only mirror includes authored actor facing; transfer never includes placement.
-Game provides the cheap authored-layer read and native transform mechanisms.
-Whole-actor Reset All uses `IActorResetControl`: Application owns admission,
-reset order and the single history entry; replay retains only the exact actor ID.
-Expression/gaze release precedes pose/IK, animation, presentation and the model
-ID follow, and external integrations run last because their restoration may redraw.
-Its inverse captures authored pose/IK plus supported appearance, model,
-presentation, gaze, expression and Customize+ state before mutation; failed
-capture refuses the reset. Lifecycle restoration shares those state owners.
-Appearance and collection restoration completes before pose-dependent writes,
-using the Game redraw barrier. MCDF resources remain under the existing
-transaction/session ownership: capture retains validated extracted packages until
-session teardown; replay copies them into a fresh owned directory and does not
-depend on the original MCDF file remaining present. The single history entry advances only after
-completion; failures remain retryable. Animation playback is never recovered.
-Pose capture/export takes exact actor IDs through `IPoseFileCapture`; Game
-resolves on the framework thread and refreshes every slot before reading.
-Application owns preview baseline capture, retries, and rebase-then-file
-sequencing through `PosePreviewController`. UI supplies options and a frame
-clock; Game owns the hidden body, native application and rendered surface.
-Late captures from a replaced source cannot overwrite its successor's baseline.
-Application also owns import pause, supersession, settle and speed restoration.
-Game retains scope planning and in-pass writes/rollback behind the import runtime.
-All import callers use `IPoseImportCommands` with exact actor IDs. Game resolves
-those IDs before planning on the framework thread; stale targets refuse without
-reading skeletons. Native facade implementations remain inside Game.
-Pose-file dialogs retain exact actor IDs, including deferred browser callbacks,
-not native actors or skeletons. Compatibility inspection returns detached facts;
-Game resolves the current rig, while UI owns option drafts and warning wording.
-A completed import's delayed speed restore is settled before its successor
-captures a baseline, so it cannot resume the newer import's actor.
+1. Cancels a pose import that is still running.
+2. Takes the last autosave.
+3. Cancels a drag in progress, clears the undo history and clears actor names.
+4. Puts back what Poser changed on actors, in this order: animation, opacity,
+   tint and Wet surface, model id, then mods and appearance (Penumbra,
+   Glamourer, Customize+). Then it removes all groups.
+5. Removes spawned actors and objects and lets go of borrowed ones.
 
-Gaze inspector, sidebar reads and point gestures use `IGazeControl` with exact
-actor generations and immutable readings. Application owns gesture coalescing
-and settings history; Game resolves each runtime call and owns native look-at
-state. Neither UI target matching nor history retains native addresses/wrappers.
-Changing selection during a gaze drag seals that gesture; it cannot transfer
-to the newly selected actor. Gaze settings history preserves its existing scope:
-mode, parts, locks and points, not entity retargeting. Native transition refusals
-remain refusals during history replay, rather than reported successes.
-Posed-copy gaze initialization belongs to actor lifecycle, not each spawn UI;
-it runs before the first draw and creates no separate gaze history entry.
+Every part of step 4 runs even if an earlier part fails. If anything fails, one
+notice lists every failure, starting "Restoring the scene failed". Unloading
+Poser inside GPose runs the same steps.
 
-## World borrowing control
-
-`IWorldService` is the application-facing entry for discovery, highlighting,
-acquisition and release. It publishes immutable candidate values and returns
-stable scene identities; UI code only owns filters, projection and selection.
-The Game implementation owns refresh cadence, framework dispatch and native
-revalidation, routing actor and object history through their existing owners.
-Actors, lights and BG/VFX keep separate native implementations.
-Candidate IDs identify an observed native incarnation. Claim receipts target
-one resulting scene incarnation; releasing it ends those receipts, including
-when release starts from the entity rather than the receipt. Undo may recreate
-a scene incarnation, but an old receipt never redirects to that replacement.
-Borrow completion and selection advance on framework updates, independently of
-the overlay's visibility. Native lifetime/restoration behavior is defined in
-[Scenes](../features/scenes.md).
-
-## Results and recovery
-
-Application decides whether an operation succeeded, failed, rolled back, or
-needs recovery. Game reports game-side work and failures. Storage handles file
-formats and safe writes. The UI shows whether an operation is running, finished,
-failed, or needs recovery. Results from an old session or operation are ignored.
-
-## Session lifecycle
-
-Startup: the host builds the provider (`ValidateOnBuild`), applies the theme,
-then runs every registered startable once, in `StartStage` order:
-auto-save, prop spawns, overlay nodes, world objects, lighting, virtual
-cameras, environment, stable bindings, animation, (Debug: debug bridge), gaze,
-actor integration, appearance-catalog warm-up, world rendering, scene
-workflow, scene creation, camera workspace, parenting frames, scene
-auto-save snapshots, clean scene lifecycle, target sync, GPose mouse target,
-character-file pump. Each feature module registers its own entries; the enum
-is the one order. Fonts, texture uploaders, the UI manager and the `/poser`
-command follow. Shutdown reverses it: warm-up cancel, framework-thread GPose
-exit, pose-import and session invalidation, command removal, UI manager (Draw unhooked), uploaders and fonts, then
-the provider disposes its singletons in reverse construction order.
-
-The host keeps failed-startup cleanup armed until activation finishes. The
-provider owns service disposal; host-owned fonts, command registration and
-global UI callbacks are unwound separately in reverse acquisition order. On
-unload the host first cancels the catalog warm-up (with a short bounded wait),
-and unhooks Draw by disposing the UI manager before any font, atlas or
-texture uploader is released; only then does the provider dispose.
-Cleanup failures are logged without replacing the original startup exception.
-Rollback never resolves additional services merely to dispose them.
-
-`SessionLifecycleCoordinator` gives each GPose session a unique token.
-Repeated entry keeps the current token. Normal exit clears it before the final
-autosave starts; the next entry gets a new token. Repeating exit is safe.
-`InvalidateForUnload` closes the session without autosave, events, or game work.
-
-When GPose closes, Poser asks for one final autosave before cleanup. Taking or
-queuing that snapshot does not prove it was saved. GPose cleanup is reported
-separately, and the background worker receives snapshots only. Autosave rules
-are in [files-and-transfer.md](../features/files-and-transfer.md).
-After final capture, `GPoseExitingEvent` runs the whole owned-state teardown
-while spawns, clones and actor bindings still exist; only then does
-`GPoseStateChangedEvent(false)` clear actors, destroy spawns and drop
-bindings. The teardown therefore does not depend on DI subscription order.
-Normal exit and plugin unload share this ordering. Destroyed native bodies
-are skipped, not written through retained bindings.
-
-`CleanSceneLifecycle` owns the ordered teardown: cancel facial capture, then
-reset animation, presentation, model id and appearance (Penumbra collection,
-Glamourer state, MCDF), then clear scene groups and their transform state.
-Every step runs even when an earlier one fails. Each step returns its result.
-Failures are logged and shown together in one notice, in teardown order.
-Nothing is retried here; owners keep failed state retryable themselves. On plugin disposal the groups are
-also cleared directly after that reset, because an off-thread disposal's
-bounded framework hop can abandon the reset.
+Autosave settings are described in
+[files-and-transfer.md](../features/files-and-transfer.md).
 
 ### Actor names
 
