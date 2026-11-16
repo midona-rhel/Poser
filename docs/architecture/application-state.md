@@ -288,8 +288,15 @@ Nothing is retried here; owners keep failed state retryable themselves. On plugi
 also cleared directly after that reset, because an off-thread disposal's
 bounded framework hop can abandon the reset.
 
-Actor nicknames and anonymous-name masks last for one GPose session. The exit
-notification clears them after final-save capture, since native slot reuse can
-retain a logical lineage for an unrelated actor. Temporary disappearance and
-same-session undo/redo do not clear names. Saved scene names remain in the file
-and are reapplied by normal loading; native actor names are never changed.
+### Actor names
+
+A nickname you give an actor lasts until you leave GPose. So does the numbered
+label that Anonymous mode shows in place of a name.
+
+- Leaving GPose clears both, after the last autosave has been taken. The game
+  hands the same actor slot to someone else next time, and without the clearing
+  that character would show the old name.
+- An actor that vanishes for a moment, for example during a redraw, keeps its
+  name. So does one you remove and bring back with undo.
+- A saved scene keeps its names in the file. Loading the scene brings them back.
+- Poser never changes a character's real name in the game.

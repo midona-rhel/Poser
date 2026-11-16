@@ -1,173 +1,154 @@
 # Animation
 
-## Basic mode
+The Animation tab plays animations on the selected actor. The bone edits you made
+on the Pose tab stay on top of whatever is playing.
 
-Basic mode is the General section of the Animation tab. It plays one animation and
-has a Loop switch, a Play emote start switch and the Stance controls.
+## Playing one animation
 
-- **Choose animation** only stages a catalog row.
-- **Apply** captures the actor's current state and then plays the row. For an
-  emote it plays the version the game uses for how the actor is now (standing,
-  sitting, mounted and so on), on the layer that version belongs to. An emote with
-  no version for the current posture is refused, with the reason.
-- **Reset** restores the state captured by the first successful Apply. That
-  capture never changes afterwards. Reset also turns Loop off.
+The **General** section is the simple way to play something.
 
-With Play emote start on, an emote's first entry uses the game's intro and loop.
-Actions and raw timelines use the timeline route.
+1. Press **Choose animation** and pick one from the list. Nothing plays yet.
+2. Press **Apply**. The actor plays it.
+3. Press **Reset** to go back to what the actor was doing before your first Apply.
 
-While Advanced is on, Choose, Apply, Reset and Loop in this section are disabled.
+The other controls in this section:
 
-## Advanced mode
+- **Loop** starts the animation again each time it ends.
+- **Play emote start** plays an emote from its beginning, with its lead-in. With it
+  off, the emote goes straight to the part that repeats.
+- **Stance** puts the actor in Idle, Chair, Ground or Sleep. The arrows beside it
+  step through the poses of that stance, the same ones `/cpose` cycles through.
+  Changing the stance clears the animation you chose.
+- **Weapon** draws or sheathes the weapon.
+- **Lock position** keeps the actor where you placed it while animations play.
 
-Advanced mode shows five layers: Full body, Upper body, Facial, Additive and Lips.
-While Advanced is off the layers stay visible but are disabled.
+Emotes look different when a character is sitting or mounted. If you apply an emote
+to a sitting actor, Poser plays the sitting version, as the game does. If the emote
+has no version for how the actor is right now, Apply tells you and plays nothing.
 
-Each layer keeps the exact catalog row you chose, writes only its own game slot,
-and restores the state captured just before its first successful write. Every
-layer has Speed, Weight and Scrub with a play/pause button. Every layer except
-Lips has its own Loop switch.
+## Playing several animations at once
 
-Entering Advanced only changes the view. It does not reset or replay the actor.
-Leaving Advanced releases a held expression and restores what the layers took over,
-before the mode changes. That restore is done layer by layer on purpose: if a
-later layer fails, Advanced stays selected and the layers already restored stay
-restored.
+Turn on **Advanced animation** to use layers. Each layer plays its own animation
+while the others play theirs.
 
-The mode belongs to one actor and is shared by every Properties window showing it.
-Catalog drafts and which pickers are open stay with each window.
+| Layer | What it moves |
+|---|---|
+| Full body | The whole actor. |
+| Upper body | The arms and torso, on top of the full body. |
+| Facial | The face. |
+| Additive | A small motion added on top, such as a nod. |
+| Lips | Mouth movement for speech. |
 
-## Attached bodies
+Every layer has the same controls:
 
-An attached body that is backed by a character uses the same animation backend with
-fewer controls: Choose, Apply and Reset for its one animation, whole-actor speed and
-play/pause, and scrub. Stance, weapon, position lock, expressions, looping and the
-advanced layers are not offered for it.
+- **Choose animation**, **Apply** and **Reset** work as in General. Reset puts back
+  what that layer played before you changed it.
+- **Speed** runs from 0 to 2. At 0 the layer stops on its current frame, 1 is
+  normal speed and 2 is double.
+- **Weight** runs from 0 to 1 and sets how strongly the layer shows.
+- **Scrub** moves through the animation by hand. The button beside it pauses or
+  plays the layer.
+- **Loop** starts the animation again each time it ends. Lips has no Loop.
+
+Things to know:
+
+- While Advanced animation is on, Choose, Apply, Reset and Loop in the General
+  section are greyed out. While it is off, the layers are greyed out.
+- Turning Advanced animation on changes nothing on the actor.
+- Turning it off resets every layer and takes off a held expression. If a layer
+  can't be reset, Advanced animation stays on and Poser shows why.
+- The setting belongs to the actor. Two Properties windows showing the same actor
+  show the same setting.
 
 ## Looping
 
-Full body loop uses the game's forced Base field. Writing another layer clears that
-force, writes the layer, then sets the force again.
+Loop repeats the animation you applied on that layer.
 
-Loop on another layer repeats the timeline that layer's Apply played last. Turning
-the switch on while that timeline is no longer playing only remembers the choice.
-It does not start anything.
-
-Turning Loop off stops the repeat without changing the current frame. Reset
-releases the loop and restores the captured layer.
-
-## Scenes
-
-A scene saves each actor's animation unless the save turns that off. See
-[A scene keeps its animation](scenes.md#a-scene-keeps-its-animation-unless-the-save-turns-it-off).
-
-## Expressions
-
-Preview on the Pose tab's Expression row holds an expression on its first frame
-(`HoldExpression`). Reset on that row releases it (`ReleaseExpression`).
-
-The Advanced Facial layer is an ordinary layer. Apply there releases a held
-expression and plays the animation with Loop on. Reset on the Facial layer releases
-a held expression too.
-
-Releasing clears the Facial speed, plays Straight Face (604), clears the speed
-again, then restores the Facial timeline and speed that were captured.
-
-Preview schedules at most one identical retry 500 ms later, and only if the
-session, actor, binding and exact selection are all still the same. The retry does
-not check what the face shows, so a paused actor can still need a second click.
-
-The Expression row also has Bake expression, which writes the face into pose
-history.
+- Turn Loop on before or after Apply. If nothing you applied is playing, Poser
+  remembers the choice and uses it at the next Apply.
+- Turning Loop off lets the animation play to its end. It does not jump.
+- Reset turns the loop off and puts back what the layer played before.
+- The Full body keeps repeating when you play or reset another layer.
 
 ## Scrubbing
 
-A scrub belongs to the window that started it. Another window can't write to that
-drag or end it, even for the same actor. Releasing the mouse or hiding the UI ends
-the drag whether or not the scrub row is drawn. Closing the window or losing the
-actor ends it too. Playback stays paused afterwards.
+Dragging **Scrub** pauses the layer and moves it to the frame under the pointer.
+It stays paused when you let go. Press the play button to carry on from there.
 
-A scrub moves the live layer's timeline through the game's own scheduler on the
-next framework tick. If several targets arrive, the latest wins. The result is the
-same frame in either direction:
+- Props an animation brings in, such as a drink, follow the body.
+- Effects show as they would look at that point of the animation.
+- Dragging backwards gives the same picture as dragging forwards to that frame.
+- An animation that has ended can still be scrubbed. Poser plays it again and
+  holds it under the pointer.
+- Only the window where you started the drag controls it. Releasing the mouse,
+  hiding the interface, closing the window or losing the actor ends the drag.
 
-- clips start again as they do in playback;
-- props that have their own animation follow the body;
-- effects that are alive at the target frame are created at the age they would have.
+When an actor is redrawn, for example after changing its gear, the Full body, the
+Upper body and a held expression come back on the frame they were on.
 
-Poser's pause and resume reach the layer timelines, props, animation controls and
-the actor's effects on one tick. Paused effects freeze.
+## Mounts, minions and ornaments
 
-A redraw from any source brings Full body, Upper body and a held Facial timeline
-back on their frame, props included.
+A mount, minion or ornament attached to an actor has a shorter Animation tab:
+Choose animation, Apply, Reset, Speed and Scrub. It has no stance, weapon, layers,
+loop or expressions.
 
-Timelines with whole-number frames, and game builds where the layout check fails,
-use the older scrub that writes the clock directly.
+## Expressions
 
-## Static idle export
+The Expression row is on the Pose tab.
 
-Actor context menu → More → Export Idle Pose asks for a name, a standing `/cpose`
-slot and which races and genders to export for. Only the actor's own race and
-gender start selected. Save and Export then asks where to save. Confirming the file
-name starts the export. Cancelling goes back to the options.
+1. Choose an expression.
+2. Press **Preview**. The face takes the expression and holds it.
+3. Press **Reset** to take it off, or **Bake expression** to turn it into bone
+   edits you can keep changing by hand. Bake is one undo step.
 
-- The slot list is what the game has for every selected target.
-- Each target keeps its own entry and hold length.
-- Existing PMP files are not overwritten.
+If Preview seems to do nothing on a paused actor, press it again.
 
-### What is captured
+The Facial layer on the Animation tab is different. It plays a facial animation
+that keeps moving and repeats. Applying one takes off a held expression.
 
-- Body and baked facial expression are bound to the destination skeleton
-  separately. A missing expression is a failure. The export is never silently
-  body-only.
-- The capture refreshes the solved pose from before Customize+.
-- Bone tracks are matched by name to the game's destination skeleton, not by the
-  modded actor's bone numbers.
-- Model-to-local conversion uses the skeleton's own rotation and scale values, not
-  a matrix split. That keeps rotated uneven scales and negative scales intact.
-- An export for the actor's own race includes extra body and face bones from the
-  loaded skeleton. The receiving collection needs the same face, skeleton mods and
-  Customize+ profile.
-- Samples for the game's standard entry are matched by name. Extra bones start at
-  their reference pose.
-- A standard bone that has been moved to another parent refuses the export, because
-  its samples would not fit.
-- Hair and cloth physics, equipment and gaze tracking are not exported.
-- Only humanoid actors can be exported, and not while a pose import is running.
+## Scenes
 
-### Other races
+A saved scene keeps each actor's animation, unless you turn that off when saving.
+See [A scene keeps its animation](scenes.md#a-scene-keeps-its-animation-unless-the-save-turns-it-off).
 
-Exporting for other races is opt-in and experimental. It retargets onto their
-unmodded body and the player face skeletons that exist (face resources 1–8).
+## Exporting a pose as an idle animation
 
-- Changes from the reference pose are matched by bone name and parent name.
-  Position offsets scale with the reference bone's length.
-- Target bones with no match, or with a different parent, keep the target's own
-  idle.
-- The face attachment root stays at the target's idle, so the head is not rotated
-  twice.
-- This does not solve contact, and it does not promise the same proportions, face
-  shape or custom rigs.
-- One detached capture feeds every target. Writing the files pauses between face
-  batches and never captures the live pose again halfway through.
+You can save the actor's current pose as a mod that replaces one of the game's
+standing poses. Other people who install the mod see their character stand in your
+pose.
 
-### How the animation is built
+1. Right-click the actor, then **More → Export Idle Pose**.
+2. Give it a name and pick which standing pose (`/cpose`) it replaces.
+3. Pick the races and genders to export for. Only the actor's own starts ticked.
+4. Press **Save and Export** and choose where to save the `.pmp` file.
 
-- Entry eases in on a sine curve and takes the shortest rotation path. Only the
-  hold loops. Exit uses the game's normal blend-out.
-- The export finishes on its own, whether or not the UI is drawing.
-- The PMP is written in one step and never replaces an existing file.
-- The game data is read from resources loaded separately, never from a live actor's
-  animation.
-- Facial samples go in their own PAP library for that race and face, which is not
-  loaded at all times. The body PAP's TMPP names that library and C010 starts its
-  motion. Putting a face binding beside the body bindings is not enough to register
-  a face motion. This follows
-  [VFXEditor's facial-library convention](https://github.com/0ceal0t/Dalamud-VFXEditor/wiki/Using-Facial-Expressions).
-- No always-loaded face library and no shared ActionTimeline is replaced.
-- Templates with several motions pick the main `cbem_` body motion and a facial
-  binding explicitly. Only that binding is written into each output PAP, at index
-  zero. The facial timeline names that same exported motion, not an expression name
-  assumed to be the same for every race.
+What ends up in the mod:
 
-Facial-layer routing and interruption by the game still need to be checked in game.
+- The body pose and the face, including a baked expression.
+- Extra bones from the actor's own skeleton, when you export for its own race.
+  Whoever uses the mod then needs the same face, skeleton mods and Customize+
+  profile.
+
+What does not:
+
+- Hair and cloth movement, equipment and where the eyes look.
+- The change in body shape that Customize+ makes.
+
+Limits:
+
+- Only humanoid actors can be exported, and not while a pose is being imported.
+- An existing `.pmp` file is never overwritten.
+- If the face can't be captured, the export fails. It never saves the body alone.
+- A custom skeleton that moves a standard bone to a different parent can't be
+  exported.
+
+### Exporting for other races
+
+Exporting for a race other than the actor's own is experimental. Poser fits the
+pose onto that race's ordinary body and its standard faces.
+
+- Bones are matched by name. A bone the other race doesn't have, or has under a
+  different parent, keeps that race's own idle.
+- Proportions and face shape will differ, and hands may not touch what they
+  touched on the original.
+- Custom skeletons are not carried over.
