@@ -1550,10 +1550,13 @@ public partial class PoseInspectorPane : IDisposable
             wide ? "Surface · GAZE" : "Rail · GAZE");
         if (!_gazeValues.IsAvailable)
         {
-            form.Status($"Gaze unavailable: {_gazeValues.UnavailableDetail ?? "native capability unavailable."}");
+            form.Status($"Gaze unavailable: {_gazeValues.UnavailableDetail}");
             return;
         }
 
+        // The actor can despawn between frames. The controls below re-read
+        // the gaze after each change; within this frame the actor that was
+        // read here is still there.
         if (_gazeValues.Read(actor) is not { } state)
             return;
 
@@ -1597,7 +1600,7 @@ public partial class PoseInspectorPane : IDisposable
                     _ => GazeTargetMode.Entity,
                 }));
             }
-            state = _gazeValues.Read(actor) ?? state;
+            state = _gazeValues.Read(actor)!;
             SyncPointSelection(previousMode, state.Settings.Mode);
         }
 
@@ -1636,7 +1639,7 @@ public partial class PoseInspectorPane : IDisposable
             if (next >= 0 && next < others.Count)
             {
                 Record(_gazeValues.SetTarget(actor, others[next].Id));
-                state = _gazeValues.Read(actor) ?? state;
+                state = _gazeValues.Read(actor)!;
             }
         }
 
@@ -1720,7 +1723,7 @@ public partial class PoseInspectorPane : IDisposable
                 next
                     ? state.Settings.TargetType | part
                     : state.Settings.TargetType & ~part));
-            state = _gazeValues.Read(actor) ?? state;
+            state = _gazeValues.Read(actor)!;
         }
 
         void LockIcon(
@@ -1751,7 +1754,7 @@ public partial class PoseInspectorPane : IDisposable
                 () =>
                 {
                     record(_gazeValues.SnapPartToCamera(actor, part));
-                    state = _gazeValues.Read(actor) ?? state;
+                    state = _gazeValues.Read(actor)!;
                 },
                 disabled: !enabled,
                 help: "Move this part's point to the camera",
@@ -1802,7 +1805,7 @@ public partial class PoseInspectorPane : IDisposable
                 next =>
                 {
                     record(_gazeValues.SetPartPosition(actor, part, next));
-                    state = _gazeValues.Read(actor) ?? state;
+                    state = _gazeValues.Read(actor)!;
                 },
                 _gazeValues.Seal,
                 0.005f,
@@ -2506,7 +2509,7 @@ public partial class PoseInspectorPane : IDisposable
                 {
                     var result = _actorReset.ResetAll(actorId);
                     if (!result.Success)
-                        _notices.Failed("Reset all", result.Detail ?? "The actor could not be reset.");
+                        _notices.Failed("Reset all", result.Detail!);
                 },
                 help: "Reset this actor's pose, expression, gaze, IK, animation, appearance, and mod integrations. Its placement in the world and the stashed pose are kept.",
                 variant: ButtonVariant.Danger);
