@@ -1,21 +1,17 @@
-using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 
 namespace Poser.Application.Posing;
 
 /// <summary>
-/// Reset, Mirror, Flip, and copying and applying a pose. Each command works out
-/// the new pose edits for the bones it changes. Reading the bones, writing them,
-/// recording the undo step and putting things back after a failed write are
-/// done by <see cref="TransformCommandService"/>, exactly as for a typed
-/// transform edit.
+/// Reset, Mirror and Flip. Each command works out the new pose edits for the
+/// bones it changes. Reading the bones, writing them, recording the undo step
+/// and putting things back after a failed write are done by
+/// <see cref="TransformCommandService"/>, exactly as for a typed transform edit.
 /// </summary>
 public sealed class PoseEditService(
-    SceneSession scene,
     ITransformRuntimePort runtime,
     TransformCommandService transforms)
 {
@@ -188,133 +184,6 @@ public sealed class PoseEditService(
             return string.Concat(
                 canonicalName.AsSpan(0, canonicalName.Length - 2), "_l");
         return null;
-    }
-
-    /// <summary>
-    /// Copies these bones' edits into a pose that names each bone by its path
-    /// from the skeleton root, so it can be applied to another actor. Returns
-    /// the refusal, or null when <paramref name="pose"/> holds the copy.
-    /// </summary>
-    internal PoseEditResult? CapturePortable(
-        IReadOnlyList<TransformTargetId> bones,
-        out PortablePose? pose)
-    {
-        pose = null;
-        if (Refusal() is { } refused)
-            return refused;
-        // Stash from an actor menu left open while the actor left the scene
-        // finds no bones. Refuse, rather than replace the stash with nothing.
-        if (bones.Count == 0)
-            return PoseEditResult.Fail("A pose edit requires at least one bone.");
-        if (Read(bones, out var states) is { } failed)
-            return failed;
-
-        var sceneBones = SceneBonesById();
-        var entries = states.Select(state =>
-        {
-            var target = PortableTarget(state.Target.Bone!.Value, sceneBones);
-            return new PortableBoneEntry(
-                target.Key,
-                state.Pose.InteractiveOnly(),
-                target.NativeIndexHint);
-        });
-        try
-        {
-            pose = new PortablePose(entries);
-            return null;
-        }
-        catch (ArgumentException exception)
-        {
-            return PoseEditResult.Fail(
-                $"Captured portable pose is not structurally representable: {exception.Message}");
-        }
-    }
-
-    public PoseEditResult ApplyPortable(
-        IReadOnlyList<TransformTargetId> bones,
-        PortablePose pose,
-        string description)
-    {
-        if (Refusal() is { } refused)
-            return refused;
-        if (Read(bones, out var states) is { } failed)
-            return failed;
-
-        var sceneBones = SceneBonesById();
-        var match = pose.Match(states
-            .Select(state => PortableTarget(state.Target.Bone!.Value, sceneBones))
-            .ToArray());
-        // A saved bone that matches two bones here is refused: it is unclear
-        // which one it means. Saved bones this skeleton lacks are skipped and
-        // reported, so a pose from a richer skeleton still applies to the
-        // bones both actors share.
-        if (match.Ambiguous.Count > 0 || match.Matches.Count == 0)
-            return PoseEditResult.Fail(DescribeMatchFailure(match));
-
-        var statesByBone = states.ToDictionary(state => state.Target.Bone!.Value);
-        var before = match.Matches
-            .Select(item => statesByBone[item.Target.Bone])
-            .ToArray();
-        var desired = before.Zip(match.Matches, (state, item) => state with
-        {
-            Pose = new BonePose(item.Source.Pose.Layers, checked(state.Pose.Version + 1)),
-        }).ToArray();
-        var applied = Apply(before, desired, description);
-        return applied.Success && match.Unmatched.Count > 0
-            ? applied with { Detail = DescribeSkipped(match.Unmatched) }
-            : applied;
-    }
-
-    private Dictionary<BoneId, BoneDescriptor> SceneBonesById() =>
-        scene.Snapshot.Actors
-            .SelectMany(actor => actor.Skeletons)
-            .SelectMany(skeleton => skeleton.Bones)
-            .ToDictionary(item => item.Id);
-
-    /// <summary>
-    /// Names a bone by the bone names from its skeleton root down to it. The
-    /// scene only accepts skeletons whose bones all have names and whose
-    /// parents are all present, so the walk always reaches the root.
-    /// </summary>
-    private static PortableBoneTarget PortableTarget(
-        BoneId bone,
-        IReadOnlyDictionary<BoneId, BoneDescriptor> bones)
-    {
-        var segments = new List<string>();
-        for (BoneId? current = bone; current is { } id; current = bones[id].Parent)
-            segments.Add(id.CanonicalName);
-        segments.Reverse();
-        return PortableBoneTarget.From(bone, new BonePath(segments));
-    }
-
-    private static string DescribeMatchFailure(PortablePoseMatchResult match)
-    {
-        var details = new List<string>();
-        if (match.Ambiguous.Count > 0)
-            details.Add(
-                $"Ambiguous portable bones: {NameList(match.Ambiguous)}.");
-        if (match.Unmatched.Count > 0)
-            details.Add(
-                $"Unmatched portable bones: {NameList(match.Unmatched)}.");
-        return string.Join(" ", details);
-    }
-
-    /// <summary>Reports bones skipped from an otherwise successful paste.</summary>
-    private static string DescribeSkipped(
-        IReadOnlyList<PortableBoneMatchFailure> unmatched) =>
-        $"Skipped {unmatched.Count} bone(s) this skeleton does not have: {NameList(unmatched)}.";
-
-    /// <summary>At most eight bone names, then how many more, so the message stays readable.</summary>
-    private static string NameList(
-        IReadOnlyList<PortableBoneMatchFailure> failures)
-    {
-        const int Shown = 8;
-        var names = failures
-            .Take(Shown)
-            .Select(item => item.Entry.Key.CanonicalName);
-        return failures.Count <= Shown
-            ? string.Join(", ", names)
-            : $"{string.Join(", ", names)} and {failures.Count - Shown} more";
     }
 
     private PoseEditResult? Refusal() =>

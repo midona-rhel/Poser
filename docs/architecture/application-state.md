@@ -69,11 +69,7 @@ Group baselines and remembered visibility/play/night flags follow those members;
 ordinary commands and pending receipts still refuse stale IDs. A separate import
 of the same file creates independent groups.
 
-`PortablePose` does not depend on an actor. It uses bone paths and keys, keeps
-duplicate-name variants in order, and uses game indices only to find bones.
-Name-only legacy entries match by name; an ambiguous match fails rather than
-broadcasting. Game access
-goes through [posing-runtime.md](posing-runtime.md).
+Game access goes through [posing-runtime.md](posing-runtime.md).
 
 Spawn search, library actor creation and entity duplication use the shared
 creation interface. Deferred UI work keeps session-scoped receipts; only Game

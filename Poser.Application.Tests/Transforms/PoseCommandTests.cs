@@ -128,7 +128,7 @@ public sealed class PoseCommandTests
             Gestures = new(Scene, this, History);
             Journal = new(History, Gestures, _ => true, new Fixtures.NoticeLog());
             var transforms = new TransformCommandService(Scene, this, History, Gestures);
-            var edits = new PoseEditService(Scene, this, transforms);
+            var edits = new PoseEditService(this, transforms);
             Commands = new PoseCommands(Scene, edits, new(null!, null!, null!, Scene, null!), this);
             _integration = new(Idle<IIntegrationRuntimeFake>(), Idle<IMcdfFileBoundary>(),
                 Idle<ISessionGenerationSource>());
