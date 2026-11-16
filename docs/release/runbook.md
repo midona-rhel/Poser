@@ -48,10 +48,8 @@ Every other place carries the same text:
 
 On the release branch set the numeric version in `Poser/Poser.csproj`,
 `Poser/Poser.json` and `repo.json`, the three `repo.json` download links to the
-new tag, and `repo.json` `LastUpdate` (Unix seconds). Add
-`docs/release/<version>-acceptance.md`: the authorization, the accepted main
-base and live runtime, the issues closed, and every check that was skipped or
-not passed (never claim an unreported test).
+new tag, and `repo.json` `LastUpdate` (Unix seconds). Say in the release pull
+request which issues it closes and which checks were skipped or did not pass.
 
 `ReleaseIdentityTests` fails when the versions, links, in-app notes, manifests
 and changelog disagree. Commit and push the release head.

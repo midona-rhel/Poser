@@ -33,7 +33,6 @@
   acceptance, and repository finalization in the main task. Only one writer
   edits a shared subsystem at a time.
 - Write concise, natural updates; do not require a TL;DR prefix or rigid template.
-  Historical plans are reference material, not current agent instructions.
   When user testing is required, include an exact actionable test card with
   starting state, actions, expected result, and what evidence to report.
 - Explicitly requested delegated tasks must send their blocker or final report
@@ -55,8 +54,9 @@
 
 Write everything — issues, PRs, commits, docs and code comments — for Midona
 and other people using Poser, in short, ordinary sentences. If it reads like a
-lab report or one agent talking to another, rewrite it. The detailed rules
-live in [issue implementation and review](docs/process/external-implementation-review-loop.md#writing-issues-and-pull-requests).
+lab report or one agent talking to another, rewrite it. The test for every
+line: can someone who has never opened the code read it? A word that only the
+code uses fails that test.
 
 - **Issues and PRs.** Start with what goes wrong for the user, then what
   should happen instead. Link the code that shows the problem with GitHub
@@ -86,4 +86,6 @@ live in [issue implementation and review](docs/process/external-implementation-r
   [unit-test budget](docs/process/testing.md#unit-test-budget-and-relevance).
 - **Docs.** Update the existing normative home in plain language and delete
   superseded prose. Feature pages describe what the user sees, not class
-  inventories. Dated evidence and live-check records go in `docs/validation/`.
+  inventories. Plans, audits, work items and records of checks are never
+  committed: work is tracked in GitHub issues, and what was checked goes in the
+  pull request.

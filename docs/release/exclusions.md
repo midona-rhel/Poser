@@ -22,8 +22,8 @@ Game and UI projects; legacy embedded-resource names remain for compatibility.
 ## Keep and inspect
 
 - `LICENSE`, `README.md`, `THIRD-PARTY-LICENSES.md`, and release documentation.
-- Poser's own design, validation, and backlog documentation when it contains no
-  local paths, private data, screenshots, or copied upstream source.
+- Poser's own documentation, when it contains no local paths, private data,
+  screenshots or copied upstream source.
 - GPL-compatible upstream data listed in `THIRD-PARTY-LICENSES.md` when it is
   required at runtime and its attribution remains with the release.
 

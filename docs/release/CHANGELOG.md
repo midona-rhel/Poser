@@ -332,12 +332,9 @@ No additional in-game verification is claimed for this release.
 - Add enabled-by-default protection against game mouse target changes in GPose.
 - Refine the first-run confirmation to say "know what you're getting into."
 
-See [release authorization and test coverage](0.9.8-acceptance.md). Locked colliders
-can display identity coordinates in the inspector until unlocked; deferred by the
-user. The continuous held-mouse overshoot/reversal gesture was not completed live;
-live runtime checks covered clamping and reverse input for both chain solvers.
-Animation playback is not reconstructed by lifecycle history. Off-list weather
-may still resolve to None.
+Known issues: a locked collider can show zero coordinates in the inspector until
+it is unlocked. Undoing the removal of an actor does not bring its animation
+back. A weather the current area does not list may show as None.
 
 ## 0.9.7-beta — world lifecycle and persistent workspace
 
@@ -351,11 +348,10 @@ may still resolve to None.
 - Add file-picker search, compact toolbar and scene-entity IK targets; fix preview isolation and drag history.
 - Correct multi-key camera movement and scene-load history restoration.
 
-User accepted the current stack; see [acceptance and coverage](0.9.7-acceptance.md).
-Known follow-up: actor nicknames can carry to unrelated actors after GPose slot
-reuse ([#196](https://github.com/midona-rhel/Poser/issues/196)). Lifecycle history
-restores authored bone transforms, not animation playback. Off-list weather may
-still resolve to None. The later renderer crash is not claimed fixed here.
+Known issues: an actor's nickname can show on an unrelated actor in a later GPose
+session ([#196](https://github.com/midona-rhel/Poser/issues/196)). Undoing the
+removal of an actor brings back its bone edits but not its animation. A weather
+the current area does not list may show as None.
 
 ## 0.9.6-beta — scene fixes and consistent controls
 
