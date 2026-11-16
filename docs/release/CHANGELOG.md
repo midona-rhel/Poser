@@ -317,8 +317,6 @@ them. Adjust single shapes by hand, and create existing groups again to get the
 new fit.
 Known issues: a locked collider can show the wrong coordinates, and the game can
 still crash when entering GPose again.
-All twelve commits through `bae6ddc0` were authorized for this release on 2026-09-07.
-No additional in-game verification is claimed for this release.
 
 
 ## 0.9.8-beta — furniture and collider-aware chain IK
@@ -371,9 +369,6 @@ the current area does not list may show as None.
 
 Known minor issues: area-light skew axis labels, wide spotlight outlines, and the
 names of duplicated lights. These are not fixed here.
-The mount-state report (#170) remains deferred pending reproduction.
-The context-menu candidate passed source review, compilation and 439 tests;
-the user authorized release before reporting the complete visual test card.
 
 ## 0.9.5-beta — spawned creatures get their collection; a drag is one step
 
@@ -415,8 +410,6 @@ dots wear a thicker ring. The 0.9.3 release notes describe the whole
 stretch since 0.9.2.
 
 ## 0.9.3-beta — the world, the journal, the wardrobe, and the overlay
-
-Sixty-two commits and eleven merged pull requests since 0.9.2-beta.
 
 **Spawn anything.** The plus lists the whole game: a hundred and three
 thousand map models under Scene objects and eight thousand effects under
@@ -553,12 +546,6 @@ that no longer existed. Disabling a borrowed actor's draw
 object crashed a later zone change. A zero-quaternion helper bone refused
 a whole pose. The Body and Face maps flashed on first visit. The combo
 menu paints as it did before the shell redesign.
-
-**Under the hood.** The main window and the library pane are partial
-files, one concern each. Surfaces reach the runtime through sixteen ports
-and never name a runtime class. Duplicated facts have one home each. A
-debug bridge and MCP server drive the plugin from outside the game for
-development.
 
 ## 0.9.2-beta — groups, the redesigned shell, and the input contract
 
