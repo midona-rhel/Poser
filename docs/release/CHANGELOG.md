@@ -294,7 +294,7 @@
 ## 0.9.10-beta — scene restoration and transform controls
 
 - Restore actor models and collections before scene poses, including attached companion placement.
-- Save evaluated IK poses without changing the live scene.
+- Save poses with IK as they look, without changing the IK in the scene.
 - Load legacy Anamnesis and CMTool poses alongside modern pose files.
 - Adjust capsule radius, endcap spacing and uniform scale independently.
 - Keep directional scaling local while retaining uniform scaling in World mode.
@@ -306,15 +306,17 @@
 
 - Create a frozen, individually editable group of body colliders from an actor's current pose.
 - Add capsule and sphere spawners; fit separate spine, shoulder, neck, limb and joint shapes with overlapping caps.
-- Respect loaded model weights and racial deformation; handle packed bone influences and exclude hair, tails and non-body geometry before capture validation.
-- Render legacy captured meshes as outlines and cache collider geometry.
+- Fit the colliders to the actor's actual body, including its race, and leave out hair, tails and other parts that are not the body.
+- Draw older mesh colliders as outlines, and draw colliders faster.
 - Prevent independent collision-chain links from accumulating unwanted twist.
 - Keep World bone gizmo axes aligned to the world, including attached minions.
-- Add bounded GPose lifetime diagnostics to investigate re-entry crashes; this is not a crash fix.
+- Add extra logging to help find a crash when entering GPose again. This does not fix the crash.
 
-Body fitting is approximate and frozen at capture time. Edit individual shapes
-as needed and recreate existing groups to use the new fitting.
-The locked-collider coordinate display and GPose re-entry crash remain tracked.
+Body colliders are an approximation, made from the pose at the moment you create
+them. Adjust single shapes by hand, and create existing groups again to get the
+new fit.
+Known issues: a locked collider can show the wrong coordinates, and the game can
+still crash when entering GPose again.
 All twelve commits through `bae6ddc0` were authorized for this release on 2026-09-07.
 No additional in-game verification is claimed for this release.
 
@@ -322,14 +324,14 @@ No additional in-game verification is claimed for this release.
 ## 0.9.8-beta — furniture and collider-aware chain IK
 
 - Add furniture as a dedicated spawn/sidebar/library category with dye, lighting and night controls.
-- Update expression controls and camera orbit around moved actors; expand detached inspector numeric fields.
-- Add parent and child spans for FABRIK and Rope, with parent-first defaults and a 50-link limit.
-- Add transformable plane, box, cylinder and cone IK colliders using Bepu, with chain collision width and independent visibility, collision and lock controls.
-- Improve collision stability, solver cost, bone rotations and rounded collider rendering.
-- Clamp authored IK target coordinates at chain reach and discard excess drag distance.
+- Update expressions to match Ktisis, orbit the camera around actors you have moved, and widen number fields in the detached Inspector.
+- Choose how many parent and child bones of the selected bone a FABRIK or Rope chain covers, up to 50, with parents first by default.
+- Add plane, box, cylinder and cone colliders for IK chains to bump into, which you can move, rotate and scale, with a collision width per chain and separate visibility, collision and lock controls.
+- Make collisions steadier and IK faster, fix flipping bone rotations, and smooth the drawing of rounded colliders.
+- Stop IK targets at the limit of the chain's reach, so dragging past it is not stored.
 - Save collider groups to the library and offer saved groups in spawn categories.
-- Decouple inspector selection updates from Properties visibility; fix detached Close and Settings navigation/state behavior.
-- Add enabled-by-default protection against game mouse target changes in GPose.
+- Keep the Inspector following the selection while Properties is hidden, make Close on a detached panel close it instead of reattaching it, and open Settings at General.
+- Stop clicks in GPose from changing the game's target, on by default.
 - Refine the first-run confirmation to say "know what you're getting into."
 
 Known issues: a locked collider can show zero coordinates in the inspector until
@@ -338,54 +340,53 @@ back. A weather the current area does not list may show as None.
 
 ## 0.9.7-beta — world lifecycle and persistent workspace
 
-- Unify world borrowing controls and edit borrowed lights in place, with release restoring the original.
-- Wait for spawned scenery/VFX replacements to become ready and preserve ownership through cleanup failures.
+- Borrow every kind of world object with the same controls, and edit borrowed lights directly; releasing one puts the original back.
+- Wait until a recreated scenery object or effect is ready before using it, and keep it under Poser's control when cleaning up fails.
 - Import human Anamnesis character files, including palette, equipment, dyes and facewear.
-- Restore authored actor appearance, integration state and manual bone transforms through lifecycle history.
+- Bring back an actor's appearance, mods and bone edits when undoing its removal.
 - Preserve Customize Plus on plain actor copies and copies of copies.
-- Remember section disclosure and detached window geometry; add a hidden-handles default.
-- Use consistent numbered names across created entities, and correct area-light labels and spotlight outlines.
-- Add file-picker search, compact toolbar and scene-entity IK targets; fix preview isolation and drag history.
-- Correct multi-key camera movement and scene-load history restoration.
+- Remember which sections are open and where detached windows sit, and add a setting to hide handles by default.
+- Give new things consistent numbered names, and fix area-light labels and spotlight outlines.
+- Add search to the file picker, a compact toolbar, and IK targets on other things in the scene; fix pose previews and undo for drags.
+- Fix moving the camera with several keys held, and undo after loading a scene.
 
 Known issues: an actor's nickname can show on an unrelated actor in a later GPose
-session ([#196](https://github.com/midona-rhel/Poser/issues/196)). Undoing the
+session. Undoing the
 removal of an actor brings back its bone edits but not its animation. A weather
 the current area does not list may show as None.
 
 ## 0.9.6-beta — scene fixes and consistent controls
 
-- Correct VFX borrowing/release lifecycle while preserving the accepted movement behavior.
-- Fix library source initialization and diagnostics, with source management in Settings.
+- Fix borrowing and releasing effects, without changing how they move.
+- Fix Library folders that failed to load, and manage Library folders in Settings.
 - Add stable group position, rotation and scale controls, including saved group orientation.
-- Improve appearance layout, complete indexed palettes, later hairstyle previews and custom colours.
-- Add attached-actor selection and controls, reorganize Actor sections, and correct ornament names.
-- Correct gizmo screen sizing, rotation-ring projection and handle-versus-bone picking; ring visibility transitions gradually.
+- Improve the Appearance layout, with complete colour palettes, previews for newer hairstyles, and custom colours.
+- Select and control the minion, mount or ornament attached to an actor, reorganize the Actor sections, and fix ornament names.
+- Fix the gizmo's size on screen, how its rotation rings are drawn, and clicks on a handle selecting a bone instead; rings now fade in and out.
 - Spawn lights closer to the camera.
-- Put supported saves and category-wide destruction under the three-dot More menu; require confirmation for Destroy all.
-- Add branch/weapon-slot/group Tree controls, explicit actor-wide presets and pose commands, and correct clicked-target routing.
-- Preserve unrelated selections on entity removal and dismiss stale library menus after list changes.
-- Expose None/0 weather explicitly. Some off-list weather still resolves to None, an accepted native limitation.
+- Put saving, and removing everything of one kind, under the three-dot More menu; Destroy all now asks first.
+- Add Tree controls to branches, weapon slots and groups, label the presets and pose commands that act on the whole actor, and make menus act on the row you right-clicked.
+- Keep the rest of the selection when removing something, and close Library menus that no longer match the list.
+- Add None as a weather choice. Some weathers the area does not list still show as None, because the game does not report them.
 
-Known minor issues: area-light skew axis labels (#182), wide spotlight overlay
-geometry (#183), and duplicate-light naming (#184). These are not fixed here.
+Known minor issues: area-light skew axis labels, wide spotlight outlines, and the
+names of duplicated lights. These are not fixed here.
 The mount-state report (#170) remains deferred pending reproduction.
 The context-menu candidate passed source review, compilation and 439 tests;
 the user authorized release before reporting the complete visual test card.
 
 ## 0.9.5-beta — spawned creatures get their collection; a drag is one step
 
-**Spawned creatures get their collection.** A creature spawned from the
-catalog kept the catalog label as its game name, and Penumbra, which
-identifies a player-kind object by a two-word capitalized name, refused
-to assign it a collection. The game object now keeps a Poser name and the
-label is its nickname, so the Morbol seedling wears the player collection
-like every other spawn.
+**Spawned creatures get their collection.** Penumbra would not give a
+collection to a creature spawned from the catalog, because the creature
+carried the catalog label as its game name. The creature now gets a
+player-style name in the game and shows the label as its nickname, so the
+Morbol seedling wears the player collection like every other spawn.
 
-**A drag is one step.** Every slider, well and field commits through one
-seam that seals the undo journal: a drag is one step from press to
-release, a typed value one from focus to unfocus, and the next touch of
-the same control opens a new step. Two drags of one slider no longer undo
+**A drag is one step.** Every slider, colour well and field now makes one
+undo step per edit: a drag is one step from press to release, a typed
+value one from clicking into the field to leaving it, and the next touch of
+the same control starts a new step. Two drags of one slider no longer undo
 as one.
 
 ## 0.9.4-beta — the look goes back, the keys stay yours, stock filters
@@ -396,8 +397,8 @@ GPose ending put it back, by the exact object while it exists and by the
 character's name once it has left GPose. An actor no longer walks out of
 GPose in the gear it was given there, as in Brio and Ktisis.
 
-**The keys stay yours.** A chord Poser binds is taken from the game at its
-key message, so Ctrl+Z undoes in Poser and no longer resets the game's
+**The keys stay yours.** A key combination bound in Poser no longer also
+reaches the game, so Ctrl+Z undoes in Poser and no longer resets the game's
 camera. Escape and Enter are never taken: they are how you leave GPose and
 a game dialog. The "keep every key" option, which ate the WASD pan and the
 game's own shortcuts, is gone; "Keep bound keys from the game" is on by
@@ -409,8 +410,7 @@ categories, each region with its IVCS bones: fingers with the hands, toes
 with the feet, the muscles with the arms and legs.
 
 **Smaller.** The whole UI no longer vanishes for one frame a couple of
-seconds after loading: the standby fonts warm on their own atlas, and a
-ready UI never skips a frame. A dialog is as tall as its content. Bone
+seconds after loading. A dialog is as tall as its content. Bone
 dots wear a thicker ring. The 0.9.3 release notes describe the whole
 stretch since 0.9.2.
 
@@ -433,8 +433,7 @@ unless you choose another placement, and the choice is a setting.
 
 **Scenery that behaves.** A map object takes a dye where its model
 allows one and says plainly when it does not. A Night switch dresses it
-for day or night — the byte the zone's layout writes and no reference
-plugin knew about. Effects get brightness, a pause, a tint and a loop
+for day or night. Effects get brightness, a pause, a tint and a loop
 that replays in place instead of blinking. Animated scenery can be
 paused, and moving a windmill or a banner now moves the motion with it:
 your placement is the base and the animation rides on top. Opacity, tint,
@@ -473,9 +472,9 @@ offset and rotation. Ropes are live: a catenary between root and dragged
 tip, hanging on world down. The actor's Pose page leads with an IK
 section: chain count, Enable all, Disable all, Bake all, Show bones.
 
-**Pause and scrub, owned.** Pause and scrub now move the whole clock
-family, so a forward scrub ends on time and a paused actor stays where
-you put it. Props ride the layer clock through scrubs and speed changes.
+**Pause and scrub, together.** Pause and scrub now move everything the
+animation drives at once, so a forward scrub ends on time and a paused actor stays where
+you put it. Props follow their layer through scrubs and speed changes.
 Speed zero is a pause wherever it comes from, Play resumes the live
 timeline instead of re-blending it, and resetting a layer really stops it.
 
@@ -485,8 +484,8 @@ animation choices, world objects, props, overlays, groups, adoption and
 scene loads. A drag or a typed word is one step. Bone edits survive a
 redraw, as Brio's do. Verbs that break animation state — Redraw, MCDF
 import, design and collection applies — wear purple, and their undo
-restores the actor from a snapshot. A step the runner refuses twice is
-dropped instead of wedging the stack. Undo depth is 500.
+puts the actor back as it was. A step that fails twice is dropped instead
+of blocking the undo history. Undo depth is 500.
 
 **Wear anything.** The Appearance tab has three views through Glamourer:
 Actor, Appearance and Equipment. Equipment is a card per slot with the
@@ -519,11 +518,8 @@ Brio's frozen popup and the wheel walks it. Selected, IK and mirror bones
 paint on top with bolder lines, and the settings swatches finally reach
 the lines and the body and face maps, which gain connector lines by
 Brio's rule and a dot size of their own. Link shows its partners as
-Mirror does, and symmetry can be set per bone. Bone dots are baked
-circles drawn in one batch and connectors are soft strips drawn in one
-batch, the projection fetched once per frame: four visible skeletons
-went from 2.9 to 1.1 ms of overlay time, and three per-frame allocators
-are gone.
+Mirror does, and symmetry can be set per bone. The overlay draws much
+faster: four visible skeletons went from 2.9 to 1.1 ms of overlay time.
 
 **Cameras and input.** Free cameras track like orbit cameras: Follow
 carries the camera, Pan turns it. Selecting a camera can be the
@@ -551,9 +547,9 @@ no modified files, no mods. Nothing is sent anywhere; you attach the
 file.
 
 **Fixed.** A scene load crashed the renderer by refreshing an object
-before its model streamed in. A paused object held the game's own index
-and draw words and crashed the shadow pass. Undoing a spawned object's
-removal re-adopted a freed address. Disabling a borrowed actor's draw
+before its model streamed in. Pausing an object could crash the game's
+shadow drawing. Undoing a spawned object's removal could pick up an object
+that no longer existed. Disabling a borrowed actor's draw
 object crashed a later zone change. A zero-quaternion helper bone refused
 a whole pose. The Body and Face maps flashed on first visit. The combo
 menu paints as it did before the shell redesign.
