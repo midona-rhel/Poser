@@ -134,9 +134,6 @@ internal sealed class BaseAnimationSession
         ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
         if (_store.Suspended() is { } blocked) return blocked;
-        // Lips has no Apply step, so there is no applied animation to repeat.
-        if (slot == AnimationSlot.Lips)
-            return Outcome.Fail("Repeat is unavailable for lips.");
         var current = _store.For(actor);
         if (!on && current.LoopedSlots.ContainsKey(slot))
         {
