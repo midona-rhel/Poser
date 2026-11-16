@@ -544,19 +544,26 @@ public sealed unsafe partial class AnimationNativeState
             return Outcome.Ok();
         }
         if (!sameMode)
-        {
-            // The chair's enter hook sets the sit height into DrawOffset/CameraOffset;
-            // the placement Poser gave the actor stays.
-            var drawOffset = character->DrawOffset;
-            var cameraOffset = character->CameraOffset;
-            _characterSetMode(character, (int)mode, param);
-            character->DrawOffset = drawOffset;
-            character->CameraOffset = cameraOffset;
-            ClearEmoteCancelPending(character);
-        }
+            EnterLoopMode(character, mode, param);
         var replayed = param == 0 && slotTimeline != 0 ? ReplayTimeline(character, slotTimeline) : Outcome.Ok();
         _gposeMotion.GiveBack(character, mode, param, baseOverride, slotTimeline);
         return replayed;
+    }
+
+    /// <summary>Enters a loop mode and keeps the placement Poser gave the actor: the
+    /// chair's enter hook sets the sit height into DrawOffset/CameraOffset. False when
+    /// the game's mode function was not found. Not for the real player.</summary>
+    internal bool EnterLoopMode(Character* character, CharacterModes mode, byte param)
+    {
+        if (_characterSetMode == null)
+            return false;
+        var drawOffset = character->DrawOffset;
+        var cameraOffset = character->CameraOffset;
+        _characterSetMode(character, (int)mode, param);
+        character->DrawOffset = drawOffset;
+        character->CameraOffset = cameraOffset;
+        ClearEmoteCancelPending(character);
+        return true;
     }
 
     /// <summary>Stops GPose replaying the actor's recorded motion before a stance
