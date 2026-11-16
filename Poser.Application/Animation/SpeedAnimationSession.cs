@@ -64,18 +64,18 @@ internal sealed class SpeedAnimationSession
     {
         _store.Trace?.Invoke($"Resume(all) {actor}");
         var current = _store.For(actor);
-        foreach (var (slot, speed) in current.SlotSpeeds)
+        foreach (var slot in current.SlotSpeeds.Keys)
         {
             if (slot == AnimationSlot.Facial && current.HeldExpression != null)
                 continue;
-            if (speed == 0f)
-                ResumeSlotSpeedCore(actor, slot);
+            ResumeSlotSpeedCore(actor, slot);
         }
         return ClearSpeed(actor);
     }
 
-    /// <summary>Reports a nonempty layer with no zero-speed override, unless
-    /// the whole actor is paused. This reads playback state, not bone movement.</summary>
+    /// <summary>True when a layer has an animation that Poser does not hold
+    /// still and the whole actor is not paused. It reads what the game plays,
+    /// not whether bones move.</summary>
     public bool AnyPlaying(ActorId actor)
     {
         if (IsPaused(actor))
@@ -117,7 +117,7 @@ internal sealed class SpeedAnimationSession
         return ClearSpeed(actor);
     }
 
-    /// <summary>Rewinds paused animation controls.</summary>
+    /// <summary>Moves every paused animation back to its first frame.</summary>
     public Outcome RewindPausedControls(ActorId actor)
     {
         if (_store.Suspended() is { } blocked) return blocked;
@@ -170,6 +170,8 @@ internal sealed class SpeedAnimationSession
         return SetSlotSpeed(actor, slot, 0f);
     }
 
+    /// <summary>Plays one layer Poser holds still again. A layer that is not
+    /// held still is left alone.</summary>
     public Outcome ResumeSlotSpeedCore(ActorId actor, AnimationSlot slot)
     {
         var current = _store.For(actor);
