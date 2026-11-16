@@ -97,7 +97,6 @@ public partial class PoseInspectorPane : IDisposable
     private Transform? _cleanModelStart;
     private Transform? _cleanDisplayedCurrent;
     private TransformGestureId? _cleanGesture;
-    // Parent pivot is fixed when the gesture begins.
 
     // Numeric scale wells keep their edited axis fixed across Alt toggles.
     private int _scaleGestureAxis = -1;
@@ -249,26 +248,6 @@ public partial class PoseInspectorPane : IDisposable
         _editorState = editorState;
         Reset3DCamera();
     }
-
-    private BoneId? OwnerBone()
-    {
-        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } selected })
-            return selected;
-        if (OwningActorId() is not { } actorId)
-            return null;
-        foreach (var descriptor in _scene.Snapshot.Actors)
-        {
-            if (descriptor.Id != actorId)
-                continue;
-            foreach (var skeleton in descriptor.Skeletons)
-                if (skeleton.Bones.Count > 0)
-                    return skeleton.Bones[0].Id;
-            return null;
-        }
-
-        return null;
-    }
-
 
     private readonly CameraPane _cameraPane;
     private readonly OverlayPane _overlayPane;
@@ -431,17 +410,9 @@ public partial class PoseInspectorPane : IDisposable
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
     }
 
-    public (string Prefix, string Bold) CrumbParts() => _primary switch
-    {
-        { Bone: { } bone } => ($"{ActorLabel(bone.Skeleton.Actor)} · ", SlotBonesOf(bone)?.FirstOrDefault(item => item.Id == bone)?.DisplayName ?? bone.CanonicalName),
-        { Actor: { } actor } => ("", ActorLabel(actor)),
-        _ => ("", ""),
-    };
-
     private string ActorLabel(ActorId id) =>
         _scene.Snapshot.FindActor(id) is { } actor ? ActorNames.Display(_configuration, actor) : "";
 
-    // Rotation rings use the current presentation frame.
     /// <summary>The camera the rail ball edits; null off camera
     /// selections.</summary>
     public Application.Presentation.CameraReading? BallCamera() =>
@@ -762,12 +733,6 @@ public partial class PoseInspectorPane : IDisposable
 
         stack.Finish();
     }
-
-    public bool HasAuthoredEdits =>
-        PrimarySkeletonDescriptor() is not null &&
-        OwningActorId() is { } actorId &&
-        _poseCommands.HasAuthoredEdits(actorId);
-
 
     private float DrawPoseSurface(
         ImDrawListPtr dl,
@@ -1090,8 +1055,8 @@ public partial class PoseInspectorPane : IDisposable
                 Width = UiWidth.Region((max.X - min.X) / s),
             });
 
-        // The fixed filter header closes with a separator, so what stays
-        // put and what scrolls is legible (the graphical panes match).
+        // A line under the search field separates it from the scrolling
+        // bone list.
         float matrixRuleY = min.Y + toolbarHeight
             + theme.Page.ActionGap * s - 1f * s;
         ImGui.GetWindowDrawList().AddRectFilled(
@@ -1210,9 +1175,8 @@ public partial class PoseInspectorPane : IDisposable
                         },
                         help);
                 }
-                // Precise naming: this clears the SELECTION, and it sits
-                // in the parenting bar — the bare "Clear" read as clearing
-                // the parenting flags.
+                // Named in full: a bare "Clear" in this bar read as clearing
+                // the parenting checkboxes.
                 bar.Button(
                     "Clear selection",
                     _workspaceSelection.Clear,
@@ -1475,9 +1439,8 @@ public partial class PoseInspectorPane : IDisposable
         bool swap = GetSwapRotationXY?.Invoke() == true;
         static Vector3 SwapXY(Vector3 value) => new(value.Y, value.X, value.Z);
 
-        // The transform grid: toolbar icons name the rows, the axis
-        // columns wear their colors and letters — the inspector's designed
-        // form of the transform (skill: shell roles).
+        // One grid for position, rotation and scale: an icon names each
+        // row and the columns are the X, Y and Z axes.
         static float Axis(Vector3 v, int axis) =>
             axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
         static Vector3 WithAxis(Vector3 v, int axis, float next) => axis switch
@@ -1898,8 +1861,7 @@ public partial class PoseInspectorPane : IDisposable
                 {
                     var flag = part;
                     bool enabled = !off && state.Settings.TargetType.HasFlag(flag);
-                    // Free controls on one row spread EQUALLY — no label
-                    // column to align to, so the spacing is the alignment.
+                    // The part buttons share the row equally.
                     actions.Button(
                         label,
                         () => SetPart(flag, !enabled),
@@ -1939,9 +1901,6 @@ public partial class PoseInspectorPane : IDisposable
         }
     }
 
-    // Keep raw hinge-axis values while dragging.
-
-    // Bake refusals are scoped to their target bone.
     /// <summary>The last bake note handed to the notices, so a failure
     /// that lingers on the bake is reported once.</summary>
     private string? _forwardedBakeNote;
@@ -2786,8 +2745,7 @@ public partial class PoseInspectorPane : IDisposable
         _primary is { Kind: SceneEntityKind.Overlay, Overlay: { } id } &&
         _viewport.GetCollider(id) is null;
 
-    /// <summary>The rail pad's overlay node — the camera ball's idiom.
-    /// </summary>
+    /// <summary>The overlay the rail's placement pad moves.</summary>
     public OverlayReading? RailOverlayNode() =>
         _overlayPane.RailNode;
 
@@ -2804,8 +2762,7 @@ public partial class PoseInspectorPane : IDisposable
             SelectedActorIds().Select(TransformTargetId.ForActor).ToList());
     }
 
-    /// <summary>Routes the camera rail's reset action to the camera pane's
-    /// exact-id validation and state owner.</summary>
+    /// <summary>Restores the selected camera's framing.</summary>
     public void ResetCameraTransform() => _cameraPane.ResetSelectedCameraTransform();
 
     public void ResetSelectedBones()
