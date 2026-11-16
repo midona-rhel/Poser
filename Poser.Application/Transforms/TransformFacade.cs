@@ -8,7 +8,8 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>UI entry point into the transform gesture application API.</summary>
+/// <summary>The one way the interface moves things: drags, typed values,
+/// undo and redo.</summary>
 public sealed class TransformFacade : ITransformFacade
 {
     private readonly SceneSession _scene;
@@ -118,9 +119,8 @@ public sealed class TransformFacade : ITransformFacade
     }
 
     /// <summary>
-    /// Stable-id gesture entry: expands linked-bone and symmetry partners
-    /// from the scene snapshot before <c>Begin</c>, then dispatches to the
-    /// gesture service. Owns no state.
+    /// Starts a transform. Adds the linked and paired bones that follow the
+    /// dragged bones, then hands the gesture to the gesture service.
     /// </summary>
     public GestureResult Begin(
         IReadOnlyList<TransformTargetId> targetIds,
@@ -133,20 +133,21 @@ public sealed class TransformFacade : ITransformFacade
         Func<string, TransformDeltaMode?>? symmetryFor = null,
         bool relativeSecondaryBones = false,
         GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing,
-        Guid? groupId = null,
         bool groupTransform = false,
         IReadOnlyList<SelectionId>? selection = null)
     {
-        // All entity multi-target entry points (rail, world gizmo and move
-        // commands) share admission and metadata, including old callers.
+        // Several entities, or one entity of a multi-entity selection, move
+        // as a group: around their shared centre, in world space, and only
+        // when the whole selection can move.
         var selected = selection ?? _scene.Selection.Selected;
         groupTransform |= (targetIds.Count > 1
             || Poser.Application.Selection.EntitySelection.IsMultiEntity(selected))
             && targetIds.All(target => target.Kind != TransformTargetKind.Bone);
+        Guid? groupId = null;
         if (groupTransform)
         {
             if (!_groups.Admit(selected, targetIds, groupScale, out groupId, out var refusal))
-                return GestureResult.Fail(refusal ?? "The group cannot be transformed.");
+                return GestureResult.Fail(refusal!);
             pivotMode = PivotMode.Centroid;
             space = TransformSpace.World;
         }
@@ -199,29 +200,23 @@ public sealed class TransformFacade : ITransformFacade
         return before ? _journal.Undo(entities[0]) : _journal.Redo(entities[0]);
     }
 
-    /// <summary>Stable-id atomic absolute write (non-interactive command).</summary>
+    /// <summary>Writes one transform as a single undo step, such as a value
+    /// typed in the inspector.</summary>
     public GestureResult SetAbsolute(
         TransformTargetId target,
         PoseTransform desired,
         string description) =>
         _commands.SetAbsolute(target, desired, description);
 
-    /// <summary>Stable-id actor override reset.</summary>
+    /// <summary>Releases the placement Poser set on these actors, as one undo
+    /// step.</summary>
     public GestureResult ClearActorOverrides(
-        IReadOnlyList<TransformTargetId> targets)
-    {
-        foreach (var target in targets)
-        {
-            if (target.Kind != TransformTargetKind.Actor)
-                return GestureResult.Fail(
-                    "Only actor targets can clear transform overrides.");
-        }
-        return _commands.ClearActorOverrides(
+        IReadOnlyList<TransformTargetId> targets) =>
+        _commands.ClearActorOverrides(
             targets,
             targets.Count == 1
                 ? "Reset actor transform"
                 : $"Reset {targets.Count} actor transforms");
-    }
 
     private void AddLinkedBoneTargets(
         ICollection<TransformTargetId> targets)
@@ -266,7 +261,7 @@ public sealed class TransformFacade : ITransformFacade
         {
             if (target.Bone is not { } bone)
                 continue;
-            // Resolved PER SOURCE BONE: with per-bone symmetry, one drag
+            // Asked for each dragged bone: with per-bone symmetry, one drag
             // can mirror one bone, link another, and leave a third alone.
             if (symmetryFor(bone.CanonicalName) is not { } mode)
                 continue;
