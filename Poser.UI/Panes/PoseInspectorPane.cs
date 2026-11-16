@@ -255,8 +255,6 @@ public partial class PoseInspectorPane : IDisposable
     private readonly UserNotices _notices;
     private bool _openCameraTracking = true;
 
-    private bool IsCreature(ActorDescriptor actor) => _interaction.IsCreature(actor.Id);
-
     // Cache transform resolution by selection and scene revision.
     private readonly List<SelectionId> _effectiveKey = new();
     private ulong _effectiveRevision;
@@ -382,6 +380,7 @@ public partial class PoseInspectorPane : IDisposable
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
 
+        // The selected actor can lose its skeleton during a redraw.
         var surfaceSkeleton = PrimarySkeletonDescriptor();
         if (surfaceSkeleton != null)
         {
@@ -389,7 +388,8 @@ public partial class PoseInspectorPane : IDisposable
                 dl,
                 cursor,
                 size,
-                s);
+                s,
+                surfaceSkeleton);
         }
         else
         {
@@ -727,7 +727,7 @@ public partial class PoseInspectorPane : IDisposable
                     "IK",
                     _openActorIk,
                     next => _openActorIk = next,
-                    form => DrawActorIk(form));
+                    form => DrawActorIk(form, skeleton.Id.Actor));
             }
         }
 
@@ -738,7 +738,8 @@ public partial class PoseInspectorPane : IDisposable
         ImDrawListPtr dl,
         Vector2 cursor,
         Vector2 size,
-        float s)
+        float s,
+        SkeletonDescriptor skeleton)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
         float width = size.X;
@@ -751,7 +752,7 @@ public partial class PoseInspectorPane : IDisposable
         ImGui.SetCursorScreenPos(cursor + new Vector2(
             0f,
             (tabsHeightPx - segmentedHeightPx) * 0.5f * s));
-        bool humanoid = HasHumanoidMap?.Invoke() ?? true;
+        bool humanoid = HasHumanoidMap!();
         if (!humanoid && _poseView == 1) _poseView = 0;
         int visibleView = !humanoid && _poseView > 1 ? _poseView - 1 : _poseView;
         SegmentedControl(
@@ -764,7 +765,7 @@ public partial class PoseInspectorPane : IDisposable
 
         if (humanoid && _poseView is 0 or 1)
         {
-            bool swapped = GetMapMirror?.Invoke() ?? false;
+            bool swapped = GetMapMirror!();
             ActionBar(
                 "pose-surface-mirror",
                 cursor,
@@ -775,7 +776,7 @@ public partial class PoseInspectorPane : IDisposable
                 right => right.Switch(
                     "Mirror",
                     swapped,
-                    next => SetMapMirror?.Invoke(next),
+                    next => SetMapMirror!(next),
                     "Swap left and right on the body and face maps"),
                 ActionBarSeparator.None);
         }
@@ -841,7 +842,8 @@ public partial class PoseInspectorPane : IDisposable
                 scrolledOrigin,
                 surfaceWidth,
                 bodyHeight,
-                s);
+                s,
+                skeleton);
         }
         ImGui.EndChild();
         ImGui.PopStyleVar();
@@ -854,30 +856,29 @@ public partial class PoseInspectorPane : IDisposable
         Vector2 cursor,
         float width,
         float viewportHeight,
-        float s)
+        float s,
+        SkeletonDescriptor skeleton)
     {
         if (_poseView is 0 or 1)
         {
             ImGui.SetCursorScreenPos(cursor);
-            if (DrawMapInline == null || !DrawMapInline(_poseView, new Vector2(width, viewportHeight)))
+            // The map needs the actor's body skeleton, which can be missing
+            // while a weapon bone is selected.
+            if (!DrawMapInline!(_poseView, new Vector2(width, viewportHeight)))
                 TextAt(new Vector2(cursor.X, cursor.Y + 8f * s), "Select an actor to use the map.", new TextStyle { Size = ActiveTheme.Typography.LabelSize, Color = ActiveTheme.FormHint });
             return viewportHeight;
         }
 
         if (_poseView == 3)
-        {
-            return PrimarySkeletonDescriptor() is { } diagramSkeleton
-                ? Draw3DView(dl, cursor, width, viewportHeight, diagramSkeleton, s)
-                : viewportHeight;
-        }
+            return Draw3DView(dl, cursor, width, viewportHeight, skeleton, s);
 
         if (_poseView == 4)
             return DrawExpressionSurface(cursor, width, viewportHeight, s);
 
         if (_poseView == 5)
-            return DrawActorSurface(cursor, width, viewportHeight, s);
+            return DrawActorSurface(cursor, width, viewportHeight, s, skeleton);
 
-        return DrawMatrixSurface(cursor, width, viewportHeight, s);
+        return DrawMatrixSurface(cursor, width, viewportHeight, s, skeleton);
     }
 
     // The scrolling band uses the width supplied by its host.
@@ -933,25 +934,10 @@ public partial class PoseInspectorPane : IDisposable
         if (!SurfaceBand(cursor, width, viewportHeight, s, out var min, out var max))
             return viewportHeight;
 
-        var actor = OwningActor();
         InsetScrollSurface(
             "##pose-expression-scroll", min, max, s,
             (origin, contentWidth) =>
-            {
-                if (actor == null ||
-                    (!_expressionSection.CanDraw && DrawExpressionRow == null))
-                {
-                    TextAt(
-                        origin,
-                        "Select an actor to edit its expression.",
-                        new TextStyle
-                        {
-                            Size = ActiveTheme.Typography.LabelSize,
-                            Color = ActiveTheme.FormHint,
-                        });
-                    return 0f;
-                }
-                return PageForm.Section(
+                PageForm.Section(
                     "pose-surface-expression",
                     "Expression",
                     origin,
@@ -961,8 +947,7 @@ public partial class PoseInspectorPane : IDisposable
                     form => _expressionSection.Draw(
                         form, OwningActorId(), paired: true,
                         DrawExpressionRow),
-                    divider: false);
-            });
+                    divider: false));
         return viewportHeight;
     }
 
@@ -970,59 +955,42 @@ public partial class PoseInspectorPane : IDisposable
         Vector2 cursor,
         float width,
         float viewportHeight,
-        float s)
+        float s,
+        SkeletonDescriptor skeleton)
     {
         if (!SurfaceBand(cursor, width, viewportHeight, s, out var min, out var max))
             return viewportHeight;
 
-        var actor = OwningActor();
-        var skeleton = PrimarySkeletonDescriptor();
+        var actorId = skeleton.Id.Actor;
         InsetScrollSurface(
             "##pose-actor-scroll", min, max, s,
             (origin, contentWidth) =>
             {
-                if (actor == null && skeleton == null)
-                {
-                    TextAt(
-                        origin,
-                        "Select an actor to use these actions.",
-                        new TextStyle
-                        {
-                            Size = ActiveTheme.Typography.LabelSize,
-                            Color = ActiveTheme.FormHint,
-                        });
-                    return 0f;
-                }
-
                 var stack = new SectionStack(
                     "pose-surface", origin, contentWidth);
                 // IK precedes the remaining actor pose sections.
-                if (skeleton != null)
-                    stack.Section(
-                        "actor-ik",
-                        "IK",
-                        _openSurfaceActorIk,
-                        next => _openSurfaceActorIk = next,
-                        form => DrawActorIk(form),
-                        divider: stack.Any);
-                if (actor != null && !IsCreature(actor))
+                stack.Section(
+                    "actor-ik",
+                    "IK",
+                    _openSurfaceActorIk,
+                    next => _openSurfaceActorIk = next,
+                    form => DrawActorIk(form, actorId),
+                    divider: stack.Any);
+                if (!_interaction.IsCreature(actorId))
                     stack.Section(
                         "gaze",
                         "Gaze",
                         _openSurfaceGaze,
                         next => _openSurfaceGaze = next,
-                        form => DrawGaze(form, actor.Id, wide: true),
+                        form => DrawGaze(form, actorId, wide: true),
                         divider: stack.Any);
-                if (skeleton != null)
-                {
-                    stack.Section(
-                        "pose",
-                        "Pose",
-                        _openSurfacePose,
-                        next => _openSurfacePose = next,
-                        form => DrawPoseActions(form, skeleton, wide: true),
-                        divider: stack.Any);
-                }
+                stack.Section(
+                    "pose",
+                    "Pose",
+                    _openSurfacePose,
+                    next => _openSurfacePose = next,
+                    form => DrawPoseActions(form, skeleton, wide: true),
+                    divider: stack.Any);
                 return stack.Bottom - origin.Y;
             });
         return viewportHeight;
@@ -1032,7 +1000,8 @@ public partial class PoseInspectorPane : IDisposable
         Vector2 cursor,
         float width,
         float viewportHeight,
-        float s)
+        float s,
+        SkeletonDescriptor matrixSkeleton)
     {
         using var profile = _profiler.Scope("Surface · Matrix");
         var theme = ActiveTheme;
@@ -1071,9 +1040,6 @@ public partial class PoseInspectorPane : IDisposable
         if (viewMax.Y <= viewMin.Y)
             return viewportHeight;
 
-        var matrixSkeleton = PrimarySkeletonDescriptor();
-        if (matrixSkeleton == null)
-            return viewportHeight;
         if (_matrixVm == null ||
             _matrixRevision != _scene.Revision ||
             _matrixSkeletonId != matrixSkeleton.Id)
@@ -1102,8 +1068,6 @@ public partial class PoseInspectorPane : IDisposable
                 },
                 (ids, additive) =>
                 {
-                    if (ids.Count == 0)
-                        return;
                     if (!additive)
                         _workspaceSelection.Select(ids[0]);
                     foreach (var id in ids.Skip(additive ? 0 : 1))
@@ -1259,7 +1223,8 @@ public partial class PoseInspectorPane : IDisposable
             }
         }
 
-        // Querying the skeleton refreshes the 3D cache.
+        // Reading the model matrix refreshes this skeleton's bone positions
+        // for this frame; the matrix itself is not needed here.
         if (skeleton.Bones.Count > 0)
             _viewport.GetSkeletonModelMatrix(skeleton.Bones[0].Id);
 
@@ -1436,7 +1401,7 @@ public partial class PoseInspectorPane : IDisposable
             .Transform.For(_primary?.Kind == SceneEntityKind.Bone);
 
         // Swap only the displayed rotation columns.
-        bool swap = GetSwapRotationXY?.Invoke() == true;
+        bool swap = GetSwapRotationXY!();
         static Vector3 SwapXY(Vector3 value) => new(value.Y, value.X, value.Z);
 
         // One grid for position, rotation and scale: an icon names each
@@ -2439,13 +2404,10 @@ public partial class PoseInspectorPane : IDisposable
             _notices.Failed($"Bake: {failed.Detail}");
     }
 
-    private void DrawActorIk(FormScope form)
+    private void DrawActorIk(FormScope form, ActorId actorId)
     {
         PumpBakeQueue();
-        var actorId = OwningActorId();
-        var chains = actorId is { } owner
-            ? ActorIkChains(owner)
-            : Array.Empty<TransformTargetId>();
+        var chains = ActorIkChains(actorId);
         int armed = chains.Count(chain => _ikPort.Get(chain)?.Enabled == true);
         int bakeable = chains.Count(_ikBake.CanBake);
 
