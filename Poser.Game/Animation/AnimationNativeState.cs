@@ -246,15 +246,9 @@ public sealed unsafe partial class AnimationNativeState
 
     internal Character* Resolve(ActorId actor, out string? detail)
     {
-        detail = null;
         var resolved = _bindings.Resolve(actor);
-        if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
-        {
-            detail = resolved.Detail ?? $"Actor {actor} is no longer available.";
-            return null;
-        }
-        var character = (Character*)legacy.Address;
-        return character == null ? null : character;
+        detail = resolved.Detail;
+        return resolved.Success ? (Character*)resolved.Value!.Address : null;
     }
 
     internal IActor? ResolveActor(ActorId actor)
