@@ -1,122 +1,95 @@
 # Product scope and boundaries
 
-Poser is an FFXIV GPose tool for posing actors and building scenes. It covers
-GPose lifecycle, actor discovery and actions, selection and transforms,
-expression/gaze/IK, animation and physics freeze, settings, and one undo
-journal. It also covers objects, lights, virtual cameras,
-environment, overlays, adopted world objects, scenes, pose and MCDF libraries,
-autosave, and reference pictures.
+Poser is a Dalamud plugin for posing actors and building scenes in Final Fantasy
+XIV's group pose (GPose). What it does for a user is described in the
+[feature pages](../README.md). This page says what Poser leaves to other plugins
+and how the code is split into projects.
 
-Runtime appearance covers opacity, model tint, wet-surface controls, and model
-id changes. External appearance stays actor-scoped: Penumbra collections,
-Glamourer designs, Customize+ profiles, MCDF import/export, and Open in
-Glamourer. Poser does not own Glamourer equipment, customization, dyes,
-materials, or saved designs.
+## What Poser leaves to other plugins
 
-General animation authoring and VFX authoring are not supported; the bounded
-[static idle export](../features/animation.md) captures a single pose, not a
-timeline editor. Character Select+ actor application is not supported until its
-public IPC can target arbitrary actors and restore them. General IPC and web
-APIs are not product features.
+- **Looks.** Poser changes an actor's mods, gear, face and body shape by asking
+  Penumbra, Glamourer and Customize+ to do it. It does not keep its own copy of
+  gear, dyes or designs. Opacity, tint, Wet surface and the model id are Poser's own.
+- **Animations and effects.** Poser plays the game's animations and places the
+  game's effects. It cannot make or edit them. The one exception is
+  [Export Idle Pose](../features/animation.md#exporting-a-pose-as-an-idle-animation),
+  which saves a single pose as a mod.
+- **Other plugins.** Poser offers no IPC for other plugins to call.
 
-## Current assembly boundaries
+## The projects
 
-At this revision:
+The solution is `Poser.slnx`. The intended split is three parts: the interface,
+the game, and Poser's own logic. In the code that is:
 
-- `Poser.Domain` has no project references.
-- `Poser.Documents` references only `Poser.Domain`; it owns portable file
-  models, codecs, validation, storage and document-placement math.
-- `Poser.Application` references `Poser.Domain` and `Poser.Documents`.
-- `Poser.Game` references `Poser.Domain`, `Poser.Application`, and
-  `Poser.Documents`.
-- The host `Poser` references `Poser.Domain`, `Poser.Application`,
-  `Poser.Game`, and `Poser.UI`.
-- `Poser.UI` references only Domain, Application and Documents. All windows,
-  panes and overlays live here; host composition supplies runtime implementations.
+| Project | What it is for |
+|---|---|
+| `Poser.Domain` | Plain values shared by everything: the ids of actors, bones, lights and other things in the scene, transforms, pose maths, the IK solvers, and bone names and categories. |
+| `Poser.Documents` | Files: the pose, scene, character (MCDF, `.chara`), camera and light formats, the settings file, the Library's folder scans and autosave files. |
+| `Poser.Application` | Poser's own logic: the scene as Poser sees it, selection, undo and redo, and what each command does. |
+| `Poser.Game` | Everything that touches the game: reading and writing actors, skeletons, cameras, lights and map objects, the game hooks, and the calls to Penumbra, Glamourer and Customize+. |
+| `Poser.UI` | The interface: windows, tabs, menus, the overlays drawn over the game, and the shared controls. |
+| `Poser` | The plugin itself. It starts Poser, connects the other projects, and registers `/poser`. Debug builds also contain a local test bridge (see [testing](../process/testing.md)). |
 
-`Poser.Application` keeps scene state and user actions. `Poser.Game` talks to
-the game and runs its hooks on the framework thread. Native entities, skeletons
-and low-level service contracts live in Game; the Core project is retired.
-Policy without a native dependency lives in Application even when only Game
-calls it: the transform facade, scene-group lifetime, refresh coalescing,
-lifecycle slots and world/VFX claim ledgers. The Journal entity sessions stay in
-Game because they hold native handles. Game folders follow the area:
-`Runtime` (core actor, posing, camera and GPose services), `Lighting`,
-`WorldObjects` (including world borrowing).
-The host wires the assemblies; UI shows application state. CI checks the allowed
-project graph and builds/tests the portable layers without the game SDK.
+## Which project may use which
 
-Configuration data and JSON recovery/storage live in Documents; settings
-migrations and notifications live in Application behind host-provided persistence.
-Legacy configuration type metadata is read against the known schema, without
-loading old assemblies. Keybinding text and key codes are portable Domain values;
-ImGui and native key conversion remain at the input boundary.
-Stagehand conversion and MCDF package storage also live in Documents; actor
-resource discovery and IPC remain in Game.
+| Project | May reference |
+|---|---|
+| `Poser.Domain` | nothing |
+| `Poser.Documents` | Domain |
+| `Poser.Application` | Domain, Documents |
+| `Poser.Game` | Domain, Documents, Application |
+| `Poser.UI` | Domain, Documents, Application |
+| `Poser` | all of the above |
 
-Environment readings and commands cross `EnvironmentControl`. Application owns
-capture, apply ordering, gesture coalescing and history; Game implements the
-runtime ports. Scene transactions apply through that same control without a
-second history entry. UI reads detached values, not native environment services.
+`Poser.Game` and `Poser.UI` do not know about each other. The interface asks
+`Poser.Application` for something, and `Poser.Application` asks the game through
+an interface that `Poser.Game` implements. The `Poser` project connects the two
+sides at startup, in `Poser/Composition/ServiceRegistration.cs`.
 
-Library refresh/cancellation and autosave cadence/admission live in Application.
-Documents owns scans, file actions, snapshot writes and disk retention. Game
-captures detached poses/scenes and owns framework subscriptions; panel visibility
-does not drive this work. Pose and scene snapshots retain their separate formats,
-roots and limits. `SceneAutoSaveService` exposes the scene snapshot root; a failed
-scene snapshot is logged at Warning.
+Domain, Documents and Application must build without Dalamud, the game's
+structures or ImGui. That keeps Poser's logic testable without the game.
+`tools/Test-ProjectBoundaries.ps1` checks the table above and this rule, and CI
+runs it on every pull request.
 
-Actor appearance commands own their history inverses in Application. UI
-supplies an actor and the selected value; it never constructs restore callbacks
-or starts native catalog work. Character-file progress and cancellation use
-the same application boundary as import/export. Host composition starts catalog
-warm-up; native integration sessions remain the single owners of provider state.
+Every namespace starts with the name of its project, so a `using` line shows
+which project the code reaches into.
 
-Every namespace starts with its owning project: `<Project>` or
-`<Project>.<folder>` (`Poser.Documents.Files`, `Poser.Game.Services`), so a
-`using` names the layer it crosses into. Embedded resources retain their
-original `Poser.Data.*` logical names after moving to Documents (rest poses
-and graphical-bone data) or Game (expressions); those names are set in the
-project files and do not follow the C# namespaces.
-Portable transforms live in Domain; file conversion operators live on the
-Documents DTOs. Existing serialized fields and keybinding enum values are unchanged.
+## Interfaces between the parts
 
-See [posing-runtime.md](posing-runtime.md) for native ordering and
-[application-state.md](application-state.md) for identity, gestures, and
-lifecycle.
+`Poser.Application` declares two kinds of interfaces, and their names say which
+side they face:
 
-Scene save/load coordinates an injected native runtime and document store.
-The document store owns native/Stagehand format routing and conversion notes;
-the workflow owns admission, ordered execution, cancellation, and rollback.
-Game-side composition owns the runtime lifetime and disposes the workflow
-before its runtime. The workflow does not construct or dispose its dependencies.
-Scene workflow policy lives in Application, without a Core or Game reference.
-Game implements the runtime interface and outward logging/library notifications.
-Portable documents depend on domain values, never native entities or services;
-transform conversions do not introduce a reverse dependency from Domain.
-Serialized fields, enum values and format rules are unchanged.
-Runtime calls exchange session-scoped `SceneEntityHandle` receipts, not native
-instances. Game retains the exact instance while workflow/history holds its
-receipt, expires ordinary reads after confirmed removal, and invalidates all receipts on
-session change or disposal. Receipts use reference identity, are not serialized,
-and never rebind by name, address or a newly published selection generation.
-Scene rollback follows the existing lifecycle history resolver when a later
-removal was undone. Scene redo explicitly reconnects those history slots using
-the same saved entity keys; it never revives or retargets ordinary receipts.
-Native owners still validate native lifetime; a receipt alone is not proof that
-an entity remains alive. Native reference storage uses weak keys so abandoned
-operations and discarded history cannot keep entities alive through the adapter.
+- `I…Control`, `I…Commands` and similar are what the interface calls. For
+  example `IGazeControl` is how the Gaze controls change where an actor looks.
+- `I…Port` and `I…RuntimePort` are what Poser's logic needs from the game.
+  `Poser.Game` implements them. For example `IGazeRuntimePort` is implemented by
+  `GazeRuntimeAdapter` in `Poser.Game/Posing`.
 
-The public `ISceneWorkflow` save/load contract, options and progress/results
-live in Application. Placement modes are shared Domain values; file DTOs live
-in Documents and native workflow mechanisms stay in Game.
+When there is no Poser logic in between, `Poser.Game` implements the
+interface-facing side directly. `ISceneObjectControl` and `IWorldService` are
+examples.
 
-Group capture, membership, nesting, order and transform-baseline policy live
-in Application behind `ISceneStructure`, using stable selection IDs only.
-Save captures a detached structure snapshot at the framework capture boundary;
-Application maps those values to file references without reading mutable group stores.
-On load, Game resolves native identities; Application converts file data before import.
-The load waits for bindings and restores structure before terminal publication;
-its rollback owns the imported groups. No pending native tokens reach the UI.
-Group pruning/root eligibility run after binding publication and generation
-remapping, not while drawing the sidebar.
+Values crossing these interfaces are ids and plain values, never game addresses.
+How the game side turns an id back into a game object is in
+[posing-runtime.md](posing-runtime.md).
+
+## Where the code does not follow the split
+
+Some behaviour lives in `Poser.UI` although it is not about drawing: which bones
+the skeleton overlay shows and the bone-visibility presets, the reference
+pictures, the generated layout of the Body and Face maps, and which shortcut runs
+which action.
+
+## Where to look
+
+| To change… | Look in |
+|---|---|
+| A button, label, tab or layout | `Poser.UI/Panes` (the Properties tabs), `Poser.UI/Views` and `Poser.UI/Windows` |
+| A right-click menu or the sidebar rows | `Poser.UI/Composition` |
+| What a command does, or how it undoes | `Poser.Application`, in the folder named after the feature |
+| How Poser reads or writes the game | `Poser.Game`, in the folder named after the feature; most game function signatures are in `Poser.Game/Natives/NativeSignatures.g.cs` |
+| Penumbra, Glamourer or Customize+ calls | `Poser.Game/Integration` |
+| A file format | `Poser.Documents/Files`, `Poser.Documents/Scene`, `Poser.Documents/Mcdf` |
+| Pose maths, IK solving, bone names | `Poser.Domain/Posing` |
+| Settings and their defaults | `Poser.Documents/Config` |
+| Adding a service, or what starts before the interface draws | `Poser/Composition` |
