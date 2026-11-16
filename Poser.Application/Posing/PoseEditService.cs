@@ -1,182 +1,111 @@
-using Poser.Domain.Transforms;
-using System.Numerics;
 using Poser.Application.Scene;
-using Poser.Domain.Operations;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
 
 namespace Poser.Application.Posing;
 
-public readonly record struct PoseCaptureResult(
-    bool Success,
-    PortablePose? Pose,
-    string? Detail = null)
-{
-    public static PoseCaptureResult Ok(PortablePose pose) =>
-        new(true, pose);
-
-    public static PoseCaptureResult Fail(string detail) =>
-        new(false, null, detail);
-
-    /// <summary>Records any transforms still waiting to be restored after a failed edit.</summary>
-    public TransformRecoveryReceipt? Recovery { get; init; }
-
-    public bool Equals(PoseCaptureResult other) =>
-        Success == other.Success &&
-        EqualityComparer<PortablePose?>.Default.Equals(Pose, other.Pose) &&
-        Detail == other.Detail;
-
-    public override int GetHashCode() =>
-        HashCode.Combine(Success, Pose, Detail);
-}
-
 /// <summary>
-/// Applies pose edits to a specific actor instance. If the runtime reports a
-/// write or final capture failure, it attempts to restore all captured starting
-/// values and reports any that could not be restored.
+/// Reset, Mirror, Flip, and copying and applying a pose. Each command works out
+/// the new pose edits for the bones it changes. Reading the bones, writing them,
+/// recording the undo step and putting things back after a failed write are
+/// done by <see cref="TransformCommandService"/>, exactly as for a typed
+/// transform edit.
 /// </summary>
-public sealed class PoseEditService
+public sealed class PoseEditService(
+    SceneSession scene,
+    ITransformRuntimePort runtime,
+    TransformCommandService transforms)
 {
-    private readonly SceneSession _scene;
-    private readonly ITransformRuntimePort _runtime;
-    private readonly EditHistory _history;
-    private readonly TransformGestureService _gestures;
-
-    public PoseEditService(
-        SceneSession scene,
-        ITransformRuntimePort runtime,
-        EditHistory history,
-        TransformGestureService gestures)
-    {
-        _scene = scene;
-        _runtime = runtime;
-        _history = history;
-        _gestures = gestures;
-    }
-
     public PoseEditResult Reset(
-        IReadOnlyList<TransformTargetId> targets,
+        IReadOnlyList<TransformTargetId> bones,
         PoseRegion region,
         string description)
     {
-        if (RecoveryBarrier() is { } recoveryBarrier)
-            return recoveryBarrier;
-        if (_gestures.ActiveGesture != null)
-            return PoseEditResult.Fail(
-                "A transform gesture is active.");
-        return ResetBones(targets, region, description, recordHistory: true);
-    }
-
-    // Reset all calls this directly: it has already refused a pending
-    // put-back or a drag, and records its own undo step.
-    internal PoseEditResult ResetBones(
-        IReadOnlyList<TransformTargetId> targets, PoseRegion region,
-        string description, bool recordHistory = false)
-    {
-        var prepared = CaptureBones(targets);
-        if (!prepared.Success)
-            return PoseEditResult.Fail(prepared.Detail!);
-
-        var before = prepared.States!
-            .Where(state =>
-                state.Target.Bone is { } bone &&
-                // Body, Face, and Hair reset bones in the character skeleton.
-                (region == PoseRegion.All ||
-                 bone.Slot == PoseSlot.Character) &&
-                MatchesRegion(bone.CanonicalName, region) &&
-                state.Pose.Layers.Count > 0)
-            .ToArray();
-        var desired = before
-            .Select(state => state with
-            {
-                Pose = PoseOperations.Reset(state.Pose),
-                HasOverride = false,
-            })
-            .ToArray();
-        return Apply(description, before, desired, recordHistory);
+        if (Refusal() is { } refused)
+            return refused;
+        if (Read(bones, out var states) is { } failed)
+            return failed;
+        var before = Edited(states, region);
+        return Apply(before, before.Select(Cleared).ToArray(), description);
     }
 
     /// <summary>
-    /// Mirrors the selected bone's pose edits across the body's left-right plane.
+    /// Clears every bone's edits without recording an undo step. Reset all calls
+    /// this after refusing a pending put-back or a drag itself, and records one
+    /// step for the pose and everything else it resets.
     /// </summary>
+    internal PoseEditResult ResetBones(IReadOnlyList<TransformTargetId> bones)
+    {
+        if (Read(bones, out var states) is { } failed)
+            return failed;
+        var before = Edited(states, PoseRegion.All);
+        if (before.Length == 0)
+            return PoseEditResult.Ok(0);
+        var desired = before.Select(Cleared).ToArray();
+        return Result(
+            transforms.Write(before, (_, index) => runtime.Restore(desired[index]), parentsFirst: false, out _),
+            desired.Length);
+    }
+
+    /// <summary>Mirrors one bone's own edits across the body's left-right plane.</summary>
     public PoseEditResult Flip(
-        TransformTargetId target,
+        TransformTargetId bone,
         string description)
     {
-        if (RecoveryBarrier() is { } recoveryBarrier)
-            return recoveryBarrier;
-        if (_gestures.ActiveGesture != null)
-            return PoseEditResult.Fail(
-                "A transform gesture is active.");
-        var prepared = CaptureBones(new[] { target });
-        if (!prepared.Success)
-            return PoseEditResult.Fail(prepared.Detail!);
-
-        var before = prepared.States!;
-        if (before[0].Pose.Layers.Count == 0)
+        if (Refusal() is { } refused)
+            return refused;
+        if (Read([bone], out var states) is { } failed)
+            return failed;
+        var state = states[0];
+        if (state.Pose.Layers.Count == 0)
             return PoseEditResult.Fail(
                 "No Poser-authored adjustment on this bone to flip.");
-        var desired = before.Select(state => state with
+        var flipped = state with
         {
             Pose = PoseOperations.MirrorRebased(
                 state.Pose,
                 state.AnimatedBaselineRotation,
                 state.AnimatedBaselineRotation),
-            HasOverride = state.Pose.Layers.Count > 0,
-        }).ToArray();
-        return Apply(description, before, desired);
+        };
+        return Apply([state], [flipped], description);
     }
 
     /// <summary>
-    /// Mirrors pose edits as one undo step. Left and right bones exchange edits;
-    /// center and unpaired bones mirror in place. The actor's rotation is mirrored
-    /// around its current position. Unedited bones keep following animation.
+    /// Mirrors an actor's pose edits as one undo step. Left and right bones
+    /// exchange edits; center and unpaired bones mirror in place. The actor's
+    /// facing is mirrored around its current position. Unedited bones keep
+    /// following the animation.
     /// </summary>
     public PoseEditResult Mirror(
-        IReadOnlyList<TransformTargetId> targets,
+        IReadOnlyList<TransformTargetId> bones,
+        TransformTargetId actor,
         string description)
     {
-        if (RecoveryBarrier() is { } recoveryBarrier)
-            return recoveryBarrier;
-        if (_gestures.ActiveGesture != null)
-            return PoseEditResult.Fail(
-                "A transform gesture is active.");
+        if (Refusal() is { } refused)
+            return refused;
+        if (Read([.. bones, actor], out var states) is { } failed)
+            return failed;
 
-        var boneTargets = targets
-            .Where(target => target.Kind == TransformTargetKind.Bone)
-            .ToArray();
-        var actorTargets = targets
-            .Where(target => target.Kind == TransformTargetKind.Actor)
-            .Distinct()
-            .ToArray();
-        if (targets.Count != boneTargets.Length + actorTargets.Length)
-            return PoseEditResult.Fail(
-                "Mirror accepts bone and actor targets only.");
-        var prepared = CaptureBones(boneTargets);
-        if (!prepared.Success)
-            return PoseEditResult.Fail(prepared.Detail!);
-
-        var before = prepared.States!;
-        var byKey = before
-            .Where(state => state.Target.Bone != null)
-            .ToDictionary(
-                state => Key(state.Target.Bone!.Value),
-                state => state);
+        var boneStates = states.Take(bones.Count).ToArray();
+        var byKey = boneStates.ToDictionary(state => Key(state.Target.Bone!.Value));
+        var before = new List<TransformTargetState>();
         var desired = new List<TransformTargetState>();
         var processed = new HashSet<TransformTargetId>();
 
-        foreach (var state in before)
+        foreach (var state in boneStates)
         {
-            if (state.Target.Bone is not { } bone ||
-                !processed.Add(state.Target))
+            if (!processed.Add(state.Target))
                 continue;
+            var bone = state.Target.Bone!.Value;
 
             TransformTargetState? partner = null;
+            // Weapon bones pair with the bone of the same name in the other hand;
+            // body bones pair by their _l and _r name endings.
             if (MirrorSlot(bone.Slot) is { } partnerSlot)
             {
-                // Match weapon bones by name and partial in the opposite hand.
                 if (byKey.TryGetValue(
                         (partnerSlot, bone.PartialId, bone.CanonicalName),
                         out var handed))
@@ -194,74 +123,52 @@ public sealed class PoseEditService
                 if (state.Pose.Layers.Count == 0 &&
                     counterpart.Pose.Layers.Count == 0)
                     continue;
+                before.Add(state);
                 desired.Add(state with
                 {
                     Pose = PoseOperations.MirrorRebased(
                         counterpart.Pose,
                         counterpart.AnimatedBaselineRotation,
                         state.AnimatedBaselineRotation),
-                    HasOverride = counterpart.Pose.Layers.Count > 0,
                 });
+                before.Add(counterpart);
                 desired.Add(counterpart with
                 {
                     Pose = PoseOperations.MirrorRebased(
                         state.Pose,
                         state.AnimatedBaselineRotation,
                         counterpart.AnimatedBaselineRotation),
-                    HasOverride = state.Pose.Layers.Count > 0,
                 });
             }
             else if (state.Pose.Layers.Count > 0)
             {
-                // Mirror center and unpaired bones in place.
+                before.Add(state);
                 desired.Add(state with
                 {
                     Pose = PoseOperations.MirrorRebased(
                         state.Pose,
                         state.AnimatedBaselineRotation,
                         state.AnimatedBaselineRotation),
-                    HasOverride = true,
                 });
             }
         }
 
-        var changedTargets = desired
-            .Select(state => state.Target)
-            .ToHashSet();
-        var changedBefore = before
-            .Where(state => changedTargets.Contains(state.Target))
-            .ToList();
-
-        var lineage = boneTargets[0].ActorLineage;
-        foreach (var target in actorTargets)
+        // An actor the game still places itself is left where the game puts it.
+        var placement = states[^1];
+        if (placement.HasOverride)
         {
-            if (target.ActorLineage != lineage)
-                return PoseEditResult.Fail(
-                    "A pose edit cannot span actor lineages.");
-            if (!_scene.Contains(target))
-                return PoseEditResult.Fail("A pose target is stale.");
-            var captured = _runtime.Capture(target);
-            if (!captured.Success || captured.State == null)
-                return PoseEditResult.Fail(
-                    captured.Detail ?? $"Could not capture {target}.");
-            var state = captured.State;
-            // Preserve the game's placement until the actor has been moved in Poser.
-            if (!state.HasOverride)
-                continue;
-            changedBefore.Add(state);
-            desired.Add(state with
+            before.Add(placement);
+            desired.Add(placement with
             {
-                Transform = state.Transform with
+                Transform = placement.Transform with
                 {
-                    Rotation = Domain.Transforms.TransformMath
-                        .NormalizeRotation(
-                            PoseOperations.MirrorRotation(
-                                state.Transform.Rotation)),
+                    Rotation = TransformMath.NormalizeRotation(
+                        PoseOperations.MirrorRotation(placement.Transform.Rotation)),
                 },
             });
         }
 
-        return Apply(description, changedBefore, desired);
+        return Apply(before, desired, description);
     }
 
     /// <summary>Pairs the two weapon hands for mirroring.</summary>
@@ -283,173 +190,104 @@ public sealed class PoseEditService
         return null;
     }
 
-    public PoseCaptureResult CapturePortable(
-        IReadOnlyList<TransformTargetId> targets)
+    /// <summary>
+    /// Copies these bones' edits into a pose that names each bone by its path
+    /// from the skeleton root, so it can be applied to another actor. Returns
+    /// the refusal, or null when <paramref name="pose"/> holds the copy.
+    /// </summary>
+    internal PoseEditResult? CapturePortable(
+        IReadOnlyList<TransformTargetId> bones,
+        out PortablePose? pose)
     {
-        if (_gestures.PendingRecovery is { } recovery)
-            return PoseCaptureResult.Fail(
-                "Transform recovery must complete before another operation.") with
-            {
-                Recovery = recovery,
-            };
-        if (_gestures.ActiveGesture != null)
-            return PoseCaptureResult.Fail(
-                "A transform gesture is active.");
-        var prepared = CaptureBones(targets);
-        if (!prepared.Success)
-            return PoseCaptureResult.Fail(prepared.Detail!);
+        pose = null;
+        if (Refusal() is { } refused)
+            return refused;
+        // Stash from an actor menu left open while the actor left the scene
+        // finds no bones. Refuse, rather than replace the stash with nothing.
+        if (bones.Count == 0)
+            return PoseEditResult.Fail("A pose edit requires at least one bone.");
+        if (Read(bones, out var states) is { } failed)
+            return failed;
 
-        var bones = SceneBonesById();
-        var entries = new List<PortableBoneEntry>(prepared.States!.Count);
-        foreach (var state in prepared.States)
+        var sceneBones = SceneBonesById();
+        var entries = states.Select(state =>
         {
-            if (!TryCreatePortableTarget(
-                    state.Target.Bone!.Value,
-                    bones,
-                    out var portableTarget,
-                    out var detail))
-                return PoseCaptureResult.Fail(detail!);
-            entries.Add(new PortableBoneEntry(
-                portableTarget.Key,
+            var target = PortableTarget(state.Target.Bone!.Value, sceneBones);
+            return new PortableBoneEntry(
+                target.Key,
                 state.Pose.InteractiveOnly(),
-                portableTarget.NativeIndexHint));
-        }
-
+                target.NativeIndexHint);
+        });
         try
         {
-            return PoseCaptureResult.Ok(new PortablePose(entries));
+            pose = new PortablePose(entries);
+            return null;
         }
         catch (ArgumentException exception)
         {
-            return PoseCaptureResult.Fail(
+            return PoseEditResult.Fail(
                 $"Captured portable pose is not structurally representable: {exception.Message}");
         }
     }
 
     public PoseEditResult ApplyPortable(
-        IReadOnlyList<TransformTargetId> targets,
+        IReadOnlyList<TransformTargetId> bones,
         PortablePose pose,
         string description)
     {
-        if (RecoveryBarrier() is { } recoveryBarrier)
-            return recoveryBarrier;
-        ArgumentNullException.ThrowIfNull(pose);
-        if (_gestures.ActiveGesture != null)
-            return PoseEditResult.Fail(
-                "A transform gesture is active.");
+        if (Refusal() is { } refused)
+            return refused;
+        if (Read(bones, out var states) is { } failed)
+            return failed;
 
-        if (!TryValidateBoneTargets(targets, out var targetDetail))
-            return PoseEditResult.Fail(targetDetail!);
+        var sceneBones = SceneBonesById();
+        var match = pose.Match(states
+            .Select(state => PortableTarget(state.Target.Bone!.Value, sceneBones))
+            .ToArray());
+        // A saved bone that matches two bones here is refused: it is unclear
+        // which one it means. Saved bones this skeleton lacks are skipped and
+        // reported, so a pose from a richer skeleton still applies to the
+        // bones both actors share.
+        if (match.Ambiguous.Count > 0 || match.Matches.Count == 0)
+            return PoseEditResult.Fail(DescribeMatchFailure(match));
 
-        var bones = SceneBonesById();
-        var destinations = new List<PortableBoneTarget>(targets.Count);
-        foreach (var target in targets.Distinct())
-        {
-            if (!TryCreatePortableTarget(
-                    target.Bone!.Value,
-                    bones,
-                    out var destination,
-                    out var detail))
-                return PoseEditResult.Fail(detail!);
-            destinations.Add(destination);
-        }
-
-        // Refuse an entry that matches more than one destination because its
-        // target is ambiguous. Missing bones are skipped and reported, allowing
-        // poses from a richer skeleton to apply to the bones both actors share.
-        var match = pose.Match(destinations);
-        if (match.Ambiguous.Count > 0)
-            return PoseEditResult.Fail(DescribeMatchFailure(match)!);
-
-        var prepared = CaptureBones(targets);
-        if (!prepared.Success)
-            return PoseEditResult.Fail(prepared.Detail!);
-
-        var statesByBone = prepared.States!.ToDictionary(
-            state => state.Target.Bone!.Value);
+        var statesByBone = states.ToDictionary(state => state.Target.Bone!.Value);
         var before = match.Matches
             .Select(item => statesByBone[item.Target.Bone])
             .ToArray();
-        if (before.Length == 0)
-            return PoseEditResult.Fail(
-                DescribeMatchFailure(match) ??
-                "The portable pose has no bones matching this skeleton.");
-
-        var desired = match.Matches.Select(item =>
+        var desired = before.Zip(match.Matches, (state, item) => state with
         {
-            var state = statesByBone[item.Target.Bone];
-            var source = item.Source.Pose;
-            var transferred = new BonePose(
-                source.Layers,
-                checked(state.Pose.Version + 1));
-            return state with
-            {
-                Pose = transferred,
-                HasOverride = transferred.Layers.Count > 0,
-            };
-            }).ToArray();
-        var applied = Apply(description, before, desired);
+            Pose = new BonePose(item.Source.Pose.Layers, checked(state.Pose.Version + 1)),
+        }).ToArray();
+        var applied = Apply(before, desired, description);
         return applied.Success && match.Unmatched.Count > 0
             ? applied with { Detail = DescribeSkipped(match.Unmatched) }
             : applied;
     }
 
-    /// <summary>Index of scene bones by ID, built once per capture or apply pass
-    /// to avoid scanning all bones again for each entry.</summary>
     private Dictionary<BoneId, BoneDescriptor> SceneBonesById() =>
-        _scene.Snapshot.Actors
+        scene.Snapshot.Actors
             .SelectMany(actor => actor.Skeletons)
             .SelectMany(skeleton => skeleton.Bones)
             .ToDictionary(item => item.Id);
 
-    private static bool TryCreatePortableTarget(
+    /// <summary>
+    /// Names a bone by the bone names from its skeleton root down to it. The
+    /// scene only accepts skeletons whose bones all have names and whose
+    /// parents are all present, so the walk always reaches the root.
+    /// </summary>
+    private static PortableBoneTarget PortableTarget(
         BoneId bone,
-        IReadOnlyDictionary<BoneId, BoneDescriptor> bones,
-        out PortableBoneTarget target,
-        out string? detail)
+        IReadOnlyDictionary<BoneId, BoneDescriptor> bones)
     {
-        if (!bones.TryGetValue(bone, out var descriptor))
-        {
-            target = default;
-            detail = $"Could not construct a structural path for bone {bone}.";
-            return false;
-        }
-
         var segments = new List<string>();
-        var seen = new HashSet<BoneId>();
-        var current = descriptor;
-        while (true)
-        {
-            if (!seen.Add(current.Id) ||
-                string.IsNullOrWhiteSpace(current.Id.CanonicalName))
-            {
-                target = default;
-                detail = $"Bone parent graph is invalid for {bone}.";
-                return false;
-            }
-
-            segments.Add(current.Id.CanonicalName);
-            if (current.Parent is not { } parent)
-                break;
-            if (!bones.TryGetValue(parent, out var parentDescriptor))
-            {
-                target = default;
-                detail = $"Bone parent {parent} is missing for {bone}.";
-                return false;
-            }
-            current = parentDescriptor;
-        }
-
+        for (BoneId? current = bone; current is { } id; current = bones[id].Parent)
+            segments.Add(id.CanonicalName);
         segments.Reverse();
-        target = PortableBoneTarget.From(
-            bone,
-            new BonePath(segments),
-            bone.BoneIndex);
-        detail = null;
-        return true;
+        return PortableBoneTarget.From(bone, new BonePath(segments));
     }
 
-    private static string? DescribeMatchFailure(PortablePoseMatchResult match)
+    private static string DescribeMatchFailure(PortablePoseMatchResult match)
     {
         var details = new List<string>();
         if (match.Ambiguous.Count > 0)
@@ -458,7 +296,7 @@ public sealed class PoseEditService
         if (match.Unmatched.Count > 0)
             details.Add(
                 $"Unmatched portable bones: {NameList(match.Unmatched)}.");
-        return details.Count == 0 ? null : string.Join(" ", details);
+        return string.Join(" ", details);
     }
 
     /// <summary>Reports bones skipped from an otherwise successful paste.</summary>
@@ -466,8 +304,7 @@ public sealed class PoseEditService
         IReadOnlyList<PortableBoneMatchFailure> unmatched) =>
         $"Skipped {unmatched.Count} bone(s) this skeleton does not have: {NameList(unmatched)}.";
 
-    /// <summary>At most eight bone names, followed by the remaining count,
-    /// to keep failure notifications readable.</summary>
+    /// <summary>At most eight bone names, then how many more, so the message stays readable.</summary>
     private static string NameList(
         IReadOnlyList<PortableBoneMatchFailure> failures)
     {
@@ -480,117 +317,48 @@ public sealed class PoseEditService
             : $"{string.Join(", ", names)} and {failures.Count - Shown} more";
     }
 
-    private CaptureResult CaptureBones(
-        IReadOnlyList<TransformTargetId> targets)
-    {
-        if (!TryValidateBoneTargets(targets, out var detail))
-            return CaptureResult.Fail(detail!);
+    private PoseEditResult? Refusal() =>
+        transforms.Refusal() is { } refused ? PoseEditResult.Fail(refused.Detail!) : null;
 
-        var states = new List<TransformTargetState>(targets.Count);
-        foreach (var target in targets.Distinct())
-        {
-            var captured = _runtime.Capture(target);
-            if (!captured.Success || captured.State == null)
-                return CaptureResult.Fail(
-                    captured.Detail ?? $"Could not capture {target}.");
-            states.Add(captured.State);
-        }
-        return CaptureResult.Ok(states);
-    }
-
-    private bool TryValidateBoneTargets(
+    private PoseEditResult? Read(
         IReadOnlyList<TransformTargetId> targets,
-        out string? detail)
+        out List<TransformTargetState> states)
     {
-        if (targets.Count == 0)
-        {
-            detail = "A pose edit requires at least one bone.";
-            return false;
-        }
-        if (targets.Any(target => target.Kind != TransformTargetKind.Bone))
-        {
-            detail = "Pose edits accept bone targets only.";
-            return false;
-        }
-        if (targets.Any(target => !_scene.Contains(target)))
-        {
-            detail = "A pose target is stale.";
-            return false;
-        }
-        var lineage = targets[0].ActorLineage;
-        if (targets.Any(target => target.ActorLineage != lineage))
-        {
-            detail = "A pose edit cannot span actor lineages.";
-            return false;
-        }
-
-        detail = null;
-        return true;
-    }
-
-    private PoseEditResult Apply(
-        string description,
-        IReadOnlyList<TransformTargetState> before,
-        IReadOnlyList<TransformTargetState> desired,
-        bool recordHistory = true)
-    {
-        if (desired.Count == 0)
-            return PoseEditResult.Ok(0);
-
-        foreach (var state in desired)
-        {
-            var result = _runtime.Restore(state);
-            if (result.Success)
-                continue;
-            var rollback = _gestures.AttemptRecovery(before);
-            return FailureAfterRecovery(
-                result.Detail ?? $"Could not apply pose to {state.Target}.",
-                rollback);
-        }
-
-        var after = new List<TransformTargetState>(desired.Count);
-        foreach (var state in desired)
-        {
-            var result = _runtime.Capture(state.Target);
-            if (!result.Success || result.State == null)
-            {
-                var rollback = _gestures.AttemptRecovery(before);
-                return FailureAfterRecovery(
-                    result.Detail ??
-                    $"Could not capture final pose for {state.Target}.",
-                    rollback);
-            }
-            after.Add(result.State);
-        }
-
-        if (recordHistory)
-            _history.Append(new TransformPatch(description, before, after));
-        return PoseEditResult.Ok(desired.Count);
+        var read = transforms.Read(targets, out states);
+        return read.Success ? null : PoseEditResult.Fail(read.Detail!);
     }
 
     /// <summary>
-    /// Retries pending transform recovery before a pose workflow proceeds.
-    /// Returns a refusal if recovery remains incomplete.
+    /// Writes each prepared state as one undo step. <paramref name="before"/>
+    /// and <paramref name="desired"/> list the same bones in the same order.
+    /// A command that finds nothing to change, such as Reset on bones with no
+    /// edits, records no step.
     /// </summary>
-    internal PoseEditResult? RecoveryBarrier() =>
-        !_gestures.TryCompleteRecovery() &&
-        _gestures.PendingRecovery is { } recovery
-            ? PoseEditResult.Fail(
-                "Transform recovery must complete before another mutation.") with
-            {
-                Recovery = recovery,
-            }
-            : null;
+    private PoseEditResult Apply(
+        IReadOnlyList<TransformTargetState> before,
+        IReadOnlyList<TransformTargetState> desired,
+        string description) =>
+        desired.Count == 0
+            ? PoseEditResult.Ok(0)
+            : Result(
+                transforms.Commit(before, (_, index) => runtime.Restore(desired[index]), description),
+                desired.Count);
 
-    private static PoseEditResult FailureAfterRecovery(
-        string primaryFailure,
-        TransformRecoveryReceipt recovery) =>
-        PoseEditResult.Fail(TransformRecovery.AppendRollbackFailure(
-            primaryFailure,
-            recovery)) with
-        {
-            Recovery = recovery,
-        };
+    private static PoseEditResult Result(GestureResult result, int affected) =>
+        result.Success ? PoseEditResult.Ok(affected) : PoseEditResult.Fail(result.Detail!);
+
+    /// <summary>The bones in this region that carry edits.</summary>
+    private static TransformTargetState[] Edited(
+        IReadOnlyList<TransformTargetState> states,
+        PoseRegion region) =>
+        states
+            .Where(state =>
+                state.Pose.Layers.Count > 0 &&
+                MatchesRegion(state.Target.Bone!.Value.CanonicalName, region))
+            .ToArray();
+
+    private static TransformTargetState Cleared(TransformTargetState state) =>
+        state with { Pose = PoseOperations.Reset(state.Pose) };
 
     private static (PoseSlot Slot, int Partial, string Name) Key(
         BoneId bone) =>
@@ -616,18 +384,5 @@ public sealed class PoseEditService
             PoseRegion.Body => !face && !hair,
             _ => false,
         };
-    }
-
-    private sealed record CaptureResult(
-        bool Success,
-        IReadOnlyList<TransformTargetState>? States,
-        string? Detail)
-    {
-        public static CaptureResult Ok(
-            IReadOnlyList<TransformTargetState> states) =>
-            new(true, states, null);
-
-        public static CaptureResult Fail(string detail) =>
-            new(false, null, detail);
     }
 }

@@ -4,7 +4,10 @@ using Poser.Domain.Posing;
 
 namespace Poser.Application.Posing;
 
-/// <summary>Owns pose command scope; PoseEditService owns transactional edits/history.</summary>
+/// <summary>
+/// Picks the bones each pose command works on (an actor's bones, or one
+/// region of them) and logs the result. PoseEditService does the edit.
+/// </summary>
 public sealed class PoseCommands(
     SceneSession scene, PoseEditService edits, PoseTransferService transfers,
     IPoseEditReads reads, Action<string, PoseEditResult>? report = null) : IPoseCommands
@@ -35,12 +38,9 @@ public sealed class PoseCommands(
         return Report(description, edits.Reset(Targets(actor, region), region, description));
     }
 
-    public PoseEditResult Mirror(ActorId actor)
-    {
-        // Facing is part of mirror, never of bone-only transfer or reset.
-        var targets = Targets(actor).Append(TransformTargetId.ForActor(actor)).ToArray();
-        return Report("Mirror edits", edits.Mirror(targets, "Mirror edits"));
-    }
+    // Mirror also turns the actor's facing; reset and stash only touch bones.
+    public PoseEditResult Mirror(ActorId actor) =>
+        Report("Mirror edits", edits.Mirror(Targets(actor), TransformTargetId.ForActor(actor), "Mirror edits"));
 
     public PoseEditResult Stash(ActorId actor, string sourceLabel) =>
         Report("Stash pose", transfers.Stash(Targets(actor), sourceLabel));
