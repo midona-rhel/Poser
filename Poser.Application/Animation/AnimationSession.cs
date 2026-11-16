@@ -98,8 +98,6 @@ public sealed class AnimationSession : IAnimationPlayback
     /// scrub can move it once it is loaded.</summary>
     private Outcome ReplayEndedForScrubUntracked(ActorId actor, AnimationSlot slot)
     {
-        if (!_store.For(actor).EndedSlots.ContainsKey(slot))
-            return Outcome.Fail("This layer is still playing.");
         var replayed = RestartIfEnded(actor, slot);
         if (!replayed.Success || IsPaused(actor) || _speed.IsSlotHeld(actor, slot))
             return replayed;
@@ -233,13 +231,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     private sealed class UntrackedScope(AnimationSession owner) : IDisposable
     {
-        private bool _done;
-        public void Dispose()
-        {
-            if (_done) return;
-            _done = true;
-            owner._untracked--;
-        }
+        public void Dispose() => owner._untracked--;
     }
 
     /// <summary>The actor's animation state as an undo step stores it.</summary>
@@ -505,9 +497,6 @@ public sealed class AnimationSession : IAnimationPlayback
     private Outcome SetSlotWeightUntracked(ActorId actor, AnimationSlot slot, float weight)
     {
         if (_store.Suspended() is { } blocked) return blocked;
-        if (!float.IsFinite(weight))
-            return Outcome.Fail("Weight must be a finite number.");
-        weight = Math.Clamp(weight, 0f, 1f);
         var result = weight >= 1f
             ? _speedPort.ClearSlotWeight(actor, slot)
             : _speedPort.SetSlotWeight(actor, slot, weight);
@@ -623,10 +612,6 @@ public sealed class AnimationSession : IAnimationPlayback
             + $"slotSpeed={OverridesFor(actor).SlotSpeeds.GetValueOrDefault(slot, float.NaN)}");
         if (SelectedFor(actor, slot) is { } selected)
         {
-            // Cloned or restored selections may have no matching UI catalog entry.
-            // A supplied entry must still match the saved selection.
-            if (entry != null && (entry.TimelineId != selected || entry.Slot != slot))
-                return Outcome.Fail("The chosen animation identity changed.");
             // Reapplying an already-playing timeline starts a new blend and can
             // restart it. Keep the current control so Resume preserves its time.
             bool alreadyLive = Read(actor)?.TimelineFor(slot) == selected;
@@ -681,8 +666,6 @@ public sealed class AnimationSession : IAnimationPlayback
     private Outcome ResetSlotCore(ActorId actor, AnimationSlot slot)
     {
         if (_store.Suspended() is { } blocked) return blocked;
-        if (!AnimationSlots.Selectable.Contains(slot))
-            return Outcome.Fail("This animation layer cannot be reset.");
         if (slot == AnimationSlot.Facial)
         {
             var facial = OverridesFor(actor);

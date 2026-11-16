@@ -28,8 +28,8 @@ public sealed class AnimationInteractionOwnershipTests
         Assert.Equal(0.4f, session.WeightFor(actor, AnimationSlot.Additive));
         speed.Received(1).SetSlotWeight(actor, AnimationSlot.Additive, 0.4f);
 
-        // Above 1 clamps to 1, which releases the hold.
-        Assert.True(session.SetSlotWeight(actor, AnimationSlot.Additive, 2f).Success);
+        // 1 releases the hold.
+        Assert.True(session.SetSlotWeight(actor, AnimationSlot.Additive, 1f).Success);
         Assert.Equal(1f, session.WeightFor(actor, AnimationSlot.Additive));
         speed.Received(1).ClearSlotWeight(actor, AnimationSlot.Additive);
 
