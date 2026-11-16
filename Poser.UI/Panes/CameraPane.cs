@@ -120,7 +120,7 @@ public sealed class CameraPane
     /// <summary>Frames one exact actor through the live orbit camera. The
     /// binding is resolved at invocation so a stale or despawned menu entry
     /// cannot reach a native camera setter.</summary>
-    public void CenterOnActor(ActorId actorId) => _notices.Report(_targets.CenterOnActor(actorId), "Center camera");
+    public void CenterOnActor(ActorId actorId) => _notices.Report(_targets.CenterOnActor(actorId), "Center camera", refusal: true);
 
     /// <summary>Resets the exact selected camera from the inspector rail.</summary>
     public void ResetSelectedCameraTransform()
@@ -134,7 +134,7 @@ public sealed class CameraPane
     /// <summary>Resets only the translation of one exact camera.</summary>
     public void ResetCameraTransform(CameraId cameraId)
     {
-        _notices.Report(_values.ResetPosition(cameraId), "Reset position");
+        _notices.Report(_values.ResetPosition(cameraId), "Reset position", refusal: true);
     }
 
     /// <summary>
@@ -212,7 +212,7 @@ public sealed class CameraPane
                     [(TablerIcon.ArrowsMove, "Position")],
                     (_, a) => Axis(camera.Position, a),
                     (_, a, next) => _notices.Report(_values.Set(camera.Id, CameraProperties.Position,
-                        WithAxis(camera.Position, a, next)), "Position"),
+                        WithAxis(camera.Position, a, next)), "Position", refusal: true),
                     _ => _values.Seal(),
                     _ => perPixel,
                     _ => "0.00",
@@ -313,7 +313,7 @@ public sealed class CameraPane
             cells.Cell(
                 "Portrait",
                 cell => cell.Switch("##camera-portrait", camera.IsPortraitMode,
-                    value => _notices.Report(_values.SetPortrait(camera.Id, value), "Portrait"), disabled: locked),
+                    value => _notices.Report(_values.SetPortrait(camera.Id, value), "Portrait", refusal: true), disabled: locked),
                 help: "Quarter-turn for portrait framing");
         });
         form.Cells(cells =>
@@ -359,14 +359,14 @@ public sealed class CameraPane
                 "Angle X",
                 cell => cell.Number("##camera-angle-x", angle.X * Rad2Deg,
                     value => _notices.Report(_values.Set(camera.Id, CameraProperties.Angle,
-                        camera.Angle with { X = value * Deg2Rad }), "Angle X"),
+                        camera.Angle with { X = value * Deg2Rad }), "Angle X", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Orbit around the pivot, in degrees");
             cells.Cell(
                 "Angle Y",
                 cell => cell.Number("##camera-angle-y", angle.Y * Rad2Deg,
                     value => _notices.Report(_values.Set(camera.Id, CameraProperties.Angle,
-                        camera.Angle with { Y = value * Deg2Rad }), "Angle Y"),
+                        camera.Angle with { Y = value * Deg2Rad }), "Angle Y", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Orbit above or below, degrees");
         });
@@ -377,14 +377,14 @@ public sealed class CameraPane
                 "Pan",
                 cell => cell.Number("##camera-pan-x", pan.X * Rad2Deg,
                     value => _notices.Report(_values.Set(camera.Id, CameraProperties.Pan,
-                        camera.Pan with { X = value * Deg2Rad }), "Pan"),
+                        camera.Pan with { X = value * Deg2Rad }), "Pan", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Swing the view, degrees");
             cells.Cell(
                 "Tilt",
                 cell => cell.Number("##camera-pan-y", pan.Y * Rad2Deg,
                     value => _notices.Report(_values.Set(camera.Id, CameraProperties.Pan,
-                        camera.Pan with { Y = value * Deg2Rad }), "Tilt"),
+                        camera.Pan with { Y = value * Deg2Rad }), "Tilt", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Tip the view, degrees");
         });
@@ -474,7 +474,7 @@ public sealed class CameraPane
                     row.CenterControl(controlHeight).Y));
                 Button(
                     "Recenter",
-                    () => _notices.Report(_targets.Recenter(cameraId, _selection.Primary), "Recenter"),
+                    () => _notices.Report(_targets.Recenter(cameraId, _selection.Primary), "Recenter", refusal: true),
                     style: buttonStyle,
                     disabled: locked,
                     help: "Center the followed actor",
@@ -491,13 +491,13 @@ public sealed class CameraPane
                 Switch(
                     "##camera-actor-lock",
                     target.IsTargetLocked,
-                    enabled => _notices.Report(_targets.SetTargetLocked(cameraId, enabled), "Lock on actor"),
+                    enabled => _notices.Report(_targets.SetTargetLocked(cameraId, enabled), "Lock on actor", refusal: true),
                     disabled: locked,
                     help: "Lock onto the followed actor");
                 if (!target.IsTracking && !target.IsTargetLocked &&
                     ImGui.IsItemHovered() &&
                     ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-                    _notices.Report(_targets.ToggleGameTarget(cameraId), "Game target");
+                    _notices.Report(_targets.ToggleGameTarget(cameraId), "Game target", refusal: true);
             });
     }
 
@@ -581,7 +581,7 @@ public sealed class CameraPane
                 "Yaw",
                 cell => cell.Number("##camera-yaw", rotation.X * Rad2Deg,
                     value => _notices.Report(_values.Set(camera.Id, CameraProperties.Rotation,
-                        camera.Rotation with { X = value * Deg2Rad }), "Yaw"),
+                        camera.Rotation with { X = value * Deg2Rad }), "Yaw", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked,
                     altReset: camera.DefaultRotation.X * Rad2Deg),
                 help: "Which way the camera faces, in degrees");
@@ -589,7 +589,7 @@ public sealed class CameraPane
                 "Pitch",
                 cell => cell.Number("##camera-pitch", rotation.Y * Rad2Deg,
                     value => _notices.Report(_values.Set(camera.Id, CameraProperties.Rotation,
-                        camera.Rotation with { Y = value * Deg2Rad }), "Pitch"),
+                        camera.Rotation with { Y = value * Deg2Rad }), "Pitch", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked,
                     altReset: camera.DefaultRotation.Y * Rad2Deg),
                 help: "Look up or down, degrees");
@@ -687,15 +687,15 @@ public sealed class CameraPane
     }
 
     public void FollowActor(ActorId actorId, string displayName, CameraId cameraId) =>
-        _notices.Report(_targets.Follow(cameraId, actorId, displayName), "Follow");
+        _notices.Report(_targets.Follow(cameraId, actorId, displayName), "Follow", refusal: true);
 
     public void ToggleTrackedBone(CameraId cameraId, BoneId boneId) =>
-        _notices.Report(_targets.ToggleTrackedBone(cameraId, boneId), "Track bone");
+        _notices.Report(_targets.ToggleTrackedBone(cameraId, boneId), "Track bone", refusal: true);
 
     // ── actions ──────────────────────────────────────────────────────────
 
     private void SetLive(CameraReading camera, bool live) =>
-        _notices.Report(_values.SetLive(camera.Id, live), "Live");
+        _notices.Report(_values.SetLive(camera.Id, live), "Live", refusal: true);
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.
     /// </summary>

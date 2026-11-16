@@ -155,15 +155,15 @@ public sealed class ScenePane
     private float _optionsBandHeight = 92f;
 
     public bool SaveEntry(SelectionId target, string displayName) =>
-        _notices.Report(_librarySave.SaveEntry(target, displayName), "Save to library");
+        _notices.Report(_librarySave.SaveEntry(target, displayName), "Save to library", refusal: true);
 
     /// <summary>A pane's "Save to file…": the same entry save, written to
     /// the path the dialog chose.</summary>
     public bool SaveEntryTo(SelectionId target, string path) =>
-        _notices.Report(_librarySave.SaveEntryTo(target, path), "Save to file");
+        _notices.Report(_librarySave.SaveEntryTo(target, path), "Save to file", refusal: true);
 
     public bool SaveGroupEntry(IReadOnlyList<SelectionId> members, string displayName) =>
-        _notices.Report(_librarySave.SaveGroup(members, displayName), "Save to library");
+        _notices.Report(_librarySave.SaveGroup(members, displayName), "Save to library", refusal: true);
 
     /// <summary>Opens an entry file using the configured spawn placement.</summary>
     public void OpenEntryLoad() =>
@@ -316,7 +316,7 @@ public sealed class ScenePane
                 var name = _librarySaveName.Trim();
                 if (name.Length == 0)
                     name = "Scene";
-                _notices.Report(_librarySave.SaveScene(name, SaveOptions), "Save to library");
+                _notices.Report(_librarySave.SaveScene(name, SaveOptions), "Save to library", refusal: true);
                 _librarySaveOpen = false;
             }
         });

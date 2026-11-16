@@ -56,12 +56,16 @@ public sealed class UserNotices : global::Poser.Application.Presentation.IUserNo
 
     /// <summary>The one way a pane reports how an action went: nothing when it
     /// worked, "Action: reason" when it did not, or "Action failed." when no
-    /// reason was given. Returns whether it worked.</summary>
-    public bool Report(Poser.Domain.Outcome result, string action)
+    /// reason was given. Returns whether it worked. Pass
+    /// <paramref name="refusal"/> when the action did not run and the reason is
+    /// the person's to fix: the notice is then a warning, not an error.</summary>
+    public bool Report(Poser.Domain.Outcome result, string action, bool refusal = false)
     {
-        if (!result.Success)
-            Failed(string.IsNullOrWhiteSpace(result.Detail) ? action + " failed." : action + ": " + result.Detail);
-        return result.Success;
+        if (result.Success)
+            return true;
+        string message = string.IsNullOrWhiteSpace(result.Detail) ? action + " failed." : action + ": " + result.Detail;
+        if (refusal) Refused(message); else Failed(message);
+        return false;
     }
 
     public void Removal(SelectionRemovalResult result)

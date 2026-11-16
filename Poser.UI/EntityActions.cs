@@ -9,8 +9,8 @@ namespace Poser.UI;
 /// <summary>Shared UI reporting for entity commands; ownership and history stay behind the port.</summary>
 public sealed class EntityActions(SelectionEntityCommands commands, EntityLockCommands locks, UserNotices notices)
 {
-    public void ToggleLock(SelectionId id) => notices.Report(locks.Toggle(id), "Lock");
-    public void ToggleGroupLock(Guid id) => notices.Report(locks.ToggleGroup(id), "Lock");
+    public void ToggleLock(SelectionId id) => notices.Report(locks.Toggle(id), "Lock", refusal: true);
+    public void ToggleGroupLock(Guid id) => notices.Report(locks.ToggleGroup(id), "Lock", refusal: true);
 
     public Task<int?> Remove(SelectionId id) => Remove([id]);
 
