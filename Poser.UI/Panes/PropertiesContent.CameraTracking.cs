@@ -165,8 +165,5 @@ public sealed partial class PropertiesContent
             .ToHashSet(StringComparer.Ordinal);
 
     private IReadOnlyList<global::Poser.UI.BoneChoice> CameraBoneSearch(string query) =>
-        query.Length == 0
-            ? _cameraBoneChoices
-            : _cameraBoneChoices.Where(choice => choice.SearchText.Contains(
-                query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        global::Poser.UI.BoneChoice.Search(_cameraBoneChoices, query);
 }

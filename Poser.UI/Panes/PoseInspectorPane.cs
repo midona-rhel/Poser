@@ -2029,10 +2029,7 @@ public partial class PoseInspectorPane : IDisposable
     }
 
     private IReadOnlyList<global::Poser.UI.BoneChoice> IkBoneSearch(string query) =>
-        query.Length == 0
-            ? _ikBoneChoices
-            : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
-                query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        global::Poser.UI.BoneChoice.Search(_ikBoneChoices, query);
 
     private void DrawIkEntityTarget(FormScope form, TransformTargetId endpoint, bool fabrik = false)
     {

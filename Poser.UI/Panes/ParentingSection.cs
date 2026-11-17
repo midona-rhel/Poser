@@ -99,7 +99,7 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
                 _boneChoices = BuildBoneChoices(actor);
                 var options = new PickerOptions<BoneChoice>
                 {
-                    Query = query => _boneChoices.Where(c => c.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray(),
+                    Query = query => BoneChoice.Search(_boneChoices, query),
                     Badge = c => c.Badge,
                 };
                 _bones.Open("parent-bone", _boneChoices, c => c.Label, c => c.Key, options: in options);

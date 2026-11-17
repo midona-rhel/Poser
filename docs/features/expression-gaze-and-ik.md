@@ -107,7 +107,8 @@ without moving either end.
 
 - **Actor**: it moves with the actor.
 - **World**: it stays at a point in the world.
-- **Bone**: it follows a bone you pick, on this actor or another one.
+- **Bone**: it follows a bone you pick, on this actor or another one. Type in
+  the bone list to search it. The bone whose name matches best comes first.
 - **Scene entity**: it follows an object, scenery, a light or an effect. **Detach**
   keeps it where it is now.
 
