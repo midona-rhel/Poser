@@ -1,60 +1,50 @@
 ---
 name: Work item
-about: Report a defect or scope an architecture, documentation, or feature change.
+about: Report a problem or describe a change.
 title: "[P2] "
 labels: "priority: P2"
 assignees: ""
 ---
 
-<!-- P2 is the default. If another priority fits, change both the title prefix
-and priority label. Search existing issues and link related work below. -->
+<!-- P2 is the usual priority. For another one, change the title and the label.
+Search for an existing issue first and link it under Related. -->
 
 ## Problem
 
-<!-- Describe the concrete problem, its impact, and the intended outcome. -->
+<!-- What goes wrong, who it affects, and what should happen instead. -->
 
 ## Evidence
 
-<!-- Link the relevant lines of code using a published commit permalink.
-Explain what those lines show. Distinguish reproduced behavior, source-verified
-findings, and hypotheses. State checks actually run and their limits.
-Documentation may be stale; a mismatch alone does not prove a code defect. -->
+<!-- Link the lines of code that show the problem, as a link to a published
+commit. Say in a few words what the reader will find there. Say whether you saw
+it in the game, read it in the code, or are guessing. -->
 
-## Reproduction / test card
+## How to see it
 
-### Starting state
+### Start from
 
-<!-- Specify the scene, settings, files, or source state needed. -->
+<!-- The scene, settings or files needed. -->
 
-### Actions
+### Steps
 
 1.
 
-### Expected
+### What should happen
 
-<!-- Describe observable behavior. For documentation/research, state the
-verification procedure and expected deliverable instead of inventing a repro. -->
+<!-- What a person sees when it works. For documentation or research, say what
+will be delivered and how to check it. -->
 
-### Evidence to report
+## Scope
 
-<!-- Name the results needed to judge completion: tested head, focused checks,
-actual versus expected behavior, and unresolved limitations. -->
+<!-- What this change covers and what it leaves alone. Name the existing code to
+reuse. For a clean-up, link the repeated or unneeded code and say why it can go. -->
 
-## Implementation boundary
+## Done when
 
-<!-- Define scope and exclusions. Identify the owner and existing mechanisms
-to reuse. For simplification, link the duplicate or unnecessary code to remove and
-explain why it is no longer needed.
-Update the existing normative documentation home instead of duplicating it.
-Follow docs/process/testing.md: Release validates; Debug deploys. -->
-
-## Acceptance criteria
-
-- [ ] <!-- Observable outcome addressing the problem. -->
-- [ ] <!-- Relevant regression checks and preserved behavior. -->
-- [ ] <!-- Documentation and user acceptance where applicable. -->
+- [ ] <!-- What a person can now do or see. -->
+- [ ] <!-- What must keep working. -->
+- [ ] <!-- The documentation says what is now true. -->
 
 ## Related
 
-<!-- Link dependencies, overlapping issues, and prior completed work. Explain
-what remains; do not silently reopen an entire completed migration. -->
+<!-- Other issues this depends on or overlaps with. -->

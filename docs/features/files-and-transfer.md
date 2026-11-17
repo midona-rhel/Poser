@@ -1,197 +1,156 @@
 # Pose files and transfer
 
-Filename character handling belongs to Documents' `FileNamePolicy`: interactive
-inputs strip invalid characters, generated library/autosave stems replace them,
-and explicit rename validation refuses them. Callers retain extension, fallback,
-collision, overwrite and retention policy; those workflows are not interchangeable.
+## Pose files
 
-## Pose format and import
+Poser reads and writes `.pose` files in the same format as Brio. It also reads
+older `.cmp` files from CMTool. A `.cmp` file holds rotations only, so it never
+moves a bone or the actor.
 
-`.pose` uses the same JSON structure as Brio v3. Each slot has its own data:
-Character uses `Bones`; MainHand, OffHand, Prop, and Ornament use their own
-collections. A missing slot never falls back to Character or a same-named bone.
+### Importing a pose
 
-Imports reject non-finite numbers, invalid model rotations, oversized files, excessive JSON,
-and bad names or tags. Unknown top-level fields are kept when the file is read
-and saved again, but Poser does not use them. Model transforms apply only when
-requested; `.cmp` files never change position. When an Anamnesis alias maps to
-one game name, the last entry in document order wins, matching Brio's
-`PoseData.SanitizeBoneNames`; old captures commonly contain both Head and RootHead.
-Finite near-zero bone rotations are retained by the file reader but skipped
-entirely by pose planning, never normalized into an invented rotation. This
-keeps old helper entries from rejecting an otherwise usable pose. Metadata and
-full reads use the same checks; modern exports and legacy `.cmp` stay supported.
+The **Import** and **Export** rows are in the **General** view of the Actor tab.
+The same actions are in the actor's right-click menu under **Pose**.
 
-Requested bone positions remain absolute targets through planning, including
-duplicate-with-pose and reset/reapply. As in Brio's importer, the native apply
-pass computes each delta after its parents have moved; matching cached local
-offsets before that pass does not remove a requested position component.
+- **Import** opens a menu with the import options and these sources: **From
+  file**, **From library**, **From clipboard**, **Reapply last** and **From
+  stash**. **A-pose**, **T-pose** and **Reference** put the actor in one of those
+  poses.
+- **Import from file** goes straight to the file browser. **From clipboard**
+  reads a pose copied from Poser or Brio. **Library** opens the Library.
 
-The import dialog keeps the selected actor and bones it showed the user. Poser
-plans the whole import before changing anything. If a write fails, it tries to
-restore every changed value. If restore cannot finish, it keeps recovery
-information and does not add the import to undo history. A successful import is
-one undo step. Copy, stash, and in-memory apply follow the same rule.
+The main import options:
 
-The pose file browser defaults to selection/preview followed by Load or a
-double-click. Its optional Single-click mode opens folders and confirms files
-with one activation, using that same import path and options; enabling it does
-not import the current highlight. This browser-local option replaces Apply on
-select and closes after confirmation, so a second Load cannot duplicate an import.
+- **Type**: **Body**, **Expression**, or both.
+- **Position**, **Rotation** and **Scale** choose which parts of each bone to
+  apply. **Model** also moves the actor to where the file placed it. It is off
+  unless you turn it on.
+- **Selected bones** applies the pose only to the bones you have selected.
+  **Include descendants** adds the bones below them. **Anchor positions** keeps
+  those bones where they are and applies only rotation and scale.
+- **Reset first** clears every bone in the import before applying the file, even
+  bones the file doesn't contain.
+- **Exclude ear bones** leaves the ears as they are.
+- **Freeze** keeps the actor paused after the import.
+- **Smart** imports a file that holds only a face as an expression.
 
-Pose previews rebase onto a snapshot of the destination's authored pose before
-applying the selected file and options. Enabled IK constraints are copied into
-the preview actor's own skeleton; targets are sampled in source model space
-and held in preview model space. Preview orbit/pan moves that isolated frame,
-not the live scene. No preview constraint retains a live entity or bone target.
+An import is one undo step. An import that changes nothing adds no step. Redo of an
+import needs the file; if it is gone, redo says so.
 
-## Anamnesis character appearance
+If something goes wrong partway, Poser tries to put back what it already changed,
+and adds nothing to history.
 
-The character-file library and actor import picker read `.chara` alongside
-`.mcdf`. `.chara` is appearance data, not a mod package: it needs Glamourer,
-not Mare extraction or a temporary Penumbra collection. Import is one undo
-step; redo uses the imported values rather than rereading a changed file.
-Brio's `AnamnesisCharaFile` is the compatibility reference for human body
-customization, packed feature switches, equipment, both dyes, and facewear.
-Facewear accepts both legacy numeric `Glasses` and `{ "GlassesId": ... }`,
-matching Brio's legacy-reader fallback. Split switches retain native bit masks
-in Glamourer requests, exactly like the appearance controls. A fresh-actor
-import validates and retains the file before spawning, then applies those bytes
-once the body is ready; unreadable or malformed files do not spawn a clone.
-Missing/null fields are left alone. This reader does not import nonhuman
-model IDs, extended shader colours, transparency or body-scale overrides;
-nonhuman files are refused. It does not write `.chara`.
+### The file browser
 
-## Storage and library
+Click a file to preview it on the actor, then press **Load** or double-click it.
+With **Single-click mode** on, one click opens a folder or imports a pose and
+closes the browser.
 
-File dialogs and scanned library tabs share session-local Name, Newest, and
-Oldest ordering. Name remains the default; directories and library sections
-stay structural, and equal modification times fall back to name. Auto-saves
-retain their dedicated newest-first recovery order.
+The preview starts from the actor's own pose and applies the file with your
+options. Turning or panning the preview moves only the preview.
 
-Pose-bearing saves capture the evaluated bone transforms, including solved IK,
-as a baked snapshot in the file only. This covers poses, scenes, saved actors
-and groups, attached companions, and autosaves. Saving never clears live IK,
-rewrites authored stacks, or adds a bake to history. New files do not carry
-solver configurations that would solve the saved pose again on load.
+### Exporting a pose
 
-Armed pose and scene captures require every requested skeleton cache to refresh.
-An interrupted or timed-out refresh refuses the capture without writing a file.
+**Export** offers **Export to file**, **To library**, **To clipboard** and **To
+stash**. **Export to file** on the row goes straight to the file browser.
 
-Poser validates a pose or scene before writing it. It writes a temporary file
-beside the destination, checks it again, then replaces the old file. The old
-file stays backed up until the new bytes are confirmed. If it is unclear which
-version reached disk, Poser keeps both paths as recovery information.
+**To stash** and **From stash** use the same stashed pose as **Stash** and **Apply
+stash** in the Pose section (see [Pose operations](pose-operations.md#stash)).
 
-Poses, Scenes, and MCDFs default under `Documents/Poser` and appear in their
-matching libraries. Auto-saves default under the plugin configuration folder.
-They are written and cleaned up, not shown in a library. File browsers open in
-the matching folder; light and camera files use Documents.
+### What a saved pose holds
 
-Library scans run in the background and publish one immutable snapshot. A pass
-records configured sources (name, path, enabled state, health, and safe
-detail), its generation, and a terminal result: initial, success, partial
-failure, or failure. Missing, denied, invalid, and traversal-failed sources
-are reported independently; a failed source contributes no truncated subtree,
-and any entries previously published for that source are omitted from the new
-snapshot. Healthy sources publish their fresh entries. Source order and
-index-based folder keys remain stable even when roots overlap. A cancelled or
-stale pass does not publish.
+A saved pose, scene or library entry stores the bones as you see them, including
+what IK did. Saving does not turn IK off or change your edits. The IK settings
+themselves are not saved.
 
-World-entry (`.xivw`) documents are read during that background pass solely to
-classify their saved asset as scenery, furniture or VFX. Other file metadata
-remains lazy; the scan does not extract appearance packages or thumbnails.
+## Character files
 
-Publication is limited to 64 configured source records, 32,768 files and 4,096
-folders overall. Excess source records have an explicit skipped count; a source
-that cannot fit is reported as failed without consuming the remaining capacity.
-Later small roots can still publish. Traversal limits also apply to each source.
+The **Character file (MCDF)** section of the Actor tab imports and exports
+character files. See [Appearance](runtime-appearance.md#character-file-mcdf).
 
-The library distinguishes no enabled sources, a healthy empty library, and
-source failures. Settings > Library owns source management: failed saved paths
-have red reasons beside their rows. The bottom Source issues button is disabled
-when no issues remain; its in-page detail view lists only enabled failed sources
-and skipped-capacity notices, with a resolved state when errors clear.
-Refresh and source configuration changes start a new pass; after copying files
-externally, press Refresh. Bad, future, and oversized
-files stay in the list with an explanation. Search uses name, author, and tags.
-Moving a file keeps its favourite status; metadata is never changed for
-unreadable or future files.
-Before a library export, the selected root is created and checked. A failed
-check reports the requested path and stops the write; it never redirects the
-file to Documents.
+### Anamnesis `.chara` files
 
-Source edits are drafts until Settings Save. A changed row says Pending Save,
-never presenting the saved path's health as validation of its replacement.
-Issue details label saved paths and pending edits explicitly. Disable/remove
-affect custom drafts only; Cancel discards them. Save refuses a concurrently
-changed source list or a root change that the candidate sources cannot resolve;
-either refusal leaves saved sources untouched. Explicit checked folder repair is
-a filesystem action, not a configuration edit, and is not undone by Cancel.
-Scans never create roots.
+A `.chara` file is a look: body, face, equipment, dyes and facewear. It needs
+Glamourer. It holds no mods.
 
-New sources carry explicit ownership: managed homes, Brio/Anamnesis references,
-or custom. Untagged legacy records are recognized only by exact known default
-name plus normalized absolute path, or one unambiguous complete four-home layout.
-Duplicates, conflicting layouts, invalid paths and unmatched legacy records stay
-custom; classification does no filesystem work and never rewrites paths. Settings
-preserves those custom records even when their names match built-ins. Poser homes
-are read-only derived leaves under one editable root. Root changes affect only
-identified managed homes. Third-party references are read-only and never created
-by Settings repair or startup; custom sources remain editable.
+- Importing is one undo step. Redo uses what was imported and does not read the
+  file again.
+- Only human characters can be imported. A `.chara` file for any other model is
+  refused.
+- Values missing from the file are left as they are.
+- Poser does not write `.chara` files.
 
-The Library title-bar Open in Explorer action opens the configured Poser root,
-independent of source selection. This explicit action may create a missing root
-after a checked request; a failure is reported without redirecting.
+### Mare `.mcdf` files
 
-## Autosave
+An `.mcdf` file holds a character's look and the mod files it needs. It does not
+hold a pose, an animation or a scene.
 
-Autosave writes whole scenes; its cadence, retention and exit behavior are
-defined in [scenes.md](scenes.md#autosave). The Autosaves library also reads
-legacy per-actor `.pose` backups. Those files remain available for recovery;
-new automatic backups do not create a second set of per-actor files.
+- Poser checks the whole file before it changes the actor.
+- Only one character-file import, export or reset runs at a time.
+- If an import fails or is cancelled, Poser removes what it had put on the actor.
+  If that can't finish, **Reset MCDF** finishes it.
+- Export only reads from the actor. It names any files it had to skip.
 
-## Character files (MCDF)
+## The Library
 
-MCDF v1 stores appearance resources and temporary file payloads. It does not
-store pose, animation, selection, camera, or scene data. Poser checks the file
-header, size, paths, extensions, duplicate entries, and payload hashes before
-it changes an actor. Legacy 40-digit SHA-1 and current 64-digit BLAKE3 hashes
-are verified; new exports use BLAKE3, matching current Lightless and Brio.
-The MCDF v1 layout is unchanged. Customize+ data remains base64-encoded JSON.
+Press **Library** in the title bar to open it. Its tabs are **Poses**,
+**Auto-saves**, **Objects**, **MCDF** and **Scenes**. The Objects tab has a toggle
+for each kind: **Actors**, **Lights**, **Cameras**, **Furniture**, **Props**,
+**Objects**, **VFX**, **Overlays**, **Environments** and **Groups**.
 
-Only one MCDF import runs for an actor at a time. Poser applies temporary
-Penumbra, Glamourer, and Customize+ changes after redraw. Failure or
-cancellation removes them in reverse order. Incomplete cleanup stays available
-through Reset MCDF. Export only reads data, reports skipped resources, and
-writes the destination safely. Appearance rules are in
-[runtime-appearance.md](runtime-appearance.md).
+- Sort by **Name** (the default), **Newest** or **Oldest**. The file dialogs use the
+  same choice. Auto-saves are always newest first.
+- Search looks at the name, the author and the tags.
+- The button beside the search rescans the folders. Press it after copying files
+  in from outside Poser.
+- A file that can't be read, is too large, or is from a newer Poser stays in the
+  list with a note saying why.
+- **Open in Explorer** opens the Poser folder.
 
-## Issue reports
+### Where files go
 
-"Report an issue" in the burger menu and on the Settings About page
-saves one zip in the plugin's own `issues` folder and opens that
-folder. It never sends anything. The user attaches the file.
+By default Poser keeps its files in `Documents/Poser`, in the folders `Poses`,
+`Scenes`, `MCDFs` and `Objects`. Scene auto-saves go to Poser's plugin
+configuration folder.
 
-The report holds the last five hundred actions with their values
-before and after, the notices the user saw, any exception the UI
-caught, the Poser and Dalamud versions, the loaded plugins, the
-settings and Poser's own lines from the Dalamud log. The scene is an
-option, off by default, and the dialog says what it means: scene data
-only, no modified files, no mods.
-The attachment is the redacted JSON document from a native `.xivs` scene,
-not a Stagehand export; actor data and entity relationships remain intact.
+### Library folders
 
-The recorder replaces known character names
-with "Actor 1", "Actor 2" and so on as it writes, in order of first
-sight and stable for the session. Before packing, both JSON members pass
-through the same decoded-string redaction policy, including settings,
-dictionary keys, actions, log lines and exception fallbacks. Absolute drive
-and UNC paths become tokens retaining only their file extension; known
-configured private path segments, hosts/shares and the user name are removed
-from diagnostic text too. Relative game asset paths remain useful for diagnosis.
-Reports remain local and should be reviewed before the user shares them.
+Settings › Library manages the folders the Library reads.
 
-The recorder is a reader of the journal, not a second journal: every
-committed entry becomes one record with final before/after values, and the
-recorder can never fail an append.
+- **Poser folder** sets the one folder that holds Poser's own four folders.
+- Brio's and Anamnesis's pose folders in `Documents` are listed too. Poser reads
+  them but never creates or changes them.
+- **New source** adds another folder. Your own folders can be renamed, moved,
+  switched off or removed. Removing one never deletes its files.
+- Changes wait until you press **Save**. Cancel discards them.
+- A folder that can't be read shows the reason in red. **Source issues** lists
+  every problem, and **Retry** scans again.
+
+## File names
+
+Characters that a file name can't contain are removed as you type.
+
+## Saving safely
+
+Poser writes a new file beside the old one, checks it, and only then replaces the
+old file. A save that fails leaves the old file as it was.
+
+## Reporting an issue
+
+**Report an issue** is in the menu behind the burger button and on the About page
+of Settings. It saves one `.zip` file in Poser's `issues` folder and opens that
+folder. Nothing is sent anywhere; you attach the file yourself.
+
+The report holds:
+
+- the last 500 actions, with their values before and after;
+- the notices you saw and any errors;
+- the Poser and Dalamud versions and the loaded plugins;
+- your settings;
+- Poser's own lines from the Dalamud log.
+
+**Include the scene** (off by default) adds the scene: poses, looks, lights,
+cameras and the environment. It adds no mods and no modified files.
+
+Character names are replaced by "Actor 1", "Actor 2" and so on. Full file paths
+and your user name are removed. The removal works by patterns, so look through the
+report before you share it.

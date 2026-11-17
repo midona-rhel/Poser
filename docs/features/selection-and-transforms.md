@@ -1,318 +1,158 @@
 # Selection and transforms
 
-All surfaces share one ordered selection list. Changing mode does not clear it.
-Ctrl toggles compatible targets, Shift selects the visible range, and symmetry,
-linked lookup, ancestry, and parent traversal stay within a slot.
-Overlay bone dots have no list range: Shift-click toggles individual bones in
-both picking modes; Ktisis mode also retains Ctrl-click. Plain clicks replace
-selection. Gizmo pointer ownership still takes precedence over bone picking.
-Body, Face and generated Bones maps use click selection, with Ctrl/Shift-click
-to toggle additional bones. A drag on empty map box-selects the dots inside
-(Ctrl/Shift adds); the box stays inside the map area, and the drag never moves
-the window. Preset-editor point dragging only changes layout positions.
+## Selecting
 
-`Block game mouse targeting` defaults on in General settings. Like Brio's
-`DisableGPoseMouseSelect`, it blocks native mouse targeting only in GPose;
-Poser selection, explicit target commands, and the two target-sync preferences
-remain independent. Turning it off restores game mouse targeting immediately.
+In the sidebar:
 
-One drag or typed edit is one gesture and one history patch. Baselines freeze at
-pointer-down; each frame applies the total delta from those baselines. Escape,
-tool/space/pivot changes, and selection changes cancel the gesture.
-Multi-selection applies each target's delta to its own baseline. Ring drags
-keep pointer ownership through release, so ending a drag cannot pick a bone.
+- Click a row to select it.
+- Ctrl-click adds or removes a row.
+- Shift-click selects every row between the last one you clicked and this one.
+- Clicking a group's row selects all of its members.
 
-Frame wells edit model-space values. World gizmo axes stay aligned to the world,
-including bones on attached entities; Local axes follow the bone's world orientation.
-World drag deltas convert back into the skeleton's model space before application.
-The dedicated Scale tool always uses local-aligned handles, regardless of the
-World/Local toggle. Universal in World mode hides directional scale handles,
-including for groups and capsules, but retains uniform scaling at the centre
-(unless configured for translation) and the capsule's uniform-scale ring.
-Hidden handles neither draw nor capture input. Numeric inspector scale remains
-unchanged. Native transforms cannot represent the shear that arbitrary
-directional world scaling would require.
-Transform locks disable inspector editing without replacing displayed values
-with identity. This includes colliders, individual locked-group members and
-readable group transforms; group membership and stale-state checks still apply.
-Self rotates in place; Parent orbits around the
-frozen parent position. The world overlay places its pivot in perspective and
-draws nothing for an unprojectable pivot. Inspector rotation stays in place.
+On the bone overlay in the game view, a click selects the bone under the pointer.
+How you add more bones depends on **Wheel over stacked bones** (Settings ›
+Skeleton):
 
-World-gizmo size calibration uses the camera image plane, keeping its reference
-pixel span stable across the viewport. The world rotation ball uses an
-orthonormal frame aimed along the eye-to-pivot ray, preserving camera roll.
-The pivot is perspective-placed, but the ball and white roll circle retain
-their configured pixel radii across the screen: no perspective stretching,
-normalization shrinkage or fitted outer-circle growth. Drawing, picking,
-positive tangents and drag sweeps share that frame; front arcs use the same
-eye-to-pivot direction. Linear handles retain world perspective. Unlike
-[ImGuizmo's fitted outer circle](https://github.com/CedricGuillemet/ImGuizmo/blob/master/src/ImGuizmo.cpp),
-Poser's rotation ball deliberately has a fixed screen size.
-The inspector retains its direction-only projection.
-Linear handles face the camera's position relative to the pivot, not its look
-direction; their signs remain frozen during a drag.
-Drawn gizmo handles, with a two-pixel scaled margin, resolve before padded scene
-marker hitboxes. Arrowheads use their triangle, not an enlarged circle. Outside
-the drawn handles, markers remain selectable; a previous frame's hover cannot
-block them. Once a drag begins it retains the pointer through release, so
-crossing a marker cannot select it or start another action.
+- **Ktisis** (the default): Ctrl-click or Shift-click adds or removes a bone.
+- **Brio**: Shift-click adds or removes a bone. Clicking where several bones
+  overlap also opens a list of them.
 
-Rotation arcs grow continuously from half circles at 20 degrees off face-on
-to full circles at 5 degrees, staying full closer in, on both gizmos.
-Drawing and picking share the same clipped arc
-endpoints; the inspector's remaining rear arc stays faint and non-interactive.
-Each projection uses its own viewing direction. Roll and gesture axes do not
-change as the arc grows.
+On the **Body**, **Face** and **Bones** maps of the Pose tab, click a dot to
+select it, and Ctrl-click or Shift-click to add or remove one. Drag on an empty
+part of the map to draw a box: the dots inside it are selected. Hold Ctrl or Shift
+while you drag to add them to what is already selected.
 
-New lights and **Move to camera** share a one-yalm camera-forward placement,
-with local +Z aligned to the look ray. Brio and Ktisis place lights exactly
-at the eye; Poser deliberately retains a nonzero offset so its world gizmo
-pivot can be projected. Move preserves scale and records one undo step.
-The light inspector and light context menu invoke the same move command.
-Clones and imported lights retain their supplied transforms rather than using
-this camera placement.
+**Block game mouse targeting** (Settings › General, on by default) stops your
+clicks from changing the game's target in GPose. Poser's own selection still
+works. Turn it off to get the game's targeting back.
 
-The overlay visibility mask is the only writer for bone visibility. A selected
-anchor stays visible when the mask hides other bones. Presets are sets of
-canonical names whose applied state comes from that mask.
+## The toolbar
 
-Precision wells support modifiers, numeric entry, Escape cancellation, and
-wheel steps. A wheel notch belongs to the hovered well, uses that well's drag
-modifiers, and commits one undo step; unclaimed wheel input scrolls the surface.
+The toolbar sets how the gizmo works. The tools are icons; hover one to see what it
+does.
 
-## Group transform read model
+| Control | Choices |
+|---|---|
+| Tool | Move, rotate, scale, or the universal tool that does all three. |
+| Axes | **Local** follows the selection's own axes. **World** uses the world's. |
+| Pivot | **Self** rotates a bone in place. **Parent** rotates it around its parent bone. |
+| Symmetry | **Off** edits only what you selected. **Link** applies the same edit to the bone on the other side. **Mirror** applies a mirrored edit to it. |
 
-Entities and named groups share the per-item sidebar handle button and
-context-menu action. Hiding suppresses both the world-selection marker and
-the selected world gizmo, including when an actor's root/bone is selected.
-Selection never overrides this choice. Bone highlights, skeleton/IK overlays,
-inspector editing and object visibility remain independent. Hidden controls
-cannot capture clicks; an existing drag finishes normally before hiding.
-Choices use the existing session presentation mask, not a global preference.
-A named group's choice is keyed by its ID, independent of its members' choices.
-An anonymous selection hides its shared gizmo if any selected entity's handle
-is hidden; its transform membership does not change. Showing handles again
-uses current transforms/centroid. Camera controls retain their existing behavior.
+Things to know:
 
-An entity multi-selection, including an exact named-group selection, has one
-group transform surface. A group owns a frozen creation-camera frame, a complete
-initial member snapshot, the exact expected member transforms from its last
-accepted gesture, and authored controls. Reads return those authored controls
-only after validating every live member against the expected snapshot; an
-external or unrepresentable edit disables the surface instead of producing a
-plausible geometric fit. The record is keyed by effective membership, never
-selection order, binding generation, or the primary member. Position is the
-world centroid; authored rotation is relative to the retained creation frame.
-New frames (including legacy imports without a saved frame) capture only the
-camera's ground-plane heading: world Y stays up, with no camera pitch or roll.
-Near a vertical view, projected camera right supplies a stable heading.
-Origin/centroid is unchanged. Explicit saved
-frames and authored rotations are preserved, not flattened or migrated; later
-user-authored X/Z rotations can deliberately tilt the group.
-World rotation deltas are conjugated through that frame. The group's world
-orientation is `creationFrame.Rotation * authoredRotation`,
-never a member's rotation. Local overlay handles use that orientation; World
-translation and rotation handles remain world-aligned. Directional scale handles
-use the group orientation. Spacing scale converts centroid offsets into those
-axes frozen at gesture start, multiplies components, then converts back to
-world space. Numeric scale uses the same axes, independent of the World/Local
-toggle. Member own-size scaling remains native component scaling, without
-affine decomposition. Active previews derive from the frozen gesture baseline.
-Both surfaces read the transaction's proposed snapshot during a group gesture,
-validated against all live members; committed metadata and history remain
-unchanged until commit. Presentation reads refuse during native writes or
-recovery, and for stale or unrelated transactions. They never admit a second
-gesture or repair state.
+- The scale tool always uses local axes.
+- In World, the universal tool has no scale arrows. It scales evenly from the
+  centre.
+- The gizmo stays the same size on screen however far away it is. **Gizmo size**
+  (Settings › Gizmo) changes that size.
 
-`SpacingOnly` and `SizesAndSpacing` keep separate authored spacing and own-size
-factors. The displayed scale is the factor for the selected mode; changing
-mode alone changes no members and cancels a held gesture. Sizes-and-spacing applies one gesture ratio to
-both current offsets and current member sizes, while spacing-only changes
-offsets alone. Group writes still use the existing frozen-baseline gesture and
-journal recovery path. Native snapshots, metadata and the history cursor finish
-together, including delayed recovery. Whole-actor fallback availability is
-defined by [the journal contract](#the-journal).
-Authored factors need only be finite and nonzero; member poses separately obey
-native scale limits. Every output is validated before the first native write.
+## Dragging and typing values
 
-Named state is captured after a command's final effective membership is assembled;
-nesting and duplicate assembly include descendants in that same history step.
-Generated collider groups use this same boundary after bone parenting is installed.
-Their lifecycle history retains and remaps both membership and transform metadata;
-Redo preserves the creation frame instead of capturing the current camera again.
-For an existing group, adding/removing/nesting members updates only membership,
-member snapshots and the average world position. Authored rotation, both scale
-factors and the exact creation frame persist; no member moves, rotates or scales
-as a side effect. The updated centroid is the next gesture's pivot. Membership
-undo/redo restores that membership and centroid together with the preserved
-controls. Genuinely new groups initialize rotation once and scale at 1;
-reordering or temporary editability refusal does not reinitialize group state.
-If membership capture was deferred, history restoration completes it explicitly
-and freezes the result. While still unavailable, restoration changes no structure
-or native members and remains retryable; ordinary reads never complete it.
-Anonymous state initializes at selection boundaries, retains at most 128 logical
-memberships, and clears with the scene session. Reads never initialize state.
-Saves capture metadata with scene state on the framework thread. Document keys
-bind both snapshots; origin and yaw placement move them and the frame together.
-Legacy groups initialize after binding. Invalid present metadata is refused,
-never replaced with a plausible identity baseline.
+One drag of the gizmo is one undo step. So is one typed value.
 
-## Camera movement
+- Press Escape during a drag to cancel it. What you dragged goes back to where
+  it was.
+- Changing the tool, the axes or the pivot during a drag also cancels it.
 
-Center camera on actor translates the current orbit shot to the actor's drawn
-mid-body pivot without changing zoom, FOV, orientation, or its follow target.
-It does not refit the actor to the frame; bone-specific close framing is separate.
+Number fields in the inspector:
 
-New free cameras take position, direction and roll from the same rendered view,
-not a mixture of rendered position and native orbit angles. This also preserves
-the view when spawning from another free camera or a panned/rolled Main Camera.
+- Drag sideways to change the value. Hold Ctrl for finer steps, or Shift for
+  bigger ones.
+- Double-click to type a value. Enter or clicking away keeps it. Escape cancels.
+- Alt-click puts a field back to its default, where it has one.
+- The mouse wheel scrolls the page. It never changes a field.
 
-`Update camera orbit with actor position` defaults on, matching
-[Ktisis 650d1bb9](https://github.com/ktisis-tools/Ktisis/commit/650d1bb9).
-Actor transform edits defer native pivot synchronization until left-mouse
-release and while the live camera is locked. Unlocking applies only the latest
-pending position. Turning the setting off discards pending synchronization;
-turning it on affects subsequent edits. Explicit actor/bone follow is separate.
-The transform owner restores the original native position and default position
-when its override is cleared, on GPose exit, or when the plugin unloads.
+## Hiding handles
 
-Moving the live camera with the game's own controls, or a free camera with its
-keys, journals nothing while it moves. Once the framing (a free camera's position
-and rotation, the game camera's angle, pan, zoom and offset, and roll and field
-of view) has held still for five seconds, it becomes one `Move camera` step from
-where it last rested; moves less than five seconds apart are one step. A move
-still settling when another step is appended is recorded first, up to the last
-framing a tick saw. A global undo records a settling move the same way and then
-takes it back, so the camera returns to where it last rested. Redo and undo for
-the selected entity do not record it. Poser's own camera edits (a staged slider
-or field, an active gesture), undo, redo and switching cameras re-base the
-resting framing instead.
-Replay resolves a restored camera through its history binding.
+An entity or group in the sidebar has a handle button on its row. **Hide handle**
+is also in its right-click menu. Hiding the handle hides its marker and its gizmo in
+the game view. It does not hide the entity itself, and you can still edit it in
+the inspector.
 
-Camera startup checks the current GPose session on its first framework tick,
-including reloads inside GPose. It waits for native camera readiness and
-creates the default camera once; it does not require another GPose entry.
+The choice is not saved. It lasts while Poser is running. **Hide handles by
+default** (Settings › UI) starts every handle hidden.
 
-Camera lifecycle Undo/Redo restores camera data without activating the restored
-camera. Explicit spawn and Look through retain their normal view-switching
-behavior. Removing the live camera still falls back to Main Camera; replaying
-an explicit Look through history entry still changes the view.
+## Locks
 
-Scene cameras are configured and assigned targets while inactive, then the
-saved view is activated once. Explicit orbit assignments (including scene
-restoration and camera switching) bypass native previous-orbit correction for
-one update, so the saved angle is not pulled toward the previous view. Normal
-camera input resumes through the native update without a persistent hold.
+Cameras, colliders and groups can be locked from the sidebar or the right-click
+menu.
 
-Free-camera movement samples held keys through Dalamud `IKeyState`, as
-Brio's `InputManagerService` does. The native keyboard frame is consumed
-only to block game input, never used as the authority for continuous movement.
+- A locked collider can't be moved. Its values still show in the inspector.
+- A locked group moves only as a whole. Select the whole group to move it. Its
+  members can't be moved one at a time.
+- **Move to camera** never moves a member of a locked group.
 
-## The journal
+## Move to camera
 
-Sidebar and context-menu lock toggles re-read the exact entity through one
-command owner, delegating to the existing camera, collider or group journal.
-Inspector, gizmo, pivot and placement share transform-lock admission: locked
-colliders cannot be edited; locked group children can move only as a complete
-group selection. Discrete placement still refuses locked group members,
-including a complete selection. These are distinct intentional operations.
+**Move to camera** brings what you selected to the camera. It is one undo step.
 
-Every change made through the UI is one step with an inverse. Undo runs
-the inverse; redo runs the step again. Drags are one step on release;
-typed fields are one step on commit. Selection is never a step.
+- For a light (in the light's inspector or right-click menu), the light moves one
+  yalm in front of the camera and points where the camera looks. Its scale stays.
+- For anything else, and for several things or a group, the centre moves 2.5
+  yalms in front of the camera. Rotation and scale stay, and several things keep
+  their spacing.
 
-Sliders and draggable numeric wells update the value live, then commit one
-before/after entry on release or edited focus loss. Returning to the original
-value adds nothing. Shared sliders, numeric wells, text and colour controls
-stage value-journal writes under the control's identity; linked writes commit
-as one entry. Closing a control also commits its edit once interaction ends.
-Gaze drags use the same deferred journal; switches and other discrete actions
-append immediately and never merge separate clicks. Transport is excluded
-for actors and world effects alike.
+## Groups
 
-Undo/redo runs each entry's recorded inverse or forward operation. Actor or
-animation changes do not select automatic whole-pose snapshot fallback.
-Explicit multi-frame restoration waits for completion before advancing history;
-it is separate from automatic fallback. Individual runtime writes still enforce
-their own identity and availability checks.
+Selecting two or more things in the sidebar opens the **Selection** tab. It counts
+what you selected by kind and has these buttons:
 
-Every value write reports a result: a refused initial write appends nothing
-and leaves redo intact. A refused inverse never moves the cursor and reports
-its detail. What happens next is one per-entry decision shared by global undo,
-scoped undo and each child of a removal batch: keep the entry for retry (value
-writes that return a refusal, disruptive restores, group restores waiting for
-member poses, and lifecycle entries by default), drop it on the second
-consecutive refusal (a value write that throws, other journal steps), or drop
-it at once when the refusal is permanent (an unrestorable
-borrowed world object, or a batch whose children are all discarded).
-These policies apply only after the entry actually ran. Active gestures,
-reentrant calls and pending recovery block admission without consuming a
-refusal attempt or discarding history, for both global and scoped replay.
+- **Group…** names the selection and makes it a group.
+- **Move to camera** (see above).
+- On a group: **Save to library** and **Ungroup**.
 
-A step that came from a file (a pose import, a scene load) checks the
-file before redo and refuses with one notice when it is gone.
+The gizmo sits at the centre of the selection and moves, rotates and scales
+everything together.
 
-Baking IK is one step: undoing it puts the bones back and re-arms the
-chains the bake disarmed.
+- A new group's axes face the way the camera was facing when you made it, level
+  with the ground.
+- **Scaling a group** (Settings › Gizmo) decides what scaling does. **Sizes and
+  spacing** grows the members and the space between them. **Spacing only** moves
+  the members apart or together and keeps their size.
+- Adding members to a group, or removing them, moves nothing.
 
-Transport (play, pause, scrub, speed) is never a step. Choosing a
-timeline and toggling loop are. A locked camera never journals.
+## The camera
 
-Each entity property (lights, overlays, cameras, props, world objects) is
-declared once per kind and written by stable ID through one path: bind the
-exact current entity, apply the kind's refusal policy, then journal under
-(entity, property) so continuous edits stage. A stale ID writes nothing and
-appends nothing. Transport properties (effect pause and speed, scenery
-animation pause) write and report but never journal. Undo and redo re-resolve
-the bound instance through the history-only resolver, so a lifecycle restore
-that replaced the native wrapper still receives its edits; public IDs are
-never repaired.
+- **Center camera on actor** (in the actor's right-click menu) turns the camera
+  to look at the middle of the actor. It keeps the zoom and the angle. It does not
+  work on a free camera, a locked camera, a camera with a pinned position, or an
+  actor that is hidden or not yet drawn.
+- **Recenter** in the camera inspector centres on the actor the camera follows.
+  If it follows no one, it uses the game's target, then the selected bone or
+  actor, then a bone the camera tracks.
+- **Update camera orbit with actor position** (Settings › Camera, on by default)
+  moves the point the camera orbits around when you move an actor. It happens when
+  you let go of the mouse. A locked camera is not changed.
 
-Transform history and retained group metadata resolve replacement generations
-through the committed scene, not through group membership or auxiliary preview
-bindings. A bone retains its actor lineage, slot, partial, index and exact name;
-only the actor/skeleton generations may change. A missing or mismatched bone
-does not become an actor transform. Ordinary selection and edit validation keep
-their separate, exact-id rules.
-A still-present actor without its character skeleton is pending during redraw,
-not evidence that its bones were deleted. History stays in the same bounded
-journal, but replay waits without writing or entering recovery. When the body
-returns, all targets are re-keyed together; a missing slot, mismatched bone or
-absent owner discards the whole patch.
-Redraw cancels an active gesture, rather than committing its partial drag.
-Its baseline recovery uses the same retained-target identity rules, including
-ordinary bone gestures. During a publication gap it retains the requested
-baseline and blocks mutations; once the exact bone returns, recovery restores
-that baseline on its current generation. It never writes a different bone to
-clear the recovery barrier.
+Moving the camera with the game's controls, or flying a free camera, is recorded
+too. Once the camera has stood still for five seconds, the move becomes one
+**Move camera** undo step. If you make another edit before then, the camera move
+is recorded first. If you press undo before then, the camera goes back to where it
+last stood still.
 
-Show and Hide report a result per target. A refused or stale target writes
-nothing and appends nothing; every surface (sidebar eye, context menu,
-selection section) shows the same refusal notice. One target is its own value
-step. Several targets are one entry that holds only the targets that landed, so
-undo and redo touch only those targets.
+## Undo and redo
 
-Selected-entity undo (Alt+Z) and redo (Alt+Y / Alt+Shift+Z) use the same journal;
-global Ctrl-based shortcuts are unchanged. Bindings are configurable. Bones and
-gaze points address their owning actor; multiple bones on that actor share the
-scope. Empty, stale, grouped or multi-entity selections never fall back to global
-history. A known disjoint entry can be skipped; a shared entry touching the actor
-or an entry with an unknown/scene-wide footprint blocks scoped replay. Entries
-are never split. Scoped redo makes its entry the newest applied operation, and
-any new edit clears redo as usual. Replay uses the normal recovery and asynchronous
-completion barriers. Creation, removal and relationship-changing operations
-remain global: deleting the selected entity must not strand its opposite
-shortcut without a live target. Known lifecycle footprints still allow skipping
-those entries when replaying unrelated entities' edits. Removal batches resolve
-the union of all child footprints at lookup time; any unknown child keeps the
-whole batch a barrier. Any new history append cancels a pending deferred replay,
-even when the new edit belongs to a different entity.
+Undo is **Ctrl+Z**. Redo is **Ctrl+Y** or **Ctrl+Shift+Z**. The keys can be changed
+in Settings › Keybinds.
 
-The depth is 500 steps by default (Settings › Undo steps).
+- History keeps 500 steps. **Undo steps** (Settings › General) changes that; 0
+  turns undo off.
+- A slider or field you drag is one step when you let go. Ending on the value you
+  started from records nothing.
+- Selecting is never a step.
+- Pausing a world effect, changing its speed and pausing scenery animation are not
+  steps. Playing, pausing and scrubbing an actor's animation are.
+- Redo of a pose import or a scene load needs the file. If it is gone, redo says
+  so.
 
-Actor placement writes preserve the supplied scale; the native writer does not
-clamp it to a second range. PosingService reports whether the actor and its draw object were available
-and the write was issued. Parenting, scene restoration, position lock and transform history
-use that result rather than treating an existing override as proof of a new
-write. An unavailable draw object does not create a new stored override.
+If an undo can't be done, Poser says why and the step stays. Most steps that fail
+twice in a row are then dropped from history, with a notice.
+
+### Undo for the selected entity
+
+**Alt+Z** undoes the latest change to the selected entity only. **Alt+Y** or
+**Alt+Shift+Z** redoes it. A bone counts as its actor.
+
+It skips changes to other entities. It stops at a change it can't separate from
+others, such as one shared by several entities or a whole scene load, and says so.
+Creating and removing entities can only be undone with the normal undo.

@@ -1,89 +1,115 @@
-# Agent rules
+# Working on Poser
 
-- Documentation is required for **durable concepts and non-obvious
-  invariants** — product boundaries, runtime ordering, identity/gesture
-  contracts, compatibility conventions. Do NOT create a document per class,
-  interface, service, or entity; member tables, constructor lists, and
-  implementation flow belong to source and search. Before adding a concept,
-  consult `docs/README.md` and extend the existing normative home; create a
-  new file only when no home fits, and keep it around 10–40 lines.
-- One normative home per contract; other documents link instead of
-  restating. Delete superseded prose — Git preserves history.
-- Follow the unit-test budget and relevance rules in
-  [testing](docs/process/testing.md#unit-test-budget-and-relevance). Increasing
-  the passing test count is not evidence of better coverage.
-- Consult Brio for native/backend behavior and Ktisis for posing
-  interaction (Brio: robust backend, horrid UI; Ktisis: the reverse). Keep a
-  reference citation in docs only when it explains an intentional
-  compatibility decision.
-- Unsafe offsets, native ordering, and surprising math are explained in
-  tight comments beside the code, not in documentation essays.
-- A **Debug build auto-deploys the plugin to the live game**. Never run Debug
-  merely to check compilation, tests, or fault injection. Use Release for
-  non-deployment validation. Run Debug only as the announced deployment action
-  for the exact reviewed head before handing the issue to the user for testing.
-  Follow [the deployment and acceptance contract](docs/process/testing.md):
-  the user is the in-game reviewer, no video verification is required, and
-  a worktree-local build is not deployment to the canonical live output.
-- Work directly in the current task by default: implement, review, validate,
-  and handle user feedback here. Do not spawn subtasks or delegate unless the
-  user explicitly asks. Track work as GitHub issues, not PBIs.
-- If the user requests delegation, prefer Sol (`gpt-5.6-sol`) unless they
-  choose another model. Delegate bounded work; keep scope, review, deployment,
-  acceptance, and repository finalization in the main task. Only one writer
-  edits a shared subsystem at a time.
-- Write concise, natural updates; do not require a TL;DR prefix or rigid template.
-  Historical plans are reference material, not current agent instructions.
-  When user testing is required, include an exact actionable test card with
-  starting state, actions, expected result, and what evidence to report.
-- Explicitly requested delegated tasks must send their blocker or final report
-  back to the main task before ending; include the exact head, patch, checks,
-  and outstanding work.
-- Announce **deployed — ready for user testing** only after verified deployment,
-  with the user's actionable test card. An undeployed build is never test-ready.
-- `main` is the development and integration branch. Cut `release/<version>`
-  from an accepted `main` commit; build, test, package, tag, and publish the
-  exact release-branch head. Squash-merge release fixes and metadata back to
-  `main` through a pull request, as configured in the repository. Main's squash
-  commit need not preserve the release commit's ancestry; never rebuild a cut
-  release from a later `main` commit.
-- Name work branches and worktrees by purpose: `feature/`, `bug/`, `ui/`,
-  `docs/`, `test/`, `perf/`, `release/`, or `chore/` as appropriate. Never
-  use a `codex/` branch prefix or a generic Codex work name.
+These are the rules for changing Poser: its code, its documentation, its issues
+and its pull requests. They apply to people and to AI agents alike.
 
-## Writing
+## Write so anyone can read it
 
-Write everything — issues, PRs, commits, docs and code comments — for Midona
-and other people using Poser, in short, ordinary sentences. If it reads like a
-lab report or one agent talking to another, rewrite it. The detailed rules
-live in [issue implementation and review](docs/process/external-implementation-review-loop.md#writing-issues-and-pull-requests).
+Everything written for this project must be readable by someone who has never
+opened the code: issues, pull requests, commit messages, documentation, code
+comments and names in the code.
 
-- **Issues and PRs.** Start with what goes wrong for the user, then what
-  should happen instead. Link the code that shows the problem with GitHub
-  permalinks to a published commit and the relevant lines, each with a short
-  label saying what the reader will find there. End with a short way to check
-  it. Say plainly whether something was reproduced, read in the source, or is
-  a guess. Leave out line counts, reviewer or model names, deployment status
-  and the story of the session. Use the
-  [work-item template](.github/ISSUE_TEMPLATE/work_item.md).
-- **Commits.** Author `midona-rhel <midona.rhel@gmail.com>`, with no Claude
-  co-author or session lines. The subject says in plain words what changed
-  ("Release scene-save appearance packages on every exit"), with the issue
-  number in parentheses when there is one. No `refactor:`/`docs:` prefixes.
-  Keep each commit to one change, and record live checks in their own commit.
-- **Code comments.** Say what the code is for and what it returns, in the
-  words a user would use: "undo step", "redraw", "bone IDs", not
-  "re-keyed footprint" or "ordering barrier". Put an explanation beside the
-  decision it explains, once. Mention which thread code runs on when it
-  matters. No capitals for emphasis, no investigation notes, no comments that
-  only say where a behavior does *not* happen. A search for a behavior should
-  land on its implementation.
-- **Code.** Prefer one shared implementation over parallel copies, and delete
-  the copy rather than leaving it beside its replacement. Before keeping a
-  guard, trace who can actually reach it; remove branches that only protect
-  states production code cannot create, and keep checks for real external
-  failures. Tests use the production path, and new tests follow the
-  [unit-test budget](docs/process/testing.md#unit-test-budget-and-relevance).
-- **Docs.** Update the existing normative home in plain language and delete
-  superseded prose. Feature pages describe what the user sees, not class
-  inventories. Dated evidence and live-check records go in `docs/validation/`.
+- Use short, ordinary sentences. One idea in each.
+- Say what a person does and what they then see. "Press Apply. The animation
+  plays."
+- Use the words the interface shows. If the tab is called Full body, write
+  Full body.
+- Do not use a word that only the code uses. If you need one, say in the same
+  sentence what it means.
+- Describe how things are now. Leave out how they used to be and how the work
+  went.
+- Cut what the reader does not need.
+
+If a line reads like notes someone wrote for themselves, rewrite it.
+
+## Code
+
+- **One way to do each thing.** Before writing something, look for the code
+  that already does it and use that. When two pieces of code do the same job,
+  keep one and delete the other.
+- **Three parts.** The interface (`Poser.UI`) draws and passes on what was
+  pressed. Poser's own logic (`Poser.Application`) decides what happens. The
+  game code (`Poser.Game`) reads and writes the game. Behaviour does not belong
+  in the interface.
+- **Names.** A name says what the thing is in plain words. Do not invent
+  vocabulary.
+- **Checks.** Only check for something that can really happen and that matters
+  when it does. Before keeping a check, find the action that leads to it.
+  - Do not guard against things a person cannot do, or would only do on
+    purpose. Someone holding a drag cannot press Reset. Undo exists.
+  - Do not catch errors around code that does not throw.
+  - Do not write a fallback for a value that is always there.
+  - Keep checks for things outside Poser's control: an actor that left, a body
+    being redrawn, a file that is missing, a game function that moved.
+- **Comments.** A comment says why the code is there, in plain words. Do not
+  write a comment that repeats the code, tells the story of a change, or needs
+  another file open to make sense. Put it next to the decision it explains.
+- **Interface.** Build panes from the shared controls in `Poser.UI/Widgets`,
+  `Poser.UI/Controls` and `Poser.UI/Compositions`. Take sizes and spacing from
+  the theme, not from numbers in a pane. Report a failed action through
+  `UserNotices.Report`, under the name of the control that was used.
+- **Tests.** Add a test only when it protects behaviour someone depends on.
+  More tests is not better coverage. The limits are in
+  [testing](docs/process/testing.md#unit-test-budget-and-relevance).
+- **Brio and Ktisis.** They do the same job as Poser. Look at how Brio talks to
+  the game and how Ktisis lets a person pose before deciding how Poser should.
+
+## Leave a file better than you found it
+
+When you change a file, bring the whole file in line with these rules in the
+same change, not only the lines you came for:
+
+- rewrite comments that are wrong, out of date or hard to read;
+- remove checks that have no reason to exist;
+- remove code nothing uses;
+- fix names that say the wrong thing.
+
+## Documentation
+
+- The pages under `docs/features` are for people who use Poser. The pages under
+  `docs/architecture` and `docs/process` are for people who change it.
+  [docs/README.md](docs/README.md) lists them.
+- Each thing is explained in one place. Other pages link to it.
+- Write down what is true and worth knowing. Do not write a page per class.
+- Plans, audits, notes and records of what was tested do not go in the
+  repository. Work is tracked in GitHub issues. What was tested goes in the
+  pull request.
+- Delete text that is no longer true. Git keeps the history.
+
+## Issues and pull requests
+
+- Start with what goes wrong, then what should happen. End with how to check
+  it.
+- Link the code that shows the problem, as a GitHub link to a published commit
+  and its lines. Say in a few words what the reader will find there.
+- Say whether something was seen in the game, read in the code, or is a guess.
+- Leave out line counts, model names and the story of the session.
+- Use the [issue template](.github/ISSUE_TEMPLATE/work_item.md).
+
+## Commits and branches
+
+- The first line says in plain words what changed, with the issue number in
+  brackets when there is one. No `fix:` or `docs:` prefixes. One change per
+  commit.
+- Name a branch after what it is for: `feature/`, `bug/`, `ui/`, `docs/`,
+  `test/`, `perf/`, `chore/` or `release/`.
+- Work is merged into `main`. A release is built from its own
+  `release/<version>` branch. The steps are in
+  [the release runbook](docs/release/runbook.md).
+
+## Building and trying a change
+
+- Build Release to check that the code compiles and the tests pass.
+- Build Debug only to try a change in the game. The game loads Poser from the
+  Debug output of the main checkout, so a Debug build there replaces what is
+  running. The steps are in [testing](docs/process/testing.md).
+- Try every change in the game before calling it done. A passing build is not
+  proof that it works.
+
+## For AI agents
+
+- Do the work in the session you are in. Hand part of it to another agent only
+  when asked to. If asked and no model is named, use Sol (`gpt-5.6-sol`).
+- Do not merge a pull request or publish a release unless you were asked to.
+- When something needs trying by hand, give the exact steps: where to start,
+  what to press, and what should be seen.

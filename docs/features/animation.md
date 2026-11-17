@@ -1,102 +1,154 @@
 # Animation
 
-Basic mode owns one General Full Body selection. Choose only stages a catalog
-row; Apply captures the actor's current Base state and then plays that exact
-row. A friendly index-zero emote can use the game's intro/loop lifecycle;
-actions and raw timelines use the audited timeline route. Reset restores the
-first successful Apply's immutable Base state.
+The Animation tab plays animations on the selected actor. The bone edits you made
+on the Pose tab stay on top of whatever is playing.
 
-Advanced mode exposes Full Body, Upper Body, Facial, Additive, and Lips.
-Controls remain visible but inert while Advanced is off. Each layer keeps the
-exact chosen catalog row, applies only its native slot, and restores the state
-captured immediately before its first successful write. Full Body and Upper
-Body provide scrub and independent Loop switches; other layers do not claim a
-stable Havok control mapping.
+## Playing one animation
 
-An attached character-backed body uses the same exact-generation animation
-backend through a deliberately reduced surface: Base choose/apply/reset,
-whole-actor speed and play/pause, and the verified Base scrub. Stance, weapon,
-position lock, expressions, looping, and advanced layers are not offered.
+The **General** section is the simple way to play something.
 
-Full Body loop uses the verified forced Base field. A non-Base write clears that
-global force, performs the exact slot write, then rearms Base. Upper Body loop
-replays its last successfully applied Upper timeline. Turning Loop off stops
-replay without changing the current frame; Reset releases the loop and restores
-the captured layer.
+1. Press **Choose animation** and pick one from the list. Nothing plays yet.
+2. Press **Apply**. The actor plays it.
+3. Press **Reset** to go back to what the actor was doing before your first Apply.
 
-Scenes do not replay any of this. A scene records no animation at all and
-restores every actor stopped; see `scenes.md`.
+The other controls in this section:
 
-Pose Expression Preview and Advanced Facial Apply share direct
-`HoldExpression`; their Reset shares `ReleaseExpression`. Release clears Facial
-speed, plays Straight Face (604), clears again, then restores the immutable
-Facial timeline and speed. Apply schedules at most one identical retry 500 ms
-later when the same session, actor generation, binding, and exact selection
-still match. This bounded retry does not observe face output and a paused actor
-may still require a second click. Pose also provides Bake into pose history.
+- **Loop** starts the animation again each time it ends.
+- **Play emote start** plays an emote from its beginning, with its lead-in. With it
+  off, the emote goes straight to the part that repeats.
+- **Stance** puts the actor in Idle, Chair, Ground or Sleep. The arrows beside it
+  step through the poses of that stance, the same ones `/cpose` cycles through.
+  Changing the stance clears the animation you chose.
+- **Weapon** draws or sheathes the weapon.
+- **Lock position** keeps the actor where you placed it while animations play.
 
-Entering Advanced is a view change; it does not reset or replay the actor.
-Leaving Advanced restores outgoing ownership before changing the mode flag.
-The mode belongs to the exact actor generation and is shared by all Properties
-hosts. Catalog drafts and picker disclosure remain window-local.
-That multi-layer restore is intentionally non-atomic: if a later restore fails,
-the prior mode remains selected, while earlier successful restores stay applied.
+Emotes look different when a character is sitting or mounted. If you apply an emote
+to a sitting actor, Poser plays the sitting version, as the game does. If the emote
+has no version for how the actor is right now, Apply tells you and plays nothing.
 
-Scrub writes and release belong to the initiating host. A stale host cannot
-write or end another host's drag, even for the same actor. Mouse release and
-hidden UI release the claim independently of whether the scrub row is drawn;
-closing the host or losing the actor releases it too. Release leaves playback paused.
+## Playing several animations at once
 
-A scrub moves the live slot timeline through the game's own scheduler, on the
-next framework tick (latest target wins). It is the same frame in both directions:
-clips re-enter as in playback, props with their own animation follow the body, and
-effects alive at the target re-spawn at their elapsed age. Poser's pause and resume
-reach the slot timelines, props, Havok controls and the actor's effects on one
-tick; paused effects freeze. A redraw from any source brings Base, Upper Body and a
-held Facial timeline back on their frame, props included. Integer-frame timelines,
-and builds where the layout check fails, keep the direct clock-write scrub.
+Turn on **Advanced animation** to use layers. Each layer plays its own animation
+while the others play theirs.
 
-## Static idle export (in development, #304)
+| Layer | What it moves |
+|---|---|
+| Full body | The whole actor. |
+| Upper body | The arms and torso, on top of the full body. |
+| Facial | The face. |
+| Additive | A small motion added on top, such as a nod. |
+| Lips | Mouth movement for speech. |
 
-Actor context menu → More → Export Idle Pose opens name, standing `/cpose` slot
-and race/gender choices. Save and Export then chooses a destination; confirming
-the filename starts export immediately. Cancelling returns to the options.
-Only the source race/gender starts selected.
-The slot list is the intersection available in game data for all selected targets;
-each target retains its native entry/hold duration. Existing PMP files are not overwritten.
-Body and baked facial expression use separate destination-skeleton bindings;
-a missing expression is a failure, not a silently body-only export. Native
-capture refreshes the solved, pre-Customize+ pose; local tracks are mapped by
-name to the game's destination skeleton, not by the modded actor's indices.
-Model-to-local conversion uses skeletal quaternion/scale components rather than
-matrix decomposition, preserving rotated non-uniform and signed bone scales.
-The source-race export includes extra body/face bones from the loaded skeleton
-and requires the same face, skeleton mods and Customize+ profile in the receiving collection.
-Vanilla entry samples map by name; extra bones start at their reference pose.
-Reparented standard bones refuse rather than applying incompatible local samples.
-Hair/cloth physics, equipment and gaze tracking are not exported.
+Every layer has the same controls:
 
-Other races are explicitly opt-in, experimental retargets onto their vanilla body
-and available player-face skeletons (face resources 1–8). Local reference-pose
-deltas map by bone and parent name; translation offsets scale by reference bone
-length. Unmatched or reparented target bones keep their target idle. This does
-not solve contact or guarantee identical proportions, facial shape or custom rigs.
-The face attachment root stays at its target idle, avoiding a second head rotation.
-One detached source capture feeds all targets; serialization yields between face
-batches and never recaptures a changed live pose midway through the package.
+- **Choose animation**, **Apply** and **Reset** work as in General. Reset puts back
+  what that layer played before you changed it.
+- **Speed** runs from 0 to 2. At 0 the layer stops on its current frame, 1 is
+  normal speed and 2 is double.
+- **Weight** runs from 0 to 1 and sets how strongly the layer shows.
+- **Scrub** moves through the animation by hand. The button beside it pauses or
+  plays the layer.
+- **Loop** starts the animation again each time it ends. Lips has no Loop.
 
-Entry uses sine easing and shortest-path quaternion interpolation. Only the
-constant hold loops; exit uses the game's normal blend-out. The application
-owns export completion independently of UI drawing; Documents writes the PMP
-atomically without replacing an existing file. Game serialization operates
-on independently loaded resources, never a live actor's animation container.
-Facial-layer routing and game interruption require live acceptance.
-Facial samples live in their own race/face-specific nonresident PAP library;
-the body PAP's TMPP names that library and C010 starts its motion. Putting a
-face binding beside body bindings is not sufficient to register a face motion.
-This follows [VFXEditor's facial-library convention](https://github.com/0ceal0t/Dalamud-VFXEditor/wiki/Using-Facial-Expressions).
-No resident face library or shared ActionTimeline is replaced.
-Multi-motion templates select the primary `cbem_` body motion and a facial
-binding explicitly. Only the selected binding is encoded into each output PAP,
-remapped to index zero; the facial timeline names that same exported motion,
-not an assumed race-independent expression name.
+Things to know:
+
+- While Advanced animation is on, Choose, Apply, Reset and Loop in the General
+  section are greyed out. While it is off, the layers are greyed out.
+- Turning Advanced animation on changes nothing on the actor.
+- Turning it off resets every layer and takes off a held expression. If a layer
+  can't be reset, Advanced animation stays on and Poser shows why.
+- The setting belongs to the actor. Two Properties windows showing the same actor
+  show the same setting.
+
+## Looping
+
+Loop repeats the animation you applied on that layer.
+
+- Turn Loop on before or after Apply. If nothing you applied is playing, Poser
+  remembers the choice and uses it at the next Apply.
+- Turning Loop off lets the animation play to its end. It does not jump.
+- Reset turns the loop off and puts back what the layer played before.
+- The Full body keeps repeating when you play or reset another layer.
+
+## Scrubbing
+
+Dragging **Scrub** pauses the layer and moves it to the frame under the pointer.
+It stays paused when you let go. Press the play button to carry on from there.
+
+- Props an animation brings in, such as a drink, follow the body.
+- Effects show as they would look at that point of the animation.
+- Dragging backwards gives the same picture as dragging forwards to that frame.
+- An animation that has ended can still be scrubbed. Poser plays it again and
+  holds it under the pointer.
+- Only the window where you started the drag controls it. Releasing the mouse,
+  hiding the interface, closing the window or losing the actor ends the drag.
+
+When an actor is redrawn, for example after changing its gear, the Full body, the
+Upper body and a held expression come back on the frame they were on.
+
+## Mounts, minions and ornaments
+
+A mount, minion or ornament attached to an actor has a shorter Animation tab:
+Choose animation, Apply, Reset, Speed and Scrub. It has no stance, weapon, layers,
+loop or expressions.
+
+## Expressions
+
+The Expression row is on the Pose tab.
+
+1. Choose an expression.
+2. Press **Preview**. The face takes the expression and holds it.
+3. Press **Reset** to take it off, or **Bake expression** to turn it into bone
+   edits you can keep changing by hand. Bake is one undo step.
+
+If Preview seems to do nothing on a paused actor, press it again.
+
+The Facial layer on the Animation tab is different. It plays a facial animation
+that keeps moving and repeats. Applying one takes off a held expression.
+
+## Scenes
+
+A saved scene keeps each actor's animation, unless you turn that off when saving.
+See [A scene keeps its animation](scenes.md#a-scene-keeps-its-animation-unless-the-save-turns-it-off).
+
+## Exporting a pose as an idle animation
+
+You can save the actor's current pose as a mod that replaces one of the game's
+standing poses. Other people who install the mod see their character stand in your
+pose.
+
+1. Right-click the actor, then **More → Export Idle Pose**.
+2. Give it a name and pick which standing pose (`/cpose`) it replaces.
+3. Pick the races and genders to export for. Only the actor's own starts ticked.
+4. Press **Save and Export** and choose where to save the `.pmp` file.
+
+What ends up in the mod:
+
+- The body pose and the face, including a baked expression.
+- Extra bones from the actor's own skeleton, when you export for its own race.
+  Whoever uses the mod then needs the same face, skeleton mods and Customize+
+  profile.
+
+What does not:
+
+- Hair and cloth movement, equipment and where the eyes look.
+- The change in body shape that Customize+ makes.
+
+Limits:
+
+- Only humanoid actors can be exported, and not while a pose is being imported.
+- An existing `.pmp` file is never overwritten.
+- If the face can't be captured, the export fails. It never saves the body alone.
+- A custom skeleton that moves a standard bone to a different parent can't be
+  exported.
+
+### Exporting for other races
+
+Exporting for a race other than the actor's own is experimental. Poser fits the
+pose onto that race's ordinary body and its standard faces.
+
+- Bones are matched by name. A bone the other race doesn't have, or has under a
+  different parent, keeps that race's own idle.
+- Proportions and face shape will differ, and hands may not touch what they
+  touched on the original.
+- Custom skeletons are not carried over.

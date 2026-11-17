@@ -1,38 +1,39 @@
-# Release exclusion manifest
+# Release exclusions
 
-This is the tracked-tree and package-staging checklist for a release. It does
-not delete files or replace the final package scan.
+What must not end up in the repository at a release, or in the release archive.
+Check both against this list before publishing (step 4 of the
+[runbook](runbook.md)). The list does not delete anything by itself.
 
-## Exclude
+## Leave out
 
-| Path or kind | Reason |
+| Path or kind | Why |
 |---|---|
-| `bin/`, `obj/`, `dist/`, `*.zip` | Generated build or package output. |
-| `*.log`, `*.dmp`, `*.mdmp`, `*.core`, `*.etl` | Diagnostics can contain local state or personal data. |
-| `Brio/`, `Ktisis/`, `Anamnesis/` | Reference clones are not Poser source or release inputs. |
-| `DevHost/`, `Norvrandt.Tests/` | Local development harnesses outside the shipped solution. |
-| `.claude/`, `claude/`, `CLAUDE.md`, `AGENTS.local.md` | Local agent/session material. |
+| `bin/`, `obj/`, `dist/`, `artifacts/`, `TestResults/`, `*.zip` | Build and test output. |
+| `*.log`, `*.dmp`, `*.mdmp`, `*.core`, `*.etl` | Logs and crash dumps can hold local paths and personal data. |
+| `Brio/`, `Ktisis/`, `Anamnesis/` | Copies of other tools kept for reference. They are not Poser's source. |
+| Folders not listed in `Poser.slnx`, such as `DevHost/`, `Norvrandt.Tests/`, `Poser.Core/` or `PosingCore/` | Old or local projects. Nothing in the release is built from them. |
+| `.claude/`, `claude/`, `CLAUDE.md`, `AGENTS.local.md`, `.local-notes/`, `.worktrees/`, `.tmp/` | Local notes, agent sessions and working copies. |
 | `imgui.ini`, `*.user`, `.vs/`, `.idea/` | Local editor and window state. |
-| `tools/__pycache__/`, `tools/uiverify/`, captured validation media | Verification scratch and captured evidence. |
-| `**/Data/GameData/` | Game-derived data that Poser cannot redistribute. |
+| `tools/__pycache__/`, `tools/uiverify/`, screenshots and recordings made while testing | Leftovers from checking changes. |
+| `**/Data/GameData/` | Data taken from the game, which Poser may not redistribute. |
 
-`Poser.Core` is retired. Runtime resources now live in the owning Documents,
-Game and UI projects; legacy embedded-resource names remain for compatibility.
+## Keep, after a look
 
-## Keep and inspect
+- `LICENSE`, `README.md`, `THIRD-PARTY-LICENSES.md` and the files in
+  `docs/release/`.
+- Poser's own documentation, as long as it has no local paths, private data,
+  screenshots or copied source from other projects.
+- Data from other projects listed in `THIRD-PARTY-LICENSES.md`, when Poser needs
+  it to run and its credit ships with it.
 
-- `LICENSE`, `README.md`, `THIRD-PARTY-LICENSES.md`, and release documentation.
-- Poser's own design, validation, and backlog documentation when it contains no
-  local paths, private data, screenshots, or copied upstream source.
-- GPL-compatible upstream data listed in `THIRD-PARTY-LICENSES.md` when it is
-  required at runtime and its attribution remains with the release.
+The `.gitignore` rule `[Rr]elease/` for build output also matches
+`docs/release/`. The `!/docs/release/` line after it keeps this folder tracked;
+do not remove it.
 
-The `[Rr]elease/` ignore rule matches documentation directories too. Preserve
-the `!/docs/release/` exception so the runbook and this manifest stay tracked.
+## Last check
 
-## Final checks
-
-Before a release, compare the approved Git tree and the separately staged ZIP.
-Reject unexpected files, duplicate or unsafe archive names, non-regular archive
-entries, bundled logs or dumps, local paths, credentials, personal data, and
-unattributed third-party material. Keep scan output redacted.
+Compare the release commit's files and the release archive with each other.
+Reject anything unexpected: duplicate or unsafe file names in the archive, links
+or other special entries, logs or dumps, local paths, passwords or keys, personal
+data, and material from other projects without its credit. Hide private details
+in anything you save from the scan.

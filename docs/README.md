@@ -1,31 +1,23 @@
 # Poser documentation
 
-Start with the product and runtime overview. Feature pages describe the
-user-visible behavior that must stay consistent.
+What each part of Poser does, written for people who use it:
 
-- [Product scope and project boundaries](architecture/product-and-boundaries.md)
-- [Posing runtime](architecture/posing-runtime.md)
-- [Application state](architecture/application-state.md)
-- [UI workspace](architecture/ui-workspace.md)
-- [Selection and transforms](features/selection-and-transforms.md)
-- [Pose operations](features/pose-operations.md)
-- [Expression, gaze, and IK](features/expression-gaze-and-ik.md)
+- [Selecting and moving things](features/selection-and-transforms.md)
+- [Posing](features/pose-operations.md)
+- [Expressions, gaze and IK](features/expression-gaze-and-ik.md)
 - [Animation](features/animation.md)
-- [Pose files and transfer](features/files-and-transfer.md)
+- [Pose files, character files and the Library](features/files-and-transfer.md)
 - [Scenes](features/scenes.md)
-- [Runtime appearance](features/runtime-appearance.md)
+- [Appearance](features/runtime-appearance.md)
 
-Current supporting guidance: [process](process/external-implementation-review-loop.md),
-[testing](process/testing.md), [dependency updates](process/dependency-currency.md),
-[licenses](../THIRD-PARTY-LICENSES.md), and [release](release/runbook.md).
+How Poser is built, for people changing the code:
 
-The [architecture review and cleanup plan](validation/architecture-review-2026-10-07.md)
-records the 2026-10-07 evidence, proposed changes, and documentation cleanup.
-It is not a replacement for the current contracts above.
+- [What Poser is and what it leaves to other plugins](architecture/product-and-boundaries.md)
+- [How a pose reaches the game](architecture/posing-runtime.md)
+- [What Poser keeps track of](architecture/application-state.md)
+- [How the interface is put together](architecture/ui-workspace.md)
+- [Testing and deploying](process/testing.md)
+- [Keeping dependencies up to date](process/dependency-currency.md)
+- [Making a release](release/runbook.md) and [what a release must not contain](release/exclusions.md)
 
-The [October 25 simplification plan](validation/simplification-plan-2026-10-25.md)
-prioritizes conflicting guards, duplicate behavior and unclear code comments.
-
-Historical/reference material: [validation snapshots and older proposals](validation/),
-[Brio notes](brio/known-brio-bugs.md), and [legacy PBI records](backlog/).
-Their dates and status belong to those snapshots; track current work in GitHub issues.
+[Release notes](release/CHANGELOG.md) list what changed in each version.

@@ -1,107 +1,101 @@
 # Testing
 
+## Building
+
+You need the .NET 10 SDK and a Dalamud install. `Poser`, `Poser.Game` and
+`Poser.UI` compile against Dalamud. The Dalamud SDK looks for it in XIVLauncher's
+`addon\Hooks\dev` folder, or in the folder named by the `DALAMUD_HOME`
+environment variable.
+
+```powershell
+dotnet build Poser.slnx -c Release --nologo
+```
+
+Use Release to check that the code compiles. A Debug build is for trying a change
+in the game (see below), never just to compile.
+
+The Release build writes the plugin to `Poser/bin/Release` and the installable
+archive to `Poser/bin/Release/Poser/latest.zip`.
+
+## Running the tests
+
+```powershell
+dotnet test Poser.slnx -c Release --no-build
+```
+
+There are three test projects:
+
+- `Poser.Domain.Tests` and `Poser.Application.Tests` test Poser's own logic. They
+  need no Dalamud install.
+- `Poser.Game.Tests` tests the game-facing code against stand-ins for the game.
+  It needs Dalamud to build, but it never runs the game.
+
+`Poser.Application.Tests` also contains `ReleaseIdentityTests`, which fails when
+the version numbers, download links and release notes of a release disagree (see
+the [runbook](../release/runbook.md)).
+
+CI runs `.github/workflows/architecture.yml` on every pull request and on pushes
+to `main`. It has two jobs:
+
+- **portable** checks which projects reference which
+  (`tools/Test-ProjectBoundaries.ps1`), then runs the Domain and Application
+  tests without Dalamud.
+- **full** downloads Dalamud, builds the whole solution in Release and runs every
+  test project.
+
+When tests fail in CI, `tools/Report-TestFailures.ps1` lists each failed test in
+the checks view.
+
+## What the tests are for
+
+Tests check that Poser's logic does what it should: what a command changes, how
+it undoes, how a scene loads, how a file is read and written. They do not show
+how the interface looks or behaves, or what the game does with a write. Those are
+checked in the game.
+
+Do not write tests for the look, layout or wiring of the interface. A larger
+number of passing tests is not better evidence.
+
 ## Unit-test budget and relevance
 
-Effective 2026-10-25: for every new unit test, remove at least three existing
-unit tests in the same change. Prefer extending a relevant existing test over
-adding another. If no justified removals are available, do not add a new test.
+- For every new unit test, remove at least three existing ones in the same
+  change. Prefer extending a relevant existing test over adding one. If there is
+  nothing that is right to remove, do not add the test.
+- Remove checks that repeat each other, tests of behaviour that no longer exists,
+  assertions that only repeat the code, and cases no real caller can reach. Say
+  for each removed test what it covered and why that is no longer needed or is
+  covered elsewhere.
+- Do not remove a useful check just to pay for an unrelated new test, and do not
+  merge unrelated tests to lower the count. Each added case of a parameterised
+  test counts as an added test.
+- Report how many tests were added and removed, and the net change.
+- A test must check a real behaviour. A stand-in for the game is useful when it
+  reproduces a failure the game can really produce.
 
-Remove redundant checks, tests of deleted behavior, assertions that merely
-repeat implementation, and scenarios with no reachable supported caller.
-Explain what each removed test covered and why that check is unnecessary or
-already covered. Do not remove a distinct useful regression check just to pay
-for an unrelated new test, or combine unrelated tests merely to hide the count.
-Count added parameterized cases as additions rather than using them to evade
-the budget. Report added, removed and net discovered test counts.
+## Checking a change in the game
 
-A retained or new test must check a meaningful behavior or concrete correctness
-requirement. Fake ports are useful when they exercise a real failure boundary;
-an invented rapid-click sequence alone does not establish that boundary.
-Use live acceptance for UI behavior and native effects that unit tests cannot
-establish. A larger passing suite is not a substitute for relevant evidence.
+How the interface looks and what the game does with a change can only be checked
+in the running game.
 
-The user is considering a 200-test cap; that cap is not yet an instruction to
-delete tests down to 200. The three-removals-per-addition rule applies now.
+1. Build Debug from the exact commit that passed the Release build and tests.
+2. Deploy it. Dalamud loads Poser as a dev plugin from the main checkout's
+   `Poser/bin/Debug` folder and reloads it when the files there change. A Debug
+   build in another worktree is not loaded: copy its whole `Poser/bin/Debug`
+   output there. Only one change can be deployed at a time.
+3. Check the Dalamud log that Poser reloaded.
+4. Try the change. When someone else is to try it, write down where to start,
+   what to do and what should happen.
 
-## Runtime validation and deployment
+A change is not finished until it has been tried in the game.
 
-- Debug bridge `/camera?camera=NAME&action=probe-native-pan&x=VALUE&y=VALUE`
-  changes the native camera pan so CameraRestRecorder can observe a pending move.
-  Use it to test the five-second resting window and ordering before another edit.
-  Ordinary `/camera` actions use the undoable camera controls instead.
+## The debug bridge
 
-- Debug bridge `/lifetimetrace?path=<new-absolute-file>` opts into a bounded
-  120-second read-only native skeleton-list trace; `stop=1` ends it early.
-  It uses safe process-memory reads and flushes changed owner/header rows
-  plus frame markers to a local file. It does not repair or suppress native
-  updates. Native offsets are explained at the reader. `/scene?cancel=1`
-  invokes the same cancellation command as the scene UI.
+Debug builds start a small HTTP server on `127.0.0.1:47999`
+(`Poser/Bridge/DebugBridge.cs`). Release builds do not contain it.
+`tools/poser_mcp.py` offers its endpoints as MCP tools, and `.mcp.json` registers
+that script. The bridge can read the scene, undo and redo, load and save scenes,
+take a screenshot of the game, and send mouse and key input to Poser's own
+windows. It uses the same commands as the interface.
 
-- Native GPose lifetime investigations use `[GPoseLifetime]` log entries at
-  entry/exit, after entry settles, and around actor/companion/overlay/IK teardown.
-  Model, skeleton, owner and bounded parent-chain addresses are read with
-  `ReadProcessMemory`, not by dereferencing potentially stale pointers. These
-  breadcrumbs correlate lifetime events; they do not establish fault ownership.
-  Collect the full Dalamud log and crash dump after recurrence. A crash before
-  the framework observes entry may leave only the preceding exit breadcrumbs.
-  There is no continuous per-frame logging or change to cleanup behavior.
-
-- The Debug-only loopback bridge and `tools/poser_mcp.py` can add a scene
-  through `SceneWorkflow`, inspect load progress/resources/native rig counts,
-  capture the rendered game via Dalamud's viewport texture API, and queue
-  ImGui input. Scene automation is additive by default; `clear=true` explicitly
-  exercises the production clear-first load contract in a disposable scene.
-  UI input is not OS/game input; button/key presses require a matching release.
-  Screenshots include the main game viewport and its plugin UI, not detached
-  external viewports. These probes are diagnostics, not acceptance verdicts.
-  `/uiwindows` lists every registered Poser window and can open, close, move,
-  or resize an exact named test window; it cannot target other plugins' windows.
-  A `published` readback distinguishes a registered window from one that has
-  an existing native ImGui window; it does not prove that window drew this frame.
-  `/uidrag` queues a bounded continuous ImGui gesture (at most eight seconds),
-  releasing its button and restoring native event admission on completion,
-  cancellation or disposal. Its bounded trace verifies the injected input,
-  not whether the target control behaved correctly; measure that separately.
-  `/worldsources` lists the portal's current object, effect, and world-light
-  candidate IDs and acquires only through the same incarnation-validated
-  application service as the UI; native addresses are never bridge identity.
-  Debug scene-autosave failure tests select their isolated root through a
-  validated process override and a plugin reload; the running store is never
-  swapped, and clearing the override plus another reload restores the default.
-
-- The Debug bridge's `/gazeprobe?actor&start=1` records at most 128 native
-  pre/post-pose samples over two seconds; it never writes bones. `/gazepose`
-  and `/gazeparts` use production gaze commands. `/undo?selected=1` and
-  `/redo?selected=1` use the same scoped facade as the shortcuts.
-
-- Validation is the Release build plus every test project, run locally and in
-  CI (`.github/workflows/architecture.yml`), plus the user's in-game test card.
-  There is no in-game automated harness; wiring and native behavior are judged
-  by the user against that card in the running game.
-- Visual and behavioral acceptance belongs to the user in the running game.
-  Give a short starting-state/actions/expected-result card and ask for observed
-  pass/fail and reproduction details. No video verification or recording is
-  required; screenshots are optional diagnostic evidence, not an acceptance gate.
-  Synthetic component catalogs and capture labs are not product evidence.
-- Never contract-test UI visual, layout, rendering, presentation, or wiring
-  contracts; validate UI with Release compilation plus explicit live visual
-  test cards.
-- Non-deployment validation uses Release only:
-  `dotnet build Poser.slnx -c Release --no-restore --nologo` and
-  `dotnet test Poser.slnx -c Release --no-restore --nologo`.
-  Never use Debug as an ordinary compile or test substitute.
-- Before handing each issue to the user for in-game testing, the organizer
-  announces deployment, builds Debug from the exact reviewed head that passed
-  Release gates, and deploys its matching runtime output to
-  `C:\Users\Midona\OneDrive\Dokument\GitHub\Poser\Poser\bin\Debug`.
-  The entry DLL is `Poser.dll` there; include its matching dependency assemblies,
-  manifest, and runtime content. A build left in another worktree is not deployed.
-  Verify destination hashes against the source build and report the head and
-  deployment result. Only one candidate may own this output at a time.
-- Deployment triggers automatic reload. Confirm successful loading from the
-  logs; do not ask the user to reload manually unless automatic reload failed.
-  The user tests that deployed candidate and gives the acceptance verdict.
-  Passing builds/tests or agent inspection do not replace that verdict; do not
-  mark the issue accepted or merge it before the user's confirmation.
-- Visual and native behavior still requires the applicable in-game acceptance
-  card; compilation is not runtime proof.
+The bridge helps to investigate a problem and to try a change. It does not show
+how the interface looks.
