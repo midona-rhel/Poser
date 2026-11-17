@@ -9,6 +9,21 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 26), "Steady IK and one action at a time",
+        [
+            "Made switching Live IK on or off keep the limb exactly where it is.",
+            "Made a limb that follows a bone move and turn with that bone, as if attached to it.",
+            "Kept the limb still when choosing Bone or Scene entity as a target, until one is picked.",
+            "Made picking a bone or scene entity to follow one undo step.",
+            "Made FABRIK start from the limb exactly as it stands.",
+            "Made a loaded scene bring back the time of day and the weather it was saved with.",
+            "Fixed map objects that move by themselves, such as aetheryte pieces, not coming back when a scene is loaded.",
+            "Added the place, contents, weather and file location to a scene's details in the Library.",
+            "Made a duplicate appear exactly where the original stands.",
+            "Made Poser's controls grey out and ignore clicks while a scene or character file loads or saves.",
+            "Made shortcuts do nothing while a drag is held.",
+            "Made bone searches put the bone with the best matching name first.",
+        ]),
         new(new(0, 9, 25), "Steadier IK, undo and stash",
         [
             "Fixed camera tracking not following the bone after the latest game update.",
