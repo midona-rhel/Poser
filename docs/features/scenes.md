@@ -12,11 +12,9 @@ On the Scene page, type an optional **Description** and press **Save…**.
 
 - **Include animation** (on by default) saves what each actor is playing. See
   [below](#a-scene-keeps-its-animation-unless-the-save-turns-it-off).
-- **Include MCDFs** (off by default) puts each actor's look and mods into the
-  file, so the scene looks the same on another computer. The save dialog calls it
-  **Modded appearance**, and the Library's save calls it **Include appearance
-  files**. It is the same choice in all three places, and it is never turned on
-  for you.
+- **Include appearance files** (off by default) puts each actor's look and mods
+  into the file, so the scene looks the same on another computer. The save dialog
+  and the Library's save have the same option. It is never turned on for you.
 - **Size** shows how large the next save will be.
 
 The save dialog shows the same two options under the file list.
@@ -38,7 +36,7 @@ Things to know:
 - A look larger than Poser can load back is left out, and the save says so.
 - Large scenes are saved with a warning about their size. A save is never refused
   for being large.
-- A temporary Penumbra collection is not saved. Use Include MCDFs for that look.
+- A temporary Penumbra collection is not saved. Use Include appearance files for that look.
 
 ### Saving one thing to the Library
 

@@ -53,8 +53,8 @@ options. Turning or panning the preview moves only the preview.
 **Export** offers **Export to file**, **To library**, **To clipboard** and **To
 stash**. **Export to file** on the row goes straight to the file browser.
 
-**To stash** and **From stash** keep their own stashed pose. It is separate from
-**Stash** in the Pose section (see [Pose operations](pose-operations.md#stash)).
+**To stash** and **From stash** use the same stashed pose as **Stash** and **Apply
+stash** in the Pose section (see [Pose operations](pose-operations.md#stash)).
 
 ### What a saved pose holds
 

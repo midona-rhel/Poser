@@ -31,16 +31,23 @@ applied through other plugins.
 
 - If one part can't be reset, Poser names it and still resets the rest.
 - The actor's place in the world and the stashed pose are kept.
+- Undo brings all of it back in one step, including the animation the actor was
+  playing.
 
 ## Stash
 
-**Stash** remembers the actor's pose. **Apply stash** puts it on another actor (or
-the same one).
+**Stash** remembers the actor's pose as it looks on screen: the body, the face and
+the weapons. **Apply stash** puts that pose on another actor (or the same one).
 
+- There is one stash. **To stash** in the Export menu fills it too, and **From
+  stash** in the Import menu reads it.
+- Apply stash puts on the whole pose as one undo step. It sets the position and
+  rotation of every bone. It does not change scale and does not move the actor.
+- From stash puts on the same pose with the import options you chose (see
+  [Importing a pose](files-and-transfer.md#importing-a-pose)).
 - Stashing again replaces what was stashed before.
 - Hover Apply stash to see which actor the pose came from and when.
-- Bones the other actor doesn't have are skipped and named in the message.
-- If no bone matches, Apply stash says so and changes nothing.
+- The stash is forgotten when Poser closes.
 
 ## Duplicate with pose
 
