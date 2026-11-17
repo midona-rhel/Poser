@@ -27,7 +27,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     private readonly IPoseFileService _poseFiles;
     private readonly ITransformRuntimePort _runtime;
     private readonly EditHistory _history;
-    private readonly TransformGestureService _gestures;
     private readonly IPluginLog _log;
 
     /// <summary>The saved pose and bone IDs for the selected chain.</summary>
@@ -66,7 +65,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         IPoseFileService poseFiles,
         ITransformRuntimePort runtime,
         EditHistory history,
-        TransformGestureService gestures,
         IPluginLog log)
     {
         _framework = framework;
@@ -75,7 +73,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         _poseFiles = poseFiles;
         _runtime = runtime;
         _history = history;
-        _gestures = gestures;
         _log = log;
         _posing.TransitiveActionsEnded += OnTransitiveActionsEnded;
     }
@@ -125,10 +122,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
                 _waiting.Enqueue(target);
             return GestureResult.Ok();
         }
-        // A live transform gesture owns these bones right now; baking under
-        // it would interleave two writers on the same chain.
-        if (_gestures.ActiveGesture != null)
-            return GestureResult.Fail("Finish the current transform gesture first.");
         if (target.Bone is not { } boneId)
             return GestureResult.Fail("IK bake requires a bone target.");
         if (_bindings.Resolve(boneId) is not { Success: true, Value: { } endpoint })

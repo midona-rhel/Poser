@@ -565,11 +565,6 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
             detail = "Face capture must start on the framework thread.";
             return false;
         }
-        if (_gestures.ActiveGesture != null)
-        {
-            detail = "Finish the current transform gesture first.";
-            return false;
-        }
         if (!_gestures.TryCompleteRecovery())
         {
             detail = "Transform recovery must complete before face capture.";
