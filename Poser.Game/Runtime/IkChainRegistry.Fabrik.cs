@@ -38,6 +38,11 @@ internal sealed unsafe partial class IkChainRegistry
         bool fromFabrik = solving && previous!.Solver is IkSolver.Fabrik or IkSolver.Rope;
         if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope))
         {
+            // This solver will move the limb, so the shape FABRIK kept no longer describes
+            // it. With it dropped here, switching back to FABRIK takes the shape afresh,
+            // while undo, redo and a loaded scene bring their own saved shape and keep it.
+            if (config.Enabled && config.Fabrik != null)
+                config = config with { Fabrik = null };
             // FABRIK and Rope keep no held target. The new target is the end bone where they
             // left it, so the switch moves nothing.
             if (config.Enabled && fromFabrik)
@@ -52,10 +57,6 @@ internal sealed unsafe partial class IkChainRegistry
                     && (config.Solver != previous.Solver || config.CcdDepth != previous.CcdDepth))
                 ? config with { ActorAnchor = _held.CaptureActorAnchor(endpoint, config) } : config;
         }
-        // Coming from Two Joint or CCD, the chain starts from the pose that solver left. A
-        // capture kept from an earlier FABRIK period describes a pose that has since changed.
-        if (config.Enabled && solving && !fromFabrik)
-            config = config with { Fabrik = null };
         if (config.Fabrik is { } control && config.TargetMode is IkTargetMode.Actor or IkTargetMode.World
             && control.Handle.Mode != config.TargetMode
             && CaptureFabrikTarget(endpoint, config.TargetMode) is { } handle)
