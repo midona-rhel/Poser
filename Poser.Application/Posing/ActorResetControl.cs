@@ -7,6 +7,7 @@ using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 
 namespace Poser.Application.Posing;
 
@@ -29,6 +30,9 @@ public sealed class ActorResetControl(
         if (!capture.Success || capture.Value is not { } before)
             return PoseEditResult.Fail(capture.Detail ?? "The actor's state could not be captured before resetting.");
 
+        // Reset all is one undo step. It keeps the animation itself, because the
+        // snapshot above does not, and the animation reset inside records no step.
+        var animationBefore = animation.Capture(actor);
         var result = ResetCore(actor);
         history.Append(new JournalStep("Reset all",
             () => CanReset(actor).Success,
@@ -38,7 +42,9 @@ public sealed class ActorResetControl(
             OnRefusal = () => RefusalAction.Keep,
             CompleteReplay = (undo, current, cancellation, completed) =>
             {
-                if (undo) snapshots.Restore(before, current, cancellation, completed);
+                if (undo)
+                    snapshots.Restore(before, current, cancellation, restored => completed(
+                        restored.Success ? GestureResult.From(animation.Restore(actor, animationBefore)) : restored));
                 else snapshots.WaitForReset(actor, current, cancellation, completed);
             },
         });
@@ -77,7 +83,12 @@ public sealed class ActorResetControl(
         Run("IK", () => { var r = runtime.ClearIk(actor); return (r.Success, r.Detail); });
         // Release animation/presentation after pose writes. External integration
         // is last because restoring its collection may redraw the native model.
-        Run("Animation", () => { var r = animation.ResetActor(actor); return (r.Success, r.Detail); });
+        Run("Animation", () =>
+        {
+            using var noStep = animation.Untracked();
+            var r = animation.ResetActor(actor);
+            return (r.Success, r.Detail);
+        });
         Run("Appearance", () => { var r = presentation.ResetActor(actor); return (r.Success, r.Detail); });
         Run("Model", () => { var r = models.Reset(actor); return (r.Success, r.Detail); });
         Run("External appearance", () => { var r = integration.ResetActor(actor); return (r.Success, r.Detail); });
