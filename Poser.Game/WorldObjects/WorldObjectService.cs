@@ -588,10 +588,6 @@ public sealed class WorldObjectService : IDisposable
             ? current == expected
             : current.SameAllocation(expected);
 
-    /// <summary>Legacy position-match tolerance of 0.05 world units. Current
-    /// borrowed-object restoration matches native identity instead.</summary>
-    public const float IdentityToleranceYalms = 0.05f;
-
 
     /// <summary>
     /// Releases a tracked object after cancelling any pending replacement.

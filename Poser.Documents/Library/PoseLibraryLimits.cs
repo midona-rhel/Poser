@@ -19,12 +19,4 @@ public static class PoseLibraryLimits
     /// <summary>Maximum sources observed and retained in a snapshot. Additional
     /// configured sources are reported by SkippedSourceCount.</summary>
     public const int MaxSources = 64;
-
-    /// <summary>Cancellation is cooperative and aborts the whole pass.</summary>
-    public const bool CancellationAbortsPass = true;
-
-    // Descriptive aliases keep call sites explicit about what is bounded.
-    public const int MaxTraversalDepth = MaxDepth;
-    public const int MaxTraversalFolders = MaxFolders;
-    public const int MaxTraversalFiles = MaxFiles;
 }

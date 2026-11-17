@@ -31,7 +31,6 @@ public partial class MainWindow
 
     private bool? PlayingOf(SelectionId id) => _playback.ReadPlaying(id);
     private void SetPlaying(SelectionId id, bool playing) => _playback.SetPlaying(id, playing);
-    private bool? NightOf(SelectionId id) => _playback.ReadNight(id);
     private void SetNight(SelectionId id, bool night) => _playback.SetNight(id, night);
 
     private bool? IsEntityVisible(SelectionId id)

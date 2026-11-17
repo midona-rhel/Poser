@@ -37,9 +37,9 @@ public sealed class PoseImportRuntime(
     }
 
     public GestureResult Begin(PoseImportOperation operation, IPreparedPoseImport plan,
-        bool expression, bool suppressHistory, string? asset) =>
+        bool expression, bool suppressHistory) =>
         plan is PreparedPoseImport prepared
-            ? capture.Begin(operation, prepared.Plan, expression, suppressHistory, asset)
+            ? capture.Begin(operation, prepared.Plan, expression, suppressHistory)
             : GestureResult.Fail("The prepared import belongs to another runtime.");
 
     public void Schedule(Action action, int ticks) =>

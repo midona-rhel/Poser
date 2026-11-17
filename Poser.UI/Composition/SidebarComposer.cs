@@ -476,16 +476,6 @@ internal sealed partial class SidebarComposer
         }
     }
 
-    private static bool ContainsActor(
-        IReadOnlyList<ActorDescriptor> snapshot,
-        ActorId id)
-    {
-        foreach (var actor in snapshot)
-            if (actor.Id.Equals(id))
-                return true;
-        return false;
-    }
-
     private static bool IsOwnedBy(ActorDescriptor candidate, ActorDescriptor owner)
         => candidate.IsCompanion
             && candidate.OwnerActor is { } link
