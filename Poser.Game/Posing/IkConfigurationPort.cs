@@ -138,15 +138,31 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     {
         if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null })
             return SetFabrikTarget(target, IkTargetMode.Bone, bone);
-        var before = BoneTarget(target);
-        var result = WriteBoneTarget(target, bone);
-        // Without a previous anchor there is no inverse to record: the
-        // chain's target mode step (an IK set) carries the way back.
-        if (!result.Success || before is not { } previous || previous == bone)
-            return result;
-        _journal.Record(this, "Set IK bone target", previous, bone,
-            next => Written(() => WriteBoneTarget(target, next)),
-            () => target.Bone is { } endpoint && _bindings.Resolve(endpoint).Success);
+        return PickTarget(target, "Set IK bone target", () => WriteBoneTarget(target, bone));
+    }
+
+    /// <summary>What a chain follows, kept for undo: its settings, and the bone or scene
+    /// entity when it follows one.</summary>
+    private readonly record struct Followed(IkChainConfig Config, BoneId? Bone, SelectionId? Entity);
+
+    private Followed? Following(TransformTargetId target) => Get(target) is { } config
+        ? new(config,
+            config.TargetMode == IkTargetMode.Bone ? BoneTarget(target) : null,
+            config.TargetMode == IkTargetMode.Entity ? EntityTarget(target) : null)
+        : null;
+
+    /// <summary>Picks a bone or scene entity to follow, as one undo step. Undo goes back to
+    /// what the chain followed before, also when that was the actor or a world point.</summary>
+    private Outcome PickTarget(TransformTargetId target, string description, Func<Outcome> pick)
+    {
+        var before = Following(target);
+        var result = pick();
+        if (result.Success && before is { } previous && Following(target) is { } now)
+            _journal.Record(target.ToSelectionId(), description, previous, now,
+                next => Written(() => next.Bone is { } bone ? WriteBoneTarget(target, bone)
+                    : next.Entity is { } entity ? WriteEntityTarget(target, entity)
+                    : Write(target, next.Config)),
+                () => target.Bone is { } endpoint && _bindings.Resolve(endpoint).Success);
         return result;
     }
 
@@ -204,13 +220,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     {
         if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null })
             return SetFabrikTarget(target, IkTargetMode.Entity, entity: entity);
-        var before = EntityTarget(target);
-        var result = WriteEntityTarget(target, entity);
-        if (result.Success && before is { } previous && previous != entity)
-            _journal.Record(this, "Set IK scene target", previous, entity,
-                next => Written(() => WriteEntityTarget(target, next)),
-                () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
-        return result;
+        return PickTarget(target, "Set IK scene target", () => WriteEntityTarget(target, entity));
     }
 
     public Outcome Adjust(TransformTargetId target, IkChainConfig config)
