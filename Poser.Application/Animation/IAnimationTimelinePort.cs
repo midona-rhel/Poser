@@ -49,7 +49,7 @@ public interface IAnimationTimelinePort
     // ── Loops ───────────────────────────────────────────
     /// <summary>Requests repetition of the specified timeline in its slot.</summary>
     Outcome SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);
-    Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot);
+    void ClearSlotLoop(ActorId actor, AnimationSlot slot);
     /// <summary>Drops every armed loop for the actor. No native writes.</summary>
     void ClearLoops(ActorId actor);
     /// <summary>Tracks whether Poser started this layer, so the runtime can

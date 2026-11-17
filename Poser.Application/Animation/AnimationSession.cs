@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain;
 using Poser.Domain.Animation;
+using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.World;
@@ -70,12 +71,9 @@ public sealed class AnimationSession : IAnimationPlayback
     /// </summary>
     private void OnLayerEnded(ActorId actor, AnimationSlot slot, float seconds)
     {
-        if (_store.CommandsSuspended || SelectedFor(actor, slot) == null)
+        if (SelectedFor(actor, slot) == null)
             return;
-        _store.Mutate(actor, o => o with
-        {
-            EndedSlots = new Dictionary<AnimationSlot, float>(o.EndedSlots) { [slot] = seconds },
-        });
+        _store.Mutate(actor, o => o with { EndedSlots = o.EndedSlots.With(slot, seconds) });
     }
 
     /// <summary>The length in seconds of a layer the game ended, or null while it
@@ -100,8 +98,6 @@ public sealed class AnimationSession : IAnimationPlayback
     /// scrub can move it once it is loaded.</summary>
     private Outcome ReplayEndedForScrubUntracked(ActorId actor, AnimationSlot slot)
     {
-        if (!_store.For(actor).EndedSlots.ContainsKey(slot))
-            return Outcome.Fail("This layer is still playing.");
         var replayed = RestartIfEnded(actor, slot);
         if (!replayed.Success || IsPaused(actor) || _speed.IsSlotHeld(actor, slot))
             return replayed;
@@ -109,14 +105,9 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     private void ForgetEnded(ActorId actor, AnimationSlot slot) =>
-        _store.Mutate(actor, o =>
-        {
-            if (!o.EndedSlots.ContainsKey(slot))
-                return o;
-            var ended = new Dictionary<AnimationSlot, float>(o.EndedSlots);
-            ended.Remove(slot);
-            return o with { EndedSlots = ended };
-        });
+        _store.Mutate(actor, o => o.EndedSlots.ContainsKey(slot)
+            ? o with { EndedSlots = o.EndedSlots.Without(slot) }
+            : o);
 
     public AnimationOverrides OverridesFor(ActorId actor) => _store.For(actor);
 
@@ -190,26 +181,37 @@ public sealed class AnimationSession : IAnimationPlayback
 
     // ── Undo / redo ───────────────────────────────────────────────────
 
-    /// <summary>
-    /// Installed by AnimationSteps to record successful user actions.
-    /// Nested Tracked calls share the outer action's history entry.
-    /// </summary>
+    /// <summary>Installed by AnimationSteps: records one command as one undo step.</summary>
     internal Func<ActorId, string, Func<Outcome>, Outcome>? Journal { get; set; }
     /// <summary>Set by the history owner: runs several actors' actions as one step.</summary>
     internal Action<Action>? Group { get; set; }
-    private int _trackDepth;
+    /// <summary>How many commands are running, one inside another.</summary>
+    private int _commandDepth;
     private int _untracked;
 
-    /// <summary>One user action, recorded as one step (unless nested or untracked).</summary>
+    /// <summary>
+    /// Runs one animation command. While a face capture is in progress the command
+    /// is refused before it changes anything. Otherwise it becomes one undo step,
+    /// unless an Untracked scope is open. A command that another command runs is
+    /// part of that one: it is not checked again and makes no step of its own.
+    /// </summary>
     public Outcome Tracked(ActorId actor, string description, Func<Outcome> action)
     {
-        if (_trackDepth == 0 && _untracked == 0 && !description.StartsWith("Scrub", StringComparison.Ordinal))
-            ForgetSeekTargets(actor);
-        if (Journal is not { } journal || _trackDepth > 0 || _untracked > 0)
+        if (_commandDepth > 0)
             return action();
-        _trackDepth++;
-        try { return journal(actor, description, action); }
-        finally { _trackDepth--; }
+        if (Suspended() is { } blocked)
+            return blocked;
+        bool record = _untracked == 0;
+        if (record && !description.StartsWith("Scrub", StringComparison.Ordinal))
+            ForgetSeekTargets(actor);
+        _commandDepth++;
+        try
+        {
+            return record && Journal is { } journal
+                ? journal(actor, description, action)
+                : action();
+        }
+        finally { _commandDepth--; }
     }
 
     private void ForgetSeekTargets(ActorId actor)
@@ -223,7 +225,7 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Several actors' actions as one step (the scene's play/pause all).</summary>
     public void Grouped(Action action)
     {
-        if (Group is { } group && _trackDepth == 0 && _untracked == 0)
+        if (Group is { } group && _commandDepth == 0 && _untracked == 0)
             group(action);
         else
             action();
@@ -240,13 +242,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     private sealed class UntrackedScope(AnimationSession owner) : IDisposable
     {
-        private bool _done;
-        public void Dispose()
-        {
-            if (_done) return;
-            _done = true;
-            owner._untracked--;
-        }
+        public void Dispose() => owner._untracked--;
     }
 
     /// <summary>The actor's animation state as an undo step stores it.</summary>
@@ -322,11 +318,16 @@ public sealed class AnimationSession : IAnimationPlayback
     /// Paused layers seek to their saved time. A running layer goes back to how far
     /// it had played when the snapshot holds that (scene saves), else to its start.
     /// Failures are collected; successful changes are not rolled back.
+    /// Undo, redo and scene loading call this.
     /// </summary>
     public Outcome Restore(ActorId actor, AnimationSnapshot target)
     {
         using var untracked = Untracked();
-        if (_store.Suspended() is { } blocked) return blocked;
+        return Tracked(actor, "Restore animation", () => RestoreUntracked(actor, target));
+    }
+
+    private Outcome RestoreUntracked(ActorId actor, AnimationSnapshot target)
+    {
         var now = Capture(actor);
         if (now == target)
             return Outcome.Ok();
@@ -383,18 +384,15 @@ public sealed class AnimationSession : IAnimationPlayback
         if (target.EndedSeconds is { } length)
         {
             // Ended: its row names it, nothing plays.
-            note(ChooseSlot(actor, slot, timeline), name);
+            note(_base.ChooseSlot(actor, slot, timeline), name);
             if (now.Live)
                 note(_timeline.ClearSlotTimeline(actor, slot), $"end {name}");
             _timeline.SetLayerOwned(actor, slot, false);
-            _store.Mutate(actor, o => o with
-            {
-                EndedSlots = new Dictionary<AnimationSlot, float>(o.EndedSlots) { [slot] = length },
-            });
+            _store.Mutate(actor, o => o with { EndedSlots = o.EndedSlots.With(slot, length) });
         }
         else if (!now.Live || !sameAnimation)
         {
-            note(ChooseSlot(actor, slot, timeline), name);
+            note(_base.ChooseSlot(actor, slot, timeline), name);
             note(PlaySelectedSlot(actor, slot, null, false), $"play {name}");
         }
         else if (target.HeldSeconds == null && now.HeldSeconds != null)
@@ -418,21 +416,28 @@ public sealed class AnimationSession : IAnimationPlayback
     public ActorAnimationReading? Read(ActorId actor) => _timeline.Read(actor);
 
     /// <summary>
-    /// Whether commands that check suspension are blocked during a facial-pose capture.
-    /// Reads remain available. This flag does not itself prevent game writes.
+    /// True while a face capture runs. Every animation command is then refused:
+    /// the commands made through <see cref="Tracked"/>, <see cref="ChooseSlot"/>
+    /// and <see cref="RewindPausedControls"/>. Reading state still works, and so
+    /// does cleanup (leaving GPose, unloading, an actor leaving the scene). The
+    /// capture lifts this around its own commands.
     /// </summary>
-    public bool CommandsSuspended => _store.CommandsSuspended;
+    public bool CommandsSuspended { get; private set; }
+
+    private Outcome? Suspended() => CommandsSuspended
+        ? Outcome.Fail("A face capture is in progress.")
+        : null;
 
     public void SuspendCommands()
     {
-        _store.CommandsSuspended = true;
-        // Armed loops would replay animations into the settling baseline.
+        CommandsSuspended = true;
+        // Armed loops would replay animations into the face while it settles.
         _timeline.LoopsSuspended = true;
     }
 
     public void ResumeCommands()
     {
-        _store.CommandsSuspended = false;
+        CommandsSuspended = false;
         _timeline.LoopsSuspended = false;
     }
 
@@ -465,16 +470,15 @@ public sealed class AnimationSession : IAnimationPlayback
         return entry with { TimelineId = row, Slot = _timeline.TimelineSlot(row) ?? AnimationSlot.Base };
     }
 
-    /// <summary>Stages a selection without reading or writing native state.</summary>
+    /// <summary>Remembers the chosen animation for a layer without playing it.
+    /// Not an undo step.</summary>
     public Outcome ChooseSlot(ActorId actor, AnimationSlot slot, ushort timeline) =>
-        _base.ChooseSlot(actor, slot, timeline);
+        Suspended() ?? _base.ChooseSlot(actor, slot, timeline);
 
     /// <summary>Sets repeat intent for one slot.</summary>
     private Outcome SetSlotLoopUntracked(
         ActorId actor, AnimationSlot slot, ushort timeline, bool on) =>
         _base.SetSlotLoop(actor, slot, timeline, on);
-
-    /// <summary>Whether full-body repeat is available.</summary>
 
     /// <summary>False when the client's stance-transition functions were
     /// not found; the stance controls render disabled.</summary>
@@ -506,40 +510,9 @@ public sealed class AnimationSession : IAnimationPlayback
     /// </summary>
     public bool AnyPlaying(ActorId actor) => _speed.AnyPlaying(actor);
 
-    /// <summary>
-    /// Replays from the start after releasing a Poser-owned pause (the debug bridge's play). A nonzero
-    /// owned speed remains active. <paramref name="resumed"/> reports whether
-    /// the pause was released.
-    /// </summary>
-    public Outcome Replay(ActorId actor, ushort timeline, out bool resumed)
-    {
-        bool lifted = false;
-        var result = Tracked(actor, "Play animation", () =>
-        {
-            var played = ReplayUntracked(actor, timeline, out var r);
-            lifted = r;
-            return played;
-        });
-        resumed = lifted;
-        return result;
-    }
-
-    private Outcome ReplayUntracked(ActorId actor, ushort timeline, out bool resumed)
-    {
-        resumed = false;
-        if (IsPaused(actor))
-        {
-            var released = _speed.ResumeForLayerPlay(
-                actor, _timeline.TimelineSlot(timeline) ?? AnimationSlot.Base);
-            if (!released.Success)
-                return released;
-            resumed = true;
-        }
-        return _base.BlendCore(actor, timeline, _timeline.TimelineSlot(timeline));
-    }
-
-    /// <summary>Rewinds paused animation controls.</summary>
-    public Outcome RewindPausedControls(ActorId actor) => _speed.RewindPausedControls(actor);
+    /// <summary>Moves every paused animation back to its first frame. Not an undo step.</summary>
+    public Outcome RewindPausedControls(ActorId actor) =>
+        Suspended() ?? _speedPort.RewindPausedControls(actor);
 
     /// <summary>The layer's held blend weight, or 1 when Poser holds none.</summary>
     public float WeightFor(ActorId actor, AnimationSlot slot) =>
@@ -548,20 +521,14 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Holds a layer's blend weight in [0, 1]; 1 releases it.</summary>
     private Outcome SetSlotWeightUntracked(ActorId actor, AnimationSlot slot, float weight)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
-        if (!float.IsFinite(weight))
-            return Outcome.Fail("Weight must be a finite number.");
-        weight = Math.Clamp(weight, 0f, 1f);
         var result = weight >= 1f
             ? _speedPort.ClearSlotWeight(actor, slot)
             : _speedPort.SetSlotWeight(actor, slot, weight);
         if (!result.Success)
             return result;
-        _store.Mutate(actor, o =>
+        _store.Mutate(actor, o => o with
         {
-            var weights = new Dictionary<AnimationSlot, float>(o.SlotWeights);
-            if (weight >= 1f) weights.Remove(slot); else weights[slot] = weight;
-            return o with { SlotWeights = weights };
+            SlotWeights = weight >= 1f ? o.SlotWeights.Without(slot) : o.SlotWeights.With(slot, weight),
         });
         return Outcome.Ok();
     }
@@ -572,7 +539,6 @@ public sealed class AnimationSession : IAnimationPlayback
     /// </summary>
     private Outcome ResumeSlotUntracked(ActorId actor, AnimationSlot slot)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var restarted = RestartIfEnded(actor, slot);
         if (!restarted.Success)
             return restarted;
@@ -669,10 +635,6 @@ public sealed class AnimationSession : IAnimationPlayback
             + $"slotSpeed={OverridesFor(actor).SlotSpeeds.GetValueOrDefault(slot, float.NaN)}");
         if (SelectedFor(actor, slot) is { } selected)
         {
-            // Cloned or restored selections may have no matching UI catalog entry.
-            // A supplied entry must still match the saved selection.
-            if (entry != null && (entry.TimelineId != selected || entry.Slot != slot))
-                return Outcome.Fail("The chosen animation identity changed.");
             // Reapplying an already-playing timeline starts a new blend and can
             // restart it. Keep the current control so Resume preserves its time.
             bool alreadyLive = Read(actor)?.TimelineFor(slot) == selected;
@@ -726,9 +688,6 @@ public sealed class AnimationSession : IAnimationPlayback
 
     private Outcome ResetSlotCore(ActorId actor, AnimationSlot slot)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
-        if (!AnimationSlots.Selectable.Contains(slot))
-            return Outcome.Fail("This animation layer cannot be reset.");
         if (slot == AnimationSlot.Facial)
         {
             var facial = OverridesFor(actor);
@@ -736,26 +695,21 @@ public sealed class AnimationSession : IAnimationPlayback
                 facial.SelectedSlots.ContainsKey(AnimationSlot.Facial) ||
                 facial.SlotCaptures.ContainsKey(AnimationSlot.Facial))
             {
-                if (facial.SlotWeights.ContainsKey(AnimationSlot.Facial) &&
-                    SetSlotWeight(actor, AnimationSlot.Facial, 1f) is { Success: false } weight)
-                    return weight;
-                if (facial.LoopWantedSlots.Contains(AnimationSlot.Facial) &&
-                    _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false) is { Success: false } loop)
-                    return loop;
-                return _expression.ReleaseExpressionCore(actor);
+                // Weight 1 and Loop off only release what Poser holds; neither can fail.
+                if (facial.SlotWeights.ContainsKey(AnimationSlot.Facial))
+                    SetSlotWeight(actor, AnimationSlot.Facial, 1f);
+                if (facial.LoopWantedSlots.Contains(AnimationSlot.Facial))
+                    _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false);
+                return _expression.ReleaseExpression(actor);
             }
         }
 
-        var failures = new List<string>();
         // Restore weight and nonzero speed overrides before the animation.
         // Keep a zero-speed override so resetting the layer does not resume it.
+        // Weight 1 only releases Poser's hold, which cannot fail.
         var beforeReset = OverridesFor(actor);
         if (beforeReset.SlotWeights.ContainsKey(slot))
-        {
-            var weight = SetSlotWeight(actor, slot, 1f);
-            if (!weight.Success)
-                return weight;
-        }
+            SetSlotWeight(actor, slot, 1f);
         if (beforeReset.SlotSpeedCaptures.ContainsKey(slot)
             && beforeReset.SlotSpeeds.GetValueOrDefault(slot) != 0f)
         {
@@ -763,7 +717,7 @@ public sealed class AnimationSession : IAnimationPlayback
             if (!speed.Success)
                 return speed;
         }
-        Outcome selection = slot switch
+        return slot switch
         {
             AnimationSlot.Base => _base.ResetBaseSelection(actor),
             AnimationSlot.Lips => SelectedFor(actor, slot) != null
@@ -771,14 +725,7 @@ public sealed class AnimationSession : IAnimationPlayback
                 : Outcome.Ok(),
             _ => _base.ResetBlendSelection(actor, slot),
         };
-        if (!selection.Success)
-            failures.Add(selection.Detail ?? "Layer restore failed.");
-        return failures.Count == 0
-            ? Outcome.Ok()
-            : Outcome.Fail(string.Join("; ", failures));
     }
-
-    // ── Lips, stance, weapon, position ────────────────────────────────
 
     // ── Physics (one global patch, held by the scene) ─────────────────
 
@@ -848,7 +795,6 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Seeks a layer by its own timeline clock (seconds from its begin).</summary>
     private Outcome SeekLayerUntracked(ActorId actor, AnimationSlot slot, float seconds)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var result = _scrub.SeekLayer(actor, slot, seconds);
         if (result.Success)
             _seekTargets[(actor, slot)] = Math.Max(seconds, 0f);
@@ -857,7 +803,9 @@ public sealed class AnimationSession : IAnimationPlayback
 
     // ── Held expression ──────────────────────────────────────────────────
 
-    /// <summary>Restores the captured facial layer.</summary>
+    /// <summary>Lets go of the held expression and puts back the face that played
+    /// before Poser changed it. The face capture's own step: not checked against
+    /// the capture and not an undo step.</summary>
     public Outcome RestoreFacialLayer(ActorId actor) => _expression.ReleaseExpression(actor);
 
     /// <summary>The expression currently held on the face, if any.</summary>
@@ -883,7 +831,6 @@ public sealed class AnimationSession : IAnimationPlayback
 
     private Outcome ResetActorCore(ActorId actor)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         if (!_store.TryGet(actor, out var owned))
         {
             // Nothing is owned for this actor. Physics is not among the
@@ -903,9 +850,10 @@ public sealed class AnimationSession : IAnimationPlayback
             return Outcome.Ok();
         }
 
-        // Each aspect is released only when its restore succeeded. What
-        // fails stays owned, so a later Reset retries it instead of the
-        // override being silently abandoned on a still-live actor.
+        // The actor was found just above. Releases that only fail for a missing
+        // actor (loops, speeds, weights, lips, position lock) are not checked.
+        // A restore that can fail for another reason is released only when it
+        // succeeded; what fails stays owned, so a later Reset retries it.
         var failures = new List<string>();
         var remaining = owned;
 
@@ -922,21 +870,21 @@ public sealed class AnimationSession : IAnimationPlayback
         // very restore below is removing.
         if (owned.LoopedSlots.Count > 0 || owned.LoopWantedSlots.Count > 0)
         {
-            bool cleared = !owned.LoopedSlots.ContainsKey(AnimationSlot.Base) ||
-                Try(_timeline.SetForceLoop(actor, 0));
-            if (cleared)
+            if (owned.LoopedSlots.ContainsKey(AnimationSlot.Base))
+                _timeline.SetForceLoop(actor, 0);
+            _timeline.ClearLoops(actor);
+            remaining = remaining with
             {
-                _timeline.ClearLoops(actor);
-                remaining = remaining with
-                {
-                    LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
-                    LoopWantedSlots = new HashSet<AnimationSlot>(),
-                };
-            }
+                LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
+                LoopWantedSlots = new HashSet<AnimationSlot>(),
+            };
         }
 
-        if (owned.OverallSpeed != null && Try(_speedPort.ClearOverallSpeed(actor)))
+        if (owned.OverallSpeed != null)
+        {
+            _speedPort.ClearOverallSpeed(actor);
             remaining = remaining with { OverallSpeed = null };
+        }
 
         // Restore captured non-base timelines.
         if (owned.SlotCaptures.Count > 0)
@@ -997,43 +945,24 @@ public sealed class AnimationSession : IAnimationPlayback
         if (owned.BaseCapture is { } capture && Try(_timeline.RestoreBase(actor, capture)) &&
             remaining.HeldExpression == null && remaining.SlotCaptures.Count == 0)
         {
-            var selected = new Dictionary<AnimationSlot, ushort>(remaining.SelectedSlots);
-            selected.Remove(AnimationSlot.Base);
             remaining = remaining with
             {
-                SelectedSlots = selected,
+                SelectedSlots = remaining.SelectedSlots.Without(AnimationSlot.Base),
                 BaseCapture = null,
                 BaseTimeline = null,
             };
         }
 
-        if (owned.SlotWeights.Count > 0)
+        foreach (var slot in owned.SlotWeights.Keys)
         {
-            var weights = new Dictionary<AnimationSlot, float>(remaining.SlotWeights);
-            foreach (var slot in owned.SlotWeights.Keys)
-                if (Try(_speedPort.ClearSlotWeight(actor, slot)))
-                    weights.Remove(slot);
-            remaining = remaining with { SlotWeights = weights };
+            _speedPort.ClearSlotWeight(actor, slot);
+            remaining = remaining with { SlotWeights = remaining.SlotWeights.Without(slot) };
         }
 
-        if (owned.SlotSpeedCaptures.Count > 0)
+        foreach (var (slot, restore) in owned.SlotSpeedCaptures)
         {
-            var speeds = new Dictionary<AnimationSlot, float>(remaining.SlotSpeeds);
-            var captures = new Dictionary<AnimationSlot, float>(remaining.SlotSpeedCaptures);
-            var resume = new Dictionary<AnimationSlot, float>(remaining.SlotResumeSpeeds);
-            foreach (var (slot, restore) in owned.SlotSpeedCaptures)
-                if (Try(_speedPort.ClearSlotSpeed(actor, slot, restore)))
-                {
-                    speeds.Remove(slot);
-                    captures.Remove(slot);
-                    resume.Remove(slot);
-                }
-            remaining = remaining with
-            {
-                SlotSpeeds = speeds,
-                SlotSpeedCaptures = captures,
-                SlotResumeSpeeds = resume,
-            };
+            _speedPort.ClearSlotSpeed(actor, slot, restore);
+            remaining = remaining.WithoutSlotSpeed(slot);
         }
 
         if (owned.StanceCaptureValue is { } stance &&
@@ -1042,13 +971,12 @@ public sealed class AnimationSession : IAnimationPlayback
         if (owned.WeaponCapture is { } weapon &&
             Try(_stancePort.SetWeaponDrawn(actor, weapon)))
             remaining = remaining with { WeaponCapture = null };
-        if (owned.LipsCapture is { } lips && Try(_timeline.SetLips(actor, lips)))
+        if (owned.LipsCapture is { } lips)
         {
-            var selected = new Dictionary<AnimationSlot, ushort>(remaining.SelectedSlots);
-            selected.Remove(AnimationSlot.Lips);
+            _timeline.SetLips(actor, lips);
             remaining = remaining with
             {
-                SelectedSlots = selected,
+                SelectedSlots = remaining.SelectedSlots.Without(AnimationSlot.Lips),
                 LipsCapture = null,
                 Lips = null,
             };
@@ -1065,8 +993,11 @@ public sealed class AnimationSession : IAnimationPlayback
                 selected.Remove(AnimationSlot.Lips);
             remaining = remaining with { SelectedSlots = selected };
         }
-        if (owned.PositionLock && Try(_stancePort.SetPositionLock(actor, false)))
+        if (owned.PositionLock)
+        {
+            _stancePort.SetPositionLock(actor, false);
             remaining = remaining with { PositionLock = false };
+        }
 
         if (!remaining.HasAny)
         {
@@ -1082,16 +1013,15 @@ public sealed class AnimationSession : IAnimationPlayback
             : Outcome.Fail(string.Join("; ", failures));
     }
 
-    /// <summary>Restores every owned actor. Used by GPose exit, plugin
-    /// disposal, and Stop/Restore All.</summary>
+    /// <summary>Puts back every actor's animation when leaving GPose or unloading
+    /// the plugin. Cleanup, not a command: it runs during a face capture too and
+    /// makes no undo step.</summary>
     public Outcome ResetAll()
     {
-        // A session-wide cleanup (leaving GPose), no user step.
-        using var untracked = Untracked();
         var failures = new List<string>();
         foreach (var actor in _store.Actors())
         {
-            var result = ResetActor(actor);
+            var result = ResetActorUntracked(actor);
             if (!result.Success && result.Detail is { } detail)
                 failures.Add($"{actor}: {detail}");
         }
@@ -1106,23 +1036,21 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     /// <summary>
-    /// Attempts to reset animation state for actors absent from the new scene snapshot.
-    /// ResetActor decides whether to forget unavailable actors or retain failed restores.
+    /// Releases the animation of actors that left the scene (despawned or
+    /// redrawn as a new actor). Cleanup, not a command: it runs during a face
+    /// capture too and makes no undo step.
     /// </summary>
     public void Reconcile(SceneSnapshot snapshot)
     {
-        // Departed actors are released, not undone.
-        using var untracked = Untracked();
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
         _advancedActors.RemoveWhere(actor => !present.Contains(actor));
         _scrub.Forget(present);
         // Physics is deliberately absent here: the freeze is held by the
         // scene, which cannot depart, so no actor leaving can retire it.
         var departed = _store.Actors().Where(id => !present.Contains(id)).ToList();
+        // An actor the game no longer has is forgotten; a restore that fails stays
+        // recorded for a later reset.
         foreach (var id in departed)
-        {
-            // Reset forgets an unavailable actor; failed restores remain recorded.
-            ResetActor(id);
-        }
+            ResetActorUntracked(id);
     }
 }

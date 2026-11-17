@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain;
 using Poser.Domain.Animation;
+using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
@@ -32,19 +33,15 @@ internal sealed class HeldExpressionSession
     /// <summary>Applies an expression and immediately pins its facial frame.</summary>
     public Outcome HoldExpression(ActorId actor, ushort timeline)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
-        // A held expression is static: the Facial layer's loop (Animation tab) ends.
+        // A held expression stands still, so the Facial layer's Loop (Animation tab) ends.
         if (_store.For(actor).LoopWantedSlots.Contains(AnimationSlot.Facial))
-        {
-            var unlooped = _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false);
-            if (!unlooped.Success)
-                return unlooped;
-        }
+            _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false);
         var chosen = _base.ChooseSlot(actor, AnimationSlot.Facial, timeline);
         if (!chosen.Success)
             return chosen;
 
-        // A replacement must run with Facial unpinned before it is held again.
+        // When the face is already held, let it go first: the new expression
+        // has to start playing before it is held on its first frame.
         var current = _store.For(actor);
         float? speedCapture = current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial)
             ? null
@@ -57,18 +54,11 @@ internal sealed class HeldExpressionSession
                 actor, AnimationSlot.Facial, restore);
             if (!unpinned.Success)
                 return unpinned;
-            _store.Mutate(actor, o =>
+            _store.Mutate(actor, o => o with
             {
-                var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds);
-                speeds.Remove(AnimationSlot.Facial);
-                var resumes = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
-                resumes.Remove(AnimationSlot.Facial);
-                return o with
-                {
-                    SlotSpeeds = speeds,
-                    SlotResumeSpeeds = resumes,
-                    HeldExpression = null,
-                };
+                SlotSpeeds = o.SlotSpeeds.Without(AnimationSlot.Facial),
+                SlotResumeSpeeds = o.SlotResumeSpeeds.Without(AnimationSlot.Facial),
+                HeldExpression = null,
             });
         }
 
@@ -79,36 +69,27 @@ internal sealed class HeldExpressionSession
         var held = _speed.SetSlotSpeed(
             actor, AnimationSlot.Facial, 0f, speedCapture);
         if (!held.Success)
-        {
-            // Facial is selected here, so a Facial slot reset is exactly
-            // the expression release.
-            var rollback = ReleaseExpressionCore(actor);
-            return rollback.Success
-                ? held
-                : Outcome.Fail(
-                    $"{held.Detail ?? "Expression hold failed."} " +
-                    $"Restore failed: {rollback.Detail}");
-        }
+            return held;
         _store.Mutate(actor, o => o with { HeldExpression = timeline });
         return Outcome.Ok();
     }
 
-    /// <summary>Releases a held facial expression.</summary>
+    /// <summary>Releases a held facial expression and puts back the face that
+    /// played before Poser's first change.</summary>
     public Outcome ReleaseExpression(ActorId actor)
-    {
-        if (_store.Suspended() is { } blocked) return blocked;
-        return ReleaseExpressionCore(actor);
-    }
-
-    public Outcome ReleaseExpressionCore(ActorId actor)
     {
         var current = _store.For(actor);
         ushort? active = current.HeldExpression;
         if (active == null &&
             current.SelectedSlots.TryGetValue(AnimationSlot.Facial, out var selected))
             active = selected;
-        if (active is not { } held)
-            return ResetSlotWithoutExpressionBridge(actor, AnimationSlot.Facial);
+        // Nothing is chosen for the face. Only a Facial speed Poser set can
+        // be left to undo.
+        if (active == null)
+            return current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial)
+                ? _speed.ClearSlotSpeed(actor, AnimationSlot.Facial)
+                : Outcome.Ok();
+        // Chosen but never played: only the choice is forgotten.
         if (!current.SlotCaptures.ContainsKey(AnimationSlot.Facial))
             return _base.ResetBlendSelection(actor, AnimationSlot.Facial);
 
@@ -119,62 +100,17 @@ internal sealed class HeldExpressionSession
         if (!unpinned.Success)
             return unpinned;
 
-        // Release clears Facial speed, plays Straight Face, clears speed
-        // again, then restores the captured facial slot.
+        // With the face free to move, play Straight Face, then put back the
+        // Facial animation that played before Poser's first change.
         var straight = _base.BlendCore(
             actor, AnimationTimelines.StraightFace, AnimationSlot.Facial);
-        var again = straight.Success
-            ? _speedPort.ClearSlotSpeed(actor, AnimationSlot.Facial, restoreSpeed)
-            : straight;
-        var restored = straight.Success && again.Success
+        var restored = straight.Success
             ? _base.ResetBlendSelection(actor, AnimationSlot.Facial)
-            : Outcome.Fail(
-                straight.Detail ?? again.Detail ?? "Expression release failed.");
-        if (!restored.Success)
-        {
-            // Keep the saved restore values and try to put the held expression
-            // back. A later Reset can then retry the failed restoration.
-            var replayed = _base.BlendCore(actor, held, AnimationSlot.Facial);
-            var repinned = replayed.Success
-                ? _speedPort.SetSlotSpeed(actor, AnimationSlot.Facial, 0f)
-                : replayed;
-            return Outcome.Fail(
-                (restored.Detail ?? "Expression release failed.") +
-                (replayed.Success && repinned.Success
-                    ? string.Empty
-                    : $" Hold rollback failed: " +
-                      (replayed.Detail ?? repinned.Detail ?? "facial hold failed.")));
-        }
-
-        _store.Mutate(actor, o =>
-        {
-            var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds);
-            speeds.Remove(AnimationSlot.Facial);
-            var speedCaptures = new Dictionary<AnimationSlot, float>(o.SlotSpeedCaptures);
-            speedCaptures.Remove(AnimationSlot.Facial);
-            var resumes = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
-            resumes.Remove(AnimationSlot.Facial);
-            return o with
-            {
-                SlotSpeeds = speeds,
-                SlotSpeedCaptures = speedCaptures,
-                SlotResumeSpeeds = resumes,
-                HeldExpression = null,
-            };
-        });
-        return Outcome.Ok();
-    }
-
-    private Outcome ResetSlotWithoutExpressionBridge(
-        ActorId actor, AnimationSlot slot)
-    {
-        if (_store.For(actor).SlotSpeedCaptures.ContainsKey(slot))
-        {
-            var speed = _speed.ClearSlotSpeed(actor, slot);
-            if (!speed.Success)
-                return speed;
-        }
-        return _base.ResetBlendSelection(actor, slot);
+            : straight;
+        // The face is no longer held, whether or not the game put the earlier
+        // face back. After a failure Reset can be pressed again.
+        _store.Mutate(actor, o => o.WithoutSlotSpeed(AnimationSlot.Facial) with { HeldExpression = null });
+        return restored;
     }
 
     /// <summary>The expression currently held on the face, if any.</summary>

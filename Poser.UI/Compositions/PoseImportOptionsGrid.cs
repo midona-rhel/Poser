@@ -51,12 +51,6 @@ public readonly record struct PoseImportOptionsGrid(
 
     public float RowY(int row) => VerticalInset + RowHeight * row;
 
-    public float FirstControlY => VerticalInset + HeaderHeight;
-
-    public float TypeHeaderY => FirstControlY + RowHeight * 2f;
-
-    public float TypeControlY => TypeHeaderY + HeaderHeight;
-
     public float ApplyX => ColumnX(0);
 
     public float OptionsX => ColumnX(1);

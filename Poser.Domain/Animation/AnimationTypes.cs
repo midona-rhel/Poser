@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Domain.Collections;
 
 namespace Poser.Domain.Animation;
 
@@ -93,8 +94,6 @@ public static class AnimationTimelines
     public const ushort Idle = 3;
     /// <summary>The neutral facial timeline.</summary>
     public const ushort StraightFace = 604;
-    public const ushort DrawWeapon = 1;
-    public const ushort SheatheWeapon = 2;
     /// <summary>Battle idle, used when the weapon is drawn.</summary>
     public const ushort BattleIdle = 34;
     /// <summary>First and last speech timeline offered as a lip override.</summary>
@@ -282,6 +281,15 @@ public sealed record AnimationOverrides
     public bool? WeaponCapture { get; init; }
 
     public static AnimationOverrides None { get; } = new();
+
+    /// <summary>This state without the layer's speed override, the speed it had
+    /// before the override, and the speed its Play button returns to.</summary>
+    public AnimationOverrides WithoutSlotSpeed(AnimationSlot slot) => this with
+    {
+        SlotSpeeds = SlotSpeeds.Without(slot),
+        SlotSpeedCaptures = SlotSpeedCaptures.Without(slot),
+        SlotResumeSpeeds = SlotResumeSpeeds.Without(slot),
+    };
 
     /// <summary>True when Poser owns anything that must be restored.</summary>
     public bool HasAny =>

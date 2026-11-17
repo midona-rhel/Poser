@@ -31,7 +31,7 @@ public interface IPoseImportRuntime
     GestureResult Reserve(ActorId actor, string description, out PoseImportOperation? operation,
         Action<bool> onFinished, Action<OperationReceipt> onReceipt);
     GestureResult Begin(PoseImportOperation operation, IPreparedPoseImport plan,
-        bool expression, bool suppressHistory, string? asset);
+        bool expression, bool suppressHistory);
     void Schedule(Action action, int ticks);
     void Report(string message, bool error = false);
 }

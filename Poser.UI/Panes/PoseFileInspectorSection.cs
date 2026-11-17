@@ -461,8 +461,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                 OnClose = () => _importMenuOpen = false,
                 HostPaintsChrome = true,
             });
-        ImGui.SetCursorScreenPos(rects.Body.Min + new Vector2(MenuPadding * scale, 0f));
-        ScrollRegion("##import-options", rects.Body.Size.X / scale - MenuPadding * 2f,
+        // The body starts at the page inset, like every other framed window.
+        float inset = ActiveTheme.Page.Inset;
+        ImGui.SetCursorScreenPos(rects.Body.Min + new Vector2(inset * scale, 0f));
+        ScrollRegion("##import-options", rects.Body.Size.X / scale - inset - MenuPadding,
             rects.Body.Size.Y / scale, region =>
             {
                 var origin = ImGui.GetCursorScreenPos();
@@ -1782,17 +1784,6 @@ public sealed class PoseFileInspectorSection : IDisposable
             actions.Button("Export", () => RequestExportMenu(actorId));
             actions.Button("Export to file", () => OpenExport(actorId));
         });
-    }
-
-    public void OpenImport(ActorId actorId)
-    {
-        if (_config.Config.Library.UseLibraryWhenImporting)
-        {
-            RequestLibrary(actorId);
-            return;
-        }
-
-        BrowseAndImport(actorId, _folder.Path, rememberPath: true);
     }
 
     /// <summary>The context menu's "Import from file": straight to the
