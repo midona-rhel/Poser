@@ -748,7 +748,9 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         var positionDelta = info.Frame == TransformFrame.HeadRelative
             ? Vector3.Transform(info.Transform.Position, headRotation) : framedDelta.Position;
         var tempPos = beforePos + positionDelta;
-        bool armed = ik is { Config.Enabled: true } && info.IkTransform == null;
+        // An unseated FABRIK chain waits one frame; its end bone moves as it did with IK off.
+        bool armed = ik is { Config.Enabled: true } and not { Config.Fabrik.Unseated: true }
+            && info.IkTransform == null;
         bool fixedMode = armed && ik!.HeldCapture != null;
         bool rotationEnforcedByIk = false;
         Quaternion? heldRotation = null;

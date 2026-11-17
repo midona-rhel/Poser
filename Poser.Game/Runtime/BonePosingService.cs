@@ -217,18 +217,19 @@ public unsafe class BonePosingService : IBonePosingService
         var applied = ToApplySpace(bone, newTransform);
         var original = ToApplySpace(bone, originalTransform);
         if (!_ik.IsImportSuppressed(SkeletonKey.Of(bone.Skeleton).Actor)
-            && GetIkConfiguration(bone) is { Enabled: true, TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
-        {
-            // Keep existing handle edits attached to the external parent, but
-            // interpret each new drag in the current model axes, not old axes.
-            applied.Position = original.Position + anchor.ToReferenceDelta(
-                applied.Position - original.Position, _ik.Held.ActorParentFrame(bone, anchor));
-        }
-        else if (!_ik.IsImportSuppressed(SkeletonKey.Of(bone.Skeleton).Actor)
             && GetIkConfiguration(bone) is { Enabled: true, Solver: IkSolver.TwoJoint or IkSolver.Ccd } held
-            && held.TargetMode != IkTargetMode.Actor
             && _ik.TryGetChain((SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex), out var chain))
-            applied.Position = original.Position + _ik.Held.ToSolveDelta(chain, applied.Position - original.Position);
+        {
+            // The drag was measured on screen; the solver's target moves in the solver's pose.
+            var step = Vector3.TransformNormal(
+                applied.Position - original.Position, _ik.Held.DisplayedFrame(chain, bone).ToSolve);
+            if (held.TargetMode != IkTargetMode.Actor)
+                applied.Position = original.Position + step;
+            else if (held.ActorAnchor is { } anchor)
+                // An Actor target keeps its edits in the frame the bone above the chain had when
+                // the target was taken, so they turn with that bone.
+                applied.Position = original.Position + anchor.ToReferenceDelta(step, chain.SolveParentFrame);
+        }
         bonePoseInfo.Apply(applied, original);
 
         // Linked bones (Anamnesis parity): transfer the SAME delta to the rest

@@ -250,25 +250,6 @@ public partial class PoseInspectorPane : IDisposable
         Reset3DCamera();
     }
 
-    private BoneId? OwnerBone()
-    {
-        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } selected })
-            return selected;
-        if (OwningActorId() is not { } actorId)
-            return null;
-        foreach (var descriptor in _scene.Snapshot.Actors)
-        {
-            if (descriptor.Id != actorId)
-                continue;
-            foreach (var skeleton in descriptor.Skeletons)
-                if (skeleton.Bones.Count > 0)
-                    return skeleton.Bones[0].Id;
-            return null;
-        }
-
-        return null;
-    }
-
 
     private readonly CameraPane _cameraPane;
     private readonly OverlayPane _overlayPane;
@@ -430,13 +411,6 @@ public partial class PoseInspectorPane : IDisposable
         }
         ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
     }
-
-    public (string Prefix, string Bold) CrumbParts() => _primary switch
-    {
-        { Bone: { } bone } => ($"{ActorLabel(bone.Skeleton.Actor)} · ", SlotBonesOf(bone)?.FirstOrDefault(item => item.Id == bone)?.DisplayName ?? bone.CanonicalName),
-        { Actor: { } actor } => ("", ActorLabel(actor)),
-        _ => ("", ""),
-    };
 
     private string ActorLabel(ActorId id) =>
         _scene.Snapshot.FindActor(id) is { } actor ? ActorNames.Display(_configuration, actor) : "";

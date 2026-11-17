@@ -77,8 +77,7 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
         IPreparedPoseImport plan,
         PoseImportOptions options,
         string description,
-        Action<OperationReceipt>? onReceipt = null,
-        string? asset = null)
+        Action<OperationReceipt>? onReceipt = null)
     {
         options = options.Clone();
         if (plan.IsEmpty)
@@ -223,8 +222,7 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
                         arm.Operation,
                         plan,
                         expression: options.AsExpression,
-                        suppressHistory: options.SuppressHistory,
-                        asset: asset);
+                        suppressHistory: options.SuppressHistory);
                     if (!begun.Success)
                     {
                         _runtime.Report(

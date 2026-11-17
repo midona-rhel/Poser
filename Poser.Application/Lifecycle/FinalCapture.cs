@@ -33,13 +33,6 @@ public readonly record struct FinalCaptureResult(
     AutoSaveTerminalStatus Persistence = AutoSaveTerminalStatus.NotAttempted,
     string? PersistenceDetail = null)
 {
-    /// <summary>
-    /// True only when every eligible actor in the attempt was detached. A
-    /// partial <see cref="FinalCaptureStatus.Failure"/> remains false.
-    /// </summary>
-    public bool CaptureCompleted =>
-        Status is FinalCaptureStatus.Captured or FinalCaptureStatus.DispatchStarted;
-
     public static FinalCaptureResult NotCaptured(string? detail = null) =>
         new(FinalCaptureStatus.NotCaptured, 0, detail);
 
