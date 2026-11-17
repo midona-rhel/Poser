@@ -104,7 +104,7 @@ public sealed class NativePoseImportService : IPoseImportCommands
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read or failed validation.");
         return BeginImport(actor, plan, options,
-            $"Import {System.IO.Path.GetFileName(path)}", onReceipt, asset: path);
+            $"Import {System.IO.Path.GetFileName(path)}", onReceipt);
     }
 
     /// <summary>In-memory variant of the file import — same plan builder,
@@ -234,13 +234,13 @@ public sealed class NativePoseImportService : IPoseImportCommands
 
     private PoseEditResult BeginImport(
         IActor actor, PoseImportPlan plan, PoseImportOptions options,
-        string description, Action<OperationReceipt>? onReceipt = null, string? asset = null)
+        string description, Action<OperationReceipt>? onReceipt = null)
     {
         if (_bindings.GetActorId(actor) is not { } id ||
             _bindings.Resolve(id) is not { Success: true, Value: { } current } ||
             !ReferenceEquals(actor, current))
             return PoseEditResult.Fail("The actor could not be resolved.");
-        return _imports.Begin(id, new PreparedPoseImport(plan), options, description, onReceipt, asset);
+        return _imports.Begin(id, new PreparedPoseImport(plan), options, description, onReceipt);
     }
 
     private readonly ISkeletonService _skeletons;
