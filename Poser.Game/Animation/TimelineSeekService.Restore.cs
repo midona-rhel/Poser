@@ -28,6 +28,9 @@ public sealed unsafe partial class TimelineSeekService
         public readonly (int Slot, ushort Id, float Clock)[] Slots;
         // Slot 0's loop queued behind the intro it was caught on, or 0.
         public ushort QueuedLoop;
+        // The mode at capture. A loop mode with no EmoteMode row is gone after the redraw.
+        public CharacterModes Mode;
+        public byte ModeParam;
         public readonly bool[] Done;
         // The address alone can be reused by a new object within the restore
         // window; the object index and entity id must match too.
@@ -113,6 +116,8 @@ public sealed unsafe partial class TimelineSeekService
             _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId)
             {
                 QueuedLoop = queuedLoop,
+                Mode = ((Character*)character)->Mode,
+                ModeParam = ((Character*)character)->ModeParam,
             };
     }
 
@@ -121,8 +126,10 @@ public sealed unsafe partial class TimelineSeekService
     private const int ContainerDrawnFlagsOffset = NativeFields.TimelineContainer_DrawnFlags;
 
     /// <summary>
-    /// After the redraw (RE notes/poser-animation-model.md §2): Mode, BaseOverride and
-    /// the emote state survive it; the slots don't. Replay each recorded id as soon as
+    /// After the redraw (RE notes/poser-animation-model.md §2): BaseOverride and the
+    /// emote state survive it; the slots don't, and neither does a loop mode with no
+    /// EmoteMode row (measured: EmoteLoop 0 comes back as Normal). Enter that mode
+    /// again, then replay each recorded id as soon as
     /// the container is drawn again, not after the draw is ready: an actor in EmoteLoop
     /// with no EmoteMode starts no Base timeline itself, and the draw waits for one.
     /// Then wait until each is loaded and seek it to the recorded clock. The seek's
@@ -158,6 +165,13 @@ public sealed unsafe partial class TimelineSeekService
             var sequencer = &chara->Timeline.TimelineSequencer;
             if (!restore.Replayed)
             {
+                // A standing pose (EmoteLoop 0) comes back from the redraw in Normal mode.
+                // Replayed there, its row is only held until something clears the slot,
+                // and a later Full body restore finds no loop to return to.
+                if (restore.Mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop
+                    && (chara->Mode != restore.Mode || chara->ModeParam != restore.ModeParam)
+                    && !AnimationNativeState.IsRealPlayer(chara))
+                    _native.EnterLoopMode(chara, restore.Mode, restore.ModeParam);
                 nint noBlend = 0;
                 foreach (var (slot, id, _) in restore.Slots)
                 {
