@@ -13,8 +13,9 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Posing;
 
-/// <summary>Turns one chain's solved bones into ordinary pose edits.
-/// Other chains and named service layers keep running.</summary>
+/// <summary>Turns IK off for one chain and keeps the limb where IK put it: the
+/// solved bones become ordinary pose edits. This is what switching Live IK off
+/// does, and what Bake does. Other chains and named service layers keep running.</summary>
 public sealed class IkBakeCapture : IDisposable, IIkBake
 {
     /// <summary>Stop waiting if the actor disappears or stops updating during the bake.</summary>
@@ -55,6 +56,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
     private Bake? _pending;
     private long _generation;
+    // Chains waiting their turn: a bake owns the next pose update, so they run one at a time.
+    private readonly Queue<TransformTargetId> _waiting = new();
 
     public IkBakeCapture(
         IFramework framework,
@@ -86,8 +89,6 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     /// <summary>True when the selected bone has an enabled chain with at least two bones.</summary>
     public bool CanBake(TransformTargetId target)
     {
-        if (_pending != null)
-            return false;
         if (target.Bone is not { } boneId)
             return false;
         if (_bindings.Resolve(boneId) is not { Success: true, Value: { } endpoint })
@@ -112,13 +113,18 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     /// <summary>
     /// Captures the selected chain, disables it, and applies its saved pose on
     /// the next evaluation. Note reports when the bake finishes or fails.
+    /// While another chain is being baked, this one waits and runs after it.
     /// </summary>
     public GestureResult Begin(TransformTargetId target)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return GestureResult.Fail("IK bake must run on the framework thread.");
         if (_pending != null)
-            return GestureResult.Fail("A bake is already running.");
+        {
+            if (_pending.Target != target && !_waiting.Contains(target))
+                _waiting.Enqueue(target);
+            return GestureResult.Ok();
+        }
         // A live transform gesture owns these bones right now; baking under
         // it would interleave two writers on the same chain.
         if (_gestures.ActiveGesture != null)
@@ -252,7 +258,15 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         if (_pending is not { } bake || bake.Generation != generation)
             return;
         _pending = null;
+        Finish(bake);
+        // A chain that was switched off or removed while it waited is skipped.
+        while (_pending == null && _waiting.TryDequeue(out var next))
+            if (CanBake(next) && Begin(next) is { Success: false } refused)
+                Note = (next, $"Bake: {refused.Detail}");
+    }
 
+    private void Finish(Bake bake)
+    {
         var failure = bake.Failure;
         if (failure == null && !bake.Slot.Executed)
             failure = "The apply pass never ran the bake.";
@@ -292,7 +306,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
         // Undo restores both the bone edits and the enabled chain.
         _history.Append(new JournalStep(
-            "Bake IK",
+            "Disable IK",
             () => RestoreStates(before) && SetChainEnabled(bake, true),
             () => RestoreStates(after) && SetChainEnabled(bake, false))
         {
@@ -404,6 +418,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     {
         _posing.TransitiveActionsEnded -= OnTransitiveActionsEnded;
         _pending = null;
+        _waiting.Clear();
         Note = null;
     }
 }

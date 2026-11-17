@@ -1989,8 +1989,10 @@ public partial class PoseInspectorPane : IDisposable
             var result = fabrik
                 ? _ikPort.SetFabrikTarget(ikTarget, IkTargetMode.Bone, bone)
                 : _ikPort.SetBoneTarget(ikTarget, bone);
-            if (_notices.Report(result, "IK ▸ Bone"))
-                _ikBoneActor = bone.Skeleton.Actor;
+            if (!_notices.Report(result, "IK ▸ Bone"))
+                return;
+            _ikBoneActor = bone.Skeleton.Actor;
+            _targetPicking = null;
         }
         form.Actions("Bone", actions =>
         {
@@ -2087,7 +2089,8 @@ public partial class PoseInspectorPane : IDisposable
             var result = fabrik
                 ? _ikPort.SetFabrikTarget(endpoint, IkTargetMode.Entity, entity: chosen.Item.Id)
                 : _ikPort.SetEntityTarget(endpoint, chosen.Item.Id);
-            _notices.Report(result, "IK ▸ Entity");
+            if (_notices.Report(result, "IK ▸ Entity"))
+                _targetPicking = null;
         }
     }
 
@@ -2188,32 +2191,8 @@ public partial class PoseInspectorPane : IDisposable
             DrawFabrikTargets(form, boneId, ikTarget, config);
         else
         {
-        int modeIndex = config.TargetMode switch
-        {
-            Domain.Posing.IkTargetMode.World => 1,
-            Domain.Posing.IkTargetMode.Bone => 2,
-            Domain.Posing.IkTargetMode.Entity => 3,
-            _ => 0,
-        };
-        form.Dropdown(
-            "Target",
-            TargetModeItems,
-            modeIndex,
-            next => Apply(config with
-            {
-                TargetMode = next switch
-                {
-                    1 => Domain.Posing.IkTargetMode.World,
-                    2 => Domain.Posing.IkTargetMode.Bone,
-                    3 => Domain.Posing.IkTargetMode.Entity,
-                    _ => Domain.Posing.IkTargetMode.Actor,
-                },
-            }, "IK ▸ Target"),
-            help: "Actor follows the actor; World holds a point; Bone or Scene entity follows the chosen target");
-        if (config.TargetMode == Domain.Posing.IkTargetMode.Bone)
-            DrawIkBoneTarget(form, boneId, ikTarget);
-        else if (config.TargetMode == Domain.Posing.IkTargetMode.Entity)
-            DrawIkEntityTarget(form, ikTarget);
+        DrawIkTarget(form, boneId, ikTarget, config.TargetMode, fabrik: false,
+            mode => Apply(config with { TargetMode = mode }, "IK ▸ Target"));
         if (config.Solver != Domain.Posing.IkSolver.TwoJoint)
             form.Switch(
                 "Keep rotation",
@@ -2360,24 +2339,8 @@ public partial class PoseInspectorPane : IDisposable
 
     // ── the actor's IK: every chain at once, and the rope ───────────────
 
-    private readonly List<TransformTargetId> _bakeQueue = new();
-
-    /// <summary>Bake all runs the bakes one after another: a bake owns the
-    /// next apply pass, and only one can be pending.</summary>
-    private void PumpBakeQueue()
-    {
-        if (_bakeQueue.Count == 0 || _ikBake.IsPending)
-            return;
-        var next = _bakeQueue[0];
-        _bakeQueue.RemoveAt(0);
-        if (_ikBake.CanBake(next)
-            && _ikBake.Begin(next) is { Success: false } failed)
-            _notices.Report(failed.Outcome, "Bake all");
-    }
-
     private void DrawActorIk(FormScope form, ActorId actorId)
     {
-        PumpBakeQueue();
         var chains = ActorIkChains(actorId);
         int armed = chains.Count(chain => _ikPort.Get(chain)?.Enabled == true);
         int bakeable = chains.Count(_ikBake.CanBake);
@@ -2395,14 +2358,8 @@ public partial class PoseInspectorPane : IDisposable
         form.Actions("Solved", actions =>
         {
             actions.Button("Bake all",
-                () =>
-                {
-                    _bakeQueue.Clear();
-                    foreach (var chain in chains)
-                        if (_ikBake.CanBake(chain))
-                            _bakeQueue.Add(chain);
-                },
-                disabled: bakeable == 0 || _bakeQueue.Count > 0);
+                () => SetEveryChain(chains, false),
+                disabled: bakeable == 0);
             actions.Button("Show bones",
                 () => ShowChainBones(chains),
                 disabled: armed == 0);

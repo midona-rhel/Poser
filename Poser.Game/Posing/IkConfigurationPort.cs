@@ -22,26 +22,37 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     private readonly IPluginLog _log;
 
     private readonly ValueJournal _journal;
+    private readonly IIkBake _bake;
 
     public IkConfigurationPort(
         StableBindingRegistry bindings,
         IBonePosingService bonePosing,
         TransformGestureService gestures,
         ValueJournal journal,
+        IIkBake bake,
         IPluginLog log)
     {
         _bindings = bindings;
         _bonePosing = bonePosing;
         _gestures = gestures;
         _journal = journal;
+        _bake = bake;
         _log = log;
     }
 
-    /// <summary>Applies the settings and records the resulting captured target for Undo and Redo.</summary>
+    /// <summary>
+    /// Applies the settings and records the resulting captured target for Undo and Redo.
+    /// Turning IK on or off never moves the limb. Off keeps the limb where IK put it,
+    /// by baking it into the pose. On starts from the limb as it stands, with no swivel.
+    /// </summary>
     public Outcome Set(TransformTargetId target, IkChainConfig config)
     {
         _journal.Seal();
         var before = Get(target);
+        if (before is { Enabled: true } && !config.Enabled && _bake.CanBake(target))
+            return _bake.Begin(target).Outcome;
+        if (before is { Enabled: false } && config.Enabled)
+            config = config with { SwivelDegrees = 0 };
         var result = Write(target, config);
         config = Get(target) ?? config; // Record captured endpoints, not the uncaptured request.
         if (!result.Success || before is null || before == config)

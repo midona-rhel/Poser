@@ -181,10 +181,7 @@ internal sealed unsafe partial class IkChainRegistry
         };
         if (mode is IkTargetMode.Bone or IkTargetMode.Entity && anchor == null) return null;
         if (anchor is { } followed)
-        {
-            position -= followed.Position;
-            rotation = Quaternion.Normalize(Quaternion.Inverse(followed.Rotation) * rotation);
-        }
+            (position, rotation) = RelativeTo(followed, position, rotation);
         return new(mode, position, rotation, authored.Position, authored.Rotation, bone, entity);
     }
 
@@ -204,10 +201,7 @@ internal sealed unsafe partial class IkChainRegistry
             };
             if (target.Mode is IkTargetMode.Bone or IkTargetMode.Entity && anchor == null) return null;
             if (anchor is { } followed)
-            {
-                position += followed.Position;
-                rotation = Quaternion.Normalize(followed.Rotation * rotation);
-            }
+                (position, rotation) = FromRelative(followed, position, rotation);
             if (bone.Skeleton is not Skeleton skeleton) return null;
             var frame = skeleton.GetModelTransform();
             if (!Matrix4x4.Invert(frame.ToMatrix(), out var inverse)) return null;
@@ -284,7 +278,8 @@ internal sealed unsafe partial class IkChainRegistry
             if (control.Unseated)
             {
                 // The first frame leaves the chain unsolved, so the pass refreshes the raw
-                // caches with the pose FABRIK must start from. The next frame captures it.
+                // caches with the pose FABRIK must start from. The next frame captures it
+                // exactly as it stands, so switching FABRIK on moves nothing.
                 if (!state.FabrikWaited)
                 {
                     state.FabrikWaited = true;
@@ -297,24 +292,6 @@ internal sealed unsafe partial class IkChainRegistry
                 if (follows.Mode is IkTargetMode.Bone or IkTargetMode.Entity
                     && FabrikTargetAt(tip, tip.LastRawTransform, follows.Mode, follows.Bone, follows.Entity) is { } followed)
                     seated = seated with { Handle = followed };
-                // The waiting frame moved the end bone by its own position edits, as with IK
-                // off. They are where the handle is, not part of the limb's shape, so the
-                // captured bone goes back to where the pass found it. Left in, the move
-                // would count as bone length. The pass only records that for a bone with
-                // edits; an older record of a bone without them is out of date.
-                if (_stacks.HasModifications(tip))
-                {
-                    var found = _stacks.GetAnimatedBaseline(tip).Position;
-                    seated = seated with
-                    {
-                        Bones = seated.Bones.Select((bone, i) => i == seated.HandleIndex
-                            ? bone with { Position = found } : bone).ToArray(),
-                        ReferenceBones = seated.ReferenceBones?.Select(reference =>
-                            reference.Pose.Name == tip.BoneName && reference.Pose.Partial == tip.PartialId
-                                ? reference with { Pose = reference.Pose with { Position = found } }
-                                : reference).ToArray(),
-                    };
-                }
                 state.Config = config = config with { Fabrik = control = seated };
             }
             var members = FabrikMembers(tip, config);
@@ -361,10 +338,7 @@ internal sealed unsafe partial class IkChainRegistry
                     _ => null,
                 };
                 if (anchor is { } followed)
-                {
-                    position -= followed.Position;
-                    rotation = Quaternion.Normalize(Quaternion.Inverse(followed.Rotation) * rotation);
-                }
+                    (position, rotation) = RelativeTo(followed, position, rotation);
             }
             return target with { Mode = modelSpace ? IkTargetMode.Actor : target.Mode,
                 Position = position, Rotation = rotation, AuthoredPosition = Vector3.Zero,
