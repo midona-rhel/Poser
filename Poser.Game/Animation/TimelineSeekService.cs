@@ -118,7 +118,11 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
         var natives = new TimelineSeekNatives(scanner, log);
         var layout = new TimelineSeekLayout(scanner, log);
         _engine = new TimelineSeekEngine(natives, layout);
-        if (_engine.Ready)
+        // Nothing here runs while animation control is off: the redraw restore plays
+        // rows with its functions. Without the engine's layout, scrubbing writes the
+        // clocks itself instead.
+        Available = _engine.Ready && native.Available;
+        if (Available)
         {
             try
             {
@@ -176,11 +180,11 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
             {
                 log.Warning($"Animation: prop group speed hook failed ({ex.Message}); a layer's props follow its speed on their controls only.");
             }
+            _framework.Update += OnUpdate;
         }
-        _framework.Update += OnUpdate;
     }
 
-    public bool Available => _engine.Ready;
+    public bool Available { get; }
 
     /// <summary>The engine's tree walks, for the scrub fallback.</summary>
     internal TimelineSeekEngine Engine => _engine;
@@ -342,8 +346,6 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
 
     private void OnUpdate(IFramework framework)
     {
-        if (!_engine.Ready)
-            return;
         _tick++;
         _engine.BeginFrameTrees();
         try

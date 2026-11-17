@@ -183,8 +183,11 @@ and rotation, the game camera's angle, pan, zoom and offset, and roll and field
 of view) has held still for five seconds, it becomes one `Move camera` step from
 where it last rested; moves less than five seconds apart are one step. A move
 still settling when another step is appended is recorded first, up to the last
-framing a tick saw. Poser's own camera edits (a staged slider or field, an active
-gesture), undo, redo and switching cameras re-base the resting framing instead.
+framing a tick saw. A global undo records a settling move the same way and then
+takes it back, so the camera returns to where it last rested. Redo and undo for
+the selected entity do not record it. Poser's own camera edits (a staged slider
+or field, an active gesture), undo, redo and switching cameras re-base the
+resting framing instead.
 Replay resolves a restored camera through its history binding.
 
 Camera startup checks the current GPose session on its first framework tick,
