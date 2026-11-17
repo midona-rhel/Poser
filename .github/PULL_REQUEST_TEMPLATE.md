@@ -1,16 +1,16 @@
-## Summary
+## What goes wrong, or what is missing
 
 
-## What changed
+## What this changes
 
 
-## How I tested it
+## How it was checked
 
+<!-- Say what was tried in the game and what was only built or read in the code. -->
 
-## Manual test needed
+## How to try it
 
+<!-- Where to start, what to press, and what should be seen. -->
 
-## Risks or notes
+## Notes
 
-
-- [ ] I will not merge this before user review.

@@ -69,8 +69,7 @@ makes a drag one undo step (see [application-state.md](application-state.md#undo
 - Messages about a finished action (a save, a refused import) go through
   `UserNotices`, which shows them as Dalamud notifications. A change the user can
   already see needs no message.
-- Do not add explanatory or warning text to a layout without the owner's
-  approval. Fix the behaviour instead.
+- Do not add explanatory or warning text to a layout. Fix the behaviour instead.
 - Labels stay on one line and must fit at the smallest supported window size.
   Do not wrap them or make rows taller to hide a sizing problem.
 - Interface changes are checked by looking at them in the game, not by unit tests

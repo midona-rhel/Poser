@@ -1,18 +1,16 @@
 # Release runbook
 
 `main` is where work is merged. A release is built from its own branch,
-`release/<version>`, cut from a `main` commit the owner has accepted. Releases are
-betas: version 0.9.24 has the tag `v0.9.24-beta` and the assembly version
+`release/<version>`, cut from one chosen `main` commit. Releases are betas: version 0.9.24 has the tag `v0.9.24-beta` and the assembly version
 `0.9.24.0`.
 
 ## 1. Cut the branch
 
-1. The owner accepts the work and asks for a release. Squash-merge the pull
-   requests that go into it, close the issues they fix, and open new issues for
-   anything left over.
-2. Write down the accepted `main` commit and branch from that commit, not from
-   whatever `origin/main` is by now:
-   `git switch -c release/<version> <accepted commit>`.
+1. Squash-merge the pull requests that go into the release, close the issues
+   they fix, and open new issues for anything left over.
+2. Write down the `main` commit the release is built from and branch from that
+   commit, not from whatever `origin/main` is by now:
+   `git switch -c release/<version> <commit>`.
 
 ## 2. Write the release notes
 
@@ -95,10 +93,10 @@ Then:
 
    The tool writes `<unzipped archive>/_manifest/spdx_2.2/manifest.spdx.json`.
    Copy it out as `Poser.spdx.json`, next to the archive, not inside it.
-5. Write `release-manifest.json`: the tag, version, branch, accepted `main`
-   commit, release commit, accepted runtime commit, every file's path, size and
-   SHA-256, the SHA-256 of
-   the archive and the SBOM, and the results of the checks above.
+5. Write `release-manifest.json`: the tag, version, branch, the `main` commit
+   the release was cut from, the release commit, the commit that was tried in
+   the game, every file's path, size and SHA-256, the SHA-256 of the archive and
+   the SBOM, and the results of the checks above.
 6. Write `SHA256SUMS.txt` with the SHA-256 of the archive, the SBOM and the
    manifest.
 

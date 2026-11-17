@@ -74,7 +74,8 @@ number of passing tests is not better evidence.
 
 ## Checking a change in the game
 
-Visual and in-game behaviour is accepted only by the owner, in the running game.
+How the interface looks and what the game does with a change can only be checked
+in the running game.
 
 1. Build Debug from the exact commit that passed the Release build and tests.
 2. Deploy it. Dalamud loads Poser as a dev plugin from the main checkout's
@@ -82,11 +83,10 @@ Visual and in-game behaviour is accepted only by the owner, in the running game.
    build in another worktree is not loaded: copy its whole `Poser/bin/Debug`
    output there. Only one change can be deployed at a time.
 3. Check the Dalamud log that Poser reloaded.
-4. Give the owner a short test card: the starting state, what to do, what should
-   happen, and what to report back. Screenshots are welcome but not required;
-   video is never required.
+4. Try the change. When someone else is to try it, write down where to start,
+   what to do and what should happen.
 
-A change is not accepted, merged or closed until the owner has tried it.
+A change is not finished until it has been tried in the game.
 
 ## The debug bridge
 
@@ -97,4 +97,5 @@ that script. The bridge can read the scene, undo and redo, load and save scenes,
 take a screenshot of the game, and send mouse and key input to Poser's own
 windows. It uses the same commands as the interface.
 
-The bridge is for investigating problems. What it reports is not acceptance.
+The bridge helps to investigate a problem and to try a change. It does not show
+how the interface looks.
