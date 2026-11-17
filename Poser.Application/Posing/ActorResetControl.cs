@@ -12,7 +12,7 @@ namespace Poser.Application.Posing;
 
 /// <summary>Whole-actor reset ordering and history; native calls resolve IDs per operation.</summary>
 public sealed class ActorResetControl(
-    SceneSession scene, TransformGestureService gestures, PoseEditService poses,
+    SceneSession scene, TransformCommandService transforms, PoseEditService poses,
     IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, AnimationSession animation,
     ActorPresentationSession presentation, ActorModelIdSession models, IntegrationReset integration,
     EditHistory history, ValueJournal values, IActorStateSnapshots snapshots)
@@ -21,7 +21,7 @@ public sealed class ActorResetControl(
     public PoseEditResult ResetAll(ActorId actor)
     {
         values.Seal();
-        if (gestures.PendingRecovery != null || gestures.ActiveGesture != null)
+        if (transforms.Refusal() != null)
             return PoseEditResult.Fail("Finish the active transform or recovery before resetting the actor.");
         var admission = CanReset(actor);
         if (!admission.Success) return admission;
@@ -71,7 +71,7 @@ public sealed class ActorResetControl(
             var targets = scene.Snapshot.Actors.Where(a => a.Id == actor)
                 .SelectMany(a => a.Skeletons).SelectMany(s => s.Bones)
                 .Select(b => TransformTargetId.ForBone(b.Id)).ToArray();
-            var r = poses.ResetBones(targets, PoseRegion.All, "Reset pose");
+            var r = poses.ResetBones(targets);
             return (r.Success, r.Detail);
         });
         Run("IK", () => { var r = runtime.ClearIk(actor); return (r.Success, r.Detail); });

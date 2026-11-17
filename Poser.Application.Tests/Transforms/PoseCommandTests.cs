@@ -90,7 +90,6 @@ public sealed class PoseCommandTests
         Assert.True(f.Scene.TryRefresh(new SceneSnapshot(2,
             [new ActorDescriptor(replacement, "replacement", [])], [], [], [])).Accepted);
         f.Captures = 0;
-        Assert.False(f.Commands.Reset(f.Actor, PoseRegion.All).Success);
         Assert.False(f.Commands.Mirror(f.Actor).Success);
         Assert.False(f.Commands.Stash(f.Actor, "lost").Success);
         Assert.False(f.Commands.ApplyStash(f.Actor).Success);
@@ -138,13 +137,14 @@ public sealed class PoseCommandTests
                         new(Vector3.UnitX, Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f), Vector3.Zero))]), true);
             Gestures = new(Scene, this, History);
             Journal = new(History, Gestures, _ => true, new Fixtures.NoticeLog());
-            var edits = new PoseEditService(Scene, this, History, Gestures);
+            var transforms = new TransformCommandService(Scene, this, History, Gestures);
+            var edits = new PoseEditService(Scene, this, transforms);
             Commands = new PoseCommands(Scene, edits, new(edits), this);
             _integration = new(Idle<IIntegrationRuntimeFake>(), Idle<IMcdfFileBoundary>(),
                 Idle<ISessionGenerationSource>());
             ModelPort.Read(Actor).Returns(0);
             Models = new ActorModelIdSession(ModelPort);
-            ResetAll = new ActorResetControl(Scene, Gestures, edits, this,
+            ResetAll = new ActorResetControl(Scene, transforms, edits, this,
                 Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationTimelinePort>(),
                     Idle<IAnimationSpeedPort>(), Idle<IAnimationStancePort>(),
                     Idle<IAnimationScrubPort>(), Idle<IWorldRenderingRuntimePort>()),

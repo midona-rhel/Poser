@@ -4,59 +4,36 @@ using Poser.Domain.Posing;
 namespace Poser.Application.Posing;
 
 /// <summary>
-/// Application-owned in-memory pose transfer slot. Capture and apply remain
-/// stable-id commands; no legacy entity or native pointer is retained.
+/// Holds one copied pose, the stash, so it can be applied to another actor.
+/// It lasts for the session; stashing again replaces it.
 /// </summary>
-public sealed class PoseTransferService
+public sealed class PoseTransferService(PoseEditService edits)
 {
-    private readonly PoseEditService _edits;
     private PortablePose? _stashedPose;
-
-    public PoseTransferService(PoseEditService edits)
-    {
-        _edits = edits;
-    }
 
     public bool HasStash => _stashedPose != null;
     public DateTimeOffset? StashedAt { get; private set; }
 
-    /// <summary>Display label of the source actor for tooltips; not an actor ID.</summary>
+    /// <summary>Name of the actor the stash came from, shown in the Apply stash tooltip.</summary>
     public string? StashedFrom { get; private set; }
 
-    public PoseCaptureResult Capture(
-        IReadOnlyList<TransformTargetId> targets) =>
-        _edits.CapturePortable(targets);
-
-    public PoseEditResult Apply(
-        IReadOnlyList<TransformTargetId> targets,
-        PortablePose pose,
-        string description = "Apply copied pose") =>
-        _edits.ApplyPortable(targets, pose, description);
-
     public PoseEditResult Stash(
-        IReadOnlyList<TransformTargetId> targets,
+        IReadOnlyList<TransformTargetId> bones,
         string sourceLabel)
     {
-        var captured = Capture(targets);
-        if (!captured.Success || captured.Pose == null)
-            return PoseEditResult.Fail(
-                captured.Detail ?? "Could not capture pose.") with
-            {
-                Recovery = captured.Recovery,
-            };
-        _stashedPose = captured.Pose;
+        if (edits.CapturePortable(bones, out var pose) is { } failed)
+            return failed;
+        _stashedPose = pose!;
         StashedAt = DateTimeOffset.UtcNow;
         StashedFrom = sourceLabel;
         return PoseEditResult.Ok(_stashedPose.Bones.Count);
     }
 
+    /// <summary>
+    /// Applies the stash. The Apply stash button is disabled, and the menu
+    /// item hidden, until something has been stashed.
+    /// </summary>
     public PoseEditResult ApplyStash(
-        IReadOnlyList<TransformTargetId> targets)
-    {
-        if (_edits.RecoveryBarrier() is { } recoveryBarrier)
-            return recoveryBarrier;
-        return _stashedPose == null
-            ? PoseEditResult.Fail("No pose has been stashed.")
-            : Apply(targets, _stashedPose, "Apply stashed pose");
-    }
+        IReadOnlyList<TransformTargetId> bones) =>
+        edits.ApplyPortable(bones, _stashedPose!, "Apply stashed pose");
 }

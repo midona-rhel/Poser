@@ -6,8 +6,9 @@ namespace Poser.Application.Transforms;
 
 /// <summary>
 /// Changes transforms from a typed value or a command, outside a drag. Each call
-/// is one undo step. If a write fails part-way, everything already written is put
-/// back. If that fails too, the result says so and later edits wait until it works.
+/// is one undo step. The pose commands (Reset, Mirror, Flip, applying a copied
+/// pose) use the same read, write and record steps; only how they work out the
+/// new values differs.
 /// </summary>
 public sealed class TransformCommandService
 {
@@ -32,8 +33,7 @@ public sealed class TransformCommandService
         TransformTargetId target,
         PoseTransform desired,
         string description) =>
-        Refusal() ?? Change([target], (before, _) => _runtime.ApplyAbsolute(before, desired),
-            description, "Could not transform", "transform");
+        Refusal() ?? Change([target], (before, _) => _runtime.ApplyAbsolute(before, desired), description);
 
     /// <summary>
     /// Sets several transforms as one undo step, parents before children. Used
@@ -47,7 +47,7 @@ public sealed class TransformCommandService
         Refusal() ?? Change(
             writes.Select(write => write.Target).ToArray(),
             (before, index) => _runtime.ApplyAbsolute(before, writes[index].Desired, rawBaseline),
-            description, "Could not transform", "transform",
+            description,
             parentsFirst: true);
 
     /// <summary>Lets the game place these actors again, as one undo step.</summary>
@@ -57,40 +57,70 @@ public sealed class TransformCommandService
         Refusal() ?? Change(
             targets,
             (before, _) => _runtime.Restore(before with { HasOverride = false }),
-            description, "Could not clear actor override", "reset");
+            description);
 
     /// <summary>
     /// Refuses while an earlier failed edit is still being put back, or during
     /// a drag. A drag can be live here: an expression bake writes a few frames
     /// after it starts, and a gizmo can be grabbed in between.
     /// </summary>
-    private GestureResult? Refusal() =>
+    internal GestureResult? Refusal() =>
         _gestures.RecoveryBarrier() ??
         (_gestures.ActiveGesture != null ? GestureResult.Fail("A transform gesture is active.") : null);
 
     /// <summary>
-    /// Reads every target, writes each one, reads them all again and records the
-    /// undo step. A failed read or write changes nothing by itself. When a
-    /// write fails after earlier ones landed, those earlier targets are put
-    /// back: resetting several actors can stop at one whose parent is gone.
+    /// Reads every target in order. Stops at the first one that has left the
+    /// scene or cannot be read, which happens while its actor is being redrawn.
     /// </summary>
-    private GestureResult Change(
+    internal GestureResult Read(
         IReadOnlyList<TransformTargetId> targets,
-        Func<TransformTargetState, int, TransformPortResult> write,
-        string description,
-        string writeFailure,
-        string afterWhat,
-        bool parentsFirst = false)
+        out List<TransformTargetState> states)
     {
-        var before = new List<TransformTargetState>(targets.Count);
+        states = new List<TransformTargetState>(targets.Count);
         foreach (var target in targets)
         {
-            var captured = Capture(target);
-            if (!captured.Success || captured.State == null)
-                return GestureResult.Fail(captured.Detail ?? $"Could not capture {target}.");
-            before.Add(captured.State);
+            if (!_scene.Contains(target))
+                return GestureResult.Fail($"Target {target} is stale.");
+            var captured = _runtime.Capture(target);
+            if (!captured.Success)
+                return GestureResult.Fail(captured.Detail!);
+            states.Add(captured.State!);
         }
+        return GestureResult.Ok();
+    }
 
+    /// <summary>
+    /// Writes every target that was read, reads them all again and records the
+    /// change as one undo step named by <paramref name="description"/>.
+    /// </summary>
+    internal GestureResult Commit(
+        IReadOnlyList<TransformTargetState> before,
+        Func<TransformTargetState, int, TransformPortResult> write,
+        string description,
+        bool parentsFirst = false)
+    {
+        var result = Write(before, write, parentsFirst, out var after);
+        if (result.Success)
+            _history.Append(new TransformPatch(description, before, after));
+        return result;
+    }
+
+    /// <summary>
+    /// Writes every target that was read and reads them all again, without
+    /// recording an undo step. Reset all uses this directly because it records
+    /// one step for the pose and everything else it resets.
+    /// A failed write changes nothing by itself. When a write fails after
+    /// earlier ones landed, those earlier targets are put back: resetting
+    /// several actors can stop at one whose parent is gone. When the read
+    /// after writing fails, every target is put back.
+    /// </summary>
+    internal GestureResult Write(
+        IReadOnlyList<TransformTargetState> before,
+        Func<TransformTargetState, int, TransformPortResult> write,
+        bool parentsFirst,
+        out List<TransformTargetState> after)
+    {
+        after = new List<TransformTargetState>(before.Count);
         var order = Enumerable.Range(0, before.Count);
         if (parentsFirst)
             order = order.OrderBy(index => _runtime.DependencyDepth(before[index].Target));
@@ -99,34 +129,30 @@ public sealed class TransformCommandService
         {
             var result = write(before[index], index);
             if (!result.Success)
-            {
-                string failure = result.Detail ?? $"{writeFailure} {before[index].Target}.";
-                return written.Count == 0 ? GestureResult.Fail(failure) : PutBack(failure, written);
-            }
+                return written.Count == 0
+                    ? GestureResult.Fail(result.Detail!)
+                    : PutBack(result.Detail!, written);
             written.Add(before[index]);
         }
 
-        var after = new List<TransformTargetState>(before.Count);
         foreach (var state in before)
         {
             var captured = _runtime.Capture(state.Target);
-            if (!captured.Success || captured.State == null)
-                return PutBack(
-                    captured.Detail ?? $"Could not capture {state.Target} after {afterWhat}.", before);
-            after.Add(captured.State);
+            if (!captured.Success)
+                return PutBack(captured.Detail!, before);
+            after.Add(captured.State!);
         }
-
-        _history.Append(new TransformPatch(description, before, after));
         return GestureResult.Ok();
     }
 
-    private TransformPortResult Capture(TransformTargetId target)
+    private GestureResult Change(
+        IReadOnlyList<TransformTargetId> targets,
+        Func<TransformTargetState, int, TransformPortResult> write,
+        string description,
+        bool parentsFirst = false)
     {
-        if (!_scene.Contains(target))
-            return TransformPortResult.Fail(
-                TransformPortStatus.StaleTarget,
-                $"Target {target} is stale.");
-        return _runtime.Capture(target);
+        var read = Read(targets, out var before);
+        return read.Success ? Commit(before, write, description, parentsFirst) : read;
     }
 
     /// <summary>Restores targets this edit already changed and reports the failure.</summary>
