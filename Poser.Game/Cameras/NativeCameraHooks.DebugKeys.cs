@@ -48,8 +48,48 @@ internal sealed unsafe partial class NativeCameraHooks
         get { lock (_debugKeyLock) return _debugKeySamples.ToArray(); }
     }
 
+    /// <summary>What <see cref="DebugRollingSamples"/> holds for each frame: the
+    /// camera values, then whether the game saw each of these keys held.</summary>
+    public const string DebugRollingColumns = DebugKeyColumns + " A D W S SHIFT CONTROL";
+
+    private const int DebugRollingFrames = 3600;
+    private readonly Queue<float[]> _debugRolling = new();
+
+    /// <summary>While on, the last minute or so of frames is kept, so a problem
+    /// someone makes happen by hand can be read afterwards.</summary>
+    public bool DebugRollingOn { get; set; }
+
+    public float[][] DebugRollingSamples
+    {
+        get { lock (_debugKeyLock) return _debugRolling.ToArray(); }
+    }
+
+    private void RecordRolling(KeyboardFrame* keyboard)
+    {
+        var camera = _owner.Native;
+        if (!DebugRollingOn || keyboard == null || camera == null)
+            return;
+        var scene = &camera->Camera.CameraBase.SceneCamera;
+        Vector3 position = scene->Position;
+        Vector3 lookAt = scene->LookAtVector;
+        float Key(VirtualKey key) => keyboard->KeyState[(int)key];
+        lock (_debugKeyLock)
+        {
+            _debugRolling.Enqueue(
+            [
+                camera->Angle.X, camera->Angle.Y, camera->Pan.X, camera->Pan.Y, camera->Roll, camera->Distance,
+                position.X, position.Y, position.Z, lookAt.X, lookAt.Y, lookAt.Z,
+                Key(VirtualKey.A), Key(VirtualKey.D), Key(VirtualKey.W), Key(VirtualKey.S),
+                Key(VirtualKey.SHIFT), Key(VirtualKey.CONTROL),
+            ]);
+            while (_debugRolling.Count > DebugRollingFrames)
+                _debugRolling.Dequeue();
+        }
+    }
+
     private void ApplyDebugKeys(KeyboardFrame* keyboard)
     {
+        RecordRolling(keyboard);
         lock (_debugKeyLock)
         {
             if (_debugKeyFramesLeft <= 0 || keyboard == null)

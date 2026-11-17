@@ -348,7 +348,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/selection?actors=INDEX,INDEX or entity=EXACT_ID or entities=EXACT_ID,EXACT_ID (omit to read; empty actors/entities to clear)",
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
-                        "/gamekeys?keys=A,SHIFT&frames=60 (holds game keys for that many frames, then records as many without; omit keys to read the recorded camera values)",
+                        "/gamekeys?keys=SHIFT,A&frames=60&mode=messages (holds game keys for that many frames, then records as many without; mode=messages sends real key messages; omit keys to read the recorded camera values)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
@@ -526,11 +526,28 @@ public sealed partial class DebugBridge : IDisposable
                 // Holds real game keys, which /shortcut and /uiinput cannot do, and
                 // records the game camera each frame so a jitter can be measured.
                 var service = (global::Poser.Game.Cameras.VirtualCameraService)_cameras;
+                // record=1 keeps the last minute of frames; record=read returns them;
+                // record=0 stops. For a problem someone makes happen by hand.
+                if (query.TryGetValue("record", out var record))
+                {
+                    var rolling = service.DebugRolling(record == "read" ? null : record == "1");
+                    return Json(new { columns = rolling.Columns, samples = record == "read" ? rolling.Samples : [],
+                        frames = rolling.Samples.Length });
+                }
                 if (query.TryGetValue("keys", out var names))
                 {
                     var keys = names.Split(',', StringSplitOptions.RemoveEmptyEntries)
                         .Select(name => Enum.Parse<Dalamud.Game.ClientState.Keys.VirtualKey>(name, true)).ToArray();
-                    service.DebugHoldKeys(keys, int.Parse(query.GetValueOrDefault("frames", "60"), CultureInfo.InvariantCulture));
+                    int frames = int.Parse(query.GetValueOrDefault("frames", "60"), CultureInfo.InvariantCulture);
+                    // mode=messages sends real key messages, which Dalamud and other
+                    // plugins also see; the default writes the game's input frame only.
+                    if (query.GetValueOrDefault("mode") == "messages")
+                    {
+                        StartKeyMessages(keys, frames);
+                        service.DebugHoldKeys([], frames);
+                    }
+                    else
+                        service.DebugHoldKeys(keys, frames);
                 }
                 var keyHold = service.DebugKeyHold();
                 return Json(new { framesLeft = keyHold.FramesLeft, columns = keyHold.Columns, samples = keyHold.Samples });
