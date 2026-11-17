@@ -32,9 +32,22 @@ internal sealed unsafe partial class IkChainRegistry
     {
         var previous = GetIkConfiguration(endpoint);
         config = PrepareEndAnchor(endpoint, config, previous);
+        // While this chain is on, the skeleton is in the pose pass, so the raw caches hold the
+        // pose the last solve left.
+        bool solving = previous is { Enabled: true };
+        bool fromFabrik = solving && previous!.Solver is IkSolver.Fabrik or IkSolver.Rope;
         if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope))
         {
-            if (config.Enabled && previous is { Enabled: true } && previous.TargetMode != config.TargetMode
+            // This solver will move the limb, so the shape FABRIK kept no longer describes
+            // it. With it dropped here, switching back to FABRIK takes the shape afresh,
+            // while undo, redo and a loaded scene bring their own saved shape and keep it.
+            if (config.Enabled && config.Fabrik != null)
+                config = config with { Fabrik = null };
+            // FABRIK and Rope keep no held target. The new target is the end bone where they
+            // left it, so the switch moves nothing.
+            if (config.Enabled && fromFabrik)
+                config = _held.AnchorOnSolvedEnd(endpoint, config);
+            else if (config.Enabled && previous is { Enabled: true } && previous.TargetMode != config.TargetMode
                 && _ikChains.TryGetValue(ChainKey(endpoint), out var state))
                 config = _held.ChangeTargetMode(state, endpoint, config);
             // Prepare before the value journal captures its after-state too:
@@ -48,11 +61,15 @@ internal sealed unsafe partial class IkChainRegistry
             && control.Handle.Mode != config.TargetMode
             && CaptureFabrikTarget(endpoint, config.TargetMode) is { } handle)
             config = config with { Fabrik = control with { Handle = handle } };
-        if (config.Fabrik == null && config.Enabled
-            || config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
-                && (config.ParentDepth != previous.ParentDepth || config.ChildDepth != previous.ChildDepth))
+        if (config.Fabrik == null && config.Enabled)
+            // The raw caches are only current while the chain is solving. Otherwise this
+            // capture is a placeholder, marked so the pass takes it again.
             return CaptureFabrikReference(endpoint, config) is { } captured
-                ? config with { Fabrik = captured } : config;
+                ? config with { Fabrik = captured with { Unseated = !solving } } : config;
+        if (config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
+            && (config.ParentDepth != previous.ParentDepth || config.ChildDepth != previous.ChildDepth))
+            return CaptureFabrikReference(endpoint, config) is { } selected
+                ? config with { Fabrik = selected } : config;
         return config;
     }
 
@@ -65,24 +82,26 @@ internal sealed unsafe partial class IkChainRegistry
             && members.Any(b => other.Bones.Contains(b.BoneName)));
     }
 
+    /// <summary>Captures the chain from the raw caches: the pose the last solve left, before
+    /// Customize+. FABRIK writes what it captured straight back into that pose, so capturing
+    /// the pose on screen would apply Customize+'s edits a second time.</summary>
     private FabrikControl? CaptureFabrikControl(IBone tip, IkChainConfig config)
     {
         var members = FabrikMembers(tip, config);
         if (members.Count == 0) return null;
-        RefreshCache(tip);
         var poses = members.Select(bone =>
         {
-            var pose = _stacks.ToApplySpace(bone, bone.LastTransform);
+            var pose = _stacks.ToApplySpace(bone, bone.LastRawTransform);
             var authored = _stacks.GetIkModification(bone) ?? Transform.Identity;
             return new FabrikBonePose(bone.BoneName, bone.PartialId, pose.Position, pose.Rotation,
                 authored.Position, authored.Rotation);
         }).ToArray();
         FabrikTarget Point(int index) => new(IkTargetMode.Actor,
-            members[index].LastTransform.Position, members[index].LastTransform.Rotation,
+            members[index].LastRawTransform.Position, members[index].LastRawTransform.Rotation,
             poses[index].AuthoredPosition, poses[index].AuthoredRotation);
         var targetBone = GetIkBoneTarget(tip) is { } anchor ? _bindings.GetBoneId(anchor) : null;
         var handle = config.Fabrik?.Handle
-            ?? CaptureFabrikTarget(tip, config.TargetMode, targetBone, GetIkEntityTarget(tip))
+            ?? FabrikTargetAt(tip, tip.LastRawTransform, config.TargetMode, targetBone, GetIkEntityTarget(tip))
             ?? Point(members.IndexOf(tip));
         return new(poses, Point(0) with { HoldRotation = false },
             Point(poses.Length - 1) with { HoldRotation = false }, config.SwivelDegrees,
@@ -102,11 +121,9 @@ internal sealed unsafe partial class IkChainRegistry
             var potential = FabrikMembers(tip, config with { ParentDepth = IkChainConfig.MaxDepth, ChildDepth = 0 })
                 .Concat(FabrikMembers(tip, config with { ParentDepth = 0, ChildDepth = IkChainConfig.MaxDepth }).Skip(1))
                 .ToArray();
-            foreach (var bone in potential) _ = bone.LastTransform; // Enrol uncached bones before the native refresh.
-            RefreshCache(tip);
             var reference = potential.Select(bone =>
             {
-                var displayed = bone.LastTransform;
+                var displayed = bone.LastRawTransform;
                 var applied = _stacks.ToApplySpace(bone, displayed);
                 var authored = _stacks.GetIkModification(bone) ?? Transform.Identity;
                 var saved = control?.Bones.FirstOrDefault(b => b.Name == bone.BoneName && b.Partial == bone.PartialId);
@@ -135,13 +152,20 @@ internal sealed unsafe partial class IkChainRegistry
     {
         var config = GetIkConfiguration(endpoint);
         if (config?.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return null;
-        var source = endpoint;
-        RefreshCache(source);
-        var authored = _stacks.GetIkModification(source) ?? Transform.Identity;
-        var model = source.LastTransform;
+        var model = endpoint.LastRawTransform;
         if (config.Enabled && config.Fabrik is { } control
             && ResolveFabrikTarget(endpoint, control.Handle, true) is { } held)
             model = _stacks.FromApplySpace(endpoint, new Transform(held.Position, held.Rotation, model.Scale));
+        return FabrikTargetAt(endpoint, model, mode, bone, entity);
+    }
+
+    /// <summary>A FABRIK target at this model-space point, stored the way its mode needs:
+    /// as is for Actor, as a world point for World, as an offset from the followed bone or
+    /// entity otherwise. Null when the followed bone or entity can't be found.</summary>
+    private FabrikTarget? FabrikTargetAt(IBone source, Transform model, IkTargetMode mode,
+        BoneId? bone, SelectionId? entity)
+    {
+        var authored = _stacks.GetIkModification(source) ?? Transform.Identity;
         if (mode == IkTargetMode.Actor)
             return new(mode, model.Position, model.Rotation, authored.Position, authored.Rotation);
         if (source.Skeleton is not Skeleton skeleton) return null;
@@ -225,7 +249,16 @@ internal sealed unsafe partial class IkChainRegistry
         // A collision-solved bone can be well short of its authored target.
         // Mouse input starts at the gizmo, not at that hidden target. Preserve
         // the gesture's input frame; never re-read the moving solved endpoint.
-        var input = displayed with { Position = inputPosition ?? displayed.Position };
+        // The gizmo sits on the bone as shown, after Customize+. The chain lives in the pose
+        // the solver works on, so the input is moved back by Customize+'s edit of this bone.
+        _ = bone.LastTransform;
+        RefreshCache(bone);
+        var input = displayed with
+        {
+            Position = inputPosition is { } shown
+                ? shown - (bone.LastTransform.Position - bone.LastRawTransform.Position)
+                : displayed.Position,
+        };
         var inputApplied = _stacks.ToApplySpace(bone, input);
         var requested = _stacks.ToApplySpace(bone, input with { Position = input.Position + delta });
         var source = control.Bones.Select(b => b.Position).ToArray();
@@ -248,6 +281,42 @@ internal sealed unsafe partial class IkChainRegistry
             if (control.Bones.Length < 2) continue; // Both spans disabled; retain the authored target for re-enabling.
             var tip = skeleton.GetBone(identity.Partial, identity.Bone);
             if (tip == null) continue;
+            if (control.Unseated)
+            {
+                // The first frame leaves the chain unsolved, so the pass refreshes the raw
+                // caches with the pose FABRIK must start from. The next frame captures it.
+                if (!state.FabrikWaited)
+                {
+                    state.FabrikWaited = true;
+                    continue;
+                }
+                if (CaptureFabrikReference(tip, config with { Fabrik = null }) is not { } seated)
+                    continue;
+                // A picked bone or entity stays what the handle follows.
+                var follows = control.Handle;
+                if (follows.Mode is IkTargetMode.Bone or IkTargetMode.Entity
+                    && FabrikTargetAt(tip, tip.LastRawTransform, follows.Mode, follows.Bone, follows.Entity) is { } followed)
+                    seated = seated with { Handle = followed };
+                // The waiting frame moved the end bone by its own position edits, as with IK
+                // off. They are where the handle is, not part of the limb's shape, so the
+                // captured bone goes back to where the pass found it. Left in, the move
+                // would count as bone length. The pass only records that for a bone with
+                // edits; an older record of a bone without them is out of date.
+                if (_stacks.HasModifications(tip))
+                {
+                    var found = _stacks.GetAnimatedBaseline(tip).Position;
+                    seated = seated with
+                    {
+                        Bones = seated.Bones.Select((bone, i) => i == seated.HandleIndex
+                            ? bone with { Position = found } : bone).ToArray(),
+                        ReferenceBones = seated.ReferenceBones?.Select(reference =>
+                            reference.Pose.Name == tip.BoneName && reference.Pose.Partial == tip.PartialId
+                                ? reference with { Pose = reference.Pose with { Position = found } }
+                                : reference).ToArray(),
+                    };
+                }
+                state.Config = config = config with { Fabrik = control = seated };
+            }
             var members = FabrikMembers(tip, config);
             if (members.Count != control.Bones.Length
                 || members.Where((b, i) => b.BoneName != control.Bones[i].Name
