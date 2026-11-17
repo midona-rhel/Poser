@@ -218,6 +218,7 @@ public sealed partial class DebugBridge : IDisposable
             FinishUiDrag();
             StopLifetimeTrace();
             _framework.Update -= AdvanceUiDrag;
+            StopKeyMessages();
         });
         try { _listener.Stop(); } catch { }
         try { _stop.Cancel(); } catch (ObjectDisposedException) { } catch (AggregateException) { }

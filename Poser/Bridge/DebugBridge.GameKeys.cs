@@ -40,6 +40,19 @@ public sealed partial class DebugBridge
         _framework.Update += AdvanceKeyMessages;
     }
 
+    /// <summary>Releases the keys of a hold that is still running. Without this,
+    /// unloading Poser in the middle of a hold would leave the keys down in the game.</summary>
+    private void StopKeyMessages()
+    {
+        if (_messageFrames == 0)
+            return;
+        nint window = Process.GetCurrentProcess().MainWindowHandle;
+        foreach (var key in _messageKeys.Reverse())
+            PostKey(window, key, down: false, repeat: false);
+        _messageFrames = 0;
+        _framework.Update -= AdvanceKeyMessages;
+    }
+
     private void AdvanceKeyMessages(IFramework framework)
     {
         nint window = Process.GetCurrentProcess().MainWindowHandle;
@@ -50,10 +63,7 @@ public sealed partial class DebugBridge
         }
         else if (_messageFrame >= _messageFrames)
         {
-            foreach (var key in _messageKeys.Reverse())
-                PostKey(window, key, down: false, repeat: false);
-            _messageFrames = 0;
-            _framework.Update -= AdvanceKeyMessages;
+            StopKeyMessages();
             return;
         }
         else if (_messageFrame > 15 && _messageFrame % 2 == 0)

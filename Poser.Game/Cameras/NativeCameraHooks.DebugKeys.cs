@@ -31,7 +31,8 @@ internal sealed unsafe partial class NativeCameraHooks
     {
         lock (_debugKeyLock)
         {
-            _debugKeys = keys.ToArray();
+            // A key number outside the game's key table would write past it.
+            _debugKeys = keys.Where(key => (int)key is > 0 and < KeyboardFrame.KeyStateLength).ToArray();
             _debugKeyFramesLeft = frames * 2;
             _debugKeyFrame = 0;
             _debugKeySamples.Clear();
