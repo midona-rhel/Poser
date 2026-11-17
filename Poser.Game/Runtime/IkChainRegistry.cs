@@ -36,14 +36,13 @@ internal sealed class IkChainState
     /// Bone and Entity modes store an offset from the selected target.</summary>
     public HeldTarget? HeldCapture;
     /// <summary>The first solve must align this displayed capture with its input pose.
-    /// Customize+ can scale the displayed body after IK runs.</summary>
+    /// Customize+ edits the pose after IK runs, so the displayed pose is not the solver's.</summary>
     public bool SeatPending;
     // A target change keeps this solver-space point until its new anchor is read during evaluation.
     public (Vector3 Position, Quaternion Rotation)? PendingRetarget;
     public (Vector3 Position, Quaternion Rotation)? SolveTarget;
-    /// <summary>World, Bone, Entity: the first bone above the chain and its frame
-    /// as the last solve saw it, so a displayed drag converts into the solve's
-    /// frame (Customize+ scales the body after the solve).</summary>
+    /// <summary>The first bone above the chain and its frame as the last solve saw it.
+    /// An Actor target follows it. The frame is null until a solve has run.</summary>
     public IBone? SolveParent;
     public PoseTransform? SolveParentFrame;
     public IBone? TargetBone;
@@ -478,17 +477,18 @@ internal sealed unsafe partial class IkChainRegistry
         if (!config.EnforceConstraints || !_ikChains.TryGetValue(ChainKey(bone), out var state)) return delta;
         var members = NativeIkMembers(bone, config);
         if (members.Count < 2) return delta;
-        foreach (var member in members) _ = member.LastTransform;
-        RefreshCache(bone);
         var authored = _stacks.GetIkModification(bone) ?? Transform.Identity;
         if (_held.ResolveHeld(state, bone, authored.Position, authored.Rotation) is not { } handle) return delta;
-        var points = members.Select(member => _stacks.ToApplySpace(member, member.LastTransform).Position).ToArray();
+        // The limit is measured where the solver works: the held target against the limb as the
+        // last solve left it. Only the drag is converted from the screen and back.
+        var points = members.Select(member => _stacks.ToApplySpace(member, member.LastRawTransform).Position).ToArray();
         var reach = IkReach.FromChain(points, config);
+        var (toDisplayed, toSolve) = _held.DisplayedFrame(state, bone);
         var displayed = _stacks.FromApplySpace(bone, new Transform(handle.Position, Quaternion.Identity, Vector3.One));
         var requested = _stacks.ToApplySpace(bone, displayed with { Position = displayed.Position + delta });
-        var limited = reach.Move(handle.Position, requested.Position - handle.Position);
-        var start = fromAuthoredBaseline ? displayed.Position
-            : _stacks.FromApplySpace(bone, displayed with { Position = reach.Clamp(handle.Position) }).Position;
-        return _stacks.FromApplySpace(bone, displayed with { Position = limited }).Position - start;
+        var limited = reach.Move(handle.Position, Vector3.TransformNormal(requested.Position - handle.Position, toSolve));
+        var start = fromAuthoredBaseline ? handle.Position : reach.Clamp(handle.Position);
+        var moved = handle.Position + Vector3.TransformNormal(limited - start, toDisplayed);
+        return _stacks.FromApplySpace(bone, displayed with { Position = moved }).Position - displayed.Position;
     }
 }
