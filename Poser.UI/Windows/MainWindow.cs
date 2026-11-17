@@ -205,10 +205,6 @@ public partial class MainWindow : Window
     /// <summary>The shell keeps workspace mode and entity selection mutually exclusive.</summary>
     private readonly ShellWorkspaceSelection _workspace;
 
-    /// <summary>Stable selection ID for the scene environment.</summary>
-    private static readonly SelectionId EnvironmentSelection =
-        SelectionId.ForEnvironment();
-
     /// <summary>Footer toggles for world-object adoption classes.</summary>
     private readonly (WorldAdoptionKind Kind, ShellWorldClass Entry)[]
         _worldClasses = BuildWorldClasses();

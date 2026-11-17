@@ -356,7 +356,7 @@ public sealed class AnimationPane : IDisposable
                 "##anim-weapon-drawn",
                 reading.WeaponDrawn,
                 next => _notices.Report(
-                    _animation.SetWeaponDrawn(actor, next), "Weapon")),
+                    _animation.SetWeaponDrawn(actor, next), "Weapon"), disabled: !supported),
             "Lock position",
             cell => cell.Switch(
                 "##anim-position-lock",

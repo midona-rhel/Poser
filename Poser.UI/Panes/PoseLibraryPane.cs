@@ -51,8 +51,6 @@ public sealed partial class PoseLibraryPane
 
     private const string AllScenesLabel = "All scenes";
 
-    private const string AllAutoSavesLabel = "All auto-saves";
-
     private const string FavoritesLabel = "Favorites";
 
     /// <summary>The day part of an auto-save rail row and of a scene section.
@@ -111,11 +109,6 @@ public sealed partial class PoseLibraryPane
 
 
     private readonly LibraryDetailsPanel _details;
-
-    /// <summary>Positional against <see cref="ObjectPlacementMode"/>.</summary>
-    private static readonly string[] PlacementModeLabels =
-        ["As saved", "Relative to camera", "Relative to actor",
-         "In front of camera"];
 
 
 
@@ -497,14 +490,16 @@ public sealed partial class PoseLibraryPane
     {
         _placementChoices.Clear();
         _placementChoiceLabels.Clear();
-        _placementChoices.Add(ObjectPlacementMode.InFrontOfCamera);
-        _placementChoiceLabels.Add(PlacementModeLabels[3]);
-        _placementChoices.Add(ObjectPlacementMode.AsSaved);
-        _placementChoiceLabels.Add(PlacementModeLabels[0]);
-        _placementChoices.Add(ObjectPlacementMode.RelativeToCamera);
-        _placementChoiceLabels.Add(PlacementModeLabels[1]);
-        _placementChoices.Add(ObjectPlacementMode.RelativeToSelectedActor);
-        _placementChoiceLabels.Add(PlacementModeLabels[2]);
+        // The Library lists In front of camera first.
+        foreach (var mode in new[]
+                 {
+                     ObjectPlacementMode.InFrontOfCamera, ObjectPlacementMode.AsSaved,
+                     ObjectPlacementMode.RelativeToCamera, ObjectPlacementMode.RelativeToSelectedActor,
+                 })
+        {
+            _placementChoices.Add(mode);
+            _placementChoiceLabels.Add(PlacementLabels.For(mode));
+        }
     }
 
     private readonly SceneLoadPreferences _scenePreferences;
@@ -602,13 +597,6 @@ public sealed partial class PoseLibraryPane
     public int SelectedType => (int)_type;
     public bool ShowsPosePreview => (_type is LibraryType.Poses or LibraryType.AutoSaves)
         && !IsSceneTile(_vm.Selected);
-
-    /// <summary>The selected tile's file path, or null — the library
-    /// window uses it to choose preview and details content.</summary>
-    public string? SelectedPath
-        => _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count
-            ? _vm.Tiles[_vm.Selected].ThumbKey
-            : null;
 
     /// <summary>A shell tab. The filters are drafts of the view being left, so
     /// the new type starts on its whole library.</summary>

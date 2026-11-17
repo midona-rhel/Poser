@@ -172,6 +172,8 @@ public sealed class FabrikSpanTests
                 "get_IsPartialRoot" => Parent == null,
                 "get_IsSkeletonRoot" => Parent == null,
                 "get_IsHiddenBone" => Hidden,
+                // The pose pass writes both caches from one pose; they differ only under Customize+.
+                "get_LastTransform" or "get_LastRawTransform" => Poser.Domain.Transforms.Transform.Identity,
                 _ => throw new InvalidOperationException(method.Name),
             });
         }

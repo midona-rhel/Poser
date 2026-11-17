@@ -2431,7 +2431,6 @@ public partial class PoseInspectorPane : IDisposable
         var actorId = skeleton.Id.Actor;
         var boneId = _primary?.Bone;
         var boneName = boneId?.CanonicalName ?? string.Empty;
-        var sourceLabel = ActorLabel(actorId);
         bool hasAuthoredEdits = _poseCommands.HasAuthoredEdits(actorId);
         form.Actions("Edit", actions =>
         {
@@ -2453,8 +2452,7 @@ public partial class PoseInspectorPane : IDisposable
         {
             actions.Button(
                 "Stash",
-                () => _poseCommands.Stash(
-                    actorId, sourceLabel),
+                () => _poseCommands.Stash(actorId),
                 help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before.");
             actions.Button(
                 "Apply stash",

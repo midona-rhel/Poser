@@ -103,9 +103,7 @@ public sealed unsafe partial class AnimationNativeState
         var character = Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        if (_cancelTimeline == null)
-            return Outcome.Fail("CancelTimeline unavailable.");
-        _cancelTimeline(&character->Timeline, a2, a3);
+        _cancelTimeline!(&character->Timeline, a2, a3);
         return Outcome.Ok();
     }
 
