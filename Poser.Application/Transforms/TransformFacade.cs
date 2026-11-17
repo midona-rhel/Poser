@@ -1,12 +1,15 @@
 using System.Numerics;
+using Poser.Application.Posing;
 using Poser.Application.Scene;
+using Poser.Application.Settings;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>UI entry point into the transform gesture application API.</summary>
+/// <summary>The one way the interface moves things: drags, typed values,
+/// undo and redo.</summary>
 public sealed class TransformFacade : ITransformFacade
 {
     private readonly SceneSession _scene;
@@ -16,6 +19,9 @@ public sealed class TransformFacade : ITransformFacade
 
     private readonly UndoJournal _journal;
     private readonly ValueJournal _values;
+    private readonly ConfigurationService _configuration;
+    private readonly EditorState _editor;
+    private readonly IPoseInteraction _interaction;
 
     public TransformFacade(
         SceneSession scene,
@@ -23,8 +29,14 @@ public sealed class TransformFacade : ITransformFacade
         TransformCommandService commands,
         UndoJournal journal,
         GroupTransformCoordinator groups,
-        ValueJournal values)
+        ValueJournal values,
+        ConfigurationService configuration,
+        EditorState editor,
+        IPoseInteraction interaction)
     {
+        _configuration = configuration;
+        _editor = editor;
+        _interaction = interaction;
         _scene = scene;
         _gestures = gestures;
         _commands = commands;
@@ -46,9 +58,69 @@ public sealed class TransformFacade : ITransformFacade
     public string? RedoDescription => _journal.RedoDescription;
 
     /// <summary>
-    /// Stable-id gesture entry: expands linked-bone and symmetry partners
-    /// from the scene snapshot before <c>Begin</c>, then dispatches to the
-    /// gesture service. Owns no state.
+    /// Starts a drag from a gizmo. The caller says what is dragged, with which
+    /// tool and around which pivot. The rest is decided here, so every gizmo
+    /// behaves the same: whether linked and paired bones come along, how a group
+    /// scales, and what the undo step is called.
+    /// </summary>
+    public GestureResult BeginDrag(
+        IReadOnlyList<TransformTargetId> targets,
+        TransformOperation operation,
+        TransformSpace space,
+        PivotMode pivotMode = PivotMode.PerTarget,
+        Vector3? customPivot = null,
+        IReadOnlyList<SelectionId>? selection = null)
+    {
+        var settings = _configuration.Config;
+        bool bones = targets[0].Kind == TransformTargetKind.Bone;
+        return Begin(targets, operation, space, pivotMode, customPivot,
+            description: DragName(targets),
+            includeLinkedBones: bones && _interaction.LinkedBonesEnabled,
+            symmetryFor: bones ? SymmetryFor : null,
+            relativeSecondaryBones: bones && settings.RelativeSecondaryBones,
+            groupScale: settings.Gizmo.GroupScale,
+            selection: selection);
+    }
+
+    /// <summary>How a bone's paired bone follows: its own setting when per-bone
+    /// symmetry is on, otherwise the toolbar's symmetry mode.</summary>
+    private TransformDeltaMode? SymmetryFor(string boneName)
+    {
+        var settings = _configuration.Config;
+        return BoneSymmetry.EffectiveMode(
+            settings.PerBoneSymmetry,
+            settings.BoneSymmetryOverrides,
+            settings.AutoLinkPairedBones,
+            _editor.SymmetryMode,
+            boneName) switch
+        {
+            Domain.Preferences.SymmetryMode.Copy => TransformDeltaMode.Direct,
+            Domain.Preferences.SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
+            _ => null,
+        };
+    }
+
+    /// <summary>The undo step's name for a drag, such as "Transform 3 bones".</summary>
+    private static string DragName(IReadOnlyList<TransformTargetId> targets)
+    {
+        var kind = targets[0].Kind;
+        string noun = targets.Any(target => target.Kind != kind)
+            ? "thing"
+            : kind switch
+            {
+                TransformTargetKind.Actor => "actor",
+                TransformTargetKind.Light => "light",
+                TransformTargetKind.Prop => "object",
+                TransformTargetKind.WorldObject => "world object",
+                TransformTargetKind.Collider => "IK collider",
+                _ => "bone",
+            };
+        return $"Transform {targets.Count} {noun}{(targets.Count == 1 ? "" : "s")}";
+    }
+
+    /// <summary>
+    /// Starts a transform. Adds the linked and paired bones that follow the
+    /// dragged bones, then hands the gesture to the gesture service.
     /// </summary>
     public GestureResult Begin(
         IReadOnlyList<TransformTargetId> targetIds,
@@ -61,20 +133,21 @@ public sealed class TransformFacade : ITransformFacade
         Func<string, TransformDeltaMode?>? symmetryFor = null,
         bool relativeSecondaryBones = false,
         GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing,
-        Guid? groupId = null,
         bool groupTransform = false,
         IReadOnlyList<SelectionId>? selection = null)
     {
-        // All entity multi-target entry points (rail, world gizmo and move
-        // commands) share admission and metadata, including old callers.
+        // Several entities, or one entity of a multi-entity selection, move
+        // as a group: around their shared centre, in world space, and only
+        // when the whole selection can move.
         var selected = selection ?? _scene.Selection.Selected;
         groupTransform |= (targetIds.Count > 1
             || Poser.Application.Selection.EntitySelection.IsMultiEntity(selected))
             && targetIds.All(target => target.Kind != TransformTargetKind.Bone);
+        Guid? groupId = null;
         if (groupTransform)
         {
             if (!_groups.Admit(selected, targetIds, groupScale, out groupId, out var refusal))
-                return GestureResult.Fail(refusal ?? "The group cannot be transformed.");
+                return GestureResult.Fail(refusal!);
             pivotMode = PivotMode.Centroid;
             space = TransformSpace.World;
         }
@@ -127,29 +200,23 @@ public sealed class TransformFacade : ITransformFacade
         return before ? _journal.Undo(entities[0]) : _journal.Redo(entities[0]);
     }
 
-    /// <summary>Stable-id atomic absolute write (non-interactive command).</summary>
+    /// <summary>Writes one transform as a single undo step, such as a value
+    /// typed in the inspector.</summary>
     public GestureResult SetAbsolute(
         TransformTargetId target,
         PoseTransform desired,
         string description) =>
         _commands.SetAbsolute(target, desired, description);
 
-    /// <summary>Stable-id actor override reset.</summary>
+    /// <summary>Releases the placement Poser set on these actors, as one undo
+    /// step.</summary>
     public GestureResult ClearActorOverrides(
-        IReadOnlyList<TransformTargetId> targets)
-    {
-        foreach (var target in targets)
-        {
-            if (target.Kind != TransformTargetKind.Actor)
-                return GestureResult.Fail(
-                    "Only actor targets can clear transform overrides.");
-        }
-        return _commands.ClearActorOverrides(
+        IReadOnlyList<TransformTargetId> targets) =>
+        _commands.ClearActorOverrides(
             targets,
             targets.Count == 1
                 ? "Reset actor transform"
                 : $"Reset {targets.Count} actor transforms");
-    }
 
     private void AddLinkedBoneTargets(
         ICollection<TransformTargetId> targets)
@@ -194,7 +261,7 @@ public sealed class TransformFacade : ITransformFacade
         {
             if (target.Bone is not { } bone)
                 continue;
-            // Resolved PER SOURCE BONE: with per-bone symmetry, one drag
+            // Asked for each dragged bone: with per-bone symmetry, one drag
             // can mirror one bone, link another, and leave a third alone.
             if (symmetryFor(bone.CanonicalName) is not { } mode)
                 continue;

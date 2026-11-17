@@ -83,6 +83,8 @@ public class GizmoOverlayWindow : Window
         public bool CapsuleScale { get; init; }
         public required LegacyTransform Start { get; init; }
         public LegacyTransform Current;
+        // The camera view at Begin; the whole drag maps the pointer through it.
+        public required WorldGizmoProjection Projection { get; init; }
         public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
         public Vector3 Pivot { get; init; }
         // Pivot choice is fixed for the gesture.
@@ -94,8 +96,7 @@ public class GizmoOverlayWindow : Window
     private GizmoTargetType _gestureTargetType = GizmoTargetType.None;
     private bool _beginSuppressed;
 
-    // Handle mapping and projection are fixed at Begin.
-    private WorldGizmoProjection? _dragProjection;
+    // Handle mapping is fixed at Begin.
     private Vector3 _dragPivotWorld;
     private Quaternion _dragRingFrame = Quaternion.Identity;
     private Vector3 _dragAxisWorld;
@@ -146,30 +147,18 @@ public class GizmoOverlayWindow : Window
     private static readonly Vector2 UniformScaleDirection =
         Vector2.Normalize(new Vector2(1f, -1f));
 
-    /// <summary>Cancels only when the service still owns the gesture; an
-    /// externally/self-cancelled gesture is treated as already cancelled.</summary>
-    private void CancelIfOwned(TransformGestureId id)
-    {
-        if (_cleanTransforms.ActiveGesture == id)
-            _cleanTransforms.Cancel(id);
-    }
-
-    /// <summary>Clears stale gestures before drawing the target branch.</summary>
+    /// <summary>Drops the drag when the transform service already ended it
+    /// (a selection change or a despawned target cancels it there), or when
+    /// the selected kind of thing changed under it. The transform service
+    /// ignores a cancel for a drag it no longer runs.</summary>
     private void ReconcileInteractionLifecycle(GizmoTargetType currentTarget)
     {
-        if (_gesture is { } gesture)
+        if (_gesture is { } gesture
+            && (_cleanTransforms.ActiveGesture != gesture.Id
+                || _gestureTargetType != currentTarget))
         {
-            bool externallyCancelled =
-                _cleanTransforms.ActiveGesture != gesture.Id;
-            bool targetKindChanged = _gestureTargetType != currentTarget;
-            if (externallyCancelled || targetKindChanged)
-            {
-                if (!externallyCancelled)
-                    _cleanTransforms.Cancel(gesture.Id);
-                _gesture = null;
-                _gestureTargetType = GizmoTargetType.None;
-                _beginSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-            }
+            _cleanTransforms.Cancel(gesture.Id);
+            ClearGesture(suppress: true);
         }
 
         if (_beginSuppressed && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -394,15 +383,15 @@ public class GizmoOverlayWindow : Window
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
             _manipulation.HoldPointer();
-            // Only the HELD gesture is a manipulation; hover is not.
+            // Only a held drag counts as manipulating; hovering does not.
             if (_gazeGesture != null)
                 _manipulation.HoldDrag();
         }
 
-        if (_gazeGesture == null && hover is { } grab && projection != null &&
-            layout != null &&
+        // A handle is only hovered while no drag runs and a layout exists.
+        if (hover is { } grab &&
             ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_beginSuppressed)
-            BeginGazeGesture(grab, layout, projection, actor, part, anchor, mouse);
+            BeginGazeGesture(grab, layout!, actor, part, anchor, mouse);
 
         if (_gazeGesture is not { } active)
             return;
@@ -495,12 +484,12 @@ public class GizmoOverlayWindow : Window
     private void BeginGazeGesture(
         WorldHandleHit grab,
         WorldGizmo.Layout layout,
-        WorldGizmoProjection projection,
         ActorId actor,
         GazePart part,
         Vector3 anchor,
         Vector2 mouse)
     {
+        var projection = layout.Projection;
         // Use the layout's signed axis.
         var axisWorld = layout.SignedTranslateAxis(grab.Handle.Axis);
         Vector3 planeNormal;
@@ -570,11 +559,10 @@ public class GizmoOverlayWindow : Window
             _gazeValues.SetPartPosition(gesture.Actor, ToTargetType(gesture.Part), target);
     }
 
-    /// <summary>Returns whether another interface owns the pointer —
-    /// BOTH halves of "a window swallows the clicks it receives" (#79):
-    /// the ImGui hover test knows every real window, and the Interactive
-    /// registry knows Poser surfaces that draw without one (the bone
-    /// hover list) — each catches interfaces the other cannot see.</summary>
+    /// <summary>Returns whether a window or popup is under the pointer, so a
+    /// click there never grabs a handle behind it. The ImGui hover test sees
+    /// every real window; the Interactive registry sees Poser surfaces drawn
+    /// without one, such as the bone hover list.</summary>
     private static bool PointerOverInterface() =>
         ImGui.IsWindowHovered(
             ImGuiHoveredFlags.AnyWindow |
@@ -586,8 +574,8 @@ public class GizmoOverlayWindow : Window
 
     private GizmoTargetType GetGizmoTargetType()
     {
-        // The anonymous group: mixed entity kinds take ONE gizmo at the
-        // selection's centroid.
+        // Different kinds of things selected together share one gizmo at
+        // the centre of the selection.
         if (global::Poser.Application.Selection.EntitySelection.IsMixedEntities(
                 _selection.Selected))
             return GizmoTargetType.Mixed;
@@ -615,7 +603,9 @@ public class GizmoOverlayWindow : Window
     private EffectiveTransformSelection? EffectiveSelection() =>
         TransformSelectionPolicy.Editing(_selection.Selected, _scene.Snapshot, _groups, _viewport);
 
-    /// <summary>Validates the active gesture against current editor state.</summary>
+    /// <summary>Returns the running drag, or cancels it when Escape is pressed
+    /// or the tool, orientation, rotation pivot or group scale setting changed
+    /// since it began.</summary>
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
         TransformOrientation currentOrientation,
@@ -623,12 +613,6 @@ public class GizmoOverlayWindow : Window
     {
         if (_gesture is not { } gesture)
             return null;
-        if (_cleanTransforms.ActiveGesture != gesture.Id)
-        {
-            // Externally cancelled — the service already restored.
-            ClearGesture(suppress: true);
-            return null;
-        }
         if (ImGui.IsKeyPressed(ImGuiKey.Escape))
         {
             _cleanTransforms.Cancel(gesture.Id);
@@ -651,7 +635,6 @@ public class GizmoOverlayWindow : Window
     {
         _gesture = null;
         _gestureTargetType = GizmoTargetType.None;
-        _dragProjection = null;
         _ringAngle = 0f;
         _ringDistance = 0f;
         _dragAccumWorld = Vector3.Zero;
@@ -664,27 +647,27 @@ public class GizmoOverlayWindow : Window
     /// <summary>Draws and updates the world transform gizmo.</summary>
     private void DrawWorldGizmo(GizmoTargetType targetType, bool occluded)
     {
-        bool isBone = targetType == GizmoTargetType.Bone;
         if (EffectiveSelection() is not { } selection)
             return;
         var targets = selection.Targets;
-        BoneId? primaryBone = null;
-        ActorId? primaryActor = null;
-        LightId? primaryLight = null;
-        PropId? primaryProp = null;
-        WorldObjectId? primaryWorldObject = null;
+        // The selection's first item decides both the gizmo kind and this
+        // primary target, so they are the same kind of thing. A mixed selection
+        // is moved as a group even when its first item is a bone.
+        var primary = selection.Primary;
+        BoneId? primaryBone = targetType == GizmoTargetType.Bone ? primary.Bone : null;
+        ActorId? primaryActor = primary.Actor;
+        LightId? primaryLight = primary.Light;
+        PropId? primaryProp = primary.Prop;
+        WorldObjectId? primaryWorldObject = primary.WorldObject;
+        bool isBone = primaryBone != null;
         var modelMatrix = Matrix4x4.Identity;
 
-        if (isBone)
+        if (primaryBone is { } primaryBoneId)
         {
-            if (selection.Primary is not
-                { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId })
-                return;
-            primaryBone = primaryBoneId;
-            // Keep gizmo without bones is the stronger word: on, a selected
-            // bone keeps its gizmo whatever the overlay shows. Off, hiding
-            // the bone, or the whole armature when asked, takes it away.
-            // Neither cancels an active drag.
+            // With "keep gizmo when bones are hidden" on, a selected bone
+            // keeps its gizmo whatever the overlay shows. With it off, hiding
+            // the bone, or the whole armature when that option is set,
+            // removes the gizmo. A running drag carries on either way.
             if (!GizmoConfig.KeepGizmoWhenBonesHidden && _gesture == null)
             {
                 if (!_presentation.IsVisible(primaryBoneId))
@@ -700,37 +683,6 @@ public class GizmoOverlayWindow : Window
                 return;
             modelMatrix = skeletonMatrix;
         }
-        else if (targetType == GizmoTargetType.Light)
-        {
-            if (selection.Primary is not
-                { Kind: TransformTargetKind.Light, Light: { } primaryLightId })
-                return;
-            primaryLight = primaryLightId;
-        }
-        else if (targetType == GizmoTargetType.Prop)
-        {
-            if (selection.Primary is not
-                { Kind: TransformTargetKind.Prop, Prop: { } primaryPropId })
-                return;
-            primaryProp = primaryPropId;
-        }
-        else if (targetType == GizmoTargetType.WorldObject)
-        {
-            if (selection.Primary is not
-                {
-                    Kind: TransformTargetKind.WorldObject,
-                    WorldObject: { } primaryWorldObjectId
-                })
-                return;
-            primaryWorldObject = primaryWorldObjectId;
-        }
-        else if (targetType is not (GizmoTargetType.Mixed or GizmoTargetType.Collider))
-        {
-            if (selection.Primary is not
-                { Kind: TransformTargetKind.Actor, Actor: { } primaryActorId })
-                return;
-            primaryActor = primaryActorId;
-        }
 
         var tool = _editorState.TransformTool;
         var orientation = _editorState.TransformOrientation;
@@ -740,7 +692,7 @@ public class GizmoOverlayWindow : Window
         // Active gestures use their frozen presentation baseline.
         Transform currentTransform;
         bool isGroup = !isBone && (targetType == GizmoTargetType.Mixed || targets.Count > 1);
-        bool capsuleScale = !isGroup && selection.Primary.Collider is { } capsuleId &&
+        bool capsuleScale = !isGroup && primary.Collider is { } capsuleId &&
             _viewport.GetCollider(capsuleId)?.Shape == Domain.Posing.IkColliderShape.Capsule;
         if (gesture is { } presented)
         {
@@ -758,8 +710,8 @@ public class GizmoOverlayWindow : Window
                 Scale = group.Scale,
             };
         }
-        else if (isBone &&
-            _viewport.GetBoneModelTransform(primaryBone!.Value) is { } boneRest)
+        else if (primaryBone is { } boneTarget &&
+            _viewport.GetBoneModelTransform(boneTarget) is { } boneRest)
         {
             currentTransform = Transform.FromPose(boneRest);
         }
@@ -781,7 +733,7 @@ public class GizmoOverlayWindow : Window
             currentTransform = Transform.FromPose(propRest);
         }
         else if (targetType == GizmoTargetType.Collider &&
-            _viewport.GetModelTransform(selection.Primary) is { } colliderTransform)
+            _viewport.GetModelTransform(primary) is { } colliderTransform)
         {
             currentTransform = Transform.FromPose(colliderTransform);
         }
@@ -892,26 +844,24 @@ public class GizmoOverlayWindow : Window
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
             _manipulation.HoldPointer();
-            // Only the HELD gesture is a manipulation; hover is not.
+            // Only a held drag counts as manipulating; hovering does not.
             if (gesture != null)
                 _manipulation.HoldDrag();
         }
 
-        if (gesture == null && hover is { } grab && layout != null &&
-            projection != null &&
-            ImGui.IsMouseClicked(ImGuiMouseButton.Left) &&
-            _gesture == null && !_beginSuppressed)
+        // A handle is only hovered while no drag runs and a layout exists.
+        if (hover is { } grab &&
+            ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_beginSuppressed)
         {
             BeginGesture(
-                grab, layout, projection, targetType, targets, primaryBone,
+                grab, layout!, targetType, targets, primaryBone,
                 tool, orientation, pivotChoice, pivotActive, pivotModel,
                 pivotWorld, currentTransform, modelMatrix, actorRotation,
                 translateFrame, scaleFrame, ringFrame, mouse);
         }
 
-        // Active drags use the frozen projection.
         if (_gesture is { } active && ImGui.IsMouseDown(ImGuiMouseButton.Left))
-            UpdateGesture(active, _dragProjection, io, mouse);
+            UpdateGesture(active, primaryBone, io, mouse);
 
         // Commit once on release.
         if (_gesture is { } completed && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -923,7 +873,7 @@ public class GizmoOverlayWindow : Window
 
         if (_gesture != null)
         {
-            DrawDragSweep(_gesture, projection, layout, uiScale);
+            DrawDragSweep(_gesture, layout, uiScale);
             DrawDragReadout(_gesture, mouse, uiScale);
         }
     }
@@ -931,12 +881,13 @@ public class GizmoOverlayWindow : Window
     /// <summary>Draws the active drag trail.</summary>
     private void DrawDragSweep(
         GizmoGesture gesture,
-        WorldGizmoProjection? projection,
         WorldGizmo.Layout? layout,
         float uiScale)
     {
-        if (projection == null)
+        // No layout while the target sits behind the camera.
+        if (layout == null)
             return;
+        var projection = layout.Projection;
         var dl = ImGui.GetWindowDrawList();
         var color = gesture.Handle.Kind switch
         {
@@ -975,8 +926,6 @@ public class GizmoOverlayWindow : Window
         {
             case WorldHandleKind.RotateRing:
             {
-                if (layout is not { RingWorldRadius: > 1e-6f, Rings.Valid: true })
-                    return;
                 var hub = projection.Center;
                 // The pie caps at one full turn; the readout keeps counting.
                 float sweep = Math.Clamp(_ringAngle, -MathF.Tau, MathF.Tau);
@@ -999,10 +948,9 @@ public class GizmoOverlayWindow : Window
             }
             case WorldHandleKind.Roll:
             {
-                // The roll ring is a screen circle, so its pie is too.
-                float radius = layout?.Rings is { Valid: true } liveRings
-                    ? liveRings.RollRadius
-                    : 88f * uiScale;
+                // The roll ring is a screen circle, so its pie is too. A ring
+                // drag only runs with a rotating tool, which always has rings.
+                float radius = layout.Rings!.RollRadius;
                 var center = projection.Center;
                 float sweep = Math.Clamp(
                     _ringAngle * _rollSweepSign, -MathF.Tau, MathF.Tau);
@@ -1085,7 +1033,6 @@ public class GizmoOverlayWindow : Window
     private void BeginGesture(
         WorldHandleHit grab,
         WorldGizmo.Layout layout,
-        WorldGizmoProjection projection,
         GizmoTargetType targetType,
         IReadOnlyList<TransformTargetId> targets,
         BoneId? primaryBone,
@@ -1104,6 +1051,7 @@ public class GizmoOverlayWindow : Window
         Vector2 mouse)
     {
         bool isBone = primaryBone != null;
+        var projection = layout.Projection;
         var kind = grab.Handle.Kind;
         int axisIndex = grab.Handle.Axis;
         bool ringHandle = kind is WorldHandleKind.RotateRing or WorldHandleKind.Roll;
@@ -1163,8 +1111,9 @@ public class GizmoOverlayWindow : Window
             case WorldHandleKind.RotateRing:
             case WorldHandleKind.Roll:
             {
-                if (layout.Rings is not { } rings || grab.Ring is not { } ringHit)
-                    return;
+                // A ring hit always comes from the layout's rings.
+                var rings = layout.Rings!;
+                var ringHit = grab.Ring!.Value;
                 axisWorld = RotationGizmoRings.AxisWorld(
                     rings,
                     kind == WorldHandleKind.Roll
@@ -1223,34 +1172,8 @@ public class GizmoOverlayWindow : Window
             cleanPivotMode = PivotMode.Centroid;
         }
 
-        var begin = _cleanTransforms.Begin(
-            targets,
-            operation,
-            space,
-            cleanPivotMode,
-            cleanCustomPivot,
-            description: targetType switch
-            {
-                GizmoTargetType.Collider => "Transform IK collider",
-                GizmoTargetType.Bone =>
-                    $"Transform {targets.Count} bone{(targets.Count == 1 ? "" : "s")}",
-                GizmoTargetType.Light =>
-                    $"Transform {targets.Count} light{(targets.Count == 1 ? "" : "s")}",
-                GizmoTargetType.Prop =>
-                    $"Transform {targets.Count} object{(targets.Count == 1 ? "" : "s")}",
-                GizmoTargetType.Mixed =>
-                    $"Transform {targets.Count} things",
-                GizmoTargetType.WorldObject =>
-                    $"Transform {targets.Count} world object{(targets.Count == 1 ? "" : "s")}",
-                _ =>
-                    $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
-            },
-            includeLinkedBones: isBone && _poseInteraction.LinkedBonesEnabled,
-            symmetryFor: isBone ? SymmetryDeltaFor : null,
-            relativeSecondaryBones: isBone &&
-                _configuration.Config
-                    .RelativeSecondaryBones,
-            groupScale: _configuration.Config.Gizmo.GroupScale);
+        var begin = _cleanTransforms.BeginDrag(
+            targets, operation, space, cleanPivotMode, cleanCustomPivot);
         if (!begin.Success || begin.GestureId is not { } gestureId)
         {
             _log.Verbose(
@@ -1270,17 +1193,15 @@ public class GizmoOverlayWindow : Window
             CapsuleScale = layout.CapsuleScale,
             Start = currentTransform,
             Current = currentTransform,
+            Projection = projection,
             PivotMode = cleanPivotMode,
-            // Use the service's captured pivot.
-            Pivot = _cleanTransforms.ActivePivot
-                ?? cleanCustomPivot
-                ?? currentTransform.Position,
+            // The pivot the transform service froze when the drag began.
+            Pivot = _cleanTransforms.ActivePivot!.Value,
             PivotChoice = pivotChoice,
         };
         _gestureTargetType = targetType;
         _manipulation.HoldDrag();
 
-        _dragProjection = projection;
         _dragInvModel = invModel;
         _dragPivotWorld = pivotWorld;
         _dragRingFrame = ringFrame;
@@ -1309,10 +1230,11 @@ public class GizmoOverlayWindow : Window
     /// <summary>Updates one engaged handle from its frozen mapping.</summary>
     private void UpdateGesture(
         GizmoGesture gesture,
-        WorldGizmoProjection? projection,
+        BoneId? primaryBone,
         ImGuiIOPtr io,
         Vector2 mouse)
     {
+        var projection = gesture.Projection;
         float multiplier = RotationGizmoRings.ModifierMultiplier(io);
         // Z enables increment snapping; X snaps translation to the pointer ray.
         var gizmoConfig = GizmoConfig;
@@ -1371,7 +1293,7 @@ public class GizmoOverlayWindow : Window
             case WorldHandleKind.TranslatePlane:
             case WorldHandleKind.TranslateCenter:
             {
-                if (projection?.RayPlane(mouse, _dragPlanePoint, _dragPlaneNormal)
+                if (projection.RayPlane(mouse, _dragPlanePoint, _dragPlaneNormal)
                     is not { } hit)
                     return;
                 var step = WorldGizmo.TranslationStep(
@@ -1405,7 +1327,7 @@ public class GizmoOverlayWindow : Window
                         + GizmoSnap.Snap(offset, linearStep);
                 }
                 var newTransform = gesture.Start with { Position = position };
-                if (EffectiveSelection()?.Primary is { Bone: { } boneId })
+                if (primaryBone is { } boneId)
                 {
                     var limited = gesture.Current.Position + _poseInteraction.ClampIkTranslation(
                         boneId, position - gesture.Current.Position, gesture.Current.Position);
@@ -1424,7 +1346,7 @@ public class GizmoOverlayWindow : Window
             }
             case WorldHandleKind.ScaleAxis:
             {
-                if (projection?.RayPlane(mouse, _dragPlanePoint, _dragPlaneNormal)
+                if (projection.RayPlane(mouse, _dragPlanePoint, _dragPlaneNormal)
                     is not { } hit)
                     return;
                 float t = Vector3.Dot(hit - _dragPlanePoint, _dragAxisWorld);
@@ -1500,7 +1422,7 @@ public class GizmoOverlayWindow : Window
             return true;
         _log.Verbose(
             $"Gizmo: {_gestureTargetType} gesture ended at Update — {update.Detail}");
-        CancelIfOwned(gesture.Id);
+        _cleanTransforms.Cancel(gesture.Id);
         ClearGesture(suppress: true);
         return false;
     }
@@ -1529,24 +1451,6 @@ public class GizmoOverlayWindow : Window
                 ScaleFactor(start.Scale.X, desired.Scale.X),
                 ScaleFactor(start.Scale.Y, desired.Scale.Y),
                 ScaleFactor(start.Scale.Z, desired.Scale.Z)));
-    }
-    /// <summary>Uses the bone override when enabled, otherwise the toolbar symmetry mode.</summary>
-    private System.Nullable<TransformDeltaMode> SymmetryDeltaFor(
-        string canonicalName)
-    {
-        var configuration =
-            _configuration.Config;
-        return Domain.Posing.BoneSymmetry.EffectiveMode(
-            configuration.PerBoneSymmetry,
-            configuration.BoneSymmetryOverrides,
-            configuration.AutoLinkPairedBones,
-            _editorState.SymmetryMode,
-            canonicalName) switch
-        {
-            SymmetryMode.Copy => TransformDeltaMode.Direct,
-            SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
-            _ => null,
-        };
     }
 
 }
