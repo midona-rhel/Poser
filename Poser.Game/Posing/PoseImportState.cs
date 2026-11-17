@@ -92,8 +92,6 @@ internal sealed class PendingPoseImport
     /// already inside the history's own walk, and an append there would
     /// clear the redo stack the walk had just pushed onto.</summary>
     public bool SuppressHistory;
-    /// <summary>The file the import came from, when it came from one.</summary>
-    public string? Asset;
     public PoseImportStage Stage = PoseImportStage.Apply;
     /// <summary>Whether this is an expression import — it runs the head
     /// restore and, at the very end, Brio's whole-pose flatten

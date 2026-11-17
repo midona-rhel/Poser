@@ -167,7 +167,7 @@ public sealed class UndoJournalTests
                 SceneLifecyclePatch step => undo ? step.Undo() : step.Redo(),
                 _ => false,
             };
-            if (!success) return new(GestureResult.Fail("Refused"), true);
+            if (!success) return new(GestureResult.Fail((entry as InverseEntry)?.FailureDetail?.Invoke() ?? "Refused"), true);
             if (undo) history.CommitUndo(entry, entity); else history.CommitRedo(entry, entity);
             return new(GestureResult.Ok(), true);
         }

@@ -144,7 +144,7 @@ public sealed class PoseImportCoordinatorTests
             return GestureResult.Ok() with { OperationReceipt = pending };
         }
         public GestureResult Begin(PoseImportOperation operation, IPreparedPoseImport plan,
-            bool expression, bool suppressHistory, string? asset)
+            bool expression, bool suppressHistory)
         {
             Assert.True(IsCurrent(operation));
             events.Add("apply");

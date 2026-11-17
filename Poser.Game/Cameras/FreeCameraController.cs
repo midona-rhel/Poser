@@ -201,13 +201,16 @@ internal sealed unsafe class FreeCameraController
                 position += pivot - last;
             if (mode is CameraTrackingMode.Pan or CameraTrackingMode.FollowAndPan)
             {
-                var toPivot = pivot - position;
-                if (toPivot.LengthSquared() > 1e-6f)
+                // The camera looks along the opposite of the direction its
+                // rotation describes (W moves it that way), so that direction
+                // has to point from the pivot back to the camera.
+                var fromPivot = position - pivot;
+                if (fromPivot.LengthSquared() > 1e-6f)
                 {
                     float flat = MathF.Sqrt(
-                        toPivot.X * toPivot.X + toPivot.Z * toPivot.Z);
-                    rotation.X = MathF.Atan2(toPivot.X, toPivot.Z);
-                    rotation.Y = MathF.Atan2(toPivot.Y, flat);
+                        fromPivot.X * fromPivot.X + fromPivot.Z * fromPivot.Z);
+                    rotation.X = MathF.Atan2(fromPivot.X, fromPivot.Z);
+                    rotation.Y = MathF.Atan2(fromPivot.Y, flat);
                 }
             }
             _freeFollowPivot = pivot;
