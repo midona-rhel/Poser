@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.9.25-beta — Steadier IK, undo and stash
+
+### Camera
+
+- Fixed camera tracking not following the bone after the latest game update.
+- Fixed a free camera turning away from the bone it tracks.
+- Made undo take back a camera move straight away, without waiting for the camera to rest.
+
+### IK and posing
+
+- Made IK limbs reach their full length and follow the gizmo on bodies shaped with Customize+.
+- Kept the limb still when switching an IK chain between Two Joint and FABRIK.
+- Kept pose edits working after an undo pressed while the actor was being redrawn.
+- Kept a redrawn actor in its standing pose when an expression is released or Full body is reset.
+
+### Stash and reset
+
+- Made Stash, Apply stash, To stash and From stash share one stashed pose.
+- Made Apply stash put on the whole pose, including the face and the weapons.
+- Made Reset All one undo step that also brings the animation back.
+
+### Interface
+
+- Made Move to camera work the same from every button and menu.
+- Made messages about an action that did not work start with the name of the control, in yellow when it was refused and red when it failed.
+- Named the option that saves looks and mods Include appearance files everywhere.
+- Fixed the missing left padding in the Import pose panel.
+
 ## 0.9.24-beta — Scene autosaves and reliable restoration
 
 ### Scenes and autosaves
