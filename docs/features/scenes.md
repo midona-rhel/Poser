@@ -196,8 +196,10 @@ On the Environment page, **Weather** picks a weather and holds it.
 - **Hold weather** keeps the weather against the game's own changes. Turning it
   off lets the game change it again; it does not jump back.
 - **Restore on exit** gives the weather back to the game when you leave GPose.
-- A scene is saved with the weather it had. Loading the scene puts that weather
-  back and holds it, also when you had not picked it yourself.
+- A scene is saved with the time of day and the weather it had. Loading the
+  scene puts both back and holds them, also when you had not set them yourself.
+  The clock stays at the saved time. Sky, light and fog follow from those two;
+  the ones you changed by hand are saved and put back as well.
 
 ### Housing interiors
 
