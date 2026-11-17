@@ -69,6 +69,34 @@ Later in the frame, after the game updates the scene and before it renders,
 If that hook cannot be installed, steps 1 and 2 run on the framework update
 instead.
 
+## Customize+ and the pose on screen
+
+Checked against Customize+ 2.2.1.3.
+
+Customize+ edits the pose every frame when the game renders, after Poser has
+applied the bone edits and solved IK. So each frame has two poses: the one
+Poser produced (`LastRawTransform` on a bone) and the one on screen
+(`LastTransform`). IK solves in the first. Never write `LastRawTransform` while
+the game is rendering.
+
+A Customize+ bone edit has a position, a rotation and a scale:
+
+- Without Propagate it changes that bone only. The bones below stay where they
+  were.
+- With a Propagate box ticked, the bones below follow the bone's own move.
+  Propagate Scale also scales every bone below, about the edited bone and along
+  the model's axes, by the bone's scale or by its separate child scale when that
+  is set. Propagate Rotation also turns every bone below about the edited bone.
+- The root bone (`n_root`) is different. Its scale and position go to the whole
+  model, not to the pose. In GPose Customize+ skips the position.
+
+A bone's own scale therefore says nothing about how the bones below it are shown.
+To learn that, compare bone positions between the two poses. An IK drag does
+this: the drag is measured on screen, so Poser converts it to the pose it
+produced by comparing how the limb's bones sit relative to each other in both
+poses, from the bone above the limb down to its end. How far a limb can reach is
+measured in the pose Poser produced.
+
 ## Changing models and freeing objects
 
 - Character model ids and the release of a character's model slots are written

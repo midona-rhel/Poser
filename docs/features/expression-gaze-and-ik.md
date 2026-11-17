@@ -73,6 +73,16 @@ bone.
 - Reset All on the actor (see [Pose operations](pose-operations.md#reset-all))
   turns off IK on every chain.
 
+Turning IK on, turning it off or changing its settings does not move the limb by
+itself:
+
+- Turning IK on starts from the limb as it stands. Turning it off keeps the
+  settings for next time.
+- Changing the solver keeps the end of the chain where it is. The joints in
+  between follow the new solver.
+- With **Constraints** on, the handle stops where the limb is fully stretched. A
+  limb can always be pulled straight, also on a body shaped with Customize+.
+
 The actor's own **IK** section (select the actor) shows how many chains are on.
 **Enable all** and **Disable all** switch every limb at once, **Bake all** bakes
 each chain in turn, and **Show bones** shows the bones that IK moves.
