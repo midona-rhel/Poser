@@ -3,7 +3,7 @@
     "Author": "Midona",
     "Name": "Poser",
     "InternalName": "Poser",
-    "AssemblyVersion": "0.9.24.0",
+    "AssemblyVersion": "0.9.25.0",
     "Punchline": "Posing, lighting and whole-scene staging for group pose. Beta.",
     "Description": "Poser is a posing and scene tool for FINAL FANTASY XIV's group pose.\n\n- Pose actors bone by bone: overlay handles, a graphical body map, and numeric transforms\n- IK on any bone with a parent, plus mirror, link and named bone-visibility presets\n- Spawn actors and objects, or click a world handle to bring what is already there into the scene\n- Borrow the map's own objects by reference and give them back untouched on release\n- Save and restore the whole shot — actors, objects, lights, camera and environment — with load options\n- Custom lights, camera control and a free camera; snapping, group pivot and group moves\n- Gaze control and one-click expressions\n- A pose library with tags, authors and search; import and export poses, and MCDF appearance files\n- Time, weather and festival control\n- On-screen dialogue panels, chat bubbles and status lines drawn with the game's own UI\n- Reference pictures as floating, aspect-locked windows\n- Twenty-five rebindable actions with Poser, Brio and Ktisis presets\n\nThis is a beta. It is not stable and it is not finished. Poser is derivative of Anamnesis, Ktisis and Brio, and those three are the mature tools.\n\nPoser was coded with the use of artificial intelligence. The plugin says so on first launch and asks you to confirm you have read the notice.",
     "ApplicableVersion": "any",
@@ -21,13 +21,13 @@
     "CanUnloadAsync": false,
     "LoadPriority": 0,
     "AcceptsFeedback": true,
-    "Changelog": "- Changed autosaves to save the whole scene, including the main camera.\n- Moved old pose autosaves into a separate legacy section.\n- Made scenes load As saved by default when you are on the same map.\n- Fixed saved camera positions and restored the camera that was active when saving.\n- Kept existing characters in their scene slots when loading, including with Anonymous mode on.\n- Kept real character names out of scene saves when Anonymous mode is on.\n- Fixed reloaded scenes failing to hide the same borrowed map objects.\n- Saved animation state by default, including playback position and paused state.\n- Kept the pose and eyes in place when applying an MCDF.\n- Made MCDF files faster to save.\n- Added an option to add an imported MCDF to the Library.\n- Added Import from clipboard to the Import menus.\n- Made spawning, duplicating and importing entities use the same Placement setting.\n- Kept limbs in place when switching IK targets and undoing those changes.\n- Fixed Bake affecting other IK chains instead of only the selected chain.\n- Fixed pose exports changing poses with active IK.\n- Fixed Reset All leaving a changed actor model in place.\n- Fixed Library cards flickering and getting cut off while resizing.\n- Kept camera movement and grouped edits as separate undo steps.",
-    "DownloadLinkInstall": "https://github.com/midona-rhel/Poser/releases/download/v0.9.24-beta/latest.zip",
-    "DownloadLinkTesting": "https://github.com/midona-rhel/Poser/releases/download/v0.9.24-beta/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/midona-rhel/Poser/releases/download/v0.9.24-beta/latest.zip",
+    "Changelog": "- Fixed camera tracking not following the bone after the latest game update.\n- Fixed a free camera turning away from the bone it tracks.\n- Made undo take back a camera move straight away, without waiting for the camera to rest.\n- Made IK limbs reach their full length and follow the gizmo on bodies shaped with Customize+.\n- Kept the limb still when switching an IK chain between Two Joint and FABRIK.\n- Kept pose edits working after an undo pressed while the actor was being redrawn.\n- Kept a redrawn actor in its standing pose when an expression is released or Full body is reset.\n- Made Stash, Apply stash, To stash and From stash share one stashed pose.\n- Made Apply stash put on the whole pose, including the face and the weapons.\n- Made Reset All one undo step that also brings the animation back.\n- Made Move to camera work the same from every button and menu.\n- Made messages about an action that did not work start with the name of the control, in yellow when it was refused and red when it failed.\n- Named the option that saves looks and mods Include appearance files everywhere.\n- Fixed the missing left padding in the Import pose panel.",
+    "DownloadLinkInstall": "https://github.com/midona-rhel/Poser/releases/download/v0.9.25-beta/latest.zip",
+    "DownloadLinkTesting": "https://github.com/midona-rhel/Poser/releases/download/v0.9.25-beta/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/midona-rhel/Poser/releases/download/v0.9.25-beta/latest.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 157,
-    "LastUpdate": 1794173925
+    "LastUpdate": 1794943067
   }
 ]
