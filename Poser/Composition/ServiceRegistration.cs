@@ -250,6 +250,8 @@ internal static class ServiceRegistration
         services.AddSingleton<ParentingFrameRuntime>();
         services.AddStartable<ParentingFrameRuntime>(StartStage.ParentingFrames);
         services.AddSingleton<TransformGestureService>();
+        services.AddSingleton<Application.Lifecycle.ActionGate>();
+        services.AddStartable(StartStage.RunningActions, RunningActions.Register);
         services.AddSingleton<ISelectionPlacement, SelectionPlacement>();
         services.AddSingleton<IUndoRunner>(sp => sp.GetRequiredService<TransformGestureService>());
         services.AddSingleton<Game.Posing.ActorColliderCapture>();

@@ -390,7 +390,7 @@ public class GizmoOverlayWindow : Window
 
         // A handle is only hovered while no drag runs and a layout exists.
         if (hover is { } grab &&
-            ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_beginSuppressed)
+            ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_beginSuppressed && !Interactive.Blocked)
             BeginGazeGesture(grab, layout!, actor, part, anchor, mouse);
 
         if (_gazeGesture is not { } active)
@@ -851,7 +851,7 @@ public class GizmoOverlayWindow : Window
 
         // A handle is only hovered while no drag runs and a layout exists.
         if (hover is { } grab &&
-            ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_beginSuppressed)
+            ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_beginSuppressed && !Interactive.Blocked)
         {
             BeginGesture(
                 grab, layout!, targetType, targets, primaryBone,

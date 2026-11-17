@@ -119,6 +119,13 @@ public static class Interactive
         // produce a release, while an accepted drag keeps reporting its
         // release even if a surface opens over the control mid-drag.
         internal uint? DragOwner;
+        // An action is running (see ActionGate): controls start nothing new.
+        internal bool Busy;
+        // The opacity before a long action greyed the interface out.
+        internal float FullAlpha = 1f;
+        internal bool Greyed;
+        // How many AllowWhileBusy scopes are open.
+        internal int AllowedDepth;
     }
 
     private static InteractionState State => UiContext.Current.Interaction;
@@ -152,6 +159,50 @@ public static class Interactive
         State.OwnerStack.Count == 0
             ? InteractionOwner.World
             : State.OwnerStack[^1];
+
+    /// <summary>True while an action is running and this control may not start another one.
+    /// A drag that was already accepted still reports its movement and its release.</summary>
+    public static bool Blocked => State.Busy && State.AllowedDepth == 0;
+
+    /// <summary>Tells the controls whether an action is running, for this frame. With
+    /// <paramref name="greyOut"/>, everything drawn from here on is dimmed as well.</summary>
+    public static void SetBusy(bool busy, bool greyOut)
+    {
+        State.Busy = busy;
+        State.FullAlpha = ImGui.GetStyle().Alpha;
+        if (greyOut)
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, State.FullAlpha * 0.45f);
+        State.Greyed = greyOut;
+    }
+
+    /// <summary>Ends the dimming that <see cref="SetBusy"/> began for this frame.</summary>
+    public static void EndBusy()
+    {
+        if (State.Greyed)
+            ImGui.PopStyleVar();
+        State.Greyed = false;
+        State.Busy = false;
+    }
+
+    /// <summary>Controls drawn inside this scope stay usable, and at full strength, while an
+    /// action runs. It is for the running action's own controls, such as its Cancel button.</summary>
+    public static AllowedScope AllowWhileBusy()
+    {
+        State.AllowedDepth++;
+        if (State.Greyed)
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, State.FullAlpha);
+        return new AllowedScope(State.Greyed);
+    }
+
+    public readonly struct AllowedScope(bool pushed) : IDisposable
+    {
+        public void Dispose()
+        {
+            if (pushed)
+                ImGui.PopStyleVar();
+            State.AllowedDepth--;
+        }
+    }
 
     public static void BeginFrame()
     {
@@ -428,7 +479,8 @@ public static class Interactive
         var max = min + size;
 
         var mouse = ImGui.GetMousePos();
-        bool occluded = PointerOccluded(owner, mouse);
+        // A running action swallows presses the same way a surface on top does.
+        bool occluded = PointerOccluded(owner, mouse) || Blocked;
         // Hover is exclusive by geometry: the pointer is inside THIS
         // item's own half-open rect, whatever ImGui's item test says of
         // its neighbours. Two abutting rows can never both light.
@@ -471,7 +523,7 @@ public static class Interactive
         bool spacePressed = focused && !disabled
             && ImGui.IsKeyPressed(ImGuiKey.Space);
         bool keyboardBlocked = (enterPressed || spacePressed)
-            && (KeyboardDisowned(owner)
+            && (Blocked || KeyboardDisowned(owner)
                 || RectOccluded(owner, min, max));
         // The button RETURN is ImGui's release-inside semantic: pressing,
         // dragging out, and releasing does not activate. Enter joins it

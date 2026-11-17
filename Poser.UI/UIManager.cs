@@ -77,8 +77,10 @@ public sealed class UIManager : IUIManager
         AnimationSceneActions sceneActions,
         AnimationSession animation,
         Dalamud.Plugin.Services.IPluginLog log,
-        Dalamud.Plugin.Services.IGameGui gameGui)
+        Dalamud.Plugin.Services.IGameGui gameGui,
+        ActionGate gate)
     {
+        _gate = gate;
         _gameGui = gameGui;
         _ui = ui;
         _profiler = profiler;
@@ -152,6 +154,7 @@ public sealed class UIManager : IUIManager
     }
 
     private readonly Dalamud.Plugin.Services.IGameGui _gameGui;
+    private readonly ActionGate _gate;
 
     /// <summary>Poser's windows are down: its own hide, or the game's UI hidden while
     /// Poser isn't set to show then. Dalamud still calls the draw (DisableUserUiHide),
@@ -183,28 +186,37 @@ public sealed class UIManager : IUIManager
         try
         {
             Interactive.BeginFrame();
+            // While an action runs, the controls start nothing new. A drag only holds the
+            // shortcuts, since the mouse is busy with it. A long action also greys them out.
+            var running = _gate.Running;
+            Interactive.SetBusy(
+                running is { Kind: not ActionKind.Drag }, running is { Kind: ActionKind.Long });
             try
             {
+                try
+                {
+                    if (!hidden)
+                        _windows.System.Draw();
+                }
+                catch (Exception ex)
+                {
+                    // Recorded for the issue report, then rethrown: Dalamud
+                    // owns what happens to a frame that threw.
+                    _recorder.Exception(ex);
+                    throw;
+                }
                 if (!hidden)
-                    _windows.System.Draw();
+                {
+                    using (_profiler.Scope("Shell · reference images"))
+                        _windows.PumpReferenceImages();
+                    // The report dialog is a popup, not a window.
+                    _issueReport.Draw();
+                    _releaseNotes.Draw();
+                }
+                using (_profiler.Scope("Shell · floating menus"))
+                    FloatingMenu.EndFrame();
             }
-            catch (Exception ex)
-            {
-                // Recorded for the issue report, then rethrown: Dalamud
-                // owns what happens to a frame that threw.
-                _recorder.Exception(ex);
-                throw;
-            }
-            if (!hidden)
-            {
-                using (_profiler.Scope("Shell · reference images"))
-                    _windows.PumpReferenceImages();
-                // The report dialog is a popup, not a window.
-                _issueReport.Draw();
-                _releaseNotes.Draw();
-            }
-            using (_profiler.Scope("Shell · floating menus"))
-                FloatingMenu.EndFrame();
+            finally { Interactive.EndBusy(); }
             using (_profiler.Scope("Shell · hover help"))
                 if (!hidden)
                     HoverHelp.Render();
@@ -400,6 +412,13 @@ public sealed class UIManager : IUIManager
         action(actor);
     }
 
+    /// <summary>A shortcut does nothing while an action is running, a held drag included.</summary>
+    private void RunShortcut(Keybind bind)
+    {
+        if (_gate.Running == null)
+            bind.Run();
+    }
+
     private void HandleKeybinds()
     {
         if (ShortcutsSuppressed)
@@ -427,7 +446,7 @@ public sealed class UIManager : IUIManager
                 if (bind.Queued)
                 {
                     bind.Queued = false;
-                    bind.Run();
+                    RunShortcut(bind);
                 }
                 continue;
             }
@@ -436,7 +455,7 @@ public sealed class UIManager : IUIManager
             if (active && !bind.Down)
             {
                 bind.Down = true;
-                bind.Run();
+                RunShortcut(bind);
                 // A fired chord is CONSUMED: the key comes off the game's
                 // state so the game does not also act on it — our binds
                 // are ours (the setter only accepts false, which is
