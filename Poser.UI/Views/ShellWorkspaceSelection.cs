@@ -54,8 +54,6 @@ public sealed class ShellWorkspaceSelection : IDisposable
 
     public ShellWorkspace Workspace => _workspace;
 
-    public bool IsScene => _workspace == ShellWorkspace.Scene;
-
     /// <summary>
     /// Enters a workspace mode: leaves whatever mode was showing and releases
     /// the entity selection, because the two are alternatives.

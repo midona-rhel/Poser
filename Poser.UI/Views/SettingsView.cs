@@ -265,11 +265,6 @@ public static partial class SettingsView
         ActiveTheme.Settings.Height;
     private const float NavigationPillRadius = 5f;
 
-    /// <summary>Positional against <c>ObjectPlacementMode</c>.</summary>
-    private static readonly string[] SpawnPlacementLabels =
-        ["Where they were saved", "Relative to the saved camera",
-         "Relative to the saved actor", "In front of the camera"];
-
     private static readonly (TablerIcon Icon, string Label)[] Nav =
     {
         (TablerIcon.Sliders, "General"),
@@ -284,8 +279,6 @@ public static partial class SettingsView
     };
 
     private static readonly float[] UndoDepthMarks = [0f, 500f];
-
-    public static int PageCount => Nav.Length;
 
     /// <summary>Debounce filtering without replaying presentation animations
     /// on unchanged results as the user refines the query.</summary>
@@ -624,7 +617,7 @@ public static partial class SettingsView
         page.Section("Spawning", form =>
             form.Dropdown(
                 "Placement",
-                SpawnPlacementLabels,
+                PlacementLabels.All,
                 vm.DefaultSpawnPlacement,
                 next => vm.DefaultSpawnPlacement = next,
                 help: "Where new entities, duplicates and loaded files appear. Scenes saved on this map default to As saved."));

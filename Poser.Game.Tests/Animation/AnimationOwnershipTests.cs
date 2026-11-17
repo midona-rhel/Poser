@@ -23,9 +23,9 @@ public sealed class AnimationOwnershipTests
 
         Assert.True(session.SetSlotLoop(Actor, AnimationSlot.Base, 0, true).Success);
         Assert.True(PlayBase(session, 42).Success);
-        Assert.True(PlayBase(session, 43).Success);
+        Assert.True(PlayBase(session, 47).Success);
         Assert.Equal(port.BaseCapture, session.OverridesFor(Actor).BaseCapture);
-        Assert.Equal("SetForceLoop:43", port.Calls.Last(call =>
+        Assert.Equal("SetForceLoop:47", port.Calls.Last(call =>
             call.StartsWith("SetForceLoop", StringComparison.Ordinal)));
         // A replacement generation does not inherit ownership.
         Assert.False(session.OverridesFor(Actor with { Generation = Actor.Generation + 1 }).HasAny);

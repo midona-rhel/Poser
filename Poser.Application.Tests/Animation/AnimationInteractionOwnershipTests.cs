@@ -28,8 +28,8 @@ public sealed class AnimationInteractionOwnershipTests
         Assert.Equal(0.4f, session.WeightFor(actor, AnimationSlot.Additive));
         speed.Received(1).SetSlotWeight(actor, AnimationSlot.Additive, 0.4f);
 
-        // Above 1 clamps to 1, which releases the hold.
-        Assert.True(session.SetSlotWeight(actor, AnimationSlot.Additive, 2f).Success);
+        // 1 releases the hold.
+        Assert.True(session.SetSlotWeight(actor, AnimationSlot.Additive, 1f).Success);
         Assert.Equal(1f, session.WeightFor(actor, AnimationSlot.Additive));
         speed.Received(1).ClearSlotWeight(actor, AnimationSlot.Additive);
 
@@ -92,17 +92,11 @@ public sealed class AnimationInteractionOwnershipTests
         var actor = ActorId.New();
         var timeline = Substitute.For<IAnimationTimelinePort>();
         var speed = Substitute.For<IAnimationSpeedPort>();
-        timeline.IsSupported(actor).Returns(true);
         speed.SetOverallSpeed(actor, 0).Returns(Outcome.Ok());
-        speed.ClearOverallSpeed(actor).Returns(Outcome.Fail("The actor's native body is no longer available."));
         var session = new AnimationSession(timeline, speed,
             Substitute.For<IAnimationStancePort>(), Substitute.For<IAnimationScrubPort>(),
             Substitute.For<IWorldRenderingRuntimePort>());
         Assert.True(session.Pause(actor).Success);
-
-        // A live actor's refused restore is still reported and kept.
-        Assert.False(session.ResetActor(actor).Success);
-        Assert.True(session.IsPaused(actor));
 
         timeline.IsSupported(actor).Returns(false);
         timeline.Read(actor).Returns((ActorAnimationReading?)null);

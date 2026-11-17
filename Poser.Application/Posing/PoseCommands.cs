@@ -1,17 +1,23 @@
 using Poser.Application.Scene;
+using Poser.Documents.Files;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 
 namespace Poser.Application.Posing;
 
-/// <summary>Owns pose command scope; PoseEditService owns transactional edits/history.</summary>
+/// <summary>
+/// Picks the bones each pose command works on (an actor's bones, or one
+/// region of them) and logs the result. PoseEditService does the edit; the
+/// stash commands go to <see cref="PoseStash"/>.
+/// </summary>
 public sealed class PoseCommands(
-    SceneSession scene, PoseEditService edits, PoseTransferService transfers,
+    SceneSession scene, PoseEditService edits, PoseStash stash,
     IPoseEditReads reads, Action<string, PoseEditResult>? report = null) : IPoseCommands
 {
-    public bool HasStash => transfers.HasStash;
-    public DateTimeOffset? StashedAt => transfers.StashedAt;
-    public string? StashedFrom => transfers.StashedFrom;
+    public bool HasStash => stash.Pose != null;
+    public PoseFile? StashedPose => stash.Pose;
+    public DateTimeOffset? StashedAt => stash.StashedAt;
+    public string? StashedFrom => stash.StashedFrom;
     public bool HasAuthoredEdits(ActorId actor) =>
         scene.Contains(TransformTargetId.ForActor(actor)) && reads.HasAuthoredEdits(actor);
 
@@ -35,17 +41,12 @@ public sealed class PoseCommands(
         return Report(description, edits.Reset(Targets(actor, region), region, description));
     }
 
-    public PoseEditResult Mirror(ActorId actor)
-    {
-        // Facing is part of mirror, never of bone-only transfer or reset.
-        var targets = Targets(actor).Append(TransformTargetId.ForActor(actor)).ToArray();
-        return Report("Mirror edits", edits.Mirror(targets, "Mirror edits"));
-    }
+    // Mirror also turns the actor's facing; reset only touches bones.
+    public PoseEditResult Mirror(ActorId actor) =>
+        Report("Mirror edits", edits.Mirror(Targets(actor), TransformTargetId.ForActor(actor), "Mirror edits"));
 
-    public PoseEditResult Stash(ActorId actor, string sourceLabel) =>
-        Report("Stash pose", transfers.Stash(Targets(actor), sourceLabel));
-    public PoseEditResult ApplyStash(ActorId actor) =>
-        Report("Apply stash", transfers.ApplyStash(Targets(actor)));
+    public PoseEditResult Stash(ActorId actor) => Report("Stash pose", stash.Stash(actor));
+    public PoseEditResult ApplyStash(ActorId actor) => Report("Apply stash", stash.Apply(actor));
 
     private TransformTargetId[] Targets(ActorId actor, PoseRegion region = PoseRegion.All) =>
         scene.Snapshot.Actors.Where(candidate => candidate.Id == actor)

@@ -211,7 +211,7 @@ public sealed partial class AppearancePane
         ActorId actor, string description,
         IReadOnlyDictionary<CustomizeKey, int> next)
     {
-        ReportExternal(_customizeSession.SetBody(actor, next, description), description);
+        ExternalChanged(_customizeSession.SetBody(actor, next, description), description);
         InvalidateCustomize();
     }
 
@@ -446,7 +446,7 @@ public sealed partial class AppearancePane
 
     private void Set(ActorId actor, CustomizeKey key, int value, string description)
     {
-        ReportExternal(_customizeSession.Set(actor, key, value, description), description);
+        ExternalChanged(_customizeSession.Set(actor, key, value, description), description);
         InvalidateCustomize();
     }
 

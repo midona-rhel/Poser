@@ -4,6 +4,9 @@ namespace Poser.Application.Presentation;
 /// owners report a completed action's outcome here; the UI posts it.</summary>
 public interface IUserNotices
 {
+    /// <summary>The action the user asked for finished.</summary>
+    void Done(string message);
+
     /// <summary>Nothing failed, but the user should know what happened.</summary>
     void Note(string message);
 

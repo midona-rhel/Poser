@@ -369,11 +369,10 @@ public sealed class ReferenceImageSession : IDisposable
             instance.Failure = failure == "gone"
                 ? "This picture is no longer on disk."
                 : "This picture could not be read.";
-            _notices.Refused(failure == "gone"
-                ? $"The reference image \"{instance.Name}\" is no longer at "
-                    + $"{instance.Entry.FilePath}."
-                : $"The reference image \"{instance.Name}\" could not be "
-                    + $"read from {instance.Entry.FilePath}.");
+            _notices.Report(Poser.Domain.Outcome.Fail(failure == "gone"
+                ? $"\"{instance.Name}\" is no longer at {instance.Entry.FilePath}."
+                : $"\"{instance.Name}\" could not be read from {instance.Entry.FilePath}."),
+                "Reference image", refusal: true);
             return;
         }
 

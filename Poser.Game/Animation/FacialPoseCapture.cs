@@ -416,10 +416,6 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 
     private void Complete(PendingBake pending)
     {
-        if (_disposed || !ReferenceEquals(_pending, pending))
-            return;
-        if (pending.Completing)
-            return;
         // Revalidate checks the session token first, right before the transform write.
         if (Revalidate(pending) is { } problem)
         {
@@ -444,11 +440,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
             applied = _transforms.SetAbsoluteMany(
                 writes,
                 "Bake expression into the pose",
-                rawBaseline: true,
-                cancellationRequested: () =>
-                    DisposeRequested ||
-                    !ReferenceEquals(_pending, pending) ||
-                    !IsCurrentToken(pending));
+                rawBaseline: true);
         }
         catch (Exception exception)
         {
@@ -463,8 +455,8 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
             return;
         }
 
-        if (_disposed || !ReferenceEquals(_pending, pending))
-            return;
+        // While Completing is set, cancelling and disposing both wait, so this is still
+        // the pending capture.
         var teardown = FinishOwnedState(pending);
         if (!applied.Success)
         {
@@ -703,8 +695,6 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         PendingBake pending,
         OperationReceipt receipt)
     {
-        if (_disposed || !ReferenceEquals(_pending, pending))
-            return;
         _pending = null;
         _terminating = true;
         try
@@ -766,8 +756,6 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         PendingBake pending,
         GestureResult applied)
     {
-        if (_disposed || !ReferenceEquals(_pending, pending))
-            return;
         _disposed = true;
         _framework.Update -= OnFrameworkUpdate;
         InvalidatePending(

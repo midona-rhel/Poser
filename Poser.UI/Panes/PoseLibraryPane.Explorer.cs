@@ -13,7 +13,7 @@ public sealed partial class PoseLibraryPane
             var root = _config.Config.Library.ResolveRoot();
             if (!LibraryConfiguration.TryEnsureDirectory(root, out var detail))
             {
-                _notices.Failed(detail);
+                _notices.Report(Poser.Domain.Outcome.Fail(detail), "Open in Explorer");
                 _library.RequestScan();
                 return;
             }
@@ -22,7 +22,7 @@ public sealed partial class PoseLibraryPane
         }
         catch (Exception ex)
         {
-            _notices.Failed("Open in Explorer: " + ex.Message);
+            _notices.Report(Poser.Domain.Outcome.Fail(ex.Message), "Open in Explorer");
         }
     }
 }

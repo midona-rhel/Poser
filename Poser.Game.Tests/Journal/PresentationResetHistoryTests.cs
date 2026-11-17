@@ -322,6 +322,7 @@ public sealed class PresentationResetHistoryTests
 
     private sealed class SilentNotices : Poser.Application.Presentation.IUserNotices
     {
+        public void Done(string message) { }
         public void Note(string message) { }
         public void Refused(string message) { }
         public void Failed(string message) { }

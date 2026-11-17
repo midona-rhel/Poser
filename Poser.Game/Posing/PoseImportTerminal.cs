@@ -117,10 +117,7 @@ internal sealed class PoseImportTerminal
         }
 
         if (before.Count > 0)
-            _history.Append(new TransformPatch(import.Description, before, after)
-            {
-                RequiredAsset = import.Asset,
-            });
+            _history.Append(new TransformPatch(import.Description, before, after));
         return null;
     }
 

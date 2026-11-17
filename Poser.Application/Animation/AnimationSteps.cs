@@ -31,6 +31,8 @@ public sealed class AnimationSteps : IAnimationActions
 
     private Outcome Record(ActorId actor, string description, Func<Outcome> action)
     {
+        // An actor that has left the scene gets no undo step: an expression preview
+        // is released when its actor despawns.
         if (!Alive(actor))
             return action();
         var before = _animation.Capture(actor);
@@ -54,16 +56,12 @@ public sealed class AnimationSteps : IAnimationActions
         }
     }
 
-    public Outcome SetAdvanced(ActorId actor, bool enabled)
-    {
-        if (!Alive(actor)) return Outcome.Fail("The actor is no longer available.");
-        return _animation.Tracked(actor, enabled ? "Advanced animation on" : "Advanced animation off",
+    public Outcome SetAdvanced(ActorId actor, bool enabled) =>
+        _animation.Tracked(actor, enabled ? "Advanced animation on" : "Advanced animation off",
             () => SetAdvancedCore(actor, enabled));
-    }
 
     private Outcome SetAdvancedCore(ActorId actor, bool enabled)
     {
-        if (_animation.IsAdvanced(actor) == enabled) return Outcome.Ok();
         if (!enabled)
         {
             var expression = _expressions.Reset(actor);

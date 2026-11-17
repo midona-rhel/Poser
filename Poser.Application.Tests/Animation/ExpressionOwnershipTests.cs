@@ -30,7 +30,6 @@ public sealed class ExpressionOwnershipTests
             Timeline.Blend(Actor, Smile, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
                 .Returns(_ => { LiveFacial = Smile; return Outcome.Ok(); });
             Timeline.SetSlotLoop(Actor, AnimationSlot.Facial, Arg.Any<ushort>()).Returns(Outcome.Ok());
-            Timeline.ClearSlotLoop(Actor, AnimationSlot.Facial).Returns(Outcome.Ok());
             Speed.SetSlotSpeed(Actor, AnimationSlot.Facial, Arg.Any<float>()).Returns(Outcome.Ok());
             Speed.ClearSlotSpeed(Actor, AnimationSlot.Facial, Arg.Any<float>()).Returns(Outcome.Ok());
             Speed.ClearOverallSpeed(Actor).Returns(Outcome.Ok());

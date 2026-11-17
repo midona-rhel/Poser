@@ -1,3 +1,4 @@
+using Poser.Domain;
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -162,7 +163,7 @@ internal sealed class LibraryMetadataEditor(
                         if (read.Succeeded && encoded is { Length: > 0 })
                             _metaImage = PosePreviewImageEdit.Set(encoded);
                         else
-                            _notices.Failed("Preview image", read.Detail);
+                            _notices.Report(new Outcome(false, read.Detail), willHaveImage ? "Replace image" : "Add image");
                     });
             ImGui.SameLine(0f, gap);
             if (Button(
@@ -196,7 +197,7 @@ internal sealed class LibraryMetadataEditor(
                         _thumbs.Clear();
                 }
                 else
-                    _notices.Failed("Metadata", result.Detail);
+                    _notices.Report(new Outcome(false, result.Detail), "Edit metadata ▸ Save");
                 _metaOpen = false;
             }
             ImGui.SameLine(0f, gap);

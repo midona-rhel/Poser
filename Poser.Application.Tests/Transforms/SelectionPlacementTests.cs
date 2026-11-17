@@ -85,7 +85,7 @@ public sealed class SelectionPlacementTests
                     default: throw new NotSupportedException(name);
                 }
             });
-            Control = new(Selection, scene, Groups, viewport, camera, transforms);
+            Control = new(scene, Groups, viewport, camera, transforms);
         }
     }
 

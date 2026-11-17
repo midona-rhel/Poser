@@ -1,26 +1,27 @@
 using System.Numerics;
 using Poser.Application.Scene;
-using Poser.Application.Selection;
 using Poser.Application.Viewport;
 using Poser.Domain.Transforms;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
 
 namespace Poser.Application.Transforms;
 
 public interface ISelectionPlacement
 {
-    GestureResult MoveToCamera();
+    /// <summary>Moves what is given in front of the camera as one undo step,
+    /// "Move to camera". Several entities move together and keep their spacing,
+    /// rotation and size. One light on its own also turns to shine where the
+    /// camera looks. Members of a locked group stay where they are.</summary>
     GestureResult MoveToCamera(IReadOnlyList<SelectionId> targets);
     bool CanPlace(SelectionId target);
     GestureResult ResetComponent(SelectionId target, TransformOperation component);
 }
 
 public sealed class SelectionPlacement(
-    SelectionSession selection, SceneSession scene, SceneGroups groups,
+    SceneSession scene, SceneGroups groups,
     IViewportReads viewport, ICameraProjection camera, ITransformFacade transforms) : ISelectionPlacement
 {
-    public GestureResult MoveToCamera() => MoveToCamera(selection.Selected);
-
     public bool CanPlace(SelectionId target) => ResolveOne(target) is { } id && Read(id) != null;
 
     private TransformTargetId? ResolveOne(SelectionId target)
@@ -52,20 +53,35 @@ public sealed class SelectionPlacement(
         var resolved = TransformSelectionPolicy.Placement(targetsToMove, scene.Snapshot, groups, viewport);
         if (resolved is not { } targets)
             return GestureResult.Fail("Nothing movable is selected.");
+        // An entity whose game object is no longer bound has no transform to
+        // read; the others still move.
         var sum = Vector3.Zero;
         int count = 0;
+        var scale = Vector3.One;
         foreach (var target in targets.Targets)
         {
-            var pose = target is { Kind: TransformTargetKind.Actor, Actor: { } actor }
-                ? viewport.GetActorTransform(actor) : viewport.GetModelTransform(target);
-            if (pose is not { } position) continue;
-            sum += position.Position;
+            if (Read(target) is not { } pose) continue;
+            sum += pose.Position;
+            scale = pose.Scale;
             count++;
         }
         if (count == 0) return GestureResult.Fail("Nothing movable is selected.");
+        // The camera reads as no direction only when the game has no usable
+        // camera; the world's forward axis is then as good as any.
         var look = camera.GetLookDirection();
         if (look.LengthSquared() < 1e-6f) look = Vector3.UnitZ;
-        var goal = camera.GetCameraPosition() + Vector3.Normalize(look) * 2.5f;
+        var eye = camera.GetCameraPosition();
+
+        // A light asked for on its own lands where a new light appears, one
+        // yalm out, and turns to shine along the view.
+        if (targetsToMove is [{ Light: not null }] && targets.Targets is [var light])
+        {
+            var placed = LightPlacement.FromCamera(eye, look, scale);
+            return transforms.SetAbsolute(light,
+                new PoseTransform(placed.Position, placed.Rotation, placed.Scale), "Move to camera");
+        }
+
+        var goal = eye + Vector3.Normalize(look) * 2.5f;
         var begin = transforms.Begin(targets.Targets, TransformOperation.Translate,
             TransformSpace.World, description: "Move to camera", selection: targetsToMove);
         if (!begin.Success || begin.GestureId is not { } gesture) return begin;
@@ -73,8 +89,10 @@ public sealed class SelectionPlacement(
             new TransformDelta(goal - sum / count, Quaternion.Identity, Vector3.One));
         if (!updated.Success)
         {
-            var cancelled = transforms.Cancel(gesture);
-            return cancelled.Success ? updated : cancelled;
+            // Some refusals end the gesture themselves; cancelling again is
+            // harmless, and its answer would hide the reason that matters.
+            transforms.Cancel(gesture);
+            return updated;
         }
         return transforms.Commit(gesture);
     }

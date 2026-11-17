@@ -274,7 +274,8 @@ public sealed class UIManager : IUIManager
         try
         {
             var result = before ? _cleanTransforms.UndoSelected() : _cleanTransforms.RedoSelected();
-            if (!reported && !result.Success && result.Detail is { } detail) _notices.Refused(detail);
+            if (!reported)
+                _notices.Report(result.Outcome, before ? "Undo selected entity" : "Redo selected entity", refusal: true);
         }
         finally { _notices.Posted -= Posted; }
     }

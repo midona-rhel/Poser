@@ -31,7 +31,6 @@ public partial class MainWindow
 
     private bool? PlayingOf(SelectionId id) => _playback.ReadPlaying(id);
     private void SetPlaying(SelectionId id, bool playing) => _playback.SetPlaying(id, playing);
-    private bool? NightOf(SelectionId id) => _playback.ReadNight(id);
     private void SetNight(SelectionId id, bool night) => _playback.SetNight(id, night);
 
     private bool? IsEntityVisible(SelectionId id)
@@ -77,18 +76,6 @@ public partial class MainWindow
             if (id is { Kind: SceneEntityKind.Actor })
                 return id;
         return null;
-    }
-
-    /// <summary>Whether the look-at action has anything to do — the context
-    /// menu's "Look at tracked actor", distinct from the row seat's
-    /// Brio-style retarget action.</summary>
-    private bool CanRecenterOnTracked(CameraId id) =>
-        _cameraTargets.Read(id)?.CanCenterTrackedActor == true;
-
-    private void RecenterCameraOnTrackedActor(CameraId cameraId)
-    {
-        var result = _cameraTargets.CenterTrackedActor(cameraId);
-        if (!result.Success) _notices.Refused(result.Detail ?? "The camera could not move.");
     }
 
     /// <summary>Whether the current selection is empty or every selected

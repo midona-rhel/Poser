@@ -109,18 +109,19 @@ public sealed class CameraPane
         _loadBrowser.Draw();
     }
 
-    /// <summary>Opens the load dialog from outside the pane — the cameras
-    /// header's "New camera from file…".</summary>
-    public void OpenLoad()
+    /// <summary>Opens the camera load dialog. <paramref name="control"/> is
+    /// the name of the button or row that opened it; a failure is reported
+    /// under it.</summary>
+    public void OpenLoad(string control)
     {
         _folder.Open(_loadBrowser, path => _scenePane.LoadEntry(
-            path, _configuration.Config.DefaultSpawnPlacement));
+            path, _configuration.Config.DefaultSpawnPlacement, control));
     }
 
     /// <summary>Frames one exact actor through the live orbit camera. The
     /// binding is resolved at invocation so a stale or despawned menu entry
     /// cannot reach a native camera setter.</summary>
-    public void CenterOnActor(ActorId actorId) => ReportTarget(_targets.CenterOnActor(actorId));
+    public void CenterOnActor(ActorId actorId) => _notices.Report(_targets.CenterOnActor(actorId), "Center camera", refusal: true);
 
     /// <summary>Resets the exact selected camera from the inspector rail.</summary>
     public void ResetSelectedCameraTransform()
@@ -134,7 +135,7 @@ public sealed class CameraPane
     /// <summary>Resets only the translation of one exact camera.</summary>
     public void ResetCameraTransform(CameraId cameraId)
     {
-        ReportTarget(_values.ResetPosition(cameraId));
+        _notices.Report(_values.ResetPosition(cameraId), "Reset position", refusal: true);
     }
 
     /// <summary>
@@ -177,11 +178,6 @@ public sealed class CameraPane
     /// rail's gate for the two camera sections.</summary>
     public bool HasRailCamera => TargetCamera().Camera != null;
 
-    /// <summary>Whether the rail should also declare tracking: every
-    /// camera tracks — an orbit camera steers its pivot, a free camera
-    /// carries or turns itself.</summary>
-    public bool RailHasTracking => TargetCamera().Camera != null;
-
     /// <summary>The rail's translation for a camera: the value it edits is
     /// the offset; free cameras edit their absolute position.</summary>
     public void DrawRailTranslation(FormScope form)
@@ -216,8 +212,8 @@ public sealed class CameraPane
                     row.Width,
                     [(TablerIcon.ArrowsMove, "Position")],
                     (_, a) => Axis(camera.Position, a),
-                    (_, a, next) => ReportTarget(_values.Set(camera.Id, CameraProperties.Position,
-                        WithAxis(camera.Position, a, next))),
+                    (_, a, next) => _notices.Report(_values.Set(camera.Id, CameraProperties.Position,
+                        WithAxis(camera.Position, a, next)), "Position", refusal: true),
                     _ => _values.Seal(),
                     _ => perPixel,
                     _ => "0.00",
@@ -318,7 +314,7 @@ public sealed class CameraPane
             cells.Cell(
                 "Portrait",
                 cell => cell.Switch("##camera-portrait", camera.IsPortraitMode,
-                    value => ReportTarget(_values.SetPortrait(camera.Id, value)), disabled: locked),
+                    value => _notices.Report(_values.SetPortrait(camera.Id, value), "Portrait", refusal: true), disabled: locked),
                 help: "Quarter-turn for portrait framing");
         });
         form.Cells(cells =>
@@ -363,15 +359,15 @@ public sealed class CameraPane
             cells.Cell(
                 "Angle X",
                 cell => cell.Number("##camera-angle-x", angle.X * Rad2Deg,
-                    value => ReportTarget(_values.Set(camera.Id, CameraProperties.Angle,
-                        camera.Angle with { X = value * Deg2Rad })),
+                    value => _notices.Report(_values.Set(camera.Id, CameraProperties.Angle,
+                        camera.Angle with { X = value * Deg2Rad }), "Angle X", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Orbit around the pivot, in degrees");
             cells.Cell(
                 "Angle Y",
                 cell => cell.Number("##camera-angle-y", angle.Y * Rad2Deg,
-                    value => ReportTarget(_values.Set(camera.Id, CameraProperties.Angle,
-                        camera.Angle with { Y = value * Deg2Rad })),
+                    value => _notices.Report(_values.Set(camera.Id, CameraProperties.Angle,
+                        camera.Angle with { Y = value * Deg2Rad }), "Angle Y", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Orbit above or below, degrees");
         });
@@ -381,15 +377,15 @@ public sealed class CameraPane
             cells.Cell(
                 "Pan",
                 cell => cell.Number("##camera-pan-x", pan.X * Rad2Deg,
-                    value => ReportTarget(_values.Set(camera.Id, CameraProperties.Pan,
-                        camera.Pan with { X = value * Deg2Rad })),
+                    value => _notices.Report(_values.Set(camera.Id, CameraProperties.Pan,
+                        camera.Pan with { X = value * Deg2Rad }), "Pan", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Swing the view, degrees");
             cells.Cell(
                 "Tilt",
                 cell => cell.Number("##camera-pan-y", pan.Y * Rad2Deg,
-                    value => ReportTarget(_values.Set(camera.Id, CameraProperties.Pan,
-                        camera.Pan with { Y = value * Deg2Rad })),
+                    value => _notices.Report(_values.Set(camera.Id, CameraProperties.Pan,
+                        camera.Pan with { Y = value * Deg2Rad }), "Tilt", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked),
                 help: "Tip the view, degrees");
         });
@@ -479,7 +475,7 @@ public sealed class CameraPane
                     row.CenterControl(controlHeight).Y));
                 Button(
                     "Recenter",
-                    () => ReportTarget(_targets.Recenter(cameraId, _selection.Primary)),
+                    () => _notices.Report(_targets.Recenter(cameraId, _selection.Primary), "Recenter", refusal: true),
                     style: buttonStyle,
                     disabled: locked,
                     help: "Center the followed actor",
@@ -496,13 +492,13 @@ public sealed class CameraPane
                 Switch(
                     "##camera-actor-lock",
                     target.IsTargetLocked,
-                    enabled => ReportTarget(_targets.SetTargetLocked(cameraId, enabled)),
+                    enabled => _notices.Report(_targets.SetTargetLocked(cameraId, enabled), "Lock on actor", refusal: true),
                     disabled: locked,
                     help: "Lock onto the followed actor");
                 if (!target.IsTracking && !target.IsTargetLocked &&
                     ImGui.IsItemHovered() &&
                     ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-                    ReportTarget(_targets.ToggleGameTarget(cameraId));
+                    _notices.Report(_targets.ToggleGameTarget(cameraId), "Game target", refusal: true);
             });
     }
 
@@ -585,16 +581,16 @@ public sealed class CameraPane
             cells.Cell(
                 "Yaw",
                 cell => cell.Number("##camera-yaw", rotation.X * Rad2Deg,
-                    value => ReportTarget(_values.Set(camera.Id, CameraProperties.Rotation,
-                        camera.Rotation with { X = value * Deg2Rad })),
+                    value => _notices.Report(_values.Set(camera.Id, CameraProperties.Rotation,
+                        camera.Rotation with { X = value * Deg2Rad }), "Yaw", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked,
                     altReset: camera.DefaultRotation.X * Rad2Deg),
                 help: "Which way the camera faces, in degrees");
             cells.Cell(
                 "Pitch",
                 cell => cell.Number("##camera-pitch", rotation.Y * Rad2Deg,
-                    value => ReportTarget(_values.Set(camera.Id, CameraProperties.Rotation,
-                        camera.Rotation with { Y = value * Deg2Rad })),
+                    value => _notices.Report(_values.Set(camera.Id, CameraProperties.Rotation,
+                        camera.Rotation with { Y = value * Deg2Rad }), "Pitch", refusal: true),
                     perPixel: 0.25f, format: "0.0", disabled: locked,
                     altReset: camera.DefaultRotation.Y * Rad2Deg),
                 help: "Look up or down, degrees");
@@ -642,7 +638,7 @@ public sealed class CameraPane
     {
         form.Actions("Camera file", actions =>
         {
-            actions.Button("Load", OpenLoad,
+            actions.Button("Load", () => OpenLoad("Camera ▸ Load"),
                 help: "Add a camera from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(camera.Id));
             actions.Button("Save to library", () => _names.Open(
@@ -665,8 +661,7 @@ public sealed class CameraPane
                     var clone = _creation.Duplicate(SelectionId.ForCamera(camera.Id));
                     if (clone.Handle == null)
                     {
-                        _notices.Failed(
-                            "Clone: the camera could not be created.");
+                        _notices.Report(new Outcome(false, clone.Detail), "Camera ▸ Clone");
                         return;
                     }
                     _pendingCreation.SelectWhenReady(clone.Handle);
@@ -691,21 +686,16 @@ public sealed class CameraPane
         DrawTrackingActors?.Invoke(form, camera.Id);
     }
 
-    private void ReportTarget(Outcome result)
-    {
-        if (!result.Success) _notices.Refused(result.Detail ?? "The camera action could not be completed.");
-    }
-
     public void FollowActor(ActorId actorId, string displayName, CameraId cameraId) =>
-        ReportTarget(_targets.Follow(cameraId, actorId, displayName));
+        _notices.Report(_targets.Follow(cameraId, actorId, displayName), "Follow", refusal: true);
 
     public void ToggleTrackedBone(CameraId cameraId, BoneId boneId) =>
-        ReportTarget(_targets.ToggleTrackedBone(cameraId, boneId));
+        _notices.Report(_targets.ToggleTrackedBone(cameraId, boneId), "Track bone", refusal: true);
 
     // ── actions ──────────────────────────────────────────────────────────
 
     private void SetLive(CameraReading camera, bool live) =>
-        ReportTarget(_values.SetLive(camera.Id, live));
+        _notices.Report(_values.SetLive(camera.Id, live), "Live", refusal: true);
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.
     /// </summary>

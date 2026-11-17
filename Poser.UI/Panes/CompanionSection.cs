@@ -143,12 +143,11 @@ public sealed class CompanionSection
         // One call both attaches and swaps: the backend empties the slot
         // before it fills it. The menu item that opens this surface is gated
         // on the slot existing, but the native write can still be refused.
+        // The picker opens from a button that reads Change or Attach.
+        string verb = _companions.Read(subjectId) is { Occupied: true } ? "Change" : "Attach";
         var result = _companions.Set(subjectId, frozenOwner,
             new CompanionAttachment(chosen.Item.Kind, chosen.Item.Id));
-        if (!result.Success)
-            _notices.Refused(
-                "Attachment",
-                result.Detail ?? "The game refused the companion-slot change.");
+        _notices.Report(result, verb, refusal: true);
     }
 
     private PickerOptions<CompanionEntry> Options() => new()

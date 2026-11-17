@@ -1,7 +1,7 @@
+using Poser.Domain;
 using Poser.Application.Selection;
 using Poser.Domain.Transforms;
 using System;
-using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -32,9 +32,7 @@ public sealed class LightPane
 
     private readonly EntityActions _entityActions;
     private readonly Poser.Application.Settings.ConfigurationService _configuration;
-    private readonly ITransformFacade _cleanTransforms;
-    private readonly IViewportReads _viewport;
-    private readonly ICameraProjection _camera;
+    private readonly ISelectionPlacement _placement;
     private readonly ITextureProvider _textures;
 
     /// <summary>Where this pane's verb outcomes go; the page itself states
@@ -95,9 +93,7 @@ public sealed class LightPane
         ISceneCreation creation,
         EntityActions entityActions,
         Poser.Application.Settings.ConfigurationService configuration,
-        ITransformFacade cleanTransforms,
-        IViewportReads viewport,
-        ICameraProjection camera,
+        ISelectionPlacement placement,
         ITextureProvider textures,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
@@ -114,12 +110,10 @@ public sealed class LightPane
         _scenePane = scenePane;
         _entityActions = entityActions;
         _configuration = configuration;
-        _cleanTransforms = cleanTransforms;
+        _placement = placement;
         // Placement is selected in the load dialog beside the chosen file.
         _loadBrowser.BottomPanel =
             new FileSidePanel(PlacementBandHeight, DrawPlacementBand);
-        _viewport = viewport;
-        _camera = camera;
         _textures = textures;
         // The library is embedded and fixed by the time the pane composes,
         // so its count is the walk and its names are the captions.
@@ -144,11 +138,6 @@ public sealed class LightPane
 
     }
 
-    /// <summary>The placement band's labels, positional against
-    /// <see cref="ObjectPlacementMode"/>.</summary>
-    private static readonly string[] PlacementModeLabels =
-        ["As saved", "Relative to camera", "Relative to actor", "In front of camera"];
-
     private const float PlacementBandHeight = 56f;
 
     private void DrawPlacementBand(Vector2 origin, Vector2 size, string? path)
@@ -158,19 +147,20 @@ public sealed class LightPane
         ImGui.SetCursorScreenPos(
             new Vector2(origin.X + inset, origin.Y + inset));
         DropdownWidgets.Dropdown(
-            "##light-placement-mode", PlacementModeLabels,
+            "##light-placement-mode", PlacementLabels.All,
             (int)_configuration.Config.DefaultSpawnPlacement,
             next => { _configuration.Config.DefaultSpawnPlacement = (ObjectPlacementMode)next; _configuration.Save(); },
             style: new ControlStyle { Width = UiWidth.Region((size.X - inset * 2) / scale) },
             help: "Placement for new entities, duplicates and loaded files");
     }
 
-    /// <summary>Opens the load dialog from outside the pane — the add-entity
-    /// menu's "New light from file…".</summary>
-    public void OpenLoad()
+    /// <summary>Opens the light load dialog. <paramref name="control"/> is
+    /// the name of the button or row that opened it; a failure is reported
+    /// under it.</summary>
+    public void OpenLoad(string control)
     {
         _folder.Open(_loadBrowser,
-            path => _scenePane.LoadEntry(path, _configuration.Config.DefaultSpawnPlacement));
+            path => _scenePane.LoadEntry(path, _configuration.Config.DefaultSpawnPlacement, control));
     }
 
     /// <summary>
@@ -405,8 +395,7 @@ public sealed class LightPane
     private void ApplyGoboIndex(LightId? target, uint index)
     {
         if (target is not { } id || _values.Gobos.Count == 0) return;
-        var result = _values.ApplyGobo(id, Math.Min(index, (uint)(_values.Gobos.Count - 1)));
-        if (!result.Success) _notices.Failed($"Gobo: {result.Detail}");
+        _notices.Report(_values.ApplyGobo(id, Math.Min(index, (uint)(_values.Gobos.Count - 1))), "Gobo");
     }
 
     /// <summary>
@@ -507,7 +496,7 @@ public sealed class LightPane
     {
         form.Actions("Light file", actions =>
         {
-            actions.Button("Load", OpenLoad,
+            actions.Button("Load", () => OpenLoad("Light ▸ Load"),
                 help: "Add a light from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(light.Id));
             actions.Button("Save to library", () => _names.Open(
@@ -539,9 +528,9 @@ public sealed class LightPane
             actions.Button("Clone",
                 () =>
                 {
-                    if (_creation.Duplicate(SelectionId.ForLight(lightId)).Handle is null)
-                        _notices.Failed(
-                            "Clone: the light could not be created.");
+                    var clone = _creation.Duplicate(SelectionId.ForLight(lightId));
+                    if (clone.Handle is null)
+                        _notices.Report(new Outcome(false, clone.Detail), "Light ▸ Clone");
                 },
                 help: "Duplicate this light");
             // A borrowed native is never destructed: a captured light is given
@@ -567,39 +556,8 @@ public sealed class LightPane
             () => RequestDestroyAll?.Invoke(), variant: ButtonVariant.Danger), alignRight: true);
     }
 
-    /// <summary>Uses the same camera-relative placement as a new light,
-    /// recorded as one absolute transform command.</summary>
-    public void MoveToCamera(LightId lightId)
-    {
-        var forward = _camera.GetLookDirection();
-        if (forward == Vector3.Zero)
-        {
-            _notices.Failed("Move to camera: the camera could not be read.");
-            return;
-        }
-
-        var scale =
-            _viewport.GetModelTransform(TransformTargetId.ForLight(lightId))
-                is { } current
-                ? current.Scale
-                : Vector3.One;
-        var placement = LightPlacement.FromCamera(_camera.GetCameraPosition(), forward, scale);
-        if (!Domain.Transforms.PoseTransform.TryCreate(
-                placement.Position,
-                placement.Rotation,
-                placement.Scale,
-                out var target,
-                out var invalid))
-        {
-            _notices.Failed($"Move to camera: {invalid}");
-            return;
-        }
-
-        var moved = _cleanTransforms.SetAbsolute(
-            TransformTargetId.ForLight(lightId), target, "Move light to camera");
-        if (!moved.Success)
-            _notices.Failed($"Move to camera: {moved.Detail}");
-    }
+    private void MoveToCamera(LightId lightId) =>
+        _notices.Report(_placement.MoveToCamera([SelectionId.ForLight(lightId)]).Outcome, "Move to camera");
 
     // ── HDR colour mapping ───────────────────────────────────────────────
 

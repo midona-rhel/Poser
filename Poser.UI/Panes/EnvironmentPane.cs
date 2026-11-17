@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Application.World;
 using Poser.Application.Scene;
 using System;
@@ -59,8 +60,8 @@ public sealed class EnvironmentPane
 
     /// <summary>The one wording for a festival verb the zone refuses. It was
     /// written out three times with three different leading words.</summary>
-    private const string FestivalPlaceRefusal =
-        "This festival cannot be changed where you are standing.";
+    private static readonly Outcome FestivalPlaceRefusal =
+        Outcome.Fail("This festival cannot be changed where you are standing.");
 
     // Initial expanded state is retained independently for each section.
     private bool _openTime = true;
@@ -303,9 +304,8 @@ public sealed class EnvironmentPane
         if (_festivalPicker.Draw() is { } festival)
         {
             if (!_values.AddFestival(festival.Item.Id))
-                _notices.Refused(
-                    $"{festival.Item.Name}: this festival cannot be set "
-                    + "where you are standing.");
+                _notices.Report(Outcome.Fail($"{festival.Item.Name} cannot be set where you are standing."),
+                    "Add festival", refusal: true);
         }
 
         // Same rule as above, and for the same reason: the four texture grids
@@ -1016,16 +1016,14 @@ public sealed class EnvironmentPane
             .ResolveObjectsRoot();
         if (!global::Poser.Documents.Library.LibraryConfiguration.TryEnsureDirectory(root, out var detail))
         {
-            _notices.Refused(detail);
+            _notices.Report(Outcome.Fail(detail), "Save to library", refusal: true);
             return;
         }
         var path = global::Poser.Documents.Library.LibraryConfiguration.NewEntryPath(
             root, name, SceneFile.EnvironmentEntryExtension);
         var result = _workflow.BeginSave(
             path, null, SceneSaveOptions.Only(SceneCategories.Environment));
-        if (!result.Success)
-            _notices.Refused(
-                result.Detail ?? "The environment could not be saved.");
+        _notices.Report(result, "Save to library", refusal: true);
     }
 
     // ── festivals ────────────────────────────────────────────────────────
@@ -1055,7 +1053,7 @@ public sealed class EnvironmentPane
                         () =>
                         {
                             if (!_values.RemoveFestival(id))
-                                _notices.Refused(FestivalPlaceRefusal);
+                                _notices.Report(FestivalPlaceRefusal, "Festivals ▸ Remove", refusal: true);
                         },
                         disabled: !canModify,
                         help: canModify
@@ -1084,7 +1082,7 @@ public sealed class EnvironmentPane
                     {
                         if (!_values.ChangeFestivalPhase(
                                 id, (ushort)phases[chosen].Id))
-                            _notices.Refused(FestivalPlaceRefusal);
+                            _notices.Report(FestivalPlaceRefusal, $"{label} phase", refusal: true);
                     },
                     help: "Which stage of the festival the zone shows",
                     disabled: !canModify);
@@ -1098,7 +1096,7 @@ public sealed class EnvironmentPane
                                 id,
                                 (ushort)Math.Clamp(
                                     (int)MathF.Round(value), 0, 255)))
-                            _notices.Refused(FestivalPlaceRefusal);
+                            _notices.Report(FestivalPlaceRefusal, $"{label} phase", refusal: true);
                     },
                     perPixel: 0.25f,
                     format: "0",

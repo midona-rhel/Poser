@@ -296,7 +296,7 @@ public sealed partial class AppearancePane
                         {
                             form.Status(_appearanceAccess.Detail ?? "Glamourer appearance access is unavailable.");
                             form.Actions("Glamourer", actions => actions.Button("Open in Glamourer",
-                                () => ReportExternal(_integration.OpenGlamourer(actor), "Open in Glamourer"),
+                                () => ExternalChanged(_integration.OpenGlamourer(actor), "Open in Glamourer"),
                                 disabled: !_integration.Glamourer.Available));
                         }, divider: false);
                     if (attachedActor)
@@ -421,7 +421,7 @@ public sealed partial class AppearancePane
                     () =>
                     {
                         if (!_companions.OpenAttachPicker(actor))
-                            _notices.Refused("The attachment relationship changed.");
+                            _notices.Report(Outcome.Fail("The attachment relationship changed."), state.Occupied ? "Change" : "Attach", refusal: true);
                     },
                     variant: ButtonVariant.Disruptive);
                 if (state.Occupied)
@@ -430,7 +430,8 @@ public sealed partial class AppearancePane
                         () =>
                         {
                             if (!_companions.Detach(actor))
-                                _notices.Refused("The attachment relationship changed.");
+                                _notices.Report(Outcome.Fail("The attachment relationship changed."),
+                                    (state.IsAttachedChild ? "Attachment" : "Companion") + " ▸ Detach", refusal: true);
                         },
                         variant: ButtonVariant.Disruptive);
             }));
@@ -534,7 +535,7 @@ public sealed partial class AppearancePane
         float tx = row.ControlOrigin.X + row.ControlWidth - trailW;
         ImGui.SetCursorScreenPos(new Vector2(tx, top));
         Button("Reset",
-            () => ReportModel(_integration.ResetModel(id), "Reset model"),
+            () => ModelChanged(_integration.ResetModel(id), "Reset model"),
             style: ControlStyle.Workspace with
             { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
             variant: ButtonVariant.Disruptive,
@@ -564,16 +565,16 @@ public sealed partial class AppearancePane
                 out var next)
             && next >= 0)
         {
-            ReportModel(_integration.SetModel(id, next), "Model id");
+            ModelChanged(_integration.SetModel(id, next), "Model id");
             return;
         }
-        _notices.Refused("Model id must be a whole number.");
+        _notices.Report(Outcome.Fail("Must be a whole number."), "Model id", refusal: true);
     }
 
-    /// <summary>Reports a model result and refreshes the numeric field.</summary>
-    private void ReportModel(Outcome result, string what)
+    /// <summary>Reports a model change and reads the numeric field again.</summary>
+    private void ModelChanged(Outcome result, string what)
     {
-        Report(result, what);
+        _notices.Report(result, what);
         _modelActor = null;
     }
 
@@ -615,7 +616,7 @@ public sealed partial class AppearancePane
         if (_modelPicker.Draw() is not { } pick
             || _modelPickerActor is not { } target)
             return;
-        ReportModel(
+        ModelChanged(
             _integration.SetModel(target, pick.Item.ModelCharaId), pick.Item.Name);
     }
 
@@ -723,8 +724,7 @@ public sealed partial class AppearancePane
             "Body profile" => _integration.SetBodyProfile(target, pick.Item.Id, pick.Item.Name),
             _ => IntegrationResult.Ok(),
         };
-        if (!picked.Success)
-            _notices.Failed($"{pick.Item.Name}: {picked.Detail}");
+        _notices.Report(picked.Outcome, pick.Owner);
         _readoutAt = DateTime.MinValue;
     }
 
@@ -742,11 +742,11 @@ public sealed partial class AppearancePane
             help: "Hide this actor without moving it",
             disabled: visible is null);
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
-            value => Report(_values.SetOpacity(actor, value), "Opacity"),
+            value => _notices.Report(_values.SetOpacity(actor, value), "Opacity"),
             help: "Fade the whole actor", onBegin: _values.Seal);
         form.Actions("Appearance", actions => actions.Button(
             "Reset",
-            () => Report(_values.ResetPresentation(actor), "Reset appearance"),
+            () => _notices.Report(_values.ResetPresentation(actor), "Reset appearance"),
             variant: ButtonVariant.Disruptive));
     }
 
@@ -765,27 +765,21 @@ public sealed partial class AppearancePane
             disabled: visible is null);
         var glamourer = _integration.Glamourer;
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
-            value => Report(_values.SetOpacity(actor, value), "Opacity"),
+            value => _notices.Report(_values.SetOpacity(actor, value), "Opacity"),
             help: "Fade the whole actor", onBegin: _values.Seal);
 
         form.Actions("Appearance", actions =>
         {
             actions.Button("Open in Glamourer",
-                () =>
-                {
-                    var opened = _integration.OpenGlamourer(actor);
-                    if (!opened.Success)
-                        _notices.Failed(
-                            $"Open in Glamourer: {opened.Detail}");
-                },
+                () => _notices.Report(_integration.OpenGlamourer(actor).Outcome, "Open in Glamourer"),
                 disabled: !glamourer.Available,
                 help: glamourer.Available ? null : glamourer.Detail);
             actions.Button("Redraw",
-                () => ReportExternal(
+                () => ExternalChanged(
                     _integration.Redraw(actor), "Redraw"),
                 variant: ButtonVariant.Disruptive);
             actions.Button("Reset",
-                () => Report(_values.ResetPresentation(actor), "Reset appearance"),
+                () => _notices.Report(_values.ResetPresentation(actor), "Reset appearance"),
                 variant: ButtonVariant.Disruptive);
             bool human = _invisibleSkin.IsHuman(actor);
             actions.Button("Clothing only",
@@ -793,7 +787,7 @@ public sealed partial class AppearancePane
                 {
                     var failure = await _invisibleSkin.Apply(actor, System.Threading.CancellationToken.None);
                     if (failure != null)
-                        await _framework.RunOnFrameworkThread(() => _notices.Failed(failure));
+                        await _framework.RunOnFrameworkThread(() => _notices.Report(Outcome.Fail(failure), "Clothing only"));
                 },
                 disabled: !human,
                 help: human ? null : "Only human actors can hide their body",
@@ -810,7 +804,7 @@ public sealed partial class AppearancePane
         form.ColorWells("Character", wells => wells.Well(
             "Character",
             TintFor(owned, reading, PresentationModel.Character) ?? Vector4.One,
-            value => Report(
+            value => _notices.Report(
                 _values.SetTint(actor, PresentationModel.Character, value),
                 "Character")),
             help: "White leaves the model unchanged");
@@ -833,7 +827,7 @@ public sealed partial class AppearancePane
             ColorWell(
                 $"appearance-tint-{what}",
                 TintFor(owned, reading, model) ?? Vector4.One,
-                value => Report(
+                value => _notices.Report(
                     _values.SetTint(actor, model, value), what));
         }
 
@@ -856,7 +850,7 @@ public sealed partial class AppearancePane
     {
         form.PairRows();
         form.Switch("Override", owned.Wetness != null,
-            value => Report(
+            value => _notices.Report(
                 _values.SetWetnessEnabled(actor, value), "Wetness override"),
             help: "Hold wetness against weather and water");
 
@@ -866,17 +860,17 @@ public sealed partial class AppearancePane
         WetnessState wet = refreshed.Wetness ?? reading.Wetness;
 
         form.Slider("Weather", wet.Weather, 0f, 1f,
-            value => Report(_values.SetWetness(
+            value => _notices.Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Weather = value }), "Weather"),
             help: "Rain wetness",
             disabled: !wetOn, onBegin: _values.Seal);
         form.Slider("Swimming", wet.Swimming, 0f, 1f,
-            value => Report(_values.SetWetness(
+            value => _notices.Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Swimming = value }), "Swimming"),
             help: "Water soaking",
             disabled: !wetOn, onBegin: _values.Seal);
         form.Slider("Depth", wet.Depth, 0f, 3f,
-            value => Report(_values.SetWetness(
+            value => _notices.Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Depth = value }), "Depth"),
             help: "How far up the body it reaches",
             disabled: !wetOn, onBegin: _values.Seal);
@@ -899,7 +893,7 @@ public sealed partial class AppearancePane
             _collectionReadout,
             () => OpenPicker(
                 actor, "Collection", _integration.ListCollections, _collectionKey),
-            () => ReportExternal(_integration.ResetCollection(actor), "Reset Collection"),
+            () => ExternalChanged(_integration.ResetCollection(actor), "Reset Collection"),
             available: penumbra.Available && !mcdfOwned,
             owned: external.CollectionOwned,
             disruptive: true,
@@ -915,7 +909,7 @@ public sealed partial class AppearancePane
             "Design",
             external.DesignOwned ? external.DesignName ?? "Design" : "None applied",
             () => OpenPicker(actor, "Design", _integration.ListDesigns),
-            () => ReportExternal(_integration.ResetDesign(actor), "Reset Design"),
+            () => ExternalChanged(_integration.ResetDesign(actor), "Reset Design"),
             available: glamourer.Available && !mcdfOwned && _appearanceAccess.CanEdit,
             owned: external.DesignOwned,
             disruptive: true,
@@ -932,7 +926,7 @@ public sealed partial class AppearancePane
                 ? external.BodyProfileName ?? "Profile"
                 : "Automatic",
             () => OpenPicker(actor, "Body profile", _integration.ListBodyProfiles),
-            () => ReportExternal(_integration.ResetBodyProfile(actor), "Reset Body profile"),
+            () => ExternalChanged(_integration.ResetBodyProfile(actor), "Reset Body profile"),
             available: customize.Available && !mcdfOwned,
             owned: external.TemporaryBodyProfile != null,
             disruptive: true,
@@ -1020,7 +1014,7 @@ public sealed partial class AppearancePane
                     {
                         actions.Button(
                             mcdfOwnedNow ? "Reset MCDF" : "Retry cleanup",
-                            () => ReportExternal(_characterFiles.Reset(actor), "Reset MCDF"),
+                            () => ExternalChanged(_characterFiles.Reset(actor), "Reset MCDF"),
                             help: mcdfOwnedNow
                                 ? "Remove everything the imported character file applied to this actor"
                                 : "Retry deleting extracted files left behind by a failed import",
@@ -1085,7 +1079,7 @@ public sealed partial class AppearancePane
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             var result = _characterFiles.Spawn(chosen);
             if (result.Handle is { } body) select(body);
-            else _notices.Failed(result.Detail ?? "The actor could not be spawned.");
+            else _notices.Report(new Outcome(false, result.Detail), "Actor from character file");
             if (result.Handle is not null) AddToLibraryIfChosen(chosen);
         });
     }
@@ -1096,7 +1090,7 @@ public sealed partial class AppearancePane
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             var imported = _characterFiles.Import(actor, chosen);
-            ReportExternal(imported, "Import");
+            ExternalChanged(imported, "Character file (MCDF) ▸ Import");
             if (imported.Success) AddToLibraryIfChosen(chosen);
         });
     }
@@ -1115,7 +1109,7 @@ public sealed partial class AppearancePane
             _framework.RunOnFrameworkThread(() =>
             {
                 if (added.Success) _notices.Note(added.Detail ?? "Added to your library.");
-                else _notices.Failed(added.Detail ?? "The character file could not be added to your library.");
+                else _notices.Report(added, "Also add to library");
             });
         }, TaskScheduler.Default);
     }
@@ -1149,8 +1143,7 @@ public sealed partial class AppearancePane
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             var begun = _characterFiles.Export(
                 actor, chosen, $"{description} — exported by Poser");
-            if (!begun.Success)
-                _notices.Failed($"Export: {begun.Detail}");
+            _notices.Report(begun.Outcome, "Character file (MCDF) ▸ Export");
         });
     }
 
@@ -1160,20 +1153,15 @@ public sealed partial class AppearancePane
         PresentationModel model) =>
         owned.Tints.TryGetValue(model, out var tint) ? tint : reading.TintFor(model);
 
-    private void Report(Outcome result, string what)
-    {
-        if (!result.Success)
-            _notices.Failed($"{what}: {result.Detail}");
-    }
-
-    /// <summary>Reports an integration result and invalidates its readout.</summary>
-    private void ReportExternal(IntegrationResult result, string what)
+    /// <summary>Reports a change made through another plugin and reads its
+    /// values again.</summary>
+    private void ExternalChanged(IntegrationResult result, string what)
     {
         bool appearanceHeld = result.AppearanceRefusal is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.PoserHeld;
         if (appearanceHeld)
             _accessAt = DateTime.MinValue;
-        if (!result.Success && !appearanceHeld)
-            _notices.Failed($"{what}: {result.Detail}");
+        else
+            _notices.Report(result.Outcome, what);
         _readoutAt = DateTime.MinValue;
     }
 

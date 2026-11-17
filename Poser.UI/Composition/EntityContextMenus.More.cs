@@ -193,33 +193,28 @@ internal sealed partial class EntityContextMenus
             if (!items.Any(item => item.Label == "Move to camera"))
             {
                 items.Add(new("Move to camera", TablerIcon.Camera, disabled: !movable));
-                actions.Add(() => ReportPlacement(_placement.MoveToCamera([id])));
+                actions.Add(() => MoveToCamera([id]));
             }
-            AddReset("Rotation", () => ReportPlacement(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Rotate)), "Zero rotation; keep position and scale");
+            AddReset("Rotation", () => _notices.Report(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Rotate).Outcome, "Reset rotation"), "Zero rotation; keep position and scale");
             if (id.Light == null)
-                AddReset("Scale", () => ReportPlacement(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Scale)), "Unit scale; keep position and rotation");
+                AddReset("Scale", () => _notices.Report(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Scale).Outcome, "Reset scale"), "Unit scale; keep position and rotation");
         }
         if (id.Actor is { } actor)
         {
-            AddReset("Placement overrides", () => ReportPlacement(_transforms.ClearActorOverrides([TransformTargetId.ForActor(actor)])), "Release this actor's authored world placement");
+            AddReset("Placement overrides", () => _notices.Report(_transforms.ClearActorOverrides([TransformTargetId.ForActor(actor)]).Outcome, "Reset placement overrides"), "Release this actor's authored world placement");
             reset.Add(ContextMenuItem.Separator);
             foreach (var region in Enum.GetValues<Domain.Posing.PoseRegion>())
             {
                 var captured = region;
                 reset.Add(new(region == Domain.Posing.PoseRegion.All ? "Pose" : region.ToString(), TablerIcon.Refresh,
                     disabled: _scene.Snapshot.FindActor(actor)?.CharacterSkeleton == null, disruptive: true)
-                { OnInvoke = () => { var result = _cleanPose.Reset(actor, captured); if (!result.Success) _notices.Failed("Reset pose", result.Detail ?? "The pose could not be reset."); } });
+                { OnInvoke = () => _notices.Report(_cleanPose.Reset(actor, captured).Outcome, captured == Domain.Posing.PoseRegion.All ? "Reset pose" : "Reset " + captured.ToString().ToLowerInvariant()) });
             }
         }
         else if (id.Overlay is { } overlay && !worldEntity)
             reset.Add(new("Size and opacity", TablerIcon.Refresh)
-            { OnInvoke = () => { var result = _overlayControl.Set(overlay, Application.Presentation.OverlayProperties.Size, (1f, 1f)); if (!result.Success) _notices.Failed("Reset", result.Detail ?? "The overlay could not be reset."); } });
+            { OnInvoke = () => _notices.Report(_overlayControl.Set(overlay, Application.Presentation.OverlayProperties.Size, (1f, 1f)), "Reset size and opacity") });
         if (reset.Count == 0 || items.Any(item => item.Label == "Reset")) return;
         items.Add(new("Reset", TablerIcon.Refresh, submenuItems: reset.ToArray())); actions.Add(null);
-    }
-
-    private void ReportPlacement(Domain.Transforms.GestureResult result)
-    {
-        if (!result.Success) _notices.Failed("Placement", result.Detail ?? "The transform could not be changed.");
     }
 }
