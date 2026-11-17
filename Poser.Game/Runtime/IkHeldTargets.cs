@@ -91,10 +91,9 @@ internal sealed unsafe class IkHeldTargets
         if (tip is not { } point)
             return null;
         if (previous != null) previous.PendingRetarget = converted;
-        return new HeldTarget(
-            point.Position - followed.Position,
-            Quaternion.Normalize(Quaternion.Inverse(followed.Rotation) * point.Rotation),
-            authored.Position, authored.Rotation) { Unseated = converted == null };
+        var offset = RelativeTo(followed, point.Position, point.Rotation);
+        return new HeldTarget(offset.Position, offset.Rotation, authored.Position, authored.Rotation)
+            { Unseated = converted == null };
     }
 
     /// <summary>Resolves the held target into solver coordinates, including edits made since capture.
@@ -139,15 +138,13 @@ internal sealed unsafe class IkHeldTargets
                 targetSkeleton.UpdateBoneTransforms(global::Poser.Game.Entities.BoneCacheTypes.LastTransform);
                 if (global::Poser.Game.Entities.BoneWorld.Of(targetBone) is not { } anchor)
                     return null;
-                worldPosition = anchor.Position + capture.Target;
-                worldRotation = Quaternion.Normalize(anchor.Rotation * capture.Rotation);
+                (worldPosition, worldRotation) = FromRelative(anchor, capture.Target, capture.Rotation);
                 break;
             case IkTargetMode.Entity:
                 if (ik.TargetEntity is not { } entity
                     || ResolveIkEntityTransform(_bindings, entity) is not { } entityTransform)
                     return null;
-                worldPosition = entityTransform.Position + capture.Target;
-                worldRotation = Quaternion.Normalize(entityTransform.Rotation * capture.Rotation);
+                (worldPosition, worldRotation) = FromRelative(entityTransform, capture.Target, capture.Rotation);
                 break;
             default:
                 return null;

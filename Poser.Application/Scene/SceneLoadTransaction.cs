@@ -924,6 +924,13 @@ internal sealed class SceneLoadTransaction(
                 return stop;
             if (_environment is { } stated)
             {
+                // A scene comes back looking as it did when it was saved. The file always
+                // holds the time of day and the weather, also when the game had chosen them
+                // by itself, so both are held here instead of being left to today's. The
+                // sky, light, fog and the rest follow from those two, apart from the
+                // sections that were changed by hand, which the file holds as well.
+                stated.IsTimeFrozen = true;
+                stated.IsWeatherOverrideEnabled = true;
                 sceneState.ApplyEnvironment(stated);
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.Environment, "Environment", true));

@@ -100,7 +100,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly record struct TileFacts(
         string Id, string? Author, IReadOnlyList<string> Tags, string? Sub,
-        PoseLibraryMetadataStatus Status, string Detail, uint TerritoryId = 0);
+        PoseLibraryMetadataStatus Status, string Detail, SceneMetadataReadOutcome? Scene = null);
 
     private void EnrichTile(int index)
     {
@@ -135,7 +135,7 @@ public sealed partial class PoseLibraryPane
                         metadata.Succeeded && kind == PoseLibraryEntryKind.Scene
                             ? LibraryScanner.DescribeScene(metadata)
                             : null,
-                        status, detail, metadata.TerritoryId));
+                        status, detail, metadata.Succeeded ? metadata : null));
                 }
             }
             catch (Exception)
@@ -155,7 +155,8 @@ public sealed partial class PoseLibraryPane
                 if (!string.Equals(tile.Id, facts.Id, StringComparison.Ordinal))
                     continue;
                 tile.Author = facts.Author;
-                _sceneTerritories[tile.Id] = facts.TerritoryId;
+                _sceneTerritories[tile.Id] = facts.Scene?.TerritoryId ?? 0;
+                tile.SceneMetadata = facts.Scene;
                 tile.Tags = facts.Tags;
                 if (facts.Sub is { Length: > 0 } sub)
                     tile.Sub = sub;

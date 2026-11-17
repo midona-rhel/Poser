@@ -60,3 +60,5 @@ appears with the pose the actor has on screen, including the face and any IK.
   posed keep your pose.
 - The copy gets the same Customize+ body shape as the original.
 - The original actor is not changed.
+- The copy stands exactly where the original stands, with the same rotation. A
+  plain **Duplicate** of an actor, a light or anything else does the same.

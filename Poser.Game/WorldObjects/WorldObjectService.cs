@@ -407,29 +407,48 @@ public sealed class WorldObjectService : IDisposable
     internal void KeepUnloaded(AdoptedWorldObject handle) =>
         _loadingFurniture.Keep(handle);
 
-    public AdoptedWorldObject? FindBorrowed(string path, Vector3 mapPosition) =>
-        _adopted.Find(item => !item.Spawned && item.IsValid
-            && MatchesSavedObject(item.Path, item.InitialPlacement.Position, path, mapPosition));
+    /// <summary>How far from its saved place a map object is still taken for the saved one.
+    /// Some map objects move by themselves, such as the pieces that circle an aetheryte.</summary>
+    private const float MovingObjectRange = 5f;
 
-    private static bool MatchesSavedObject(string resource, Vector3 position, string path, Vector3 mapPosition) =>
-        string.Equals(resource, path, StringComparison.OrdinalIgnoreCase)
-        && Vector3.DistanceSquared(position, mapPosition) <= 0.0001f;
+    /// <summary>An object within this distance of its saved place has not moved.</summary>
+    private const float ExactPlace = 0.01f;
+
+    /// <summary>The borrowed map object a saved entry means: the one with the same model
+    /// nearest to the saved place. Null when none is within <see cref="MovingObjectRange"/>.</summary>
+    public AdoptedWorldObject? FindBorrowed(string path, Vector3 mapPosition) =>
+        Nearest(_adopted.Where(item => !item.Spawned && item.IsValid),
+            item => item.Path, item => item.InitialPlacement.Position, path, mapPosition).Item;
+
+    private static (T? Item, float Distance) Nearest<T>(IEnumerable<T> items, Func<T, string> pathOf,
+        Func<T, Vector3> positionOf, string path, Vector3 mapPosition)
+    {
+        (T? Item, float Distance) best = (default, MovingObjectRange);
+        foreach (var item in items)
+        {
+            if (!string.Equals(pathOf(item), path, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var distance = Vector3.Distance(positionOf(item), mapPosition);
+            if (distance <= best.Distance)
+                best = (item, distance);
+        }
+        return best;
+    }
 
     public AdoptedWorldObject? RestoreBorrowed(string path, Vector3 mapPosition, Transform placement,
         bool visible, out string? detail)
     {
-        // Use the original placement even when an earlier load moved the object.
-        var handle = FindBorrowed(path, mapPosition);
-        if (handle == null)
-        {
-            foreach (var row in _port.Enumerate())
-                if (!IsAdopted(row.Address) && MatchesSavedObject(row.Path, row.Placement.Position, path, mapPosition))
-                {
-                    handle = Adopt(row.Address);
-                    break;
-                }
-        }
-        detail = handle == null ? "The original map object could not be found at its saved position." : null;
+        // Compare against where the object was first found, also when an earlier load moved
+        // it. A borrowed object standing exactly at the saved place is the one. Otherwise an
+        // object not borrowed yet comes first, so that two saved objects with the same model
+        // do not both take the same one.
+        var borrowed = Nearest(_adopted.Where(item => !item.Spawned && item.IsValid),
+            item => item.Path, item => item.InitialPlacement.Position, path, mapPosition);
+        var onMap = borrowed.Item != null && borrowed.Distance <= ExactPlace ? default
+            : Nearest(_port.Enumerate().Where(row => !IsAdopted(row.Address)).Select(row => (WorldObjectRow?)row),
+                row => row!.Value.Path, row => row!.Value.Placement.Position, path, mapPosition);
+        var handle = onMap.Item is { } unborrowed ? Adopt(unborrowed.Address) : borrowed.Item;
+        detail = handle == null ? "The original map object could not be found near its saved position." : null;
         if (handle != null)
         {
             handle.Transform = placement;

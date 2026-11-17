@@ -179,6 +179,9 @@ effects around you. Click a mark to add that thing to the scene.
 - A world light becomes a copy you can edit, and the original is hidden.
   Releasing it, or leaving GPose, shows the original again.
 - A world object or effect is borrowed as it is. Releasing it puts it back.
+- A saved scene finds a borrowed object again by its model and where it stood.
+  For an object that moves by itself, such as the pieces circling an aetheryte, it
+  takes the nearest one with that model.
 - A borrowed actor has **Release** in a **Scene** section of the Actor tab.
 
 ## Environment
@@ -193,6 +196,10 @@ On the Environment page, **Weather** picks a weather and holds it.
 - **Hold weather** keeps the weather against the game's own changes. Turning it
   off lets the game change it again; it does not jump back.
 - **Restore on exit** gives the weather back to the game when you leave GPose.
+- A scene is saved with the time of day and the weather it had. Loading the
+  scene puts both back and holds them, also when you had not set them yourself.
+  The clock stays at the saved time. Sky, light and fog follow from those two;
+  the ones you changed by hand are saved and put back as well.
 
 ### Housing interiors
 

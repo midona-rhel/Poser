@@ -66,6 +66,21 @@ internal static class IkChainShapes
         return names;
     }
 
+    /// <summary>Where a world point sits as seen from the bone or entity it follows. Kept this
+    /// way, the point moves and turns with what it follows, like a child of it.</summary>
+    internal static (Vector3 Position, Quaternion Rotation) RelativeTo(
+        Transform followed, Vector3 position, Quaternion rotation)
+    {
+        var back = Quaternion.Inverse(followed.Rotation);
+        return (Vector3.Transform(position - followed.Position, back), Quaternion.Normalize(back * rotation));
+    }
+
+    /// <summary>The world point for an offset kept by <see cref="RelativeTo"/>.</summary>
+    internal static (Vector3 Position, Quaternion Rotation) FromRelative(
+        Transform followed, Vector3 position, Quaternion rotation) =>
+        (followed.Position + Vector3.Transform(position, followed.Rotation),
+            Quaternion.Normalize(followed.Rotation * rotation));
+
     internal static Transform? ResolveIkEntityTransform(IEntityBindings bindings, SelectionId target)
     {
         Transform? transform = target switch

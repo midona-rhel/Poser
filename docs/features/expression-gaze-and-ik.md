@@ -68,16 +68,16 @@ bone.
 
 - **Reset** puts the bone's IK settings back to their defaults. It does not turn IK
   off.
-- **Bake** turns what IK did into ordinary bone edits and turns IK off for that
-  chain. It is one undo step. Undo puts the bones back and turns IK on again.
+- **Bake** does the same as switching Live IK off.
 - Reset All on the actor (see [Pose operations](pose-operations.md#reset-all))
   turns off IK on every chain.
 
-Turning IK on, turning it off or changing its settings does not move the limb by
-itself:
+Turning IK on or off never moves the limb. Only using the controls does:
 
-- Turning IK on starts from the limb as it stands. Turning it off keeps the
-  settings for next time.
+- Turning IK on starts from the limb as it stands, with **Swivel** at zero.
+- Turning IK off leaves the limb where IK put it. What IK did becomes ordinary
+  bone edits, and the settings are kept for next time. It is one undo step. Undo
+  turns IK on again as it was.
 - Changing the solver keeps the end of the chain where it is. The joints in
   between follow the new solver.
 - With **Constraints** on, the handle stops where the limb is fully stretched. A
@@ -111,9 +111,14 @@ without moving either end.
 - **Scene entity**: it follows an object, scenery, a light or an effect. **Detach**
   keeps it where it is now.
 
-Changing the target does not move the bone. Only what it follows changes. If the
-bone or entity it follows leaves the scene, IK stops until you choose another
-target.
+A bone or scene entity carries the end of the chain with it, as if the end were
+attached to it: when it moves or turns, the end keeps the same place and angle as
+seen from it.
+
+Changing the target does not move the bone. Only what it follows changes.
+Choosing **Bone** or **Scene entity** changes nothing until you have picked one.
+If the bone or entity it follows leaves the scene, IK stops until you choose
+another target.
 
 **Keep rotation** makes the end of the chain follow the target's rotation too, not
 only its position. Two Joint has no Keep rotation, and it is greyed out with the

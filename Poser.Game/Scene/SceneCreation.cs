@@ -138,13 +138,20 @@ public sealed class SceneCreation : ISceneCreation
         return true;
     }
 
+    /// <summary>Places a new entity at <paramref name="position"/>. A duplicate
+    /// instead stands exactly where its source stands: it gets the source's
+    /// place, rotation and scale, and the same parent with the same offset.</summary>
     private SceneCreationResult Finish(SceneEntityKind kind, object? entity, Vector3? position,
         SelectionId? source = null)
     {
         var result = Track(kind, entity);
         if (result.Handle is not { } handle) return result;
+        // Read now: by the time an actor can be placed, its source may have moved.
+        var sourcePlace = source is { Camera: null } original ? _transforms.Read(original) : null;
         void Apply()
         {
+            if (sourcePlace is { } place && !_transforms.WriteEntity(entity, place))
+                _log.Warning("The duplicate could not be put where its source is.");
             if (position is { } point)
             {
                 if (entity is Cameras.VirtualCamera camera)
@@ -158,8 +165,7 @@ public sealed class SceneCreation : ISceneCreation
                     || !_transforms.WriteEntity(entity, transform with { Position = point }))
                     _log.Warning("The new entity could not be placed.");
             }
-            if (source is { } original && Resolve(handle) is { } target
-                && !_parenting.Copy(original, target, preserveWorld: position != null))
+            if (source is { } copied && Resolve(handle) is { } target && !_parenting.Copy(copied, target))
                 _log.Warning("The duplicated entity could not inherit its source's parent.");
         }
         // Native spawning sets the actor's position. Place it and copy its
@@ -181,35 +187,17 @@ public sealed class SceneCreation : ISceneCreation
             foreach (var source in sources) results[source] = new(null, "Duplication requires an active GPose session.");
             return results;
         }
-        var transforms = sources.ToDictionary(id => id, ReadTransform);
-        var placed = transforms.Values.OfType<PoseTransform>().ToArray();
-        Vector3? anchor = null;
-        if (placed.Length > 0 && !TryPlacement(out anchor, out var refusal))
-        {
-            foreach (var source in sources) results[source] = new(null, refusal);
-            return results;
-        }
-        var offset = anchor is { } point
-            ? point - GroupTransformBaseline.Centroid(placed)
-            : (Vector3?)null;
-        // Capture the anchor once so creating a camera cannot move later copies.
         foreach (var source in sources)
-            results[source] = DuplicateAt(source, withPose,
-                offset is { } delta && transforms[source] is { } transform ? transform.Position + delta : null);
+            results[source] = DuplicateInPlace(source, withPose);
         return results;
     }
 
-    private PoseTransform? ReadTransform(SelectionId source) => source.Camera is { } id
-        ? _bindings.Resolve(id).Value is { } camera
-            ? PoseTransform.Identity with { Position = camera.WorldPosition } : null
-        : _transforms.Read(source);
-
-    private SceneCreationResult DuplicateAt(SelectionId source, bool withPose, Vector3? position)
+    private SceneCreationResult DuplicateInPlace(SelectionId source, bool withPose)
     {
         object? copy = source.Kind switch
         {
             SceneEntityKind.Actor when source.Actor is { } id && _bindings.Resolve(id).Value is { } actor =>
-                DuplicateActor(actor, withPose, position),
+                DuplicateActor(actor, withPose),
             SceneEntityKind.Light when source.Light is { } id && _bindings.Resolve(id).Value is { } light =>
                 _lifecycle.CloneLight(light),
             SceneEntityKind.Camera when source.Camera is { } id && _bindings.Resolve(id).Value is { } camera =>
@@ -222,10 +210,10 @@ public sealed class SceneCreation : ISceneCreation
                 && world.Path.Contains('/') => _lifecycle.CloneWorldObject(world),
             _ => null,
         };
-        return Finish(source.Kind, copy, position, source);
+        return Finish(source.Kind, copy, null, source);
     }
 
-    private IActor? DuplicateActor(IActor source, bool withPose, Vector3? position)
+    private IActor? DuplicateActor(IActor source, bool withPose)
     {
         string? parameters = null;
         if (_bindings.GetActorId(source) is { } sourceId
@@ -263,7 +251,7 @@ public sealed class SceneCreation : ISceneCreation
         string name = Application.Settings.ConfigurationService.StripObjectIndex(source.Name);
         if (!withPose || _skeletons.GetSkeleton(source) is null)
             return _lifecycle.SpawnActor($"Duplicate actor '{name}'", Clone, source: source);
-        return _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source, position);
+        return _lifecycle.SpawnActorWithPose($"Duplicate actor '{name}' with pose", Clone, source);
     }
 
     private SceneCreationResult Track(SceneEntityKind kind, object? entity) => entity is null

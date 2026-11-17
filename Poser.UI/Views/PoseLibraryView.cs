@@ -96,6 +96,8 @@ public sealed class PoseLibraryTileRow
     /// <summary>The formatted modification time, or a summary of the scene contents.
     /// </summary>
     public required string Sub;
+    public string Modified = string.Empty;
+    public Poser.Documents.Files.SceneMetadataReadOutcome? SceneMetadata;
     public required string ThumbKey;
     public bool HasThumbnail;
     public bool Favorite;

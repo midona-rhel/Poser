@@ -213,6 +213,7 @@ public sealed partial class PoseLibraryPane
                         : entry.Name,
                     LabelLower = entry.NameLower,
                     Sub = entry.Stamp,
+                    Modified = entry.Stamp,
                     ThumbKey = entry.FilePath,
                     // Only a file whose document says it embeds an image asks
                     // the cache: auto-saves are written without one, and a

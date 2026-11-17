@@ -527,9 +527,7 @@ public sealed partial class PoseLibraryPane
 
     /// <summary>Per-tile stamps for the info rail, parallel to the tile
     /// list like the tag and author lists above.</summary>
-    private readonly List<string> _tileModified = [];
 
-    private readonly List<string> _tileContents = [];
 
     /// <summary>The workspace moved on. The decoded thumbnails are a cache of
     /// what was on screen, and the icon size is persisted here rather than on
@@ -729,8 +727,6 @@ public sealed partial class PoseLibraryPane
         _tileAuthors.Clear();
         _tileStatus.Clear();
         _tileKinds.Clear();
-        _tileModified.Clear();
-        _tileContents.Clear();
         // Labels are minted with or without the extension HERE; the search
         // keeps matching the bare name either way.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
@@ -740,8 +736,6 @@ public sealed partial class PoseLibraryPane
             _tileAuthors.Add(entry.AuthorLower);
             _tileStatus.Add(entry.MetadataStatus);
             _tileKinds.Add(entry.Kind);
-            _tileModified.Add(entry.ModifiedText);
-            _tileContents.Add(entry.SceneContents);
             bool flagged =
                 entry.MetadataStatus != PoseLibraryMetadataStatus.Valid;
             // Minted ONCE. A scene's key and its heading are the same run —
@@ -760,6 +754,7 @@ public sealed partial class PoseLibraryPane
                 LabelLower = entry.NameLower,
                 // A scene's own line is what is INSIDE it — "3 actors, 2
                 // lights" tells a user which scene this is; a stamp does not.
+                Modified = entry.ModifiedText,
                 Sub = entry.SceneContents.Length > 0
                     ? entry.SceneContents
                     : entry.ModifiedText,

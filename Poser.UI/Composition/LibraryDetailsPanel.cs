@@ -29,14 +29,12 @@ namespace Poser.UI;
 internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
 {
     private string? _detailsPath;
+    private SceneMetadataReadOutcome? _detailsMetadata;
     private readonly List<(string Label, string Value)> _detailsRows = [];
     private Vector3? _detailsColor;
 
-    /// <summary>The rail for the tabs that cannot preview (MCDF, scenes):
-    /// the selected file's name, timestamp, author, contents, and tags.
-    /// Returns the height consumed so a caller can stack below it.</summary>
-    public float DrawInfoRail(Vector2 origin, Vector2 size, PoseLibraryTileRow? tile,
-        string modified, string contents)
+    /// <summary>Shows the selected file's location and saved details beside the grid.</summary>
+    public float DrawInfoRail(Vector2 origin, Vector2 size, PoseLibraryTileRow? tile)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
@@ -57,6 +55,9 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
             return size.Y;
         }
 
+        if (tile.SceneMetadata is { } scene)
+            ProbeDetails(tile.Id, PoseLibraryEntryKind.Scene, scene);
+
         TextAt(cursor, tile.Label, new TextStyle
         {
             Size = theme.Typography.SurfaceTitleSize,
@@ -70,26 +71,14 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
             new Vector2(origin.X, cursor.Y), size.X, true, null,
             form =>
             {
-                form.ReadOnly("Saved", modified,
-                    mono: true);
+                form.ReadOnly("File", tile.Id, help: tile.Id);
+                if (tile.SceneMetadata != null)
+                    foreach (var (label, value) in _detailsRows)
+                        form.ReadOnly(label, value, mono: true);
+                else
+                    form.ReadOnly("Saved", tile.Modified, mono: true);
                 if (!string.IsNullOrEmpty(tile.Author))
                     form.ReadOnly("Author", tile.Author!, mono: true);
-                // Show one row per kind — "Actors 2", "Lights 3" —
-                // never one truncating line (ruled 2026-08-31). The
-                // pre-minted one-liner splits on its own separator.
-                if (contents.Length > 0)
-                    foreach (var part in contents.Split(", "))
-                    {
-                        int space = part.IndexOf(' ');
-                        if (space > 0 && int.TryParse(
-                                part[..space], out _))
-                            form.ReadOnly(
-                                char.ToUpperInvariant(part[space + 1])
-                                    + part[(space + 2)..],
-                                part[..space], mono: true);
-                        else
-                            form.ReadOnly("Contents", part, mono: true);
-                    }
                 if (tile.Tags.Count > 0)
                     form.ReadOnly("Tags", string.Join(", ", tile.Tags),
                         mono: true);
@@ -145,23 +134,26 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
                                 new Vector4(clamped, 1f)));
                     });
                 }
+                form.ReadOnly("File", tile.Id, help: tile.Id);
                 foreach (var (label, value) in _detailsRows)
                     form.ReadOnly(label, value, mono: true);
             },
             divider: false, dense: true);
     }
 
-    private void ProbeDetails(string path, PoseLibraryEntryKind kind)
+    private void ProbeDetails(string path, PoseLibraryEntryKind kind, SceneMetadataReadOutcome? supplied = null)
     {
-        if (string.Equals(path, _detailsPath, StringComparison.Ordinal))
+        if (string.Equals(path, _detailsPath, StringComparison.Ordinal) && ReferenceEquals(supplied, _detailsMetadata))
             return;
         _detailsPath = path;
+        _detailsMetadata = supplied;
         _detailsRows.Clear();
         _detailsColor = null;
         try
         {
             switch (kind)
             {
+                case PoseLibraryEntryKind.Scene:
                 case PoseLibraryEntryKind.Actor:
                 case PoseLibraryEntryKind.Environment:
                 case PoseLibraryEntryKind.Overlay:
@@ -170,20 +162,18 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
                 case PoseLibraryEntryKind.Prop:
                 case PoseLibraryEntryKind.Light:
                 case PoseLibraryEntryKind.Camera:
-                    var metadata = SceneFileStore.Default.ReadMetadata(path);
+                    var metadata = supplied ?? SceneFileStore.Default.ReadMetadata(path);
                     if (metadata.Succeeded)
                     {
                         if (!string.IsNullOrEmpty(metadata.PlaceName))
                             _detailsRows.Add(("Place", metadata.PlaceName!));
-                        // A group entry says what it contains — the one fact
-                        // its tile cannot — as per-kind rows.
-                        if (kind == PoseLibraryEntryKind.Group)
+                        else if (metadata.TerritoryId != 0)
+                            _detailsRows.Add(("Place", $"Territory {metadata.TerritoryId}"));
+                        if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Group)
                             AppendContentsRows(metadata, _detailsRows);
-                        if (kind == PoseLibraryEntryKind.Environment)
+                        if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Environment)
                         {
-                            // The name travels in the file when the capture
-                            // recorded it; an older file resolves through the
-                            // live weather sheet by id.
+                            // Older scenes can resolve the saved weather ID through the game data.
                             string weather = metadata.WeatherName.Length > 0
                                 ? metadata.WeatherName
                                 : metadata.WeatherId != 0 &&
@@ -194,6 +184,8 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
                             if (weather.Length > 0)
                                 _detailsRows.Add(("Weather", weather));
                         }
+                        if (!string.IsNullOrWhiteSpace(metadata.Description))
+                            _detailsRows.Add(("Description", metadata.Description));
                         if (metadata.SavedAt is { } saved)
                             _detailsRows.Add(("Saved", saved.ToLocalTime()
                                 .ToString(LibraryStamp.DateTimeFormat,
@@ -201,9 +193,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
                     }
                     break;
             }
-            // Every entry answers "Saved": the document's own stamp when it
-            // records one, else the file's write time — a light or camera
-            // document carries no date of its own.
+            // Older files use their modification date when no saved date was recorded.
             if (!_detailsRows.Exists(row => row.Label == "Saved"))
                 _detailsRows.Add(("Saved",
                     System.IO.File.GetLastWriteTime(path).ToString(
@@ -214,8 +204,6 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
         {
             _detailsRows.Add(("Details", "could not be read"));
         }
-        if (_detailsRows.Count == 0 && _detailsColor is null)
-            _detailsRows.Add(("Details", "none recorded"));
     }
 
     /// <summary>The entry's contents as one row per kind — "Actors 2",
@@ -232,7 +220,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
         }
         Part(metadata.ActorCount, "Actors");
         Part(metadata.PropCount, "Objects");
-        Part(metadata.WorldObjectCount, "Borrowed objects");
+        Part(metadata.WorldObjectCount, "World objects");
         Part(metadata.LightCount, "Lights");
         Part(metadata.CameraCount, "Cameras");
         Part(metadata.OverlayCount, "Overlays");
