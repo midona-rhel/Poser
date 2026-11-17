@@ -127,7 +127,8 @@ everything together.
 Moving the camera with the game's controls, or flying a free camera, is recorded
 too. Once the camera has stood still for five seconds, the move becomes one
 **Move camera** undo step. If you make another edit before then, the camera move
-is recorded first.
+is recorded first. If you press undo before then, the camera goes back to where it
+last stood still.
 
 ## Undo and redo
 
