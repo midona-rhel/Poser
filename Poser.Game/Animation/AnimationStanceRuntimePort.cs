@@ -27,7 +27,10 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
         _posing = posing;
     }
 
-    public bool SupportsStance => _native.HasSetEmoteMode && _native.HasSetPose;
+    /// <summary>Whether the game functions stances and the weapon draw need were found
+    /// at start-up. The scene and undo restore stance and weapon without the
+    /// interface, so both writes below check it too.</summary>
+    public bool SupportsStance => _native.StanceAvailable;
 
     /// <summary>
     /// The game's /changepose kind for a stance: 0 idle, 1 weapon drawn, 2 chair, 3 ground
@@ -44,9 +47,9 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
     };
 
     /// <summary>The stance's pose count from the game's own pose table (the base
-    /// pose and each pose emote); 1 where the table can't be read.</summary>
+    /// pose and each pose emote).</summary>
     public int PoseCount(AnimationStance stance, bool weaponDrawn) =>
-        _native.PoseCount(PoseKind(stance, weaponDrawn)) ?? 1;
+        _native.PoseCount(PoseKind(stance, weaponDrawn));
 
     /// <summary>
     /// Changes stance and pose through the game's emote controller. Sitting and
@@ -133,11 +136,13 @@ public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
             return Outcome.Fail(detail!);
         if (character->Timeline.IsWeaponDrawn == drawn)
             return Outcome.Ok();
+        if (!SupportsStance)
+            return Outcome.Fail(
+                "Drawing the weapon is unavailable: a required game function was not found.");
         if (AnimationNativeState.IsRealPlayer(character))
             return Outcome.Fail("The weapon can't be drawn on your own world character; use its GPose copy.");
-        return _native.SetWeaponDrawn(character, drawn)
-            ? Outcome.Ok()
-            : Outcome.Fail("Drawing the weapon is unavailable: the game function was not found.");
+        _native.SetWeaponDrawn(character, drawn);
+        return Outcome.Ok();
     }
 
     /// <summary>

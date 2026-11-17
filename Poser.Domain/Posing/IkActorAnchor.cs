@@ -18,6 +18,12 @@ public readonly record struct IkActorAnchor(Vector3 Position, Quaternion Rotatio
     /// to the end bone by a solve. History preserves this pending state.
     /// </summary>
     public bool Unseated { get; init; }
+    /// <summary>
+    /// Position and Rotation are already where the solver must aim, but the parent's frame is
+    /// still to be read on the first solve. Set when the target comes from FABRIK or Rope,
+    /// which can pose the bone above this chain, so its frame changes once they let go.
+    /// </summary>
+    public bool ParentUnseated { get; init; }
     public bool IsValid => TransformMath.IsFinite(Position) && TransformMath.IsFinite(AuthoredPosition)
         && TransformMath.IsFinite(Rotation) && Rotation.LengthSquared() > 1e-8f
         && TransformMath.IsFinite(AuthoredRotation) && AuthoredRotation.LengthSquared() > 1e-8f

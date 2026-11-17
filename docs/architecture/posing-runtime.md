@@ -89,6 +89,33 @@ ids, rechecks the full observation before use, and can only be used to create a
 world-actor clone that Poser owns. Poser never adopts, mutates, or deletes the
 source actor.
 
+## Customize+ and the displayed pose
+
+Checked against Customize+ 2.2.1.3.
+
+Customize+ edits the pose in its render hook, every frame, after Poser's pose
+pass and IK solve have run. It writes the model-space pose in place. So each
+frame has two poses: the one the pass produced (`LastRawTransform`) and the one
+on screen (`LastTransform`, once refreshed at draw time). IK solves in the
+first. Never write `LastRawTransform` at draw time.
+
+A Customize+ bone edit has a position, a rotation and a scale:
+
+- Without Propagate it changes that bone only. The scale multiplies the bone's
+  own scale along the bone's axes. The bones below stay where they were.
+- With any Propagate box ticked, the bones below follow the bone's own move.
+  Propagate Scale also scales every bone below, about the edited bone and along
+  the model's axes, by the bone's scale or by its separate child scale when
+  that is set. Propagate Rotation also turns every bone below about the edited
+  bone.
+- The root bone (`n_root`) is different. Its scale goes to the draw object's
+  scale and its position to the draw object's position, not to the pose. In
+  GPose the render hook skips the position.
+
+A bone's own scale therefore says nothing about how the bones below it are
+displayed. To learn that, compare bone positions between the two poses, as the
+[IK drag conversion](../features/expression-gaze-and-ik.md) does.
+
 ## Native ordering
 
 Character model-ID assignment and render-slot release have one native mutation

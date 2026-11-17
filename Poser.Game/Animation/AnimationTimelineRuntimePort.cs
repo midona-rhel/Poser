@@ -36,6 +36,8 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         _framework.Update += OnFrameworkUpdate;
     }
 
+    /// <summary>False for every actor while animation control is off (a game
+    /// function it needs was not found at start-up).</summary>
     public bool IsSupported(ActorId actor)
     {
         if (_native.ResolveActor(actor) is not { } live)
@@ -169,9 +171,6 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         int index = (int)slot;
         if (index is < 0 or >= 14)
             return Outcome.Fail("Slot out of range.");
-        if (!_native.HasCancelTimeline)
-            return Outcome.Fail(
-                "Timeline cancellation is unavailable: the game function was not found.");
         // CancelTimeline takes a slot index, not a timeline row id, as argument two.
         // Keep argument three zero to avoid resetting the base animation.
         _native.CancelTimeline(&character->Timeline, (nint)index, nint.Zero);
