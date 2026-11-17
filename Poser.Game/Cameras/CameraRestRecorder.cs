@@ -51,6 +51,7 @@ public sealed class CameraRestRecorder : IDisposable
         _gestures = gestures;
         _undo = undo;
         _undo.Undoing += RecordSettlingMove;
+        _undo.HasUnrecordedChange = HasSettlingMove;
         _history.Appending += RecordSettlingMove;
         _history.Appended += OnAppended;
         _history.Stepped += Rebase;
@@ -66,10 +67,14 @@ public sealed class CameraRestRecorder : IDisposable
     /// framing the last tick saw.</summary>
     private void RecordSettlingMove()
     {
-        if (_recording || _camera is not { IsValid: true } camera || !_moved || _poserEdit || _last.Near(_rested))
-            return;
-        Record(camera, _last);
+        if (HasSettlingMove())
+            Record(_camera!, _last);
     }
+
+    /// <summary>Whether the camera was moved by its own controls and that move
+    /// is not an undo step yet.</summary>
+    private bool HasSettlingMove() =>
+        !_recording && _camera is { IsValid: true } && _moved && !_poserEdit && !_last.Near(_rested);
 
     private void Tick(IFramework _)
     {
@@ -176,6 +181,7 @@ public sealed class CameraRestRecorder : IDisposable
     {
         _framework.Update -= Tick;
         _undo.Undoing -= RecordSettlingMove;
+        _undo.HasUnrecordedChange = null;
         _history.Appending -= RecordSettlingMove;
         _history.Appended -= OnAppended;
         _history.Stepped -= Rebase;

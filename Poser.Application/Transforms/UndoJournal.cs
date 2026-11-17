@@ -74,7 +74,12 @@ public sealed class UndoJournal
     /// wait for it.</summary>
     public bool IsRestoring => _restoring != null;
 
-    public bool CanUndo => !IsRestoring && _history.CanUndo;
+    public bool CanUndo => !IsRestoring && (_history.CanUndo || HasUnrecordedChange?.Invoke() == true);
+
+    /// <summary>Answers whether there is a change that is not in the history yet,
+    /// such as a camera move that has not come to rest. Undo is offered while
+    /// there is one, even with an empty history.</summary>
+    public Func<bool>? HasUnrecordedChange { get; set; }
     public bool CanRedo => !IsRestoring && _history.CanRedo;
     public string? UndoDescription => _history.UndoDescription;
     public string? RedoDescription => _history.RedoDescription;
