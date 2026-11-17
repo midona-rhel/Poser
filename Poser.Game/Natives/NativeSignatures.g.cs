@@ -120,7 +120,7 @@ internal static class NativeSignatures
     /// <summary>KineDriver.UpdateModule (0x141865DD0 on the analysed build).</summary>
     public const string KineDriver_UpdateModule = "48 89 5C ?? ?? 55 56 57 41 54 41 55 41 56 41 57 48 83 EC 50 33 DB";
     /// <summary>KineDriver.ApplyDriver (0x14187CBE0 on the analysed build).</summary>
-    public const string KineDriver_ApplyDriver = "40 55 53 57 41 56 48 8D ?? 24 C1 48 81 EC B8 00 00 00";
+    public const string KineDriver_ApplyDriver = "40 55 53 57 41 56 48 8D ?? 24 C1 48 81 EC B8 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 F7";
     /// <summary>KineDriver.WriteRotation (0x14186A5B0 on the analysed build).</summary>
     public const string KineDriver_WriteRotation = "48 83 EC 58 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 ?? ?? 0F 2F 15";
     /// <summary>CharacterBase.LoadBKDForSlot (0x140439610 on the analysed build).</summary>
@@ -564,7 +564,7 @@ internal static class NativeSignatures
     /// <summary>InputDeviceManager.Update (0x1401FDCB0 on the analysed build).</summary>
     public const string InputDeviceManager_Update = "48 89 74 ?? ?? 57 48 83 EC 30 0F 29 74 ?? ?? 48 8B F9 48 8B 0D";
     /// <summary>Camera.SmoothLookAt (0x1418A5160 on the analysed build).</summary>
-    public const string Camera_SmoothLookAt = "4C 8B DC 49 89 ?? ?? 49 89 ?? ?? 55 57 41 56 49 8D ?? 98";
+    public const string Camera_SmoothLookAt = "4C 8B DC 49 89 ?? ?? 49 89 ?? ?? 55 57 41 56 49 8D ?? ?? 48 81 EC ?? ?? ?? ?? 45 0F 29";
     /// <summary>SceneCamera.Update (0x14041FBC0 on the analysed build).</summary>
     public const string SceneCamera_Update = "48 89 5C ?? ?? 57 48 81 EC B0 00 00 00 F6 81 F0 00 00 00 01 48 8B D9 48 89 B4";
     /// <summary>EnvManager.Update (0x140074140 on the analysed build).</summary>
