@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
@@ -45,15 +44,10 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     private delegate void SetSlotSpeedDelegate(ActionTimelineSequencer* sequencer, uint slot, float speed);
     private readonly Hook<SetSlotSpeedDelegate>? _slotSpeedHook;
 
-    // A hook object can exist after Enable fails. Commands gate on flags set
-    // only after the matching hook is enabled.
-    private readonly bool _overallSpeedHookEnabled;
-    private readonly bool _slotSpeedHookEnabled;
     private readonly TimelineSeekService _seek;
 
     public AnimationSpeedRuntimePort(
         IFramework framework,
-        ISigScanner sigScanner,
         IGameInteropProvider hooking,
         IPluginLog log,
         StableBindingRegistry bindings,
@@ -75,31 +69,16 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         };
 #endif
 
-        // Each hook's capability flag is set only after Enable succeeds.
-        try
+        // Both functions are part of animation control's start-up check; while it is
+        // off no actor resolves here, so nothing below uses the hooks.
+        if (native.Available)
         {
-            var speedAddress = sigScanner.ScanText(
-                Poser.Game.Natives.NativeSignatures.TimelineContainer_CalculateOverallSpeedLive);
             _speedHook = hooking.HookFromAddress<CalculateAndApplyOverallSpeedDelegate>(
-                speedAddress, OverallSpeedDetour);
+                native.OverallSpeedFunction, OverallSpeedDetour);
             _speedHook.Enable();
-            _overallSpeedHookEnabled = true;
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"Overall-speed hook unavailable; overall speed overrides will fail explicitly: {ex.Message}");
-        }
-
-        try
-        {
             _slotSpeedHook = hooking.HookFromAddress<SetSlotSpeedDelegate>(
-                ActionTimelineSequencer.Addresses.SetSlotSpeed.Value, SlotSpeedDetour);
+                native.SlotSpeedFunction, SlotSpeedDetour);
             _slotSpeedHook.Enable();
-            _slotSpeedHookEnabled = true;
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"Slot-speed hook unavailable; layer speed overrides will fail explicitly: {ex.Message}");
         }
     }
 
@@ -225,10 +204,6 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             return Outcome.Fail(detail!);
         if (!float.IsFinite(speed))
             return Outcome.Fail("Speed must be a finite number.");
-        // Without the enabled hook, the game replaces the value next frame.
-        if (!_overallSpeedHookEnabled)
-            return Outcome.Fail(
-                "Speed is unavailable: the game's speed hook is not active.");
 
         var enforcement = EnforcementFor(actor);
         enforcement.OverallSpeed = speed;
@@ -245,8 +220,6 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             return Outcome.Fail(detail!);
         if (!_seek.Available)
             return Outcome.Fail("Layer weight is unavailable: the native timeline layout is not resolved.");
-        if (!_overallSpeedHookEnabled)
-            return Outcome.Fail("Layer weight is unavailable: the game's speed hook is not active.");
         EnforcementFor(actor).SlotWeights[(int)slot] = Math.Clamp(weight, 0f, 1f);
         SyncEnforcementIndex();
         _seek.ApplySlotWeights(character, EnforcementFor(actor).SlotWeights);
@@ -324,8 +297,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             var sequencer = &live->Timeline.TimelineSequencer;
             foreach (var (slot, value) in values)
             {
-                if (_slotSpeedHookEnabled)
-                    _slotSpeedHook!.Original(sequencer, (uint)slot, value);
+                _slotSpeedHook!.Original(sequencer, (uint)slot, value);
                 _seek.ApplySlotSpeed(sequencer, slot, value);
             }
             _seek.ApplyPropSpeed(live, overall);
@@ -368,9 +340,6 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             return Outcome.Fail(detail!);
         if (!float.IsFinite(speed))
             return Outcome.Fail("Speed must be a finite number.");
-        if (!_slotSpeedHookEnabled)
-            return Outcome.Fail(
-                "Layer speed is unavailable: the game's slot-speed hook is not active.");
 
         var enforcement = EnforcementFor(actor);
         enforcement.SlotSpeeds[(int)slot] = speed;

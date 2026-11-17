@@ -30,7 +30,11 @@ public sealed unsafe partial class AnimationNativeState
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
 
-    // These native entry points are resolved by signature.
+    // The game functions below are found by their byte patterns once, at start-up.
+    // A function animation control needs that is missing turns animation off as a
+    // whole (Available); a function only stances need turns stances off
+    // (StanceAvailable). A field is null only while its feature is off, and nothing
+    // calls it then, so the calls below use them without checking.
     private delegate bool SetEmoteModeDelegate(EmoteController* controller, uint mode);
     private readonly SetEmoteModeDelegate? _setEmoteMode;
     private delegate nint CancelTimelineDelegate(TimelineContainer* container, nint a2, nint a3);
@@ -42,8 +46,8 @@ public sealed unsafe partial class AnimationNativeState
     private delegate nint ActionTimelineRowDelegate(uint id);
     private readonly ActionTimelineRowDelegate? _actionTimelineRow;
 
-    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
-    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.Emote>? _emoteSheet;
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline> _timelineSheet;
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.Emote> _emoteSheet;
     // TimelineContainer::PlayActionTimeline 0x1408BED60(container, first, second, params):
     // queues first (an emote's intro) and second (its loop) and plays first; the
     // sequencer plays second itself when first ends (the game's own intro → loop).
@@ -95,7 +99,7 @@ public sealed unsafe partial class AnimationNativeState
     // it is set so the option is the game's own object.
     private readonly nint _playEmoteOptionVtbl;
     private const int CPoseKinds = 8, CPoseEntrySize = NativeFields.EmoteControllerCPoseTable_EntrySize, CPoseCountOffset = NativeFields.EmoteControllerCPoseTable_Count;
-    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode>? _emoteModeSheet;
+    private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.EmoteMode> _emoteModeSheet;
     // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
     // against our verified sequencer layout): per-slot SchedulerTimeline
     // HANDLES at sequencer+0x70 (Handle = { Data*, Flags }; Flags==0 means
@@ -120,14 +124,10 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>The row the slot was asked to play (ClientStructs TimelineIds, seq+0xE0):
-    /// the one the base pick compares. For slot 0 it runs ahead of
-    /// <see cref="StartedId"/> while the row is queued.</summary>
+    /// the one the base pick compares. For slot 0 it is set while the row is still
+    /// queued, before the slot starts it.</summary>
     internal static ushort RequestedId(ActionTimelineSequencer* sequencer, int slot) =>
         sequencer->TimelineIds[slot];
-
-    /// <summary>The row StartSlot last started on the slot (seq+0xFC).</summary>
-    internal static ushort StartedId(ActionTimelineSequencer* sequencer, int slot) =>
-        *(ushort*)((byte*)sequencer + NativeFields.ActionTimelineSequencer_SlotStartedIds + 2 * slot);
 
     /// <summary>Slot 0's queued second row (seq+0x152; an emote's loop after its intro).</summary>
     internal static ushort QueuedId(ActionTimelineSequencer* sequencer) =>
@@ -156,12 +156,11 @@ public sealed unsafe partial class AnimationNativeState
     private static extern bool ReadProcessMemory(
         nint process, nint address, void* buffer, nint size, out nint read);
 
-    /// <summary>Whether ReadProcessMemory can copy this range (up to 0x160 bytes).</summary>
+    /// <summary>Whether ReadProcessMemory can copy this range (a few hundred bytes at most:
+    /// the copy goes to the stack).</summary>
     internal static bool RegionReadable(nint address, int size)
     {
-        if (size > 0x160)
-            return false;
-        byte* scratch = stackalloc byte[0x160];
+        byte* scratch = stackalloc byte[size];
         return ReadProcessMemory((nint)(-1), address, scratch, size, out var read) && read == size;
     }
 
@@ -187,107 +186,127 @@ public sealed unsafe partial class AnimationNativeState
         _log = log;
         _bindings = bindings;
 
-        // Resolve functions independently. Callers check the capabilities they require;
-        // optional helpers can be absent while another animation operation remains available.
-        _setEmoteMode = ScanDelegate<SetEmoteModeDelegate>(
-            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetMode, "SetEmoteMode");
-        _cancelTimeline = ScanDelegate<CancelTimelineDelegate>(
-            sigScanner, Poser.Game.Natives.NativeSignatures.TimelineContainer_CancelTimeline, "CancelTimeline");
-        _setTimelineId = ScanDelegate<SetTimelineIdDelegate>(
-            sigScanner,
-            Poser.Game.Natives.NativeSignatures.ActionTimelineSequencer_PlayTimeline,
-            "SetTimelineId");
-        _playActionTimeline = ScanDelegate<PlayActionTimelineDelegate>(
-            sigScanner,
-            Poser.Game.Natives.NativeSignatures.TimelineContainer_PlayActionTimeline,
-            "PlayActionTimeline");
-        _getPosture = ScanDelegate<GetPostureDelegate>(
-            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_GetPosture, "EmoteController.GetPosture");
-        _canPlayEmote = ScanDelegate<CanPlayEmoteDelegate>(
-            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_CanPlayEmote, "EmoteController.CanPlayEmote");
-        _setPose = ScanDelegate<SetPoseDelegate>(
-            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_SetPose, "EmoteController.SetPose");
-        _characterSetMode = ScanDelegate<CharacterSetModeDelegate>(
-            sigScanner, Poser.Game.Natives.NativeSignatures.Character_SetMode, "Character.SetMode");
-        _setWeaponDrawn = ScanDelegate<SetWeaponDrawnDelegate>(
-            sigScanner, Poser.Game.Natives.NativeSignatures.TimelineContainer_SetWeaponDrawn, "TimelineContainer.SetWeaponDrawn");
-        if (Poser.Game.Natives.NativeData.TryResolve(sigScanner, Poser.Game.Natives.NativeData.EmoteController_PlayEmoteOptionVtbl, out var optionVtbl))
-            _playEmoteOptionVtbl = optionVtbl;
+        var missing = new List<string>();
+        _setTimelineId = Required<SetTimelineIdDelegate>(Poser.Game.Natives.NativeSignatures.ActionTimelineSequencer_PlayTimeline,
+            "ActionTimelineSequencer.PlayTimeline", missing);
+        _playActionTimeline = Required<PlayActionTimelineDelegate>(Poser.Game.Natives.NativeSignatures.TimelineContainer_PlayActionTimeline,
+            "TimelineContainer.PlayActionTimeline", missing);
+        _cancelTimeline = Required<CancelTimelineDelegate>(Poser.Game.Natives.NativeSignatures.TimelineContainer_CancelTimeline,
+            "TimelineContainer.CancelTimeline", missing);
+        _characterSetMode = Required<CharacterSetModeDelegate>(Poser.Game.Natives.NativeSignatures.Character_SetMode,
+            "Character.SetMode", missing);
+        _getPosture = Required<GetPostureDelegate>(Poser.Game.Natives.NativeSignatures.EmoteController_GetPosture,
+            "EmoteController.GetPosture", missing);
         if (Poser.Game.Natives.NativeData.TryResolve(sigScanner, Poser.Game.Natives.NativeData.EmoteController_CPoseTable, out var cposeTable))
             _cposeTable = (byte*)cposeTable;
         else
-            _log.Warning("Animation: the pose table was not found; stance poses can't be stepped.");
+            missing.Add("EmoteController.CPoseTable");
+        // The speed port hooks these two; pausing, speeds, scrubbing and a held
+        // expression all hold their speed through them.
+        if (sigScanner.TryScanText(Poser.Game.Natives.NativeSignatures.TimelineContainer_CalculateOverallSpeedLive, out var overallSpeed))
+            OverallSpeedFunction = overallSpeed;
+        else
+            missing.Add("TimelineContainer.CalculateOverallSpeedLive");
+        SlotSpeedFunction = (nint)ActionTimelineSequencer.Addresses.SetSlotSpeed.Value;
+        if (SlotSpeedFunction == 0)
+            missing.Add("ActionTimelineSequencer.SetSlotSpeed");
+        Available = missing.Count == 0;
+
+        var stanceMissing = new List<string>();
+        _setEmoteMode = Required<SetEmoteModeDelegate>(Poser.Game.Natives.NativeSignatures.EmoteController_SetMode,
+            "EmoteController.SetMode", stanceMissing);
+        _setPose = Required<SetPoseDelegate>(Poser.Game.Natives.NativeSignatures.EmoteController_SetPose,
+            "EmoteController.SetPose", stanceMissing);
+        _canPlayEmote = Required<CanPlayEmoteDelegate>(Poser.Game.Natives.NativeSignatures.EmoteController_CanPlayEmote,
+            "EmoteController.CanPlayEmote", stanceMissing);
+        _setWeaponDrawn = Required<SetWeaponDrawnDelegate>(Poser.Game.Natives.NativeSignatures.TimelineContainer_SetWeaponDrawn,
+            "TimelineContainer.SetWeaponDrawn", stanceMissing);
+        StanceAvailable = stanceMissing.Count == 0;
+
+        if (!Available)
+            _log.Warning($"Animation: {string.Join(", ", missing.Concat(stanceMissing))} not found in the game; "
+                + "animation control is off.");
+        else if (!StanceAvailable)
+            _log.Warning($"Animation: {string.Join(", ", stanceMissing)} not found in the game; "
+                + "stances and drawing the weapon are off.");
+
+        // Helpers whose absence only loses a detail; their callers check them.
+        if (Poser.Game.Natives.NativeData.TryResolve(sigScanner, Poser.Game.Natives.NativeData.EmoteController_PlayEmoteOptionVtbl, out var optionVtbl))
+            _playEmoteOptionVtbl = optionVtbl;
+        _stopLoopedEmote = Optional<StopLoopedEmoteDelegate>(Poser.Game.Natives.NativeSignatures.EmoteController_StopLoopedEmote,
+            "EmoteController.StopLoopedEmote", "a Full body animation played over a sitting or looped emote no longer stops that emote or clears its pose");
+        _actionTimelineRow = Optional<ActionTimelineRowDelegate>(Poser.Game.Natives.NativeSignatures.Sheet_GetActionTimelineRow,
+            "Sheet.GetActionTimelineRow", "an additive animation such as a nod stops the Upper body layer");
         _gposeMotion = new GPoseMotionRecords(sigScanner, log);
-        _stopLoopedEmote = ScanDelegate<StopLoopedEmoteDelegate>(
-            sigScanner, Poser.Game.Natives.NativeSignatures.EmoteController_StopLoopedEmote, "EmoteController.StopLoopedEmote");
-        _actionTimelineRow = ScanDelegate<ActionTimelineRowDelegate>(
-            sigScanner,
-            Poser.Game.Natives.NativeSignatures.Sheet_GetActionTimelineRow,
-            "ActionTimelineRow");
     }
 
-    private T? ScanDelegate<T>(ISigScanner scanner, string signature, string name)
-        where T : Delegate
+    private T? Required<T>(string signature, string name, List<string> missing) where T : Delegate
     {
-        try
-        {
-            if (scanner.TryScanText(signature, out var address) && address != nint.Zero)
-                return Marshal.GetDelegateForFunctionPointer<T>(address);
-            _log.Warning($"Animation: {name} signature not found; stance changes will fail explicitly.");
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"Animation: {name} scan failed ({ex.Message}); stance changes will fail explicitly.");
-        }
+        if (_sigScanner.TryScanText(signature, out var address))
+            return Marshal.GetDelegateForFunctionPointer<T>(address);
+        missing.Add(name);
         return null;
     }
 
+    private T? Optional<T>(string signature, string name, string loss) where T : Delegate
+    {
+        if (_sigScanner.TryScanText(signature, out var address))
+            return Marshal.GetDelegateForFunctionPointer<T>(address);
+        _log.Warning($"Animation: {name} not found in the game; {loss}.");
+        return null;
+    }
+
+    /// <summary>Whether every game function animation control needs was found at
+    /// start-up. When false, no actor resolves here, so every animation operation
+    /// fails at its first step and the Animation tab shows the actor as unsupported.</summary>
+    internal bool Available { get; }
+
+    /// <summary>Whether the game functions stances and the weapon draw need were found
+    /// at start-up (on top of <see cref="Available"/>).</summary>
+    internal bool StanceAvailable { get; }
+
+    /// <summary>The game's overall-speed calculation and slot-speed setter, which the
+    /// speed port hooks; set while <see cref="Available"/>.</summary>
+    internal nint OverallSpeedFunction { get; }
+    internal nint SlotSpeedFunction { get; }
+
     // ── Resolution ────────────────────────────────────────────────────
 
+    /// <summary>The actor's game character, or null with the reason. This is where
+    /// animation being off stops every operation.</summary>
     internal Character* Resolve(ActorId actor, out string? detail)
     {
-        detail = null;
-        var resolved = _bindings.Resolve(actor);
-        if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
+        if (!Available)
         {
-            detail = resolved.Detail ?? $"Actor {actor} is no longer available.";
+            detail = "Animation control is off: game functions it needs were not found after a game update.";
             return null;
         }
-        var character = (Character*)legacy.Address;
-        return character == null ? null : character;
+        var resolved = _bindings.Resolve(actor);
+        detail = resolved.Detail;
+        return resolved.Success ? (Character*)resolved.Value!.Address : null;
     }
 
     internal IActor? ResolveActor(ActorId actor)
     {
+        if (!Available)
+            return null;
         var resolved = _bindings.Resolve(actor);
         return resolved.Success ? resolved.Value : null;
     }
 
     // ── Native entry points ───────────────────────────────────────────
 
-    internal bool HasCancelTimeline => _cancelTimeline != null;
-    internal bool HasSetEmoteMode => _setEmoteMode != null;
-    internal bool HasSetPose => _setPose != null && _characterSetMode != null;
-
-    /// <summary>The game's pose step; callers check <see cref="HasSetPose"/>.</summary>
+    /// <summary>The game's pose step. Stances only.</summary>
     internal void SetPose(Character* character, int kind, byte index) =>
         _setPose!(&character->EmoteController, kind, index, nint.Zero);
 
     /// <summary>A pose kind's pose count (the base pose and each pose emote) from the
-    /// game's table, or null when the table isn't available.</summary>
-    internal int? PoseCount(int kind) =>
-        _cposeTable == null || kind is < 0 or >= CPoseKinds
-            ? null
-            : 1 + _cposeTable[kind * CPoseEntrySize + CPoseCountOffset];
+    /// game's table.</summary>
+    internal int PoseCount(int kind) => 1 + _cposeTable[kind * CPoseEntrySize + CPoseCountOffset];
 
-    /// <summary>The game's weapon draw or sheathe; false when it wasn't found.</summary>
-    internal bool SetWeaponDrawn(Character* character, bool drawn)
-    {
-        if (_setWeaponDrawn == null)
-            return false;
-        _setWeaponDrawn(&character->Timeline, drawn ? (byte)1 : (byte)0, 1);
-        return true;
-    }
+    /// <summary>The game's weapon draw or sheathe. Stances only.</summary>
+    internal void SetWeaponDrawn(Character* character, bool drawn) =>
+        _setWeaponDrawn!(&character->Timeline, drawn ? (byte)1 : (byte)0, 1);
 
     /// <summary>A standing loop with no EmoteMode (EmoteLoop 0): a loop mode is
     /// switched loop to loop, which runs no exit hook. Not for the real player.</summary>
@@ -310,7 +329,7 @@ public sealed unsafe partial class AnimationNativeState
         ClearEmoteCancelPending(character);
     }
 
-    /// <summary>Character::SetMode; available with <see cref="HasSetPose"/>.</summary>
+    /// <summary>Character::SetMode.</summary>
     internal void SetCharacterMode(Character* character, CharacterModes mode, byte param) =>
         _characterSetMode!(character, (int)mode, param);
 
@@ -318,11 +337,10 @@ public sealed unsafe partial class AnimationNativeState
     internal static void ClearEmoteCancelPending(Character* character) =>
         *((byte*)&character->EmoteController + EmoteCancelPendingOffset) = 0;
 
-    /// <summary>Calls CancelTimeline; callers check <see cref="HasCancelTimeline"/>.</summary>
     internal void CancelTimeline(TimelineContainer* container, nint a2, nint a3) =>
         _cancelTimeline!(container, a2, a3);
 
-    /// <summary>Calls SetEmoteMode; callers check <see cref="HasSetEmoteMode"/>.</summary>
+    /// <summary>EmoteController::SetMode. Stances only.</summary>
     internal void SetEmoteMode(EmoteController* controller, uint mode) =>
         _setEmoteMode!(controller, mode);
 
@@ -330,7 +348,7 @@ public sealed unsafe partial class AnimationNativeState
     /// onto, or null when the row is missing or unmapped.</summary>
     internal AnimationSlot? TimelineSlot(ushort timeline)
     {
-        var stance = _timelineSheet?.GetRowOrDefault(timeline)?.Stance;
+        var stance = _timelineSheet.GetRowOrDefault(timeline)?.Stance;
         return stance is { } value && AnimationSlots.IsKnown(value)
             ? (AnimationSlot)value
             : null;
@@ -349,13 +367,13 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>Every Havok animation control on the actor's body skeleton (each
-    /// partial's animated skeleton 0) with its partial and array index; false without
-    /// a skeleton.</summary>
-    internal static bool ForEachControl(Character* character, ControlVisitor visit)
+    /// partial's animated skeleton 0) with its partial and array index. None while
+    /// the actor has no drawn body (during a redraw).</summary>
+    internal static void ForEachControl(Character* character, ControlVisitor visit)
     {
         var skeleton = BodySkeleton(character);
         if (skeleton == null)
-            return false;
+            return;
         for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
         {
             var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
@@ -368,7 +386,6 @@ public sealed unsafe partial class AnimationNativeState
                     visit(p, c, control);
             }
         }
-        return true;
     }
 
     private static bool Bound(
@@ -428,23 +445,16 @@ public sealed unsafe partial class AnimationNativeState
     /// <summary>An intro played again with its loop queued behind it, as the game queues
     /// an emote (TimelineContainer::PlayActionTimeline): a redraw clears the queue, and
     /// the intro alone left nothing to play after it.</summary>
-    internal Outcome ReplayIntro(Character* character, ushort intro, ushort loop)
-    {
-        if (_playActionTimeline == null)
-            return Outcome.Fail("Timeline playback is unavailable.");
+    internal void ReplayIntro(Character* character, ushort intro, ushort loop) =>
         WithUpperKept(intro, () =>
         {
-            _playActionTimeline(&character->Timeline, intro, loop, nint.Zero);
+            _playActionTimeline!(&character->Timeline, intro, loop, nint.Zero);
             return true;
         });
-        return Outcome.Ok();
-    }
 
     private Outcome Play(Character* character, ushort timeline, bool leaveLoop)
     {
-        if (_setTimelineId == null || _characterSetMode == null)
-            return Outcome.Fail("Timeline playback is unavailable.");
-        if (_timelineSheet?.GetRowOrDefault(timeline) == null)
+        if (_timelineSheet.GetRowOrDefault(timeline) == null)
             return Outcome.Fail("Timeline playback failed: the game has no such animation.");
         bool fullBody = TimelineSlot(timeline) is AnimationSlot.Base or null;
         if (fullBody && leaveLoop)
@@ -453,7 +463,7 @@ public sealed unsafe partial class AnimationNativeState
             LeaveForFullBody(character);
         }
         var sequencer = &character->Timeline.TimelineSequencer;
-        if (!WithUpperKept(timeline, () => _setTimelineId(sequencer, timeline, nint.Zero)))
+        if (!WithUpperKept(timeline, () => _setTimelineId!(sequencer, timeline, nint.Zero)))
             return Outcome.Fail("Timeline playback failed.");
         if (fullBody && character->Timeline.BaseOverride != timeline && RequestedId(sequencer, 0) == timeline)
             HoldAgainstBasePick(sequencer);
@@ -521,8 +531,6 @@ public sealed unsafe partial class AnimationNativeState
     internal Outcome RestoreFullBody(Character* character, CharacterModes mode, byte param,
         ushort baseOverride, ushort slotTimeline)
     {
-        if (_cancelTimeline == null || _characterSetMode == null)
-            return Outcome.Fail("Full body reset is unavailable: a required game function was not found.");
         bool loop = mode is CharacterModes.EmoteLoop or CharacterModes.InPositionLoop;
         bool sameMode = character->Mode == mode && character->ModeParam == param;
         // Already in the captured state (a layer reset that never touched the Full
@@ -537,7 +545,7 @@ public sealed unsafe partial class AnimationNativeState
         if (!sameMode)
             LeaveForFullBody(character);
         character->Timeline.BaseOverride = loop ? (ushort)0 : baseOverride;
-        _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
+        _cancelTimeline!(&character->Timeline, nint.Zero, nint.Zero);
         if (!loop || IsRealPlayer(character))
         {
             _gposeMotion.GiveBack(character, mode, param, baseOverride, slotTimeline);
@@ -551,19 +559,16 @@ public sealed unsafe partial class AnimationNativeState
     }
 
     /// <summary>Enters a loop mode and keeps the placement Poser gave the actor: the
-    /// chair's enter hook sets the sit height into DrawOffset/CameraOffset. False when
-    /// the game's mode function was not found. Not for the real player.</summary>
-    internal bool EnterLoopMode(Character* character, CharacterModes mode, byte param)
+    /// chair's enter hook sets the sit height into DrawOffset/CameraOffset. Not for the
+    /// real player.</summary>
+    internal void EnterLoopMode(Character* character, CharacterModes mode, byte param)
     {
-        if (_characterSetMode == null)
-            return false;
         var drawOffset = character->DrawOffset;
         var cameraOffset = character->CameraOffset;
-        _characterSetMode(character, (int)mode, param);
+        _characterSetMode!(character, (int)mode, param);
         character->DrawOffset = drawOffset;
         character->CameraOffset = cameraOffset;
         ClearEmoteCancelPending(character);
-        return true;
     }
 
     /// <summary>Stops GPose replaying the actor's recorded motion before a stance
@@ -576,7 +581,7 @@ public sealed unsafe partial class AnimationNativeState
     /// independent, so unless the row plays on Upper Body itself the bit is
     /// cleared for this call only and restored: nothing else in the call reads
     /// it (the transition doesn't; StartSlot reads bit 0), and it all runs on
-    /// this thread.
+    /// the framework thread.
     /// </summary>
     private bool WithUpperKept(ushort timeline, Func<bool> play)
     {
@@ -593,24 +598,18 @@ public sealed unsafe partial class AnimationNativeState
 #if DEBUG
         _probeOurWrite = true;
 #endif
-        try
-        {
-            return play();
-        }
-        finally
-        {
-            if (rowFlags != null)
-                *rowFlags |= 4;
+        bool played = play();
+        if (rowFlags != null)
+            *rowFlags |= 4;
 #if DEBUG
-            _probeOurWrite = false;
+        _probeOurWrite = false;
 #endif
-        }
+        return played;
     }
 
     /// <summary>The game's posture (EmoteController::GetPosture): 0 standing, 1 ground
-    /// sit, 2 chair, 3 mounted, 4 dozing, 5 swimming, 6 diving; null when unavailable.</summary>
-    internal int? Posture(Character* character) =>
-        _getPosture == null ? null : _getPosture(&character->EmoteController);
+    /// sit, 2 chair, 3 mounted, 4 dozing, 5 swimming, 6 diving.</summary>
+    internal int Posture(Character* character) => _getPosture!(&character->EmoteController);
 
     /// <summary>
     /// Whether the game would let the actor enter this emote mode (sit on the ground,
@@ -619,32 +618,29 @@ public sealed unsafe partial class AnimationNativeState
     /// of them is allowed, a mount that forbids emotes refuses too). Any other posture
     /// is allowed, because the stance change cancels the current one first; the check
     /// itself would judge it from the stance being left (sit to ground sit refused).
-    /// Null when the check or the row is unavailable.
+    /// Null when the mode has no start emote. Stances only.
     /// </summary>
     internal bool? CanStartEmoteMode(Character* character, uint emoteMode)
     {
-        if (_canPlayEmote == null || _getPosture == null
-            || _emoteModeSheet?.GetRowOrDefault(emoteMode) is not { } mode || mode.StartEmote.RowId == 0)
+        if (_emoteModeSheet.GetRowOrDefault(emoteMode) is not { } mode || mode.StartEmote.RowId == 0)
             return null;
-        int posture = _getPosture(&character->EmoteController);
-        if (posture is not (3 or 5 or 6))
+        if (Posture(character) is not (3 or 5 or 6))
             return true;
-        return _canPlayEmote(&character->EmoteController, (ushort)mode.StartEmote.RowId, 0) != 0;
+        return _canPlayEmote!(&character->EmoteController, (ushort)mode.StartEmote.RowId, 0) != 0;
     }
 
     /// <summary>
     /// The emote's row for the actor's posture, as the game's emote start picks it
     /// (FUN_140617920 over GetPosture): standing [0], ground sit [2], chair [3],
     /// dozing [5]; mounted, swimming or diving [4] only if the emote is usable so.
-    /// 0 where the game refuses the emote in this posture; null when the posture
-    /// can't be read. The standing height-adjust loop [6] is not applied.
+    /// 0 where the game refuses the emote in this posture; null when the game has no
+    /// such emote. The standing height-adjust loop [6] is not applied.
     /// </summary>
     internal ushort? EmotePostureRow(Character* character, uint emoteId)
     {
-        if (_getPosture == null || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
-            || emote.ActionTimeline.Count < 6)
+        if (_emoteSheet.GetRowOrDefault(emoteId) is not { } emote)
             return null;
-        int index = _getPosture(&character->EmoteController) switch
+        int index = Posture(character) switch
         {
             1 => 2,
             2 => 3,
@@ -667,9 +663,7 @@ public sealed unsafe partial class AnimationNativeState
     /// </summary>
     internal bool PlayEmoteFromStart(Character* character, uint emoteId, ushort loop)
     {
-        if (_characterSetMode == null || _cancelTimeline == null
-            || _emoteSheet?.GetRowOrDefault(emoteId) is not { } emote
-            || emote.ActionTimeline.Count < 2)
+        if (_emoteSheet.GetRowOrDefault(emoteId) is not { } emote)
             return false;
         if (IsRealPlayer(character))
             return PlayEmoteRows(character, emote, loop);
@@ -684,11 +678,11 @@ public sealed unsafe partial class AnimationNativeState
         // Pose emotes and paused loops without an EmoteMode need EmoteLoop mode
         // so the normal idle animation leaves them playing.
         if (emote.EmoteMode.RowId == 0
-            && (IsPoseEmote(emoteId) || _timelineSheet?.GetRowOrDefault(standingLoop)?.Pause == true))
-            _characterSetMode(character, (int)CharacterModes.EmoteLoop, 0);
+            && (IsPoseEmote(emoteId) || _timelineSheet.GetRowOrDefault(standingLoop)?.Pause == true))
+            _characterSetMode!(character, (int)CharacterModes.EmoteLoop, 0);
         // The game refuses an emote while a higher-priority animation occupies this slot.
         if (*(int*)((byte*)sequencer + Slot0PriorityOffset) > 1)
-            _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
+            _cancelTimeline!(&character->Timeline, nint.Zero, nint.Zero);
         var option = stackalloc EmoteController.PlayEmoteOption[1];
         *option = default;
         *(nint*)option = _playEmoteOptionVtbl;
@@ -706,8 +700,6 @@ public sealed unsafe partial class AnimationNativeState
     /// the local player's timeline through PlayActionTimeline.</summary>
     private bool PlayEmoteRows(Character* character, Lumina.Excel.Sheets.Emote emote, ushort loop)
     {
-        if (_playActionTimeline == null)
-            return false;
         if (loop == 0)
             loop = (ushort)emote.ActionTimeline[0].RowId;
         ushort intro = (ushort)emote.ActionTimeline[1].RowId;
@@ -718,7 +710,7 @@ public sealed unsafe partial class AnimationNativeState
         nint before = SlotTimeline(sequencer, 0);
         WithUpperKept(first, () =>
         {
-            _playActionTimeline(&character->Timeline, first, intro != 0 ? loop : (ushort)0, nint.Zero);
+            _playActionTimeline!(&character->Timeline, first, intro != 0 ? loop : (ushort)0, nint.Zero);
             return true;
         });
         return SlotTimeline(sequencer, 0) != before;
@@ -728,8 +720,6 @@ public sealed unsafe partial class AnimationNativeState
     /// table's emote lists).</summary>
     private bool IsPoseEmote(uint emoteId)
     {
-        if (_cposeTable == null)
-            return false;
         for (int kind = 0; kind < CPoseKinds; kind++)
         {
             byte* entry = _cposeTable + kind * CPoseEntrySize;

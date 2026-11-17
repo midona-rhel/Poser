@@ -11,18 +11,13 @@ using CSGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Captures selected timeline clocks before redraw and attempts to restore them afterward.</summary>
+/// <summary>Remembers what each of a character's animation layers was playing, and
+/// where, before a redraw, and plays it again from there afterwards.</summary>
 public sealed unsafe partial class TimelineSeekService
 {
     // ── Redraw restore ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Entry of Character::DisableDraw (every redraw path: Penumbra, Glamourer,
-    /// the game's own hide). At entry the slot ids, handles and clocks are intact;
-    /// the function then destroys the props and stops every slot. Only drawn
-    /// (+0x9A bit 7) Poser actors. The detour catches capture exceptions before
-    /// calling the original native function.
-    /// </summary>
+    /// <summary>What one character was playing when its redraw began.</summary>
     private sealed class Restore
     {
         public readonly (int Slot, ushort Id, float Clock)[] Slots;
@@ -58,14 +53,19 @@ public sealed unsafe partial class TimelineSeekService
 
     private const int RestoreFrames = 600;
 
-
+    /// <summary>
+    /// Entry of Character::DisableDraw (every redraw path: Penumbra, Glamourer,
+    /// the game's own hide). At entry the slot ids, handles and clocks are intact;
+    /// the function then destroys the props and stops every slot. Only drawn
+    /// (+0x9A bit 7) Poser actors are captured.
+    /// </summary>
     private void DisableDrawDetour(nint character)
     {
         try
         {
             // A character with a pending restore counts even if Poser's list dropped
             // it for a moment: the game is calling this on a live object.
-            if (character != 0 && (_managed.Contains(character) || _restores.ContainsKey(character))
+            if ((_managed.Contains(character) || _restores.ContainsKey(character))
                 && (*(byte*)(character + NativeFields.Character_DrawFlags9A) & 0x80) != 0)
                 Capture(character);
         }
@@ -106,11 +106,11 @@ public sealed unsafe partial class TimelineSeekService
             // A row still loading (a redraw right after a play) is replayed from its
             // start: an actor in EmoteLoop with no EmoteMode has nothing else that
             // starts its Base again, and its draw never finishes without one.
-            slots.Add((slot, id, state.Loaded ? state.Clock : TimelineState.Of(timeline).Exists ? state.Begin : 0f));
+            slots.Add((slot, id, state.Loaded ? state.Clock : state.Exists ? state.Begin : 0f));
         }
         ushort queuedLoop = AnimationNativeState.QueuedLoopBehindIntro(sequencer);
         var go = (CSGameObject*)character;
-        _log.Debug($"[TimelineSeek] redraw capture mode {((Character*)character)->Mode}/{((Character*)character)->ModeParam} queued {AnimationNativeState.QueuedLoopBehindIntro(sequencer)}: "
+        _log.Debug($"[TimelineSeek] redraw capture mode {((Character*)character)->Mode}/{((Character*)character)->ModeParam} queued {queuedLoop}: "
             + string.Join(", ", slots.Select(x => $"slot {x.Item1} row {x.Item2} at {x.Item3:0.#}")));
         if (slots.Count > 0)
             _restores[character] = new Restore(slots.ToArray(), go->ObjectIndex, go->EntityId)
@@ -138,8 +138,6 @@ public sealed unsafe partial class TimelineSeekService
     /// </summary>
     private void PumpRestores()
     {
-        if (_restores.Count == 0)
-            return;
         List<nint>? finished = null;
         foreach (var (character, restore) in _restores)
         {
@@ -175,9 +173,11 @@ public sealed unsafe partial class TimelineSeekService
                 nint noBlend = 0;
                 foreach (var (slot, id, _) in restore.Slots)
                 {
-                    var played = slot == 0 && restore.QueuedLoop != 0
-                        ? _native.ReplayIntro(chara, id, restore.QueuedLoop)
-                        : _native.ReplayTimeline(chara, id);
+                    var played = Poser.Domain.Outcome.Ok();
+                    if (slot == 0 && restore.QueuedLoop != 0)
+                        _native.ReplayIntro(chara, id, restore.QueuedLoop);
+                    else
+                        played = _native.ReplayTimeline(chara, id);
                     if (!played.Success)
                         LogOnce($"restore-play:{id}", $"[TimelineSeek] redraw restore could not replay {id}: {played.Detail}");
                     else if (noBlend == 0)
