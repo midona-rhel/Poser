@@ -40,15 +40,13 @@ internal sealed partial class EntityContextMenus
 
     private ContextMenuItem[] BuildActorPoseSubmenu(ActorId actorId, out List<Action?> actions)
     {
-        var sourceLabel = ActorNames.Display(_configuration, actorId,
-            _scene.Snapshot.FindActor(actorId)?.Name ?? "Actor");
         actions =
         [
             () => _poseFileSection.RequestImportMenu(withPresets: true, target: actorId),
             () => _poseFileSection.OpenImportFromFile(actorId),
             () => _poseFileSection.ImportFromClipboard(actorId),
             null,
-            () => _cleanPose.Stash(actorId, sourceLabel),
+            () => _cleanPose.Stash(actorId),
         ];
         var items = new List<ContextMenuItem>
         {

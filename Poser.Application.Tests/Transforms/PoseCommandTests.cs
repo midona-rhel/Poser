@@ -63,16 +63,10 @@ public sealed class PoseCommandTests
     }
 
     [Fact]
-    public void Stash_restores_all_bone_slots_without_model_transform_while_mirror_includes_facing()
+    public void Mirror_includes_facing()
     {
         using var f = new Fixture();
         var original = f.Live.ToDictionary();
-        Assert.True(f.Commands.Stash(f.Actor, "source").Success);
-        Assert.True(f.Commands.Reset(f.Actor, PoseRegion.All).Success);
-        Assert.True(f.Commands.ApplyStash(f.Actor).Success);
-        Assert.Equal(original[f.Character].Pose.Evaluate(), f.Live[f.Character].Pose.Evaluate());
-        Assert.Equal(original[f.Weapon].Pose.Evaluate(), f.Live[f.Weapon].Pose.Evaluate());
-        Assert.Equal(original[f.Model], f.Live[f.Model]);
         Assert.True(f.Commands.Mirror(f.Actor).Success);
         var mirror = Assert.IsType<TransformPatch>(f.History.PeekUndo());
         Assert.Contains(mirror.After, state => state.Target == f.Model);
@@ -82,21 +76,16 @@ public sealed class PoseCommandTests
     }
 
     [Fact]
-    public void Old_actor_and_bone_commands_do_not_redirect_to_new_generation_or_overwrite_stash()
+    public void Old_actor_and_bone_commands_do_not_redirect_to_new_generation()
     {
         using var f = new Fixture();
-        Assert.True(f.Commands.Stash(f.Actor, "kept").Success);
         var replacement = f.Actor with { Generation = f.Actor.Generation + 1 };
         Assert.True(f.Scene.TryRefresh(new SceneSnapshot(2,
             [new ActorDescriptor(replacement, "replacement", [])], [], [], [])).Accepted);
         f.Captures = 0;
-        Assert.False(f.Commands.Reset(f.Actor, PoseRegion.All).Success);
         Assert.False(f.Commands.Mirror(f.Actor).Success);
-        Assert.False(f.Commands.Stash(f.Actor, "lost").Success);
-        Assert.False(f.Commands.ApplyStash(f.Actor).Success);
         Assert.False(f.Commands.ResetBone(f.Character, "old bone").Success);
         Assert.False(f.Commands.HasAuthoredEdits(f.Actor));
-        Assert.Equal("kept", f.Commands.StashedFrom);
         Assert.Equal(0, f.Captures);
         Assert.False(f.History.CanUndo);
     }
@@ -138,13 +127,14 @@ public sealed class PoseCommandTests
                         new(Vector3.UnitX, Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f), Vector3.Zero))]), true);
             Gestures = new(Scene, this, History);
             Journal = new(History, Gestures, _ => true, new Fixtures.NoticeLog());
-            var edits = new PoseEditService(Scene, this, History, Gestures);
-            Commands = new PoseCommands(Scene, edits, new(edits), this);
+            var transforms = new TransformCommandService(Scene, this, History, Gestures);
+            var edits = new PoseEditService(this, transforms);
+            Commands = new PoseCommands(Scene, edits, new(null!, null!, null!, Scene, null!), this);
             _integration = new(Idle<IIntegrationRuntimeFake>(), Idle<IMcdfFileBoundary>(),
                 Idle<ISessionGenerationSource>());
             ModelPort.Read(Actor).Returns(0);
             Models = new ActorModelIdSession(ModelPort);
-            ResetAll = new ActorResetControl(Scene, Gestures, edits, this,
+            ResetAll = new ActorResetControl(Scene, transforms, edits, this,
                 Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationTimelinePort>(),
                     Idle<IAnimationSpeedPort>(), Idle<IAnimationStancePort>(),
                     Idle<IAnimationScrubPort>(), Idle<IWorldRenderingRuntimePort>()),
@@ -200,7 +190,7 @@ public sealed class PoseCommandTests
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
         {
             "Reset" => Outcome.Ok(),
-            "ClearLoops" or "SuspendColors" or "ClearOwned" or "SetLayerOwned"
+            "Read" or "ClearLoops" or "SuspendColors" or "ClearOwned" or "SetLayerOwned"
                 or "add_LayerEnded" or "remove_LayerEnded" => null,
             _ => throw new InvalidOperationException($"Unexpected reset mechanism: {method.Name}"),
         };

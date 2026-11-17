@@ -207,14 +207,6 @@ public static class Tabler
     public static SvgDocument? GetFilled(TablerIcon icon) =>
         GetFilled(NameFor(icon));
 
-    /// <summary>Every shipped icon name — hand-authored sources plus the
-    /// generated Tabler set, ordinal-sorted.</summary>
-    public static IReadOnlyList<string> ShippedNames() =>
-        PoserIconSources.Sources.Keys
-            .Union(TablerSvgSources.Sources.Keys)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToList();
-
     /// <summary>Lower-kebab-case name for a built-in enum value (e.g. <c>EyeOff</c> → <c>"eye-off"</c>).</summary>
     public static string NameFor(TablerIcon icon) => icon switch
     {

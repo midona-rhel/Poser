@@ -111,25 +111,6 @@ public class CameraService : ICameraProjection
         return true;
     }
 
-    private static bool WorldToScreenDepth(Matrix4x4 m, Vector3 v, out Vector2 screenPos)
-    {
-        var x = (m.M11 * v.X) + (m.M21 * v.Y) + (m.M31 * v.Z) + m.M41;
-        var y = (m.M12 * v.X) + (m.M22 * v.Y) + (m.M32 * v.Z) + m.M42;
-        var w = (m.M14 * v.X) + (m.M24 * v.Y) + (m.M34 * v.Z) + m.M44;
-
-        var io = Dalamud.Bindings.ImGui.ImGui.GetIO();
-        var camX = io.DisplaySize.X / 2f;
-        var camY = io.DisplaySize.Y / 2f;
-
-        screenPos = new Vector2(
-            camX + (camX * x / w),
-            camY - (camY * y / w)
-        );
-
-        // Reject points with w at or below the near-zero threshold.
-        return w > 0.001f;
-    }
-
     public unsafe Vector3 ScreenToWorld(Vector2 screenPos, float depth)
     {
         var cameraManager = CameraManager.Instance();

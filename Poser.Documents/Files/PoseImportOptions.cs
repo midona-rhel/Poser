@@ -144,16 +144,6 @@ public class PoseImportOptions
     /// </summary>
     public static PoseImportOptions Default => new();
 
-    /// <summary>
-    /// Options that only import rotation (for expression application).
-    /// </summary>
-    public static PoseImportOptions RotationOnly => new()
-    {
-        ApplyRotation = true,
-        ApplyPosition = false,
-        ApplyScale = false
-    };
-
     /// <summary>Expression preset — face only, head excluded, no model transform.</summary>
     public static PoseImportOptions Expression => new()
     {

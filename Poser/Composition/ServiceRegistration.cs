@@ -265,7 +265,7 @@ internal static class ServiceRegistration
         services.AddSingleton<IGroupTransformSource, GroupTransformSource>();
         services.AddSingleton<GroupTransformCoordinator>();
         services.AddSingleton<PoseEditService>();
-        services.AddSingleton<PoseTransferService>();
+        services.AddSingleton<PoseStash>();
         services.AddSingleton<IPoseEditReads, PoseEditReads>();
         services.AddSingleton<IActorPoseResetRuntime, ActorPoseResetRuntime>();
         services.AddSingleton<IActorResetControl, ActorResetControl>();
@@ -276,7 +276,7 @@ internal static class ServiceRegistration
             var log = sp.GetRequiredService<IPluginLog>();
             return new PoseCommands(
                 sp.GetRequiredService<SceneSession>(), sp.GetRequiredService<PoseEditService>(),
-                sp.GetRequiredService<PoseTransferService>(), sp.GetRequiredService<IPoseEditReads>(),
+                sp.GetRequiredService<PoseStash>(), sp.GetRequiredService<IPoseEditReads>(),
                 (description, result) =>
                 {
                     if (!result.Success)

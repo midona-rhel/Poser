@@ -232,8 +232,7 @@ public sealed class PoseImportCapture : IDisposable
         PoseImportOperation operation,
         PoseImportPlan plan,
         bool expression = false,
-        bool suppressHistory = false,
-        string? asset = null)
+        bool suppressHistory = false)
     {
         if (Volatile.Read(ref _pending) is not { } import ||
             !ReferenceEquals(import.Operation, operation) ||
@@ -241,7 +240,6 @@ public sealed class PoseImportCapture : IDisposable
             return GestureResult.Fail("The pose import arm is stale.");
         import.Expression = expression;
         import.SuppressHistory = suppressHistory;
-        import.Asset = asset;
         if (plan.IsEmpty)
             return FailAdmitted(import, "Nothing in this file applies to the chosen scope.");
 

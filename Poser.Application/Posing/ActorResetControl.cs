@@ -7,12 +7,13 @@ using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Transforms;
 
 namespace Poser.Application.Posing;
 
 /// <summary>Whole-actor reset ordering and history; native calls resolve IDs per operation.</summary>
 public sealed class ActorResetControl(
-    SceneSession scene, TransformGestureService gestures, PoseEditService poses,
+    SceneSession scene, TransformCommandService transforms, PoseEditService poses,
     IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, AnimationSession animation,
     ActorPresentationSession presentation, ActorModelIdSession models, IntegrationReset integration,
     EditHistory history, ValueJournal values, IActorStateSnapshots snapshots)
@@ -21,17 +22,17 @@ public sealed class ActorResetControl(
     public PoseEditResult ResetAll(ActorId actor)
     {
         values.Seal();
-        if (gestures.PendingRecovery != null || gestures.ActiveGesture != null)
+        if (transforms.Refusal() != null)
             return PoseEditResult.Fail("Finish the active transform or recovery before resetting the actor.");
-        using var transition = gestures.TryEnterTransition();
-        if (transition == null)
-            return PoseEditResult.Fail("Another pose operation is running.");
         var admission = CanReset(actor);
         if (!admission.Success) return admission;
         var capture = snapshots.Capture(actor);
         if (!capture.Success || capture.Value is not { } before)
             return PoseEditResult.Fail(capture.Detail ?? "The actor's state could not be captured before resetting.");
 
+        // Reset all is one undo step. It keeps the animation itself, because the
+        // snapshot above does not, and the animation reset inside records no step.
+        var animationBefore = animation.Capture(actor);
         var result = ResetCore(actor);
         history.Append(new JournalStep("Reset all",
             () => CanReset(actor).Success,
@@ -41,7 +42,9 @@ public sealed class ActorResetControl(
             OnRefusal = () => RefusalAction.Keep,
             CompleteReplay = (undo, current, cancellation, completed) =>
             {
-                if (undo) snapshots.Restore(before, current, cancellation, completed);
+                if (undo)
+                    snapshots.Restore(before, current, cancellation, restored => completed(
+                        restored.Success ? GestureResult.From(animation.Restore(actor, animationBefore)) : restored));
                 else snapshots.WaitForReset(actor, current, cancellation, completed);
             },
         });
@@ -74,13 +77,18 @@ public sealed class ActorResetControl(
             var targets = scene.Snapshot.Actors.Where(a => a.Id == actor)
                 .SelectMany(a => a.Skeletons).SelectMany(s => s.Bones)
                 .Select(b => TransformTargetId.ForBone(b.Id)).ToArray();
-            var r = poses.ResetWithinTransition(targets, PoseRegion.All, "Reset pose");
+            var r = poses.ResetBones(targets);
             return (r.Success, r.Detail);
         });
         Run("IK", () => { var r = runtime.ClearIk(actor); return (r.Success, r.Detail); });
         // Release animation/presentation after pose writes. External integration
         // is last because restoring its collection may redraw the native model.
-        Run("Animation", () => { var r = animation.ResetActor(actor); return (r.Success, r.Detail); });
+        Run("Animation", () =>
+        {
+            using var noStep = animation.Untracked();
+            var r = animation.ResetActor(actor);
+            return (r.Success, r.Detail);
+        });
         Run("Appearance", () => { var r = presentation.ResetActor(actor); return (r.Success, r.Detail); });
         Run("Model", () => { var r = models.Reset(actor); return (r.Success, r.Detail); });
         Run("External appearance", () => { var r = integration.ResetActor(actor); return (r.Success, r.Detail); });
