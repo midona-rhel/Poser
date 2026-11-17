@@ -1989,7 +1989,7 @@ public partial class PoseInspectorPane : IDisposable
             var result = fabrik
                 ? _ikPort.SetFabrikTarget(ikTarget, IkTargetMode.Bone, bone)
                 : _ikPort.SetBoneTarget(ikTarget, bone);
-            if (_notices.Report(result, "Bone"))
+            if (_notices.Report(result, "IK ▸ Bone"))
                 _ikBoneActor = bone.Skeleton.Actor;
         }
         form.Actions("Bone", actions =>
@@ -2077,7 +2077,7 @@ public partial class PoseInspectorPane : IDisposable
                 }
                 // The IK section is drawn only for a bone whose chain reads.
                 _notices.Report(_ikPort.Set(endpoint, _ikPort.Get(endpoint)! with { TargetMode = IkTargetMode.World }),
-                    "Detach");
+                    "IK ▸ Detach");
             }, disabled: current == null, help: "Hold the endpoint at its current world position");
         });
         if (current != null && currentName == null)
@@ -2087,7 +2087,7 @@ public partial class PoseInspectorPane : IDisposable
             var result = fabrik
                 ? _ikPort.SetFabrikTarget(endpoint, IkTargetMode.Entity, entity: chosen.Item.Id)
                 : _ikPort.SetEntityTarget(endpoint, chosen.Item.Id);
-            _notices.Report(result, "Entity");
+            _notices.Report(result, "IK ▸ Entity");
         }
     }
 
@@ -2208,7 +2208,7 @@ public partial class PoseInspectorPane : IDisposable
                     3 => Domain.Posing.IkTargetMode.Entity,
                     _ => Domain.Posing.IkTargetMode.Actor,
                 },
-            }, "Target"),
+            }, "IK ▸ Target"),
             help: "Actor follows the actor; World holds a point; Bone or Scene entity follows the chosen target");
         if (config.TargetMode == Domain.Posing.IkTargetMode.Bone)
             DrawIkBoneTarget(form, boneId, ikTarget);

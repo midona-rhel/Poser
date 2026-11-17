@@ -1029,11 +1029,11 @@ public sealed class ScenePane
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description,
             SaveOptions);
-        if (_notices.Report(started, "Save"))
+        if (_notices.Report(started, "Scene ▸ Save"))
             _library.RequestScan();
     });
 
-    private void OpenLoad() => _folder.Open(_loadBrowser, path => BeginLoad(path, "Load"));
+    private void OpenLoad() => _folder.Open(_loadBrowser, path => BeginLoad(path, "Scene ▸ Load"));
 
     /// <summary>
     /// Opens Stagehand's shared folder, creating it if needed. Falls back
@@ -1065,11 +1065,11 @@ public sealed class ScenePane
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description,
             SaveOptions with { IncludeModdedAppearance = false });
-        _notices.Report(started, "Export");
+        _notices.Report(started, "Stage ▸ Export");
     });
 
     private void OpenStageImport() =>
-        _stageLoadBrowser.Open(StageFolder(), path => BeginLoad(path, "Import"));
+        _stageLoadBrowser.Open(StageFolder(), path => BeginLoad(path, "Stage ▸ Import"));
 
     private void OpenSnapshots() =>
         _snapshotBrowser.Open(_snapshots.RootDirectory, path => BeginLoad(path, "Snapshots"));
@@ -1093,7 +1093,7 @@ public sealed class ScenePane
         }
         catch (Exception ex)
         {
-            _notices.Report(Outcome.Fail(ex.Message), "Open folder");
+            _notices.Report(Outcome.Fail(ex.Message), "Last result ▸ Open folder");
         }
     }
 }

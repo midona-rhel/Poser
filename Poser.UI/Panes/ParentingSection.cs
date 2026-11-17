@@ -57,7 +57,7 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
         form.EndPair();
         form.Dropdown("Target", Modes, _mode, next =>
         {
-            if (next == 0) Apply(child, null, "Target");
+            if (next == 0) Apply(child, null, "Parenting ▸ Target");
             else _mode = next;
         }, help: "Follow an entity or bone while keeping the current position and rotation offset");
 
@@ -111,14 +111,14 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
             {
                 if (_mode == 2)
                     actions.IconButton(TablerIcon.Crosshair, () => bonePick.Begin(false,
-                        bone => Apply(child, SelectionId.ForBone(bone), "Bone"),
+                        bone => Apply(child, SelectionId.ForBone(bone), "Parenting ▸ Bone"),
                         onlyActor: scene.Snapshot.Actors.FirstOrDefault(a => a.Id == _actor)?.Id),
                         help: "Pick the parent bone in the view");
-                actions.Button("Detach", () => Apply(child, null, "Detach"), disabled: target == null,
+                actions.Button("Detach", () => Apply(child, null, "Parenting ▸ Detach"), disabled: target == null,
                     help: "Stop following and keep the current world placement");
             });
 
-        if (_entities.Draw() is { } entityPick && _editing is { } entityChild) Apply(entityChild, entityPick.Item.Id, "Entity");
-        if (_bones.Draw() is { } picked && _editing is { } boneChild) Apply(boneChild, SelectionId.ForBone(picked.Item.BoneId), "Bone");
+        if (_entities.Draw() is { } entityPick && _editing is { } entityChild) Apply(entityChild, entityPick.Item.Id, "Parenting ▸ Entity");
+        if (_bones.Draw() is { } picked && _editing is { } boneChild) Apply(boneChild, SelectionId.ForBone(picked.Item.BoneId), "Parenting ▸ Bone");
     }
 }

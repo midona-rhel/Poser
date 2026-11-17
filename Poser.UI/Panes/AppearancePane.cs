@@ -430,7 +430,8 @@ public sealed partial class AppearancePane
                         () =>
                         {
                             if (!_companions.Detach(actor))
-                                _notices.Report(Outcome.Fail("The attachment relationship changed."), "Detach", refusal: true);
+                                _notices.Report(Outcome.Fail("The attachment relationship changed."),
+                                    (state.IsAttachedChild ? "Attachment" : "Companion") + " ▸ Detach", refusal: true);
                         },
                         variant: ButtonVariant.Disruptive);
             }));
@@ -1089,7 +1090,7 @@ public sealed partial class AppearancePane
         {
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             var imported = _characterFiles.Import(actor, chosen);
-            ExternalChanged(imported, "Import");
+            ExternalChanged(imported, "Character file (MCDF) ▸ Import");
             if (imported.Success) AddToLibraryIfChosen(chosen);
         });
     }
@@ -1142,7 +1143,7 @@ public sealed partial class AppearancePane
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             var begun = _characterFiles.Export(
                 actor, chosen, $"{description} — exported by Poser");
-            _notices.Report(begun.Outcome, "Export");
+            _notices.Report(begun.Outcome, "Character file (MCDF) ▸ Export");
         });
     }
 

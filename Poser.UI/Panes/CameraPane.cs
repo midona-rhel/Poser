@@ -638,7 +638,7 @@ public sealed class CameraPane
     {
         form.Actions("Camera file", actions =>
         {
-            actions.Button("Load", () => OpenLoad("Load"),
+            actions.Button("Load", () => OpenLoad("Camera ▸ Load"),
                 help: "Add a camera from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(camera.Id));
             actions.Button("Save to library", () => _names.Open(
@@ -661,7 +661,7 @@ public sealed class CameraPane
                     var clone = _creation.Duplicate(SelectionId.ForCamera(camera.Id));
                     if (clone.Handle == null)
                     {
-                        _notices.Report(new Outcome(false, clone.Detail), "Clone");
+                        _notices.Report(new Outcome(false, clone.Detail), "Camera ▸ Clone");
                         return;
                     }
                     _pendingCreation.SelectWhenReady(clone.Handle);

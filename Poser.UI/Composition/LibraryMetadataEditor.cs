@@ -197,7 +197,7 @@ internal sealed class LibraryMetadataEditor(
                         _thumbs.Clear();
                 }
                 else
-                    _notices.Report(new Outcome(false, result.Detail), "Save");
+                    _notices.Report(new Outcome(false, result.Detail), "Edit metadata ▸ Save");
                 _metaOpen = false;
             }
             ImGui.SameLine(0f, gap);

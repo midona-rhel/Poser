@@ -1053,7 +1053,7 @@ public sealed class EnvironmentPane
                         () =>
                         {
                             if (!_values.RemoveFestival(id))
-                                _notices.Report(FestivalPlaceRefusal, "Remove", refusal: true);
+                                _notices.Report(FestivalPlaceRefusal, "Festivals ▸ Remove", refusal: true);
                         },
                         disabled: !canModify,
                         help: canModify

@@ -155,7 +155,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                 return;
             operation = null;
             if (receipt.State is not OperationReceiptState.Applied)
-                _notices.Report(new Poser.Domain.Outcome(false, receipt.Detail), "Import");
+                _notices.Report(new Poser.Domain.Outcome(false, receipt.Detail), "Pose ▸ Import");
         };
     }
 
@@ -201,7 +201,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (target is not { } actor || !_imports.HasPosableSkeleton(actor))
         {
-            _notices.Report(Poser.Domain.Outcome.Fail("The import target is unavailable. Open Import from an actor."), "Import", refusal: true);
+            _notices.Report(Poser.Domain.Outcome.Fail("The import target is unavailable. Open Import from an actor."), "Pose ▸ Import", refusal: true);
             return;
         }
         _importMenuActor = actor;
@@ -1844,7 +1844,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             notice = cmpNotice;
         if (blocked)
         {
-            _notices.Report(Poser.Domain.Outcome.Fail(notice), fromDialog ? "Import" : "Reapply last", refusal: true);
+            _notices.Report(Poser.Domain.Outcome.Fail(notice), fromDialog ? "Pose ▸ Import" : "Reapply last", refusal: true);
             return;
         }
 
@@ -1867,9 +1867,9 @@ public sealed class PoseFileInspectorSection : IDisposable
             frozenSelection,
             TrackImport(expectedActor));
         if (!imported.Success)
-            _notices.Report(imported.Outcome, fromDialog ? "Import" : "Reapply last");
+            _notices.Report(imported.Outcome, fromDialog ? "Pose ▸ Import" : "Reapply last");
         else if (notice.Length > 0)
-            _notices.Report(Poser.Domain.Outcome.Fail(notice), fromDialog ? "Import" : "Reapply last", refusal: true);
+            _notices.Report(Poser.Domain.Outcome.Fail(notice), fromDialog ? "Pose ▸ Import" : "Reapply last", refusal: true);
     }
 
     private bool HasSelectedBonesForImportTarget()
@@ -2031,10 +2031,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                     if (exported)
                         _notices.Done($"Pose saved to {path}.");
                     else
-                        _notices.Report(Poser.Domain.Outcome.Fail("The pose file could not be written."), "Export");
+                        _notices.Report(Poser.Domain.Outcome.Fail("The pose file could not be written."), "Pose ▸ Export");
                 });
             if (!armed.Success)
-                _notices.Report(armed.Outcome, "Export");
+                _notices.Report(armed.Outcome, "Pose ▸ Export");
         }));
     }
 
@@ -2207,7 +2207,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (!LibraryConfiguration.TryEnsureDirectory(source.Path, out var detail))
         {
-            _notices.Report(Poser.Domain.Outcome.Fail(detail), "Export");
+            _notices.Report(Poser.Domain.Outcome.Fail(detail), "Pose ▸ Export");
             return false;
         }
 
@@ -2220,11 +2220,11 @@ public sealed class PoseFileInspectorSection : IDisposable
                 _library.RequestScan();
             }
             else
-                _notices.Report(Poser.Domain.Outcome.Fail("The pose file could not be written."), "Export");
+                _notices.Report(Poser.Domain.Outcome.Fail("The pose file could not be written."), "Pose ▸ Export");
         });
         if (!armed.Success)
         {
-            _notices.Report(armed.Outcome, "Export");
+            _notices.Report(armed.Outcome, "Pose ▸ Export");
             return false;
         }
 

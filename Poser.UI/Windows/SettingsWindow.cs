@@ -343,7 +343,7 @@ public class SettingsWindow : Window
         {
             if (vm.Library.IsPending(source) || !vm.Library.StillSaved(source, _configuration.Config.Library))
             {
-                _notices.Report(Outcome.Fail("The source changed. Save or cancel pending edits and retry."), "Open folder", refusal: true);
+                _notices.Report(Outcome.Fail("The source changed. Save or cancel pending edits and retry."), "Source folders ▸ Open folder", refusal: true);
                 return;
             }
             var path = source.Path;
@@ -351,14 +351,14 @@ public class SettingsWindow : Window
             {
                 if (!System.IO.Directory.Exists(path))
                 {
-                    _notices.Report(Outcome.Fail($"Folder '{path}' is missing or inaccessible. No folder was created."), "Open folder");
+                    _notices.Report(Outcome.Fail($"Folder '{path}' is missing or inaccessible. No folder was created."), "Source folders ▸ Open folder");
                     return;
                 }
                 Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                _notices.Report(Outcome.Fail($"Could not open '{path}': {ex.Message}"), "Open folder");
+                _notices.Report(Outcome.Fail($"Could not open '{path}': {ex.Message}"), "Source folders ▸ Open folder");
             }
         };
         vm.OnRetrySources = () =>
@@ -430,7 +430,7 @@ public class SettingsWindow : Window
         if (!_vm.Library.TryApply(_configuration.Config.Library, out var detail))
         {
             _vm.LibraryStatus = detail;
-            _notices.Report(Outcome.Fail(detail), "Save", refusal: true);
+            _notices.Report(Outcome.Fail(detail), "Settings ▸ Save", refusal: true);
             _vm.Category = SettingsView.LibraryPage;
             return;
         }

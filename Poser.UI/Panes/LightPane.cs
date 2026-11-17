@@ -501,7 +501,7 @@ public sealed class LightPane
     {
         form.Actions("Light file", actions =>
         {
-            actions.Button("Load", () => OpenLoad("Load"),
+            actions.Button("Load", () => OpenLoad("Light ▸ Load"),
                 help: "Add a light from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(light.Id));
             actions.Button("Save to library", () => _names.Open(
@@ -535,7 +535,7 @@ public sealed class LightPane
                 {
                     var clone = _creation.Duplicate(SelectionId.ForLight(lightId));
                     if (clone.Handle is null)
-                        _notices.Report(new Outcome(false, clone.Detail), "Clone");
+                        _notices.Report(new Outcome(false, clone.Detail), "Light ▸ Clone");
                 },
                 help: "Duplicate this light");
             // A borrowed native is never destructed: a captured light is given
