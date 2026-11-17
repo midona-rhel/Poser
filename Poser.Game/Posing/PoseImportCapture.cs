@@ -110,9 +110,9 @@ public sealed class PoseImportCapture : IDisposable
     /// <summary>Whether an operation still owns the pending slot.</summary>
     public bool IsPending => Volatile.Read(ref _pending) != null;
 
-    /// <summary>Busy conditions callers may wait out before retrying admission.</summary>
-    public bool AdmissionBusy =>
-        IsPending || _ikBake.IsPending || _gestures.ActiveGesture != null;
+    /// <summary>True while another import or an IK bake is applying. A scene
+    /// load waits for this to clear before importing its next actor's pose.</summary>
+    public bool AdmissionBusy => IsPending || _ikBake.IsPending;
 
     public bool IsCurrent(PoseImportOperation operation) =>
         Volatile.Read(ref _pending) is { } import &&
@@ -182,8 +182,6 @@ public sealed class PoseImportCapture : IDisposable
             {
                 Recovery = pendingRecovery,
             };
-        if (_gestures.ActiveGesture != null)
-            return GestureResult.Fail("Finish the current transform gesture first.");
         if (_bindings.GetActorId(actor) is not { } actorId ||
             _bindings.Resolve(actorId) is not { Success: true, Value: { } resolved } ||
             !ReferenceEquals(resolved, actor))
