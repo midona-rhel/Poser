@@ -32,7 +32,6 @@ internal sealed class StanceAnimationSession
 
     public Outcome SetStance(ActorId actor, AnimationStance stance, int pose)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var capture = _store.For(actor).StanceCaptureValue;
         if (capture == null && _timeline.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
@@ -75,7 +74,6 @@ internal sealed class StanceAnimationSession
 
     public Outcome SetWeaponDrawn(ActorId actor, bool drawn)
     {
-        if (_store.Suspended() is { } blocked) return blocked;
         var capture = _store.For(actor).WeaponCapture;
         if (capture == null && _timeline.Read(actor) is { } reading)
             capture = reading.WeaponDrawn;

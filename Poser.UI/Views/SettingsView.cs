@@ -285,8 +285,6 @@ public static partial class SettingsView
 
     private static readonly float[] UndoDepthMarks = [0f, 500f];
 
-    public static int PageCount => Nav.Length;
-
     /// <summary>Debounce filtering without replaying presentation animations
     /// on unchanged results as the user refines the query.</summary>
     private const double SearchSettleSeconds = 0.12;

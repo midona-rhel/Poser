@@ -73,16 +73,6 @@ public class VirtualBone : EntityBase, IBone
         }
     }
 
-    /// <summary>
-    /// The pivot bone used for gizmo position (may be null for averaged categories).
-    /// </summary>
-    public IBone? PivotBone => _pivotBone;
-
-    /// <summary>
-    /// The bones this virtual bone represents.
-    /// </summary>
-    public IReadOnlyList<IBone> ConstituentBones => _constituentBones.AsReadOnly();
-
     #region IBone Implementation
 
     public int BoneIndex => -1; // Indicates virtual

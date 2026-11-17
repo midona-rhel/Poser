@@ -1786,17 +1786,6 @@ public sealed class PoseFileInspectorSection : IDisposable
         });
     }
 
-    public void OpenImport(ActorId actorId)
-    {
-        if (_config.Config.Library.UseLibraryWhenImporting)
-        {
-            RequestLibrary(actorId);
-            return;
-        }
-
-        BrowseAndImport(actorId, _folder.Path, rememberPath: true);
-    }
-
     /// <summary>The context menu's "Import from file": straight to the
     /// browser regardless of the library-first preference — the row names
     /// its destination.</summary>

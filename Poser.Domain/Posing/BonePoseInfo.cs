@@ -200,21 +200,6 @@ public class BonePoseInfo
     }
 
     /// <summary>
-    /// Replaces the current compatible edit instead of accumulating another change.
-    /// Returns false without modifying the stack when the input contains NaN or infinity.
-    /// </summary>
-    public bool SetStackTransform(Transform absoluteDelta, TransformComponents? propagation = null)
-    {
-        if (!TransformMath.IsFinite(absoluteDelta))
-            return false;
-
-        var prop = propagation ?? DefaultPropagation;
-        var transformIndex = GetTransformIndex(prop, layer: null);
-        _stacks[transformIndex] = new BonePoseTransformInfo(prop, absoluteDelta);
-        return true;
-    }
-
-    /// <summary>
     /// Replaces a named effect layer, leaving manual edits unchanged.
     /// This allows effects such as expression blending to be recomputed each frame.
     /// </summary>

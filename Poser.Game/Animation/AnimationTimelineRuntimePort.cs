@@ -258,7 +258,7 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         return Outcome.Ok();
     }
 
-    public Outcome ClearSlotLoop(ActorId actor, AnimationSlot slot)
+    public void ClearSlotLoop(ActorId actor, AnimationSlot slot)
     {
         _seek.ClearLoop(actor, slot);
         if (_loops.TryGetValue(actor, out var slots))
@@ -267,7 +267,6 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
             if (slots.Count == 0)
                 _loops.Remove(actor);
         }
-        return Outcome.Ok();
     }
 
     public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned) =>

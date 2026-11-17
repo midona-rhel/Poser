@@ -239,32 +239,6 @@ public static class FontRegistry
         return ranges.ToArray();
     }
 
-    /// <summary>
-    /// Every concrete font file this machine's registry resolves —
-    /// the base faces plus the shared font-link CJK fallback for both
-    /// weights. Provenance hashes exactly these files rather than an
-    /// assumed list.
-    /// </summary>
-    public static IEnumerable<string> ResolveAllFiles()
-    {
-        var files = new List<string?>
-        {
-            ResolveFile(FontFamily.Default, FontWeight.Regular),
-            ResolveFile(FontFamily.Default, FontWeight.SemiBold),
-            ResolveFile(FontFamily.Mono, FontWeight.Regular),
-            ResolveFile(FontFamily.Italic, FontWeight.Regular),
-        };
-        foreach (int weight in new[] { 400, 600 })
-        {
-            if (WindowsFontFallback.ResolveJapanese(weight) is { } fallback)
-                files.Add(fallback.Path);
-        }
-        return files
-            .Where(file => file != null)
-            .Select(file => file!)
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-    }
-
     /// <summary>Resolve a font handle for family + size at regular weight.</summary>
     public static IFontHandle? Resolve(FontFamily family, float size)
         => Resolve(family, FontWeight.Regular, size);

@@ -1244,12 +1244,6 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
 
     private const int HoverPadding = 6;
 
-    /// <summary>The ShowSelectedBonesOnly filter as a cached predicate: a
-    /// lambda written inline allocates a delegate every frame the mode is
-    /// on.</summary>
-    private static readonly Predicate<BoneDisplayData> NotSelectedOrHovered =
-        bone => !(bone.IsSelected || bone.IsHovered);
-
     /// <summary>Index of the hovered handle NEAREST the camera, or -1.
     /// Ties keep the earlier entry, as the ordered query this replaces
     /// did.</summary>
