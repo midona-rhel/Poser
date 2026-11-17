@@ -96,7 +96,7 @@ public sealed partial class DebugBridge : IDisposable
             "/scene" => !query.ContainsKey("path"),
             "/ik" => query.GetValueOrDefault("action") == "read",
             "/environment" => !query.ContainsKey("weather") && !query.ContainsKey("hold"),
-            "/mcdf" => !query.ContainsKey("import"),
+            "/mcdf" => !query.Keys.Any(key => key is "import" or "spawn" or "reset" or "export"),
             "/selection" or "/parenting" => query.Count == 0,
             _ => false,
         };
@@ -484,11 +484,14 @@ public sealed partial class DebugBridge : IDisposable
 
     private async Task<string> ExportIdle(Dictionary<string, string> query)
     {
+        string? waitMessage = null;
         var actor = await _framework.RunOnFrameworkThread(() =>
         {
+            waitMessage = HeldByRunningAction("/idleexport", query);
             var live = FindActor(query.GetValueOrDefault("actor", "0"));
             return live == null ? (ActorId?)null : _bindings.GetActorId(live);
         });
+        if (waitMessage != null) return waitMessage;
         if (actor == null) return Json(new { error = "No such actor." });
         await _idleExport.ExportAsync(actor.Value, query["path"]);
         return Json(new { ok = true, path = query["path"] });
