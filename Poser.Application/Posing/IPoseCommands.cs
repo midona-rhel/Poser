@@ -1,3 +1,4 @@
+using Poser.Documents.Files;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 
@@ -8,6 +9,7 @@ public interface IPoseCommands
 {
     bool HasAuthoredEdits(ActorId actor);
     bool HasStash { get; }
+    PoseFile? StashedPose { get; }
     DateTimeOffset? StashedAt { get; }
     string? StashedFrom { get; }
     PoseEditResult ResetBone(TransformTargetId bone, string name);
@@ -15,7 +17,7 @@ public interface IPoseCommands
     PoseEditResult FlipBone(TransformTargetId bone, string name);
     PoseEditResult Reset(ActorId actor, PoseRegion region);
     PoseEditResult Mirror(ActorId actor);
-    PoseEditResult Stash(ActorId actor, string sourceLabel);
+    PoseEditResult Stash(ActorId actor);
     PoseEditResult ApplyStash(ActorId actor);
 }
 
