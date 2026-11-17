@@ -11,7 +11,8 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Posing;
 
-/// <summary>Whole-actor reset ordering and history; native calls resolve IDs per operation.</summary>
+/// <summary>Reset all for one actor: its expression, gaze, pose, IK, animation and
+/// looks go back to the game's, in that order, as one undo step.</summary>
 public sealed class ActorResetControl(
     SceneSession scene, TransformCommandService transforms, PoseEditService poses,
     IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, AnimationSession animation,
@@ -22,8 +23,8 @@ public sealed class ActorResetControl(
     public PoseEditResult ResetAll(ActorId actor)
     {
         values.Seal();
-        if (transforms.Refusal() != null)
-            return PoseEditResult.Fail("Finish the active transform or recovery before resetting the actor.");
+        if (transforms.Refusal() is { } refused)
+            return PoseEditResult.Fail(refused.Detail!);
         var admission = CanReset(actor);
         if (!admission.Success) return admission;
         var capture = snapshots.Capture(actor);

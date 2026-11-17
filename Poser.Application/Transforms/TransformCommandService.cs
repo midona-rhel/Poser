@@ -5,7 +5,7 @@ using Poser.Domain.Transforms;
 namespace Poser.Application.Transforms;
 
 /// <summary>
-/// Changes transforms from a typed value or a command, outside a drag. Each call
+/// Changes transforms from a typed value or a command. Each call
 /// is one undo step. The pose commands (Reset, Mirror, Flip, applying a copied
 /// pose) use the same read, write and record steps; only how they work out the
 /// new values differs.
@@ -60,13 +60,11 @@ public sealed class TransformCommandService
             description);
 
     /// <summary>
-    /// Refuses while an earlier failed edit is still being put back, or during
-    /// a drag. A drag can be live here: an expression bake writes a few frames
-    /// after it starts, and a gizmo can be grabbed in between.
+    /// Refuses while an earlier failed edit is still being put back. An edit
+    /// made during a drag goes through: a bone the drag holds is set back to
+    /// the drag's value on its next update, and every other bone keeps the edit.
     /// </summary>
-    internal GestureResult? Refusal() =>
-        _gestures.RecoveryBarrier() ??
-        (_gestures.ActiveGesture != null ? GestureResult.Fail("A transform gesture is active.") : null);
+    internal GestureResult? Refusal() => _gestures.RecoveryBarrier();
 
     /// <summary>
     /// Reads every target in order. Stops at the first one that has left the
