@@ -13,7 +13,8 @@ namespace Poser.Game.Cameras;
 /// keys, leaves no step behind. Once the live camera has moved and then held
 /// still for <see cref="RestMilliseconds"/>, the new framing becomes one undo
 /// step from where it last rested. A move still settling when another step is
-/// added is recorded first, so it comes back before that step. Poser's own
+/// added, or when undo is pressed, is recorded first: it comes back before that
+/// step, and that undo takes it back. Poser's own
 /// camera edits (a slider being dragged, a gesture), undo and redo re-base the
 /// resting framing instead, so nothing is recorded twice.
 /// </summary>
@@ -27,6 +28,7 @@ public sealed class CameraRestRecorder : IDisposable
     private readonly ValueJournal _journal;
     private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
+    private readonly UndoJournal _undo;
     private readonly IEntityHistoryResolver<IVirtualCamera>? _restored;
     private IVirtualCamera? _camera;
     private Framing _rested;
@@ -38,7 +40,7 @@ public sealed class CameraRestRecorder : IDisposable
     private bool _recording;
 
     public CameraRestRecorder(IFramework framework, IVirtualCameraService cameras,
-        ValueJournal journal, EditHistory history, TransformGestureService gestures,
+        ValueJournal journal, EditHistory history, TransformGestureService gestures, UndoJournal undo,
         IEntityHistoryResolver<IVirtualCamera>? restored = null)
     {
         _restored = restored;
@@ -47,7 +49,10 @@ public sealed class CameraRestRecorder : IDisposable
         _journal = journal;
         _history = history;
         _gestures = gestures;
-        _history.Appending += OnAppending;
+        _undo = undo;
+        _undo.Undoing += RecordSettlingMove;
+        _undo.HasUnrecordedChange = HasSettlingMove;
+        _history.Appending += RecordSettlingMove;
         _history.Appended += OnAppended;
         _history.Stepped += Rebase;
         _history.Cleared += Rebase;
@@ -57,15 +62,19 @@ public sealed class CameraRestRecorder : IDisposable
     private void OnAppended(HistoryEntry _) => _rebase = true;
     private void Rebase() => _rebase = true;
 
-    /// <summary>Another step is about to be added: a camera move that has not
-    /// rested its 5 seconds yet is recorded first, up to the framing the last
-    /// tick saw.</summary>
-    private void OnAppending()
+    /// <summary>Another step is about to be added, or undo was pressed: a camera
+    /// move that has not rested its 5 seconds yet is recorded first, up to the
+    /// framing the last tick saw.</summary>
+    private void RecordSettlingMove()
     {
-        if (_recording || _camera is not { IsValid: true } camera || !_moved || _poserEdit || _last.Near(_rested))
-            return;
-        Record(camera, _last);
+        if (HasSettlingMove())
+            Record(_camera!, _last);
     }
+
+    /// <summary>Whether the camera was moved by its own controls and that move
+    /// is not an undo step yet.</summary>
+    private bool HasSettlingMove() =>
+        !_recording && _camera is { IsValid: true } && _moved && !_poserEdit && !_last.Near(_rested);
 
     private void Tick(IFramework _)
     {
@@ -171,7 +180,9 @@ public sealed class CameraRestRecorder : IDisposable
     public void Dispose()
     {
         _framework.Update -= Tick;
-        _history.Appending -= OnAppending;
+        _undo.Undoing -= RecordSettlingMove;
+        _undo.HasUnrecordedChange = null;
+        _history.Appending -= RecordSettlingMove;
         _history.Appended -= OnAppended;
         _history.Stepped -= Rebase;
         _history.Cleared -= Rebase;

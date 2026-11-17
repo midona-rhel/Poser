@@ -74,10 +74,19 @@ public sealed class UndoJournal
     /// wait for it.</summary>
     public bool IsRestoring => _restoring != null;
 
-    public bool CanUndo => !IsRestoring && _history.CanUndo;
+    public bool CanUndo => !IsRestoring && (_history.CanUndo || HasUnrecordedChange?.Invoke() == true);
+
+    /// <summary>Answers whether there is a change that is not in the history yet,
+    /// such as a camera move that has not come to rest. Undo is offered while
+    /// there is one, even with an empty history.</summary>
+    public Func<bool>? HasUnrecordedChange { get; set; }
     public bool CanRedo => !IsRestoring && _history.CanRedo;
     public string? UndoDescription => _history.UndoDescription;
     public string? RedoDescription => _history.RedoDescription;
+
+    /// <summary>A global undo is about to pick its step. A change that is still
+    /// settling, such as a camera move, is recorded now, so this undo takes it back.</summary>
+    public event Action? Undoing;
 
     public GestureResult Undo() => UndoCore(null);
     public GestureResult Undo(SelectionId entity) => UndoCore(entity);
@@ -88,6 +97,7 @@ public sealed class UndoJournal
             return recovered;
         if (IsRestoring)
             return GestureResult.Fail("A restore is still applying.");
+        if (entity is null) Undoing?.Invoke();
         var entry = _history.PeekUndo(entity);
         if (entry == null)
             return GestureResult.Fail(entity is null ? "Nothing to undo." : "No independent undo step for this entity. Creation, removal, shared or scene-wide steps require global undo.");
