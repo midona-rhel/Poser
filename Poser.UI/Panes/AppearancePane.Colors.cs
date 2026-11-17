@@ -36,7 +36,7 @@ public sealed partial class AppearancePane
             FixedColourGroups(form, "custom-colour", CustomColourRows.Length,
                 index => CustomColourRows[index].Label, controlsWidth, (index, origin, scale) =>
                 {
-                    var (channel, _) = CustomColourRows[index];
+                    var (channel, label) = CustomColourRows[index];
                     var owned = _colors.Override(actor, channel);
                     Vector4 observed = reading.Value is { } values && values.TryGetValue(channel, out var value)
                         ? value : Vector4.One;
@@ -44,7 +44,7 @@ public sealed partial class AppearancePane
                     ImGui.SetCursorScreenPos(origin);
                     ImGui.BeginGroup();
                     ColorWell($"custom-colour-{actor}-{channel}", owned ?? observed,
-                        next => ReportColour(_colors.Set(actor, channel, next)),
+                        next => _notices.Report(_colors.Set(actor, channel, next), $"{label} colour"),
                         new ControlStyle
                         {
                             Width = UiWidth.Fixed(controlsWidth),
@@ -58,7 +58,7 @@ public sealed partial class AppearancePane
                         onBegin: _colors.Seal,
                         onRightClick: () =>
                         {
-                            if (owned.HasValue) ReportColour(_colors.Clear(actor, channel));
+                            if (owned.HasValue) _notices.Report(_colors.Clear(actor, channel), $"{label} colour");
                         });
                     if (owned.HasValue)
                         ImGui.GetWindowDrawList().AddRect(origin - new Vector2(scale),
@@ -107,10 +107,5 @@ public sealed partial class AppearancePane
                 }
             });
         }
-    }
-
-    private void ReportColour(Outcome result)
-    {
-        if (!result.Success) _notices.Failed(result.Detail ?? "The custom colour could not be changed.");
     }
 }

@@ -256,7 +256,7 @@ public sealed class AnimationPane : IDisposable
                     style: FixedSelectionStyle());
                 actions.Button(
                     "Apply",
-                    () => Report(
+                    () => _notices.Report(
                         _steps.Play(
                             actor, slot, choice, _playEmoteStart, resume: false),
                         "Animation playback"),
@@ -276,7 +276,7 @@ public sealed class AnimationPane : IDisposable
             owned.OverallSpeed ?? reading.OverallSpeed,
             0f,
             2f,
-            next => Report(_animation.SetSpeed(actor, next), "Animation speed"),
+            next => _notices.Report(_animation.SetSpeed(actor, next), "Animation speed"),
             format: "0.00",
             marks: UnitMarks,
             actions: actions => actions.IconSpace(),
@@ -323,7 +323,7 @@ public sealed class AnimationPane : IDisposable
                         int pose = StanceValues[picked] == reading.Stance
                             ? reading.Pose
                             : 0;
-                        Report(
+                        _notices.Report(
                             _animation.SetStance(
                                 actor, StanceValues[picked], pose),
                             "Stance");
@@ -340,11 +340,11 @@ public sealed class AnimationPane : IDisposable
             cell => PoseStepper(
                 cell,
                 poseDisabled,
-                () => Report(
+                () => _notices.Report(
                     _animation.SetStance(
                         actor, poseFamily, reading.Pose - 1),
                     "Pose"),
-                () => Report(
+                () => _notices.Report(
                     _animation.SetStance(
                         actor, poseFamily, reading.Pose + 1),
                     "Pose")));
@@ -355,13 +355,13 @@ public sealed class AnimationPane : IDisposable
             cell => cell.Switch(
                 "##anim-weapon-drawn",
                 reading.WeaponDrawn,
-                next => Report(
+                next => _notices.Report(
                     _animation.SetWeaponDrawn(actor, next), "Weapon"), disabled: !supported),
             "Lock position",
             cell => cell.Switch(
                 "##anim-position-lock",
                 owned.PositionLock,
-                next => Report(
+                next => _notices.Report(
                     _animation.SetPositionLock(actor, next),
                     "Position lock")));
     }
@@ -455,7 +455,7 @@ public sealed class AnimationPane : IDisposable
                     disabled: disabled);
                 actions.Button(
                     "Apply",
-                    () => Report(
+                    () => _notices.Report(
                         _steps.Play(
                             actor,
                             slot,
@@ -481,7 +481,7 @@ public sealed class AnimationPane : IDisposable
             speed,
             0f,
             2f,
-            next => Report(
+            next => _notices.Report(
                 _animation.SetSlotSpeed(actor, slot, next),
                 $"{label} speed"),
             format: "0.00",
@@ -496,7 +496,7 @@ public sealed class AnimationPane : IDisposable
             weight,
             0f,
             1f,
-            next => Report(
+            next => _notices.Report(
                 _animation.SetSlotWeight(actor, slot, next),
                 $"{label} weight"),
             format: "0.00",
@@ -540,7 +540,7 @@ public sealed class AnimationPane : IDisposable
                 form.Switch(
                     "Loop",
                     _animation.LoopWantedFor(actor, slot),
-                    next => Report(
+                    next => _notices.Report(
                         _steps.SetLoop(actor, slot, next),
                         $"{label} loop"),
                     disabled: !advanced);
@@ -559,7 +559,7 @@ public sealed class AnimationPane : IDisposable
         var changed = _steps.SetAdvanced(actor, enabled);
         if (!changed.Success)
         {
-            Report(changed, "Animation mode");
+            _notices.Report(changed, "Animation mode");
             return;
         }
         _generalSelections.Remove(actor);
@@ -587,7 +587,7 @@ public sealed class AnimationPane : IDisposable
             cell => cell.Switch(
                 "##anim-general-loop",
                 _animation.LoopWantedFor(actor, AnimationSlot.Base),
-                next => Report(
+                next => _notices.Report(
                     _steps.SetLoop(actor, AnimationSlot.Base, next),
                     "Loop"),
                 disabled: advanced));
@@ -690,7 +690,7 @@ public sealed class AnimationPane : IDisposable
             disabled: disabled || !(available || endedScrub),
             actions: actions => actions.IconButton(
                 paused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause,
-                () => Report(toggle(), what),
+                () => _notices.Report(toggle(), what),
                 disabled: disabled || !(available || ended != null),
                 help: paused ? "Play this layer on from here" : "Hold this layer on this frame",
                 id: $"anim-{slot}-playpause"),
@@ -709,7 +709,7 @@ public sealed class AnimationPane : IDisposable
             var replayed = _animation.ReplayEndedForScrub(actor, slot);
             if (!replayed.Success)
             {
-                Report(replayed, "Animation scrub");
+                _notices.Report(replayed, "Animation scrub");
                 _scrubBlocked = true;
                 return;
             }
@@ -718,7 +718,7 @@ public sealed class AnimationPane : IDisposable
         var sought = _animation.SeekLayer(actor, slot, time);
         if (!sought.Success)
         {
-            Report(sought, "Animation scrub");
+            _notices.Report(sought, "Animation scrub");
             _endedDrag = null;
             _scrubBlocked = true;
         }
@@ -748,7 +748,7 @@ public sealed class AnimationPane : IDisposable
             var begun = _animation.BeginScrub(actor, control.Id, _scrubOwner, slot);
             if (!begun.Success)
             {
-                Report(begun, "Animation scrub");
+                _notices.Report(begun, "Animation scrub");
                 _scrubBlocked = true;
                 return;
             }
@@ -761,7 +761,7 @@ public sealed class AnimationPane : IDisposable
             // The session dropped the gesture (the control died mid-drag,
             // the timeline ended): report ONCE, end the pane's gesture, and
             // stay quiet until the next press.
-            Report(updated, "Animation scrub");
+            _notices.Report(updated, "Animation scrub");
             _animation.EndScrub(_scrubOwner);
             _scrubActor = null;
             _scrubControl = null;
@@ -814,7 +814,7 @@ public sealed class AnimationPane : IDisposable
             {
                 actions.Button(
                     "Preview",
-                    () => ReportExpression(
+                    () => _notices.Report(
                         ApplyExpression(actor, selected),
                         "Expression"),
                     disabled: selected == 0 || pending,
@@ -826,7 +826,7 @@ public sealed class AnimationPane : IDisposable
                     help: "Reset the face bones");
                 actions.Button(
                     "Bake expression",
-                    () => Report(
+                    () => _notices.Report(
                         _expressions.Bake(actor, selected), "Bake expression"),
                     disabled: selected == 0 || pending ||
                         _expressions.IsBaking,
@@ -1151,7 +1151,7 @@ public sealed class AnimationPane : IDisposable
                 var expression = _expressions.Choose(actor, pick.Entry);
                 if (expression.Success)
                     _expressionSelections[actor] = pick.Entry;
-                Report(expression, "Expression");
+                _notices.Report(expression, "Expression");
                 break;
             case AnimationPickTarget.Lips:
                 ChooseLayer(actor, AnimationSlot.Lips, pick.Entry);
@@ -1166,7 +1166,7 @@ public sealed class AnimationPane : IDisposable
             actor, slot, (ushort)entry.TimelineId);
         if (chosen.Success)
             _layerSelections[(actor, slot)] = entry;
-        Report(chosen, AnimationSlots.DisplayName(slot));
+        _notices.Report(chosen, AnimationSlots.DisplayName(slot));
     }
 
     private void ResetLayer(ActorId actor, AnimationSlot slot, string label)
@@ -1180,7 +1180,7 @@ public sealed class AnimationPane : IDisposable
             if (slot == AnimationSlot.Facial)
                 _expressionSelections.Remove(actor);
         }
-        Report(reset, $"{label} reset");
+        _notices.Report(reset, $"{label} reset");
     }
 
     private void ApplyGeneral(ActorId actor)
@@ -1191,7 +1191,7 @@ public sealed class AnimationPane : IDisposable
         // the game plays it; the Full body layer plays exactly its pick instead.
         if (_animation.PostureEntry(actor, command.Entry, out var refusal) is not { } entry)
         {
-            Report(Outcome.Fail(refusal ?? "This emote can't play now."), "Animation");
+            _notices.Report(Outcome.Fail(refusal ?? "This emote can't play now."), "Animation");
             return;
         }
         // One General animation: the last one's layer goes when this one is elsewhere.
@@ -1200,7 +1200,7 @@ public sealed class AnimationPane : IDisposable
             var cleared = _steps.ResetSlot(actor, command.PlayedSlot);
             if (!cleared.Success)
             {
-                Report(cleared, "Animation");
+                _notices.Report(cleared, "Animation");
                 return;
             }
         }
@@ -1210,11 +1210,11 @@ public sealed class AnimationPane : IDisposable
             (ushort)entry.TimelineId);
         if (!chosen.Success)
         {
-            Report(chosen, "Animation");
+            _notices.Report(chosen, "Animation");
             return;
         }
         _generalSelections[actor] = command with { Applied = true, Played = entry };
-        Report(
+        _notices.Report(
             _steps.Play(
                 actor, entry.Slot, entry, _playEmoteStart),
             "Animation");
@@ -1228,15 +1228,12 @@ public sealed class AnimationPane : IDisposable
         var reset = _steps.ResetGeneral(actor, slot);
         if (!reset.Success)
         {
-            Report(reset, "Animation reset");
+            _notices.Report(reset, "Animation reset");
             return;
         }
         _generalSelections.Remove(actor);
         _layerSelections.Remove((actor, AnimationSlot.Base));
     }
-
-    private void ReportExpression(Outcome result, string what) =>
-        Report(result, what);
 
     private string ExpressionNameFor(ActorId actor, ushort timeline, string empty)
     {
@@ -1261,7 +1258,7 @@ public sealed class AnimationPane : IDisposable
             _expressionSelections.Remove(actor);
             _layerSelections.Remove((actor, AnimationSlot.Facial));
         }
-        ReportExpression(result, "Expression");
+        _notices.Report(result, "Expression");
     }
 
     private Outcome ApplyExpression(ActorId actor, ushort timeline) =>
@@ -1306,12 +1303,6 @@ public sealed class AnimationPane : IDisposable
         foreach (var key in _layerSelections.Keys.ToArray())
             if (key.Actor == actor)
                 _layerSelections.Remove(key);
-    }
-
-    private void Report(Outcome result, string what)
-    {
-        if (!result.Success)
-            _notices.Failed($"{what}: {result.Detail}");
     }
 
     public void Dispose()

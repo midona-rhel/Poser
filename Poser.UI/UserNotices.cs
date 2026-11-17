@@ -37,22 +37,41 @@ public sealed class UserNotices : global::Poser.Application.Presentation.IUserNo
     /// <summary>An action completed and the user asked for it to.</summary>
     public void Done(string message) => Post(message, NotificationType.Success);
 
-    /// <summary>An action did not run, and the reason is the user's to fix —
-    /// nothing was selected, nothing was stashed, the target went away.
-    /// </summary>
-    public void Refused(string message) => Post(message, NotificationType.Warning);
-
     /// <summary>One line of information: nothing failed, nothing was
     /// refused, but the user should know what happened.</summary>
     public void Note(string message) => Post(message, NotificationType.Info);
 
-    /// <summary>An action ran and failed.</summary>
+    /// <summary>A failure posted as a whole sentence, with no control to
+    /// name. Only two callers need it: the Scene page's finished save or load
+    /// notice, and an expression the game dropped after a redraw. Everything
+    /// a person clicks reports through <see cref="Report"/>.</summary>
     public void Failed(string message) => Post(message, NotificationType.Error);
 
-    /// <summary>"Verb: detail" — the shape a failed file verb reports in.</summary>
-    public void Failed(string verb, string detail) => Failed(verb + ": " + detail);
+    /// <summary>Logic below the interface reports refusals as whole
+    /// sentences.</summary>
+    void global::Poser.Application.Presentation.IUserNotices.Refused(string message) => Refused(message);
 
-    public void Refused(string verb, string detail) => Refused(verb + ": " + detail);
+    private void Refused(string message) => Post(message, NotificationType.Warning);
+
+    private void Failed(string verb, string detail) => Failed(verb + ": " + detail);
+
+    private void Refused(string verb, string detail) => Refused(verb + ": " + detail);
+
+    /// <summary>The one way the interface tells a person that an action did
+    /// not work: nothing when it worked, "Action: reason" when it did not, or
+    /// "Action failed." when no reason was given. <paramref name="action"/> is
+    /// the name on the button, menu entry or field the person used. Returns
+    /// whether it worked. Pass <paramref name="refusal"/> when the action did
+    /// not run and the reason is the person's to fix: the notice is then a
+    /// yellow warning, not a red error.</summary>
+    public bool Report(Poser.Domain.Outcome result, string action, bool refusal = false)
+    {
+        if (result.Success)
+            return true;
+        string message = string.IsNullOrWhiteSpace(result.Detail) ? action + " failed." : action + ": " + result.Detail;
+        if (refusal) Refused(message); else Failed(message);
+        return false;
+    }
 
     public void Removal(SelectionRemovalResult result)
     {

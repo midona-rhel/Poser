@@ -154,8 +154,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                 return;
             operation = null;
             if (receipt.State is not OperationReceiptState.Applied)
-                _notices.Failed(
-                    $"Import: {receipt.Detail ?? receipt.State.ToString()}.");
+                _notices.Report(new Poser.Domain.Outcome(false, receipt.Detail), "Pose ▸ Import");
         };
     }
 
@@ -201,7 +200,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (target is not { } actor || !_imports.HasPosableSkeleton(actor))
         {
-            _notices.Refused("The import target is unavailable. Open Import from an actor.");
+            _notices.Report(Poser.Domain.Outcome.Fail("The import target is unavailable. Open Import from an actor."), "Pose ▸ Import", refusal: true);
             return;
         }
         _importMenuActor = actor;
@@ -340,7 +339,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (target is not { } actorId || !_imports.HasPosableSkeleton(actorId))
         {
-            _notices.Refused(NoActorText);
+            _notices.Report(Poser.Domain.Outcome.Fail(NoActorText), choice switch { 0 => "Export to file", 1 => "To library", 3 => "To clipboard", _ => "To stash" }, refusal: true);
             return;
         }
         switch (choice)
@@ -974,7 +973,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                         if (SelectedActor() is { } actorId)
                             OpenImportFromFile(actorId);
                         else
-                            _notices.Refused(NoActorText);
+                            _notices.Report(Poser.Domain.Outcome.Fail(NoActorText), "From file", refusal: true);
                     });
                     actions.Button("From library",
                         () =>
@@ -982,7 +981,7 @@ public sealed class PoseFileInspectorSection : IDisposable
                             if (SelectedActor() is { } actorId)
                                 RequestLibrary(actorId);
                             else
-                                _notices.Refused("The import target is no longer available.");
+                                _notices.Report(Poser.Domain.Outcome.Fail("The import target is no longer available."), "From library", refusal: true);
                         },
                         disabled: InLibrary,
                         help: InLibrary ? "The library is already open" : null);
@@ -1630,22 +1629,22 @@ public sealed class PoseFileInspectorSection : IDisposable
         if (!_referenceArmed)
         {
             _referenceArmed = true;
-            _notices.Refused(
-                "Reference pose replaces the current pose of every bone "
-                + "(undo restores it). Press Confirm reference to apply.");
+            _notices.Report(Poser.Domain.Outcome.Fail(
+                "Replaces the current pose of every bone "
+                + "(undo restores it). Press Confirm reference to apply."), "Reference", refusal: true);
             return;
         }
         _referenceArmed = false;
         if (SelectedActor() is not { } expectedActor)
         {
-            _notices.Refused(NoActorText);
+            _notices.Report(Poser.Domain.Outcome.Fail(NoActorText), "Confirm reference", refusal: true);
             return;
         }
         NotePoseApplied();
         if (_imports.ApplyReferencePose(
                 expectedActor, TrackImport(expectedActor)) is
             { Success: false } failed)
-            _notices.Failed($"Reference: {failed.Detail}");
+            _notices.Report(failed.Outcome, "Confirm reference");
     }
 
     private void ApplyRestPreset(RestPose pose)
@@ -1659,10 +1658,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                     pose,
                     TrackImport(expectedActor)) is
                 { Success: false } failed)
-                _notices.Failed($"Preset: {failed.Detail}");
+                _notices.Report(failed.Outcome, pose == RestPose.APose ? "A-pose" : "T-pose");
         }
         else
-            _notices.Refused(NoActorText);
+            _notices.Report(Poser.Domain.Outcome.Fail(NoActorText), pose == RestPose.APose ? "A-pose" : "T-pose", refusal: true);
     }
 
     private void NotePoseApplied()
@@ -1836,7 +1835,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             notice = cmpNotice;
         if (blocked)
         {
-            _notices.Refused(notice);
+            _notices.Report(Poser.Domain.Outcome.Fail(notice), fromDialog ? "Pose ▸ Import" : "Reapply last", refusal: true);
             return;
         }
 
@@ -1859,9 +1858,9 @@ public sealed class PoseFileInspectorSection : IDisposable
             frozenSelection,
             TrackImport(expectedActor));
         if (!imported.Success)
-            _notices.Failed($"Import: {imported.Detail}");
+            _notices.Report(imported.Outcome, fromDialog ? "Pose ▸ Import" : "Reapply last");
         else if (notice.Length > 0)
-            _notices.Refused(notice);
+            _notices.Report(Poser.Domain.Outcome.Fail(notice), fromDialog ? "Pose ▸ Import" : "Reapply last", refusal: true);
     }
 
     private bool HasSelectedBonesForImportTarget()
@@ -1929,9 +1928,9 @@ public sealed class PoseFileInspectorSection : IDisposable
             description,
             TrackImport(expectedActor));
         if (!imported.Success)
-            _notices.Failed($"{statusPrefix}: {imported.Detail}");
+            _notices.Report(imported.Outcome, statusPrefix);
         else if (notice.Length > 0)
-            _notices.Refused(notice);
+            _notices.Report(Poser.Domain.Outcome.Fail(notice), statusPrefix, refusal: true);
     }
 
     private static PoseFile? LoadForSmartRouting(string path, bool isCmp)
@@ -1968,22 +1967,22 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (SelectedActor() is not { } actorId)
         {
-            _notices.Refused(NoActorText);
+            _notices.Report(Poser.Domain.Outcome.Fail(NoActorText), "Reapply last", refusal: true);
             return;
         }
         if (_lastImportPath is { } path)
             ImportFromPath(actorId, path);
         else if (_lastImportPose is { } pose)
-            ImportLoadedPose(actorId, pose, "Reapply last pose", "Reapply");
+            ImportLoadedPose(actorId, pose, "Reapply last pose", "Reapply last");
         else
-            _notices.Refused("Nothing has been imported yet.");
+            _notices.Report(Poser.Domain.Outcome.Fail("Nothing has been imported yet."), "Reapply last", refusal: true);
     }
 
     private void ImportFromStash()
     {
         if (SelectedActor() is not { } actorId)
         {
-            _notices.Refused(NoActorText);
+            _notices.Report(Poser.Domain.Outcome.Fail(NoActorText), "From stash", refusal: true);
             return;
         }
         // The button is disabled until something is stashed.
@@ -2002,11 +2001,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                     if (exported)
                         _notices.Done($"Pose saved to {path}.");
                     else
-                        _notices.Failed(
-                            "Export: the pose file could not be written.");
+                        _notices.Report(Poser.Domain.Outcome.Fail("The pose file could not be written."), "Pose ▸ Export");
                 });
             if (!armed.Success)
-                _notices.Failed($"Export: {armed.Detail}");
+                _notices.Report(armed.Outcome, "Pose ▸ Export");
         }));
     }
 
@@ -2179,7 +2177,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (!LibraryConfiguration.TryEnsureDirectory(source.Path, out var detail))
         {
-            _notices.Failed("Library: " + detail);
+            _notices.Report(Poser.Domain.Outcome.Fail(detail), "Pose ▸ Export");
             return false;
         }
 
@@ -2192,12 +2190,11 @@ public sealed class PoseFileInspectorSection : IDisposable
                 _library.RequestScan();
             }
             else
-                _notices.Failed(
-                    "Library: the pose file could not be written.");
+                _notices.Report(Poser.Domain.Outcome.Fail("The pose file could not be written."), "Pose ▸ Export");
         });
         if (!armed.Success)
         {
-            _notices.Failed($"Library: {armed.Detail}");
+            _notices.Report(armed.Outcome, "Pose ▸ Export");
             return false;
         }
 
@@ -2276,7 +2273,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (SelectedActor() is not { } actorId)
         {
-            _notices.Refused(NoActorText);
+            _notices.Report(Poser.Domain.Outcome.Fail(NoActorText), "From clipboard", refusal: true);
             return;
         }
         ImportFromClipboard(actorId);
@@ -2286,7 +2283,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     {
         if (!_imports.HasPosableSkeleton(actorId))
         {
-            _notices.Refused(NoActorText);
+            _notices.Report(Poser.Domain.Outcome.Fail(NoActorText), "From clipboard", refusal: true);
             return;
         }
         string text;
@@ -2296,16 +2293,16 @@ public sealed class PoseFileInspectorSection : IDisposable
         }
         catch (Exception ex)
         {
-            _notices.Failed($"Clipboard: {ex.Message}");
+            _notices.Report(Poser.Domain.Outcome.Fail(ex.Message), "From clipboard");
             return;
         }
         if (PoseClipboard.Decode(text, out var reason) is not { } pose)
         {
-            _notices.Failed($"Clipboard: {reason}");
+            _notices.Report(new Poser.Domain.Outcome(false, reason), "From clipboard");
             return;
         }
         ImportLoadedPose(
-            actorId, pose, "Import pose from clipboard", "Clipboard");
+            actorId, pose, "Import pose from clipboard", "From clipboard");
     }
 
     public void CopyToClipboard(ActorId actorId)
@@ -2314,7 +2311,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         {
             if (pose == null || PoseClipboard.Encode(pose) is not { } payload)
             {
-                _notices.Failed("Clipboard: the pose could not be copied.");
+                _notices.Report(Poser.Domain.Outcome.Fail("The pose could not be copied."), "To clipboard");
                 return;
             }
             try
@@ -2324,10 +2321,10 @@ public sealed class PoseFileInspectorSection : IDisposable
             }
             catch (Exception ex)
             {
-                _notices.Failed($"Clipboard: {ex.Message}");
+                _notices.Report(Poser.Domain.Outcome.Fail(ex.Message), "To clipboard");
             }
         });
         if (!armed.Success)
-            _notices.Failed($"Clipboard: {armed.Detail}");
+            _notices.Report(armed.Outcome, "To clipboard");
     }
 }

@@ -1,3 +1,4 @@
+using Poser.Domain;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -28,15 +29,13 @@ public sealed partial class PoseLibraryPane
         var result = _fileOperations.Probe(path);
         if (!result.Succeeded)
         {
-            _notices.Failed("Retry", result.Detail);
+            _notices.Report(new Outcome(false, result.Detail), "Retry read");
             return;
         }
         // A successful retry clears the tile's error badge after rescanning.
         // Show a separate notice only if the file is still invalid.
         if (result.ProbeStatus != PoseLibraryMetadataStatus.Valid)
-            _notices.Failed(
-                "Retry: "
-                + StatusText(result.ProbeStatus!.Value, result.Detail));
+            _notices.Report(Outcome.Fail(StatusText(result.ProbeStatus!.Value, result.Detail)), "Retry read");
         // Refresh the tile's status after either result.
         _library.RequestScan();
     }
@@ -46,7 +45,7 @@ public sealed partial class PoseLibraryPane
         var result = _fileOperations.Quarantine(path);
         if (!result.Succeeded)
         {
-            _notices.Failed("Quarantine", result.Detail);
+            _notices.Report(new Outcome(false, result.Detail), "Quarantine");
             return;
         }
         _notices.Done("Moved into "
@@ -100,7 +99,7 @@ public sealed partial class PoseLibraryPane
         {
             var moved = _fileOperations.Move(more, destination);
             if (!moved.Succeeded)
-                _notices.Failed("Move", moved.Detail);
+                _notices.Report(new Outcome(false, moved.Detail), "Move to folder");
         }
         _moveMore.Clear();
         var result = _fileOperations.Move(path, destination);
@@ -109,7 +108,7 @@ public sealed partial class PoseLibraryPane
             _library.RequestScan();
         }
         else
-            _notices.Failed("Move", result.Detail);
+            _notices.Report(new Outcome(false, result.Detail), "Move to folder");
     }
 
     /// <summary>Opens Explorer with the file selected. A refusal is stated,
@@ -120,7 +119,7 @@ public sealed partial class PoseLibraryPane
         {
             if (!System.IO.File.Exists(path))
             {
-                _notices.Refused("Reveal: the file no longer exists.");
+                _notices.Report(Outcome.Fail("The file no longer exists."), "Reveal in Explorer", refusal: true);
                 return;
             }
             System.Diagnostics.Process.Start(
@@ -132,7 +131,7 @@ public sealed partial class PoseLibraryPane
         }
         catch (Exception ex)
         {
-            _notices.Failed("Reveal", ex.Message);
+            _notices.Report(Outcome.Fail(ex.Message), "Reveal in Explorer");
         }
     }
 
@@ -158,7 +157,7 @@ public sealed partial class PoseLibraryPane
                     _library.RequestScan();
                 }
                 else
-                    _notices.Failed("Rename", result.Detail);
+                    _notices.Report(new Outcome(false, result.Detail), "Rename");
             },
             confirm: "Rename",
             validate: name =>

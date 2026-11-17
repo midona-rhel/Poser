@@ -413,8 +413,7 @@ public sealed partial class PoseLibraryPane
                 return;
             operation = null;
             if (receipt.State is not OperationReceiptState.Applied)
-                _notices.Failed(
-                    $"Apply: {receipt.Detail ?? receipt.State.ToString()}.");
+                _notices.Report(new Poser.Domain.Outcome(false, receipt.Detail), "Apply");
         };
     }
 

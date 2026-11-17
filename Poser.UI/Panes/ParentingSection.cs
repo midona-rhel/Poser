@@ -36,11 +36,12 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
             yield return new(SelectionId.ForOverlay(overlay.Id), overlay.Name, "Collider");
     }
 
-    private void Apply(SelectionId child, SelectionId? target)
+    /// <summary>A failure is reported under <paramref name="control"/>, the
+    /// name of the field or button the person used.</summary>
+    private void Apply(SelectionId child, SelectionId? target, string control)
     {
-        var result = parenting.Attach(child, target);
-        if (!result.Success) notices.Failed("Parent", result.Detail ?? "Parenting failed.");
-        else _child = null; // Reconcile from the committed relationship on the next draw.
+        if (notices.Report(parenting.Attach(child, target), control))
+            _child = null; // Reconcile from the committed relationship on the next draw.
     }
 
     public void Draw(FormScope form, SelectionId child)
@@ -56,7 +57,7 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
         form.EndPair();
         form.Dropdown("Target", Modes, _mode, next =>
         {
-            if (next == 0) Apply(child, null);
+            if (next == 0) Apply(child, null, "Parenting ▸ Target");
             else _mode = next;
         }, help: "Follow an entity or bone while keeping the current position and rotation offset");
 
@@ -110,14 +111,14 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
             {
                 if (_mode == 2)
                     actions.IconButton(TablerIcon.Crosshair, () => bonePick.Begin(false,
-                        bone => Apply(child, SelectionId.ForBone(bone)),
+                        bone => Apply(child, SelectionId.ForBone(bone), "Parenting ▸ Bone"),
                         onlyActor: scene.Snapshot.Actors.FirstOrDefault(a => a.Id == _actor)?.Id),
                         help: "Pick the parent bone in the view");
-                actions.Button("Detach", () => Apply(child, null), disabled: target == null,
+                actions.Button("Detach", () => Apply(child, null, "Parenting ▸ Detach"), disabled: target == null,
                     help: "Stop following and keep the current world placement");
             });
 
-        if (_entities.Draw() is { } entityPick && _editing is { } entityChild) Apply(entityChild, entityPick.Item.Id);
-        if (_bones.Draw() is { } picked && _editing is { } boneChild) Apply(boneChild, SelectionId.ForBone(picked.Item.BoneId));
+        if (_entities.Draw() is { } entityPick && _editing is { } entityChild) Apply(entityChild, entityPick.Item.Id, "Parenting ▸ Entity");
+        if (_bones.Draw() is { } picked && _editing is { } boneChild) Apply(boneChild, SelectionId.ForBone(picked.Item.BoneId), "Parenting ▸ Bone");
     }
 }

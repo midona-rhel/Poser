@@ -155,35 +155,27 @@ public sealed class ScenePane
     private float _optionsBandHeight = 92f;
 
     public bool SaveEntry(SelectionId target, string displayName) =>
-        ReportLibrarySave(_librarySave.SaveEntry(target, displayName));
+        _notices.Report(_librarySave.SaveEntry(target, displayName), "Save to library", refusal: true);
 
     /// <summary>A pane's "Save to file…": the same entry save, written to
     /// the path the dialog chose.</summary>
     public bool SaveEntryTo(SelectionId target, string path) =>
-        ReportLibrarySave(_librarySave.SaveEntryTo(target, path));
+        _notices.Report(_librarySave.SaveEntryTo(target, path), "Save to file", refusal: true);
 
     public bool SaveGroupEntry(IReadOnlyList<SelectionId> members, string displayName) =>
-        ReportLibrarySave(_librarySave.SaveGroup(members, displayName));
+        _notices.Report(_librarySave.SaveGroup(members, displayName), "Save to library", refusal: true);
 
-    private bool ReportLibrarySave(Outcome result)
-    {
-        if (!result.Success) _notices.Refused(result.Detail ?? "The library save could not start.");
-        return result.Success;
-    }
-
-    /// <summary>Opens an entry file using the configured spawn placement.</summary>
-    public void OpenEntryLoad() =>
+    /// <summary>Opens an entry file using the configured spawn placement.
+    /// <paramref name="control"/> is the name of the button or row that
+    /// opened the dialog; a failure is reported under it.</summary>
+    public void OpenEntryLoad(string control) =>
         _folder.Open(_entryBrowser,
-            path => LoadEntry(path, _config.Config.DefaultSpawnPlacement));
+            path => LoadEntry(path, _config.Config.DefaultSpawnPlacement, control));
 
     /// <summary>Uses the Library's placement and entry loader, reporting failures in this pane.</summary>
-    public void LoadEntry(string path, global::Poser.Domain.Scene.ObjectPlacementMode mode)
-    {
-        var result = _libraryScene.SpawnEntry(path,
-            Poser.Documents.Library.LibraryScanner.KindOf(path), mode);
-        if (!result.Success)
-            _notices.Refused(result.Detail ?? "The entry could not be loaded.");
-    }
+    public void LoadEntry(string path, global::Poser.Domain.Scene.ObjectPlacementMode mode, string control) =>
+        _notices.Report(_libraryScene.SpawnEntry(path,
+            Poser.Documents.Library.LibraryScanner.KindOf(path), mode), control, refusal: true);
 
     public ScenePane(
         ISceneWorkflow workflow,
@@ -322,7 +314,7 @@ public sealed class ScenePane
                 var name = _librarySaveName.Trim();
                 if (name.Length == 0)
                     name = "Scene";
-                ReportLibrarySave(_librarySave.SaveScene(name, SaveOptions));
+                _notices.Report(_librarySave.SaveScene(name, SaveOptions), "Save to library", refusal: true);
                 _librarySaveOpen = false;
             }
         });
@@ -373,7 +365,7 @@ public sealed class ScenePane
                     placeholder: "Optional description",
                     disabled: busy);
                 form.Switch(
-                    "Include MCDFs",
+                    "Include appearance files",
                     SaveOptions.IncludeModdedAppearance,
                     next => SaveOptions = SaveOptions with
                     {
@@ -797,7 +789,7 @@ public sealed class ScenePane
                 disabled: false,
                 fullWidth: false,
                 new CheckItem(
-                    "Modded appearance",
+                    "Appearance files",
                     SaveOptions.IncludeModdedAppearance,
                     next => SaveOptions = SaveOptions with
                     {
@@ -1029,16 +1021,11 @@ public sealed class ScenePane
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description,
             SaveOptions);
-        if (started.Success)
+        if (_notices.Report(started, "Scene ▸ Save"))
             _library.RequestScan();
-        else
-            _notices.Failed(started.Detail ?? "The scene could not be saved.");
     });
 
-    private void OpenLoad() => _folder.Open(_loadBrowser, path =>
-    {
-        BeginLoad(path);
-    });
+    private void OpenLoad() => _folder.Open(_loadBrowser, path => BeginLoad(path, "Scene ▸ Load"));
 
     /// <summary>
     /// Opens Stagehand's shared folder, creating it if needed. Falls back
@@ -1070,23 +1057,19 @@ public sealed class ScenePane
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description,
             SaveOptions with { IncludeModdedAppearance = false });
-        if (!started.Success)
-            _notices.Failed(
-                started.Detail ?? "The Stage could not be exported.");
+        _notices.Report(started, "Stage ▸ Export");
     });
 
     private void OpenStageImport() =>
-        _stageLoadBrowser.Open(StageFolder(), BeginLoad);
+        _stageLoadBrowser.Open(StageFolder(), path => BeginLoad(path, "Stage ▸ Import"));
 
     private void OpenSnapshots() =>
-        _snapshotBrowser.Open(_snapshots.RootDirectory, BeginLoad);
+        _snapshotBrowser.Open(_snapshots.RootDirectory, path => BeginLoad(path, "Snapshots"));
 
-    private void BeginLoad(string path)
-    {
-        var started = _libraryScene.LoadScene(path, _config.Config.DefaultSpawnPlacement);
-        if (!started.Success)
-            _notices.Failed(started.Detail ?? "The scene could not be loaded.");
-    }
+    /// <summary>A failure is reported under <paramref name="control"/>, the
+    /// button that opened the file dialog.</summary>
+    private void BeginLoad(string path, string control) =>
+        _notices.Report(_libraryScene.LoadScene(path, _config.Config.DefaultSpawnPlacement), control);
 
     private void OpenFolder(string? folder)
     {
@@ -1102,7 +1085,7 @@ public sealed class ScenePane
         }
         catch (Exception ex)
         {
-            _notices.Failed($"The folder could not be opened: {ex.Message}");
+            _notices.Report(Outcome.Fail(ex.Message), "Last result ▸ Open folder");
         }
     }
 }

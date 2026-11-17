@@ -216,7 +216,7 @@ internal sealed partial class EntityContextMenus
                 }
                 else
                 {
-                    _notices.Failed($"'{name}' could not be destroyed.");
+                    _notices.Report(Domain.Outcome.Fail($"'{name}' could not be destroyed."), "Destroy");
                 }
             });
         }
@@ -273,7 +273,7 @@ internal sealed partial class EntityContextMenus
         catch (Exception ex)
         {
             _log.Error(ex, "Actor collider capture failed");
-            _notices.Refused("Create collider", ex.Message);
+            _notices.Report(Domain.Outcome.Fail(ex.Message), "Create collider", refusal: true);
         }
     }
 
@@ -708,7 +708,7 @@ internal sealed partial class EntityContextMenus
             () => SetEntityVisible(SelectionId.ForLight(lightId), !light.IsOn),
             () => OpenEntityRename(
                 "Rename light", light.Name, next => _lightControl.Set(lightId, Application.Presentation.LightProperties.Name, next)),
-            () => _lightPane.MoveToCamera(lightId),
+            () => MoveToCamera([SelectionId.ForLight(lightId)]),
             () => DuplicateAndSelect(SelectionId.ForLight(lightId)),
             () => _lightPane.OpenSave(lightId),
             // The library save asks for the entry's NAME first — the same
@@ -1101,7 +1101,7 @@ internal sealed partial class EntityContextMenus
         };
         items = items.Append(new ContextMenuItem("Move to camera", TablerIcon.Camera,
             disabled: locked || !_groups.Descendants(group).Any(_placement.CanPlace))).ToArray();
-        actions = actions.Append((Action?)(() => ReportPlacement(_placement.MoveToCamera(_groups.Descendants(group).ToArray())))).ToArray();
+        actions = actions.Append((Action?)(() => MoveToCamera(_groups.Descendants(group).ToArray()))).ToArray();
         var moreActions = MoveMoreActions(ref items, ref actions);
         if (_groupCtxOpenRequested)
         {
@@ -1188,7 +1188,7 @@ internal sealed partial class EntityContextMenus
             actions.Add(() => SetSelectionPaused(anyRunning));
         }
         items.Add(new ContextMenuItem("Move to camera", TablerIcon.Crosshair));
-        actions.Add(MoveSelectionToCamera);
+        actions.Add(() => MoveToCamera(_selection.Selected));
         items.Add(ContextMenuItem.Separator);
         actions.Add(null);
         if (matched != null)

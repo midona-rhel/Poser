@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Scene;
 using System;
 using System.Collections.Generic;
@@ -434,7 +435,7 @@ public sealed partial class AppearancePane
 
     private void SetItem(ActorId actor, EquipSlot slot, ulong itemId, byte dye1, byte dye2, string description)
     {
-        ReportExternal(_wardrobeSession.SetItem(actor, slot, itemId, dye1, dye2, description), description);
+        ExternalChanged(_wardrobeSession.SetItem(actor, slot, itemId, dye1, dye2, description), description);
         InvalidateWardrobe();
     }
 
@@ -443,25 +444,25 @@ public sealed partial class AppearancePane
         string description = dye == 0
             ? $"Clear {SlotName(slot).ToLowerInvariant()} dye {which + 1}"
             : $"Dye {SlotName(slot).ToLowerInvariant()}";
-        ReportExternal(_wardrobeSession.SetDye(actor, slot, which, dye, description), description);
+        ExternalChanged(_wardrobeSession.SetDye(actor, slot, which, dye, description), description);
         InvalidateWardrobe();
     }
 
     private void SetFacewear(ActorId actor, ulong id, string description)
     {
-        ReportExternal(_wardrobeSession.SetFacewear(actor, id, description), description);
+        ExternalChanged(_wardrobeSession.SetFacewear(actor, id, description), description);
         InvalidateWardrobe();
     }
 
     private void Switch(ActorId actor, MetaSwitch which, bool on)
     {
-        ReportExternal(_wardrobeSession.SetSwitch(actor, which, on), "Show");
+        ExternalChanged(_wardrobeSession.SetSwitch(actor, which, on), "Show");
         InvalidateWardrobe();
     }
 
     private void Outfit(ActorId actor, string description, Func<EquipSlot, WardrobeSlot?> outfit)
     {
-        ReportExternal(_wardrobeSession.SetOutfit(actor, description, outfit), description);
+        ExternalChanged(_wardrobeSession.SetOutfit(actor, description, outfit), description);
         InvalidateWardrobe();
     }
 
@@ -502,7 +503,7 @@ public sealed partial class AppearancePane
             else if (saved.AppearanceRefusal is GlamourerAccessKind.ForeignHeld or GlamourerAccessKind.PoserHeld)
                 _accessAt = DateTime.MinValue;
             else
-                _notices.Failed($"Save design: {saved.Detail}");
+                _notices.Report(new Outcome(false, saved.Detail), "Save design");
         }, placeholder: "Design name");
     }
 
@@ -510,7 +511,7 @@ public sealed partial class AppearancePane
     /// the look read before the revert back on.</summary>
     private void RevertLook(ActorId actor)
     {
-        ReportExternal(_wardrobeSession.Revert(actor), "Revert");
+        ExternalChanged(_wardrobeSession.Revert(actor), "Revert");
         InvalidateWardrobe();
     }
 

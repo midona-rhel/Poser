@@ -83,7 +83,7 @@ public sealed partial class PoseLibraryPane
                 {
                     var gone = _fileOperations.Delete(more);
                     if (!gone.Succeeded)
-                        _notices.Failed("Delete", gone.Detail);
+                        _notices.Report(new Poser.Domain.Outcome(false, gone.Detail), "Delete");
                 }
                 _deleteMore.Clear();
                 var result = _fileOperations.Delete(_deletePath);
@@ -95,7 +95,7 @@ public sealed partial class PoseLibraryPane
                         _library.RequestScan();
                 }
                 else
-                    _notices.Failed("Delete", result.Detail);
+                    _notices.Report(new Poser.Domain.Outcome(false, result.Detail), "Delete");
                 _deleteOpen = false;
             }
             ImGui.SameLine(0f, gap);

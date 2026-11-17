@@ -1,3 +1,4 @@
+using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
 using Poser.Domain.Posing;
@@ -28,14 +29,14 @@ public sealed partial class PoseLibraryPane
     {
         if (index < 0 || index >= _vm.Tiles.Count || index >= _tileKinds.Count) return;
         var result = _libraryScene.SpawnEntry(_vm.Tiles[index].ThumbKey, _tileKinds[index], EffectiveMode());
-        if (!result.Success) _notices.Failed(result.Detail ?? "The entry could not be loaded.");
+        _notices.Report(result, "Spawn");
     }
 
     private void LoadScene(int index)
     {
         if (index < 0 || index >= _vm.Tiles.Count) return;
         var result = _libraryScene.LoadScene(_vm.Tiles[index].ThumbKey, EffectiveMode(index));
-        if (!result.Success) _notices.Failed(result.Detail ?? "The scene could not be loaded.");
+        _notices.Report(result, "Load scene");
     }
 
     private void Apply(int index)
@@ -56,7 +57,7 @@ public sealed partial class PoseLibraryPane
 
         if (TargetActor() is not { } actor || !_imports.HasPosableSkeleton(actor))
         {
-            _notices.Refused("Select an actor to apply a pose to.");
+            _notices.Report(Outcome.Fail("Select an actor to apply a pose to."), "Apply", refusal: true);
             return;
         }
         ApplyTo(index, actor);
@@ -75,7 +76,7 @@ public sealed partial class PoseLibraryPane
         }
         if (!_imports.HasPosableSkeleton(actor))
         {
-            _notices.Refused("That actor has no skeleton to pose.");
+            _notices.Report(Outcome.Fail("That actor has no skeleton to pose."), "Apply", refusal: true);
             return;
         }
         var path = _vm.Tiles[index].ThumbKey;
@@ -83,7 +84,7 @@ public sealed partial class PoseLibraryPane
         _files.CmpImportOverride(path, out bool blocked, out var cmpNote);
         if (blocked)
         {
-            _notices.Refused(cmpNote!);
+            _notices.Report(Outcome.Fail(cmpNote!), "Apply", refusal: true);
             return;
         }
         // The target's stance is about to change, so the preview's rebase
@@ -96,10 +97,8 @@ public sealed partial class PoseLibraryPane
             path,
             BuildImportOptions(path),
             onReceipt: TrackImport(expectedActor));
-        if (!result.Success)
-            _notices.Failed(Failure(result));
-        else if (cmpNote is { Length: > 0 })
-            _notices.Refused(cmpNote);
+        if (_notices.Report(result.Outcome, "Apply") && cmpNote is { Length: > 0 })
+            _notices.Report(Outcome.Fail(cmpNote), "Apply", refusal: true);
     }
 
     /// <summary>
@@ -111,13 +110,12 @@ public sealed partial class PoseLibraryPane
     {
         if ((requestedTarget ?? TargetActor()) is not { } id)
         {
-            _notices.Refused("Select an actor to apply a character file to.");
+            _notices.Report(Outcome.Fail("Select an actor to apply a character file to."), "Apply", refusal: true);
             return;
         }
         string path = _vm.Tiles[index].ThumbKey;
         var begun = _characterFiles.Import(id, path);
-        if (!begun.Success)
-            _notices.Failed("Import", begun.Detail ?? "The character file could not be applied.");
+        _notices.Report(begun.Outcome, "Apply");
     }
 
     private void Spawn(int index)
@@ -131,16 +129,12 @@ public sealed partial class PoseLibraryPane
         _files.CmpImportOverride(path, out bool blocked, out var cmpNote);
         if (blocked)
         {
-            _notices.Refused(cmpNote!);
+            _notices.Report(Outcome.Fail(cmpNote!), "Spawn as new actor", refusal: true);
             return;
         }
 
         var result = _libraryScene.SpawnPose(path, BuildImportOptions(path));
-        if (!result.Success) { _notices.Failed(result.Detail!); return; }
-        if (cmpNote is { Length: > 0 })
-            _notices.Refused(cmpNote);
+        if (_notices.Report(result, "Spawn as new actor") && cmpNote is { Length: > 0 })
+            _notices.Report(Outcome.Fail(cmpNote), "Spawn as new actor", refusal: true);
     }
-
-    private static string Failure(PoseEditResult result) =>
-        "Apply: " + (result.Detail ?? "the pose could not be applied.");
 }

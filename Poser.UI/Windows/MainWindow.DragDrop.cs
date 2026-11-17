@@ -8,6 +8,7 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
@@ -180,7 +181,7 @@ public partial class MainWindow
             if (_groups.CanNest(groupId, intoGroup.Id, out var reason))
                 _log.Debug($"Sidebar drop: nest -> {_groupSteps.Nest(groupId, intoGroup.Id)}");
             else
-                _notices.Failed($"Group not moved: {reason}");
+                _notices.Report(Outcome.Fail(reason), "Move group");
             return;
         }
         // Beside a row that lives inside a group: a sibling there.
@@ -189,7 +190,7 @@ public partial class MainWindow
         {
             if (!_groups.CanNest(groupId, host.Id, out var reason))
             {
-                _notices.Failed($"Group not moved: {reason}");
+                _notices.Report(Outcome.Fail(reason), "Move group");
                 return;
             }
             int index = target.Tag is GroupRowTag sibling ? host.Children.IndexOf(sibling.Id) : -1;

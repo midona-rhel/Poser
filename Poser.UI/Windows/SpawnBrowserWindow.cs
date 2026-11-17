@@ -46,9 +46,6 @@ public sealed class SpawnBrowserWindow : Window
     /// rather than spawning twice.</summary>
     private const double ReactivationSwallow = 0.35;
 
-    private const string SpawnFailedNote =
-        "The spawn failed — GPose may be full or unavailable.";
-
     private static readonly string[] KindBadges = ["Minion", "Mount", "Accessory"];
 
     private readonly ISceneCreation _creation;
@@ -373,17 +370,20 @@ public sealed class SpawnBrowserWindow : Window
         // Pumped after the list: the surface a row opened has to outlive that
         // row's own draw call.
         if (_assetPicker.Draw() is { } asset)
-            SpawnWorldAsset(asset.Item.Path);
+            SpawnWorldAsset(asset.Item.Path, asset.Item.Label);
     }
 
     /// <summary>Spawns one catalog path at the configured placement — the
-    /// world-object spawn every picked asset lands through.</summary>
-    private void SpawnWorldAsset(string path)
+    /// world-object spawn every picked asset lands through. A failure is
+    /// reported under <paramref name="label"/>, the name on the row the person
+    /// picked.</summary>
+    private void SpawnWorldAsset(string path, string label)
     {
-        if (_creation.CreateWorldObject(path).Handle is { } spawned)
+        var created = _creation.CreateWorldObject(path);
+        if (created.Handle is { } spawned)
             SelectSpawned(spawned);
         else
-            _notices.Failed("The selected world asset could not be spawned.");
+            _notices.Report(new Outcome(false, created.Detail), label);
     }
 
     // ── the list ─────────────────────────────────────────────────────────
@@ -680,7 +680,7 @@ public sealed class SpawnBrowserWindow : Window
     {
         var result = _libraryScene.SpawnEntry(saved.Path, saved.Kind,
             _configuration.Config.DefaultSpawnPlacement);
-        if (!result.Success) _notices.Failed(result.Detail ?? $"'{saved.Label}' could not be spawned.");
+        _notices.Report(result, saved.Label);
     }
 
     private SpawnActionDescriptor ActionRow(
@@ -857,22 +857,24 @@ public sealed class SpawnBrowserWindow : Window
         _lastActivatedAt = now;
 
         if ((uint)index >= (uint)_vm.Rows.Count || _vm.Rows[index].Disabled) return;
+        string label = _vm.Rows[index].Label;
         switch (_vm.Rows[index].Dispatch)
         {
             case SpawnDispatch.Builtin builtin:
-                ActivateAction(builtin.Id);
+                ActivateAction(builtin.Id, label);
                 break;
             case SpawnDispatch.Actor actor:
-                SpawnActor(new(Catalog: actor.Entry));
+                SpawnActor(new(Catalog: actor.Entry), label);
                 break;
             case SpawnDispatch.Npc npc:
-                SpawnActor(new(ModelCharaId: npc.ModelCharaId));
+                SpawnActor(new(ModelCharaId: npc.ModelCharaId), label);
                 break;
             case SpawnDispatch.Prop prop:
-                if (_creation.CreateProp(prop.Model).Handle is null) _notices.Failed(SpawnFailedNote);
+                var created = _creation.CreateProp(prop.Model);
+                if (created.Handle is null) _notices.Report(new Outcome(false, created.Detail), label);
                 break;
             case SpawnDispatch.WorldAsset asset:
-                SpawnWorldAsset(asset.Path);
+                SpawnWorldAsset(asset.Path, label);
                 break;
             case SpawnDispatch.Saved saved:
                 SpawnSavedObject(saved);
@@ -880,13 +882,16 @@ public sealed class SpawnBrowserWindow : Window
         }
     }
 
-    private void SpawnActor(ActorCreationRequest request)
+    private void SpawnActor(ActorCreationRequest request, string label)
     {
-        if (_creation.CreateActor(request).Handle is { } handle) SelectSpawned(handle);
-        else _notices.Failed(SpawnFailedNote);
+        var created = _creation.CreateActor(request);
+        if (created.Handle is { } handle) SelectSpawned(handle);
+        else _notices.Report(new Outcome(false, created.Detail), label);
     }
 
-    private void ActivateAction(SpawnActionId action)
+    /// <summary>Runs one of the browser's own rows. A failure is reported
+    /// under <paramref name="label"/>, the name on that row.</summary>
+    private void ActivateAction(SpawnActionId action, string label)
     {
         switch (action)
         {
@@ -903,9 +908,12 @@ public sealed class SpawnBrowserWindow : Window
                         withPose: action == SpawnActionId.CloneActorPosed).Handle);
                 return;
             case SpawnActionId.Prop:
-                if (_creation.CreateProp().Handle == null)
-                    _notices.Failed(SpawnFailedNote);
+            {
+                var created = _creation.CreateProp();
+                if (created.Handle == null)
+                    _notices.Report(new Outcome(false, created.Detail), label);
                 return;
+            }
             case SpawnActionId.ActorFromLibrary:
             case SpawnActionId.PropFromLibrary:
             case SpawnActionId.ObjectFromLibrary:
@@ -945,7 +953,7 @@ public sealed class SpawnBrowserWindow : Window
             case SpawnActionId.FurnitureFromFile:
                 // ONE dialog serves every entry kind; the pane owns and
                 // pumps it, so it outlives this window closing.
-                _scenePane.OpenEntryLoad();
+                _scenePane.OpenEntryLoad(label);
                 return;
             case SpawnActionId.ActorFromMcdf:
                 // FILE FIRST: the pane's dialog opens now; the pick spawns
@@ -980,7 +988,7 @@ public sealed class SpawnBrowserWindow : Window
                         _ => OverlayNodeKind.Talk,
                     });
                 if (result.Handle is { } overlay) SelectSpawned(overlay);
-                else _notices.Failed(result.Detail ?? "The overlay could not be created.");
+                else _notices.Report(new Outcome(false, result.Detail), label);
                 return;
             }
             case SpawnActionId.LightSpot:
@@ -1000,7 +1008,7 @@ public sealed class SpawnBrowserWindow : Window
                 // The pane owns the dialog and the import's own selection; it
                 // is pumped by the main window every frame, so the dialog
                 // outlives this window.
-                _lightPane.OpenLoad();
+                _lightPane.OpenLoad(label);
                 return;
             case SpawnActionId.CameraGame:
             case SpawnActionId.CameraFree:
@@ -1009,9 +1017,7 @@ public sealed class SpawnBrowserWindow : Window
                     action == SpawnActionId.CameraFree ? CameraKind.Free : CameraKind.Game);
                 if (created.Handle is null)
                 {
-                    _notices.Failed(
-                        "The camera could not be created — cameras exist "
-                        + "only inside GPose.");
+                    _notices.Report(new Outcome(false, created.Detail), label);
                     return;
                 }
                 SelectSpawned(created.Handle);
@@ -1020,7 +1026,7 @@ public sealed class SpawnBrowserWindow : Window
             case SpawnActionId.CameraFromFile:
                 // The pane owns the dialog and the import's own selection,
                 // exactly like the light file row above.
-                _cameraPane.OpenLoad();
+                _cameraPane.OpenLoad(label);
                 return;
             case SpawnActionId.ReferenceImage:
                 // The session owns the picker for the same reason the panes

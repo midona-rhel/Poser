@@ -213,6 +213,7 @@ public partial class PoseInspectorPane : IDisposable
         OverlayPane overlayPane,
         SkeletonOverlayPresentation overlayPresentation,
         UserNotices notices,
+        ISelectionPlacement placement,
         global::Poser.Application.Scene.SceneGroups groups,
         GroupTransformCoordinator groupCoordinator,
         ParentingSection parentingSection,
@@ -229,6 +230,7 @@ public partial class PoseInspectorPane : IDisposable
         _groupCoordinator = groupCoordinator;
         _overlayPresentation = overlayPresentation;
         _notices = notices;
+        _placement = placement;
         _ikPort = ikPort;
         _ikBake = ikBake;
         _cameraPane = cameraPane;
@@ -252,6 +254,7 @@ public partial class PoseInspectorPane : IDisposable
     private readonly OverlayPane _overlayPane;
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly UserNotices _notices;
+    private readonly ISelectionPlacement _placement;
     private bool _openCameraTracking = true;
 
     // Cache transform resolution by selection and scene revision.
@@ -552,24 +555,8 @@ public partial class PoseInspectorPane : IDisposable
         return (_multiHeadWho, _multiHeadSub);
     }
 
-    /// <summary>One undoable translate: the whole selection moves so its
-    /// centroid lands at <paramref name="goal"/>, every member keeping its
-    /// offset from the others.</summary>
-    public void GroupMoveTowards(Vector3 goal)
-    {
-        if (!_groupCoordinator.Resolve(_selection.Selected, out var targets, out _)
-            || !_groupCoordinator.TryReadSelection(
-                _selection.Selected, _configuration.Config.Gizmo.GroupScale, out var current, out _))
-            return;
-        var begin = _cleanTransforms.Begin(targets, DomainOperation.Translate,
-            DomainSpace.World, DomainPivot.Centroid, description: "Move to camera",
-            selection: _selection.Selected);
-        if (!begin.Success || begin.GestureId is not { } gestureId) return;
-        var update = _cleanTransforms.Update(gestureId,
-            new DomainDelta(goal - current.Position, Quaternion.Identity, Vector3.One));
-        if (update.Success) _cleanTransforms.Commit(gestureId);
-        else _cleanTransforms.Cancel(gestureId);
-    }
+    public void MoveSelectionToCamera() =>
+        _notices.Report(_placement.MoveToCamera(_selection.Selected).Outcome, "Move to camera");
 
     private readonly PropertiesContext _properties;
     public bool CanGroupDeselect => _properties.CanDeselectGroup;
@@ -1880,7 +1867,7 @@ public partial class PoseInspectorPane : IDisposable
             return;
         _forwardedBakeNote = text;
         if (text != null && text.StartsWith("Bake:", StringComparison.Ordinal))
-            _notices.Failed(text);
+            _notices.Report(Outcome.Fail(text["Bake:".Length..].TrimStart()), "Bake");
     }
 
     private void DrawIkChainList(
@@ -2002,9 +1989,7 @@ public partial class PoseInspectorPane : IDisposable
             var result = fabrik
                 ? _ikPort.SetFabrikTarget(ikTarget, IkTargetMode.Bone, bone)
                 : _ikPort.SetBoneTarget(ikTarget, bone);
-            if (result is { Success: false } failed)
-                _notices.Failed($"IK target: {failed.Detail}");
-            else
+            if (_notices.Report(result, "IK ▸ Bone"))
                 _ikBoneActor = bone.Skeleton.Actor;
         }
         form.Actions("Bone", actions =>
@@ -2091,9 +2076,8 @@ public partial class PoseInspectorPane : IDisposable
                     return;
                 }
                 // The IK section is drawn only for a bone whose chain reads.
-                if (_ikPort.Set(endpoint, _ikPort.Get(endpoint)! with { TargetMode = IkTargetMode.World })
-                        is { Success: false } failed)
-                    _notices.Failed($"IK target: {failed.Detail}");
+                _notices.Report(_ikPort.Set(endpoint, _ikPort.Get(endpoint)! with { TargetMode = IkTargetMode.World }),
+                    "IK ▸ Detach");
             }, disabled: current == null, help: "Hold the endpoint at its current world position");
         });
         if (current != null && currentName == null)
@@ -2103,7 +2087,7 @@ public partial class PoseInspectorPane : IDisposable
             var result = fabrik
                 ? _ikPort.SetFabrikTarget(endpoint, IkTargetMode.Entity, entity: chosen.Item.Id)
                 : _ikPort.SetEntityTarget(endpoint, chosen.Item.Id);
-            if (result is { Success: false } refusal) _notices.Failed($"IK target: {refusal.Detail}");
+            _notices.Report(result, "IK ▸ Entity");
         }
     }
 
@@ -2114,12 +2098,11 @@ public partial class PoseInspectorPane : IDisposable
     {
         var ikTarget = TransformTargetId.ForBone(boneId);
 
-        void Apply(Domain.Posing.IkChainConfig next)
+        // A failure is reported under the name of the control that changed.
+        void Apply(Domain.Posing.IkChainConfig next, string control)
         {
-            var result = _ikPort.Set(ikTarget, next);
-            if (result.Success)
+            if (_notices.Report(_ikPort.Set(ikTarget, next), control))
                 config = _ikPort.Get(ikTarget)!;
-            else _notices.Failed($"IK: {result.Detail}");
         }
 
         void Adjust(Domain.Posing.IkChainConfig next)
@@ -2136,7 +2119,7 @@ public partial class PoseInspectorPane : IDisposable
         form.Switch(
             "Live IK",
             armed,
-            next => Apply(config with { Enabled = next }));
+            next => Apply(config with { Enabled = next }, "Live IK"));
         form.Actions(string.Empty, actions =>
         {
             actions.Button(
@@ -2150,8 +2133,7 @@ public partial class PoseInspectorPane : IDisposable
                 "Bake",
                 () =>
                 {
-                    if (_ikBake.Begin(ikTarget) is { Success: false } failed)
-                        _notices.Failed($"Bake: {failed.Detail}");
+                    _notices.Report(_ikBake.Begin(ikTarget).Outcome, "Bake");
                     config = _ikPort.Get(ikTarget)!;
                 },
                 disabled: !canBake);
@@ -2191,7 +2173,7 @@ public partial class PoseInspectorPane : IDisposable
                     Solver = solver,
                     CcdDepth = Math.Min(
                         config.CcdDepth, Domain.Posing.IkChainConfig.MaxDepthFor(solver)),
-                });
+                }, "Solver");
             },
             help: "Two Joint is a real arm or leg; CCD and FABRIK bend a chain; Rope hangs it");
         form.Slider(
@@ -2226,7 +2208,7 @@ public partial class PoseInspectorPane : IDisposable
                     3 => Domain.Posing.IkTargetMode.Entity,
                     _ => Domain.Posing.IkTargetMode.Actor,
                 },
-            }),
+            }, "IK ▸ Target"),
             help: "Actor follows the actor; World holds a point; Bone or Scene entity follows the chosen target");
         if (config.TargetMode == Domain.Posing.IkTargetMode.Bone)
             DrawIkBoneTarget(form, boneId, ikTarget);
@@ -2236,7 +2218,7 @@ public partial class PoseInspectorPane : IDisposable
             form.Switch(
                 "Keep rotation",
                 config.HoldRotation,
-                next => Apply(config with { HoldRotation = next }),
+                next => Apply(config with { HoldRotation = next }, "Keep rotation"),
                 disabled: config.TargetMode == Domain.Posing.IkTargetMode.Actor,
                 help: "The tip keeps its rotation to the held spot or bone as well");
         }
@@ -2246,14 +2228,14 @@ public partial class PoseInspectorPane : IDisposable
             form.Switch(
                 "Constraints",
                 config.EnforceConstraints,
-                next => Apply(config with { EnforceConstraints = next }),
+                next => Apply(config with { EnforceConstraints = next }, "Constraints"),
                 help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
             // On: the end turns with the limb. Stored as the hold it replaces,
             // so saved chains keep behaving as they were saved.
             form.Switch(
                 "End rotation",
                 !config.EnforceEndRotation,
-                next => Apply(config with { EnforceEndRotation = !next }),
+                next => Apply(config with { EnforceEndRotation = !next }, "End rotation"),
                 help: "On: the hand or foot turns with the limb as the IK moves or swivels it. Off: it keeps its rotation");
 
             // The IK service stores Two Joint only on arm and leg endpoints.
@@ -2316,7 +2298,7 @@ public partial class PoseInspectorPane : IDisposable
                 form.Switch(
                     "Constraints",
                     config.EnforceConstraints,
-                    next => Apply(config with { EnforceConstraints = next }),
+                    next => Apply(config with { EnforceConstraints = next }, "Constraints"),
                     help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
             if (config.Solver is IkSolver.Fabrik or IkSolver.Rope)
             {
@@ -2324,7 +2306,7 @@ public partial class PoseInspectorPane : IDisposable
                     next => Adjust(config with { ParentDepth = (int)MathF.Round(next) }), format: "0",
                     help: "Links toward parents; zero disables this side. The far end stays anchored");
                 form.Switch("Colliders", config.Collisions,
-                    next => Apply(config with { Collisions = next }),
+                    next => Apply(config with { Collisions = next }, "Colliders"),
                     help: "Avoid enabled IK colliders with this chain");
                 if (config.Collisions)
                     form.Slider("Bone width", config.CollisionRadius * 2f, 0f, 1f,
@@ -2390,7 +2372,7 @@ public partial class PoseInspectorPane : IDisposable
         _bakeQueue.RemoveAt(0);
         if (_ikBake.CanBake(next)
             && _ikBake.Begin(next) is { Success: false } failed)
-            _notices.Failed($"Bake: {failed.Detail}");
+            _notices.Report(failed.Outcome, "Bake all");
     }
 
     private void DrawActorIk(FormScope form, ActorId actorId)
@@ -2503,12 +2485,7 @@ public partial class PoseInspectorPane : IDisposable
                 () => _poseCommands.Reset(actorId, PoseRegion.Hair));
             actions.Button(
                 "All",
-                () =>
-                {
-                    var result = _actorReset.ResetAll(actorId);
-                    if (!result.Success)
-                        _notices.Failed("Reset all", result.Detail!);
-                },
+                () => _notices.Report(_actorReset.ResetAll(actorId).Outcome, "Reset all"),
                 help: "Reset this actor's pose, expression, gaze, IK, animation, appearance, and mod integrations. Its placement in the world and the stashed pose are kept.",
                 variant: ButtonVariant.Danger);
         }
