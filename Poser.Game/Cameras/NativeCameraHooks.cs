@@ -19,7 +19,7 @@ namespace Poser.Game.Cameras;
 /// tracking through native hooks. Managed failures in Poser's detour work are
 /// logged once per hook; calls to the original native functions are outside those catches.
 /// </summary>
-internal sealed unsafe class NativeCameraHooks
+internal sealed unsafe partial class NativeCameraHooks
 {
     // Signatures generated from the patchcheck registry.
     private const string CameraUpdateSignature =
@@ -269,6 +269,9 @@ internal sealed unsafe class NativeCameraHooks
         nint a1, nint a2, nint a3, MouseFrame* mouse, KeyboardFrame* keyboard)
     {
         _handleInputHook!.Original(a1, a2, a3, mouse, keyboard);
+#if DEBUG
+        ApplyDebugKeys(keyboard);
+#endif
         try
         {
             if (!_gPose.IsGPosing || Live is not { } live)

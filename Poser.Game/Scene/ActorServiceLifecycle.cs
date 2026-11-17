@@ -249,26 +249,6 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
                     bone.PartialRootScale = scale;
     }
 
-    /// <summary>
-    /// Reads a pose from existing skeleton caches without refreshing them.
-    /// This legacy helper has no current caller; copy and scene capture use
-    /// the armed PoseExportCapture path.
-    /// </summary>
-    private PoseFile? CapturePose(IActor actor)
-    {
-        try
-        {
-            var slots = _skeletons.GetSkeletons(actor);
-            return slots.Count == 0 ? null : _poseFiles.CreatePoseFile(slots, PoseBoneWanted);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning(
-                $"SceneLifecycleHistory: '{actor.Name}' pose could not be captured before the despawn: {ex.Message}");
-            return null;
-        }
-    }
-
     private bool PoseBoneWanted(IBone bone) => !IsPhysicsDriven(bone.BoneName)
         || _bonePosing.GetPoseInfo(bone.Skeleton)
             .GetPoseInfo(bone.BoneName, bone.PartialId).HasStacks;

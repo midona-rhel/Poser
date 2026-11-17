@@ -535,6 +535,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     private GestureResult RestorePatch(TransformPatch patch, bool before, Action commit)
     {
+        // A redraw replaces the bones under an undo as it does under a gesture:
+        // a restore it left pending retries on the same bones of the new body.
         var recovery = AttemptRecovery(before ? patch.Before : patch.After, () =>
         {
             if (patch.GroupState is { } change)
@@ -544,7 +546,15 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                     _groupTransforms?.Restore(current, before);
             }
             commit();
-        }, remap: patch.GroupState != null);
+        }, remap: true);
+        // No target was bound, so nothing was written and nothing is left to recover:
+        // the step is refused and stays in history for the redrawn body.
+        if (recovery.Attempts.All(attempt => attempt.Status == TransformPortStatus.StaleTarget))
+        {
+            PendingRecovery = null;
+            _recoveryCompleted = null;
+            _recoveryRemap = false;
+        }
         return RecoveryResult(recovery);
     }
 
