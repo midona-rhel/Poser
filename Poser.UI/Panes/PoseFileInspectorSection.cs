@@ -462,8 +462,10 @@ public sealed class PoseFileInspectorSection : IDisposable
                 OnClose = () => _importMenuOpen = false,
                 HostPaintsChrome = true,
             });
-        ImGui.SetCursorScreenPos(rects.Body.Min + new Vector2(MenuPadding * scale, 0f));
-        ScrollRegion("##import-options", rects.Body.Size.X / scale - MenuPadding * 2f,
+        // The body starts at the page inset, like every other framed window.
+        float inset = ActiveTheme.Page.Inset;
+        ImGui.SetCursorScreenPos(rects.Body.Min + new Vector2(inset * scale, 0f));
+        ScrollRegion("##import-options", rects.Body.Size.X / scale - inset - MenuPadding,
             rects.Body.Size.Y / scale, region =>
             {
                 var origin = ImGui.GetCursorScreenPos();
