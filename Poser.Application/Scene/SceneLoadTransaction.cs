@@ -924,6 +924,10 @@ internal sealed class SceneLoadTransaction(
                 return stop;
             if (_environment is { } stated)
             {
+                // A scene comes back with the weather it was saved in. The file always
+                // names that weather, also when the game had chosen it by itself, so it
+                // is held here instead of being left to today's weather.
+                stated.IsWeatherOverrideEnabled = true;
                 sceneState.ApplyEnvironment(stated);
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.Environment, "Environment", true));
