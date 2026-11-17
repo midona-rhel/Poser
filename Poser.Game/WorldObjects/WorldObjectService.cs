@@ -411,6 +411,9 @@ public sealed class WorldObjectService : IDisposable
     /// Some map objects move by themselves, such as the pieces that circle an aetheryte.</summary>
     private const float MovingObjectRange = 5f;
 
+    /// <summary>An object within this distance of its saved place has not moved.</summary>
+    private const float ExactPlace = 0.01f;
+
     /// <summary>The borrowed map object a saved entry means: the one with the same model
     /// nearest to the saved place. Null when none is within <see cref="MovingObjectRange"/>.</summary>
     public AdoptedWorldObject? FindBorrowed(string path, Vector3 mapPosition) =>
@@ -436,13 +439,15 @@ public sealed class WorldObjectService : IDisposable
         bool visible, out string? detail)
     {
         // Compare against where the object was first found, also when an earlier load moved
-        // it. An object not borrowed yet is taken from the map when it is nearer.
+        // it. A borrowed object standing exactly at the saved place is the one. Otherwise an
+        // object not borrowed yet comes first, so that two saved objects with the same model
+        // do not both take the same one.
         var borrowed = Nearest(_adopted.Where(item => !item.Spawned && item.IsValid),
             item => item.Path, item => item.InitialPlacement.Position, path, mapPosition);
-        var onMap = Nearest(_port.Enumerate().Where(row => !IsAdopted(row.Address)).Select(row => (WorldObjectRow?)row),
-            row => row!.Value.Path, row => row!.Value.Placement.Position, path, mapPosition);
-        var handle = onMap.Item is { } nearer && (borrowed.Item == null || onMap.Distance < borrowed.Distance)
-            ? Adopt(nearer.Address) : borrowed.Item;
+        var onMap = borrowed.Item != null && borrowed.Distance <= ExactPlace ? default
+            : Nearest(_port.Enumerate().Where(row => !IsAdopted(row.Address)).Select(row => (WorldObjectRow?)row),
+                row => row!.Value.Path, row => row!.Value.Placement.Position, path, mapPosition);
+        var handle = onMap.Item is { } unborrowed ? Adopt(unborrowed.Address) : borrowed.Item;
         detail = handle == null ? "The original map object could not be found near its saved position." : null;
         if (handle != null)
         {
