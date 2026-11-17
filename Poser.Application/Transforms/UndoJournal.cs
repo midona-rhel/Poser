@@ -3,32 +3,33 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>Admission is separate from the entry's own result. A blocked
-/// request never ran the entry and must not consume its refusal policy.</summary>
+/// <summary>The result of running one undo or redo step. Attempted is false when
+/// the step never ran, for example because a drag is still in progress; such a
+/// refusal does not count toward discarding the step.</summary>
 public readonly record struct HistoryRunResult(GestureResult Result, bool Attempted);
 
-/// <summary>What runs an entry's delta: the gesture service, which owns the
-/// recovery barrier every mutation shares. The journal peeks the entry and
-/// picks its path; the runner never reads history to find it again.</summary>
+/// <summary>Runs undo and redo steps for the journal. This is the transform
+/// gesture service, so a step never runs in the middle of a drag.</summary>
 public interface IUndoRunner
 {
-    /// <summary>Finishes a pending recovery before history may move; null when
-    /// nothing is pending.</summary>
+    /// <summary>Retries bones that an earlier cancelled drag or undo could not
+    /// put back (usually because the actor was being redrawn). Returns null when
+    /// nothing was waiting; otherwise that retry is this press's whole result.</summary>
     GestureResult? RecoverPending();
 
-    /// <summary>Runs one direction of a synchronous entry and commits it to
-    /// history (scoped to <paramref name="entity"/> when given) on success.</summary>
+    /// <summary>Runs a step that finishes at once, and moves it to the other
+    /// list (only within <paramref name="entity"/>'s steps when given) if it worked.</summary>
     HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity);
 
-    /// <summary>Starts one direction of a multi-frame step. The journal owns
-    /// completion and the history commit.</summary>
+    /// <summary>Starts a step that takes several frames, such as restoring an
+    /// actor after a redraw. The journal moves it once it has finished.</summary>
     HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity);
 }
 
 /// <summary>
-/// Undo and redo through each entry's recorded inverse. Explicit multi-frame
-/// restoration waits for completion before moving history; file redo checks
-/// its required asset. Animation changes never select an implicit recovery mode.
+/// Undo and redo. Each press picks the newest step (or the newest step for the
+/// selected entity), asks its owner to put it back, and decides what happens to
+/// the step when the owner refuses. Runs on the game's main thread.
 /// </summary>
 public sealed class UndoJournal
 {
@@ -124,10 +125,12 @@ public sealed class UndoJournal
         switch (RefusalPolicy.Decide(entry))
         {
             case RefusalAction.DropNow:
+                // Only steps with their own undo and redo (never a bone or
+                // object move) ask for this, and the runner has already put
+                // the step's own reason in the result.
                 _refused = null;
                 _history.Drop(entry);
-                var reason = (entry as InverseEntry)?.FailureDetail?.Invoke() ?? result.Detail;
-                _notices.Note(reason ?? $"{entry.Description} could not be restored and was discarded.");
+                _notices.Note(result.Detail!);
                 return result;
             case RefusalAction.Keep:
                 _refused = null;
@@ -191,8 +194,7 @@ public sealed class UndoJournal
             if (before) _history.CommitUndo(step, entity); else _history.CommitRedo(step, entity);
             completed = result;
         }
-        try { step.CompleteReplay!(before, Current, cancellation.Token, Finish); }
-        catch (Exception ex) { Finish(GestureResult.Fail(ex.Message)); }
+        step.CompleteReplay!(before, Current, cancellation.Token, Finish);
         return completed ?? GestureResult.Ok();
     }
 

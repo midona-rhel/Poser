@@ -21,7 +21,6 @@ namespace Poser.Game.Cameras;
 public sealed class CameraRestRecorder : IDisposable
 {
     public const long RestMilliseconds = 5000;
-    private const string Unavailable = "The camera is no longer available.";
 
     private readonly IFramework _framework;
     private readonly IVirtualCameraService _cameras;
@@ -29,19 +28,19 @@ public sealed class CameraRestRecorder : IDisposable
     private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
     private readonly UndoJournal _undo;
-    private readonly IEntityHistoryResolver<IVirtualCamera>? _restored;
+    private readonly IEntityHistoryResolver<IVirtualCamera> _restored;
     private IVirtualCamera? _camera;
     private Framing _rested;
     private Framing _last;
     private long _changedAt;
+    // True while the camera's last seen framing differs from the rested one.
     private bool _moved;
     private bool _rebase;
     private bool _poserEdit;
-    private bool _recording;
 
     public CameraRestRecorder(IFramework framework, IVirtualCameraService cameras,
         ValueJournal journal, EditHistory history, TransformGestureService gestures, UndoJournal undo,
-        IEntityHistoryResolver<IVirtualCamera>? restored = null)
+        IEntityHistoryResolver<IVirtualCamera> restored)
     {
         _restored = restored;
         _framework = framework;
@@ -74,11 +73,13 @@ public sealed class CameraRestRecorder : IDisposable
     /// <summary>Whether the camera was moved by its own controls and that move
     /// is not an undo step yet.</summary>
     private bool HasSettlingMove() =>
-        !_recording && _camera is { IsValid: true } && _moved && !_poserEdit && !_last.Near(_rested);
+        // The camera may have been deleted since the last tick.
+        _camera is { IsValid: true } && _moved && !_poserEdit;
 
     private void Tick(IFramework _)
     {
-        if (!_cameras.IsAvailable || _cameras.LiveCamera is not { IsValid: true } live)
+        // There is a live camera only in GPose, and only while the camera hooks loaded.
+        if (_cameras.LiveCamera is not { } live)
         {
             _camera = null;
             return;
@@ -116,26 +117,21 @@ public sealed class CameraRestRecorder : IDisposable
 
     private void Record(IVirtualCamera camera, Framing after)
     {
+        // Cleared first: recording adds a step, which calls RecordSettlingMove again.
         _moved = false;
         var before = _rested;
         _rested = after;
-        _recording = true;
-        try
+        // The camera service as the first part of the key keeps this step in
+        // global undo. A camera deleted and brought back by undo is a new
+        // object, so the step looks up the current one. The journal runs the
+        // last argument right before each write: when the camera is gone,
+        // undo and redo of this step do nothing.
+        IVirtualCamera? Current() => _restored.Resolve(camera) is { IsValid: true } live ? live : null;
+        _journal.Record((_cameras, camera, nameof(CameraRestRecorder)), "Move camera", before, after, state =>
         {
-            // A service-based journal key keeps this entry in global history.
-            // A camera removed and restored by undo is a new instance: resolve it.
-            IVirtualCamera? Current() => (_restored?.Resolve(camera) ?? camera) is { IsValid: true } live ? live : null;
-            _journal.Record((_cameras, camera, nameof(CameraRestRecorder)), "Move camera", before, after, state =>
-            {
-                if (Current() is not { } live) return new(false, Unavailable);
-                state.Apply(live);
-                return Outcome.Ok();
-            }, () => Current() != null);
-        }
-        finally
-        {
-            _recording = false;
-        }
+            state.Apply(Current()!);
+            return Outcome.Ok();
+        }, () => Current() != null);
     }
 
     /// <summary>What the camera's own controls change: a free camera's place and
@@ -147,9 +143,9 @@ public sealed class CameraRestRecorder : IDisposable
         public static Framing Read(IVirtualCamera c) => new(
             c.Kind, c.Position, c.Rotation, c.PositionOffset, c.Angle, c.Pan, c.Zoom, c.Roll, c.FoV);
 
+        /// <summary>Compares two framings of the same camera, so the kind always matches.</summary>
         public bool Near(Framing other) =>
-            Kind == other.Kind
-            && Vector3.DistanceSquared(Position, other.Position) < 1e-8f
+            Vector3.DistanceSquared(Position, other.Position) < 1e-8f
             && Vector3.DistanceSquared(Rotation, other.Rotation) < 1e-8f
             && Vector3.DistanceSquared(PositionOffset, other.PositionOffset) < 1e-8f
             && Vector2.DistanceSquared(Angle, other.Angle) < 1e-8f
