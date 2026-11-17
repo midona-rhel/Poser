@@ -183,6 +183,19 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// bones this tick, or null when nothing is tracked.</summary>
     internal Vector3? TrackedPivot => _trackedPivot;
 
+#if DEBUG
+    /// <summary>Debug bridge: tells the game these keys are held for some frames
+    /// and records the game camera on each frame.</summary>
+    public void DebugHoldKeys(IReadOnlyList<Dalamud.Game.ClientState.Keys.VirtualKey> keys, int frames) =>
+        _native?.DebugHoldKeys(keys, frames);
+
+    /// <summary>Debug bridge: frames left in the current key hold, and what was recorded.</summary>
+    public (int FramesLeft, string Columns, float[][] Samples) DebugKeyHold() =>
+        _native is { } native
+            ? (native.DebugKeyFramesLeft, NativeCameraHooks.DebugKeyColumns, native.DebugKeySamples)
+            : (0, NativeCameraHooks.DebugKeyColumns, []);
+#endif
+
     /// <summary>The native orbit camera; null when the manager is not up.</summary>
     internal NativeCamera* Native
     {
