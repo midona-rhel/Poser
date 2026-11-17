@@ -66,6 +66,7 @@ public static class DropdownWidgets
         var pos = ImGui.GetCursorScreenPos();
 
         ImGui.SetCursorScreenPos(pos);
+        disabled |= Interactive.GreyedOut;
         var trigger = Interactive.Reserve(
             Ids.Join(id, "_value"), new Vector2(totalWidth, height), disabled);
         bool valueHovered = trigger.Hovered;

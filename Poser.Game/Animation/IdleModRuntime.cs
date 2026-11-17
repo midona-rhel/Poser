@@ -57,7 +57,6 @@ public sealed class IdleModRuntime(
         var completion = new TaskCompletionSource<Captured>(TaskCreationOptions.RunContinuationsAsynchronously);
         await framework.RunOnFrameworkThread(() =>
         {
-            if (imports.IsImportBusy) throw new InvalidOperationException("Wait for the pose import to finish.");
             var actor = bindings.Resolve(actorId).Value ?? throw new InvalidOperationException("The actor is unavailable.");
             var slots = skeletons.GetSkeletons(actor);
             var character = slots.SingleOrDefault(s => s.Slot == PoseSlot.Character)

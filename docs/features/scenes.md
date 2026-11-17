@@ -48,6 +48,10 @@ Selection tab saves a group. Loading it from the Library adds it to the scene.
 
 Press **Load…** on the Scene page, or open the scene from the Library.
 
+While a scene loads or saves, Poser's controls are greyed out and do nothing.
+**Cancel** on the progress row stays usable. The same happens while a character
+file is applied or saved.
+
 The **Load** options are on the Scene page and in the load dialog:
 
 - **Clear the session first** removes everything before loading. This can't be

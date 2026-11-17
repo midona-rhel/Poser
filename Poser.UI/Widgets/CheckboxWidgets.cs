@@ -30,6 +30,7 @@ public static class CheckboxWidgets
         bool partial = false)
     {
         var measured = MeasureCheckbox(style);
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, measured, disabled);
         if (hit.Clicked)
         {

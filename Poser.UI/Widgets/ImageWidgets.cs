@@ -32,6 +32,7 @@ public static class ImageWidgets
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, new Vector2(side * scale), disabled);
         var draw = ImGui.GetWindowDrawList();
         var fill = !disabled && (hit.Hovered || hit.Active)
@@ -83,6 +84,7 @@ public static class ImageWidgets
     {
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, new Vector2(width * scale, height * scale), disabled);
         var draw = ImGui.GetWindowDrawList();
         var fill = color is { } paint ? paint with { W = 1f } : theme.Chrome.InputWell;

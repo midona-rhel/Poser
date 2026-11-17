@@ -121,8 +121,7 @@ public static class Interactive
         internal uint? DragOwner;
         // An action is running (see ActionGate): controls start nothing new.
         internal bool Busy;
-        // The opacity before a long action greyed the interface out.
-        internal float FullAlpha = 1f;
+        // The running action is a long one: controls look disabled.
         internal bool Greyed;
         // How many AllowWhileBusy scopes are open.
         internal int AllowedDepth;
@@ -164,44 +163,32 @@ public static class Interactive
     /// A drag that was already accepted still reports its movement and its release.</summary>
     public static bool Blocked => State.Busy && State.AllowedDepth == 0;
 
-    /// <summary>Tells the controls whether an action is running, for this frame. With
-    /// <paramref name="greyOut"/>, everything drawn from here on is dimmed as well.</summary>
+    /// <summary>True while a long action runs: a control that can look disabled should.
+    /// Controls read this next to their own disabled state.</summary>
+    public static bool GreyedOut => State.Greyed && State.AllowedDepth == 0;
+
+    /// <summary>Tells the controls, for this frame, whether an action is running and whether
+    /// it is a long one.</summary>
     public static void SetBusy(bool busy, bool greyOut)
     {
         State.Busy = busy;
-        State.FullAlpha = ImGui.GetStyle().Alpha;
-        if (greyOut)
-            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, State.FullAlpha * 0.45f);
         State.Greyed = greyOut;
     }
 
-    /// <summary>Ends the dimming that <see cref="SetBusy"/> began for this frame.</summary>
-    public static void EndBusy()
-    {
-        if (State.Greyed)
-            ImGui.PopStyleVar();
-        State.Greyed = false;
-        State.Busy = false;
-    }
+    /// <summary>Ends what <see cref="SetBusy"/> began for this frame.</summary>
+    public static void EndBusy() => SetBusy(false, false);
 
-    /// <summary>Controls drawn inside this scope stay usable, and at full strength, while an
-    /// action runs. It is for the running action's own controls, such as its Cancel button.</summary>
+    /// <summary>Controls drawn inside this scope stay usable while an action runs. It is for
+    /// the running action's own controls, such as its Cancel button.</summary>
     public static AllowedScope AllowWhileBusy()
     {
         State.AllowedDepth++;
-        if (State.Greyed)
-            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, State.FullAlpha);
-        return new AllowedScope(State.Greyed);
+        return default;
     }
 
-    public readonly struct AllowedScope(bool pushed) : IDisposable
+    public readonly struct AllowedScope : IDisposable
     {
-        public void Dispose()
-        {
-            if (pushed)
-                ImGui.PopStyleVar();
-            State.AllowedDepth--;
-        }
+        public void Dispose() => State.AllowedDepth--;
     }
 
     public static void BeginFrame()

@@ -58,6 +58,7 @@ public static class ColorWellWidgets
             style.Height, theme.Controls.ColorWellSize);
         var metrics = ControlSizing.Resolve(style, side, side);
         float scale = metrics.Scale;
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, metrics.Size, disabled);
         var wellMin = hit.ScreenMin;
         var wellMax = fillWidth ? hit.ScreenMax : wellMin + new Vector2(side * scale);

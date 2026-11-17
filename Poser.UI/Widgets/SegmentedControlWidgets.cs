@@ -292,7 +292,7 @@ public static class SegmentedControlWidgets
         float x = origin.X + layout.Padding;
         for (int i = 0; i < count; i++)
         {
-            bool disabled = itemDisabled?.Invoke(i) == true;
+            bool disabled = itemDisabled?.Invoke(i) == true || Interactive.GreyedOut;
             var tabMin = new Vector2(
                 x,
                 origin.Y + layout.Padding);

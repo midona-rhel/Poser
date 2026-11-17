@@ -16,8 +16,7 @@ public sealed class IdleModExport(IIdleModRuntime runtime)
     public Task<IdleModChoices> DescribeAsync(ActorId actor) => runtime.DescribeAsync(actor);
     public async Task ExportAsync(ActorId actor, string destination, IdleModOptions? options = null)
     {
-        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
-            throw new InvalidOperationException("An idle export is already running.");
+        Volatile.Write(ref _busy, 1);
         try
         {
             var choices = await runtime.DescribeAsync(actor);

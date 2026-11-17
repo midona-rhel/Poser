@@ -33,6 +33,7 @@ public static class SwitchWidgets
         var size = new Vector2(
             logicalWidth,
             logicalHeight) * scale;
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, size, disabled);
         if (hit.Clicked)
         {

@@ -71,6 +71,37 @@ public sealed partial class DebugBridge : IDisposable
     private readonly ITextureProvider _textures;
     private readonly ITextureReadbackProvider _readback;
     private readonly ISceneWorkflow _scenes;
+    private readonly global::Poser.Application.Lifecycle.ActionGate _gate;
+
+    // Routes that only read, cancel the running action, or press keys and move the mouse
+    // the way a person would. Every other route starts something.
+    private static readonly HashSet<string> RoutesAllowedWhileBusy = new(StringComparer.Ordinal)
+    {
+        "/actors", "/history", "/bone", "/bones", "/bonediff", "/state", "/rig", "/resources", "/log",
+        "/screenshot", "/cameras", "/groups", "/layers", "/glamstate", "/wardrobe", "/customize",
+        "/uidrag", "/uiinput", "/uiwindows", "/uiscale", "/uiprobestate", "/shortcut", "/gamekeys",
+        "/bakestate", "/importstate", "/profile", "/natives", "/appearanceevidence", "/penumbraidentity",
+        "/catalogmodels", "/fonts", "/meta", "/cancel", "/dump", "/watch",
+    };
+
+    /// <summary>A person cannot start an action while another one runs, and neither can a
+    /// script here. Null when the route may run.</summary>
+    private string? HeldByRunningAction(string path, Dictionary<string, string> query)
+    {
+        if (_gate.Running is not { } running || RoutesAllowedWhileBusy.Contains(path))
+            return null;
+        // These routes read when they are given nothing to change.
+        bool reads = path switch
+        {
+            "/scene" => !query.ContainsKey("path"),
+            "/ik" => query.GetValueOrDefault("action") == "read",
+            "/environment" => !query.ContainsKey("weather") && !query.ContainsKey("hold"),
+            "/mcdf" => !query.ContainsKey("import"),
+            "/selection" or "/parenting" => query.Count == 0,
+            _ => false,
+        };
+        return reads ? null : Json(new { ok = false, Detail = $"Wait for {running.Name} to finish." });
+    }
     private readonly IdleModExport _idleExport;
     private readonly IDataManager _idleData;
     private readonly ISigScanner _idleScanner;
@@ -115,6 +146,7 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Application.Gaze.IGazeControl gaze,
         global::Poser.Game.Services.IBonePosingService bonePosing,
         Application.Posing.IIkConfigurationPort ikConfiguration,
+        global::Poser.Application.Lifecycle.ActionGate gate,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
         global::Poser.Application.Catalog.ISpawnCatalogService catalog,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
@@ -172,6 +204,7 @@ public sealed partial class DebugBridge : IDisposable
         _library = library;
         _bonePosing = bonePosing;
         _ikConfiguration = ikConfiguration;
+        _gate = gate;
         _penumbra = penumbra;
         _glamourer = glamourer;
         _customizePlus = customizePlus;
@@ -493,6 +526,7 @@ public sealed partial class DebugBridge : IDisposable
 
     private string RouteOnFramework(string path, Dictionary<string, string> query)
     {
+        if (HeldByRunningAction(path, query) is { } waitMessage) return waitMessage;
         if (path == "/parenting") return ParentingProbe(query);
         switch (path)
         {

@@ -21,7 +21,6 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
     }
 
     private object? _holder;
-    private bool _admittingHolder;
 
     /// <summary>Busy includes a held slot, so a feature that waits on this
     /// (the staged preview, lifecycle restores) waits out a scene load rather
@@ -33,10 +32,9 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
     public bool IsSlotBusy => _importArm != null || _runtime.AdmissionBusy;
 
     /// <summary>
-    /// A scene load holds the slot from its first native step to its
-    /// terminal: an import it did not make refuses instead of superseding the
-    /// one an actor is waiting on, and the load's own imports are admitted
-    /// through <see cref="AdmitHeld"/>. Framework thread.
+    /// A scene load holds the slot from its first native step to its terminal,
+    /// so that <see cref="IsImportBusy"/> stays true for the whole load.
+    /// Framework thread.
     /// </summary>
     public void Hold(object holder) => _holder = holder;
 
@@ -44,19 +42,6 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
     {
         if (ReferenceEquals(_holder, holder))
             _holder = null;
-    }
-
-    public PoseEditResult AdmitHeld(object holder, Func<PoseEditResult> admit)
-    {
-        _admittingHolder = ReferenceEquals(_holder, holder);
-        try
-        {
-            return admit();
-        }
-        finally
-        {
-            _admittingHolder = false;
-        }
     }
 
     /// <summary>Cancels the armed import when it is still
@@ -85,9 +70,6 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
                 "Nothing in this file applies to the chosen scope.");
         if (!_runtime.IsFrameworkThread)
             return PoseEditResult.Fail("Pose import must run on the framework thread.");
-        if (_holder != null && !_admittingHolder)
-            return PoseEditResult.Fail(
-                "A scene is loading; apply the pose once it finishes.");
         if (_importArm != null || _runtime.IsPending)
         {
             var priorArm = _importArm;

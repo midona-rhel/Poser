@@ -71,17 +71,17 @@ public sealed class UndoJournal
         };
     }
 
-    /// <summary>True while an explicit restore is in flight; undo and redo
-    /// wait for it.</summary>
+    /// <summary>True while an undo or redo is still putting things back. The action
+    /// gate reads it, so a second undo cannot be started meanwhile.</summary>
     public bool IsRestoring => _restoring != null;
 
-    public bool CanUndo => !IsRestoring && (_history.CanUndo || HasUnrecordedChange?.Invoke() == true);
+    public bool CanUndo => _history.CanUndo || HasUnrecordedChange?.Invoke() == true;
 
     /// <summary>Answers whether there is a change that is not in the history yet,
     /// such as a camera move that has not come to rest. Undo is offered while
     /// there is one, even with an empty history.</summary>
     public Func<bool>? HasUnrecordedChange { get; set; }
-    public bool CanRedo => !IsRestoring && _history.CanRedo;
+    public bool CanRedo => _history.CanRedo;
     public string? UndoDescription => _history.UndoDescription;
     public string? RedoDescription => _history.RedoDescription;
 
@@ -96,8 +96,6 @@ public sealed class UndoJournal
     {
         if (_runner.RecoverPending() is { } recovered)
             return recovered;
-        if (IsRestoring)
-            return GestureResult.Fail("A restore is still applying.");
         if (entity is null) Undoing?.Invoke();
         var entry = _history.PeekUndo(entity);
         if (entry == null)
@@ -154,8 +152,6 @@ public sealed class UndoJournal
     {
         if (_runner.RecoverPending() is { } recovered)
             return recovered;
-        if (IsRestoring)
-            return GestureResult.Fail("A restore is still applying.");
         var entry = _history.PeekRedo(entity);
         if (entry == null)
             return GestureResult.Fail(entity is null ? "Nothing to redo." : "No independent redo step for this entity. Creation, removal, shared or scene-wide steps require global redo.");

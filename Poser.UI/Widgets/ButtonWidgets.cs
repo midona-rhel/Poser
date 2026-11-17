@@ -230,6 +230,7 @@ public static class ButtonWidgets
         float scale = ImGuiHelpers.GlobalScale;
         var size = logicalSize * scale;
         uint identity = ImGui.GetID(id);
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, size, disabled);
         PaintTextButton(hit, identity, label, style, variant, disabled);
 
@@ -412,6 +413,7 @@ public static class ButtonWidgets
         float scale = ImGuiHelpers.GlobalScale;
         var size = logicalSize * scale;
         uint identity = ImGui.GetID(id);
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(
             id, size, disabled, activateOnSpace: true);
         var theme = ActiveTheme;
@@ -555,6 +557,7 @@ public static class ButtonWidgets
         bool dimmed = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, logicalSize * scale, disabled);
         float opacity = ToggleOpacity(disabled);
         // A dimmed toggle states "not the active one" as a quieter glyph

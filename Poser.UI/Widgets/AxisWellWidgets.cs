@@ -50,6 +50,7 @@ public static class AxisWellWidgets
                 adaptiveDisplay ? "0.######" : format,
                 pos, size, scale);
 
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, size, disabled);
         bool changed = false;
         // Alt-click restores the optional default and commits it as one edit.

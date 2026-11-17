@@ -104,6 +104,7 @@ public static class SliderWidgets
                 id, string.Empty, value, Clamped, onCommit,
                 ActiveTheme.FormValue, format ?? "0.###", pos, size, uiScale);
 
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, size, disabled);
         bool changed = false;
         if (hit.DoubleClicked)
@@ -254,6 +255,7 @@ public static class SliderWidgets
                 ActiveTheme.Controls.SwitchHeight * frameScale,
                 widthPx),
             metrics.Height);
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, size, disabled);
         if (hit.DragBegan)
             onBegin?.Invoke();
