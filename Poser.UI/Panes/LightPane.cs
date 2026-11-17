@@ -144,11 +144,6 @@ public sealed class LightPane
 
     }
 
-    /// <summary>The placement band's labels, positional against
-    /// <see cref="ObjectPlacementMode"/>.</summary>
-    private static readonly string[] PlacementModeLabels =
-        ["As saved", "Relative to camera", "Relative to actor", "In front of camera"];
-
     private const float PlacementBandHeight = 56f;
 
     private void DrawPlacementBand(Vector2 origin, Vector2 size, string? path)
@@ -158,7 +153,7 @@ public sealed class LightPane
         ImGui.SetCursorScreenPos(
             new Vector2(origin.X + inset, origin.Y + inset));
         DropdownWidgets.Dropdown(
-            "##light-placement-mode", PlacementModeLabels,
+            "##light-placement-mode", PlacementLabels.All,
             (int)_configuration.Config.DefaultSpawnPlacement,
             next => { _configuration.Config.DefaultSpawnPlacement = (ObjectPlacementMode)next; _configuration.Save(); },
             style: new ControlStyle { Width = UiWidth.Region((size.X - inset * 2) / scale) },

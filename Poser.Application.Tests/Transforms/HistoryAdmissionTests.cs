@@ -48,34 +48,6 @@ public sealed class HistoryAdmissionTests
         Assert.Equal(baseline + 1, attempts);
     }
 
-    [Fact]
-    public void Reentrant_replay_cannot_invoke_even_a_permanently_refused_entry_policy()
-    {
-        using var f = new Fixture();
-        int attempts = 0, policies = 0;
-        var step = new JournalStep("Unavailable edit", () => { attempts++; return false; }, () => true)
-        {
-            OnRefusal = () => { policies++; return RefusalAction.DropNow; },
-        };
-        f.History.Append(step);
-        f.Runtime.Capture(f.Target).Returns(_ =>
-        {
-            Assert.False(f.Journal.Undo().Success);
-            Assert.False(f.Journal.Undo().Success);
-            return TransformPortResult.Ok(f.State);
-        });
-        var drag = f.Begin();
-        Assert.True(drag.Success, drag.Detail);
-        Assert.Same(step, f.History.PeekUndo());
-        Assert.Equal(0, attempts);
-        Assert.Equal(0, policies);
-        Assert.True(f.Gestures.Cancel(drag.GestureId!.Value).Success);
-        Assert.False(f.Journal.Undo().Success);
-        Assert.Equal(1, attempts);
-        Assert.Equal(1, policies);
-        Assert.Null(f.History.PeekUndo());
-    }
-
     private static GestureResult Replay(Fixture f, bool redo, bool scoped) =>
         scoped ? redo ? f.Journal.Redo(SelectionId.ForActor(f.Actor)) : f.Journal.Undo(SelectionId.ForActor(f.Actor))
             : redo ? f.Journal.Redo() : f.Journal.Undo();

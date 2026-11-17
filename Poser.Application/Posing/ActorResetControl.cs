@@ -23,9 +23,6 @@ public sealed class ActorResetControl(
         values.Seal();
         if (gestures.PendingRecovery != null || gestures.ActiveGesture != null)
             return PoseEditResult.Fail("Finish the active transform or recovery before resetting the actor.");
-        using var transition = gestures.TryEnterTransition();
-        if (transition == null)
-            return PoseEditResult.Fail("Another pose operation is running.");
         var admission = CanReset(actor);
         if (!admission.Success) return admission;
         var capture = snapshots.Capture(actor);
@@ -74,7 +71,7 @@ public sealed class ActorResetControl(
             var targets = scene.Snapshot.Actors.Where(a => a.Id == actor)
                 .SelectMany(a => a.Skeletons).SelectMany(s => s.Bones)
                 .Select(b => TransformTargetId.ForBone(b.Id)).ToArray();
-            var r = poses.ResetWithinTransition(targets, PoseRegion.All, "Reset pose");
+            var r = poses.ResetBones(targets, PoseRegion.All, "Reset pose");
             return (r.Success, r.Detail);
         });
         Run("IK", () => { var r = runtime.ClearIk(actor); return (r.Success, r.Detail); });
