@@ -75,6 +75,7 @@ public static class TextInputWidgets
         bool disabled,
         string? help)
     {
+        disabled |= Interactive.GreyedOut;
         float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         var metrics = ControlSizing.Resolve(

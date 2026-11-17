@@ -60,8 +60,8 @@ public interface IActorRestorePort
     string? AttachCompanion(SceneEntityHandle actor, SceneActor data);
 
     /// <summary>Whether the single-flight pose slot would refuse or supersede
-    /// an import right now: one is armed or applying, an IK bake is applying,
-    /// or a transform gesture is open. A load waits this out instead of
+    /// an import right now: one is armed or applying, or an IK bake is
+    /// applying. A load waits this out instead of
     /// spending an actor's one attempt on it.</summary>
     bool PoseImportBusy { get; }
 

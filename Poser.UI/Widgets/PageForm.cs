@@ -1155,6 +1155,9 @@ public static class PageForm
             string? cancelHelp = null, string? help = null,
             ControlStyle cancelStyle = default)
         {
+            // This row belongs to the running action, so it stays usable while that action
+            // holds the rest of the interface.
+            using var allowed = Interactive.AllowWhileBusy();
             string id = Id(label);
             var row = _page.BeginRow(label, help);
             if (!row.Visible)

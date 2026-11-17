@@ -94,8 +94,7 @@ public sealed class UndoJournalTests
         Assert.True(world.Journal.Undo().Success);
         Assert.Equal(1, inverse);
         Assert.Same(step, world.History.PeekUndo());
-        Assert.False(world.Journal.CanUndo);
-        Assert.False(world.Journal.Redo().Success);
+        Assert.True(world.Journal.IsRestoring);
         complete!(GestureResult.Ok());
         Assert.Same(step, world.History.PeekRedo());
         Assert.False(world.Journal.IsRestoring);

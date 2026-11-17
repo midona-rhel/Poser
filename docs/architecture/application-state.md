@@ -54,6 +54,38 @@ default; the limit is a setting (`UndoDepth`).
 
 The history is cleared when GPose ends.
 
+## One action at a time
+
+A person cannot start an action while another one is running. There is one place
+that answers "is something running": `ActionGate` in
+`Poser.Application/Lifecycle`. Its answer has a name ("Load scene") and a kind:
+
+| Kind | Example | What the interface does |
+|---|---|---|
+| Drag | A gizmo or number field being dragged | Shortcuts do nothing. |
+| Quick | A bake, a pose import, an undo still putting things back | Clicks and shortcuts do nothing. |
+| Long | Loading or saving a scene, applying a character file | Clicks and shortcuts do nothing, and the controls look disabled. |
+
+- `Poser/Composition/RunningActions.cs` lists everything that counts as running.
+  Each entry reads a flag the action already keeps. Nothing is switched on and
+  off by hand, so the gate cannot stay shut after an action ends. An action added
+  to Poser that takes more than one frame gets a line there.
+- The interface asks once per frame, in `UIManager`. Controls read the answer
+  through `Interactive`: `Reserve` ignores new presses, and a control that can
+  look disabled does so while `GreyedOut` is true. A drag that had already
+  started still gets its movement and its release.
+- `Interactive.AllowWhileBusy()` keeps the running action's own controls usable.
+  The progress row uses it, so Cancel works.
+- The debug bridge asks the same gate. Routes that only read still answer.
+
+The gate is for what a person starts. Poser's own work each frame, autosave, and
+the steps inside a running action do not ask it. Some checks therefore remain
+next to the gate, because Poser's own steps rely on them: a scene operation and a
+character file operation each admit one at a time (a scene load applies
+character files one after another through that), a pose import waits for a bake
+to finish, and a redraw is waited for. A check that only a second click could
+reach does not belong in a service any more.
+
 ## Starting and stopping Poser
 
 `Poser/Poser.cs` starts Poser in this order:

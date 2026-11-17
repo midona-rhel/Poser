@@ -222,8 +222,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
 
         if (_bindings.GetActorId(target) is not { } actorId)
             return "The actor is no longer available.";
-        var result = _imports.AdmitHeld(this, () => _poses.ImportPose(
-            actorId, data.Pose!, SceneImportOptions, description, onReceipt));
+        var result = _poses.ImportPose(
+            actorId, data.Pose!, SceneImportOptions, description, onReceipt);
         if (!result.Success)
             Trace($"import refused for {target.Name}: {result.Detail}");
         return result.Success ? null : result.Detail ?? "The pose import refused.";
@@ -241,8 +241,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
             return "The companion's skeleton had not built, so its pose was not restored.";
         if (_bindings.GetActorId(companion) is not { } companionId)
             return "The companion is no longer available.";
-        var result = _imports.AdmitHeld(this, () => _poses.ImportPose(
-            companionId, data.CompanionPose!, SceneImportOptions, description, onReceipt));
+        var result = _poses.ImportPose(
+            companionId, data.CompanionPose!, SceneImportOptions, description, onReceipt);
         return result.Success
             ? null
             : result.Detail ?? "The companion pose import refused.";

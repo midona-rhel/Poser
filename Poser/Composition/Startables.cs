@@ -34,6 +34,7 @@ internal enum StartStage
     TargetSync,
     MouseTarget,
     CharacterFiles,
+    RunningActions,
 }
 
 internal sealed record Startable(StartStage Stage, Action<IServiceProvider> Start);

@@ -190,17 +190,14 @@ public sealed class AnimationSession : IAnimationPlayback
     private int _untracked;
 
     /// <summary>
-    /// Runs one animation command. While a face capture is in progress the command
-    /// is refused before it changes anything. Otherwise it becomes one undo step,
-    /// unless an Untracked scope is open. A command that another command runs is
+    /// Runs one animation command. It becomes one undo step, unless an Untracked
+    /// scope is open. A command that another command runs is
     /// part of that one: it is not checked again and makes no step of its own.
     /// </summary>
     public Outcome Tracked(ActorId actor, string description, Func<Outcome> action)
     {
         if (_commandDepth > 0)
             return action();
-        if (Suspended() is { } blocked)
-            return blocked;
         bool record = _untracked == 0;
         if (record && !description.StartsWith("Scrub", StringComparison.Ordinal))
             ForgetSeekTargets(actor);
@@ -415,31 +412,9 @@ public sealed class AnimationSession : IAnimationPlayback
 
     public ActorAnimationReading? Read(ActorId actor) => _timeline.Read(actor);
 
-    /// <summary>
-    /// True while a face capture runs. Every animation command is then refused:
-    /// the commands made through <see cref="Tracked"/>, <see cref="ChooseSlot"/>
-    /// and <see cref="RewindPausedControls"/>. Reading state still works, and so
-    /// does cleanup (leaving GPose, unloading, an actor leaving the scene). The
-    /// capture lifts this around its own commands.
-    /// </summary>
-    public bool CommandsSuspended { get; private set; }
-
-    private Outcome? Suspended() => CommandsSuspended
-        ? Outcome.Fail("A face capture is in progress.")
-        : null;
-
-    public void SuspendCommands()
-    {
-        CommandsSuspended = true;
-        // Armed loops would replay animations into the face while it settles.
-        _timeline.LoopsSuspended = true;
-    }
-
-    public void ResumeCommands()
-    {
-        CommandsSuspended = false;
-        _timeline.LoopsSuspended = false;
-    }
+    /// <summary>Holds back animations that are set to repeat, for as long as a face capture
+    /// runs: a repeat starting again would play into the face while it settles.</summary>
+    public void HoldLoops(bool hold) => _timeline.LoopsSuspended = hold;
 
     public bool IsSupported(ActorId actor) => _timeline.IsSupported(actor);
 
@@ -473,7 +448,7 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Remembers the chosen animation for a layer without playing it.
     /// Not an undo step.</summary>
     public Outcome ChooseSlot(ActorId actor, AnimationSlot slot, ushort timeline) =>
-        Suspended() ?? _base.ChooseSlot(actor, slot, timeline);
+        _base.ChooseSlot(actor, slot, timeline);
 
     /// <summary>Sets repeat intent for one slot.</summary>
     private Outcome SetSlotLoopUntracked(
@@ -512,7 +487,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>Moves every paused animation back to its first frame. Not an undo step.</summary>
     public Outcome RewindPausedControls(ActorId actor) =>
-        Suspended() ?? _speedPort.RewindPausedControls(actor);
+        _speedPort.RewindPausedControls(actor);
 
     /// <summary>The layer's held blend weight, or 1 when Poser holds none.</summary>
     public float WeightFor(ActorId actor, AnimationSlot slot) =>

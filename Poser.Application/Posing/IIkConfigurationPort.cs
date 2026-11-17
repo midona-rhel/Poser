@@ -16,9 +16,7 @@ public readonly record struct IkChainSummary(
     IReadOnlyList<string> Bones);
 
 /// <summary>
-/// Reads and writes per-chain IK configuration using exact target IDs.
-/// The game runtime resolves those IDs and rejects configuration changes
-/// while a transform gesture is active.
+/// Reads and writes the IK settings of one chain, named by its end bone.
 /// </summary>
 public interface IIkConfigurationPort
 {

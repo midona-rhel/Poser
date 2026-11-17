@@ -443,6 +443,7 @@ public sealed class TexturePicker
         bool active = grid && value == _selected;
 
         ImGui.SetCursorScreenPos(min);
+        disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, cell, disabled);
 
         var fill = hit.Hovered || hit.Active

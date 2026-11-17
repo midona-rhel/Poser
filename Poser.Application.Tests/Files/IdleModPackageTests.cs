@@ -97,7 +97,6 @@ public sealed class IdleModPackageTests
             var path = Path.Combine(directory.FullName, "pose.pmp");
             var first = export.ExportAsync(default, path);
             Assert.True(export.Busy);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => export.ExportAsync(default, path));
             completion.SetException(new InvalidDataException("Actor disappeared"));
             await Assert.ThrowsAsync<InvalidDataException>(() => first);
             Assert.False(export.Busy);

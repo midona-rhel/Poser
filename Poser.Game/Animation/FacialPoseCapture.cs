@@ -157,8 +157,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
                 Bones = bones,
             };
             _pending = pending;
-            // Freeze other animation commands for the whole capture window.
-            _animation.SuspendCommands();
+            _animation.HoldLoops(true);
             RequestRawRefresh(pending);
             Publish(OperationReceipt.Pending(
                 operationId,
@@ -202,8 +201,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         SessionGeneration session,
         string detail)
     {
-        if (_animation.CommandsSuspended)
-            _animation.ResumeCommands();
+        _animation.HoldLoops(false);
         return GestureResult.Fail(detail);
     }
 
@@ -281,8 +279,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         for (var i = 0; i < pending.Bones.Count; i++)
             captures.Add((pending.Bones[i], reading[i]));
 
-        var restored = WithBarrierLifted(
-            () => _animation.RestoreFacialLayer(pending.Actor));
+        var restored = _animation.RestoreFacialLayer(pending.Actor);
         if (!restored.Success)
         {
             InvalidatePending(
@@ -311,8 +308,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
     /// </summary>
     private void TakeFacialDrive(PendingBake pending)
     {
-        var driven = WithBarrierLifted(() =>
-            _animation.SetSlotSpeed(pending.Actor, AnimationSlot.Facial, 1f));
+        var driven = _animation.SetSlotSpeed(pending.Actor, AnimationSlot.Facial, 1f);
         if (driven.Success)
         {
             pending.DriveHeld = true;
@@ -327,32 +323,10 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         if (!pending.DriveHeld)
             return;
         pending.DriveHeld = false;
-        var released = WithBarrierLifted(() =>
-            _animation.ClearSlotSpeed(pending.Actor, AnimationSlot.Facial));
+        var released = _animation.ClearSlotSpeed(pending.Actor, AnimationSlot.Facial);
         if (!released.Success)
             _log.Warning(
                 $"Face bake could not release the facial layer: {released.Detail}");
-    }
-
-    /// <summary>
-    /// Temporarily lifts the animation command barrier for one capture-owned step,
-    /// then restores it. The call is synchronous on the framework thread; callbacks
-    /// made by the step can still reenter other code while the barrier is lifted.
-    /// </summary>
-    private T WithBarrierLifted<T>(Func<T> step)
-    {
-        bool suspended = _animation.CommandsSuspended;
-        if (suspended)
-            _animation.ResumeCommands();
-        try
-        {
-            return step();
-        }
-        finally
-        {
-            if (suspended)
-                _animation.SuspendCommands();
-        }
     }
 
     /// <summary>Reads the current raw transform for each face bone.</summary>
@@ -540,8 +514,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         try
         {
             ReleaseFacialDrive(pending);
-            if (_animation.CommandsSuspended)
-                _animation.ResumeCommands();
+            _animation.HoldLoops(false);
             return (true, null);
         }
         catch (Exception exception)
@@ -563,11 +536,6 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         if (!_framework.IsInFrameworkUpdateThread)
         {
             detail = "Face capture must start on the framework thread.";
-            return false;
-        }
-        if (_gestures.ActiveGesture != null)
-        {
-            detail = "Finish the current transform gesture first.";
             return false;
         }
         if (!_gestures.TryCompleteRecovery())

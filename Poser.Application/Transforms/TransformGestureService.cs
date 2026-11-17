@@ -84,8 +84,10 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     public Vector3? ActivePivot => _active?.Pivot;
 
     /// <summary>
-    /// An incomplete exact-state restore. While present it blocks every new
-    /// transform/pose mutation so partial state cannot become a new baseline.
+    /// Values that a failed edit, cancelled drag or undo could not put back yet,
+    /// usually because the actor was being redrawn. Until they are put back,
+    /// new pose edits are refused, so a half-restored pose is never recorded
+    /// as the starting point of another undo step.
     /// </summary>
     public TransformRecoveryReceipt? PendingRecovery { get; private set; }
 
@@ -432,6 +434,10 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     /// Runs one direction of the entry <see cref="UndoJournal"/> peeked and
     /// commits it only when it lands. A refused entry remains available to
     /// retry. The journal has already finished any pending put-back first.
+    /// Undo and redo wait for a drag to end: the drag's undo step is recorded
+    /// on release with the values its bones had when it started, so an undo
+    /// run under it would come back when the drag is undone, with its step
+    /// already gone from history.
     /// </summary>
     public HistoryRunResult Run(HistoryEntry entry, bool undo, SelectionId? entity)
     {
@@ -469,6 +475,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return GestureResult.Ok();
     }
 
+    /// <summary>Starts a step that takes several frames. Waits for a drag to
+    /// end, for the same reason as <see cref="Run"/>.</summary>
     public HistoryRunResult Replay(JournalStep step, bool before, SelectionId? entity)
     {
         if (_active != null) return new(GestureResult.Fail("Cancel the active gesture before undo or redo."), false);
@@ -480,7 +488,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     public GestureResult RunValueTransition(Action action)
     {
         if (PendingRecovery != null) return RecoveryRequired(PendingRecovery);
-        if (_active != null) return GestureResult.Fail("Cancel the active gesture before changing actor values.");
         try { action(); return GestureResult.Ok(); }
         catch (Exception ex) { return GestureResult.Fail(ex.Message); }
     }
@@ -503,12 +510,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (PendingRecovery is not { } pending)
             return null;
-        if (_active != null)
-            return GestureResult.Fail(
-                "Cancel the active gesture before retrying recovery.") with
-            {
-                Recovery = pending,
-            };
         return RecoveryResult(Retry(pending));
     }
 
@@ -570,8 +571,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     {
         if (PendingRecovery is not { } pending)
             return true;
-        if (_active != null)
-            return false;
         return Retry(pending).Complete;
     }
 
