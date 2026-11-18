@@ -28,10 +28,10 @@ public readonly record struct InteractionOwner(
 }
 
 /// <summary>
-/// Hit-test result from <see cref="Interactive.Reserve"/>: the placed rect, the
-/// pseudo-state derived from hover/active/disabled, the click flags, and the
-/// drag handshake. Controls never query ImGui item state themselves — every
-/// signal a control needs is reported here, already occlusion-gated.
+/// What <see cref="Interactive.Reserve"/> found for one control: where it was
+/// placed, whether it is hovered, pressed or disabled, whether it was clicked,
+/// and how a drag on it is going. Controls never ask ImGui for this themselves.
+/// Everything here already ignores input aimed at a window or popup on top.
 /// </summary>
 public readonly struct InteractionResult
 {
@@ -40,22 +40,22 @@ public readonly struct InteractionResult
     public readonly PseudoState State;
     public readonly bool Clicked;
     public readonly bool Activated;
-    /// <summary>Right press while enabled, hovered and not occluded.</summary>
+    /// <summary>Right click while enabled, hovered and not covered by a window or popup.</summary>
     public readonly bool RightClicked;
-    /// <summary>Left double-click while hovered — same gating as
+    /// <summary>Left double-click while hovered, with the same checks as
     /// <see cref="Clicked"/>.</summary>
     public readonly bool DoubleClicked;
-    /// <summary>The frame the item took ImGui's active id (press) with
-    /// the press ACCEPTED — enabled and not under a higher surface. A
-    /// swallowed press reports neither this nor
+    /// <summary>True on the frame the control was pressed, if the press
+    /// counted: the control is enabled and nothing is drawn over it. A
+    /// press that did not count reports neither this nor
     /// <see cref="DragEnded"/>.</summary>
     public readonly bool DragBegan;
-    /// <summary>The frame the item released an accepted drag. Pairs with
-    /// <see cref="DragBegan"/> exactly once, even when a surface opens
-    /// over the control mid-drag.</summary>
+    /// <summary>True on the frame a counted drag is released. It comes exactly
+    /// once after each <see cref="DragBegan"/>, even if a popup opens over the
+    /// control during the drag.</summary>
     public readonly bool DragEnded;
-    /// <summary>Pointer movement this frame while the item owns an
-    /// accepted drag and is active, zero otherwise.</summary>
+    /// <summary>How far the mouse moved this frame during a counted drag on
+    /// this control; zero otherwise.</summary>
     public readonly Vector2 DragDelta;
     public readonly InteractionOwner Owner;
 
@@ -92,14 +92,15 @@ public readonly struct InteractionResult
 }
 
 /// <summary>
-/// Ordered input ownership shared by windows, floating surfaces, controls,
-/// hover help, and world overlays. Current and previous geometry are retained
-/// so an overlay drawn before normal windows still sees their last complete
-/// ownership map.
+/// Decides which window, popup, control, tooltip or in-world overlay gets the
+/// mouse and keyboard, by drawing order. It keeps where everything was this
+/// frame and last frame, so an overlay drawn before the normal windows can
+/// still see what they covered last frame.
 /// </summary>
 public static class Interactive
 {
-    /// <summary>Occlusion geometry, the owner stack, the exclusive chain and the accepted drag.</summary>
+    /// <summary>Where windows and popups cover the screen, which one is being drawn, the
+    /// chain of open popups that hold the keyboard, and the drag in progress.</summary>
     internal sealed class InteractionState
     {
         internal List<Occluder> PreviousOccluders = new();
@@ -113,11 +114,11 @@ public static class Interactive
         internal int NextSurfaceToken;
         internal int Frame;
         internal InteractionOwner? OpeningBarrier;
-        // The ImGui id whose drag press was ACCEPTED (unoccluded, enabled).
-        // Ownership is what pairs DragBegan with DragEnded: a press swallowed
-        // by an occluder never records an owner and therefore can never
-        // produce a release, while an accepted drag keeps reporting its
-        // release even if a surface opens over the control mid-drag.
+        // The ImGui id of the control whose press counted (enabled, nothing
+        // drawn over it). This is what pairs DragBegan with DragEnded: a press
+        // on a covered control records nothing, so it never reports a release,
+        // while a counted drag still reports its release if a popup opens over
+        // the control during the drag.
         internal uint? DragOwner;
         // An action is running (see ActionGate): controls start nothing new.
         internal bool Busy;
@@ -134,9 +135,10 @@ public static class Interactive
         Vector2 Min,
         Vector2 Max);
 
-    // Reserve asks the same owner about the same pointer once for every
-    // control in a surface. Keep that repeated query bounded and allocation
-    // free; any geometry or exclusive-state mutation retires the entries.
+    // Reserve asks the same question, about the same window and mouse position,
+    // once for every control in a window. The answers are kept in a small fixed
+    // table that allocates nothing. Any change to where windows are, or to which
+    // popup holds the keyboard, clears it.
     internal struct PointerQuery
     {
         public int Generation;
@@ -249,7 +251,7 @@ public static class Interactive
             return;
         }
 
-        // During exception unwinding an inner owner may still be on the stack.
+        // During exception unwinding an inner window or popup may still be on the stack.
         // Pop through it without throwing so End does not replace the original
         // exception.
         for (int i = State.OwnerStack.Count - 1; i >= 0; i--)
@@ -381,19 +383,17 @@ public static class Interactive
     }
 
     /// <summary>
-    /// Keyboard ownership is not geometric. While the exclusive chain is open,
-    /// its topmost link owns the keyboard, whether
-    /// or not that surface happens to cover the control: a popup off to
-    /// one side still takes Enter away from the button behind it, and on
-    /// the frame a surface CLAIMS the chain it has registered no rectangle
-    /// at all, so geometry could not answer either way.
+    /// Who gets the keyboard does not depend on where things are on screen.
+    /// While popups that hold the keyboard are open, the newest one gets it,
+    /// whether or not it covers the control: a popup off to one side still
+    /// takes Enter away from the button behind it. On the frame a popup opens
+    /// it has not registered its area yet, so position could not decide anyway.
     ///
-    /// Only the chain tail owns it; an ancestor is
-    /// is inactive for the keyboard. A modal with a dropdown open inside
-    /// it hands the keyboard to the dropdown, so the modal's own controls
-    /// cannot be Entered from behind their child; they remain
-    /// pointer-visible under the ordinary geometry rules, and take the
-    /// keyboard back the moment the child releases its link.
+    /// Only the newest popup gets the keyboard, not the ones it opened from. A
+    /// modal with a dropdown open inside it gives the keyboard to the dropdown,
+    /// so Enter cannot reach the modal's own controls behind it. Those controls
+    /// still react to the mouse as usual, and get the keyboard back as soon as
+    /// the dropdown closes.
     /// </summary>
     private static bool KeyboardDisowned(InteractionOwner owner)
     {
@@ -468,9 +468,10 @@ public static class Interactive
         var mouse = ImGui.GetMousePos();
         // A running action swallows presses the same way a surface on top does.
         bool occluded = PointerOccluded(owner, mouse) || Blocked;
-        // Hover is exclusive by geometry: the pointer is inside THIS
-        // item's own half-open rect, whatever ImGui's item test says of
-        // its neighbours. Two abutting rows can never both light.
+        // Only one control is hovered at a time: the mouse must be inside this
+        // control's own area, whatever ImGui says about its neighbours. The area
+        // includes its top and left edges but not its bottom and right edges, so
+        // two rows that touch never both light up.
         bool inside = mouse.X >= min.X && mouse.X < max.X
             && mouse.Y >= min.Y && mouse.Y < max.Y;
         bool hovered = ImGui.IsItemHovered() && inside && !disabled && !occluded;
@@ -479,11 +480,11 @@ public static class Interactive
         bool rightClicked = hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right);
         bool doubleClicked = hovered
             && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
-        // Drag handshake: ImGui's own activation edges, gated by drag
-        // OWNERSHIP rather than by the current occlusion state, plus the
-        // pointer delta while the owning item holds the active id.
-        // Disabled controls, and presses landing under a higher surface,
-        // never take ownership and therefore report neither edge.
+        // Drags use ImGui's own press and release, but only for the control
+        // whose press counted, not for whatever is uncovered now. The mouse
+        // movement is reported while that control is held. A disabled control,
+        // or a press on a control with a popup over it, never counts and
+        // reports neither the start nor the end.
         uint itemId = ImGui.GetID(id);
         bool dragBegan = false;
         if (!disabled && !occluded && ImGui.IsItemActivated())
@@ -497,13 +498,12 @@ public static class Interactive
         var dragDelta = active && State.DragOwner == itemId
             ? ImGui.GetIO().MouseDelta
             : Vector2.Zero;
-        // Keyboard activation has no pointer to hit-test, so it takes two
-        // gates instead. OWNERSHIP is the primary one: while an exclusive
-        // surface is open it owns the keyboard globally, so anything off
-        // its chain is unreachable regardless of geometry. The rect gate
-        // remains for ordinary non-exclusive surfaces that merely overlap
-        // the control. Both cover the explicit keys below AND ImGui's own
-        // nav ACTIVATE, which arrives through `pressed` on the same frame.
+        // A key press has no mouse position to check, so it gets two other
+        // checks. The main one: while a popup that holds the keyboard is open,
+        // only that popup's controls get keys, wherever they are on screen. The
+        // second: a control covered by an ordinary window or popup gets no keys
+        // either. Both apply to Enter and Space below, and to ImGui's own
+        // keyboard activation, which arrives through `pressed` on the same frame.
         bool enterPressed = focused && !disabled
             && (ImGui.IsKeyPressed(ImGuiKey.Enter)
                 || ImGui.IsKeyPressed(ImGuiKey.KeypadEnter));
@@ -512,10 +512,10 @@ public static class Interactive
         bool keyboardBlocked = (enterPressed || spacePressed)
             && (Blocked || KeyboardDisowned(owner)
                 || RectOccluded(owner, min, max));
-        // The button RETURN is ImGui's release-inside semantic: pressing,
-        // dragging out, and releasing does not activate. Enter joins it
-        // explicitly; components with native button semantics can opt
-        // into explicit Space activation without changing other controls.
+        // ImGui's button counts a click only when the mouse is released over
+        // it, so pressing, dragging off and releasing does nothing. Enter also
+        // activates. Space activates only the controls that ask for it with
+        // activateOnSpace, so other controls are not affected.
         bool activated =
             pressed && !disabled && !occluded && !keyboardBlocked;
         if (!keyboardBlocked

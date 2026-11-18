@@ -30,15 +30,15 @@ using static Poser.UI.Widgets.ButtonWidgets;
 namespace Poser.UI;
 
 /// <summary>
-/// Library navigation and grid presentation. Metadata editing and file details
-/// have independent presentation owners; application controls own file policy,
-/// activation and pending creation.
+/// The Library: its tabs, folder list and grid of files. Editing and showing a
+/// file's details are done by their own classes. What happens to the files
+/// themselves is decided outside the interface.
 /// </summary>
 public sealed partial class PoseLibraryPane
 {
-    /// <summary>Double-click applies, and the action row's primary applies the
-    /// same tile: a second apply of the SAME tile is swallowed rather than
-    /// importing twice.</summary>
+    /// <summary>A double-click and the Apply button both apply the selected
+    /// tile. A second apply of the same tile within this many seconds is
+    /// ignored, so the file is not applied twice.</summary>
     private const double ReactivationSwallow = 0.35;
 
     private const string AllKey = "##pose-library-all";
@@ -53,34 +53,34 @@ public sealed partial class PoseLibraryPane
 
     private const string FavoritesLabel = "Favorites";
 
-    /// <summary>The day part of an auto-save rail row and of a scene section.
-    /// DISPLAY only — never used to read a name off disk.</summary>
+    /// <summary>How the date is shown in an auto-save row of the folder list
+    /// and in a scene group heading. Only for display; file names on disk are
+    /// never read with it.</summary>
     private const string DayFormat = LibraryStamp.DateFormat;
 
-    /// <summary>What joins a day to the place it was taken in. One separator
-    /// for both surfaces: a scene section heading reads "place – day", an
-    /// auto-save rail row "day – place".</summary>
+    /// <summary>Joins a date to the place a scene was saved in. A scene group
+    /// heading reads "place – date" and an auto-save row in the folder list
+    /// reads "date – place".</summary>
     private const string PlaceSeparator = " – ";
 
-    /// <summary>Separates the two halves of an auto-save rail row's KEY. A
-    /// unit separator cannot occur in a day or a place name, so a key is
-    /// unambiguous even where a place name contains the visible separator.
+    /// <summary>Separates the date and the place in the hidden key of an
+    /// auto-save row. This character never appears in a date or a place name,
+    /// so the key stays unique even when a place name contains " – ".
     /// </summary>
     private const char KeySeparator = '\u001f';
 
     private const string PoseExtension = ".pose";
 
-    /// <summary>The one word an outstanding enumeration is stated with —
-    /// the footer caption on either tab, and the auto-save grid's empty line
-    /// on a first entry that has no rows to leave standing.</summary>
+    /// <summary>Shown while folders are still being read: in the footer on
+    /// any tab, and in the empty Auto-saves grid the first time it opens.</summary>
     private const string ScanningText = "Scanning";
 
-    /// <summary>The auto-save grid's standing empty answer, once a pass has
-    /// actually landed and found nothing.</summary>
+    /// <summary>Shown in the Auto-saves grid once reading the folder has
+    /// finished and found nothing.</summary>
     private const string NoAutoSavesText = "No auto-saves yet.";
 
-    /// <summary>The band's type tabs, positional against
-    /// <see cref="PoseLibraryView.TypeLabels"/>.</summary>
+    /// <summary>The Library's tabs. The Library window decides the order
+    /// they are shown in.</summary>
     internal enum LibraryType
     {
         Poses,
@@ -89,8 +89,8 @@ public sealed partial class PoseLibraryPane
         Scenes,
 
         /// <summary>Everything that is not a pose, a scene or a character
-        /// file: actor, light and camera entries, one tab because they share
-        /// the one Objects home.</summary>
+        /// file, such as actors, lights and cameras. They share one tab
+        /// because they are saved in the same Objects folder.</summary>
         Objects,
     }
 
@@ -124,75 +124,74 @@ public sealed partial class PoseLibraryPane
     private readonly PoseFileInspectorSection _files;
 
 
-    /// <summary>Where every verb's OUTCOME goes. A file verb, an apply and a
-    /// spawn all answer after the click that started them; they are not the
-    /// grid's standing state, so they do not take a band of it.</summary>
+    /// <summary>Where the result of every action is reported. A file action,
+    /// an apply or a spawn finishes after the click that started it, so its
+    /// result is a notification, not a line in the grid.</summary>
     private readonly UserNotices _notices;
 
     private readonly PoseLibraryViewModel _vm = new();
 
     private readonly List<ActorId> _applyTargets = new();
 
-    /// <summary>Which library the tabs are showing. SESSION state: it is a
-    /// browsing mode, not a preference, so it is never persisted and every
-    /// entry starts on the poses.</summary>
+    /// <summary>Which tab is open. It is not saved: each time the Library
+    /// opens, it starts on Poses.</summary>
     private LibraryType _type;
 
-    /// <summary>The Objects tab's KIND filter: the ADMITTED kinds. It
-    /// starts full — every kind allowed — and each strip toggle removes
-    /// or re-adds its kind (ruled 2026-09-01).</summary>
+    /// <summary>The kinds of object the Objects tab shows. It starts with
+    /// every kind, and each kind toggle removes or adds its kind.</summary>
     private readonly HashSet<PoseLibraryEntryKind> _kindFilter =
         new(Enum.GetValues<PoseLibraryEntryKind>());
 
-    /// <summary>Collapsed group keys. Session state, cleared on entry; poses
-    /// and character files share a folder's key deliberately — it is the same
-    /// folder either way.</summary>
+    /// <summary>Which groups are collapsed. Cleared each time the Library
+    /// opens. The Poses and MCDF tabs use the same key for a folder on
+    /// purpose, because it is the same folder.</summary>
     private readonly Dictionary<string, bool> _collapsed =
         new(StringComparer.Ordinal);
 
-    /// <summary>Snapshot folder index to <see cref="PoseLibraryViewModel.Folders"/>
-    /// row, or -1 for a folder the active type dropped. The rail is built per
-    /// type, so the entry's own folder index is no longer the row's.</summary>
+    /// <summary>For each scanned folder, its row in the folder list
+    /// (<see cref="PoseLibraryViewModel.Folders"/>), or -1 when the open tab
+    /// hides it. Each tab builds its own folder list, so a file's folder
+    /// number is not its row number.</summary>
     private int[] _folderRows = [];
 
-    /// <summary>The auto-save tab reads the disk itself; this is what makes it
-    /// re-enumerate.</summary>
+    /// <summary>The Auto-saves tab reads its folder itself. Setting this makes
+    /// it read the folder again.</summary>
     private bool _autoDirty = true;
 
-    /// <summary>Whether the STANDING rows were minted by the auto-save path. A
-    /// kick that finds the other library's rows in place has to clear them —
-    /// its own answer is a frame or more away, and the poses' tiles under a
-    /// rail-less tab are not what the auto-save tab may draw meanwhile.
+    /// <summary>Whether the rows on screen came from the Auto-saves tab. When
+    /// that tab starts reading its folder and finds another tab's rows still
+    /// on screen, it clears them. Its own rows take a frame or more to arrive,
+    /// and until then it must not show another tab's files.
     /// </summary>
     private bool _autoRows;
 
-    /// <summary>Whether an auto-save enumeration is outstanding, as the DRAW
-    /// thread sees it: set when a kick starts one, cleared when its result is
-    /// minted. This is the tab's own <c>IsScanning</c> — the disabled rescan
-    /// and the footer caption read it, never the worker's flags.</summary>
+    /// <summary>Whether the Auto-saves tab is still reading its folder. Set
+    /// when a read starts and cleared when its rows are built. The rescan
+    /// button and the footer text use this, not the background reader's own
+    /// state.</summary>
     private bool _autoPending;
 
     private readonly Application.Library.AutoSaveLibrary _autoLibrary;
 
-    /// <summary>Lower-cased tags per TILE. Tiles are a filtered view of the
-    /// snapshot's entries, so the tag test can no longer index the entries by
-    /// tile index; this is the parallel the pass reads instead.</summary>
+    /// <summary>Each tile's tags in lower case, in tile order. The tiles are
+    /// only some of the scanned files, so a tile's position cannot be used to
+    /// find its file; search reads this list instead.</summary>
     private readonly List<IReadOnlyList<string>> _tileTags = [];
 
-    /// <summary>Lower-cased author per TILE, empty when the file names none —
-    /// the search matches it alongside the name and the tags.</summary>
+    /// <summary>Each tile's author in lower case, or empty when the file names
+    /// none. Search matches it as well as the name and the tags.</summary>
     private readonly List<string> _tileAuthors = [];
 
-    /// <summary>Typed metadata status per TILE. The context menu reads it to
-    /// decide which recovery verbs an entry qualifies for.</summary>
+    /// <summary>Whether each tile's file could be read. The right-click menu
+    /// uses it to decide which repair actions, such as Retry, to offer.</summary>
     private readonly List<PoseLibraryMetadataStatus> _tileStatus = [];
 
-    /// <summary>Entry kinds parallel to the tiles, used to choose their activation behavior.</summary>
+    /// <summary>Each tile's kind of file, in tile order. It decides what applying the tile does.</summary>
     private readonly List<PoseLibraryEntryKind> _tileKinds = [];
 
-    /// <summary>The snapshot revision the rows were built from. A type switch
-    /// resets it: each type builds its own rail and tiles from the same
-    /// snapshot.</summary>
+    /// <summary>Which scan the rows were built from. Switching tabs resets it,
+    /// because each tab builds its own folder list and tiles from the same
+    /// scan.</summary>
     private int _seenRevision = -1;
 
     private string _query = string.Empty;
@@ -203,10 +202,10 @@ public sealed partial class PoseLibraryPane
 
     private bool _refilter = true;
 
-    /// <summary>The selected rail row's contiguous descendant span in VIEW row
-    /// indices, or -1 when the selection is not a folder. The tree is flattened
-    /// depth-first, so a subtree is exactly the rows up to the next row at the
-    /// same or shallower depth.</summary>
+    /// <summary>The rows in the folder list that are inside the selected
+    /// folder, or -1 when no folder is selected. Each folder is listed directly
+    /// above everything inside it, so its contents are the rows up to the next
+    /// row that is not indented further.</summary>
     private int _rangeStart = -1;
 
     private int _rangeEnd = -1;
@@ -222,17 +221,17 @@ public sealed partial class PoseLibraryPane
     private bool _iconSizeDirty;
 
     // ── the tile context menu and its file actions ───────────────────────
-    // The BINDER owns the tile menu now: its rows depend on the tab, the
-    // entry's typed metadata status, and which authoring/recovery verbs
-    // apply — none of which the view knows. Disk actions go through the
-    // typed PoseLibraryFileActions verbs; every outcome is a notification and
-    // a successful mutation requests a rescan, never edits the snapshot.
+    // This class builds the tile menu, not the view, because its rows depend
+    // on the tab, on whether the file could be read, and on which edit and
+    // repair actions apply. Each file action reports its result as a
+    // notification. After a change on disk the Library scans again instead of
+    // editing its list.
 
     private const string TileMenuId = "##pose-library-tile-menu";
 
-    /// <summary>What each context-menu row DOES; separators carry
-    /// <see cref="TileMenuAction.None"/> so the row indices stay aligned with
-    /// the clicked index the menu answers.</summary>
+    /// <summary>What each right-click menu row does. Separators use
+    /// <see cref="TileMenuAction.None"/>, so each row's position here matches
+    /// the row number the menu reports when clicked.</summary>
     private enum TileMenuAction
     {
         None,
@@ -252,14 +251,14 @@ public sealed partial class PoseLibraryPane
 
     private readonly List<TileMenuAction> _menuActionRows = [];
 
-    /// <summary>The move-to menu's destinations, parallel to its rows, and
-    /// the file it would move — both frozen at the submenu's open.</summary>
+    /// <summary>The folders in the Move to menu, one per row, and the file to
+    /// move. Both are fixed when the menu opens.</summary>
     private readonly List<string> _moveDestinations = [];
 
     private string? _movePath;
 
-    // The three file modals. Each freezes its target PATH at open: tile
-    // indices do not survive a refilter, paths do.
+    // The three file dialogs. Each keeps the file's path from when it opened,
+    // because tile positions change when the list is filtered and paths do not.
     private readonly global::Poser.UI.Controls.EntityNameModal _renameModal = new();
 
     private readonly LibraryMetadataEditor _metadataEditor;
@@ -271,27 +270,27 @@ public sealed partial class PoseLibraryPane
 
     private string _deleteName = string.Empty;
 
-    /// <summary>This pane's drive of the ONE shared preview: whose appearance,
-    /// which file, which options, and the compare that re-poses it when any of
-    /// the three moves.</summary>
+    /// <summary>Drives the one shared pose preview: whose appearance it uses,
+    /// which file it shows and with which options. It poses the preview again
+    /// whenever one of these changes.</summary>
     private readonly PosePreviewController _previewBinder;
 
-    /// <summary>The last value of <see cref="PoseFileInspectorSection.
-    /// TargetPoseRevision"/> this pane acted on — the edge on which the
-    /// preview's rebase baseline is captured again.</summary>
+    /// <summary>The last <see cref="PoseFileInspectorSection.TargetPoseRevision"/>
+    /// this pane saw. When it changes, the preview takes the actor's current
+    /// pose again as the pose it starts from.</summary>
     private int _seenPoseRevision;
 
-    /// <summary>Whether the pane is the workspace's current content. The first
-    /// draw after it becomes true is the old window's OnOpen.</summary>
+    /// <summary>Whether the Library is on screen. The first draw after it
+    /// opens resets the Library for the new visit.</summary>
     private bool _showing;
 
-    /// <summary>Raised by the no-sources empty state and by the action row's
-    /// "Add source…"; the UI manager owns the settings window.</summary>
+    /// <summary>Raised by the Add source button and by the message shown when
+    /// there are no library folders. The Settings window is opened elsewhere.</summary>
     public event Action? OnSettingsRequested;
 
-    /// <summary>Raised by the scenes tab's save affordance. The scene
-    /// workspace owns the destination dialog and the description that goes
-    /// into the file, so it is asked rather than duplicated here.</summary>
+    /// <summary>Raised by the save button on the Scenes tab. Saving a scene,
+    /// with its save dialog and description, is handled outside the Library,
+    /// so this pane only asks for it.</summary>
     public event Action? OnSaveSceneRequested;
 
     public PoseLibraryPane(
@@ -348,9 +347,9 @@ public sealed partial class PoseLibraryPane
             _applyChoice = index >= 0 && index < _applyTargets.Count
                 ? _applyTargets[index]
                 : null;
-        // Every apply that HAS a target goes through the actor picker — one
-        // workflow, the target always explicit (a lone eligible actor skips
-        // the menu). A scene has no target and loads outright.
+        // Applying a file to an actor always goes through the actor picker,
+        // so the actor is always chosen. When only one actor can take it, the
+        // picker is skipped. A scene has no target actor and loads at once.
         _vm.OnApplyTile = ActivateTile;
         _vm.Footer = DrawFooterLead;
         _vm.OnSpawnTile = Spawn;
@@ -358,12 +357,11 @@ public sealed partial class PoseLibraryPane
         _vm.OnTagFilter = TagFilter;
         _vm.OnIconSize = SetIconSize;
         _vm.OnRefresh = Refresh;
-        // The two Brio menus, opened from the action row; the shared state
-        // lives on the FILES section so both surfaces read one filter. The
-        // library mount opens the import menu WITHOUT presets — rest poses
-        // belong to the actor part (user rule).
-        // The rail's "Options" is a BUTTON, so the menu hangs off it — the
-        // same seat rule the Apply menu below already follows.
+        // The import options menu and the bone filter menu, as in Brio. Their
+        // settings live in the pose file section, so the Library and that
+        // section share one filter. The Library's import menu leaves out the
+        // presets, because rest poses are applied from the actor, not from the
+        // Library. The menu opens under the Options button, like the Apply menu.
         _vm.OnImportMenu = () => _files.RequestImportMenu(
             withPresets: false, target: CurrentApplyTarget(), anchor: ButtonSeat);
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
@@ -374,9 +372,8 @@ public sealed partial class PoseLibraryPane
                 LoadScene(_vm.Selected);
                 return;
             }
-            // An object tile's action is its own (spawn or apply by what the
-            // file is); the actor-target picker is for poses and character
-            // files only.
+            // An object tile spawns or applies depending on what the file is.
+            // The actor picker is only for poses and MCDFs.
             if (_type == LibraryType.Objects)
             {
                 ActivateObject(_vm.Selected);
@@ -384,16 +381,16 @@ public sealed partial class PoseLibraryPane
             }
             ApplyToChosen(_vm.Selected);
         };
-        // The character-file apply is the one long transaction this pane
-        // starts, so this pane also carries its stop — the same cooperative
-        // cancel the appearance pane's progress row calls.
+        // Applying an MCDF is the one long task this pane starts, so
+        // the pane also offers a way to stop it. It is the same cancel as the
+        // one on the appearance progress row.
         _vm.OnCancelImport = _mcdf.Cancel;
         _vm.OnSaveScene = () => OnSaveSceneRequested?.Invoke();
         _vm.OnEditMetadata = OpenMetadataEditor;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
-        // Spawning needs no selection and no scene state; the service answers
-        // null when the game refuses, which is a note rather than a gate.
+        // Spawning needs no selection and nothing in the scene, so it is always
+        // allowed. If the game cannot spawn, a message says so instead.
         _vm.CanSpawn = true;
     }
 
@@ -417,13 +414,13 @@ public sealed partial class PoseLibraryPane
         };
     }
 
-    /// <summary>Advances presentation-only thumbnail decoding.</summary>
+    /// <summary>Lets the thumbnail cache carry on decoding pictures.</summary>
     public void Tick()
     {
         _thumbs.Tick();
     }
 
-    /// <summary>Draws into the rect the shell hands the workspace.</summary>
+    /// <summary>Draws the Library into the area the window gives it.</summary>
     public void Draw(Vector2 origin, Vector2 size)
     {
         if (!_showing)
@@ -440,10 +437,10 @@ public sealed partial class PoseLibraryPane
 
         if (_type == LibraryType.AutoSaves)
         {
-            // The auto-save root is re-enumerated on entry and on an explicit
-            // rescan, never watched — and never on THIS thread: a cold root of
-            // snapshot folders is a whole frame's worth of disk, so the kick
-            // only starts a worker and the take mints whatever has landed.
+            // The auto-save folder is read again when the tab opens and when
+            // rescan is pressed; nothing watches it for changes. Reading it can
+            // take a whole frame, so it is read in the background and each
+            // frame shows whatever has arrived.
             if (_autoDirty)
                 KickAutoSaves();
             TakeAutoSaves();
@@ -470,7 +467,7 @@ public sealed partial class PoseLibraryPane
         DrawDeleteModal();
     }
 
-    // ── the tile menu ────────────────────────────────────────────────────
+    // ── the footer ───────────────────────────────────────────────────────
 
     /// <summary>Shows Add source and scan status at the left of the footer.</summary>
     private void DrawFooterLead(ActionBarScope scope)
@@ -479,7 +476,7 @@ public sealed partial class PoseLibraryPane
         scope.Label(_vm.Status);
     }
 
-    // ── the objects inspector rail ───────────────────────────────────────
+    // ── where spawned objects and scenes are placed ──────────────────────
 
     /// <summary>Placement choices in the order shown in the dropdown.</summary>
     private readonly List<ObjectPlacementMode> _placementChoices = [];
@@ -525,59 +522,57 @@ public sealed partial class PoseLibraryPane
         return _config.Config.DefaultSpawnPlacement;
     }
 
-    /// <summary>Per-tile stamps for the info rail, parallel to the tile
-    /// list like the tag and author lists above.</summary>
 
 
-    /// <summary>The workspace moved on. The decoded thumbnails are a cache of
-    /// what was on screen, and the icon size is persisted here rather than on
-    /// every drag tick.</summary>
+    /// <summary>Called when the Library closes. It drops the decoded
+    /// thumbnails, which only served what was on screen, and saves the icon
+    /// size once here instead of on every step of the slider drag.</summary>
     public void OnHidden()
     {
         _showing = false;
         _thumbs.Clear();
-        // The hidden actor and its render target are the library's own cost;
-        // leaving the mode gives them back.
+        // The pose preview uses a hidden actor and its own picture; closing
+        // the Library frees both.
         ClosePreview();
         if (!_iconSizeDirty)
             return;
-        // The slider writes the config live so the grid reflows with the drag;
-        // the disk write waits for the surface to close.
+        // The slider changes the setting at once so the grid follows the
+        // drag; it is saved to disk only when the Library closes.
         _iconSizeDirty = false;
         _config.Save();
     }
 
-    /// <summary>The first frame of a library session.</summary>
+    /// <summary>Runs on the first frame after the Library opens.</summary>
     private void Enter()
     {
-        // Nothing is scanned until a surface asks, so the first entry is what
-        // pays for the file system. The auto-save read starts here too, so the
-        // tab has a listing waiting when it is opened; the tab's own kick
-        // then only re-stats what this pass already read.
+        // No folder is read until something needs it, so opening the Library
+        // starts the scan. The auto-save folder is read here too, so its tab
+        // already has a list when it is opened; opening the tab then only
+        // checks those files again.
         _library.RequestScan();
         _autoLibrary.RequestScan();
 
-        // The type is a browsing mode, not a preference: every entry starts on
-        // the poses, which is also what the import redirect expects to land on.
+        // Every visit starts on the Poses tab. Code that opens the Library to
+        // import a pose also expects to land there.
         _type = LibraryType.Poses;
         _collapsed.Clear();
         _autoDirty = true;
 
-        // The query and the tag are DRAFTS: they mean nothing outside the open
-        // surface, so each entry starts on the whole library.
+        // The search text and the tag filter only matter while the Library is
+        // open, so each visit starts with nothing filtered.
         ResetFilters();
         _lastAppliedTile = -1;
         _vm.IconSize = _config.Config.Library.IconSize;
         _iconSizeDirty = false;
 
-        // Favourites and sources may have moved while the mode was away, and a
-        // completed scan keeps its revision: rebuild unconditionally.
+        // Favorites and library folders may have changed while the Library was
+        // closed, and a finished scan keeps its number, so always rebuild.
         _seenRevision = -1;
         _refilter = true;
     }
 
-    /// <summary>The drafts, which no view of the library inherits from
-    /// another.</summary>
+    /// <summary>Clears the search, the tag filter and the chosen folder. No
+    /// tab or visit carries these over from another.</summary>
     private void ResetFilters()
     {
         _vm.Query = string.Empty;
@@ -590,14 +585,14 @@ public sealed partial class PoseLibraryPane
         _rangeEnd = -1;
     }
 
-    /// <summary>The active LibraryType value as an index.
-    /// The shell's tab strip states it while the mode is on.</summary>
+    /// <summary>The open tab as a number. The Library window uses it to
+    /// show which tab is open.</summary>
     public int SelectedType => (int)_type;
     public bool ShowsPosePreview => (_type is LibraryType.Poses or LibraryType.AutoSaves)
         && !IsSceneTile(_vm.Selected);
 
-    /// <summary>A shell tab. The filters are drafts of the view being left, so
-    /// the new type starts on its whole library.</summary>
+    /// <summary>Switches tab. The new tab starts with nothing filtered, because
+    /// the filters belonged to the tab being left.</summary>
     public void SelectType(int index)
     {
         if (index < 0 || index > (int)LibraryType.Objects
@@ -607,8 +602,8 @@ public sealed partial class PoseLibraryPane
         ResetFilters();
         _lastAppliedTile = -1;
         ClearTileSelection();
-        // Each type builds its OWN rail and tiles from the same snapshot, so
-        // both paths have to rebuild rather than refilter.
+        // Each tab builds its own folder list and tiles from the same scan, so
+        // both the scanned tabs and Auto-saves must rebuild, not just filter.
         _seenRevision = -1;
         _autoDirty = true;
         _refilter = true;
@@ -624,8 +619,9 @@ public sealed partial class PoseLibraryPane
 
     // ── the rows ─────────────────────────────────────────────────────────
 
-    /// <summary>Rebuilds the rail and the tiles from a new snapshot. Every
-    /// string a frame reads is minted HERE, the count readouts included.
+    /// <summary>Rebuilds the folder list and the tiles after a new scan. Every
+    /// text the grid draws, the counts included, is built here once, so drawing
+    /// does not make new text every frame.
     /// </summary>
     private void SyncSnapshot()
     {
@@ -656,8 +652,8 @@ public sealed partial class PoseLibraryPane
                 favored++;
         }
 
-        // The two synthetic heads are positional by contract: [0] "All …",
-        // [1] "Favorites", the scan's own folders after them.
+        // The folder list always starts with "All …" and then "Favorites",
+        // followed by the scanned folders. Other code relies on this order.
         var folders = _vm.Folders;
         folders.Clear();
         folders.Add(new PoseLibraryFolderRow
@@ -697,10 +693,10 @@ public sealed partial class PoseLibraryPane
                 LibraryType.Objects => folder.ObjectsCount,
                 _ => folder.PoseCount,
             };
-            // A subfolder with none of this kind has no descendant of it
-            // either, so dropping it drops a WHOLE subtree — the flattened tree
-            // stays depth-first and the subtree range test stays a range test.
-            // Source roots always list, exactly as the scan itself keeps them.
+            // A folder's count includes its subfolders, so a subfolder with no
+            // files of this kind has none below it either. Hiding it hides
+            // everything below it too, and each folder stays directly above
+            // its contents. The top folder of each library source always shows.
             if (folder.Depth > 0 && count == 0)
             {
                 _folderRows[i] = -1;
@@ -719,7 +715,7 @@ public sealed partial class PoseLibraryPane
         }
 
         var tiles = _vm.Tiles;
-        // Menu actions use tile indices; a refreshed/sorted list is a new target set.
+        // Open menus point at tiles by position, and a rebuilt list moves them, so close the menus.
         FloatingMenu.Dismiss(TileMenuId);
         FloatingMenu.Dismiss("##library-apply-target");
         tiles.Clear();
@@ -727,8 +723,8 @@ public sealed partial class PoseLibraryPane
         _tileAuthors.Clear();
         _tileStatus.Clear();
         _tileKinds.Clear();
-        // Labels are minted with or without the extension HERE; the search
-        // keeps matching the bare name either way.
+        // Names get their file extension here or not, depending on the
+        // setting. Search always matches the name without it.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
         foreach (var entry in Ordered(entries, kind))
         {
@@ -738,10 +734,10 @@ public sealed partial class PoseLibraryPane
             _tileKinds.Add(entry.Kind);
             bool flagged =
                 entry.MetadataStatus != PoseLibraryMetadataStatus.Valid;
-            // Minted ONCE. A scene's key and its heading are the same run —
-            // the split exists because a folder's differ — and this loop runs
-            // per entry per rebuild, where a second identical string is a
-            // defect rather than a rounding error.
+            // Built once and used twice: for a scene, the group key and the
+            // heading are the same text. They are separate fields because for
+            // folders they differ. This loop runs for every file on every
+            // rebuild, so making the same text twice would be wasted work.
             string section = kind == PoseLibraryEntryKind.Scene
                 ? SceneSectionLabel(entry)
                 : string.Empty;
@@ -752,8 +748,8 @@ public sealed partial class PoseLibraryPane
                     ? entry.Name + System.IO.Path.GetExtension(entry.FilePath)
                     : entry.Name,
                 LabelLower = entry.NameLower,
-                // A scene's own line is what is INSIDE it — "3 actors, 2
-                // lights" tells a user which scene this is; a stamp does not.
+                // A scene's second line says what is in it, such as "3 actors,
+                // 2 lights". That tells scenes apart better than a date.
                 Modified = entry.ModifiedText,
                 Sub = entry.SceneContents.Length > 0
                     ? entry.SceneContents
@@ -794,8 +790,8 @@ public sealed partial class PoseLibraryPane
             });
         }
 
-        // A rescan invalidates row identity. A sort-only rebuild carries the
-        // selected paths across because the files themselves did not change.
+        // After a rescan the old selection no longer matches the rows, so it is
+        // cleared. When only the sort order changed, the same files stay selected.
         if (!RestoreSortSelection())
             ClearTileSelection();
         _vm.ShowRail = true;
@@ -837,9 +833,8 @@ public sealed partial class PoseLibraryPane
         _vm.EmptyText = total == 0 && _queryLower.Length == 0 && _tagLower is null
             ? $"No {emptyKind} found."
             : "No matches.";
-        // The rows standing from here on are the SCANNED library's, so an
-        // auto-save kick has to clear them rather than leave them showing
-        // under a rail-less tab.
+        // The rows on screen now belong to the scanned tabs. If the Auto-saves
+        // tab opens next, it must clear them instead of showing them.
         _autoRows = false;
         if (_vm.SelectedFolder >= folders.Count)
             _vm.SelectedFolder = 0;
@@ -847,11 +842,10 @@ public sealed partial class PoseLibraryPane
         _refilter = true;
     }
 
-    // ── the auto-save tab ────────────────────────────────────────────────
-    // Scan backup files on a worker; drawing the library only consumes the results.
+    // ── thumbnails ───────────────────────────────────────────────────────
 
-    /// <summary>Requests the current thumbnail handle and size from the cache.
-    /// A cache miss can queue decoding and returns no handle yet.</summary>
+    /// <summary>Gets a file's thumbnail from the cache. If it is not decoded
+    /// yet, this starts decoding it and returns nothing for now.</summary>
     private PoseThumbnail ResolveThumbnail(string path)
     {
         var handle = _thumbs.Get(path, out var size);

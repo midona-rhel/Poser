@@ -22,25 +22,25 @@ using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 namespace Poser.Game;
 
 /// <summary>
-/// The shape of an IK chain on a skeleton, read off bone topology alone:
-/// which bones each solver moves, whether a bone can anchor CCD, and a scene
-/// target's position and rotation. Target resolution reads live bindings.
+/// Works out an IK chain from how a skeleton's bones are connected: which
+/// bones each IK method moves, which bones the game's own CCD IK can use, and
+/// where a target object in the scene is right now.
 /// </summary>
 internal static class IkChainShapes
 {
-    /// <summary>Brio's <c>EligibleForIK</c> — a parent for the solver to walk
-    /// into, and not a hidden one (<c>Brio/Game/Posing/Skeletons/Bone.cs:68</c>).
-    /// Native CCD also requires that parent to belong to the same Havok pose,
-    /// matching the partial/skeleton boundary in its parent traversal.</summary>
+    /// <summary>Whether the game's own CCD IK can use this bone. As in Brio,
+    /// the bone needs a parent that is not hidden. That parent must also be in
+    /// the same part of the skeleton (body, face, hair and so on), because the
+    /// game's IK cannot move bones across parts.</summary>
     internal static bool IsCcdEligible(IBone bone) =>
         bone is not VirtualBone &&
         bone.ParentBone is { IsHiddenBone: false } parent &&
         parent.PartialId == bone.PartialId && ReferenceEquals(parent.Skeleton, bone.Skeleton);
 
-    /// <summary>Which bones the configured solver actually moves. CCD walks
-    /// the endpoint's own parents to the configured depth — the same walk
-    /// IKService.GetBonesToDepth and IkBakeCapture.AffectedBones make, because
-    /// the chain is not declared anywhere to read it from.</summary>
+    /// <summary>Which bones the chosen IK method moves. For CCD this walks up
+    /// from the end bone through its parents, as many as the depth setting
+    /// allows. Other IK code repeats the same walk, because no list of a
+    /// chain's bones is stored anywhere.</summary>
     internal static IReadOnlyList<string> ChainMemberNames(
         IBone endpoint,
         Poser.Domain.Posing.IkChainConfig config)
@@ -93,7 +93,7 @@ internal static class IkChainShapes
                 ? live.Transform : (Transform?)null,
             _ => null,
         };
-        // Resolve the exact stable generation each time; never retain a native handle.
+        // Look the object up every time instead of keeping a pointer to it: the game can remove or replace it.
         return transform is { } value
             && Domain.Transforms.TransformMath.IsFinite(value.Position)
             && Domain.Transforms.TransformMath.IsFinite(value.Rotation)
@@ -109,7 +109,7 @@ internal static class IkChainShapes
         var result = new List<IBone>();
         for (IBone? bone = tip; bone != null && result.Count <= config.ParentDepth; bone = bone.ParentBone)
         {
-            // A Havok pose cannot address indices from a different partial.
+            // The game's pose data cannot reach bones in a different part of the skeleton.
             if (bone != tip && bone.IsHiddenBone || bone.PartialId != tip.PartialId || !ReferenceEquals(bone.Skeleton, tip.Skeleton)) break;
             result.Add(bone);
         }
@@ -119,7 +119,7 @@ internal static class IkChainShapes
         {
             var children = child.ChildBones.Where(b => !b.IsHiddenBone
                 && b.PartialId == tip.PartialId && ReferenceEquals(b.Skeleton, tip.Skeleton)).ToArray();
-            // A depth does not identify a branch: stop rather than picking one arbitrarily.
+            // Where the bones branch, a depth cannot say which way to go, so stop instead of guessing.
             if (children.Length != 1) break;
             child = children[0];
             result.Add(child);

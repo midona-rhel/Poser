@@ -15,104 +15,97 @@ using Poser.Domain.Scene;
 namespace Poser.Documents.Files;
 
 /// <summary>
-/// Poser scene file format (.xivs): one versioned JSON
-/// document carrying every entity of a scene — actors with their complete
-/// embedded Brio-format <see cref="PoseFile"/>, props, lights and cameras as
-/// their existing per-entity documents (<see cref="LightFile"/>,
-/// <see cref="CameraFile"/>), the environment, and the explicit relationships
-/// between them (companion attachment, light bone attachment, camera target).
+/// A Poser scene file (.xivs). It is one JSON document that holds everything
+/// in a scene: the actors and their poses, the props, lights and cameras, the
+/// environment, and how they are linked (a companion on an actor, a light
+/// attached to a bone, a camera following an actor).
 ///
-/// Entity payloads deliberately embed the EXISTING codecs rather than
-/// restating their fields: there is one codec per entity kind, and a light
-/// that round-trips through a scene is bit-for-bit the light that round-trips
-/// through a .xivl — including that codec's own FileVersion semantics.
+/// Each actor's pose is stored as a whole <see cref="PoseFile"/>, and each
+/// light and camera as a whole <see cref="LightFile"/> or
+/// <see cref="CameraFile"/>. So a light saved in a scene is exactly the light
+/// saved on its own as a .xivl.
 ///
-/// <see cref="SceneId"/> is the document's stable logical identity. It
-/// persists across saves of the same scene and is the exact identity a scene
-/// operation's <c>OperationReceipt</c> targets, since a whole-scene operation
-/// has no single target actor.
+/// <see cref="SceneId"/> stays the same every time the same scene is saved.
+/// Loading a scene reports its result under that id, because a whole scene
+/// has no single actor to report under.
 /// </summary>
 [Serializable]
 public class SceneFile
 {
-    /// <summary>The scene format version this build writes. The rule is in
-    /// <c>docs/features/scenes.md</c> (Format versioning): bump it for any
-    /// change an older reader would lose or misread; readers accept
-    /// <see cref="MinimumVersion"/> through this and refuse anything newer as
-    /// a typed Future outcome.</summary>
+    /// <summary>The scene format version this build writes. Raise it for any
+    /// change an older Poser would lose or misread. Files from
+    /// <see cref="MinimumVersion"/> up to this version are read, and newer
+    /// files are refused.</summary>
     public const int CurrentVersion = 4;
 
     /// <summary>The oldest scene format this build still reads.</summary>
     public const int MinimumVersion = 2;
 
-    /// <summary>The one extension every scene reader, writer and listing
-    /// filters on.</summary>
+    /// <summary>The extension of a scene file.</summary>
     public const string Extension = ".xivs";
 
     /// <summary>
-    /// An actor library entry: the SAME container and document as a scene,
-    /// restricted to exactly one actor and nothing else. It gets its own
-    /// extension so the library can tab it without opening it; every codec,
-    /// store and restore path treats it as the scene it is.
+    /// An actor saved to the library: a scene file that holds one actor and
+    /// nothing else. Its own extension lets the library put it in the right
+    /// tab without opening it. Everything else treats it as a scene.
     /// </summary>
     public const string ActorEntryExtension = ".xiva";
 
-    /// <summary>Placement anchors: where the camera and the anchor actor
-    /// stood at capture, yaw-flattened. Stamped on every capture (they cost
-    /// nothing); an actor ENTRY load is what reads them.</summary>
+    /// <summary>Where the camera and the selected actor stood when saving, and
+    /// which way they faced along the ground. Every save records them. Loading
+    /// a library entry relative to the camera or to an actor uses them.</summary>
     public PlacementAnchorData? CameraAnchor { get; set; }
     public PlacementAnchorData? ActorAnchor { get; set; }
 
     /// <summary>
-    /// An environment library entry: the scene container restricted to the
-    /// environment configuration — weather, sky, atmosphere, world rendering
-    /// — and nothing else. Same codec, own extension so the library tabs it
-    /// without opening it.
+    /// An environment saved to the library: a scene file that holds only the
+    /// environment settings (weather, sky, atmosphere, world rendering). Its
+    /// own extension lets the library put it in the right tab without opening
+    /// it.
     /// </summary>
     public const string EnvironmentEntryExtension = ".xive";
 
     /// <summary>
-    /// An overlay library entry: the scene container restricted to one
-    /// overlay node.
+    /// An overlay saved to the library: a scene file that holds one overlay.
     /// </summary>
     public const string OverlayEntryExtension = ".xivo";
 
     /// <summary>
-    /// A group library entry: the scene container restricted to one named
-    /// group's members, the group itself riding along so a load recreates
-    /// it whole. Same codec, own extension so the library tabs it without
-    /// opening it.
+    /// A group saved to the library: a scene file that holds one group and
+    /// its members, so loading it recreates the whole group. Its own extension
+    /// lets the library put it in the right tab without opening it.
     /// </summary>
     public const string GroupEntryExtension = ".xivg";
 
     /// <summary>
-    /// A world-object library entry: the scene container restricted to one
-    /// world object saved as a SPAWNABLE copy — the entry carries the model
-    /// path marked spawned, so activation creates it anywhere, any zone.
+    /// A world object saved to the library: a scene file that holds one world
+    /// object, saved as a copy Poser spawns. Loading it creates the object
+    /// anywhere, in any zone.
     /// </summary>
     public const string WorldObjectEntryExtension = ".xivw";
 
-    /// <summary>A prop entry: one spawned weapon-model prop — its model
-    /// triple, dyes, and pose variant — as a scene container.</summary>
+    /// <summary>A prop saved to the library: a scene file that holds one
+    /// weapon-model prop with its model, dyes and pose variant.</summary>
     public const string PropEntryExtension = ".xivp";
 
     /// <summary>
-    /// A light library entry. ONE pipeline for every entry (ruled
-    /// 2026-08-31): the scene container restricted to one light, saved
-    /// through the workflow and restored through the load. Bare-JSON files
-    /// older builds wrote are still read (see <see cref="SceneFileStore"/>);
-    /// nothing writes them.
+    /// A light saved to the library: a scene file that holds one light, saved
+    /// and loaded the same way as a scene. Older .xivl files hold only the
+    /// light's own JSON; they are still read (see <see cref="SceneFileStore"/>),
+    /// but Poser writes only the scene form.
     /// </summary>
     public const string LightEntryExtension = ".xivl";
 
-    /// <summary>The camera's twin of <see cref="LightEntryExtension"/>.
+    /// <summary>A camera saved to the library, stored the same way as a light
+    /// (<see cref="LightEntryExtension"/>).
     /// </summary>
     public const string CameraEntryExtension = ".xivc";
 
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
-    /// <summary>Stable logical scene identity; never empty in a valid file.</summary>
+    /// <summary>The scene's id. It stays the same across saves and is never
+    /// empty in a valid file.</summary>
     public Guid SceneId { get; set; }
 
     /// <summary>The name Poser gives an actor's scene appearance when it packs it while
@@ -129,8 +122,8 @@ public class SceneFile
             : !string.Equals(packed.FileName, actor.Name + ".mcdf", StringComparison.OrdinalIgnoreCase)
                 && !packed.FileName.StartsWith(PackedAppearancePrefix, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The Poser install that saved the scene. Absent in older scenes. See
-    /// <c>SceneAppearanceRule</c>.</summary>
+    /// <summary>The Poser install that saved the scene. Absent in older scenes. Only
+    /// the install that saved a scene loads its scene appearances editable.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Guid? SavedBy { get; set; }
 
@@ -138,38 +131,32 @@ public class SceneFile
     public string? Description { get; set; }
     public DateTimeOffset? SavedAt { get; set; }
 
-    /// <summary>The territory the capture ran in; 0 means unknown, which is
-    /// every file written before scenes recorded where they were taken.
+    /// <summary>The zone the scene was saved in. 0 means unknown, as in files
+    /// saved before the zone was recorded.
     /// </summary>
     public uint TerritoryId { get; set; }
 
-    /// <summary>The territory's place name, resolved AT CAPTURE. The name is
-    /// persisted BESIDE the id, not derived from it, because neither the codec
-    /// nor the library scan has game data to resolve an id with — a listing
-    /// must be able to say where a scene was taken with the game shut. Absent
-    /// on files written before scenes recorded it, and on a capture whose
-    /// territory had no name.</summary>
+    /// <summary>The zone's name, looked up when saving. It is stored next to
+    /// the id because the library lists scenes without the game data needed
+    /// to look a name up. Absent in older files and when the zone had no
+    /// name.</summary>
     public string? PlaceName { get; set; }
 
     /// <summary>
-    /// Where the capture STOOD: the local player's world position at save. It
-    /// is the anchor a relative load rebases onto, and nothing else — every
-    /// placement in this document stays ABSOLUTE, which is the invariant a
-    /// reader that ignores this field depends on.
+    /// Where the player's character stood when the scene was saved. A
+    /// relative load (placing the scene around where the character stands
+    /// now) moves everything by the difference. Every other position in the
+    /// file stays an absolute world position, so a reader that ignores this
+    /// field still places everything correctly.
     ///
-    /// <para>Both references encode the same anchor and neither states it the
-    /// same way: Ktisis stores every actor position ALREADY relative to its
-    /// <c>SceneOrigin</c> and adds the origin back on load
-    /// (<c>Services/Data/SceneDataService.cs</c>), while Brio keeps absolutes
-    /// and anchors on the live local player at import
-    /// (<c>Services/SceneService.cs</c>, <c>useRelativeLightPositions</c>).
-    /// Poser follows Brio's shape — absolutes on the wire — because a document
-    /// whose numbers only mean something beside an origin cannot be read by a
-    /// listing, a diff, or a reader that never asked for a relative load.</para>
+    /// <para>Brio does the same: it saves absolute positions and anchors on
+    /// the player's character at load. Ktisis saves positions relative to an
+    /// origin instead. Poser keeps absolute positions so the file still makes
+    /// sense to anything that reads it without a relative load.</para>
     ///
-    /// <para>Absent on a capture with no local player to anchor on and on
-    /// every file written before the anchor was recorded; a relative load of
-    /// such a file is REFUSED by name rather than rebased onto a guess.</para>
+    /// <para>Absent when there was no player character to anchor on, and in
+    /// older files. A relative load of such a file is refused with a message
+    /// rather than guessing.</para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public Vector3? Origin { get; set; }
@@ -180,47 +167,40 @@ public class SceneFile
     public List<SceneCamera> Cameras { get; set; } = new();
     public SceneEnvironment? Environment { get; set; }
 
-    /// <summary>Session-wide render and simulation toggles. Absent when every
-    /// one of them sits at the game's own behaviour, which is what a scene
-    /// written before they were recorded says.</summary>
+    /// <summary>Scene-wide switches that freeze water and physics. Absent when
+    /// both are off, which is the game's normal behaviour.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneWorld? World { get; set; }
 
-    /// <summary>The staged game-UI overlay nodes. ABSENT rather than empty
-    /// when the scene has none, which is every scene written before overlay
-    /// nodes existed: an older file reads back byte-identical and a scene with
-    /// no nodes writes no list at all.</summary>
+    /// <summary>The game-interface overlays placed in the scene. Absent when
+    /// there are none.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneOverlay>? Overlays { get; set; }
 
-    /// <summary>The map's own objects the scene had BORROWED. ABSENT rather
-    /// than empty when the scene had none, which is every scene written before
-    /// world objects could be adopted: an older file reads back byte-identical
-    /// and a scene that borrowed nothing writes no list at all.
+    /// <summary>Objects that belong to the map and that the scene took over.
+    /// Absent when there are none.
     ///
-    /// <para>These entries are the one part of a scene that only means
-    /// something WHERE IT WAS TAKEN. A BG object has no id that survives a
-    /// session — its address is this process's — so an entry names it by the
-    /// model path plus the point the MAP stands it at, and a load outside
-    /// <see cref="TerritoryId"/> refuses every entry BY NAME rather than
-    /// re-adopting whatever happens to share a path in another zone.</para>
+    /// <para>These are the only part of a scene that only makes sense in the
+    /// zone it was saved in. A map object has no id that lasts from one game
+    /// session to the next, so each entry names it by its model path and the
+    /// point where the map places it. Loading the scene in another zone skips
+    /// every entry and names each one, rather than taking over some other
+    /// object that uses the same model.</para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneWorldObject>? WorldObjects { get; set; }
 
-    /// <summary>The sidebar's named groups. ABSENT rather than empty when
-    /// the scene has none, so every older file reads back byte-identical.
-    /// Members reference entities by the SAME keys the entity lists above
-    /// carry; a member the load cannot restore is skipped by name, and a
-    /// group thinned below two members dissolves exactly as it does
-    /// live.</summary>
+    /// <summary>The named groups in the sidebar. Absent when there are none.
+    /// Members point at entities by the same keys the lists above use. A
+    /// member the load cannot bring back is skipped and named, and a group
+    /// left with fewer than two members is removed, just as it is in the
+    /// sidebar.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneGroupEntry>? Groups { get; set; }
 
-    /// <summary>The sidebar's root order — the USER'S arrangement, kinds
-    /// interleaved, group heads included (Kind "group", keyed by the
-    /// group entry's key). ABSENT when unrecorded; a load without it
-    /// seats entities in kind order.</summary>
+    /// <summary>The order of the sidebar's top level as it was arranged, with
+    /// kinds mixed and groups included (Kind "group", by the group's key).
+    /// Absent when not saved; a load then lists entities by kind.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneStructureRef>? RootOrder { get; set; }
 
@@ -229,9 +209,9 @@ public class SceneFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneParentLink>? Parents { get; set; }
 
-    // The same wire style every Poser document uses — numerics as
-    // comma-space strings, enums by name, PascalCase, pretty printing,
-    // relaxed escaping, tolerated trailing commas and unknown members.
+    // The JSON style every Poser file uses: vectors as comma-separated
+    // strings, enums by name, PascalCase names, indented, text not escaped
+    // more than needed, and trailing commas and unknown fields allowed.
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -250,78 +230,76 @@ public class SceneFile
     };
 }
 
-/// <summary>Hard bounds every scene read and write enforces.</summary>
+/// <summary>Size limits every scene read and write checks.</summary>
 public static class SceneFileLimits
 {
     /// <summary>
-    /// The DOCUMENT's cap — the JSON entry inside the container, which holds
-    /// one complete pose document per actor and no payload bytes at all. It is
-    /// double the ordinary pose cap for the same reason it always was.
+    /// The limit on the scene's JSON, which holds one pose per actor and no
+    /// appearance files. It is twice the limit for a pose file.
     ///
-    /// <para>This is deliberately NOT a cap on the file: appearance payloads
-    /// are separate container entries, so a scene carrying half a gigabyte of
-    /// packages still has a small document.</para>
+    /// <para>It does not limit the whole file: appearances are stored as
+    /// separate entries, so a scene with large appearances still has a small
+    /// JSON.</para>
     /// </summary>
     public const long MaxDocumentBytes = 64L * 1024 * 1024;
     public const int MaxJsonDepth = 64;
     public const int MaxNameCharacters = 256;
 
-    /// <summary>The scene's free-text description: prose, not a name, so it
-    /// gets room the description field can actually fill.</summary>
+    /// <summary>The scene's description is free text, not a name, so it gets
+    /// more room.</summary>
     public const int MaxDescriptionCharacters = 4096;
 
-    /// <summary>Bound for stated filesystem paths, which are legitimately
-    /// longer than a name — a long-path prefix plus a deep library.</summary>
+    /// <summary>The limit for file paths, which can be much longer than a
+    /// name: a long-path prefix plus a deep library folder.</summary>
     public const int MaxPathCharacters = 1024;
 
     /// <summary>Hex characters of a SHA-256 digest.</summary>
     public const int ContentHashCharacters = 64;
 
     /// <summary>
-    /// One actor's embedded appearance package. It matches the MCDF importer's
-    /// own ceiling (<c>IntegrationConfiguration.McdfMaxFileBytes</c>) because a
-    /// package Poser will happily IMPORT must be a package it can SAVE — real
-    /// character files run to hundreds of megabytes, and a scene format that
-    /// refuses them is a scene format that cannot record appearance.
+    /// The limit on one actor's appearance saved in a scene. It is the same as the limit
+    /// for importing an MCDF, so any MCDF Poser can import can also be saved
+    /// in a scene. Real ones can be hundreds of megabytes.
     ///
-    /// <para>Payloads are stored as their own container entries and streamed,
-    /// never encoded into the document, so this bounds disk rather than
+    /// <para>Appearances are stored as separate entries and copied in pieces,
+    /// never held in memory whole, so this limits disk use, not
     /// memory.</para>
     /// </summary>
     public const long MaxEmbeddedAppearanceBytes = 512L * 1024 * 1024;
 
-    /// <summary>Above this, a save still writes the payload and SAYS how big
-    /// the file became. It is a warning threshold, never a refusal: a user who
-    /// asked for portable appearance gets portable appearance.</summary>
+    /// <summary>Above this size, a save still writes the appearance and says
+    /// how large the file became. It is only a warning, never a reason to
+    /// refuse the save.</summary>
     public const long LargeAppearanceWarningBytes = 256L * 1024 * 1024;
     public const float MinQuaternionLengthSquared =
         PoseFileLimits.MinQuaternionLengthSquared;
 }
 
 /// <summary>
-/// One saved actor: its stable in-document key, respawn facts, companion
-/// attachment, where it stands, what it is playing, where it is looking, and
-/// the complete embedded pose document, a local collection reference and an
-/// optional appearance package.
+/// One saved actor: its key in the file, what is needed to spawn it again,
+/// its companion, where it stands, what it plays, where it looks, its whole
+/// pose, its Penumbra collection and, if saved, its appearance.
 /// </summary>
 [Serializable]
 public class SceneActor
 {
-    /// <summary>Stable in-document identity; relationship fields refer to it.
-    /// Independent of any native binding generation.</summary>
+    /// <summary>The actor's id within this file; links between entities use
+    /// it. It has nothing to do with the actor's id in the game.</summary>
     public Guid Key { get; set; }
 
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>Hash of the original character name, used to find them in GPose without saving their name.</summary>
+    /// <summary>Hash of the original character name, used to find the character in GPose without saving the name.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? IdentityHash { get; set; }
 
-    /// <summary>Older captures stored native names with temporary object-index suffixes.</summary>
+    /// <summary>True when <see cref="Name"/> is the name as shown. Older files left it
+    /// false and stored the game's name with a temporary number on the end.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool NameIsDisplayName { get; set; }
 
-    /// <summary>The actor's ModelChara row id; 0 is the human base.</summary>
+    /// <summary>The game's model id for the actor (its ModelChara row); 0 is a normal
+    /// human.</summary>
     public int ModelCharaId { get; set; }
 
     /// <summary>The catalog kind of a minion, mount or ornament spawned as an
@@ -330,19 +308,19 @@ public class SceneActor
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CompanionKind? SpawnedKind { get; set; }
 
-    /// <summary>The actor was the user's own character. A load puts the saved
-    /// state back on the user's live character instead of spawning a copy.
+    /// <summary>The actor was the player's own character. A load puts the
+    /// saved state back on the player's character instead of spawning a copy.
     /// Absent in older files, which spawn every actor.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool LocalPlayer { get; set; }
 
-    /// <summary>The actor wore an appearance of its own that this file does
-    /// not carry, so it loads wearing the local player's.</summary>
+    /// <summary>The actor had an appearance of its own that this file does not
+    /// hold, so it loads looking like the local player.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool AppearanceNotSaved { get; set; }
 
-    /// <summary>Local permanent Penumbra collection, restored before posing.
-    /// Temporary collections travel through the appearance package instead.</summary>
+    /// <summary>A permanent Penumbra collection on this computer, set before
+    /// posing. Temporary collections are kept in the actor's saved appearance instead.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Guid? PenumbraCollection { get; set; }
 
@@ -350,90 +328,83 @@ public class SceneActor
 
     public bool ClothingOnly { get; set; }
 
-    /// <summary>Whether the actor reserved a companion slot at spawn. Required
-    /// for a companion attachment to be restorable.</summary>
+    /// <summary>Whether the actor was spawned with room for a companion. A
+    /// companion can only be restored when it was.</summary>
     public bool HasCompanionSlot { get; set; }
 
-    /// <summary>Attached companion/mount/ornament; ABSENT when the slot is
-    /// empty. Nothing attached is the absence of an attachment, never a
-    /// kind — no sheet describes an empty slot — so an empty slot writes no
-    /// kind rather than a named one.</summary>
+    /// <summary>The attached minion, mount or ornament. Absent when there is
+    /// none.</summary>
     public CompanionKind? CompanionKind { get; set; }
 
-    /// <summary>The attachment's row id; 0 when <see cref="CompanionKind"/>
-    /// is absent.</summary>
+    /// <summary>The companion's row id in the game data; 0 when
+    /// <see cref="CompanionKind"/> is absent.</summary>
     public ushort CompanionId { get; set; }
 
     /// <summary>
-    /// The attached companion's OWN pose document, as a complete pose in its
-    /// own right — a minion, mount or ornament has a skeleton and can be posed
-    /// like any other body, and restoring only the ATTACHMENT brings it back
-    /// idling in whatever the game hands it. Brio saves the same thing
-    /// (<c>ChildActor.PoseFile</c>, ActorDTO.cs:137); Ktisis has no companion
-    /// concept in its scene at all.
+    /// The attached companion's own pose. A minion, mount or ornament has a
+    /// skeleton and can be posed like any actor; restoring only the companion
+    /// would bring it back in its idle animation. Brio saves the same thing;
+    /// Ktisis does not save companions.
     ///
-    /// <para>Absent when the slot is empty, when the companion had no skeleton
-    /// to read, or when the companion was never posed away from its idle — so a
-    /// scene written before companion poses existed reads back byte-identical.
+    /// <para>Absent when there is no companion, when it had no skeleton to
+    /// read, or when it was never posed.
     /// </para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public PoseFile? CompanionPose { get; set; }
 
-    /// <summary>The complete Brio-format pose document, validated by the
-    /// ordinary pose codec rules. Required — a scene actor without a pose is
-    /// not a saved scene.</summary>
+    /// <summary>The actor's whole pose, in Brio's format, checked by the same
+    /// rules as a pose file. Required: a scene actor without a pose is not
+    /// valid.</summary>
     public PoseFile? Pose { get; set; }
 
     /// <summary>
-    /// Where the actor STANDS: the absolute world transform of its draw
-    /// object, stated by the scene layer in its own right.
+    /// Where the actor stands: the world position, rotation and scale of its
+    /// model.
     ///
-    /// <para>The embedded pose carries a model transform too, but only as the
-    /// pose codec's <c>ModelAbsoluteValues</c>, whose "nothing was recorded"
-    /// marker is <c>BoneData.Identity</c> — zero position, identity rotation,
-    /// ZERO scale. An actor genuinely standing at the world origin unrotated
-    /// is therefore indistinguishable from an unrecorded one, and the restore
-    /// silently placed nothing. ABSENT here is the only statement of "this
-    /// file records no placement", so present always means place it.</para>
+    /// <para>The pose holds a model transform too, but there a position of
+    /// zero, no rotation and a scale of zero means "not recorded". An actor
+    /// really standing at the world origin would look unrecorded and not be
+    /// placed. This field has no such problem: when it is present, the actor
+    /// is placed there.</para>
     ///
-    /// <para>Omitted when unset, so a scene written before placements were
-    /// stated reads back byte-identical and falls back to the embedded pose's
-    /// absolute values exactly as it always did.</para>
+    /// <para>Absent in older files, which fall back to the pose's model
+    /// transform.</para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public LightFile.TransformData? ModelTransform { get; set; }
 
-    /// <summary>Where the actor is LOOKING. Absent when no gaze override is
-    /// configured, which is the ordinary case.</summary>
+    /// <summary>Where the actor is looking. Absent when no gaze is set, which
+    /// is usual.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneActorGaze? Gaze { get; set; }
 
-    /// <summary>FABRIK chains written before #229 stopped capturing them. The
-    /// actor's pose already carries their baked result, so a load ignores them
-    /// with a note instead of restarting a solver over it; the payload is read
-    /// opaquely, never validated, and no capture sets it.</summary>
+    /// <summary>FABRIK chains saved by older versions. The pose already holds
+    /// their result, so a load ignores them and shows a note instead of
+    /// running the solver again. The data is kept as it is, never checked,
+    /// and nothing writes it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JsonElement? Fabrik { get; set; }
 
-    /// <summary>The character file the actor is WEARING. Absent when the
-    /// actor's appearance is not an imported MCDF, which is the ordinary
-    /// case.</summary>
+    /// <summary>The appearance saved for the actor: an MCDF that was applied to
+    /// it, or its scene appearance. Absent when no appearance was
+    /// saved.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneActorMcdf? Mcdf { get; set; }
 
     /// <summary>
-    /// Saved with the save dialog's Animation option (format 4): what the actor
-    /// was playing, layer by layer. With it, a load restores this animation and
-    /// <see cref="PoseEdits"/> on top instead of importing the baked
-    /// <see cref="Pose"/>, so the actor can play on. <see cref="Pose"/> is still
-    /// written: it is the picture an animation that can't be restored falls back
-    /// to. Absent: the scene is the baked picture, as before.
+    /// Saved when the save dialog's Animation option is on (format 4): what
+    /// the actor was playing, layer by layer. A load then restores this
+    /// animation with <see cref="PoseEdits"/> on top, instead of applying the
+    /// still <see cref="Pose"/>, so the actor keeps moving. <see cref="Pose"/>
+    /// is still written: a load uses it when the animation cannot be restored.
+    /// Absent: the scene holds only the still pose.
     /// </summary>
     public SceneAnimationState? Animation { get; set; }
 
-    /// <summary>The user's own bone edits as offsets over the animation (the
-    /// authored pose stacks, not the frame underneath), with <see cref="Animation"/>.</summary>
+    /// <summary>The bone edits made on top of the animation, stored as
+    /// offsets (only the edits, not the animation frame under them). Saved
+    /// with <see cref="Animation"/>.</summary>
     public List<SceneBoneEdit>? PoseEdits { get; set; }
 
     /// <summary>The attached companion's (mount, minion, ornament) animation, with
@@ -444,35 +415,11 @@ public class SceneActor
     public List<SceneBoneEdit>? CompanionPoseEdits { get; set; }
 }
 
-/// <summary>
-/// The character file an actor is wearing, in ONE of two modes — and the mode
-/// is the difference between a scene that travels and one that does not.
-///
-/// <para>REFERENCE mode (<see cref="Package"/> absent) states where the package
-/// was and lets the existing import machinery read it again. It is the default
-/// because an MCDF is tens of megabytes of another player's mods, and it is
-/// only meaningful on the machine that saved it.</para>
-///
-/// <para>PORTABLE mode (<see cref="Package"/> present) carries the package's
-/// own bytes. A path, a temporary collection id, or any other live handle is
-/// NOT a portable save — it names something the receiving machine does not
-/// have — so a save the user asked to make portable either embeds the bytes or
-/// refuses by name and saves the actor without appearance. It never keeps the
-/// reference and calls itself portable.</para>
-///
-/// <para>Divergence from both references, deliberately: Brio records only a
-/// <c>WasMCDF</c> boolean and then explicitly REFUSES to restore the appearance
-/// ("was locked at the time of saving. Appearance will not be imported",
-/// SceneService.cs:516-519). Ktisis records the path
-/// (<c>SceneFile.ActorInfo.MCDF</c>) and re-imports it, warning by name when
-/// the file has moved (SceneDataService.cs:429-437) — reference mode follows
-/// Ktisis and adds the content hash Ktisis has no equivalent of; portable mode
-/// is Poser's own and neither reference has anything like it.</para>
-/// </summary>
-[Serializable]
 /// <summary>An actor's animation as a scene saves it: the same state an undo
-/// step restores. A held layer keeps its frame; a running one plays from its
-/// start. Timeline ids resolve against the loading client's game and mods.</summary>
+/// step restores. A held layer keeps its frame; a running one carries on from
+/// where it was. Animation ids are looked up in the game and mods of the
+/// computer that loads the scene.</summary>
+[Serializable]
 public class SceneAnimationState
 {
     public SceneAnimationLayer? Base { get; set; }
@@ -502,7 +449,8 @@ public class SceneAnimationLayer
     /// <summary>The held frame, in seconds from the animation's start; absent
     /// while it runs.</summary>
     public float? HeldSeconds { get; set; }
-    /// <summary>It ran out (its row stays): the animation's length.</summary>
+    /// <summary>Set when the animation played to its end and stopped: its
+    /// length in seconds. The layer stays.</summary>
     public float? EndedSeconds { get; set; }
 
     /// <summary>How far a running animation had played, in seconds; a load
@@ -534,59 +482,74 @@ public class SceneBoneOffset
     public Vector3? IkScale { get; set; }
 }
 
+/// <summary>
+/// The appearance saved for an actor, in one of two ways.
+///
+/// <para>By reference (<see cref="PackageEntry"/> absent): the file stores
+/// where the MCDF was, and a load imports it from there again. This only
+/// works on the computer that saved the scene.</para>
+///
+/// <para>Portable (<see cref="PackageEntry"/> present): the scene file holds
+/// the MCDF itself, so it works on any computer. A path or a temporary
+/// collection means nothing on another computer, so a portable save either
+/// includes the MCDF or saves the actor without it and says so. It never
+/// falls back to a reference.</para>
+///
+/// <para>Brio saves only that the actor wore an MCDF and does not restore
+/// it. Ktisis saves the path and imports it again, warning when the file has
+/// moved. Saving by reference works like Ktisis, with a content hash added;
+/// neither Brio nor Ktisis has a portable save.</para>
+/// </summary>
 public class SceneActorMcdf
 {
-    /// <summary>The package's full path AT SAVE. Required in reference mode;
-    /// EMPTY in portable mode, where the bytes are the document's own and no
-    /// path on the saving machine means anything to a reader.</summary>
+    /// <summary>The MCDF's full path when saved. Required by reference; empty
+    /// when portable, since a path on the saving computer means nothing
+    /// elsewhere.</summary>
     public string Path { get; set; } = string.Empty;
 
     /// <summary>True when this is an MCDF that was loaded onto the actor. False when it
-    /// is the actor's scene appearance, packed by Poser when the scene was saved.
+    /// is the actor's scene appearance, saved by Poser with the scene.
     /// See <c>SceneAppearanceRule</c> for how a load uses it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool LoadedOnto { get; set; }
 
-    /// <summary>The display name, kept beside the path so a load can name the
-    /// file in a refusal without parsing a path that may no longer exist.
+    /// <summary>The file's name, kept next to the path so a load can name the
+    /// file in a message even when the path no longer exists.
     /// </summary>
     public string FileName { get; set; } = string.Empty;
 
-    /// <summary>SHA-256 of the package's bytes at save, uppercase hex. EMPTY
-    /// when the file could not be read while saving — an unverifiable
-    /// reference, which a load still follows but cannot vouch for. A hash that
-    /// no longer matches is a named warning on load, never a silent import of
-    /// different content. In portable mode it is the digest of
-    /// <see cref="Package"/> and is REQUIRED: embedded bytes whose hash does
-    /// not check out are refused rather than imported.</summary>
+    /// <summary>SHA-256 of the MCDF when saved, in uppercase hex. Empty when
+    /// the file could not be read while saving; a load still follows such a
+    /// reference but cannot confirm it is the same file. When the hash no
+    /// longer matches, the load warns rather than quietly importing a
+    /// different file. When portable, it is the hash of the included MCDF and
+    /// is required: an included MCDF whose hash does not match is not
+    /// imported.</summary>
     public string ContentHash { get; set; } = string.Empty;
 
     /// <summary>
-    /// The container entry holding this package's bytes, present only in
-    /// portable mode.
+    /// The name of the entry inside the scene file that holds the MCDF. Only
+    /// present when portable.
     ///
-    /// <para>The bytes are an entry of their own, NOT a field of this
-    /// document. A real character file is hundreds of megabytes; base64 inside
-    /// the JSON would inflate it by a third, force the whole thing through a
-    /// single string and a single byte[] on every read, every write and every
-    /// commit verification, and put a multi-gigabyte transient in a game
-    /// process. The entry is written and read as a STREAM, so the cost of a
-    /// large payload is disk and nothing else.</para>
+    /// <para>The MCDF is a separate entry, not part of the JSON. A real one
+    /// can be hundreds of megabytes; inside the JSON it would grow by a third
+    /// and have to sit in the game's memory all at once on every read and
+    /// write. As a separate entry it is written and read in pieces, so a large
+    /// MCDF costs only disk space.</para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PackageEntry { get; set; }
 
-    /// <summary>The payload entry's length in bytes, as recorded at save. It
-    /// lets a listing state a scene's real size, and the save preview state
-    /// what a scene is about to cost, without opening the container.</summary>
+    /// <summary>The size of the included MCDF in bytes, recorded when saving.
+    /// It lets the library show a scene's real size, and the save preview
+    /// show what a save will cost, without opening the file.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public long PackageBytes { get; set; }
 
     /// <summary>
-    /// Where the package is being read FROM while a save is in flight. Never
-    /// serialized and never present on a document that came off disk: the
-    /// sealing step records it, the writer streams it into the container
-    /// entry, and nothing else may look at it.
+    /// Where the MCDF is read from while a save runs. It is never written to
+    /// the file: the save sets it, and the writer copies the MCDF from there
+    /// into the scene file.
     /// </summary>
     [JsonIgnore]
     public string? PackageSourcePath { get; set; }
@@ -597,11 +560,10 @@ public class SceneActorMcdf
 }
 
 /// <summary>
-/// One actor's gaze configuration. The Entity target is stated as the
-/// in-document ACTOR KEY, never the native GameObjectId it is keyed by at
-/// runtime: every actor in a restored scene is freshly spawned, so a saved
-/// object id names nothing. A gaze that followed an actor the capture did not
-/// take records no target at all.
+/// One actor's gaze settings. An actor target is saved as that actor's key
+/// in this file, not as its id in the game: every actor in a loaded scene is
+/// newly spawned, so a saved game id would point at nothing. A gaze that
+/// followed an actor the save did not include saves no target.
 /// </summary>
 [Serializable]
 public class SceneActorGaze
@@ -609,14 +571,14 @@ public class SceneActorGaze
     public bool PoseAware { get; set; }
     public GazeTargetMode Mode { get; set; } = GazeTargetMode.None;
 
-    /// <summary>Which parts participate.</summary>
+    /// <summary>Which parts follow the target.</summary>
     public GazeTargetType Parts { get; set; } = GazeTargetType.All;
 
     /// <summary>The followed actor's in-document key; null when the gaze
     /// follows no actor.</summary>
     public Guid? TargetActorKey { get; set; }
 
-    /// <summary>The shared Position-mode anchor.</summary>
+    /// <summary>The point all parts share in Position mode.</summary>
     public Vector3 Position { get; set; }
 
     public Vector3 EyesPosition { get; set; }
@@ -627,8 +589,8 @@ public class SceneActorGaze
     public GazeTargetType LockedParts { get; set; } = GazeTargetType.None;
 }
 
-/// <summary>One spawned prop: the weapon-model triple that respawns it and
-/// its absolute world transform.</summary>
+/// <summary>One spawned prop: the weapon model ids needed to spawn it again,
+/// and where it is in the world.</summary>
 [Serializable]
 public class SceneProp
 {
@@ -638,8 +600,8 @@ public class SceneProp
     public ushort Submodel { get; set; }
     public byte Variant { get; set; }
 
-    /// <summary>The two dye channels and the pose variant, exactly the
-    /// facts the native create bakes in. Absent reads undyed.</summary>
+    /// <summary>The two dyes and the pose variant, which the game sets when
+    /// it creates the model. Absent reads as undyed.</summary>
     public byte Stain0 { get; set; }
     public byte Stain1 { get; set; }
     public byte AnimationVariant { get; set; }
@@ -656,78 +618,76 @@ public class SceneProp
 }
 
 /// <summary>
-/// One staged overlay node: its stable in-document key plus the COMPLETE node
-/// document, embedded rather than restated. A node's state is already one
-/// value the editor, the undo journal and the native port all speak, so the
-/// scene carries that value and nothing else — the same rule that has a scene
-/// light carry a whole <see cref="LightFile"/>.
+/// One overlay: its key in this file and the overlay's whole state. The
+/// editor and undo already keep an overlay's state as one value, so the scene
+/// stores that value as it is, just as a scene light stores a whole
+/// <see cref="LightFile"/>.
 /// </summary>
 [Serializable]
 public class SceneOverlay
 {
     public Guid Key { get; set; }
 
-    /// <summary>The node's whole state. Required — an overlay entry without
-    /// one names nothing.</summary>
+    /// <summary>The overlay's whole state. Required: an entry without it is
+    /// not valid.</summary>
     public OverlayNodeState? Node { get; set; }
 
-    /// <summary>True when the node's stored position is an offset from the
-    /// SCREEN CENTRE rather than absolute pixels — how an overlay survives a
-    /// different resolution or aspect ratio. The restore re-attaches it at
-    /// the current centre; a file from before the convention reads as the
-    /// absolute pixels it was.</summary>
+    /// <summary>True when the overlay's position is measured from the centre
+    /// of the screen rather than in pixels from the corner, so it stays in
+    /// place at another resolution or screen shape. Older files read as
+    /// pixels from the corner.</summary>
     public bool CenterRelative { get; set; }
 }
 
 /// <summary>
-/// One BORROWED map object: which object it is, and what the user did to it.
+/// One world object in the scene, either taken over from the map or spawned
+/// by Poser: which object it is, and what was done to it.
 ///
-/// <para>Identity is the pair <see cref="Path"/> and <see cref="MapPosition"/>
-/// — the model file the object draws, and the point the MAP stands it at. It is
-/// deliberately not the address the claim was taken at: that address belongs to
-/// one run of one process. The map position is captured from the object's own
-/// pre-adoption placement, so it is the same value on every visit to the same
-/// territory and it does not move when the user drags the object.</para>
+/// <para>A map object is identified by <see cref="Path"/> and
+/// <see cref="MapPosition"/>: the model it draws and where the map places it.
+/// Its memory address cannot be used, because that changes every time the
+/// game runs. The map position is read from where the map placed the object,
+/// so it is the same on every visit to the zone and does not change when the
+/// object is dragged.</para>
 /// </summary>
 [Serializable]
 public class SceneWorldObject
 {
     public Guid Key { get; set; }
 
-    /// <summary>The model resource path. Half of the identity; also the row's
-    /// name.</summary>
+    /// <summary>The model's path. Half of what identifies the object; also its
+    /// name in the list.</summary>
     public string Path { get; set; } = string.Empty;
 
-    /// <summary>Where the MAP stands this object, before any adoption. The
-    /// other half of the identity, matched within a small tolerance because a
-    /// float that has been through a codec is not the float that went in.
+    /// <summary>Where the map places this object. The other half of what
+    /// identifies it. It is matched with a small tolerance, because a number
+    /// saved to a file and read back is not always exactly the same.
     /// </summary>
     public Vector3 MapPosition { get; set; }
 
-    /// <summary>Where the USER left it. Absolute, like every other placement in
-    /// this document.</summary>
+    /// <summary>Where the object was left. Absolute, like every other position
+    /// in this file.</summary>
     public LightFile.TransformData Transform { get; set; } =
         LightFile.TransformData.Identity;
 
     public bool Visible { get; set; } = true;
 
-    /// <summary>Whether POSER created this object rather than borrowing it
-    /// from the map. A spawned entry restores by SPAWNING its path — any
-    /// zone, no map identity to match — where a borrowed one re-adopts the
-    /// object the map is standing. Absent on older files, which only ever
-    /// borrowed.</summary>
+    /// <summary>Whether Poser created this object rather than taking it over
+    /// from the map. A spawned object is restored by spawning its model again,
+    /// in any zone; a taken-over one is found on the map again. Older files
+    /// only have taken-over objects.</summary>
     public bool Spawned { get; set; }
 
-    /// <summary>The user's name for it, when one was given; empty derives
-    /// from the path as ever.</summary>
+    /// <summary>The name given to it; empty means the name comes from the
+    /// path.</summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>The drawn opacity, 1 fully drawn. Absent reads as 1 on
-    /// older files.</summary>
+    /// <summary>How opaque it is drawn; 1 is fully drawn. Older files read
+    /// as 1.</summary>
     public float Opacity { get; set; } = 1f;
 
-    /// <summary>The effect's colour multiplier when the user tinted it;
-    /// null leaves the file's own colours alone (VFX only).</summary>
+    /// <summary>The colour the object is tinted with; null leaves its own
+    /// colours alone.</summary>
     public Vector3? Tint { get; set; }
 
     /// <summary>Whether a spawned effect replays on its interval.</summary>
@@ -740,26 +700,25 @@ public class SceneWorldObject
     /// <summary>A spawned effect's playback speed.</summary>
     public float VfxSpeed { get; set; } = 1f;
 
-    /// <summary>A spawned effect's uniform brightness, 1 as authored.
+    /// <summary>A spawned effect's brightness; 1 is as the effect was made.
     /// </summary>
     public float VfxIntensity { get; set; } = 1f;
 
     /// <summary>Whether a spawned effect is frozen mid-frame.</summary>
     public bool VfxPaused { get; set; }
 
-    /// <summary>The model's day/night dressing. Absent reads DAY (off)
-    /// — the ruled default for anything undefined.</summary>
+    /// <summary>Whether the model shows its night look. Absent reads as day
+    /// (off).</summary>
     public bool NightState { get; set; }
 
     /// <summary>Whether an animated model's motion is frozen.</summary>
     public bool AnimPaused { get; set; }
 }
 
-/// <summary>One reference into the scene's structure: an entity of the
-/// named kind (actor, prop, worldObject, light, camera, overlay) by the
-/// key its entity list carries, or a group by its entry's key (Kind
-/// "group"). Kind is a string so an unknown future kind reads and skips
-/// rather than failing the file.</summary>
+/// <summary>One item in the sidebar: an entity of the named kind (actor,
+/// prop, worldObject, light, camera, overlay) by the key its list uses, or a
+/// group by its key (Kind "group"). Kind is text, so a kind added later is
+/// skipped by an older Poser instead of failing the whole file.</summary>
 [Serializable]
 public class SceneStructureRef
 {
@@ -767,8 +726,8 @@ public class SceneStructureRef
     public Guid Key { get; set; }
 }
 
-/// <summary>One named sidebar group: naming, structure, and its optional
-/// stable transform presentation state.</summary>
+/// <summary>One named group in the sidebar: its name, its members, and its
+/// saved transform if it has one.</summary>
 [Serializable]
 public class SceneGroupEntry
 {
@@ -779,14 +738,13 @@ public class SceneGroupEntry
     /// <summary>The group this one nests in, by key; null at the root.</summary>
     public Guid? Parent { get; set; }
 
-    /// <summary>Optional exact group transform state. Older scene files omit
-    /// it; the loader initializes a legacy group after placement and binding
-    /// are valid.</summary>
+    /// <summary>The group's saved transform. Older files do not have it; the
+    /// load then sets one up once the members are placed.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneGroupTransformEntry? Transform { get; set; }
 
-    /// <summary>Compatibility with the first additive frame-only draft. New
-    /// saves use <see cref="Transform"/>; old files remain readable.</summary>
+    /// <summary>Only in files from an early version of groups, which saved
+    /// just the group's rotation. New saves use <see cref="Transform"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public Quaternion? InitialFrameRotation { get; set; }
 }
@@ -820,8 +778,8 @@ public class SceneBoneAttachment
     public string BoneName { get; set; } = string.Empty;
 }
 
-/// <summary>One scene light: the complete existing light document plus the
-/// optional explicit bone attachment.</summary>
+/// <summary>One scene light: the whole light document and, if it has one,
+/// the bone it is attached to.</summary>
 [Serializable]
 public class SceneLight
 {
@@ -830,9 +788,9 @@ public class SceneLight
     public SceneBoneAttachment? Attachment { get; set; }
 }
 
-/// <summary>One virtual camera: the complete existing camera document plus
-/// the session facts a .xivc deliberately omits — liveness, whether it is
-/// the session default, and the explicit target-actor relationship.</summary>
+/// <summary>One camera: the whole camera document plus what a .xivc file
+/// leaves out: whether it is live, whether it is the default camera, and the
+/// actor it follows.</summary>
 [Serializable]
 public class SceneCamera
 {
@@ -846,41 +804,37 @@ public class SceneCamera
     public Guid? TargetActorKey { get; set; }
     public string TargetActorName { get; set; } = string.Empty;
     public Vector3 TargetOffset { get; set; }
-    /// <summary>Whether the target identity stays fixed until unlocked.</summary>
+    /// <summary>Whether the camera keeps following the same actor until
+    /// unlocked.</summary>
     public bool IsTargetLocked { get; set; }
 }
 
 /// <summary>
-/// Toggles that belong to the whole session rather than to any one entity: a
-/// suppressed water renderer and a suppressed physics simulation. They are not
-/// environment values — the environment is a set of held per-section VALUES,
-/// while these two are patches whose enabled state is the whole of their
-/// state — so they are stated in their own right rather than smuggled into
-/// <see cref="SceneEnvironment"/>.
+/// Two switches for the whole scene rather than for any one thing in it:
+/// freeze water and freeze physics. They are kept apart from
+/// <see cref="SceneEnvironment"/>, which holds values, because these two are
+/// simply on or off.
 ///
-/// <para>The water freeze is Brio's <c>SceneFile.IsWaterFrozen</c> (Brio
-/// EnvironmentDTO); neither reference records a physics freeze.</para>
+/// <para>Brio saves frozen water too. Neither Brio nor Ktisis saves frozen
+/// physics.</para>
 /// </summary>
 [Serializable]
 public class SceneWorld
 {
-    /// <summary>The water renderer's update suppressed, freezing every
-    /// surface.</summary>
+    /// <summary>Water stops updating, so every water surface stands still.</summary>
     public bool IsWaterFrozen { get; set; }
 
-    /// <summary>The physics simulation suppressed. Global, not per-actor: a
-    /// scene states whether IT asked for the freeze, which is exactly what the
-    /// shell's own switch owns.</summary>
+    /// <summary>Physics is frozen for the whole scene, not per actor.</summary>
     public bool IsPhysicsFrozen { get; set; }
 
-    /// <summary>Nothing to state: a scene records no world block at all.
+    /// <summary>Both are off, so the scene saves no World entry.
     /// </summary>
     public bool IsDefault => !IsWaterFrozen && !IsPhysicsFrozen;
 }
 
-/// <summary>Time, weather and the held environment sections. A section's
-/// values are present exactly when that section is held — an unheld section
-/// belongs to the game and carries nothing.</summary>
+/// <summary>Time, weather and the environment sections Poser holds. A
+/// section's values are saved only when it is held; a section that is not
+/// held follows the game and saves nothing.</summary>
 [Serializable]
 public class SceneEnvironment
 {
@@ -889,9 +843,9 @@ public class SceneEnvironment
     public bool IsTimeFrozen { get; set; }
     public uint WeatherId { get; set; }
 
-    /// <summary>The weather's display name at capture. Display-only — the
-    /// restore keys on the id — so a listing can say "Rain" without the
-    /// game's weather sheet in hand.</summary>
+    /// <summary>The weather's name when saved, only for showing; a load uses
+    /// the id. It lets the library say "Rain" without the game's weather
+    /// list.</summary>
     public string WeatherName { get; set; } = string.Empty;
 
     public bool IsWeatherOverrideEnabled { get; set; }

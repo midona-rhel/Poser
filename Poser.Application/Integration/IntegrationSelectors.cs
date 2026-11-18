@@ -52,7 +52,7 @@ public sealed class IntegrationSelectors
 
     public IntegrationOverrides OverridesFor(ActorId actor) => _ownership.OverridesFor(actor);
 
-    /// <summary>Captures profile contents for export and undo.</summary>
+    /// <summary>Reads the actor's Customize+ profile, to export it or to restore it on undo.</summary>
     public IntegrationValue<string?> CaptureBodyProfile(ActorId actor) => _ownership.CaptureBodyProfile(actor);
 
     public IntegrationValue<IReadOnlyList<ExternalItem>> ListCollections() => _penumbra.GetCollections();
@@ -66,9 +66,9 @@ public sealed class IntegrationSelectors
     public IntegrationValue<Guid> ReadPlayerCollection() => _penumbra.GetPlayerCollection();
 
     /// <summary>
-    /// Captures appearance for undo. By default an unreadable Glamourer state fails
-    /// the capture. Removal callers can instead omit unavailable appearance so the
-    /// actor remains removable; the snapshot records that omission.
+    /// Saves the actor's appearance for undo. If Glamourer cannot be read, this fails,
+    /// unless <paramref name="omitUnreadableLook"/> is set. Removing an actor sets it, so
+    /// the actor can still be removed; the saved copy then notes that the look is missing.
     /// </summary>
     public IntegrationValue<ActorAppearanceSnapshot> TryCaptureHistory(ActorId actor, bool captureCollection = true,
         bool omitUnreadableLook = false)
@@ -128,7 +128,7 @@ public sealed class IntegrationSelectors
         Func<bool> stillCurrent, CancellationToken cancellation)
     {
         await _mcdf.CurrentCompletion.WaitAsync(cancellation);
-        // Release the imported appearance before restoring the saved appearance.
+        // The saved appearance has no MCDF, so take off any MCDF the actor has now.
         if (snapshot.McdfPath == null)
         {
             var reset = await _actors.OnFrameworkThread(() =>
@@ -259,7 +259,7 @@ public sealed class IntegrationSelectors
         return _glamourer.AddDesign(state.Value, name);
     }
 
-    // ── Selectors ────────────────────────────────────────────────────────
+    // ── Collection, design and Customize+ profile ────────────────────────
 
     /// <summary>
     /// Requests a Penumbra redraw using the actor's current collection.
@@ -295,8 +295,8 @@ public sealed class IntegrationSelectors
         SpawnCollectionSnapshot? inherited = null;
         if (_ownership.ForeignTemporaryCollection(current, assignment) is { } foreign)
         {
-            // Duplicate collections belong to our spawn owner, not MCDF.
-            // Capture their resources before releasing the temporary assignment.
+            // This is a temporary collection Poser gave the actor when spawning it.
+            // Save what it holds before replacing it, so Reset can put it back.
             var captured = _penumbra.CaptureInheritedCollection(actor);
             if (!captured.Success || captured.Value == null)
                 return IntegrationResult.Fail(captured.Detail ?? foreign);
@@ -356,7 +356,7 @@ public sealed class IntegrationSelectors
         var state = current.Baseline.GlamourerState;
         if (state == null)
         {
-            // Capture must succeed before applying the new design.
+            // Save the current look first, so Reset can bring it back.
             var incoming = _glamourer.CaptureGlamourerState(actor);
             if (!incoming.Success || incoming.Value is not { } captured)
                 return new(false, incoming.Detail ?? "The incoming Glamourer state could not be captured.", incoming.AppearanceRefusal);

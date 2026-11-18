@@ -25,10 +25,11 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The scene's appearance files: the save-side capture, hash stamp and
-/// portable seal, and the load-side collection restore and character-file
-/// import. Every character-file child runs through the existing MCDF
-/// transaction; this owns only the files a scene stages for it.
+/// The appearance part of saving and loading a scene. Saving records each
+/// actor's MCDF and its hash, and packs appearances into the scene file.
+/// Loading sets each actor's Penumbra collection and puts the saved
+/// appearance back. Every MCDF import and export goes through the usual MCDF
+/// code; this class only handles the files a scene needs for it.
 /// </summary>
 internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
 {
@@ -44,8 +45,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     private readonly Poser.Application.Integration.McdfTransaction _mcdf;
     private readonly IActorManager _actors;
 
-    /// <summary>Finds an appearance package by its bytes. Held as the
-    /// interface: the library owns MCDFs and will own this index too.
+    /// <summary>Finds an MCDF in the library by its content.
     /// </summary>
     private readonly Poser.Documents.Library.IMcdfHashIndex _mcdfHashes;
 
@@ -78,8 +78,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         _mcdfHashes = mcdfHashes;
         _log = log;
         _framework.Update += SweepHistoryAppearance;
-        // Remove old packages from the current and legacy temp directories.
-        // File age is a heuristic; this does not inspect other running clients.
+        // Delete old appearance files from Poser's temp folder and from the
+        // one older versions used. Only a file's age is checked, not whether
+        // another running game is still using it.
         _ = Task.Run(() =>
         {
             var cutoff = DateTime.UtcNow - SessionAppearanceFiles.StaleAge;
@@ -117,16 +118,16 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         {
             if (actor.Mcdf is not { } mcdf)
                 continue;
-            // A sealed portable payload already carries the digest of the
-            // bytes in the document. Re-hashing the source path would stamp a
-            // file the document no longer depends on.
+            // An appearance saved in the scene already has the hash of the copy inside the
+            // scene file. Hashing the original path would record a file the
+            // scene no longer uses.
             if (mcdf.IsPortable)
                 continue;
             var hashed = FileDigest.TryHashFile(mcdf.Path);
             if (hashed is null)
             {
-                // The reference is still worth saving: the load can follow the
-                // path, it just cannot vouch that the bytes are the same.
+                // Still save the path: a load can follow it, it just cannot
+                // check that the file is the same.
                 notes.Add(
                     $"Actor '{actor.Name}''s character file '{mcdf.FileName}' " +
                     "could not be read while saving; the scene records where it " +
@@ -154,8 +155,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             if (cancellation.IsCancellationRequested)
                 return new SceneSealOutcome(notes, temporaries);
 
-            // The package Poser already owns for this actor is the source of
-            // truth; only when the actor wears none does a new one get built.
+            // Use the MCDF already applied to the actor. Only an actor without one
+            // gets a new MCDF exported.
             string? source = actor.Mcdf is { } existing &&
                 !string.IsNullOrWhiteSpace(existing.Path) &&
                 System.IO.File.Exists(existing.Path)
@@ -172,11 +173,11 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                         "appearance could not be packaged.");
                     continue;
                 }
-                // New exports require a spawned actor, the local player,
-                // or an actor explicitly adopted into Poser.
-                // SealAppearance runs on the save worker. Ownership reads
-                // the live object table, so resolve and check in one game-
-                // thread dispatch; only the resulting value leaves it.
+                // Only export the appearance of an actor Poser spawned, the
+                // player's own character, or an actor taken over into Poser.
+                // This method runs in the background, but these checks read
+                // the game's actor list, so they run together on the game's
+                // main thread.
                 var owned = await _framework.RunOnFrameworkThread(() =>
                     _bindings.Resolve(id) is { Success: true, Value: { } live }
                     && (_spawns.IsSpawnedActor(live)
@@ -216,9 +217,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 }
                 if (info.Length > SceneFileLimits.MaxEmbeddedAppearanceBytes)
                 {
-                    // The one remaining refusal, and it is the IMPORTER's own
-                    // ceiling: a package Poser could not import back is a
-                    // package there is no point saving.
+                    // Poser could not import an MCDF this large again, so
+                    // there is no point saving it.
                     notes.Add(
                         $"Actor '{actor.Name}''s appearance is " +
                         $"{Megabytes(info.Length)}, over the " +
@@ -229,9 +229,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                     continue;
                 }
 
-                // Hashed by STREAM, and the bytes stay on disk: the writer
-                // copies them straight into the container entry, so a
-                // half-gigabyte package never becomes a half-gigabyte array.
+                // Hash the file piece by piece and leave it on disk. The
+                // writer copies it straight into the scene file, so a large
+                // MCDF is never held in memory whole.
                 string digest = FileDigest.TryHashFile(source)
                     ?? throw new System.IO.IOException(
                         "the package could not be checksummed.");
@@ -277,9 +277,11 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             : $"{bytes / (1024d * 1024):N0} MB";
 
     /// <summary>
-    /// Waits for the shared MCDF operation slot, up to the supplied deadline.
-    /// Starts the child on the framework thread once free, or reports timeout
-    /// or cancellation. The child's own completion is awaited separately.
+    /// Waits, up to <paramref name="bound"/>, until no other MCDF import or
+    /// export is running, then runs <paramref name="begin"/> on the game's
+    /// main thread to start one. Returns why it could not start: the time ran
+    /// out, the work was cancelled, or the reason <paramref name="begin"/>
+    /// gave. Waiting for the started work to finish is done separately.
     /// </summary>
     private async Task<string?> BeginMcdfChild(
         Func<string?> begin, string busy, string cancelled, TimeSpan bound,
@@ -308,9 +310,10 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     }
 
     /// <summary>
-    /// Exports one appearance package through McdfTransaction. Returns null
-    /// on success or a failure reason. Delete is false while the transaction
-    /// may still be writing the destination, so cleanup must wait for it.
+    /// Exports one actor's appearance as an MCDF. Returns null on success, or
+    /// why it failed. Delete is false while the export may still be writing
+    /// the file: the caller must not delete it, because it is deleted once
+    /// the export stops.
     /// </summary>
     private async Task<(string? Refusal, bool Delete)> ExportAppearance(
         Poser.Domain.Identity.ActorId id,
@@ -336,15 +339,16 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         if (operationId is not { } admitted)
             return ("the appearance export did not publish its receipt.", true);
 
-        // The export is this save's child: on the deadline or a cancelled
-        // save it is cancelled by its own id and drained, never abandoned.
+        // The export belongs to this save. If the save runs out of time or is
+        // cancelled, the export is cancelled too and waited for, never left
+        // running on its own.
         var waited = await _mcdf.AwaitOperation(admitted, bound, cancellation);
         if (waited.Applied)
             return (null, false);
         if (!waited.Terminal)
         {
-            // Still writing past the drain bound: the destination stays the
-            // child's until it stops, and is deleted then — never under it.
+            // The export is still writing after the wait. Leave the file alone
+            // until it stops, then delete it.
             DeleteWhenSettled(destination, _mcdf.Settled(admitted));
             _log.Warning(
                 $"Scene save: the appearance export for '{name}' did not stop within " +
@@ -380,8 +384,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             }
             catch (Exception)
             {
-                // A package that cannot be stat'd contributes nothing to the
-                // estimate; the save will name it if it also cannot read it.
+                // A file whose size cannot be read adds nothing to the
+                // estimate. The save names it if it cannot read it either.
             }
         }
         return total;
@@ -389,8 +393,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
 
     public void DeleteTemporary(string path) => DeleteQuietly(path);
 
-    /// <summary>Deletes a temporary file after the MCDF child stops reading
-    /// or writing it, regardless of the child's outcome.</summary>
+    /// <summary>Deletes a temporary file once the MCDF import or export using
+    /// it has stopped, whether or not it succeeded.</summary>
     internal static void DeleteWhenSettled(string path, Task settled) =>
         _ = settled.ContinueWith(
             _ => DeleteQuietly(path),
@@ -406,8 +410,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         }
         catch (Exception)
         {
-            // A temporary export that outlives the save costs disk, not
-            // correctness; the save must not fail on a cleanup.
+            // A leftover temporary file only costs disk space. The save must
+            // not fail because a cleanup did.
         }
     }
 
@@ -421,8 +425,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         var target = await _framework.RunOnFrameworkThread(() =>
             _bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)));
         if (target is not { } id) return Outcome.Fail("The actor is no longer bound.");
-        // Already wearing it (an older file that recorded the player's
-        // collection a spawn inherits): no assignment, and no redraw.
+        // The actor already has this collection, as with an older file that
+        // saved the collection a spawned actor got from the player. Nothing to
+        // set, and no redraw.
         if (await _framework.RunOnFrameworkThread(() => _integration.ReadCollection(id)) is
             { Success: true, Value: { HasIndividualAssignment: true } current }
             && current.EffectiveId == collection)
@@ -443,10 +448,10 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         return result.Outcome;
     }
 
-    /// <summary>Finds the saved look's package: an embedded one is copied to a staged file
-    /// and checked against its recorded digest; a referenced one is looked up by content,
-    /// then by its recorded path. <c>Changed</c> names a package that differs from what the
-    /// scene recorded. The caller deletes <c>Staged</c> when done with it.</summary>
+    /// <summary>Finds the saved MCDF. A packed one is copied out to a temporary file and
+    /// checked against its saved hash. A referenced one is looked up in the library by its
+    /// content first, then at its saved path. <c>Changed</c> is a message when the MCDF
+    /// differs from what the scene saved. The caller deletes <c>Staged</c> when done.</summary>
     private async Task<(string? Source, string? Staged, string? Changed, string? Refusal)> LocatePackage(
         string scenePath, SceneActorMcdf saved, System.Threading.CancellationToken cancellation)
     {
@@ -459,11 +464,10 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             staged = SessionAppearanceFiles.NewTempPath(staged: true);
             try
             {
-                // Container entry to disk, as a STREAM. A real package is
-                // hundreds of megabytes; nothing here holds it. Hashed
-                // on the way through: the digest the document carries is
-                // what makes embedded bytes trustworthy, so bytes that do
-                // not match it are refused rather than worn.
+                // Copy the MCDF out of the scene file piece by piece, since a
+                // real one can be hundreds of megabytes, and hash it on the
+                // way. Only the saved hash shows the copy is intact, so an
+                // MCDF that does not match it is not applied.
                 var opened = _documents.OpenAppearance(scenePath, saved.PackageEntry!);
                 using var payload = opened.Stream
                     ?? throw new System.IO.IOException(opened.Error ?? "the payload could not be opened.");
@@ -495,9 +499,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         }
         else
         {
-            // BY CONTENT first; the decision itself lives in
-            // SceneAppearanceSource so the order can be stated and tested
-            // without a live client.
+            // Look the file up by its content first. SceneAppearanceSource
+            // makes that choice, so it can be tested without the game.
             var resolved = SceneAppearanceSource.Resolve(
                 saved, _mcdfHashes, System.IO.File.Exists, cancellation);
             if (resolved.Origin == SceneAppearanceOrigin.None ||
@@ -510,8 +513,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             if (resolved.Origin == SceneAppearanceOrigin.RecordedPath &&
                 saved.ContentHash.Length > 0)
             {
-                // A missing library match does not prove the file changed.
-                // Hash the fallback path and compare with the saved digest.
+                // Not finding it in the library does not mean the file
+                // changed. Hash the file at the saved path and compare.
                 var hash = FileDigest.TryHashFile(found);
                 changed = hash is null
                     ? $"The character file '{saved.FileName}' could not be " +
@@ -597,10 +600,11 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     }
 
     /// <summary>
-    /// Imports through McdfTransaction. Portable packages are streamed to a temporary
-    /// file and checked against their saved digest. Successful imports retain that
-    /// file for session history; failed imports delete it after the child stops.
-    /// References resolve by library checksum first, then by recorded path.
+    /// Applies the saved MCDF to the actor. A packed MCDF is copied to a temporary file
+    /// and checked against its saved hash. After a successful import that file is kept so
+    /// undo and redo can use it; after a failed one it is deleted once the import stops.
+    /// A referenced MCDF is looked up in the library by content first, then at its saved
+    /// path.
     /// </summary>
     public async Task<SceneMcdfOutcome> ImportMcdf(
         string scenePath,
@@ -616,9 +620,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         var historySession = ActiveSession;
         try
         {
-            // File work first, off the framework thread: a missing package is a
-            // refusal that never touches the actor, and a changed one is named
-            // before anything is applied.
+            // Find the file first, in the background. If it is missing, the
+            // actor is never touched, and a changed file is reported before
+            // anything is applied.
             var located = await LocatePackage(scenePath, saved, cancellation);
             staged = located.Staged;
             if (located.Refusal is { } missing)
@@ -637,8 +641,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 var started = _mcdf.BeginImport(id, source, preservePose: false, name: saved.FileName);
                 if (!started.Success)
                     return started.Detail ?? "The character file import was refused.";
-                // The transaction publishes a Pending receipt inside admission, so
-                // the id of THIS operation is readable the moment it is admitted.
+                // The import's id can be read as soon as it has started.
                 operationId = _mcdf.Receipt?.OperationId;
                 return null;
             }, "Another character-file operation held the slot for the whole bound.",
@@ -650,15 +653,15 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 return SceneMcdfOutcome.Refused(
                     "The character file import did not publish its receipt.");
 
-            // The import is this load's child. On the deadline or a cancelled
-            // load it is cancelled by its own id and drained: once cancelled,
-            // every later phase refuses before mutating, so a late completion
-            // rolls back instead of changing the actor.
+            // The import belongs to this load. If the load runs out of time or
+            // is cancelled, the import is cancelled too and waited for. A
+            // cancelled import changes nothing in its later steps, so one that
+            // finishes late undoes itself instead of changing the actor.
             var waited = await _mcdf.AwaitOperation(admitted, bound, cancellation);
             if (waited.Applied)
             {
-                // Committed (possibly just before a matched cancel): owned by
-                // the transaction, and history may re-import the staged package.
+                // The import finished, possibly just before it was cancelled.
+                // Keep the temporary file: undo and redo may import it again.
                 if (staged is not null &&
                     historySession is { } session && ActiveSession == session &&
                     _historyAppearanceFiles.Retain(staged, session))
@@ -667,10 +670,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             }
             if (!waited.Terminal)
             {
-                // Cancelled but still running past the drain bound: it may still
-                // read the staged package, so it is deleted when the child
-                // stops — not here, and not by a session sweep that does not
-                // know the child is alive.
+                // Cancelled but still running after the wait. It may still read
+                // the temporary file, so the file is deleted when the import
+                // stops, not now.
                 if (staged is not null)
                 {
                     DeleteWhenSettled(staged, _mcdf.Settled(admitted));

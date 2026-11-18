@@ -7,9 +7,9 @@ using Poser.Game.Entities;
 
 namespace Poser.Game.Services;
 
-/// <summary>Spawn and destroy through the journal: every creation and
-/// removal a surface issues goes through here so undo knows it. Props,
-/// overlays and world objects travel as their handle interfaces.</summary>
+/// <summary>Every spawn and removal the interface makes goes through here, so
+/// undo can reverse it. Props, overlays and world objects are passed as their
+/// handles, typed as object.</summary>
 public interface ISceneLifecycleHistory
 {
     ILight? SpawnLight(LightKind kind);

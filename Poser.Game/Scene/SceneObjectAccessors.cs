@@ -5,8 +5,8 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
-/// <summary>How each declared prop and world-object property reads and
-/// writes a live handle.</summary>
+/// <summary>How each value of a prop or world object is read from and written
+/// to the object in the game.</summary>
 public static class SceneObjectAccessors
 {
     public static EntityAccessors<PropId, IPropHandle> Props() =>
@@ -25,8 +25,8 @@ public static class SceneObjectAccessors
             .Assign(WorldObjectProperties.NightState, o => o.NightState, (o, v) => o.NightState = v)
             .Assign(WorldObjectProperties.LoopVfx, o => o.LoopVfx, (o, v) => o.LoopVfx = v)
             .Assign(WorldObjectProperties.VfxIntensity, o => o.VfxIntensity, (o, v) => o.VfxIntensity = v)
-            // The tint lands before the stain: the stain applies over the
-            // cleared tint, and undo restores the tint first the same way.
+            // The tint is set before the stain, because the stain is drawn on
+            // top of the tint. Undo sets them in the same order.
             .Assign(WorldObjectProperties.Stain, o => (o.Stain, o.Tint), (o, v) =>
             {
                 o.Tint = v.Tint;

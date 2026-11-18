@@ -2,8 +2,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Presentation;
 
-/// <summary>Every value a surface sets on a prop. A model change respawns
-/// the prop, so it is a command on <see cref="ISceneObjectControl"/>.</summary>
+/// <summary>Every value the interface sets on a prop. Changing the model spawns
+/// the prop again, so that is a command on <see cref="ISceneObjectControl"/> instead.</summary>
 public static class PropProperties
 {
     public static readonly EntityProperty<PropId, string> Name = new("Name", "Rename prop");

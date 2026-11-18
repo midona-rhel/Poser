@@ -4,8 +4,8 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Transforms;
 
 /// <summary>The result of running one undo or redo step. Attempted is false when
-/// the step never ran, for example because a drag is still in progress; such a
-/// refusal does not count toward discarding the step.</summary>
+/// the step never ran, for example because a drag is still in progress. A step that
+/// never ran does not count toward discarding it.</summary>
 public readonly record struct HistoryRunResult(GestureResult Result, bool Attempted);
 
 /// <summary>Runs undo and redo steps for the journal. This is the transform
@@ -13,7 +13,7 @@ public readonly record struct HistoryRunResult(GestureResult Result, bool Attemp
 public interface IUndoRunner
 {
     /// <summary>Retries bones that an earlier cancelled drag or undo could not
-    /// put back (usually because the actor was being redrawn). Returns null when
+    /// restore (usually because the actor was being redrawn). Returns null when
     /// nothing was waiting; otherwise that retry is this press's whole result.</summary>
     GestureResult? RecoverPending();
 
@@ -28,8 +28,8 @@ public interface IUndoRunner
 
 /// <summary>
 /// Undo and redo. Each press picks the newest step (or the newest step for the
-/// selected entity), asks its owner to put it back, and decides what happens to
-/// the step when the owner refuses. Runs on the game's main thread.
+/// selected entity), asks the code that recorded it to reverse it, and decides what
+/// happens to the step when that fails. Runs on the game's main thread.
 /// </summary>
 public sealed class UndoJournal
 {
@@ -71,8 +71,8 @@ public sealed class UndoJournal
         };
     }
 
-    /// <summary>True while an undo or redo is still putting things back. The action
-    /// gate reads it, so a second undo cannot be started meanwhile.</summary>
+    /// <summary>True while an undo or redo is still restoring things.
+    /// <see cref="Lifecycle.ActionGate"/> reads it, so a second undo cannot be started meanwhile.</summary>
     public bool IsRestoring => _restoring != null;
 
     public bool CanUndo => _history.CanUndo || HasUnrecordedChange?.Invoke() == true;
@@ -107,8 +107,9 @@ public sealed class UndoJournal
         return GiveUpOnRepeat(entry, _runner.Run(entry, true, entity));
     }
 
-    /// <summary>The last refused entry using DropOnRepeat. A second refusal
-    /// of that same entry discards it; Keep entries remain retryable.</summary>
+    /// <summary>The last step that failed and is meant to be dropped if it fails
+    /// again (DropOnRepeat). A second failure of the same step discards it. Steps
+    /// marked Keep can always be tried again.</summary>
     private HistoryEntry? _refused;
 
     private GestureResult GiveUpOnRepeat(HistoryEntry entry, HistoryRunResult run)

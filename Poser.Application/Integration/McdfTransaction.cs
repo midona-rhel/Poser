@@ -8,20 +8,21 @@ using Poser.Application.Transforms;
 namespace Poser.Application.Integration;
 
 /// <summary>
-/// Runs one MCDF import, export, reset, or release wait at a time. Each
-/// framework-thread phase verifies that its operation and session are still
-/// current before changing state. Cancellation and disposal use bounded waits;
-/// retained integration state records cleanup that must be retried. Extracted
-/// file lifetime is handled by <see cref="McdfTeardown"/>.
+/// Runs one MCDF job at a time: applying one, saving one, removing one, or waiting
+/// to delete its extracted files. Each step on the game's main thread first checks
+/// that its job and the GPose session are still the current ones. Cancelling and
+/// unloading wait only for a limited time; cleanup that could not finish is
+/// remembered and tried again later. <see cref="McdfTeardown"/> decides when
+/// extracted files are deleted.
 /// </summary>
 public sealed class McdfTransaction
 {
-    /// <summary>Maximum disposal wait for active work. A task waiting for the
-    /// framework thread may not finish while disposal blocks that thread.</summary>
+    /// <summary>How long unloading waits for a running job. A job waiting for the
+    /// game's main thread cannot finish while unloading holds that thread.</summary>
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
-    /// <summary>Maximum parent wait for cancellation and rollback, including
-    /// the redraw barrier.</summary>
+    /// <summary>How long a caller such as a scene load waits for a job to cancel
+    /// and undo its changes, including waiting for the actor's redraw.</summary>
     public static readonly TimeSpan DrainBound = TimeSpan.FromSeconds(15);
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
@@ -38,8 +39,8 @@ public sealed class McdfTransaction
     private readonly McdfImport _import;
     private readonly McdfExport _export;
 
-    /// <summary>Cancelled once at unload; never disposed, so a late reader
-    /// cannot fault on it.</summary>
+    /// <summary>Cancelled once when Poser unloads. It is never disposed, so code
+    /// that checks it late cannot crash on it.</summary>
     private readonly CancellationTokenSource _shutdown = new();
 
     public McdfTransaction(
@@ -61,33 +62,32 @@ public sealed class McdfTransaction
         _export = new McdfExport(penumbra, glamourer, files, ownership, _flight);
     }
 
-    /// <summary>Hard validation limits for incoming packages.</summary>
+    /// <summary>Limits a package must stay within to be applied.</summary>
     public McdfLimits Limits
     {
         get => _import.Limits;
         set => _import.Limits = value;
     }
 
-    /// <summary>Immutable snapshot of the single running (or last finished)
-    /// MCDF operation; null before the first one.</summary>
+    /// <summary>Progress of the running MCDF job, or of the last one that
+    /// finished; null before the first one.</summary>
     public McdfProgress? Progress => _flight.Progress;
 
-    /// <summary>Immutable receipt of the single running (or last finished)
-    /// MCDF operation, carrying the exact operation id, owner-local epoch,
-    /// session generation, and target actor generation.</summary>
+    /// <summary>The receipt of the running MCDF job, or of the last one that
+    /// finished. It records which job it was, which GPose session it ran in,
+    /// and which actor it was for.</summary>
     public OperationReceipt? Receipt => _flight.Receipt;
 
-    /// <summary>Only one MCDF import/export/teardown transaction runs at a
-    /// time.</summary>
+    /// <summary>True while an MCDF job runs. Only one runs at a time.</summary>
     public bool Busy => _flight.Busy;
 
-    /// <summary>Await the transaction already admitted by import/reset; never
-    /// start a competing redraw.</summary>
+    /// <summary>Finishes when the running job finishes. Wait on this instead of
+    /// starting a second redraw of the same actor.</summary>
     public Task CurrentCompletion => _flight.Completion;
 
-    /// <summary>Cooperative cancellation of the running operation. Publish
-    /// the request immediately; rollback can trail while unwinding provider
-    /// state and extracted files.</summary>
+    /// <summary>Asks the running job to stop. Its progress shows Cancelling at
+    /// once; undoing its changes in the other plugins and deleting its extracted
+    /// files can take longer.</summary>
     public void Cancel()
     {
         bool published = _flight.TryReplaceProgress((operation, progress) =>
@@ -103,15 +103,16 @@ public sealed class McdfTransaction
     }
 
     /// <summary>
-    /// Reads package metadata without reserving the import/export slot.
-    /// This performs blocking file reads; call it off the framework thread.
+    /// Reads a package's header without starting a job, so it works while
+    /// another job runs. It waits on the disk, so do not call it on the game's
+    /// main thread.
     /// </summary>
     public IntegrationValue<McdfSummary> ReadSummary(string path) =>
         _files.ReadSummary(path);
 
     public IntegrationValue<McdfLook> ReadLook(string path) => _files.ReadLook(path);
 
-    // ── Admission ────────────────────────────────────────────────────────
+    // ── Starting a job ───────────────────────────────────────────────────
 
     private IntegrationResult? AdmissionGate()
     {
@@ -162,13 +163,14 @@ public sealed class McdfTransaction
         return IntegrationResult.Ok();
     }
 
-    // ── A parent's wait on its own operation ─────────────────────────────
+    // ── Waiting for a job a caller started ───────────────────────────────
 
     /// <summary>
-    /// A parent's wait on ONE admitted MCDF operation. Returns at its terminal
-    /// receipt; on the deadline or the parent's cancellation it cancels and
-    /// drains that operation (<see cref="CancelAndDrain"/>) instead of
-    /// walking away from it. Never awaited on the framework thread.
+    /// Waits for one MCDF job that a caller, such as a scene load, started.
+    /// Returns when the job has finished. If the time runs out or the caller is
+    /// cancelled, it cancels the job and waits for it to stop
+    /// (<see cref="CancelAndDrain"/>) rather than leaving it running. Never wait
+    /// on this on the game's main thread.
     /// </summary>
     public async Task<McdfWait> AwaitOperation(
         Guid operationId, TimeSpan bound, CancellationToken cancellation,
@@ -193,17 +195,17 @@ public sealed class McdfTransaction
     }
 
     /// <summary>
-    /// Requests cancellation of the matching operation, then waits up to bound.
-    /// A nonterminal result means completion has not been established; callers must
-    /// retain files the operation may still use.
+    /// Asks the given job to stop, then waits up to <paramref name="bound"/>.
+    /// If the result says the job has not finished, it may still be using its
+    /// files, so the caller must keep them.
     /// </summary>
     public async Task<McdfWait> CancelAndDrain(Guid operationId, TimeSpan bound)
     {
         if (_shutdown.IsCancellationRequested)
         {
-            // Unload: the framework thread is blocked in Dispose, so a hop
-            // would never run. AbandonWaits already cancelled the child;
-            // answer at once and leave the join to Drain.
+            // Poser is unloading. The game's main thread is busy unloading, so
+            // work sent to it would never run. AbandonWaits has already
+            // cancelled the job; return at once and let Drain wait for it.
             CancelQuietly();
         }
         else
@@ -215,13 +217,14 @@ public sealed class McdfTransaction
             }
             try
             {
-                // The hop is inside the bound too, and unload cuts both short.
+                // The time limit also covers getting onto the game's main
+                // thread, and unloading cuts both short.
                 await CancelAndJoin().WaitAsync(bound, _shutdown.Token);
             }
             catch (Exception)
             {
-                // Timeout: still running, reported through the non-terminal
-                // result below. Cancelled: unload. Faulted: the child is
+                // Timed out: the job is still running, and the result below
+                // says so. Cancelled: Poser is unloading. Failed: the job has
                 // finished and its receipt says how.
             }
         }
@@ -230,20 +233,19 @@ public sealed class McdfTransaction
     }
 
     /// <summary>
-    /// Completes once the operation has stopped running: at once when its
-    /// receipt is terminal, else with the transaction's task. A caller that
-    /// got a non-terminal <see cref="McdfWait"/> deletes the files the child
-    /// reads or writes on this, never before.
+    /// Finishes once the job has stopped running, at once if it already has.
+    /// A caller whose <see cref="McdfWait"/> ended before the job finished
+    /// deletes the job's files only after this, never before.
     /// </summary>
     public Task Settled(Guid operationId) =>
         TerminalOf(operationId) is null ? CurrentCompletion : Task.CompletedTask;
 
     /// <summary>
-    /// Unload edge, called on the disposing thread before any parent is
-    /// joined. Every later <see cref="CancelAndDrain"/>, and any drain
-    /// already waiting, returns at once instead of waiting on a hop the
-    /// blocked framework thread can never run; the running child is
-    /// cancelled directly. Idempotent.
+    /// Called when Poser unloads, before it waits for callers such as a scene
+    /// load. From then on every <see cref="CancelAndDrain"/>, including one
+    /// already waiting, returns at once: the game's main thread is busy
+    /// unloading and would never run its work. The running job is cancelled
+    /// directly. Calling this twice is harmless.
     /// </summary>
     public void AbandonWaits()
     {
@@ -263,7 +265,7 @@ public sealed class McdfTransaction
         }
     }
 
-    /// <summary>Framework thread only.</summary>
+    /// <summary>Call only on the game's main thread.</summary>
     internal Task CancelIfCurrent(Guid operationId)
     {
         if (Receipt is not { State: OperationReceiptState.Pending } receipt
@@ -273,9 +275,9 @@ public sealed class McdfTransaction
         return CurrentCompletion;
     }
 
-    /// <summary>The operation's terminal result, or null while it runs. A
-    /// different receipt means a newer operation was admitted, which the
-    /// single slot allows only after this one finished.</summary>
+    /// <summary>The job's final result, or null while it runs. A receipt for a
+    /// different job means a newer one started, which can only happen after
+    /// this one finished.</summary>
     private McdfWait? TerminalOf(Guid operationId) => Receipt switch
     {
         { } receipt when receipt.OperationId != operationId =>
@@ -285,20 +287,20 @@ public sealed class McdfTransaction
         _ => null,
     };
 
-    // ── In-flight invalidation ───────────────────────────────────────────
+    // ── Stopping a running import ────────────────────────────────────────
 
     /// <summary>See <see cref="McdfImport.InvalidateInFlight"/>.</summary>
     internal void InvalidateInFlight() => _import.InvalidateInFlight();
 
     /// <summary>
-    /// Invalidates an import whose actor is absent from the new scene snapshot.
+    /// Stops an import whose actor is no longer in the scene.
     /// </summary>
     internal void InvalidateIfTargetMissing(HashSet<ActorId> present) =>
         _import.InvalidateIfTargetMissing(present);
 
     /// <summary>
-    /// Invalidates and rolls back an import targeting this actor. For other active
-    /// operations targeting it, requests cancellation.
+    /// Stops an import running on this actor and undoes it. Any other job
+    /// running on the actor is asked to cancel.
     /// </summary>
     internal void OnResetActor(ActorId actor)
     {
@@ -308,7 +310,7 @@ public sealed class McdfTransaction
             Cancel();
     }
 
-    // ── Teardown of committed ownership ──────────────────────────────────
+    // ── Removing an applied MCDF ─────────────────────────────────────────
 
     /// <summary>See <see cref="McdfTeardown.TearDown"/>.</summary>
     internal IntegrationOverrides TearDown(
@@ -323,11 +325,11 @@ public sealed class McdfTransaction
         IntegrationOverrides current, List<string> failures) =>
         _teardown.RetryPendingDirectories(current, failures);
 
-    /// <summary>Removes everything the active MCDF created and restores the
-    /// complete pre-integration external baseline. Selector-owned
-    /// components stay owned and keep their own resets. When the teardown
-    /// leaves the extracted directory owned pending a redraw, the bounded
-    /// release barrier is scheduled as the one active transaction.</summary>
+    /// <summary>Removes everything the applied MCDF added and puts the actor's
+    /// Penumbra, Glamourer and Customize+ state back to how it was before. A
+    /// collection, design or profile applied separately through Poser stays and
+    /// has its own reset. If the extracted files must wait for a redraw before
+    /// they can be deleted, that wait runs as the one MCDF job.</summary>
     public IntegrationResult Reset(ActorId actor)
     {
         if (Busy)
@@ -335,8 +337,8 @@ public sealed class McdfTransaction
         var current = _ownership.OverridesFor(actor);
         if (current.Mcdf is not { } mcdf)
         {
-            // No active MCDF — but standalone pending-directory cleanup
-            // obligations still retry from this action.
+            // No MCDF is applied, but extracted folders that could not be
+            // deleted earlier are tried again here.
             if (current.PendingDirectories.Count == 0)
                 return IntegrationResult.Ok();
             var cleanupFailures = new List<string>();
@@ -359,11 +361,11 @@ public sealed class McdfTransaction
     }
 
     /// <summary>
-    /// Starts the bounded redraw-complete barrier task for a teardown that
-    /// left the extracted directory owned pending a redraw. The barrier is
-    /// the one active MCDF transaction while it runs; when the slot is
-    /// already busy the ownership simply stays retained and a later Reset
-    /// MCDF (or the re-importing task) retries the release.
+    /// When removing an MCDF left its extracted files waiting for a redraw,
+    /// starts the job that waits for the redraw, for a limited time, and then
+    /// deletes them. That wait counts as the one running MCDF job. If another
+    /// job is already running, the files are kept, and a later Reset MCDF or
+    /// the next import tries again.
     /// </summary>
     internal void ScheduleDirectoryReleaseIfPending(ActorId actor)
     {
@@ -378,11 +380,11 @@ public sealed class McdfTransaction
     // ── Export ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Captures the exact selected actor's supported external state
-    /// synchronously (read-only — export never changes the actor), then
-    /// writes the package off-thread. Refuses while an MCDF is active on
-    /// the actor (no repackaging), while another operation runs, and when
-    /// the Glamourer state is locked by another plugin.
+    /// Reads the selected actor's Penumbra, Glamourer and Customize+ state right
+    /// away, without changing the actor, then writes the package in the
+    /// background. It refuses when the actor already has an MCDF applied, while
+    /// another job runs, and when another
+    /// plugin has locked the actor's Glamourer state.
     /// </summary>
     public IntegrationResult BeginExport(ActorId actor, string path, string description)
     {
@@ -395,8 +397,8 @@ public sealed class McdfTransaction
         if (refusal is { } capturing)
             return capturing;
 
-        // Provider data was captured before starting the worker. File inspection,
-        // filtering, and package writing run after operation progress is published.
+        // The plugin state was read above. Checking, filtering and writing the
+        // files happen in the background, after the progress is shown.
         var operation = Admit(
             actor, _files.GetFileName(path), McdfOperationKind.Export, session,
             McdfPhase.CapturingExport, out var cancellation);
@@ -404,7 +406,7 @@ public sealed class McdfTransaction
         return IntegrationResult.Ok();
     }
 
-    // ── History retention ────────────────────────────────────────────────
+    // ── Keeping files for undo ───────────────────────────────────────────
 
     internal IntegrationValue<Guid> RetainHistory(string directory) =>
         _teardown.RetainHistory(directory);
@@ -417,11 +419,12 @@ public sealed class McdfTransaction
     internal string? ReleaseHistoryResources() =>
         _teardown.ReleaseHistoryResources(_import.InFlight?.OperationDirectory?.Path);
 
-    // ── Drain ────────────────────────────────────────────────────────────
+    // ── Unloading ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Closes admission, requests cancellation, and waits up to DisposeDrainTimeout.
-    /// The worker may outlive that wait; cancellation is not proof that cleanup finished.
+    /// Stops new jobs from starting, cancels the running one, and waits up to
+    /// <see cref="DisposeDrainTimeout"/>. The job may still run after that;
+    /// cancelling it does not mean its cleanup has finished.
     /// </summary>
     internal void Drain()
     {
@@ -430,7 +433,7 @@ public sealed class McdfTransaction
     }
 }
 
-/// <summary>Why a parent stopped waiting on its MCDF child.</summary>
+/// <summary>Why a caller stopped waiting for its MCDF job.</summary>
 public enum McdfWaitEnd
 {
     Finished,
@@ -439,14 +442,14 @@ public enum McdfWaitEnd
 }
 
 /// <summary>
-/// Result of waiting for an MCDF operation. Terminal false means the wait did
-/// not establish completion, so input files must remain available. Receipt may
-/// belong to a newer operation when the requested operation has been replaced.
+/// The result of waiting for an MCDF job. When Terminal is false, the job may not
+/// have finished, so its input files must be kept. Receipt can belong to a newer
+/// job if the one waited for was replaced.
 /// </summary>
 public readonly record struct McdfWait(McdfWaitEnd End, bool Terminal, OperationReceipt? Receipt)
 {
-    /// <summary>The child committed. Possible after the deadline too: a
-    /// commit ordered before the matched cancel on the framework thread is
-    /// a real, owned result, not a late write.</summary>
+    /// <summary>The job finished and its changes stayed. This can be true even
+    /// after the time ran out: a job that finished on the game's main thread
+    /// before the cancel reached it really did apply.</summary>
     public bool Applied => Receipt is { State: OperationReceiptState.Applied };
 }

@@ -30,8 +30,8 @@ public sealed class PoseEditService(
 
     /// <summary>
     /// Clears every bone's edits without recording an undo step. Reset all calls
-    /// this after checking for a pending put-back itself, and records one step
-    /// for the pose and everything else it resets.
+    /// this. It first checks that no earlier failed edit is still being undone,
+    /// and records one undo step for the pose and everything else it resets.
     /// </summary>
     internal PoseEditResult ResetBones(IReadOnlyList<TransformTargetId> bones)
     {

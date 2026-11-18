@@ -81,8 +81,9 @@ public sealed class IdleModRuntime(
         });
         var captured = await completion.Task.WaitAsync(TimeSpan.FromSeconds(15));
         var files = new List<IdleModFile>();
-        // Snapshot once; independent native resources are then serialized on the
-        // framework in bounded race/face batches, without holding live bone wrappers.
+        // The pose is captured once. Each race and face is then built from that copy
+        // on the game's main thread, one at a time, so the game is never held up long
+        // and nothing holds on to live bones.
         foreach (int race in options.Races)
         {
             var faces = race == captured.Race ? new[] { captured.Face } : Enumerable.Range(1, 8)
@@ -129,8 +130,9 @@ public sealed class IdleModRuntime(
         var vanillaFaceLayout = _encoder.ReadSkeleton(faceSkeleton);
         var bodyLayout = _encoder.ReadSkeleton(ReadLoaded(basePath));
         var faceLayout = _encoder.ReadSkeleton(ReadLoaded(facePath));
-        // The source may be excluded from the targets and have fewer cpose slots.
-        // Its entry sample only seeds capture; each destination uses its own slot.
+        // The actor's own race may not be one of the export targets, and may have
+        // fewer /cpose slots. Its start animation only gives a reference pose to
+        // measure from; each target race uses its own slot.
         int sourceSlot = data.FileExists(BodyPath(race, slot, "start")) ? slot : 1;
         var start = new PapAnimationDocument(Read(BodyPath(race, sourceSlot, "start")));
         var neutral = new PapAnimationDocument(Read($"chara/human/{raceName}/animation/{face}/resident/face.pap"));
@@ -154,16 +156,16 @@ public sealed class IdleModRuntime(
             {
                 // The bone sets match (checked above), so every layout bone and parent is present.
                 var bone = source[layout.Bones[i]];
-                // LastRawTransform is the refreshed update-phase pose BEFORE
-                // render-phase Customize+ changes; reusing it avoids baking C+ twice.
+                // LastRawTransform is the pose before Customize+ changes it for
+                // drawing. Using it keeps Customize+ from being baked in twice.
                 Transform? parentTransform = null;
                 if (layout.Parents[i] >= 0)
                     parentTransform = source[layout.Bones[layout.Parents[i]]].LastRawTransform;
                 else if (partial != 0)
                 {
-                    // Facial partial roots are attached by the game, not independent
-                    // world/model tracks. Preserve the clip's root rather than the
-                    // already reparented head placement from the live skeleton.
+                    // The game attaches the face skeleton's root to the head itself.
+                    // Keep the root from the animation, not the live head position
+                    // the game has already applied to it.
                     tracks.Add(new(i, idle[i], idle[i]));
                     continue;
                 }
@@ -194,7 +196,8 @@ public sealed class IdleModRuntime(
                 _encoder.SampleStart(start.HavokBytes, bodyBytes, start.BodyClip.BindingIndex));
             expression = IdlePoseRetargeter.Retarget(source.FaceLayout, source.Expression, _encoder.ReadSkeleton(faceBytes),
                 _encoder.SampleStart(neutral.HavokBytes, faceBytes, neutral.Clips.Single(c => c.Name == "cfxf_base").BindingIndex));
-            // The face root is an attachment, never a second exported head rotation.
+            // The face root follows the head. Exporting a rotation for it would turn
+            // the head a second time.
             expression = expression with { Tracks = expression.Tracks.Select(t => t.BoneIndex == 0 ? t with { Posed = t.Idle } : t).ToImmutableArray() };
         }
         int entryFrames = start.DurationFrames, holdFrames = loop.DurationFrames;

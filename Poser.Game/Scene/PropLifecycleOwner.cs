@@ -8,7 +8,7 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Model, name, placement, and visibility saved when a prop is removed.</summary>
+/// <summary>The name, model, placement, visibility and tint kept when a prop is removed, so undo can bring it back.</summary>
 internal readonly record struct PropState(
     string Name,
     PropModel Model,
@@ -17,8 +17,8 @@ internal readonly record struct PropState(
     System.Numerics.Vector4 Tint);
 
 /// <summary>
-/// Operations needed to undo and redo prop creation and removal.
-/// The opaque token represents a native prop without exposing its handle here.
+/// What undo and redo need to add and remove props.
+/// A prop is passed around as a plain object, so this code never sees the game's prop type.
 /// </summary>
 internal interface IPropLifecycle
 {
@@ -75,8 +75,9 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
     }
 }
 
-/// <summary>Tracks the current prop and the state saved when it was removed.
-/// Restoring creates a new native prop and binds it to this history slot.</summary>
+/// <summary>One prop's place in undo history: the prop in the scene now, and
+/// what it was like when it was removed. Undoing the removal creates a new prop
+/// in the game and puts it in this place.</summary>
 internal sealed class PropLifecycleSlot
 {
     public object? Live;
@@ -84,8 +85,8 @@ internal sealed class PropLifecycleSlot
     public bool HasDocument;
 }
 
-/// <summary>Records prop creation, cloning, and removal in undo history,
-/// and updates the slot when restoration creates a replacement prop.</summary>
+/// <summary>Adds prop creation, cloning and removal to undo history. When undo
+/// brings a prop back as a new object, later undo steps use the new one.</summary>
 internal sealed class PropLifecycleOwner
 {
     private readonly EditHistory _history;
@@ -114,7 +115,7 @@ internal sealed class PropLifecycleOwner
     public void BindReplacement(object original, object replacement) =>
         _slots.BindReplacement(original, replacement);
 
-    /// <summary>Brio's default prop, for the row that names no model.</summary>
+    /// <summary>Adds the same default prop Brio uses, for when no model was picked.</summary>
     public object? SpawnProp() =>
         SpawnProp(new PropModel("Object", 9001, 249, 1, string.Empty));
 

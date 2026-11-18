@@ -160,8 +160,8 @@ public static class SliderWidgets
         var max = pos + size;
         float radius = ActiveTheme.Radii.Small * uiScale;
         var well = ActiveTheme.Chrome.InputWell;
-        // The fill is an OPAQUE blend of well ground and accent — the
-        // approved mockup color — never a translucent wash.
+        // The fill is a solid mix of the field's background and the accent
+        // colour, never see-through.
         var accent = ActiveTheme.Chrome.AccentFill;
         var fill = new Vector4(
             well.X + (accent.X - well.X) * 0.45f,
@@ -186,7 +186,7 @@ public static class SliderWidgets
             value, minimum, maximum, scale, logCurvature);
         if (fraction > 0f)
         {
-            // The fill clips against the well's rounded silhouette.
+            // The fill is clipped to the field's rounded shape.
             draw.PushClipRect(
                 pos, new Vector2(pos.X + size.X * fraction, max.Y), true);
             draw.AddRectFilled(
@@ -260,9 +260,9 @@ public static class SliderWidgets
         if (hit.DragBegan)
             onBegin?.Invoke();
 
-        // Alt-click restores the stated default — one gesture, one undo
-        // step, no travel. It owns the click: the drag update stands down
-        // so the value cannot jump to the pointer first.
+        // Alt-click restores the given default in one undo step, without
+        // sliding there. The Alt-click takes over the click, so the drag does
+        // not first move the value to the mouse.
         bool altResetHit = altReset is { } fallback && hit.Clicked
             && ImGui.GetIO().KeyAlt && !disabled;
         bool changed = false;
@@ -294,7 +294,7 @@ public static class SliderWidgets
     }
 
     /// <summary>
-    /// Returns the value under the pointer while the slider owns the drag.
+    /// Returns the value under the mouse while the slider is being dragged.
     /// Returns <c>NaN</c> when the track or range is empty.
     /// </summary>
     private static float SliderValueAt(

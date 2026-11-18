@@ -12,7 +12,7 @@ namespace Poser.UI.Widgets;
 
 public static class AxisWellWidgets
 {
-    /// <summary>The axis well being typed into, shared with the slider wells.</summary>
+    /// <summary>The axis field being typed into. Slider fields use the same state.</summary>
     internal sealed class AxisEditState
     {
         internal uint? Id;
@@ -90,9 +90,9 @@ public static class AxisWellWidgets
 
         // Leave wheel input to the surrounding scroll region.
 
-        // The label follows the adaptive three-digit rule when asked; the
-        // EDIT above always carries the full value — precision belongs to
-        // typing, not to the resting label.
+        // When asked, the number shown is rounded to about four digits.
+        // Typing a value above always uses the full value: full precision is
+        // for typing, not for the number shown at rest.
         DrawAxisWell(
             pos, size, axis, value, accent,
             adaptiveDisplay ? null : format,
@@ -153,7 +153,7 @@ public static class AxisWellWidgets
                 - ImGui.CalcTextSize(editText).X
                 - horizontalPaddingPx * 2f);
 
-        // Center the native editor using ImGui's line height so its text,
+        // Center ImGui's own text field using its line height so its text,
         // selection highlight, and caret move together.
         ImGui.GetWindowDrawList().AddRectFilled(
             pos + new Vector2(inputLeft, 0f),
@@ -272,9 +272,9 @@ public static class AxisWellWidgets
             : pad
                 + axisSize.X
                 + ActiveTheme.Form.AxisLabelGap * scale;
-        // The well's own mono face stays pushed for the slot geometry
-        // above; TextInBand resolves the same handle and ink-centers both
-        // runs on the well.
+        // The monospace font stays pushed for the measurements above.
+        // TextInBand uses the same font and centres both texts in the field
+        // by the letters' visible height.
         var wellStyle = new TextStyle
         {
             Size = ActiveTheme.Typography.LabelSize,

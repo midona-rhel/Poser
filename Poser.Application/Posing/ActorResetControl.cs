@@ -31,8 +31,9 @@ public sealed class ActorResetControl(
         if (!capture.Success || capture.Value is not { } before)
             return PoseEditResult.Fail(capture.Detail ?? "The actor's state could not be captured before resetting.");
 
-        // Reset all is one undo step. It keeps the animation itself, because the
-        // snapshot above does not, and the animation reset inside records no step.
+        // Reset all is one undo step. The snapshot above does not hold the
+        // animation, and the animation reset below adds no undo step of its own,
+        // so the animation is saved here separately.
         var animationBefore = animation.Capture(actor);
         var result = ResetCore(actor);
         history.Append(new JournalStep("Reset all",
@@ -82,8 +83,9 @@ public sealed class ActorResetControl(
             return (r.Success, r.Detail);
         });
         Run("IK", () => { var r = runtime.ClearIk(actor); return (r.Success, r.Detail); });
-        // Release animation/presentation after pose writes. External integration
-        // is last because restoring its collection may redraw the native model.
+        // Animation and appearance are reset after the pose. Changes from
+        // Penumbra, Glamourer and Customize+ go last, because putting back the
+        // Penumbra collection can redraw the actor.
         Run("Animation", () =>
         {
             using var noStep = animation.Untracked();

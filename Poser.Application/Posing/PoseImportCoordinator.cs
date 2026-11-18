@@ -6,7 +6,8 @@ using Poser.Documents.Files;
 
 namespace Poser.Application.Posing;
 
-/// <summary>Owns the shared import pause, supersession, settle and completion workflow.</summary>
+/// <summary>Runs a pose import: pauses the actor's animation, waits for it to settle,
+/// applies the pose, then restores the speed. A new import cancels one still running.</summary>
 public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationSession animation)
 {
     private readonly IPoseImportRuntime _runtime = runtime;
@@ -22,19 +23,20 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
 
     private object? _holder;
 
-    /// <summary>Busy includes a held slot, so a feature that waits on this
-    /// (the staged preview, lifecycle restores) waits out a scene load rather
-    /// than being refused by it.</summary>
+    /// <summary>True while a pose import runs and also while a scene loads, so
+    /// features that wait for this, such as the pose preview, wait for the
+    /// scene load to finish instead of failing.</summary>
     public bool IsImportBusy => _importArm != null || _runtime.IsPending || _holder != null;
 
-    /// <summary>Whether the holder's own import would be refused or would
-    /// supersede another right now. Framework thread.</summary>
+    /// <summary>Whether an import started now would be refused or would cancel
+    /// one already running. A scene load checks this for its own imports.
+    /// Call only from the game's main thread.</summary>
     public bool IsSlotBusy => _importArm != null || _runtime.AdmissionBusy;
 
     /// <summary>
-    /// A scene load holds the slot from its first native step to its terminal,
-    /// so that <see cref="IsImportBusy"/> stays true for the whole load.
-    /// Framework thread.
+    /// A scene load calls this when it starts changing the game and releases
+    /// it when it ends, so <see cref="IsImportBusy"/> stays true for the whole
+    /// load. Call only from the game's main thread.
     /// </summary>
     public void Hold(object holder) => _holder = holder;
 
@@ -44,9 +46,9 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
             _holder = null;
     }
 
-    /// <summary>Cancels the armed import when it is still
-    /// <paramref name="operationId"/>; its Cancelled terminal is published
-    /// through the import's own receipt callback. Framework thread.</summary>
+    /// <summary>Cancels the running import if it is still the one with this
+    /// <paramref name="operationId"/>. The import tells whoever started it that
+    /// it was cancelled. Call only from the game's main thread.</summary>
     public void Cancel(Guid operationId, string detail)
     {
         if (_importArm is not { } arm || arm.Operation.Pending.OperationId != operationId)
@@ -87,8 +89,8 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
                 };
         }
 
-        // A completed import can still own its two-tick restore. Finish that
-        // ownership before capturing the next import's speed baseline.
+        // A finished import may still be waiting two frames to restore the
+        // speed. Restore it now, before reading the speed to return to.
         _pendingSpeedRestore?.Invoke();
 
         bool freeze = options.FreezeOnImport ||
@@ -98,7 +100,7 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
         if (_animation.IsSupported(actor))
         {
             priorSpeed = _animation.OverridesFor(actor).OverallSpeed;
-            // The import's own hold is no user step.
+            // Pausing for the import is not an undo step.
             if (priorSpeed is not 0f)
                 using (_animation.Untracked())
                     pausedForImport = _animation.Pause(actor).Success;
@@ -184,8 +186,9 @@ public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationS
         _importArm = arm;
         PublishReceipt(pending);
 
-        // Brio pauses, settles for four ticks, then rewinds before applying.
-        // Restore only after our in-pass completion, with its two-tick settle delay.
+        // As in Brio: pause, wait four frames for the animation to settle,
+        // rewind it, then apply the pose. The speed comes back two frames
+        // after the import finishes.
         try
         {
             _runtime.Schedule(() =>

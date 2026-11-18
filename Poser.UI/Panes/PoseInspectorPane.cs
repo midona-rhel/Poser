@@ -78,10 +78,10 @@ public partial class PoseInspectorPane : IDisposable
     private BoneMatrixViewModel? _matrixVm;
     private string _matrixFilter = "";
     private ulong _matrixRevision;
-    // Slot identity invalidates the matrix cache.
+    // A different skeleton empties the bone list cache.
     private SkeletonId? _matrixSkeletonId;
 
-    // Commands use stable selection IDs.
+    // The selection, kept as ids for commands to use.
     private SelectionId? _primary;
     private SelectionId[] _selectionSnapshot = Array.Empty<SelectionId>();
 
@@ -97,7 +97,7 @@ public partial class PoseInspectorPane : IDisposable
     private Transform? _cleanDisplayedCurrent;
     private TransformGestureId? _cleanGesture;
 
-    // Numeric scale wells keep their edited axis fixed across Alt toggles.
+    // The scale fields keep the axis being dragged when Alt is pressed or released.
     private int _scaleGestureAxis = -1;
     private bool _scaleGestureAltApplied;
 
@@ -133,7 +133,7 @@ public partial class PoseInspectorPane : IDisposable
     private bool _openSurfaceActorIk;
     private bool _openPose = true;
 
-    // Rail and workspace disclosure states are independent.
+    // The rail and the workspace open and close their sections separately.
     private bool _openSurfaceExpression = true;
     private bool _openSurfaceGaze = true;
     private bool _openSurfacePose = true;
@@ -160,9 +160,9 @@ public partial class PoseInspectorPane : IDisposable
     private readonly SearchPicker<IkEntityChoice> _ikEntityPicker = new("ik-entity-target");
     private IReadOnlyList<IkEntityChoice> _ikEntityChoices = Array.Empty<IkEntityChoice>();
 
-    /// <summary>Bone-mode target picking: the actor whose bones the list
-    /// shows, the picker, and the choices the host builds (its categorised
-    /// bone list, shared with the camera's tracking picker).</summary>
+    /// <summary>For an IK target in Bone mode: the actor whose bones the list
+    /// shows, the picker, and the choices. The window that shows this pane builds
+    /// the choices: the same grouped bone list the camera's tracking picker uses.</summary>
     private global::Poser.Domain.Identity.ActorId? _ikBoneActor;
     private readonly SearchPicker<global::Poser.UI.BoneChoice> _ikBonePicker =
         new("ik-bone-target");
@@ -257,7 +257,8 @@ public partial class PoseInspectorPane : IDisposable
     private readonly ISelectionPlacement _placement;
     private bool _openCameraTracking = true;
 
-    // Cache transform resolution by selection and scene revision.
+    // Which transforms the selection edits, worked out again only when the
+    // selection, the scene or the groups change.
     private readonly List<SelectionId> _effectiveKey = new();
     private ulong _effectiveRevision;
     private int _effectiveGroupsRevision;
@@ -283,7 +284,7 @@ public partial class PoseInspectorPane : IDisposable
         return _effective;
     }
 
-    // Selection order determines the primary target.
+    // Compared in order, because the first selected entity is the primary one.
     private static bool SameSelection(
         List<SelectionId> cached,
         IReadOnlyList<SelectionId> current)
@@ -333,7 +334,8 @@ public partial class PoseInspectorPane : IDisposable
         return actor?.CharacterSkeleton;
     }
 
-    // Bone selection stays within its slot skeleton.
+    // The bones of the one skeleton this bone belongs to, such as the body or a
+    // weapon. Selecting children never crosses into another skeleton.
     private IReadOnlyList<BoneDescriptor>? SlotBonesOf(BoneId bone)
     {
         foreach (var actor in _scene.Snapshot.Actors)
@@ -348,7 +350,8 @@ public partial class PoseInspectorPane : IDisposable
         return null;
     }
 
-    // Each host reads the shared selection itself; Properties may not be drawn.
+    // Each window that shows this pane reads the shared selection itself,
+    // because the Properties window may not be drawn this frame.
     public void RefreshSelection()
     {
         var primary = _selection.Primary;
@@ -415,15 +418,17 @@ public partial class PoseInspectorPane : IDisposable
     private string ActorLabel(ActorId id) =>
         _scene.Snapshot.FindActor(id) is { } actor ? ActorNames.Display(_configuration, actor) : "";
 
-    /// <summary>The camera the rail ball edits; null off camera
-    /// selections.</summary>
+    /// <summary>The camera the rail's rotation ball edits; null when the
+    /// selection is not a camera.</summary>
     public Application.Presentation.CameraReading? BallCamera() =>
         IsCameraSelection ? _cameraPane.BallCamera() : null;
 
     public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
     {
-        // Rail axes are the creation-camera frame plus authored rotation;
-        // input deltas convert through the frozen frame into world space.
+        // For several entities, the rail's axes are the group's frame (taken
+        // from the camera when the group was made) turned by the group's own
+        // rotation. Changes from the rail go through that fixed frame into
+        // world space.
         if (IsMultiEntitySelection)
         {
             var (group, groupCanEdit) = ReadTransform();
@@ -468,7 +473,8 @@ public partial class PoseInspectorPane : IDisposable
         return (frame, Quaternion.Identity, canEdit);
     }
 
-    // Rotation deltas apply to the gesture baseline.
+    // The total rotation is applied to the rotation at the start of the drag,
+    // not to last frame's.
     public void RotateSelectionGizmo(Quaternion totalDelta)
     {
         UpdateGestureGuards();
@@ -477,12 +483,12 @@ public partial class PoseInspectorPane : IDisposable
         var (transform, canEdit) = ReadTransform();
         if (!canEdit) return;
         BeginTransformSession(transform, DomainOperation.Rotate);
-        // The gesture service can refuse to start, for example while another
+        // The drag can fail to start, for example while another
         // gesture is running.
         if (_dragStart is not { } start)
             return;
         var rotation = Quaternion.Normalize(totalDelta * start.Rotation);
-        _dragEuler = null; // the numeric wells re-derive from the quaternion
+        _dragEuler = null; // the number fields work their angles out from the rotation again
         ApplyTransformSession(transform with { Rotation = rotation });
     }
 
@@ -492,7 +498,7 @@ public partial class PoseInspectorPane : IDisposable
         ClearTransformSession();
     }
 
-    // ── the anonymous group: rail wiring ─────────────────────────────────
+    // ── Several entities selected: the rail ──────────────────────────────
 
     public bool IsMultiEntitySelection =>
         global::Poser.Application.Selection.EntitySelection
@@ -502,8 +508,8 @@ public partial class PoseInspectorPane : IDisposable
     private string _multiHeadWho = string.Empty;
     private string _multiHeadSub = string.Empty;
 
-    /// <summary>"N selected" and its per-kind line, minted only when the
-    /// counts change.</summary>
+    /// <summary>The "N selected" title and the line that counts each kind,
+    /// rebuilt only when the counts change.</summary>
     public (string Who, string Sub) MultiselectHeader()
     {
         Span<int> counts = stackalloc int[5];
@@ -608,9 +614,10 @@ public partial class PoseInspectorPane : IDisposable
     public void DrawRailSections(Vector2 origin, float width)
     {
         using var profile = _profiler.Scope("Rail · sections");
-        // The rail's bone rows read the finalize hook's snapshot.
+        // The rail's bone rows read the copy of the bones Poser takes each
+        // frame, once the game has finished the pose.
         _viewport.RequestBoneSnapshot();
-        // Gesture guards run even when Translation is collapsed.
+        // The drag checks run even when the Translation section is closed.
         UpdateGestureGuards();
 
         var stack = new SectionStack("pose-rail", origin, width);
@@ -814,7 +821,7 @@ public partial class PoseInspectorPane : IDisposable
                 false, bodyFlags))
         {
             var scrolledOrigin = ImGui.GetCursorScreenPos();
-            // Scrolling surfaces include the shell scrollbar gutter.
+            // Views that scroll also get the width of the window's scrollbar strip.
             float surfaceWidth = _poseView switch
             {
                 2 or 4 or 5 => width
@@ -867,7 +874,7 @@ public partial class PoseInspectorPane : IDisposable
         return DrawMatrixSurface(cursor, width, viewportHeight, s, skeleton);
     }
 
-    // The scrolling band uses the width supplied by its host.
+    // The scrolling area takes the width it is given.
     private static bool SurfaceBand(
         Vector2 cursor,
         float width,
@@ -1079,8 +1086,8 @@ public partial class PoseInspectorPane : IDisposable
         return viewportHeight;
     }
 
-    /// <summary>The parenting bar the shell's content footer keeps
-    /// between its two attach seats while Pose is the tab.</summary>
+    /// <summary>The Parenting bar at the bottom of the window, shown while
+    /// the Pose tab is open.</summary>
     internal void DrawParentingBar(
         Vector2 cursor,
         Vector2 size,
@@ -1125,8 +1132,8 @@ public partial class PoseInspectorPane : IDisposable
                         },
                         help);
                 }
-                // Named in full: a bare "Clear" in this bar read as clearing
-                // the parenting checkboxes.
+                // Named in full, because a plain "Clear" in this bar looks
+                // like it clears the parenting checkboxes.
                 bar.Button(
                     "Clear selection",
                     _workspaceSelection.Clear,
@@ -1299,7 +1306,7 @@ public partial class PoseInspectorPane : IDisposable
 
 
 
-    // Axis rows update one shared transform gesture.
+    // Every axis row edits through the same single drag.
     private void DrawTransform(FormScope form)
     {
         using var profile = _profiler.Scope("Rail · TRANSLATION");
@@ -1437,8 +1444,8 @@ public partial class PoseInspectorPane : IDisposable
                         _dragEuler = null;
                 },
                 r => r == 1 ? 0.5f : dragSpeed,
-                // Rotation is degrees: four digits say everything. The
-                // metric rows keep their thousandths.
+                // Rotation is in degrees, so one decimal is enough. Position
+                // and scale keep three decimals.
                 r => r == 1 ? "0.0" : "0.000",
                 _ => !canEdit,
                 _ => _groupTransformUnavailableReason
@@ -1447,8 +1454,8 @@ public partial class PoseInspectorPane : IDisposable
                         : canEdit ? null : "Transform is unavailable."),
                 altReset: r => r == 1 ? 0f : r == 2 ? 1f : null));
 
-        // If Alt is released between well callbacks, return immediately to
-        // the active axis from the same frozen scale baseline.
+        // If Alt is released between field updates, go straight back to
+        // scaling only the dragged axis, from the scale at the start of the drag.
         if (_cleanGesture != null && _scaleGestureAltApplied &&
             !ImGui.GetIO().KeyAlt && _scaleGestureAxis >= 0 &&
             _dragStart is { } releasedStart &&
@@ -1528,7 +1535,8 @@ public partial class PoseInspectorPane : IDisposable
 
     private bool _gazeActorUnavailableNote;
 
-    // Refusals are scoped to their target actor.
+    // A failed gaze change and the actor it was for, so its message shows only
+    // for that actor.
     private (ActorId Actor, string Text)? _gazeRefusal;
 
     private void DrawGaze(FormScope form, ActorId actor, bool wide)
@@ -1854,12 +1862,12 @@ public partial class PoseInspectorPane : IDisposable
         }
     }
 
-    /// <summary>The last bake note handed to the notices, so a failure
-    /// that lingers on the bake is reported once.</summary>
+    /// <summary>The last bake message sent to the notices, so a failure that
+    /// stays on the bake is reported only once.</summary>
     private string? _forwardedBakeNote;
 
-    /// <summary>A bake that fails after its click fails inside a later
-    /// pass; its note reaches the user as a notice, never as page text.</summary>
+    /// <summary>A bake fails a few frames after the click, when the game next
+    /// updates the pose. Its message is shown as a notice, not as text in the panel.</summary>
     private void ForwardBakeNote()
     {
         var text = _ikBake.Note?.Text;
@@ -1950,8 +1958,9 @@ public partial class PoseInspectorPane : IDisposable
         return chains;
     }
 
-    /// <summary>Bone mode's rows: whose bone, which bone (a list or a pick
-    /// in the view). The pick keeps the tip's offset from the bone.</summary>
+    /// <summary>The rows for Bone mode: which actor, and which bone, chosen from
+    /// a list or picked in the view. Picking keeps the chain end's current offset
+    /// from that bone.</summary>
     private void DrawIkBoneTarget(
         FormScope form,
         global::Poser.Domain.Identity.BoneId endpoint,
@@ -1961,8 +1970,9 @@ public partial class PoseInspectorPane : IDisposable
         var current = fabrik
             ? _ikPort.Get(ikTarget)?.Fabrik?.Handle.Bone
             : _ikPort.BoneTarget(ikTarget);
-        // The dropdown leads with Any actor: the list needs one named, the
-        // pick in the view is limited to the named one and free otherwise.
+        // The dropdown starts with Any actor. The bone list needs an actor
+        // chosen; picking in the view is limited to the chosen actor, or open
+        // to every actor with Any actor.
         var shownActor = _ikBoneActor ?? current?.Skeleton.Actor;
         int actorIndex = -1;
         var names = new string[actors.Count + 1];
@@ -2074,7 +2084,7 @@ public partial class PoseInspectorPane : IDisposable
                     _ikPort.SetFabrikTarget(endpoint, IkTargetMode.World);
                     return;
                 }
-                // The IK section is drawn only for a bone whose chain reads.
+                // The IK section is only drawn for a bone that has a chain.
                 _notices.Report(_ikPort.Set(endpoint, _ikPort.Get(endpoint)! with { TargetMode = IkTargetMode.World }),
                     "IK ▸ Detach");
             }, disabled: current == null, help: "Hold the endpoint at its current world position");
@@ -2091,9 +2101,9 @@ public partial class PoseInspectorPane : IDisposable
         }
     }
 
-    // Writes below re-read the chain so the rest of this frame shows the
-    // stored values. The bone resolved when the rail read its chain this
-    // frame, so the re-read cannot come back empty.
+    // Writes below read the chain again so the rest of this frame shows the
+    // stored values. The rail already found this bone's chain this frame, so
+    // reading it again cannot come back empty.
     private void DrawIk(FormScope form, BoneId boneId, IkChainConfig config)
     {
         var ikTarget = TransformTargetId.ForBone(boneId);
@@ -2143,8 +2153,8 @@ public partial class PoseInspectorPane : IDisposable
         bool twoJointAvailable = _ikPort.IsTwoJointAvailable(ikTarget);
         var solverItems = twoJointAvailable
             ? TwoJointSolverItems : CcdSolverItems;
-        // The list is Two Joint, CCD, FABRIK on a limb and CCD, FABRIK
-        // elsewhere; the offset folds the two into one index space.
+        // On an arm or leg the list starts with Two Joint; elsewhere it starts
+        // with CCD. The offset gives both lists the same numbering.
         int offset = twoJointAvailable ? 0 : 1;
         int solverIndex = config.Solver switch
         {
@@ -2166,8 +2176,8 @@ public partial class PoseInspectorPane : IDisposable
                     2 => Domain.Posing.IkSolver.Fabrik,
                     _ => Domain.Posing.IkSolver.Rope,
                 };
-                // The game's CCD stops at 20; a deeper FABRIK chain folds
-                // back to that when CCD is chosen.
+                // The game's CCD handles at most 20 bones, so a longer FABRIK
+                // chain is cut to 20 when CCD is chosen.
                 Apply(config with
                 {
                     Solver = solver,
@@ -2206,15 +2216,15 @@ public partial class PoseInspectorPane : IDisposable
                 config.EnforceConstraints,
                 next => Apply(config with { EnforceConstraints = next }, "Constraints"),
                 help: "Keep the limb inside its natural reach; off snaps this bone onto the target instead");
-            // On: the end turns with the limb. Stored as the hold it replaces,
-            // so saved chains keep behaving as they were saved.
+            // On means the hand or foot turns with the limb. It is stored as the
+            // opposite setting, EnforceEndRotation, so saved chains load unchanged.
             form.Switch(
                 "End rotation",
                 !config.EnforceEndRotation,
                 next => Apply(config with { EnforceEndRotation = !next }, "End rotation"),
                 help: "On: the hand or foot turns with the limb as the IK moves or swivels it. Off: it keeps its rotation");
 
-            // The IK service stores Two Joint only on arm and leg endpoints.
+            // Two Joint is only ever set on the end bone of an arm or leg.
             bool isArm = Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!.IsArm;
             var labels = isArm ? ArmJointLabels : LegJointLabels;
             var helps = isArm ? ArmJointHelp : LegJointHelp;
@@ -2334,7 +2344,7 @@ public partial class PoseInspectorPane : IDisposable
         }
     }
 
-    // ── the actor's IK: every chain at once, and the rope ───────────────
+    // ── The actor's IK: every chain at once ─────────────────────────────
 
     private void DrawActorIk(FormScope form, ActorId actorId)
     {
@@ -2700,8 +2710,9 @@ public partial class PoseInspectorPane : IDisposable
 
         _groupTransformUnavailableReason = null;
 
-        // Read the selected target even when locked; edit admission stays
-        // separate so locked group members cannot become editable here.
+        // Read the selected target even when it is locked. Whether it can be
+        // edited is decided separately, so a locked group member cannot become
+        // editable here.
         var primary = TransformTargetResolver.Resolve(_selection.Selected, _scene.Snapshot)?.Primary;
         bool canEdit = primary is not null && EffectiveSelection()?.Primary == primary;
         switch (primary)
@@ -2710,12 +2721,13 @@ public partial class PoseInspectorPane : IDisposable
                 return _viewport.GetModelTransform(collider) is { } value
                     ? (Transform.FromPose(value), canEdit) : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Actor, Actor: { } actorId }:
-                // Model overrides stabilize actor transforms during animation.
+                // Poser's placement override keeps the actor's transform steady
+                // while it animates.
                 return _viewport.GetActorTransform(actorId) is { } actorValue
                     ? (Transform.FromPose(actorValue), canEdit)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Bone, Bone: { } boneId }:
-                // Bones use model-space transform values.
+                // Bone values are relative to the actor's model, not the world.
                 return ViewportBoneModel(boneId) is { } model
                     ? (model, canEdit)
                     : (Transform.Identity, false);
@@ -2787,7 +2799,7 @@ public partial class PoseInspectorPane : IDisposable
 
     private void ApplyTransformSession(Transform displayedAfter)
     {
-        // Nothing to apply when the gesture service refused the drag.
+        // Nothing to apply when the drag could not start.
         if (_cleanGesture is not { } gesture ||
             _dragStart is not { } modelStart)
             return;
@@ -2837,8 +2849,9 @@ public partial class PoseInspectorPane : IDisposable
         }
     }
 
-    // A pinned inspector can stop drawing while a numeric/ring drag is held.
-    // Finish only this pane's gesture; never seal another host's interaction.
+    // A pinned Inspector can stop drawing while a number field or rotation ring
+    // is still being dragged. This finishes only this pane's drag, never one
+    // that another window started.
     public void PumpInteraction(bool pointerHeld)
     {
         if (_cleanGesture is not { } gesture) return;
@@ -2875,8 +2888,9 @@ public partial class PoseInspectorPane : IDisposable
         return -1;
     }
 
-    // Alt derives one factor from the frozen active component, never from a
-    // previously uniform result, so modifier toggles preserve start ratios.
+    // With Alt, one factor comes from the dragged axis's starting value, never
+    // from an earlier all-axes result, so pressing and releasing Alt keeps the
+    // starting proportions.
     private static Vector3 ScaleFromAxis(
         Vector3 frozenStart, Vector3 changed, int axis)
     {

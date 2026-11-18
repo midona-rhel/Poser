@@ -4,7 +4,7 @@ namespace Poser.Application.Settings;
 
 public sealed record ReleaseNotesEntry(Version Version, string Title, ImmutableArray<string> Highlights);
 
-/// <summary>Bundled user-facing release history, newest first.</summary>
+/// <summary>The release notes that ship with Poser, newest first.</summary>
 public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =

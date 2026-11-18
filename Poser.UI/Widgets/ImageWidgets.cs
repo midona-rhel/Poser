@@ -21,9 +21,9 @@ public static class ImageWidgets
             ImGui.Image(source.TextureHandle, size);
     }
 
-    /// <summary>A square picture that opens something — an item's icon on
-    /// its card. A well-coloured box holds the image inset; without an
-    /// image the fallback glyph stands in. Two rows tall by convention.</summary>
+    /// <summary>A square picture that opens something, such as an item's icon on
+    /// its card. The image sits inside a box with a small margin. With no image,
+    /// the fallback icon shows instead. It is usually two rows tall.</summary>
     public static bool ImageTile(
         string id, nint texture, float side, Action? onClick = null,
         TablerIcon fallback = TablerIcon.Photo, string? help = null,
@@ -74,9 +74,9 @@ public static class ImageWidgets
         return hit.Activated;
     }
 
-    /// <summary>A box of one colour that opens something — a dye's row,
-    /// the colour being the value. A label reads in contrast on it. No
-    /// colour paints the empty well.</summary>
+    /// <summary>A box filled with one colour that opens something, such as a
+    /// dye's row. Its label is drawn in a colour that stands out against the fill.
+    /// With no colour, the box shows as an empty field.</summary>
     public static bool ColorTile(
         string id, Vector4? color, float width, float height,
         Action? onClick = null, string? label = null, string? help = null,
@@ -122,7 +122,7 @@ public static class ImageWidgets
         return hit.Activated;
     }
 
-    /// <summary>Direct overload retained for existing callers that use Dalamud textures.</summary>
+    /// <summary>Draws a Dalamud texture at the given size.</summary>
     public static void Image(IDalamudTextureWrap texture, Vector2 size, Vector4? tint = null)
     {
         if (texture == null) return;

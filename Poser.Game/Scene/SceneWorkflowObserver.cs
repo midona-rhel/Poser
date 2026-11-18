@@ -25,8 +25,9 @@ internal sealed class SceneWorkflowObserver(IPluginLog log, IPoseLibraryService 
             $"{prefix}: {state}: {progress.FileName}: {detail}";
         if (state == OperationReceiptState.Applied)
             log.Information(terminal);
-        // A scene that loaded but left some parts out (map objects on another map, a
-        // missing file) is kept and names each part below: a warning, not an error.
+        // A scene that loaded with some parts left out (objects from another map,
+        // a missing file) is still kept, so it is a warning, not an error. Each
+        // part left out is logged below.
         else if (state is OperationReceiptState.Cancelled
                  or OperationReceiptState.RolledBack
                  || entities.Any(entity => entity.Restored))

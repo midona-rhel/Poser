@@ -30,7 +30,7 @@ public class ConfigurationService : IDisposable
         LoadFailure = loaded.Failure;
         MigrateConfig();
 
-        // Seeded in memory only; it persists with the next save the user causes.
+        // Filled in memory only. It is written to disk with the next save.
         Config.Library.EnsureDefaults();
 
         // Saved at once: an id that changed between sessions would make your own
@@ -44,17 +44,16 @@ public class ConfigurationService : IDisposable
     }
 
     /// <summary>
-    /// The stored config walks UP to <see cref="PoserConfiguration.LatestVersion"/>
-    /// one step at a time, so a config that skipped a release still receives
-    /// every step in order.
+    /// Brings saved settings from an older Poser up to
+    /// <see cref="PoserConfiguration.LatestVersion"/>, one version at a time, so
+    /// settings that skipped a release still get every step in order.
     ///
-    /// <para>Version 2: the overlay color redesign replaces the old defaults,
-    /// so stored overlay colors reset once to the new palette (this also
-    /// re-enables accent-following for selected/hovered). Sizes, opacity, and
-    /// every non-color setting keep their stored values.</para>
+    /// <para>Version 2: the bone colors reset once to the current defaults,
+    /// which also makes selected and hovered bones follow the accent color.
+    /// Sizes, opacity and every other setting keep their saved values.</para>
     ///
-    /// <para>Version 3: the single keybind per action becomes a primary and a
-    /// secondary slot; the stored chord becomes the primary.</para>
+    /// <para>Version 3: each action gets a first and a second key binding. The
+    /// saved key binding becomes the first.</para>
     /// </summary>
     private void MigrateConfig()
     {
@@ -76,7 +75,7 @@ public class ConfigurationService : IDisposable
 
         if (Config.Version < 3)
             Config.UI.MigrateKeybindsToSlots();
-        // Upgrade the former default dot radius while preserving custom values.
+        // A bone dot size still at the old default takes the new default. A size someone chose stays.
         if (Config.Version < 4
             && Math.Abs(Config.Skeleton.BoneDotRadius - 3.4f) < 0.01f)
             Config.Skeleton.BoneDotRadius = new SkeletonConfiguration().BoneDotRadius;
@@ -139,14 +138,15 @@ public class ConfigurationService : IDisposable
 
     #region Anonymous Mode
 
-    // Lineage-keyed anonymous masks: stable per logical actor for one
-    // session, so the same masked actor keeps the same masked name.
+    // The random names for anonymous mode, one per actor for the whole GPose
+    // session, so an actor keeps the same random name. They are filed by the
+    // actor's lasting id, which stays the same when the actor is redrawn.
     private readonly Dictionary<Guid, string> _lineageAnonymousNames = new();
 
     /// <summary>
-    /// Stable-id display name: the user nickname wins, then the anonymous
-    /// mask when <c>Display.AnonymousMode</c> is enabled, then the raw scene
-    /// name. The caller supplies the raw name from the scene snapshot.
+    /// The name to show for an actor. A nickname given in Poser comes first,
+    /// then a random name when <c>Display.AnonymousMode</c> is on, then the
+    /// actor's name in the scene, which the caller passes in.
     /// </summary>
     public string GetDisplayName(Guid actorLineage, string rawName)
     {
@@ -164,9 +164,9 @@ public class ConfigurationService : IDisposable
         return anonName;
     }
 
-    /// <summary>Strips the object-index suffix a scene name carries
-    /// ("Name (201)"). The ONE place the rule lives, so every surface shows
-    /// the same name.</summary>
+    /// <summary>Removes the object number at the end of a scene name
+    /// ("Name (201)"). Only this method does it, so the name looks the same
+    /// everywhere.</summary>
     public static string StripObjectIndex(string rawName)
     {
         int open = rawName.LastIndexOf('(');
@@ -178,8 +178,7 @@ public class ConfigurationService : IDisposable
         return rawName.AsSpan(0, open).TrimEnd().ToString();
     }
 
-    // Lineage-keyed nicknames: the stable-id UI keys display names by the
-    // actor's logical lineage Guid instead of a legacy entity id.
+    // Nicknames, filed by the actor's lasting id.
     private readonly Dictionary<Guid, string> _lineageNicknames = new();
 
     /// <summary>Goes up every time an actor is renamed or the names are
@@ -200,8 +199,9 @@ public class ConfigurationService : IDisposable
 
     public void ResetSessionNames()
     {
-        // Lineages can be reused by unrelated native actors in the next GPose.
-        // Keep them during same-session disappearance/undo, not across sessions.
+        // In the next GPose session, a lasting id can belong to a different
+        // actor. So names survive an actor leaving or being undone within one
+        // session, but not a new session.
         _lineageNicknames.Clear();
         _lineageAnonymousNames.Clear();
         NamesRevision++;

@@ -29,7 +29,7 @@ public enum McdfPhase
     Completed,
     Failed,
     Cancelled,
-    // Appended so Debug telemetry keeps every existing serialized enum value.
+    // Kept last so the values above keep their numbers, which debug output saves.
     Cancelling,
 }
 
@@ -68,8 +68,9 @@ public readonly record struct McdfProgressStep(
     McdfPhase Phase, int FilesDone, int FilesTotal, long BytesDone, long BytesTotal);
 
 /// <summary>
-/// Extraction folder and ownership marker used to check that cleanup deletes
-/// the folder created for this operation, rather than an unrelated replacement.
+/// The folder a package is extracted into, with a marker showing this operation
+/// made it. Cleanup checks the marker so it never deletes a different folder that
+/// took its place.
 /// </summary>
 public sealed record McdfOperationDirectory(
     string Path,
@@ -98,14 +99,14 @@ public sealed record McdfPackage(
         || ManipulationData.Length > 0;
 }
 
-/// <summary>
-/// Header information for the Library preview. Reading it does not extract files
-/// or apply appearance to an actor. MCDF headers do not contain a thumbnail.
-/// </summary>
 /// <summary>The look a package holds: its Glamourer settings and its Customize+ body,
 /// each as the package stores it (base64). Either can be empty.</summary>
 public sealed record McdfLook(string GlamourerData, string CustomizePlusData);
 
+/// <summary>
+/// Header information for the Library preview. Reading it does not extract files
+/// or apply appearance to an actor. MCDF headers do not contain a thumbnail.
+/// </summary>
 public sealed record McdfSummary(
     string FileName,
     string Description,
@@ -117,9 +118,9 @@ public sealed record McdfSummary(
     bool HasManipulations);
 
 /// <summary>
-/// File path, size, MCDF payload hash and optional filesystem identity captured
-/// when the export checks its files. The writer puts the hash in the package
-/// header and checks the path, size and identity again before copying the file.
+/// A file's path, size, content hash and, where the file system has one, its own id
+/// for the file, taken when the export checks its files. The writer puts the hash in
+/// the package header and checks the path, size and id again before copying the file.
 /// </summary>
 public sealed record McdfExportSourceObservation
 {

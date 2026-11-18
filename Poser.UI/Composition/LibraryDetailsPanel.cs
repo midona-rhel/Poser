@@ -25,7 +25,7 @@ using static Poser.UI.Widgets.Themes;
 
 namespace Poser.UI;
 
-/// <summary>The info rail and the objects rail beside the grid.</summary>
+/// <summary>The panel beside the library grid that shows the selected file's details.</summary>
 internal sealed class LibraryDetailsPanel(EnvironmentControl _environment,
     Poser.Application.Settings.ConfigurationService _configuration)
 {
@@ -99,8 +99,8 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment,
         float inset = theme.Page.Inset * scale;
         var cursor = origin + new Vector2(inset, inset);
 
-        // The entry's name leads, then one plain "Properties" heading — no
-        // separators anywhere on this rail.
+        // The entry's name comes first, then a plain "Properties" heading,
+        // with no dividers anywhere in this panel.
         TextAt(cursor, tile.Label, new TextStyle
         {
             Size = theme.Typography.SurfaceTitleSize,
@@ -174,7 +174,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment,
                             AppendContentsRows(metadata, _detailsRows);
                         if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Environment)
                         {
-                            // Older scenes can resolve the saved weather ID through the game data.
+                            // Older scenes saved only the weather's id, so look its name up in the game data.
                             string weather = metadata.WeatherName.Length > 0
                                 ? metadata.WeatherName
                                 : metadata.WeatherId != 0 &&
@@ -236,8 +236,8 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment,
             .ToString("0.#", CultureInfo.InvariantCulture) + " MB"));
     }
 
-    /// <summary>The entry's contents as one row per kind — "Actors 2",
-    /// "Lights 3" — never one truncating line.</summary>
+    /// <summary>The entry's contents as one row per kind ("Actors 2",
+    /// "Lights 3"), rather than one line that gets cut off.</summary>
     private static void AppendContentsRows(
         SceneMetadataReadOutcome metadata,
         List<(string Label, string Value)> rows)

@@ -72,8 +72,8 @@ public sealed class SceneObjectControl : ISceneObjectControl
     public Outcome Update<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, Func<T, T> change) =>
         _objects.Update(id, property, change);
 
-    // A dye respawns the prop in place; its undo respawns the previous model.
-    // Only a landed respawn is a step.
+    // Changing a prop's dye respawns it in place, and undo respawns the previous
+    // model. An undo step is recorded only if the respawn works.
     public Outcome SetModel(PropId id, PropModel model)
     {
         if (Resolve(id) is not { } p) return new(false, PropUnavailable);
@@ -96,9 +96,9 @@ public sealed class SceneObjectControl : ISceneObjectControl
     }
 
     /// <summary>
-    /// Replaces a spawned object's model. A successful path change records one
-    /// history step; undo and redo wait for replacement loading to finish.
-    /// Refused or cancelled replacements add no entry.
+    /// Replaces a spawned object's model. A change that works is one undo step,
+    /// and undo and redo wait for the model to finish loading. A replacement
+    /// that fails or is cancelled records nothing.
     /// </summary>
     public async Task<Outcome> Respawn(WorldObjectId id, string path)
     {
@@ -114,8 +114,8 @@ public sealed class SceneObjectControl : ISceneObjectControl
             if (!string.Equals(before, after, StringComparison.Ordinal))
                 _history.Append(ModelStep(id, o, before, after));
         }
-        // The replacement completes off the framework thread; history is
-        // framework-thread state.
+        // The new model can finish loading on another thread. Undo history is
+        // only changed on the game's main thread, so the step is recorded there.
         if (_framework is null || _framework.IsInFrameworkUpdateThread) Record();
         else await _framework.RunOnFrameworkThread(Record);
         return result;
