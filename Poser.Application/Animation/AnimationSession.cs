@@ -11,9 +11,10 @@ using Poser.Application.World;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// Coordinates animation selection, playback, reset, and history for each actor.
-/// The specialized sessions share one store of selections and restore values.
-/// Scene physics is tracked separately because it affects all actors.
+/// Handles each actor's animations: which one is chosen for each layer, playing,
+/// resetting, and undo. The helper classes for base, speed, stance, scrubbing and
+/// expression share one store of choices and of values to restore. Scene physics
+/// is kept apart because it affects every actor.
 /// </summary>
 public sealed class AnimationSession : IAnimationPlayback
 {
@@ -34,7 +35,7 @@ public sealed class AnimationSession : IAnimationPlayback
         if (enabled) _advancedActors.Add(actor);
         else _advancedActors.Remove(actor);
     }
-    /// <summary>Tracks the scene physics hold.</summary>
+    /// <summary>Whether the scene asked for physics to be frozen.</summary>
     private bool _sceneOwnsPhysics;
 
     /// <summary>
@@ -111,7 +112,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     public AnimationOverrides OverridesFor(ActorId actor) => _store.For(actor);
 
-    // ── Tracked actions (each a step) ───────────────────────────────────
+    // ── Actions that each make one undo step ────────────────────────────
 
     public Outcome ReplayEndedForScrub(ActorId actor, AnimationSlot slot) =>
         Tracked(actor, $"Scrub {AnimationSlots.DisplayName(slot)}", () => ReplayEndedForScrubUntracked(actor, slot));
@@ -183,7 +184,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>Installed by AnimationSteps: records one command as one undo step.</summary>
     internal Func<ActorId, string, Func<Outcome>, Outcome>? Journal { get; set; }
-    /// <summary>Set by the history owner: runs several actors' actions as one step.</summary>
+    /// <summary>Installed by AnimationSteps: runs several actors' actions as one step.</summary>
     internal Action<Action>? Group { get; set; }
     /// <summary>How many commands are running, one inside another.</summary>
     private int _commandDepth;
@@ -298,7 +299,7 @@ public sealed class AnimationSession : IAnimationPlayback
             ushort native = reading.TimelineFor(slot);
             if (!paused || native == 0 || _scrub.FindSlotControl(actor, slot) is not { } control)
                 return layer;
-            // Scene capture currently requests repeat for every paused game layer.
+            // Scene capture asks for repeat on every paused game layer.
             return new LayerSnapshot(native, true, true, layer.Speed, layer.Weight, control.Time, null);
         }
         return snapshot with
@@ -337,7 +338,7 @@ public sealed class AnimationSession : IAnimationPlayback
         if (now.OverallSpeed is not null)
             Note(ClearSpeed(actor), "speed");
         // The stance first: it resets the Full body layer and plays its own
-        // animation, so a layer put back before it would be lost.
+        // animation, so a layer restored before it would be lost.
         if (now.Stance != target.Stance || now.Pose != target.Pose)
         {
             Note(SetStance(actor, target.Stance, target.Pose), "stance");
@@ -450,13 +451,13 @@ public sealed class AnimationSession : IAnimationPlayback
     public Outcome ChooseSlot(ActorId actor, AnimationSlot slot, ushort timeline) =>
         _base.ChooseSlot(actor, slot, timeline);
 
-    /// <summary>Sets repeat intent for one slot.</summary>
+    /// <summary>Sets whether one layer repeats.</summary>
     private Outcome SetSlotLoopUntracked(
         ActorId actor, AnimationSlot slot, ushort timeline, bool on) =>
         _base.SetSlotLoop(actor, slot, timeline, on);
 
-    /// <summary>False when the client's stance-transition functions were
-    /// not found; the stance controls render disabled.</summary>
+    /// <summary>False when the game functions that change stance were not
+    /// found; the stance controls are then disabled.</summary>
     public bool SupportsStance => _stance.SupportsStance;
 
     /// <summary>The stance's pose count from the game's pose table.</summary>
@@ -481,7 +482,7 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     /// <summary>
-    /// Reports whether playback state contains a layer without a pause override.
+    /// True when the actor has a layer that Poser has not paused.
     /// </summary>
     public bool AnyPlaying(ActorId actor) => _speed.AnyPlaying(actor);
 
@@ -510,7 +511,8 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>
     /// Resumes this layer, restarting it if it ended. When the whole actor was
-    /// paused, other live layers receive individual pause overrides first.
+    /// paused, the other playing layers are first paused one by one, so only
+    /// this layer resumes.
     /// </summary>
     private Outcome ResumeSlotUntracked(ActorId actor, AnimationSlot slot)
     {
@@ -532,7 +534,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>
     /// Applies the selected animation if it is not already playing on this layer.
-    /// When resume is false, existing pause overrides remain. Only the Base layer
+    /// When resume is false, layers Poser paused stay paused. Only the Base layer
     /// can use an emote's introduction through playFromStart.
     /// </summary>
     public Outcome PlaySelectedSlot(
@@ -702,7 +704,7 @@ public sealed class AnimationSession : IAnimationPlayback
         };
     }
 
-    // ── Physics (one global patch, held by the scene) ─────────────────
+    // ── Physics (one game-wide setting, held by the scene) ────────────
 
     /// <summary>
     /// Changes global physics when the requested scene flag changes. Records the
@@ -724,9 +726,9 @@ public sealed class AnimationSession : IAnimationPlayback
         return Outcome.Ok();
     }
 
-    /// <summary>Whether the scene holds the patch — distinct from
-    /// <see cref="IsPhysicsFrozen"/>, which is the global state however it
-    /// came to be true.</summary>
+    /// <summary>Whether the scene asked for physics to be frozen.
+    /// <see cref="IsPhysicsFrozen"/> is different: it says whether physics is
+    /// frozen at all, whatever froze it.</summary>
     public bool SceneOwnsPhysics => _sceneOwnsPhysics;
 
     // ── Scrubbing ─────────────────────────────────────────────────────
@@ -748,7 +750,7 @@ public sealed class AnimationSession : IAnimationPlayback
     private string ScrubDescription() =>
         $"Scrub {(_scrubSlot is { } s ? AnimationSlots.DisplayName(s) : "animation")}";
 
-    /// <summary>Writes a frame clamped to the duration captured at Begin.</summary>
+    /// <summary>Moves to a frame, kept within the length read when the drag began.</summary>
     private Outcome UpdateScrubUntracked(ActorId actor, float time, Guid owner)
     {
         var result = _scrub.UpdateScrub(actor, time, owner);
@@ -759,7 +761,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     // The frame a held layer was last asked to seek to, in seconds. The seek lands
     // on the next tick, so a snapshot taken right after the request reads the
-    // target, not the old frame. An outer tracked non-scrub action clears them.
+    // target, not the old frame. Any other action that makes an undo step clears them.
     private readonly Dictionary<(ActorId Actor, AnimationSlot Slot), float> _seekTargets = new();
 
     /// <summary>
@@ -778,9 +780,9 @@ public sealed class AnimationSession : IAnimationPlayback
 
     // ── Held expression ──────────────────────────────────────────────────
 
-    /// <summary>Lets go of the held expression and puts back the face that played
-    /// before Poser changed it. The face capture's own step: not checked against
-    /// the capture and not an undo step.</summary>
+    /// <summary>Lets go of the held expression and restores the face that played
+    /// before Poser changed it. The face capture uses this itself, so it is not
+    /// blocked while a capture runs and makes no undo step.</summary>
     public Outcome RestoreFacialLayer(ActorId actor) => _expression.ReleaseExpression(actor);
 
     /// <summary>The expression currently held on the face, if any.</summary>
@@ -808,15 +810,15 @@ public sealed class AnimationSession : IAnimationPlayback
     {
         if (!_store.TryGet(actor, out var owned))
         {
-            // Nothing is owned for this actor. Physics is not among the
-            // things that could be: the freeze is held by the scene, not by
-            // any actor, so no actor's reset can retire it.
+            // Poser holds nothing for this actor. Physics is never held per
+            // actor: the scene holds the freeze, so resetting an actor cannot
+            // end it.
             _timeline.ClearLoops(actor);
             return Outcome.Ok();
         }
 
-        // If the game port cannot find a supported, readable actor, discard its
-        // saved overrides. GPose cleanup may already have removed the actor.
+        // If the game side cannot find a supported, readable actor, discard its
+        // saved values. Leaving GPose may already have removed the actor.
         if (!_timeline.IsSupported(actor) && _timeline.Read(actor) == null)
         {
             _timeline.ClearLoops(actor);
@@ -825,10 +827,10 @@ public sealed class AnimationSession : IAnimationPlayback
             return Outcome.Ok();
         }
 
-        // The actor was found just above. Releases that only fail for a missing
-        // actor (loops, speeds, weights, lips, position lock) are not checked.
-        // A restore that can fail for another reason is released only when it
-        // succeeded; what fails stays owned, so a later Reset retries it.
+        // The actor was found just above. Releases that can only fail when the
+        // actor is missing (loops, speeds, weights, lips, position lock) are not
+        // checked. Anything else is forgotten only when its restore worked; what
+        // fails stays recorded, so a later Reset tries it again.
         var failures = new List<string>();
         var remaining = owned;
 
@@ -861,7 +863,7 @@ public sealed class AnimationSession : IAnimationPlayback
             remaining = remaining with { OverallSpeed = null };
         }
 
-        // Restore captured non-base timelines.
+        // Restore the saved layers other than Base.
         if (owned.SlotCaptures.Count > 0)
         {
             var liveRead = _timeline.Read(actor);
@@ -872,20 +874,21 @@ public sealed class AnimationSession : IAnimationPlayback
             bool cancelled = true;
             if (cancelNeeded)
             {
-                // Only Poser's layers on slots that were empty go: the slot cancel
-                // takes just its own layer. A container cancel took every layer,
-                // and the game's own were then replayed from frame 0.
+                // Only Poser's layers on slots that were empty are removed:
+                // cancelling a slot removes just its own layer. Cancelling the
+                // whole animation container would remove every layer, and the
+                // game's own would then restart from frame 0.
                 foreach (var (slot, incoming) in owned.SlotCaptures)
                     if (incoming == 0 && liveRead?.TimelineFor(slot) is > 0)
                         cancelled &= Try(_timeline.ClearSlotTimeline(actor, slot));
             }
 
-            // A failed cancellation processes no slot: replaying would
-            // restart layers over a state the cancel never cleared, and
-            // releasing any entry would shrink the plan the retry still
-            // needs. The complete plan is preserved unchanged, the base
-            // restore below still runs for this attempt, and the cancel
-            // failure returns with the result.
+            // If cancelling fails, no layer is touched. Replaying would
+            // restart layers on top of a state the cancel never cleared, and
+            // forgetting any entry would lose part of what the retry still
+            // needs. Everything is kept as it is, the Base restore below
+            // still runs this time, and the cancel failure is returned with
+            // the result.
             if (cancelled)
             {
                 foreach (var (slot, incoming) in slots.ToList())
@@ -956,8 +959,8 @@ public sealed class AnimationSession : IAnimationPlayback
                 Lips = null,
             };
         }
-        // A staged selection with no readable restore point made no native
-        // write, so reset can simply forget that intent.
+        // A layer that was chosen but has no saved value to restore never
+        // changed anything in the game, so reset can simply forget the choice.
         if (remaining.BaseCapture == null && remaining.BaseTimeline == null ||
             remaining.LipsCapture == null && remaining.Lips == null)
         {
@@ -1020,8 +1023,8 @@ public sealed class AnimationSession : IAnimationPlayback
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
         _advancedActors.RemoveWhere(actor => !present.Contains(actor));
         _scrub.Forget(present);
-        // Physics is deliberately absent here: the freeze is held by the
-        // scene, which cannot depart, so no actor leaving can retire it.
+        // Physics is left out on purpose: the scene holds the freeze, and the
+        // scene cannot leave, so no actor leaving can end it.
         var departed = _store.Actors().Where(id => !present.Contains(id)).ToList();
         // An actor the game no longer has is forgotten; a restore that fails stays
         // recorded for a later reset.

@@ -12,14 +12,13 @@ namespace Poser.Application.Scene;
 /// <list type="bullet">
 /// <item>An actor that had an MCDF applied when the scene was saved gets that MCDF
 /// again, and its appearance can't be edited.</item>
-/// <item>Every other actor gets its scene appearance put back and stays editable, on the
-/// install that saved the scene.</item>
+/// <item>Every other actor gets its scene appearance applied again and stays editable, on
+/// the install that saved the scene.</item>
 /// <item>A scene saved by another install (one someone shared with you) has none of that
 /// install's mods, so its scene appearances load as MCDFs, locked.</item>
 /// </list>
 ///
-/// Scenes saved before this rule did not record who saved them or which saved looks
-/// were MCDFs. They count as yours; see <see cref="SceneFile.HasLoadedMcdf"/> for how
+/// Older scene files do not record who saved them or which saved looks were MCDFs. They count as yours; see <see cref="SceneFile.HasLoadedMcdf"/> for how
 /// their MCDFs are told apart.
 /// </summary>
 public static class SceneAppearanceRule

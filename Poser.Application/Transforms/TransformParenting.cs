@@ -23,7 +23,9 @@ public interface ITransformParenting
     Outcome Attach(SelectionId child, SelectionId? target);
 }
 
-/// <summary>One relationship owner; native following and UI do not own offsets or history.</summary>
+/// <summary>The one place that keeps parent links: which entity follows which, and at
+/// what offset. Links and their undo steps change only here; the interface and the
+/// code that moves children each frame just read them.</summary>
 public sealed class TransformParenting(IParentingRuntime runtime, EditHistory history,
     ValueJournal journal) : ITransformParenting
 {
@@ -52,7 +54,8 @@ public sealed class TransformParenting(IParentingRuntime runtime, EditHistory hi
         }
         var before = Read(child);
         Set(child, link);
-        // Keyed by this owner, not the child: relationship changes stay global.
+        // The key starts with this object, not the child, so the step goes in the
+        // global undo list and not in the child's own.
         journal.Record((this, child), target == null ? "Detach entity" : "Parent entity", before, link,
             ValueWrites.Unchecked<TransformParent?>(value => Set(history.ResolveLifecycleEntity(child), Rebind(value))),
             () => runtime.Read(history.ResolveLifecycleEntity(child)) != null);
@@ -66,9 +69,9 @@ public sealed class TransformParenting(IParentingRuntime runtime, EditHistory hi
         return true;
     }
 
-    /// <summary>Drops a link <see cref="Import"/> made; the importer's own
-    /// rollback owns it, so no history is recorded. Follows the child's
-    /// lifecycle replacement, since undo/redo may have rebound it.</summary>
+    /// <summary>Removes a link <see cref="Import"/> made, with no undo step: a failed
+    /// import uses this to clean up after itself. It also removes the link under the
+    /// child's new id, in case undo or redo brought the child back.</summary>
     public void Remove(SelectionId child)
     {
         _links.Remove(child);
@@ -130,7 +133,8 @@ public sealed class TransformParenting(IParentingRuntime runtime, EditHistory hi
         try
         {
             runtime.BeginRead();
-            // Only the history owner can redirect a removed/restored entity. Ordinary IDs never do.
+            // An entity that undo removed and brought back has a new id. Undo history
+            // maps the old id to the new one; every other id maps to itself.
             foreach (var (old, link) in _links.ToArray())
             {
                 var child = history.ResolveLifecycleEntity(old);

@@ -22,11 +22,12 @@ namespace Poser.UI.Widgets;
 
 public static class PageForm
 {
-    /// <summary>Section disclosure: the host's remembered preferences and the open host's snapshot.</summary>
+    /// <summary>Which sections are open: the choices saved in the settings, and the copy
+    /// the open window took of them.</summary>
     internal sealed class SectionState
     {
-        // The host supplies persisted UI preferences, independent of ImGui's
-        // window/actor ID stack. The renderer remains usable without a config host.
+        // The window passes in the saved open-or-closed choices, keyed by section
+        // name rather than by ImGui ids. Forms still work when none are passed in.
         internal Func<string, bool>? ReadSectionOpen { get; set; }
         internal Action<string, bool>? WriteSectionOpen { get; set; }
         internal Dictionary<string, bool>? Disclosure;
@@ -34,8 +35,9 @@ public static class PageForm
 
     private static SectionState State => UiContext.Current.Sections;
 
-    // A host snapshots the saved defaults when it opens. Writes still remember
-    // the preference for future hosts, but cannot collapse an existing sibling.
+    // A window copies the saved choices when it opens. Opening or closing a
+    // section still saves the choice for windows opened later, but does not
+    // close the same section in another window that is already open.
     internal static SectionDisclosureScope UseSectionDisclosure(Dictionary<string, bool>? state) => new(state);
 
     internal readonly struct SectionDisclosureScope : IDisposable
@@ -48,19 +50,19 @@ public static class PageForm
         }
         public void Dispose() => State.Disclosure = _previous;
     }
-    /// <summary>Logical section-rule thickness.</summary>
+    /// <summary>Thickness of the line between sections, before scaling.</summary>
     private const float SectionRuleThickness = 1f;
 
-    /// <summary>Disclosure slot width.</summary>
+    /// <summary>Width of the space for a section's open/close arrow.</summary>
     private const float SectionChevronSlot = 24f;
 
-    /// <summary>Collapsed disclosure opacity.</summary>
+    /// <summary>Opacity of the arrow while the section is closed.</summary>
     private const float SectionChevronOpacity = 0.3f;
 
-    /// <summary>Expanded disclosure opacity.</summary>
+    /// <summary>Opacity of the arrow while the section is open.</summary>
     private const float SectionChevronExpandedOpacity = 0f;
 
-    /// <summary>Hovered disclosure opacity.</summary>
+    /// <summary>Opacity of the arrow while the header is hovered.</summary>
     private const float SectionChevronHoverOpacity = 1f;
 
     private const int SectionChevronChannel = 0;
@@ -71,21 +73,24 @@ public static class PageForm
     internal static Vector4 FormSeparatorColor => ActiveTheme.FormSeparator;
 
     /// <summary>
-    /// Minimum logical page width for paired rows with the default label width.
+    /// The narrowest page, before scaling, that fits two rows side by side with the
+    /// default label width.
     /// </summary>
     private const float TwoTrackMinimum = 480f;
 
-    /// <param name="labelColumnWidth">Optional logical label-column width.</param>
-    /// <param name="responsive">Fill the host width and wrap cell groups
-    /// at the shared minimum track width. The default retains the readable cap.</param>
-    /// <param name="halfRows">Currently unused. Sections request paired rows
-    /// through FormScope.PairRows.</param>
+    /// <param name="labelColumnWidth">Width of the label column, before scaling.</param>
+    /// <param name="responsive">Fill the whole width given and wrap rows of cells
+    /// at the shared minimum column width. Without it, the page stops at its
+    /// maximum readable width.</param>
+    /// <param name="halfRows">Not used. Sections ask for paired rows through
+    /// FormScope.PairRows.</param>
     public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content,
         float? labelColumnWidth = null, bool halfRows = false, bool responsive = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float inset = ActiveTheme.Page.Inset * scale;
-        // The host scroll region supplies the trailing gutter, so add only a left inset.
+        // The scrolling area already leaves space on the right, so only the left
+        // margin is added here.
         float width = MathF.Max(0f, size.X - inset);
         if (!responsive)
             width = MathF.Min(width, ActiveTheme.Page.MaximumContentWidth * scale);
@@ -101,9 +106,9 @@ public static class PageForm
         page.Complete(origin, size.X);
     }
 
-    /// <param name="divider">Draws the leading separator.</param>
-    /// <param name="onOpenChanged">Enables disclosure when supplied.</param>
-    /// <param name="dense">Uses the compact row pitch.</param>
+    /// <param name="divider">Draws the line above the section.</param>
+    /// <param name="onOpenChanged">When given, the section can be opened and closed.</param>
+    /// <param name="dense">Uses the shorter row height.</param>
     public static float Section(
         string id,
         string title,
@@ -146,7 +151,7 @@ public static class PageForm
     {
         private readonly List<ActionItem> _items = new();
 
-        /// <param name="id">Optional stable button identity.</param>
+        /// <param name="id">An id for the button that stays the same when its label changes.</param>
         public void Button(string label, Action onClick,
             ControlStyle style = default, bool disabled = false,
             string? help = null,
@@ -182,13 +187,14 @@ public static class PageForm
         private readonly bool _dense;
         private float _y;
 
-        // Cache an expanded visible band for row clipping. Rows can skip drawing
-        // while retaining layout space; extra space above accommodates taller rows.
+        // The visible part of the window, with some extra room, so rows outside it
+        // skip drawing but still take their space. The extra room above lets a
+        // tall row that starts above the window still draw.
         private readonly float _clipTop;
         private readonly float _clipBottom;
 
-        // Sections can request left/right row pairs when there is enough width.
-        // A full-line row or section boundary finishes the current pair.
+        // Sections can ask for rows side by side, left and right, when the page is
+        // wide enough. A full-width row or a new section ends the pair.
         private bool _twoTrack;
         private float _trackWidth;
         private int _track;
@@ -196,29 +202,29 @@ public static class PageForm
         private float _lineHeight;
         private bool _pendingFullLine;
 
-        /// <summary>The NEXT row reserves its whole line, painting only
-        /// the left track. Set through <see cref="FormScope.FullLine"/>;
-        /// consumed by the row that follows.</summary>
+        /// <summary>The next row takes the whole line but draws only in the
+        /// left column. Set by <see cref="FormScope.FullLine"/>; the next row
+        /// uses it up.</summary>
         internal bool NextFullLine;
         internal bool IsTwoTrack => _twoTrack;
 
-        /// <summary>Search hooks. A probe sees every (section, label, help)
-        /// the page would draw and draws nothing; a row filter drops rows
-        /// that answer false, a section filter drops whole sections. A
-        /// dropped row takes no layout.</summary>
+        /// <summary>Used by search. Probe is called with the section, label and
+        /// help of every row the page would draw, and nothing is drawn.
+        /// RowFilter hides the rows it returns false for, and SectionFilter
+        /// hides whole sections. A hidden row takes no space.</summary>
         public Action<string, string, string?>? Probe { get; set; }
         public Func<string, string, string?, bool>? RowFilter { get; set; }
         public Func<string, bool>? SectionFilter { get; set; }
-        /// <summary>Prefixed to every section title drawn — a search result
+        /// <summary>Put in front of every section title, so a search result
         /// names the page its section came from.</summary>
         public string? SectionPrefix { get; set; }
         public string? DisclosureScope { get; set; }
         internal bool AllowDisclosure { get; set; } = true;
         private string _section = string.Empty;
 
-        /// <summary>Paint hooks: every row and every section header the
-        /// page paints reports its section, label, vertex range and top,
-        /// so a host can move or fade what was just painted.</summary>
+        /// <summary>Called for every row and section header the page draws,
+        /// with its section, its label, the range of draw data it added and
+        /// its top, so the window can move or fade what was just drawn.</summary>
         public Action<string, string, int, int, float>? RowPainted { get; set; }
         public Action<string, int, int, float>? SectionPainted { get; set; }
         private bool _anyPainted;
@@ -243,13 +249,13 @@ public static class PageForm
                 + ActiveTheme.Controls.FormRowHeight * scale;
         }
 
-        /// <summary>Logical row height for this page.</summary>
+        /// <summary>Row height for this page, before scaling.</summary>
         internal float RowHeight => _dense
             ? ActiveTheme.Controls.ListRowHeight
             : ActiveTheme.Controls.FormRowHeight;
 
-        /// <summary>The page's own height in screen pixels, when the host
-        /// knows it; an empty state centres in it.</summary>
+        /// <summary>The page's own height in screen pixels, when the window
+        /// knows it. The empty-page message is centred in it.</summary>
         internal float Height { get; init; }
         internal bool Responsive { get; init; }
 
@@ -283,13 +289,13 @@ public static class PageForm
             _y += ActiveTheme.Page.StatusLineHeight;
         }
 
-        /// <param name="divider">Draws the leading separator.</param>
+        /// <param name="divider">Draws the line above the section.</param>
         public void Section(
             string title, Action<FormScope> content, bool divider = true,
             bool allowDisclosure = true) =>
             DrawSection(title, true, null, content, divider, allowDisclosure);
 
-        /// <param name="divider">Draws the leading separator.</param>
+        /// <param name="divider">Draws the line above the section.</param>
         public void Section(string title, bool open, Action<bool> onOpenChanged,
             Action<FormScope> content, bool divider = true) =>
             DrawSection(title, open, onOpenChanged, content, divider);
@@ -310,8 +316,8 @@ public static class PageForm
             if (SectionFilter != null && !SectionFilter(title))
                 return;
             var page = ActiveTheme.Page;
-            // The first thing on a page never leads with a rule, whatever
-            // the caller asked: a search draws sections out of their order.
+            // The first section on a page never has a line above it, whatever
+            // the caller asked, because a search draws sections out of order.
             if (!_anyPainted)
                 divider = false;
             int sectionVertexStart = ImGui.GetWindowDrawList().VtxBuffer.Size;
@@ -342,7 +348,7 @@ public static class PageForm
                 open = !local.TryGetValue(disclosureKey, out var stored) || stored;
             else if (remembered) open = State.ReadSectionOpen!(disclosureKey);
 
-            // Dense sections omit header padding.
+            // Compact sections leave out the space above the header.
             if (!_dense)
                 _y += page.SectionPaddingTop;
 
@@ -401,9 +407,9 @@ public static class PageForm
             _y += SectionRuleThickness + page.ActionGap;
         }
 
-        /// <summary>Closes a half-filled line: the flow returns to the
-        /// left track below the line's tallest row. Section boundaries and
-        /// full-line rows call this.</summary>
+        /// <summary>Ends a line that has only its left row filled: the next
+        /// row starts in the left column, below the taller row of that line.
+        /// A new section or a full-width row calls this.</summary>
         internal void CloseLine()
         {
             if (_track == 1)
@@ -413,8 +419,8 @@ public static class PageForm
             }
         }
 
-        /// <summary>Rows from here to the section's end flow two per line.
-        /// The tracks only form when the page genuinely fits two.</summary>
+        /// <summary>From here to the end of the section, rows go two per line,
+        /// but only when the page is wide enough for two.</summary>
         internal void BeginPairedRows()
         {
             CloseLine();
@@ -455,8 +461,8 @@ public static class PageForm
             float top = _origin.Y + _y * _scale;
             bool visible = top <= _clipBottom && top >= _clipTop;
             float column = LabelColumn(label, _trackWidth, _scale, _labelWidth);
-            // A trailing control does not consume the intervening space.
-            // Keep its existing position and let the label use that space.
+            // A control at the right end does not take the space between it and
+            // the label. It stays where it is, and the label gets that space.
             if (trailingControlWidth is { } trailing)
                 column = MathF.Max(0f, _trackWidth
                     - (trailing + ActiveTheme.Spacing.Three) * _scale);
@@ -480,8 +486,9 @@ public static class PageForm
         }
 
         /// <summary>
-        /// Returns a row excluded by search or probe mode. It takes no layout space and
-        /// is positioned offscreen; controls should still check Visible before drawing.
+        /// Returns a row that search hides, or that is only being listed for search.
+        /// It takes no space and sits off screen; controls should still check Visible
+        /// before drawing.
         /// </summary>
         private FormRowScope SkippedRow() =>
             new(new(_origin.X, -100000f), _trackWidth, _scale,
@@ -505,8 +512,8 @@ public static class PageForm
                     _section, row.Label, row.VertexStart,
                     ImGui.GetWindowDrawList().VtxBuffer.Size, row.Origin.Y);
             }
-            // The help anchors on the LABEL band — a full-row rect would
-            // shadow the controls' own hovers.
+            // The help sits on the label only. Over the whole row it would
+            // hide the controls' own hover help.
             float helpWidth = row.HasLabel ? row.LabelWidth : row.Width;
             RegisterHelp(Ids.Join(id, "-row"), row.Origin,
                 row.Origin + new Vector2(helpWidth,
@@ -515,14 +522,14 @@ public static class PageForm
             {
                 if (_track == 0)
                 {
-                    // Left track filled: the line stays open for a right
-                    // neighbour. _y holds the LINE TOP while it is open.
+                    // The left column is filled: the line stays open for a row
+                    // on the right. While it is open, _y holds the line's top.
                     _lineStartY = _y;
                     _lineHeight = height;
                     _track = 1;
                     return;
                 }
-                // Right track filled: the line closes at its taller row.
+                // The right column is filled: the line ends below its taller row.
                 _y = _lineStartY + MathF.Max(_lineHeight, height);
                 _track = 0;
                 return;
@@ -539,9 +546,9 @@ public static class PageForm
             Action<FormScope> content,
             bool divider = true)
         {
-            // A standalone section is one of a stack its caller manages:
-            // the caller's divider stands, the page's first-rule rule
-            // does not apply.
+            // A standalone section is one of several its caller lays out. The
+            // caller decides about the line above it; the page's rule of no
+            // line above the first section does not apply.
             _anyPainted = true;
             DrawSection(title, open, onOpenChanged, content, divider);
         }
@@ -569,8 +576,8 @@ public static class PageForm
             _section = section;
         }
 
-        /// <summary>The NEXT row reserves its whole line inside a paired
-        /// stretch — nothing flows beside it.</summary>
+        /// <summary>Inside paired rows, the next row takes the whole line,
+        /// with nothing beside it.</summary>
         public void FullLine() => _page.NextFullLine = true;
 
         /// <summary>
@@ -579,11 +586,11 @@ public static class PageForm
         /// </summary>
         public void PairRows() => _page.BeginPairedRows();
 
-        /// <summary>Whether paired rows run two tracks at this width. A
-        /// caller that pairs rows across cards orders them by it.</summary>
+        /// <summary>Whether paired rows really sit two per line at this width.
+        /// A caller that pairs rows from different cards uses this to order them.</summary>
         public bool TwoTrack => _page.IsTwoTrack;
 
-        /// <summary>Ends a paired stretch early.</summary>
+        /// <summary>Ends the paired rows before the section ends.</summary>
         public void EndPair() => _page.EndPairedRows();
 
         /// <summary>Adds a small scaled gap between groups of controls.</summary>
@@ -601,10 +608,10 @@ public static class PageForm
             _page.EndRow(row, Id(label), help, logicalHeight);
         }
 
-        /// <param name="scale">Slider travel mapping.</param>
-        /// <param name="readout">Optional value formatter.</param>
-        /// <param name="actions">Optional trailing actions.</param>
-        /// <param name="id">Optional identity when visible labels repeat.</param>
+        /// <param name="scale">How the slider's position maps to its value.</param>
+        /// <param name="readout">Turns the value into the text shown beside the slider.</param>
+        /// <param name="actions">Buttons at the right end of the row.</param>
+        /// <param name="id">An id to use when two rows share the same label.</param>
         public void Slider(string label, float value, float minimum, float maximum,
             Action<float> onChange, string? format = null, string? help = null,
             bool disabled = false, ControlStyle style = default,
@@ -688,8 +695,8 @@ public static class PageForm
                 logCurvature: logCurvature,
                 altReset: altReset);
             }
-            // A track slider can have text or an editable numeric readout.
-            // Bare sliders omit that readout.
+            // A slider shows its value beside it, as text or as an editable
+            // number. A bare slider shows none.
             if (!valueWell && !bare)
             {
             var bandOrigin = new Vector2(
@@ -721,9 +728,8 @@ public static class PageForm
                     },
                     onCommit,
                     ActiveTheme.FormValue,
-                    // The standard drag ladder caps the rate: 0.1 per
-                    // pixel (Shift 1, Ctrl 0.01); only tighter ranges
-                    // drag finer.
+                    // Dragging moves at most 0.1 per pixel (1 with Shift,
+                    // 0.01 with Ctrl); only small ranges drag finer.
                     MathF.Min(0.1f, (maximum - minimum) / 300f),
                     format ?? "0.00",
                     ControlStyle.Workspace with
@@ -762,7 +768,6 @@ public static class PageForm
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
             // Leave one switch-width between the toggle and the right edge.
             float switchWidth = logicalSwitchWidth * row.Scale;
-            // Inset the toggle from the right edge by its own width.
             ImGui.SetCursorScreenPos(new Vector2(
                 row.ControlOrigin.X + row.ControlWidth - switchWidth * 2f,
                 row.CenterControl(switchHeight).Y));
@@ -802,7 +807,8 @@ public static class PageForm
                 float actionGap = actionWidth > 0f
                     ? ActiveTheme.Page.ActionGap * row.Scale
                     : 0f;
-                // The toggle right-aligns against the trailing verbs.
+                // The toggle sits left of the buttons, with one toggle width
+                // of space between.
                 ImGui.SetCursorScreenPos(new Vector2(
                     row.ControlOrigin.X + row.ControlWidth
                         - actionWidth - actionGap - switchWidth * 2f,
@@ -844,7 +850,8 @@ public static class PageForm
         public void Checkboxes(string label, params CheckItem[] items) =>
             Checkboxes(label, disabled: false, items);
 
-        /// <summary>Row-level disabled combines with each item's own flag.</summary>
+        /// <summary>With disabled set, every checkbox is disabled; otherwise each
+        /// item's own Disabled decides.</summary>
         public void Checkboxes(
             string label, bool disabled, params CheckItem[] items) =>
             Checkboxes(label, disabled, fullWidth: false, items);
@@ -1457,11 +1464,11 @@ public static class PageForm
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>A read-only value alone on its band, at body size.
-        /// </summary>
-        /// <param name="icon">An already-resolved game texture, drawn in the
-        /// control cell's own icon slot; 0 is no mark and costs the value no
-        /// width.</param>
+        /// <summary>A value that cannot be edited, alone on its row, at body
+        /// text size.</summary>
+        /// <param name="icon">A game texture that is already loaded, drawn in the
+        /// icon space of the value's cell. 0 means no icon, and the value then
+        /// takes the full width.</param>
         public void ReadOnly(string label, string value, string? help = null,
             bool unavailable = false, nint icon = 0, bool mono = false)
         {
@@ -1585,9 +1592,9 @@ public static class PageForm
             var wrap = TextConstraint.Wrap(row.Width);
             float height = MeasureText(text, style, wrap).Y;
             float band = ActiveTheme.Controls.FormRowHeight * row.Scale;
-            // One line seats exactly as a Status row does; more lines start at
-            // that same seat and run on, so a paragraph beside single-line
-            // rows shares their first baseline.
+            // One line sits exactly where a Status row's text sits. More lines
+            // start at the same place and run on, so a paragraph next to
+            // single-line rows lines up with their text.
             TextInBand(
                 row.Origin, new(row.Width, band), text, style, wrap);
             _page.EndRow(
@@ -1689,8 +1696,8 @@ public static class PageForm
             DrawHalf(
                 in row, row.Origin.X + half + cellMargin, half, column,
                 rightLabel, drawRight);
-            // The pair's help anchors on the LABEL bands, so each cell's
-            // control keeps its own hover.
+            // The help sits on the two labels only, so each control keeps its
+            // own hover help.
             if (help is not null)
             {
                 var band = new Vector2(
@@ -1709,8 +1716,8 @@ public static class PageForm
         public void Cells(Action<FormCellScope> content, string? help = null, int? fixedColumns = null)
         {
             ArgumentNullException.ThrowIfNull(content);
-            // Do not pair this multi-cell row with a following row. This reserves
-            // the line but retains the current track width when paired mode is active.
+            // This row of cells takes the whole line, so nothing is placed beside
+            // it. Inside paired rows it still uses the current column width.
             _page.NextFullLine = true;
             var scope = new FormCellScope();
             content(scope);
@@ -1721,8 +1728,9 @@ public static class PageForm
             var row = _page.BeginRow(string.Empty);
             // Leave a gap between adjacent tracks.
             float gap = ActiveTheme.Spacing.Six * row.Scale;
-            // Responsive pages retain room for a label and a stepper before
-            // adding another cell. Other pages keep their designed row count.
+            // On a page that fills its width, a line gets another cell only when
+            // there is room for a label and a number field. Other pages put all
+            // the cells on one line.
             int columns = fixedColumns is { } requested ? Math.Clamp(requested, 1, items.Count)
                 : _page.Responsive
                 ? Math.Clamp((int)((row.Width + gap) / (TwoTrackMinimum / 2f * row.Scale + gap)), 1, items.Count)
@@ -1777,8 +1785,8 @@ public static class PageForm
                 row.Scale));
         }
 
-        /// <param name="actions">Optional trailing actions.</param>
-        /// <param name="expanded">Uses separate axis rows.</param>
+        /// <param name="actions">Buttons at the right end of the row.</param>
+        /// <param name="expanded">Puts each axis on its own row.</param>
         public void AxisVector(
             string label,
             Vector3 value,
@@ -1816,7 +1824,7 @@ public static class PageForm
             float available = fullWidth || stacked
                 ? row.Width
                 : row.ControlWidth;
-            // Actions reduce the shared axis width.
+            // Buttons take width away from the axis fields.
             float actionWidth = actionScope.Items.Count == 0
                 ? 0f
                 : MeasureActions(actionScope.Items, row.Scale, available);
@@ -1874,7 +1882,8 @@ public static class PageForm
                     actionScope.Items,
                     originX + available - actionWidth,
                     actionWidth,
-                    // Stacked actions align with the axis wells.
+                    // When the fields drop below the label, the buttons drop
+                    // with them.
                     stacked
                         ? row.Origin.Y
                             + ActiveTheme.Controls.FormRowHeight * row.Scale
@@ -1974,7 +1983,7 @@ public static class PageForm
 
         private string Id(string label) => _page.RowId(_section, label);
 
-        // Counters are scoped to one form section.
+        // Counts of rows with no label in this section, so each gets its own id.
         private int _actionRows;
         private int _readOnlyActionRows;
         private int _statusRows;
@@ -2018,7 +2027,7 @@ public static class PageForm
         {
             if (_items.Count == 0)
                 return 1;
-            // Each row uses equal-width well tracks.
+            // Each row splits its width equally between the colour wells.
             float gap = ActiveTheme.Page.ActionGap * _row.Scale;
             float widestLabel = 0f;
             foreach (var entry in _items)
@@ -2115,10 +2124,10 @@ public static class PageForm
         }
     }
 
-    /// <summary>Maximum label share within one cell.</summary>
+    /// <summary>The largest share of a cell's width a label may take.</summary>
     private const float FormCellLabelShare = 0.5f;
 
-    /// <summary>Provides positioning for one paired form control.</summary>
+    /// <summary>Where one cell's control goes, with helpers to draw common controls in it.</summary>
     public readonly record struct FormPairCell(
         Vector2 Origin, float Width, float Scale)
     {
@@ -2164,7 +2173,7 @@ public static class PageForm
                 altReset: altReset,
                 onBegin: onBegin,
                 onCommit: onCommit);
-            // Custom values use text; numeric values use the standard readout.
+            // A custom readout is shown as text; otherwise an editable number is shown.
             var bandOrigin = new Vector2(Origin.X + Width - readoutWidth, Origin.Y);
             if (readout is { } custom)
                 DrawTextRight(
@@ -2292,7 +2301,7 @@ public static class PageForm
                 });
         }
 
-        /// <summary>The cell's text field, filling its track.</summary>
+        /// <summary>The cell's text field, filling the cell.</summary>
         public void TextInput(
             string id, string value, Action<string> onChange,
             string? placeholder = null, bool disabled = false)
@@ -2307,9 +2316,8 @@ public static class PageForm
                 id, value, onChange, style, placeholder, disabled);
         }
 
-        /// <summary>The cell's picker: the value-showing button that
-        /// opens the choice surface, filling its track — the form-level
-        /// Picker's cell form.</summary>
+        /// <summary>The cell version of the form's Picker: a button that shows
+        /// the value and opens the list of choices, filling the cell.</summary>
         public void Picker(
             string id, string value, Action select,
             bool disabled = false, string? help = null)
@@ -2334,7 +2342,7 @@ public static class PageForm
                 id: id);
         }
 
-        /// <summary>The cell's enum picker, filling its track.</summary>
+        /// <summary>The cell's dropdown, filling the cell.</summary>
         public void Dropdown(
             string id, string[] items, int selected, Action<int> onChange,
             bool disabled = false, string? help = null)
@@ -2362,25 +2370,25 @@ public static class PageForm
         public float ControlWidth { get; }
         public float Scale { get; }
 
-        /// <summary>Scaled label-column width.</summary>
+        /// <summary>Width of the label column, in screen pixels.</summary>
         public float LabelWidth { get; }
 
-        /// <summary>Logical row height.</summary>
+        /// <summary>Row height, before scaling.</summary>
         public float RowHeight { get; }
 
-        /// <summary>False outside the host window's visible band. Controls
-        /// should check this before drawing; layout still advances.</summary>
+        /// <summary>False when the row is outside the visible part of the window.
+        /// Controls should check this before drawing; the row still takes its space.</summary>
         public bool Visible { get; }
 
         /// <summary>Whether help uses the label area. Without a label,
         /// EndRow uses the whole row as the help area.</summary>
         public bool HasLabel { get; internal init; }
 
-        /// <summary>A row a search dropped: nothing drawn, no layout.</summary>
+        /// <summary>A row that search hid: nothing is drawn and it takes no space.</summary>
         public bool Skipped { get; internal init; }
 
-        /// <summary>The label the row was begun with, and where the draw
-        /// list stood then — what the paint hook reports.</summary>
+        /// <summary>The row's label, and how much draw data there was when the
+        /// row began. RowPainted reports both.</summary>
         public string Label { get; internal init; } = string.Empty;
         public int VertexStart { get; internal init; }
 
@@ -2566,8 +2574,8 @@ public static class PageForm
     }
 
     /// <summary>
-    /// Assigns the available region to Fill widths and optionally unspecified widths.
-    /// Explicit fixed/content widths are left unchanged.
+    /// Gives the available width to a control set to Fill and, with fillByDefault,
+    /// to one with no width set. Fixed and content widths stay as they are.
     /// </summary>
     private static ControlStyle InRegion(
         ControlStyle style, float width, bool fillByDefault) =>
@@ -2596,7 +2604,7 @@ public static class PageForm
             scale,
             FormSeparatorColor);
 
-    /// <summary>Draws a section header and optional disclosure control.</summary>
+    /// <summary>Draws a section header, with its open/close arrow when it has one.</summary>
     private static void PaintSectionHeader(
         in InteractionResult hit, uint identity, string title, bool open,
         Vector2 min, float width)
@@ -2604,7 +2612,7 @@ public static class PageForm
         float scale = ImGuiHelpers.GlobalScale;
         float headerHeight = ActiveTheme.Page.SectionHeaderHeight * scale;
         bool hovered = hit.Hovered;
-        // Reserve the disclosure slot before measuring the title.
+        // Leave room for the arrow before measuring the title.
         float titleWidth = identity != 0
             ? width - SectionChevronSlot * scale
             : width;
@@ -2629,7 +2637,7 @@ public static class PageForm
             });
     }
 
-    /// <summary>Draws the disclosure glyph and its opacity transition.</summary>
+    /// <summary>Draws the open/close arrow and fades it in and out.</summary>
     private static void DrawDisclosure(
         uint identity, Vector2 headerRight, Vector4 color,
         bool open, bool hovered, float scale)

@@ -25,9 +25,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// Restores actor and companion state through separate workflow steps: readiness,
-/// pose, animation, placement, gaze, name, and visibility. Appearance restoration
-/// is delegated to SceneAppearanceRuntime.
+/// Loads a scene's saved state onto an actor and its companion, one step at a time:
+/// waiting until the actor is ready, then pose, animation, placement, gaze, name and
+/// visibility. SceneAppearanceRuntime handles appearance.
 /// </summary>
 internal sealed class SceneActorRuntime : IActorRestorePort
 {
@@ -46,7 +46,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     private readonly IFramework _framework;
     private readonly Poser.Application.Appearance.IInvisibleSkinService _invisibleSkin;
 
-    /// <summary>Breadcrumbs for the scene pose leg.</summary>
+    /// <summary>Log for the pose step of a scene load.</summary>
     private readonly IPluginLog _log;
 
     public SceneActorRuntime(
@@ -84,8 +84,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     }
 
     /// <summary>
-    /// Object identity hash for comparing wrapper and skeleton instances in logs.
-    /// Hashes are diagnostic hints and can collide.
+    /// A short id for an object, so the log shows whether an actor or skeleton
+    /// object was replaced. Two objects can share one, so it is only a hint.
     /// </summary>
     private static string Ord(object? instance) =>
         instance is null
@@ -94,22 +94,22 @@ internal sealed class SceneActorRuntime : IActorRestorePort
                 .GetHashCode(instance).ToString("X8");
 
     /// <summary>
-    /// One breadcrumb for the scene pose leg. Debug level: it must be there
-    /// when a load misbehaves and invisible in ordinary play.
+    /// Writes one line about the pose step of a scene load. It logs at debug
+    /// level: there when a load goes wrong, hidden in ordinary play.
     /// </summary>
     private void Trace(string message) =>
         _log.Debug($"Scene pose leg: {message}");
 
     /// <summary>
-    /// Checks that skeletons and their root-bone bindings are ready, and that
-    /// the actor ID resolves to this exact wrapper. After a redraw, new skeleton
-    /// objects can exist before the binding registry has published their IDs.
-    /// The scene workflow polls this check before importing the saved pose.
+    /// Checks that the actor's skeletons and bones have ids, and that the actor's
+    /// id still points to this same actor object. After a redraw, new skeletons
+    /// can exist before their bones have ids. A scene load checks this again and
+    /// again until it passes, then applies the saved pose.
     /// </summary>
     public bool ActorReady(SceneEntityHandle actor) =>
         Posable(_handles.Require<IActor>(actor, SceneEntityKind.Actor));
 
-    /// <summary>Checks actor and skeleton bindings for an actor or companion.</summary>
+    /// <summary>The same check, for an actor or a companion.</summary>
     private bool Posable(IActor candidate)
     {
         var skeletons = _skeletons.GetSkeletons(candidate);
@@ -161,8 +161,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         System.Threading.CancellationToken cancellation) =>
         _appearance.ApplySceneAppearance(scenePath, actor, data, bound, cancellation);
 
-    // Only called for an actor whose attachment is present: the workflow skips
-    // an absent kind rather than asking the runtime to detach.
+    // Only called when the scene saved a companion for the actor. With none
+    // saved, the scene load skips this step rather than removing a companion.
     public string? AttachCompanion(SceneEntityHandle actor, SceneActor data) =>
         _spawns.SetCompanion(
             _handles.Require<IActor>(actor, SceneEntityKind.Actor),
@@ -170,18 +170,18 @@ internal sealed class SceneActorRuntime : IActorRestorePort
             ? null
             : "The companion could not be attached.";
 
-    /// <summary>Every component and every slot: an embedded scene pose is a
-    /// complete captured state, not an interactive rotation-only import.
-    /// Placement is absolute and separate (<see cref="PlaceActor"/>), so the
-    /// difference-based model transform stays off.</summary>
+    /// <summary>A scene's pose is applied in full: rotation, position and scale on
+    /// every skeleton. It is the complete saved state, not a pose file import that
+    /// may only apply rotations. The actor's placement is set separately by
+    /// <see cref="PlaceActor"/>, so the model transform is left out here.</summary>
     internal static readonly PoseImportOptions SceneImportOptions = new()
     {
         ApplyRotation = true,
         ApplyPosition = true,
         ApplyScale = true,
         ApplyModelTransform = false,
-        // The whole load owns history; its internal actor/companion imports
-        // must neither append extra steps nor resume the frozen scene pose.
+        // The scene load records one undo step for the whole load, so these
+        // imports add none of their own. They must also keep the actor frozen.
         SuppressHistory = true,
         FreezeOnImport = true,
     };
@@ -205,8 +205,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         string description,
         Action<OperationReceipt> onReceipt)
     {
-        // Compare these instance hashes with the readiness log to diagnose a
-        // skeleton replacement between readiness and import planning.
+        // Compare these ids with the ones logged when the actor was ready, to see
+        // whether a skeleton was replaced in between.
         var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         var skeletons = _skeletons.GetSkeletons(target);
         int resolvable = 0;
@@ -261,7 +261,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         if (_bindings.GetActorId(target) is not { } id)
             return "The actor is no longer bound.";
-        // Native names remain untouched: appearance providers identify by them.
+        // The actor's name in the game stays as it is, because Glamourer and
+        // Penumbra find the actor by it. The saved name becomes a nickname.
         _appearance.RememberActorIdentity(target, data.IdentityHash);
         _configuration.SetNickname(id.LogicalId, SceneActorNames.Resolve(data));
         return null;
@@ -277,10 +278,10 @@ internal sealed class SceneActorRuntime : IActorRestorePort
 
     private string? PlaceModel(IActor target, LightFile.TransformData? model, PoseFile? pose)
     {
-        // The scene's OWN placement first. The embedded pose's absolute values
-        // remain the fallback for files written before placements were stated,
-        // and only there does the codec's unset marker (BoneData.Identity —
-        // zero position, identity rotation, ZERO scale) have to be guessed at.
+        // Use the placement the scene saved. Older scene files do not save one,
+        // so fall back to the model values in the saved pose. Only there must
+        // Poser guess whether the value was never set: an unset value has zero
+        // position, no rotation and zero scale.
         System.Numerics.Vector3 position;
         System.Numerics.Quaternion rotation;
         System.Numerics.Vector3 scale;
@@ -354,8 +355,9 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         return RestoreEdits(body, data.CompanionPoseEdits) ? null : "The companion's bone edits did not match its skeleton.";
     }
 
-    /// <summary>The saved offsets back on their bones; every other bone has none
-    /// (the animation alone). False when a saved bone is missing on this skeleton.</summary>
+    /// <summary>Puts the saved bone edits back on their bones. Every other bone gets
+    /// no edit, so only the animation moves it. Returns false when a saved bone is
+    /// missing on this skeleton.</summary>
     private bool RestoreEdits(IActor actor, List<SceneBoneEdit>? edits)
     {
         var skeletons = _skeletons.GetSkeletons(actor);
@@ -386,11 +388,11 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     }
 
     /// <summary>
-    /// Restores the saved gaze in the order the service's own transitions
-    /// require: the mode first (entering a mode with no parts enables all
-    /// three), then the exact participation mask, then the anchor and each
-    /// part's own point, then the locks — a lock freezes a part at the target
-    /// it currently holds, so it must land after that target is written.
+    /// Restores the saved gaze in the order the gaze settings need. First the
+    /// mode: entering a mode with no parts turns on all three. Then which parts
+    /// take part, then the target point and each part's own point, then the
+    /// locks. A lock holds a part at its current target, so it must come after
+    /// that target is set.
     /// </summary>
     public string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target)
     {
@@ -401,10 +403,10 @@ internal sealed class SceneActorRuntime : IActorRestorePort
 
         var source = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
 
-        // Entity mode IS its target: SetGazeTarget both chooses the actor and
-        // enters the mode. A saved Entity gaze whose target the file does not
-        // name has nothing to follow, and is refused by name rather than left
-        // pointing at whatever the mode transition would pick.
+        // Following an actor is set by choosing that actor: SetGazeTarget picks
+        // the actor and switches the mode. If the scene file does not name the
+        // followed actor, there is nothing to follow, so this step fails with a
+        // message instead of looking at whatever the mode would pick on its own.
         if (saved.Mode == GazeTargetMode.Entity)
         {
             if (_handles.Resolve<IActor>(target, SceneEntityKind.Actor) is not { } followed)

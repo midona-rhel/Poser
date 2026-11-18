@@ -14,15 +14,16 @@ public sealed record BeginTransformGesture(
     Vector3? CustomPivot = null,
     string Description = "Transform",
     IReadOnlyDictionary<TransformTargetId, TransformDeltaMode>? TargetModes = null,
-    /// <summary>When enabled, secondary bones rotate in the primary's frame
-    /// instead of receiving the primary's raw delta.</summary>
+    /// <summary>When on, the other selected bones turn in the first bone's frame,
+    /// instead of copying the first bone's change as it is.</summary>
     bool RelativeSecondaryBones = false,
     GroupScaleMode GroupScale = GroupScaleMode.SizesAndSpacing,
     Guid? GroupId = null,
     bool IsGroupTransform = false);
 
 /// <summary>
-/// Coordinates transform gestures, rollback recovery, and history entries.
+/// Runs move, rotate and scale gestures such as a gizmo drag, restores the targets
+/// when a gesture fails, and records undo steps.
 /// Every caller runs on the game's main thread, one call at a time.
 /// </summary>
 public sealed class TransformGestureService : IDisposable, IUndoRunner
@@ -69,7 +70,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     private GroupTransformPresentation ReadGroupPresentation(Guid? named, IReadOnlyList<TransformTargetId> targets)
     {
-        // While a put-back is pending, the members' live transforms may be partial.
+        // While a restore is still waiting, the members' current transforms may be
+        // only half restored.
         if (PendingRecovery != null) return default;
         if (_active is not { } active) return new(true, null);
         if (active.GroupBefore is not { } before || active.Command.GroupId != named
@@ -84,9 +86,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     public Vector3? ActivePivot => _active?.Pivot;
 
     /// <summary>
-    /// Values that a failed edit, cancelled drag or undo could not put back yet,
-    /// usually because the actor was being redrawn. Until they are put back,
-    /// new pose edits are refused, so a half-restored pose is never recorded
+    /// Values that a failed edit, cancelled drag or undo could not restore yet,
+    /// usually because the actor was being redrawn. Until they are restored,
+    /// new pose edits are turned away, so a half-restored pose is never recorded
     /// as the starting point of another undo step.
     /// </summary>
     public TransformRecoveryReceipt? PendingRecovery { get; private set; }
@@ -124,10 +126,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             captured.Add(result.State);
         }
 
-        // Frozen at Begin, from the captured baselines: a pivot re-derived
-        // per frame from the moving targets would feed a result back as the
-        // next frame's input, which is the one thing every gesture here
-        // refuses to do.
+        // The pivot is fixed at the start, from the values captured then.
+        // Working it out again each frame from the moving targets would feed
+        // each frame's result into the next frame, which no gesture here may do.
         var pivot = command.PivotMode switch
         {
             PivotMode.PerTarget => captured[0].Transform.Position,
@@ -165,9 +166,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
-    /// The arithmetic mean of the captured positions. The sum uses double
-    /// precision to preserve low bits for large scenes; a single target
-    /// returns its position exactly.
+    /// The average of the captured positions. The sum is kept in double
+    /// precision so it stays accurate far from the world's origin; a single
+    /// target returns its own position exactly.
     /// </summary>
     private static Vector3 Centroid(IReadOnlyList<TransformTargetState> captured)
     {
@@ -223,14 +224,14 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         for (var index = 0; index < active.Before.Count; index++)
         {
             var baseline = active.Before[index];
-            // Symmetry partners transform the delta before it applies.
-            // Mirrored: Local-space deltas act in each bone's own frame, so
-            // they rebase through BOTH frozen animated baselines (captured
-            // at Begin); model-frame deltas reflect directly. Direct (Link):
-            // the partner repeats the primary's motion in its OWN local
-            // frame — world-frame deltas rebase through both baselines,
-            // Local-space deltas already act per-bone. No frame feeds an
-            // applied result back as a baseline.
+            // A symmetry partner gets an adjusted copy of the change.
+            // Mirrored: in Local space a change acts in each bone's own frame,
+            // so it is converted through both bones' animated rotations taken at
+            // the start; in other spaces it is simply reflected.
+            // Direct (Link): the partner repeats the first bone's motion in its
+            // own local frame, so a world-space change is converted through both
+            // starting rotations, and a Local-space change already acts per bone.
+            // No frame uses an applied result as its starting point.
             var targetDelta = delta;
             if (active.Command.TargetModes != null &&
                 active.Command.TargetModes.TryGetValue(
@@ -256,9 +257,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                     _ => delta,
                 };
             }
-            // Apply relative secondary rotation after symmetry and only to
-            // secondary bones. Local-space deltas already use each target's
-            // own frame, so rebasing them again would rotate twice.
+            // Turn the other bones relative to the first bone after symmetry,
+            // and only those other bones. A Local-space change already uses each
+            // bone's own frame, so converting it again would turn it twice.
             if (active.Command.RelativeSecondaryBones &&
                 index != 0 &&
                 active.Command.Space != TransformSpace.Local &&
@@ -273,11 +274,10 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             {
                 PivotMode.PerTarget => false,
                 PivotMode.Primary => index != 0,
-                // The centroid is nobody's own origin, so EVERY target swings
-                // about it — including the primary, unlike Primary mode:
-                // exempting index 0 would pin one member of the group in
-                // place and swing the rest around it, the exact behaviour the
-                // centroid exists to replace.
+                // The centre point belongs to no target, so every target swings
+                // around it, the first one too. Leaving the first one out would
+                // hold it in place and swing the rest around it, which is what
+                // Primary mode does and what the centre point is there to avoid.
                 PivotMode.Centroid => true,
                 PivotMode.Custom => true,
                 _ => false,
@@ -285,10 +285,11 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             var pivot = active.Command.PivotMode == PivotMode.PerTarget
                 ? baseline.Transform.Position
                 : active.Pivot;
-            // A shared pivot makes this a group gesture: the offsets scale
-            // with it, and each member's own size follows only in the
-            // sizes-and-spacing mode. Per-target scaling is unchanged.
-            // Bones never spread: scaling several bones scales the bones.
+            // A shared pivot makes this a group gesture: the distances between
+            // members scale, and each member's own size changes only in the
+            // sizes-and-spacing mode. Scaling each target on its own pivot works
+            // as usual. Bones never spread apart: scaling several bones scales
+            // the bones themselves.
             bool scalePosition = rotatePosition
                 && baseline.Target.Kind != TransformTargetKind.Bone;
             bool scaleOwn = !scalePosition
@@ -317,9 +318,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             if (result.Success)
                 continue;
 
-            // A runtime apply failure ends the gesture. Every frozen Before
-            // state is attempted in order even after a restore failure, and
-            // the complete receipt remains available for exact retry.
+            // If the game side cannot apply a value, the gesture ends. Every
+            // target is restored to its starting value in order, even after one
+            // restore fails, and the full record is kept so it can be retried.
             var rollback = RecoverGesture(active);
             _active = null;
             var applyDetail =
@@ -412,9 +413,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
-    /// Reconciles the active gesture with a completed scene refresh. The
-    /// gesture survives when all targets remain current; otherwise it is
-    /// cancelled and incomplete recovery remains a mutation barrier.
+    /// Called after the scene's entities are refreshed. The gesture goes on if
+    /// all its targets are still there. Otherwise it is cancelled, and if its
+    /// targets cannot all be restored, new edits are turned away until they are.
     /// </summary>
     public void ReconcileScene(Func<TransformTargetId, bool> isCurrent)
     {
@@ -431,9 +432,10 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
-    /// Runs one direction of the entry <see cref="UndoJournal"/> peeked and
-    /// commits it only when it lands. A refused entry remains available to
-    /// retry. The journal has already finished any pending put-back first.
+    /// Runs the undo or redo of the step <see cref="UndoJournal"/> picked, and
+    /// moves the step to the other list only if it worked. A step that fails
+    /// stays, so it can be tried again. The journal has already retried any
+    /// restore that was still waiting.
     /// Undo and redo wait for a drag to end: the drag's undo step is recorded
     /// on release with the values its bones had when it started, so an undo
     /// run under it would come back when the drag is undone, with its step
@@ -454,8 +456,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
-    /// Runs one direction of a lifecycle entry and commits it only when the
-    /// action reports success. A refused action remains available to retry.
+    /// Runs the undo or redo of a step that carries its own undo and redo
+    /// actions, and moves the step only if the action worked. A step that fails
+    /// stays, so it can be tried again.
     /// </summary>
     private static GestureResult RunLifecycle(
         Func<bool> act, string failure, Action commit, Func<string?>? failureDetail = null)
@@ -503,8 +506,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
-    /// Undo and redo call this first. With a put-back still pending it tries
-    /// that put-back again instead, and returns its result; otherwise null.
+    /// Undo and redo call this first. With a restore still waiting, it tries
+    /// that restore again instead and returns its result; otherwise null.
     /// </summary>
     public GestureResult? RecoverPending()
     {
@@ -536,8 +539,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
 
     private GestureResult RestorePatch(TransformPatch patch, bool before, Action commit)
     {
-        // A redraw replaces the bones under an undo as it does under a gesture:
-        // a restore it left pending retries on the same bones of the new body.
+        // A redraw can replace the bones during an undo, just as during a drag.
+        // A restore left waiting is retried on the same bones of the redrawn body.
         var recovery = AttemptRecovery(before ? patch.Before : patch.After, () =>
         {
             if (patch.GroupState is { } change)
@@ -548,8 +551,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             }
             commit();
         }, remap: true);
-        // No target was bound, so nothing was written and nothing is left to recover:
-        // the step is refused and stays in history for the redrawn body.
+        // No target could be found, so nothing was written and nothing needs
+        // restoring. The step fails and stays in history, to be tried on the
+        // redrawn body.
         if (recovery.Attempts.All(attempt => attempt.Status == TransformPortStatus.StaleTarget))
         {
             PendingRecovery = null;
@@ -560,12 +564,11 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
-    /// One automatic retry of the pending recovery, run before a mutation is
-    /// refused for it. A recovery usually goes incomplete because its bones
-    /// were unreachable for a moment (mid-redraw), and nothing in the product
-    /// retries by hand — without this, one transient failure refused every
-    /// later mutation permanently. Returns true when nothing is pending
-    /// anymore.
+    /// Tries the waiting restore once more before an edit is turned away for
+    /// it. A restore usually fails because its bones could not be reached for a
+    /// moment, during a redraw. Nothing in the interface lets a person retry it,
+    /// so without this, one short failure would block every later edit for good.
+    /// Returns true when nothing is waiting any more.
     /// </summary>
     public bool TryCompleteRecovery()
     {
@@ -580,8 +583,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             _recoveryCompleted, _recoveryRemap);
 
     /// <summary>
-    /// Puts back transforms another operation saved (a pose import that
-    /// failed part-way). If some cannot be put back yet, they become the
+    /// Restores transforms that another action saved, such as a pose import
+    /// that failed part way. Any that cannot be restored yet become the
     /// <see cref="PendingRecovery"/> that later edits retry first.
     /// </summary>
     public GestureResult RestoreForOperation(
@@ -609,9 +612,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         return FailureAfterRecovery(detail, RecoverGesture(active));
     }
 
-    // A redraw cancels ordinary bone gestures too. Retain their baseline
-    // through the publication gap and resolve its exact bone identity on
-    // retry, rather than permanently retrying a retired skeleton generation.
+    // A redraw also cancels an ordinary bone drag. Keep the starting values
+    // while the redrawn bones have no ids yet, and look up the new bones on
+    // each retry, rather than retrying forever on bones that no longer exist.
     private TransformRecoveryReceipt RecoverGesture(ActiveGestureState active) =>
         AttemptRecovery(active.Before, () =>
         {
@@ -654,8 +657,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     private static bool IsHomogeneous(
         IReadOnlyList<TransformTargetId> targets)
     {
-        // Bone targets must belong to one logical actor, but may span its slots.
-        // Other entity kinds may be mixed because their transforms use world space.
+        // Bones must all belong to one actor, but may come from different
+        // skeletons of it, such as the body and a weapon. Other kinds of entity
+        // may be mixed, because their transforms are all in world space.
         var first = targets[0];
         if (targets.Any(target => target.Kind == TransformTargetKind.Bone))
             return targets.All(target =>

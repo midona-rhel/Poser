@@ -23,7 +23,7 @@ public readonly record struct RunningAction(string Name, ActionKind Kind);
 /// out when the action takes time. Poser's own work each frame, and the steps inside the
 /// running action, never ask.
 /// Each kind of action registers how to tell that it is running. Nothing is switched on and
-/// off by hand, so the gate cannot stay shut after an action has ended.
+/// off by hand, so the interface cannot stay blocked after an action has ended.
 /// </summary>
 public sealed class ActionGate
 {
