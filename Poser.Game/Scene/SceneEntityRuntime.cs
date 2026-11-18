@@ -172,6 +172,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         }
         handle.Transform = data.Transform;
         handle.Visible = data.Visible;
+        handle.Tint = data.Tint ?? System.Numerics.Vector4.One;
         detail = null;
         return _handles.Track(SceneEntityKind.Prop, handle);
     }

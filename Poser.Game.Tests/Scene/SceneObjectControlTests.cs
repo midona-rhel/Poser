@@ -22,6 +22,7 @@ public sealed class SceneObjectControlTests
             "get_IsValid" or "get_Visible" => true,
             "get_Name" => "Test",
             "get_Model" => model,
+            "get_Tint" => System.Numerics.Vector4.One,
             "Respawn" => Replace(args!),
             _ => throw new InvalidOperationException(method),
         });

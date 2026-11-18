@@ -146,6 +146,11 @@ public sealed class PropsPane
                 DyeName(prop.Model.Stain1),
                 () => OpenDyePicker(prop, channel: 1),
                 help: "Dye the model's second channel"));
+        form.ColorWells("Tint", wells => wells.Well(
+                "Tint",
+                prop.Tint,
+                value => _values.Set(prop.Id, PropProperties.Tint, value)),
+            help: "White leaves the model unchanged");
         // The variant edits a DRAFT and applies on release — a respawn
         // per drag tick would churn the weapon.
         if (_animDraftFor != prop.Id || _animBaseline != prop.Model.AnimationVariant)

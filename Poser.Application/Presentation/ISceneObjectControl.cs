@@ -6,7 +6,7 @@ using Poser.Domain.Scene;
 
 namespace Poser.Application.Presentation;
 
-public sealed record PropReading(PropId Id, string Name, bool Visible, PropModel Model);
+public sealed record PropReading(PropId Id, string Name, bool Visible, PropModel Model, Vector4 Tint);
 
 public sealed record WorldObjectReading(
     WorldObjectId Id, string Name, string Path, bool Spawned, bool Visible,

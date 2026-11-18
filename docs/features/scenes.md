@@ -224,12 +224,25 @@ only.
 - **Cone angle** on a spotlight goes from 0 to 180 degrees. The outline drawn on
   screen stays a fixed length so it always fits.
 
+### Objects
+
+An object from the **Props** tab of the spawn browser has **Dye**, **Dye 2**
+and **Tint**.
+
+- Dye and Dye 2 colour the model's dye channels. Choosing one rebuilds the object
+  in place; it keeps its name, place and tint.
+- **Tint** multiplies the colour of the whole model. White leaves it unchanged.
+  Scenes and copies keep it.
+
 ### Furniture
 
 Furniture comes from the **Furniture** tab of the spawn browser.
 
 - **Dye** colours it. A custom tint wins over a dye. Choosing a dye clears the
   tint in the same undo step.
+- Dye and tint only colour the parts the game lets you dye. On the Glade
+  Partition Door, for example, the door takes the colour and the wall around it
+  does not. Brio works the same way.
 - **Night** switches the furniture's own day and night look. What changes depends
   on the piece.
 - A piece with built-in lights has a switch for each (**Light 1**, **Light 2** and

@@ -71,6 +71,20 @@ public sealed unsafe class PropHandle : IPropHandle
 
     internal void Retarget(nint address) => _address = address;
 
+    private Vector4 _tint = Vector4.One;
+
+    /// <summary>The colour the whole weapon model is multiplied by, the same field an
+    /// actor's weapon tint uses. Kept here so a respawn for a dye change keeps it.</summary>
+    public Vector4 Tint
+    {
+        get => _tint;
+        set
+        {
+            _tint = value;
+            if (IsValid) Weapon->Tint = value;
+        }
+    }
+
     public nint Address => _address;
 
     public bool IsValid => _address != nint.Zero;
@@ -369,6 +383,7 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
             handle.Model = model;
             handle.Transform = placement;
             handle.Visible = visible;
+            handle.Tint = handle.Tint;
             Natives.OwnedSceneObjectLifetime.Destroy((CSObject*)old);
             _events.Publish(new PropListChangedEvent());
             return true;

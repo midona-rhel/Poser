@@ -51,7 +51,7 @@ public sealed class SceneObjectControl : ISceneObjectControl
     }
 
     public PropReading? Read(PropId id) => Resolve(id) is { } p
-        ? new(id, p.Name, p.Visible, p.Model) : null;
+        ? new(id, p.Name, p.Visible, p.Model, p.Tint) : null;
 
     public WorldObjectReading? Read(WorldObjectId id) => Resolve(id) is { } o
         ? new(id, o.Name, o.Path, o.Spawned, o.Visible, o.IsVfx, o.IsFurniture,

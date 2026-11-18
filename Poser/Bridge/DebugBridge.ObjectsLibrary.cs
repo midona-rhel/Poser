@@ -53,6 +53,62 @@ public sealed partial class DebugBridge
             ready = after != null, historyLabel = _transforms.UndoDescription };
     }
 
+    /// <summary>Dyes or tints a prop or world object through the same calls as its panel:
+    /// ?object=ID&amp;stain=N[&amp;stain2=N] or &amp;tint=R,G,B (0 to 1). Without either it reads.</summary>
+    private object ObjectDyeCommand(Dictionary<string, string> query)
+    {
+        if (query.ContainsKey("createprop"))
+        {
+            var made = _creation.CreateProp();
+            return new { ok = made.Handle != null, made.Detail,
+                id = made.Handle is { } handle ? _creation.Resolve(handle)?.ToString() : null };
+        }
+        var selection = ResolveSelection(query.GetValueOrDefault("object", ""));
+        if (query.ContainsKey("tocamera") && selection is { } moved)
+        {
+            var placement = (global::Poser.Application.Transforms.ISelectionPlacement)_services.GetService(
+                typeof(global::Poser.Application.Transforms.ISelectionPlacement))!;
+            var result = placement.MoveToCamera([moved]);
+            return new { ok = result.Success, result.Detail };
+        }
+        Vector3? tint = query.TryGetValue("tint", out var text)
+            ? text.Split(',').Select(v => float.Parse(v, CultureInfo.InvariantCulture)).ToArray() is { Length: 3 } c
+                ? new Vector3(c[0], c[1], c[2]) : null
+            : null;
+        if (selection is { Prop: { } propId } && BridgeObjects.Read(propId) is { } prop)
+        {
+            Domain.Outcome? result = null;
+            if (TryNumber(query, "stain", out byte first) | TryNumber(query, "stain2", out byte second))
+                result = BridgeObjects.SetModel(propId, prop.Model with
+                {
+                    Stain0 = query.ContainsKey("stain") ? first : prop.Model.Stain0,
+                    Stain1 = query.ContainsKey("stain2") ? second : prop.Model.Stain1,
+                });
+            if (tint is { } colour)
+                result = BridgeObjects.Set(propId, PropProperties.Tint, new Vector4(colour, 1f));
+            BridgeObjects.Seal();
+            var after = BridgeObjects.Read(propId);
+            Vector4? drawn = null;
+            if (_bindings.Resolve(propId).Value is { IsValid: true } live)
+                unsafe { drawn = ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)live.Address)->Tint; }
+            return new { ok = result?.Success, result?.Detail, kind = "prop", after?.Model.Stain0, after?.Model.Stain1,
+                tint = after?.Tint.ToString(), drawnTint = drawn?.ToString() };
+        }
+        if (selection is { WorldObject: { } worldId } && BridgeObjects.Read(worldId) is { } world)
+        {
+            Domain.Outcome? result = null;
+            if (TryNumber(query, "stain", out byte stain))
+                result = BridgeObjects.Set(worldId, WorldObjectProperties.Stain, (stain, (Vector3?)null));
+            else if (tint != null)
+                result = BridgeObjects.Set(worldId, WorldObjectProperties.Tint, tint);
+            BridgeObjects.Seal();
+            var after = BridgeObjects.Read(worldId);
+            return new { ok = result?.Success, result?.Detail, kind = world.IsFurniture ? "furniture" : world.IsVfx ? "effect" : "model",
+                after?.Stain, tint = after?.Tint?.ToString(), after?.Dyeable, after?.Spawned };
+        }
+        return new { ok = false, Detail = "Unknown prop or world object." };
+    }
+
     private static object PropModelState(SelectionId selection, PropReading value) => new
     {
         accepted = true,

@@ -13,7 +13,8 @@ internal readonly record struct PropState(
     string Name,
     PropModel Model,
     Transform Transform,
-    bool Visible);
+    bool Visible,
+    System.Numerics.Vector4 Tint);
 
 /// <summary>
 /// Operations needed to undo and redo prop creation and removal.
@@ -61,7 +62,7 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
     {
         var handle = (PropHandle)prop;
         return new PropState(
-            handle.Name, handle.Model, handle.Transform, handle.Visible);
+            handle.Name, handle.Model, handle.Transform, handle.Visible, handle.Tint);
     }
 
     public void Apply(object prop, PropState state)
@@ -70,6 +71,7 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
         handle.Name = state.Name;
         handle.Transform = state.Transform;
         handle.Visible = state.Visible;
+        handle.Tint = state.Tint;
     }
 }
 

@@ -13,6 +13,7 @@ public static class SceneObjectAccessors
         new EntityAccessors<PropId, IPropHandle>("The prop did not accept the value.")
             .Assign(PropProperties.Name, p => p.Name, (p, v) => p.Name = v)
             .Assign(PropProperties.Visible, p => p.Visible, (p, v) => p.Visible = v)
+            .Assign(PropProperties.Tint, p => p.Tint, (p, v) => p.Tint = v)
             .Complete(PropProperties.All);
 
     public static EntityAccessors<WorldObjectId, IWorldObject> WorldObjects() =>
