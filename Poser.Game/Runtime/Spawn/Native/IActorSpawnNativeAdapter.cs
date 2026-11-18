@@ -42,7 +42,7 @@ internal interface IActorSpawnNativeAdapter
     /// the source's rendered model (Human.Customize, Human equipment models).
     /// A sync plugin or a locked Glamourer state writes the draw object and
     /// leaves DrawData at the game's values, so the game's own copy drew a
-    /// vanilla character next to a modded one (2026-09-02, Valya).</summary>
+    /// vanilla character next to a modded one.</summary>
     bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target);
     bool HasCompanionSlot(SpawnNativeDescriptor descriptor);
     /// <summary>Reads the slot. False when the descriptor no longer

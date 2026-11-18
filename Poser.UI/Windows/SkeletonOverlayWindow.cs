@@ -948,7 +948,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
 
         // Draw skeleton
         // A HELD drag, world gizmo or inspector ball: hovering a handle
-        // is not a manipulation and hides nothing (Midona, 2026-09-02).
+        // is not a manipulation and hides nothing.
         var isGizmoActive = _manipulation.DragHeld
             || _manipulation.ShellDragHeld;
         var lineOpacity = isGizmoActive ? LineOpacityWhileUsing : LineOpacity;
