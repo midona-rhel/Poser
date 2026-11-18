@@ -41,7 +41,7 @@ public sealed class ParentingSection(ITransformParenting parenting, SceneSession
     private void Apply(SelectionId child, SelectionId? target, string control)
     {
         if (notices.Report(parenting.Attach(child, target), control))
-            _child = null; // Reconcile from the committed relationship on the next draw.
+            _child = null; // Read the saved parent again on the next draw.
     }
 
     public void Draw(FormScope form, SelectionId child)

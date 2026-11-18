@@ -67,8 +67,8 @@ public sealed partial class PropertiesContent
                         ? "Choose an actor first"
                         : $"Choose exact bones on {ActorNames.Display(_configuration, actor)}",
                     id: "camera-track-select-bones");
-                // Picking in the view: a click takes a bone, Ctrl-click
-                // keeps adding within the currently followed actor.
+                // Pick bones in the game view: a click picks one bone, and
+                // Ctrl-click adds more bones on the actor the camera follows.
                 actions.IconButton(
                     TablerIcon.Crosshair,
                     () => _bonePick.Begin(

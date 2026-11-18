@@ -15,7 +15,8 @@ namespace Poser.Game.Posing;
 
 /// <summary>Turns IK off for one chain and keeps the limb where IK put it: the
 /// solved bones become ordinary pose edits. This is what switching Live IK off
-/// does, and what Bake does. Other chains and named service layers keep running.</summary>
+/// does, and what Bake does. Other IK chains keep running, and changes that
+/// other Poser features keep on these bones stay.</summary>
 public sealed class IkBakeCapture : IDisposable, IIkBake
 {
     /// <summary>Stop waiting if the actor disappears or stops updating during the bake.</summary>
@@ -44,10 +45,10 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         public required TransformTargetId Target;
         public required IkChainConfig Config;
         public required SlotBake Slot;
-        /// <summary>Bone edits saved before baking, in application order.</summary>
+        /// <summary>The chain's bones, in the order their edits are applied.</summary>
         public required List<TransformTargetId> Order;
         public required Dictionary<TransformTargetId, TransformTargetState> Before;
-        /// <summary>Targets an action actually appended a stack to.</summary>
+        /// <summary>The bones the bake actually wrote an edit to.</summary>
         public readonly HashSet<TransformTargetId> Written = new();
         public string? Failure;
         public bool Completing;
@@ -55,7 +56,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
     private Bake? _pending;
     private long _generation;
-    // Chains waiting their turn: a bake owns the next pose update, so they run one at a time.
+    // Chains waiting their turn. A bake needs the next pose update to itself, so chains are baked one at a time.
     private readonly Queue<TransformTargetId> _waiting = new();
 
     public IkBakeCapture(
@@ -108,8 +109,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     }
 
     /// <summary>
-    /// Captures the selected chain, disables it, and applies its saved pose on
-    /// the next evaluation. Note reports when the bake finishes or fails.
+    /// Saves the selected chain's pose, turns the chain off, and puts the saved
+    /// pose back on the next pose update. Note says when the bake finishes or fails.
     /// While another chain is being baked, this one waits and runs after it.
     /// </summary>
     public GestureResult Begin(TransformTargetId target)
@@ -174,7 +175,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         if (_posing.SetIkConfiguration(endpoint, config with { Enabled = false }) is { } disableError)
             return GestureResult.Fail(disableError);
 
-        // Replace only this chain's manual edits. Named service layers remain active.
+        // Remove only the edits made by hand on this chain's bones. Changes other Poser features keep on them stay.
         var poseInfo = _posing.GetPoseInfo(slot);
         foreach (var bone in affected)
             if (bake.Slot.Covered.ContainsKey((bone.PartialId, bone.BoneIndex)))
@@ -192,7 +193,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         return GestureResult.Ok();
     }
 
-    /// <summary>Applies a saved bone transform against the raw pose refreshed by this evaluation.</summary>
+    /// <summary>Puts a bone back where it was saved, measured from the game's animated pose in this update.</summary>
     private void ApplyBone(
         Bake bake,
         SlotBake slot,
@@ -220,12 +221,12 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         }
         catch (Exception ex)
         {
-            // Report the error after leaving the native callback, then restore the pose.
+            // Report the error once the game's pose update has returned, then put the old pose back.
             bake.Failure ??= $"{bone.BoneName}: {ex.Message}";
         }
     }
 
-    /// <summary>Schedules completion on the framework thread after the native pose callback ends.</summary>
+    /// <summary>Finishes the bake in the plugin's next frame update, once the game's pose update has returned.</summary>
     private void OnTransitiveActionsEnded(TransitiveActionOutcome outcome)
     {
         if (_pending is not { } bake)
@@ -356,7 +357,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         return failure == null;
     }
 
-    /// <summary>Selects the pose-file section for the skeleton's slot.</summary>
+    /// <summary>Picks the part of the saved pose that belongs to this skeleton.</summary>
     private static Dictionary<string, PoseFile.BoneData>? CollectionFor(
         PoseFile poseFile,
         PoseSlot slot) => slot switch
@@ -393,7 +394,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
         if (IkChains.ForEndpoint(endpoint.BoneName) is not { } definition)
             return result;
-        // Named joints belong to the endpoint's skeleton partial.
+        // The named joints are looked up in the same part of the skeleton as the end bone.
         var skeleton = endpoint.Skeleton as Skeleton;
         IBone? ByName(string? name) => name == null
             ? null

@@ -16,26 +16,26 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI.Widgets;
 
 /// <summary>
-/// One texture id, chosen off a grid of what the textures actually look
-/// like. The field is a stepped numeric id — the id is the value, and a
-/// pose file states it — with a preview tile beside it that opens the grid.
+/// Picks a texture by its number, from a grid that shows what each texture
+/// looks like. The field is the number itself, with buttons to step it,
+/// because the number is what gets saved. A preview square beside it opens
+/// the grid.
 ///
-/// <para>Retained like <see cref="SearchPicker{T}"/> and drained the same
-/// way: <see cref="Draw"/> runs the surface's lifetime once a frame and
-/// answers with the pick, so the row that opened it reports the outcome.
+/// <para>Like <see cref="SearchPicker{T}"/>, it stays alive between frames:
+/// <see cref="Draw"/> is called every frame and returns the texture picked,
+/// so the row that opened the picker handles the result.
 /// </para>
 ///
-/// <para>The catalog is probed rather than known: the game exposes no list
-/// of sky or cloud textures, so the ids are walked and the ones the game
-/// has no file for are dropped — every id but zero, which is the
-/// no-texture choice and is always offered. The walk is chunked over
-/// frames because a texture wrap blocks while it resolves — a thousand of
-/// them on one frame is a visible hitch.</para>
+/// <para>The game has no list of sky or cloud textures, so the picker tries
+/// each number and leaves out the ones the game has no file for. Zero is
+/// always kept, because it means no texture. The numbers are tried a few at
+/// a time over many frames, because loading a texture preview holds up the
+/// frame until it is found, and a thousand in one frame is a visible stutter.</para>
 /// </summary>
 public sealed class TexturePicker
 {
-    /// <summary>Three large tiles across, three rows in the viewport —
-    /// big enough that a housing window's leadwork actually reads.
+    /// <summary>Three large tiles across and three rows visible, big enough
+    /// to make out the pattern of a housing window.
     /// </summary>
     private const int TextureGridColumns = 3;
 
@@ -43,21 +43,21 @@ public sealed class TexturePicker
 
     private const float TextureTileSize = 120f;
 
-    /// <summary>Inter-tile breathing is the shared spacing token, not a
-    /// metric of this component's own.</summary>
+    /// <summary>The space between tiles comes from the theme's shared
+    /// spacing.</summary>
     private static float TextureTileGap => ActiveTheme.Spacing.Four;
 
-    /// <summary>The tile's art breathes off its own hover fill, so the
-    /// selected ring never crops the preview.</summary>
+    /// <summary>Space between the picture and the edge of its tile, so the
+    /// outline of the selected tile never covers the picture.</summary>
     private const float TextureTileInset = 3f;
 
-    /// <summary>The caption band under the art — its own strip of panel,
-    /// never a scrim over the preview: a name printed on the art both
-    /// hides it and fights it for contrast.</summary>
+    /// <summary>Height of the name strip under the picture. The name gets
+    /// its own strip, because printed on the picture it would hide part of
+    /// it and be hard to read.</summary>
     private const float TextureTileCaption = 16f;
 
-    /// <summary>The surface's own inset. The shared PopupPadding is
-    /// menu-tier (4) and reads as none on a surface this large.</summary>
+    /// <summary>Padding inside the picker. The shared popup padding is sized
+    /// for small menus and looks like none on something this large.</summary>
     private const float TextureSurfacePadding = 12f;
 
     /// <summary>Maximum catalog probes per frame, including pending retries.
@@ -65,11 +65,10 @@ public sealed class TexturePicker
     private const int TextureProbesPerFrame = 16;
 
     /// <summary>
-    /// Zero means no texture and is admitted whatever the game answers for
-    /// it — the one id the walk may not drop. Every other id earns its
-    /// tile by having a file; zero earns its tile by being the value that
-    /// means "none", which the grid must expose directly rather than
-    /// leaving to the steppers beside it.
+    /// Zero means no texture. It is always offered, whatever the game says
+    /// about it. Every other number gets a tile because the game has a file
+    /// for it; zero gets one because the grid must offer "none" directly,
+    /// not leave it to the step buttons beside it.
     /// </summary>
     private const uint NoTextureId = 0;
 
@@ -113,10 +112,10 @@ public sealed class TexturePicker
         _columns = Math.Max(1, columns);
         _rows = Math.Max(1, rows);
         _tileSize = tileSize;
-        // A catalog that KNOWS its ids skips the walk: the grid opens at
-        // its final size on its first frame, and a tile whose image is
-        // still loading draws its glyph until the handle exists. Walked
-        // catalogs (sky, clouds) grew row by row for a dozen frames.
+        // When the numbers are known in advance, nothing is tried: the grid
+        // opens at its full size on the first frame, and a tile whose picture
+        // is still loading shows an icon until it is ready. When numbers must
+        // be tried, as for sky and clouds, the grid grows over a dozen frames.
         if (knownIds is not null)
         {
             _ids.AddRange(knownIds);
@@ -134,10 +133,9 @@ public sealed class TexturePicker
 
     public bool IsOpen => ImGui.IsPopupOpen(_popupId);
 
-    /// <summary>Draws the surface if it is up, and answers with the pick.
-    /// UNCONDITIONAL like every retained surface: a popup that is not
-    /// submitted on a frame is closed by ImGui at the end of it, and a
-    /// closed picker returns on its first line.</summary>
+    /// <summary>Draws the picker if it is open and returns the texture
+    /// picked, if any. Call it every frame: ImGui closes a popup that is not
+    /// drawn in a frame, and a closed picker returns at once.</summary>
     public uint? Draw()
     {
         if (_openRequested)
@@ -153,15 +151,15 @@ public sealed class TexturePicker
         var theme = ActiveTheme;
         float pad = TextureSurfacePadding;
         float pitch = _tileSize + TextureTileCaption + TextureTileGap;
-        // The gutter-as-padding contract: the reserved scrollbar gutter
-        // sits ON the surface's right edge and IS the trailing inset —
-        // the stated padding covers the other three sides only.
+        // The space kept for the scrollbar sits at the right edge and serves
+        // as the right padding, so the padding is only added on the other
+        // three sides.
         float width = pad
             + _columns * (_tileSize + TextureTileGap)
             - TextureTileGap
             + theme.Scrollbar.GutterWidth;
-        // The surface fits its rows up to the cap; fewer rows, a
-        // shorter surface, and no scrolling until the cap.
+        // The picker is as tall as its rows, up to the row limit, and only
+        // scrolls past that.
         float height = pad * 2f
             + RowsShown() * pitch - TextureTileGap;
 
@@ -172,8 +170,8 @@ public sealed class TexturePicker
             {
                 Width = width,
                 Height = height,
-                // Zero window padding: the body seats itself so the
-                // gutter can reach the edge the padding would cover.
+                // No window padding: the grid places itself, so the
+                // scrollbar space can reach the right edge.
                 Padding = 0f,
                 AnchorMin = _anchorMin,
                 AnchorMax = _anchorMax,
@@ -184,9 +182,10 @@ public sealed class TexturePicker
     }
 
     /// <summary>
-    /// The row control: the preview tile that opens the grid, then the id
-    /// itself under a pair of steppers. The tile leads because it is what
-    /// the eye reads; the id trails because it is what the value IS.
+    /// The control in a form row: the preview square that opens the grid,
+    /// then the number between a minus and a plus button. The preview comes
+    /// first because it is what people look at; the number follows because it
+    /// is the value that is saved.
     /// </summary>
     public void Field(
         in FormPairCell cell,
@@ -200,8 +199,8 @@ public sealed class TexturePicker
         float scale = cell.Scale;
         float side = theme.Controls.WorkspaceHeight * scale;
         float gap = theme.Page.ActionGap * scale;
-        // The stepper hugs the well it steps; the tile stands apart from
-        // the group it previews.
+        // The minus and plus buttons sit close to the number; the preview
+        // square stands a little apart.
         float tight = theme.Spacing.One * scale;
         float committed = side * 3f + gap + tight * 2f;
         float well = Math.Clamp(
@@ -257,8 +256,8 @@ public sealed class TexturePicker
     private uint Clamp(float value) => (uint)Math.Clamp(
         (int)MathF.Round(value), 0, (int)Math.Max(1u, _count) - 1);
 
-    /// <summary>Opens the picker under the caller's tile rectangle. Explicit
-    /// bounds keep later controls from changing its anchor.</summary>
+    /// <summary>Opens the picker under the given square. Passing its corners
+    /// means controls drawn later cannot move where the picker opens.</summary>
     public void OpenAt(uint selected, Vector2 anchorMin, Vector2 anchorMax) =>
         Open(selected, anchorMin, anchorMax);
 
@@ -271,8 +270,9 @@ public sealed class TexturePicker
     }
 
     /// <summary>
-    /// Retries pending textures before probing more IDs. Both consume the
-    /// frame budget; unresolved textures remain queued for later frames.
+    /// Checks again on textures still loading, then tries more numbers. Both
+    /// count toward the limit per frame; textures still loading are checked
+    /// again on later frames.
     /// </summary>
     private void Probe()
     {
@@ -300,9 +300,9 @@ public sealed class TexturePicker
         }
     }
 
-    /// <summary>Ids are admitted out of order — a retry lands after the ids
-    /// the walk reached meanwhile — so the list is kept sorted rather than
-    /// appended to.</summary>
+    /// <summary>Numbers arrive out of order, because a texture that finished
+    /// loading late comes after numbers tried since. So the list is kept
+    /// sorted instead of only added to at the end.</summary>
     private void Admit(uint id)
     {
         int index = _ids.BinarySearch(id);
@@ -318,8 +318,8 @@ public sealed class TexturePicker
         var min = ImGui.GetWindowPos();
         float scale = ImGuiHelpers.GlobalScale;
         float pitch = _tileSize + TextureTileCaption + TextureTileGap;
-        // Left and top insets by hand (the window's own padding is zero);
-        // the right inset is the ScrollRegion's reserved gutter itself.
+        // Left and top padding are added here by hand, because the window has
+        // none. The right padding is the space kept for the scrollbar.
         ImGui.SetCursorScreenPos(
             min + new Vector2(TextureSurfacePadding * scale));
         ScrollRegion(
@@ -333,8 +333,8 @@ public sealed class TexturePicker
             ImGui.CloseCurrentPopup();
     }
 
-    /// <summary>The grid, clipped at the ROW pitch: a catalog of a thousand
-    /// tiles submits only the band the viewport shows.</summary>
+    /// <summary>Draws only the rows of the grid that are on screen, so a
+    /// thousand textures cost no more than the visible ones.</summary>
     private void DrawGrid(ScrollRegionScope region)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -394,18 +394,16 @@ public sealed class TexturePicker
     }
 
     /// <summary>
-    /// The corners of the image a tile actually samples. Some of the
-    /// game's textures in these catalogs are animation atlases — a wide
-    /// sheet of square frames laid side by side — and squashing a whole
-    /// sheet into a square tile shows every frame at once instead of the
-    /// picture. Anything that is not 1:1 is therefore sampled at its
-    /// top-left square, which is the atlas's first frame; a square texture
-    /// keeps the whole image.
+    /// The part of the texture a tile shows. Some of these textures are
+    /// animation sheets: square frames side by side in one wide picture.
+    /// Squeezing a whole sheet into a square tile would show every frame at
+    /// once. So a texture that is not square shows only its top-left square,
+    /// which is the first frame; a square texture shows in full.
     ///
-    /// <para>This affects display only: the id the scene is given never sees
-    /// this, and the crop is two UV corners handed to ImGui — no pixels
-    /// are decoded, resized, or cached. A probe that could not state a
-    /// size answers zero and is drawn whole.</para>
+    /// <para>This only changes what the tile shows, not the number that is
+    /// saved. No pixels are read, resized or stored: ImGui is only told which
+    /// corners of the picture to draw. A texture whose size is unknown reports
+    /// zero and is drawn whole.</para>
     /// </summary>
     private static (Vector2 Min, Vector2 Max) FirstFrameUv(Vector2 pixels)
     {
@@ -418,9 +416,10 @@ public sealed class TexturePicker
     }
 
     /// <summary>
-    /// One preview square, hit-tested. The field tile opens the surface;
-    /// a grid tile picks. The wrap is re-resolved every frame — a shared
-    /// texture's handle is the frame's and nothing else.
+    /// One clickable preview square. The square in the form row opens the
+    /// grid; a square in the grid picks that texture. The texture is looked up
+    /// again every frame, because a shared texture's handle is only good for
+    /// the frame it was given in.
     /// </summary>
     private void DrawTile(
         string id,
@@ -434,8 +433,8 @@ public sealed class TexturePicker
         var theme = ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         var draw = ImGui.GetWindowDrawList();
-        // A grid cell is the art square PLUS its caption band; the whole
-        // cell is one hit target so the name is as clickable as the art.
+        // A grid tile is the picture plus the name under it. The whole tile
+        // can be clicked, the name as well as the picture.
         float captionBand = grid ? TextureTileCaption * scale : 0f;
         var cell = size + new Vector2(0f, captionBand);
         var max = min + cell;
@@ -494,15 +493,14 @@ public sealed class TexturePicker
 
         if (grid)
         {
-            // The caption stands under the art on the tile's own fill —
-            // the art stays whole and the text never fights a bright
-            // preview for contrast. A named catalog prints its name; a
-            // walked one prints the id. A name wider than the tile is
-            // cut to it with the shared ellipsis shaping, never drawn
-            // past the cell.
-            // Zero with no art behind it IS the no-texture choice, and it
-            // says so in words: an id printed under an empty square is
-            // indistinguishable from a texture the client is missing.
+            // The name sits under the picture on the tile's own background,
+            // so the picture stays whole and the name stays readable next to
+            // a bright picture. Textures with names show their name; the
+            // others show their number. A name too wide for the tile is
+            // shortened with an ellipsis.
+            // Zero with no picture is the no-texture choice and says None,
+            // because a bare number under an empty square would look like a
+            // texture the game is missing.
             bool none = value == NoTextureId && !drawn;
             var captionStyle = new TextStyle
             {

@@ -112,8 +112,8 @@ public sealed class UIManager : IUIManager
             error => log.Error(error, "UI activation cleanup failed"));
         startup.OnFailure(Dispose);
         _keyEvents.KeyEvent += OnKeyEvent;
-        // A released drag or an accepted typed value seals the journal's
-        // open step, so every control's edit is one step, press to release.
+        // Releasing a drag or confirming a typed value closes the current
+        // undo step, so each edit to a control is one undo step, press to release.
         _ui.ValueCommitted += _values.CommitEdit;
         _ui.ValueEditBegan += _values.BeginEdit;
         _ui.ValueEditEnded += _values.EndEdit;
@@ -144,8 +144,8 @@ public sealed class UIManager : IUIManager
         }
         else
         {
-            // Reference images are the session's; they go with it whether
-            // or not the windows do.
+            // Reference pictures belong to the GPose session, so they close
+            // with it whether or not the windows do.
             _windows.CloseReferenceImages();
             _windows.CloseProperties();
             if (config.CloseWithGPose)
@@ -156,9 +156,9 @@ public sealed class UIManager : IUIManager
     private readonly Dalamud.Plugin.Services.IGameGui _gameGui;
     private readonly ActionGate _gate;
 
-    /// <summary>Poser's windows are down: its own hide, or the game's UI hidden while
-    /// Poser isn't set to show then. Dalamud still calls the draw (DisableUserUiHide),
-    /// so shortcuts queued by the key hook (undo, redo) run while hidden.</summary>
+    /// <summary>True when Poser's windows are hidden: Poser itself was hidden, or the
+    /// game's interface is hidden and Poser is not set to show then. Drawing still
+    /// runs while hidden, so shortcuts such as undo and redo still work.</summary>
     private bool WindowsHidden =>
         _uiHidden || (_gameGui.GameUiHidden && !_configService.Config.UI.ShowWhenGameUiHidden);
 
@@ -171,7 +171,7 @@ public sealed class UIManager : IUIManager
         if (!AdvanceTheme())
             return;
 
-        // Warm caches before primary windows draw, with separate timing scopes.
+        // Load icons before the main windows draw, timed separately in the profiler.
         using (_profiler.Scope("Shell · icon pump"))
             _ui.Icons.PumpStartupIcons(_configService.Config.Library.IconSize);
         bool previewBackingReady;
@@ -200,8 +200,8 @@ public sealed class UIManager : IUIManager
                 }
                 catch (Exception ex)
                 {
-                    // Recorded for the issue report, then rethrown: Dalamud
-                    // owns what happens to a frame that threw.
+                    // Recorded for the issue report, then thrown again, because
+                    // Dalamud decides what happens to a frame that failed.
                     _recorder.Exception(ex);
                     throw;
                 }
@@ -228,9 +228,9 @@ public sealed class UIManager : IUIManager
             EndValueFrame();
             _profiler.EndFrame();
         }
-        // Hide-while-manipulating (#77): the windows fade down while a
-        // world drag is HELD — hover never hides — so the scene is clear
-        // under the gesture.
+        // The windows fade out while something in the scene is being
+        // dragged, so the scene is clear to see. Only a held drag hides them;
+        // hovering does not.
         bool held = _manipulation.DragHeld;
         bool shellHeld = _manipulation.ShellDragHeld;
         bool active = _configService.Config.UI.HideWhileManipulating
@@ -249,9 +249,9 @@ public sealed class UIManager : IUIManager
         HandleKeybinds();
     }
 
-    /// <summary>A mouse drag that began on empty space — nothing of the
-    /// UI or a handle under the press — and has moved since: the game is
-    /// turning its camera under it, on either button.</summary>
+    /// <summary>A drag with either mouse button that started where there was
+    /// no window or handle, and has moved since. The game turns its camera
+    /// with such a drag.</summary>
     private readonly bool[] _emptyPress = new bool[2];
     private readonly System.Numerics.Vector2[] _pressAt = new System.Numerics.Vector2[2];
     private bool EmptySpaceDrag()
@@ -278,8 +278,9 @@ public sealed class UIManager : IUIManager
 
     private void SelectedHistory(bool before)
     {
-        // The journal reports file/deferred failures itself. Report only a
-        // refusal it did not already surface during this synchronous action.
+        // Undo history reports its own failures, including ones that come
+        // later. Report a failure here only if it was not already reported
+        // during this action.
         bool reported = false;
         void Posted(string kind, string message) => reported = true;
         _notices.Posted += Posted;
@@ -397,8 +398,8 @@ public sealed class UIManager : IUIManager
     private void PoseShortcut(Action<global::Poser.Domain.Identity.ActorId> action,
         bool opensWindow = false, bool requiresPose = true)
     {
-        // Keyboard actions use the one workspace cursor, never a Library host
-        // or whichever pinned Properties happened to draw last.
+        // Shortcuts act on the main window's selection, never on the Library
+        // or on whichever pop-out Properties window drew last.
         if (_scene.Selection.PrimaryActor is not { } actor
             || !_scene.Selection.Selected.All(id => id.OwningActor == actor)
             || !_scene.Snapshot.Actors.Any(item => item.Id == actor)
@@ -426,8 +427,9 @@ public sealed class UIManager : IUIManager
             foreach (var bind in _keybinds)
             {
                 bind.Sync(PoserKeybinds.Slots(_configService.Config.UI, bind.Name));
-                // A held recording/text-entry chord is not a fresh press when
-                // suppression ends, including the no-native-hook polling path.
+                // Keys still held from recording a shortcut or typing text do
+                // not count as a new press when shortcuts work again. The same
+                // applies when keys are polled because the key hook is missing.
                 bind.Down = ChordDown(bind.Primary) || ChordDown(bind.Secondary);
                 bind.Queued = false;
             }
@@ -440,9 +442,9 @@ public sealed class UIManager : IUIManager
             bind.Sync(slots);
             if (_keyEvents.Available)
             {
-                // The key hook decided and took the key from the game on
-                // its message; the bind runs here, on the draw frame, as
-                // every bind always has.
+                // The key hook already took the key from the game; the
+                // shortcut itself runs here, during drawing, like every other
+                // shortcut.
                 if (bind.Queued)
                 {
                     bind.Queued = false;
@@ -456,10 +458,9 @@ public sealed class UIManager : IUIManager
             {
                 bind.Down = true;
                 RunShortcut(bind);
-                // A fired chord is CONSUMED: the key comes off the game's
-                // state so the game does not also act on it — our binds
-                // are ours (the setter only accepts false, which is
-                // exactly the suppression Dalamud offers).
+                // A shortcut that ran takes its key away from the game, so
+                // the game does not act on it too. Dalamud only lets a key be
+                // set to not pressed, which is exactly what this needs.
                 var fired = ChordDown(bind.Primary)
                     ? bind.Primary
                     : bind.Secondary;
@@ -474,9 +475,9 @@ public sealed class UIManager : IUIManager
         }
     }
 
-    /// <summary>Resolves a game key message using the modifiers currently held.
-    /// Matching presses queue actions for the draw frame. ProcessShortcutKey
-    /// decides whether the game also receives the message.</summary>
+    /// <summary>Matches a key press from the game against the shortcuts, using the
+    /// modifier keys held right now. A match is queued to run during drawing.
+    /// ProcessShortcutKey decides whether the game also gets the key.</summary>
     private bool OnKeyEvent(Domain.Preferences.KeyCode code, global::Poser.Application.Input.KeyEventKind kind)
         => ProcessShortcutKey(new KeyChord(_keyState[VirtualKey.CONTROL],
             _keyState[VirtualKey.SHIFT], _keyState[VirtualKey.MENU], code), kind);
@@ -526,8 +527,8 @@ public sealed class UIManager : IUIManager
     }
 
 #if DEBUG
-    // Diagnostic input follows the real chord resolver and deferred draw-frame
-    // dispatch, without sending keys to the game or desktop.
+    // Test input for debugging. It goes through the same shortcut matching and
+    // runs at the same point during drawing, but sends no keys to the game or desktop.
     public object DebugShortcut(string chord, global::Poser.Application.Input.KeyEventKind kind)
     {
         bool suppressed = ShortcutsSuppressed;
@@ -580,8 +581,8 @@ public sealed class UIManager : IUIManager
         }
     }
 
-    // Hiding is not closing: preserve each window's open state and avoid
-    // triggering Settings cancellation or the workspace's open request.
+    // Hiding is not closing: each window stays open underneath, Settings
+    // keeps its unsaved changes, and nothing that runs on opening is triggered.
     private void ToggleAllUi() => _uiHidden = !_uiHidden;
 
     public void ToggleMainWindow()
@@ -624,8 +625,8 @@ public sealed class UIManager : IUIManager
         builder.DisableGposeUiHide = ui.ShowInGPose;
         builder.DisableCutsceneUiHide = ui.ShowInCutscene;
         builder.DisableAutomaticUiHide = ui.ShowWhenGameUiHidden;
-        // Poser hides its own windows for the game's UI hide (WindowsHidden): the
-        // draw has to keep running for the shortcuts the key hook queues there.
+        // Poser hides its own windows when the game's interface is hidden
+        // (WindowsHidden), because drawing must keep running for shortcuts to work.
         builder.DisableUserUiHide = true;
     }
 
@@ -647,7 +648,7 @@ public sealed class UIManager : IUIManager
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
-        // The provider owns the context. Presentation disposal still dismisses
-        // menus through it after Draw stops, so keep it alive until then.
+        // The shared UI state is disposed elsewhere, not here. Closing the panes
+        // still closes menus through it after drawing stops, so it must live until then.
     }
 }

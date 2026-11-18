@@ -17,13 +17,14 @@ using LegacyTransform = Poser.Domain.Transforms.Transform;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Bakes the previewed expression into one transform patch. The capture reads
-/// the face, restores the facial layer, drives that layer when needed, waits
-/// for stable readings, and applies a delta against the restored layer.
-/// Pending operations are bound to the current session, actor, skeleton, and
-/// bindings; callbacks revalidate those identities before writing or restoring.
-/// The patch uses the captured facial output. Running animation can later
-/// change the result; settling also has a fixed timeout.
+/// Bakes the expression being previewed into the pose, as one undo step. It
+/// reads the face bones, puts the face animation back the way it was, lets
+/// that animation play until the face stops moving, and then sets the face
+/// bones on top of it so the expression stays.
+/// While it waits, it checks every frame that the session, the actor and its
+/// skeleton are still the same, and stops without changing anything if not.
+/// An animation that keeps playing can change the face again afterwards.
+/// Waiting for the face to stop moving gives up after a fixed time.
 /// </summary>
 public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 {
@@ -37,25 +38,25 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
     private readonly ISessionGenerationSource _sessionGeneration;
     private readonly IPluginLog _log;
 
-    /// <summary>Ticks between arming and the first face read.</summary>
+    /// <summary>Frames to wait after starting before the face is first read.</summary>
     private const int CaptureDelayTicks = 2;
 
-    /// <summary>Consecutive equal readings required before settling.</summary>
+    /// <summary>How many frames in a row the face must read the same to count as still.</summary>
     private const int StableTicks = 2;
 
-    /// <summary>Maximum ticks spent waiting for a stable face.</summary>
+    /// <summary>The most frames to wait for the face to stop moving.</summary>
     private const int SettleTimeoutTicks = 20;
 
-    /// <summary>Model-space tolerance used when comparing readings.</summary>
+    /// <summary>How far a bone may move between two readings and still count as not moving.</summary>
     private const float StableEpsilon = 1e-5f;
 
     private enum BakePhase
     {
-        /// <summary>Waiting for a pass to refresh the raw caches.</summary>
+        /// <summary>Waiting for the game to update the face bones before reading them.</summary>
         Capturing,
 
-        /// <summary>Face captured, facial layer restored, waiting for the
-        /// layer's own output to settle.</summary>
+        /// <summary>The face has been read and its animation put back; waiting
+        /// for that animation to stop moving the face.</summary>
         Settling,
     }
 
@@ -74,7 +75,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         public int StableRuns;
         public int SettleTicks;
 
-        /// <summary>Whether the facial slot speed override is held.</summary>
+        /// <summary>Whether Poser is forcing the face animation to play at normal speed.</summary>
         public bool DriveHeld;
         public bool Completing;
     }
@@ -123,7 +124,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         name.Equals("j_kao", StringComparison.Ordinal) ||
         name.StartsWith("j_ago", StringComparison.Ordinal);
 
-    /// <summary>Starts capture. Success here means it was accepted; receipts report completion.</summary>
+    /// <summary>Starts the bake. Success only means it started; a later status report says when it is done.</summary>
     public GestureResult Begin(ActorId actor, ActorDescriptor descriptor)
     {
         if (_disposed || DisposeRequested)
@@ -176,7 +177,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         }
     }
 
-    /// <summary>Invalidates the current operation before restoring owned state.</summary>
+    /// <summary>Stops the bake in progress, then undoes the temporary changes it made to the actor.</summary>
     public OperationReceipt? CancelPending(
         string detail = "Facial capture was cancelled.")
     {
@@ -218,7 +219,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         if (pending.Completing)
             return;
 
-        // Validate before any callback-side read, write, restore, or publication.
+        // Check the bake still belongs to this session before reading, writing or reporting anything.
         if (!IsCurrentToken(pending))
         {
             InvalidatePending(
@@ -227,7 +228,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
             return;
         }
 
-        // The refresh lease lasts one rebuild, so renew it while waiting.
+        // A request to update the face bones lasts one frame, so ask again every frame while waiting.
         RequestRawRefresh(pending);
 
         if (pending.Phase == BakePhase.Capturing)
@@ -253,8 +254,9 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         if (!arrived)
             return;
 
-        // Release the temporary drive before applying the patch, then settle
-        // once more against the frame the actor will keep.
+        // Stop forcing the face animation to play before setting the bones,
+        // then wait for the face to be still again, so the bake matches what
+        // the actor will show afterwards.
         if (pending.DriveHeld)
         {
             ReleaseFacialDrive(pending);
@@ -265,7 +267,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         Complete(pending);
     }
 
-    /// <summary>Reads the face, restores the facial layer, and starts settling.</summary>
+    /// <summary>Reads the face, puts its animation back, and starts waiting for the face to be still.</summary>
     private void CaptureAndRestore(PendingBake pending)
     {
         if (!TryReadFace(pending.Bones, out var reading, out var problem))
@@ -302,9 +304,10 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
     }
 
     /// <summary>
-    /// Temporarily requests facial slot speed 1 while waiting for readings. The
-    /// native speed port still multiplies this by overall actor speed. Releases
-    /// the override before measuring the baseline for the transform patch.
+    /// Makes the face animation play at normal speed while waiting, even if it
+    /// was paused. The game still multiplies this by the actor's overall
+    /// animation speed. Poser stops forcing it before the last reading, which
+    /// the baked bones are measured against.
     /// </summary>
     private void TakeFacialDrive(PendingBake pending)
     {
@@ -329,7 +332,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
                 $"Face bake could not release the facial layer: {released.Detail}");
     }
 
-    /// <summary>Reads the current raw transform for each face bone.</summary>
+    /// <summary>Reads each face bone as the game's animation set it, before Poser's own changes.</summary>
     private bool TryReadFace(
         IReadOnlyList<BoneId> bones,
         out List<LegacyTransform> reading,
@@ -374,7 +377,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         return true;
     }
 
-    /// <summary>Requests a raw-transform refresh for the captured face bones.</summary>
+    /// <summary>Asks the game to update the face bones' animation values for the next reading.</summary>
     private void RequestRawRefresh(PendingBake pending)
     {
         foreach (var bone in pending.Bones)
@@ -390,7 +393,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
 
     private void Complete(PendingBake pending)
     {
-        // Revalidate checks the session token first, right before the transform write.
+        // Check the session, actor and skeleton are still the same right before writing the bones.
         if (Revalidate(pending) is { } problem)
         {
             InvalidatePending(pending, $"Facial capture cancelled: {problem}");
@@ -429,8 +432,8 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
             return;
         }
 
-        // While Completing is set, cancelling and disposing both wait, so this is still
-        // the pending capture.
+        // While Completing is set, cancel and shutdown both wait, so this is still
+        // the same bake.
         var teardown = FinishOwnedState(pending);
         if (!applied.Success)
         {
@@ -508,7 +511,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         }
     }
 
-    /// <summary>Attempts to release the facial drive and resumes animation commands.</summary>
+    /// <summary>Stops forcing the face animation to play and lets animation commands run again.</summary>
     private (bool Success, string? Detail) FinishOwnedState(PendingBake pending)
     {
         try
@@ -694,8 +697,8 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         }
         catch (Exception exception)
         {
-            // Never fall back to native/session writes on the provider's
-            // off-thread shutdown path. The owner remains closed to new work.
+            // When shutdown comes from another thread, never touch the game or
+            // the session from here. This object still takes no new bakes.
             _log.Warning(
                 $"Face capture disposal could not reach the framework thread: " +
                 exception.Message);
@@ -708,9 +711,9 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
             return;
         if (!_framework.IsInFrameworkUpdateThread)
             return;
-        // A reentrant request from ApplyAbsolute cannot touch the facial
-        // guard, speed, or receipts until SetAbsoluteMany observes the
-        // cancellation and returns from its exhaustive rollback.
+        // A shutdown that arrives while the bone writes are still running
+        // must wait. It may not change the face animation, its speed or the
+        // status reports until the writes notice the cancel and undo themselves.
         if (_pending is { Completing: true } || _terminating)
             return;
 

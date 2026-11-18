@@ -19,10 +19,11 @@ namespace Poser.Game.Scene;
 
 
 /// <summary>
-/// Captures a scene document without native handles or entity references.
-/// BeginCapture first refreshes skeleton caches through PoseExportCapture, then
-/// builds the document on the framework thread. Pose imports block capture to
-/// avoid saving an intermediate pose. Document relationships use logical IDs.
+/// Builds a scene file from what is in the scene now. The file holds no
+/// pointers into game memory: actors, lights and the rest point at each other
+/// by ids saved in the file. Before reading poses it has the game update every
+/// skeleton, then builds the file on the game's main thread. It does nothing
+/// while a pose is being applied, so a half-applied pose is never saved.
 /// </summary>
 public sealed class SceneCaptureService
 {
@@ -116,10 +117,10 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// Starts a framework-thread capture and reports its result through onCaptured.
-    /// Refreshes every available actor and companion skeleton before reading poses,
-    /// since unedited skeleton caches may still contain their initial values.
-    /// With no skeletons, capture runs immediately. Returns a reason if it cannot start.
+    /// Starts saving the scene and reports the result through onCaptured.
+    /// It first updates the skeleton of every actor and companion, because
+    /// Poser's copy of a bone no one has edited can still hold an old value.
+    /// With no skeletons it saves at once. Returns the reason when it cannot start.
     /// </summary>
     public string? BeginCapture(
         Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured, bool includeAnimation = false)
@@ -131,9 +132,9 @@ public sealed class SceneCaptureService
         if (sceneId == Guid.Empty)
             return "A scene capture needs a scene identity.";
 
-        // Companions included: a companion is not a scene entry of its own,
-        // but its pose IS captured through its owner, off the very same
-        // caches.
+        // Companions too. A companion is not saved as an actor of its own,
+        // but its pose is saved with the actor it belongs to, from the same
+        // skeleton data.
         var slots = new List<ISkeleton>();
         foreach (var actor in _actors.Actors)
             slots.AddRange(_skeletons.GetSkeletons(actor));
@@ -144,9 +145,9 @@ public sealed class SceneCaptureService
             return null;
         }
 
-        // The outcome is built inside the refresh's own write step, which runs
-        // on the framework thread after every slot refreshed. An interrupted
-        // or timed-out refresh refuses capture instead of saving stale caches.
+        // The scene file is built right after every skeleton has updated, on
+        // the game's main thread. If the update is interrupted or takes too
+        // long, nothing is saved, rather than saving old bone values.
         SceneCaptureOutcome? outcome = null;
         var begun = _exports.Begin(
             slots,
@@ -162,8 +163,9 @@ public sealed class SceneCaptureService
             : begun.Detail ?? "The scene capture could not be armed.";
     }
 
-    /// <summary>Builds the document after cache refresh, or directly when there
-    /// are no skeletons. sceneId preserves identity when saving an existing scene.</summary>
+    /// <summary>Builds the scene file once the skeletons have updated, or at once
+    /// when there are none. Saving over an existing scene passes its own sceneId,
+    /// so it stays the same scene.</summary>
     private SceneCaptureOutcome Capture(Guid sceneId, string? description, bool includeAnimation)
     {
         if (!_framework.IsInFrameworkUpdateThread)
@@ -188,8 +190,8 @@ public sealed class SceneCaptureService
                 SavedAt = DateTimeOffset.UtcNow,
             };
             CaptureTerritory(scene);
-            // Anchors cost nothing at capture and make every container entry
-            // placeable later.
+            // The camera and actor positions are cheap to save, and they let
+            // every saved item be placed relative to them later.
             scene.CameraAnchor = _anchors.CameraAnchorNow();
             scene.ActorAnchor = _anchors.ActorAnchorNow();
 
@@ -219,18 +221,19 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// Saves territory ID, display name, and local-player origin. The library can
-    /// display the saved place without querying game data.
+    /// Saves which zone the scene is in, the zone's name, and where the player's
+    /// own character stands. The Library can then show the place without
+    /// looking it up in game data.
     /// </summary>
     private void CaptureTerritory(SceneFile scene)
     {
         var place = _place.Current;
         scene.TerritoryId = place.TerritoryId;
         scene.PlaceName = place.PlaceName;
-        // The anchor a relative load rebases onto — the same one both
-        // references anchor on, the local player. Absent with no local player
-        // rather than defaulted to the world origin: a stated zero would rebase
-        // a whole scene onto a place nobody ever stood.
+        // Loading a scene relative to the player moves everything by the
+        // player's position, as Brio and Ktisis do. With no player character
+        // this stays empty instead of zero, because zero would move the whole
+        // scene to a spot where no one stood.
         scene.Origin = _objects.LocalPlayer?.Position;
     }
 
@@ -246,8 +249,8 @@ public sealed class SceneCaptureService
         {
             if (actor.IsCompanion)
             {
-                // An attached companion restores through its owner's
-                // companion attachment; it is not a standalone scene entry.
+                // A companion comes back through the actor it belongs to; it is
+                // not saved as an actor of its own.
                 continue;
             }
 
@@ -284,15 +287,15 @@ public sealed class SceneCaptureService
                     : _savedIdentities.TryGetValue(actor, out var savedIdentity) ? savedIdentity.Value : null,
                 ModelCharaId = Math.Max(0, _spawns.GetModelCharaId(actor)),
                 SpawnedKind = spawnedKind,
-                // An unmatched character needs a saved appearance to restore their look.
+                // Poser saves no appearance for a character it did not spawn, other than the player's own.
                 AppearanceNotSaved = spawnedKind is null && !_actors.IsLocalPlayer(actor),
                 LocalPlayer = spawnedKind is null && _actors.IsLocalPlayer(actor),
                 NameIsDisplayName = true,
                 PenumbraCollection = id is { } collectionActor ? CaptureCollection(collectionActor) : null,
                 Visible = _spawns.IsVisible(actor),
                 ClothingOnly = id is { } clothingActor && _invisibleSkin.IsApplied(clothingActor),
-                // A live attachment proves the slot exists even when the
-                // actor was not spawned by Poser with an explicit reservation.
+                // An actor that has a companion right now has room for one,
+                // even if Poser did not spawn it with that room set aside.
                 HasCompanionSlot = _spawns.HasCompanionSlot(actor) ||
                     companion is not null,
                 CompanionKind = companion?.Kind,
@@ -301,8 +304,8 @@ public sealed class SceneCaptureService
                     ? null
                     : CaptureCompanionPose(actor, notes),
                 Pose = pose,
-                // Pose already contains the evaluated IK result. Saving must
-                // not restart a solver over these baked transforms on load.
+                // The saved pose already includes what IK did, so loading must
+                // not run IK over it again.
                 ModelTransform = NormalizedTransform(
                     _posing.GetEffectiveTransform(actor),
                     $"Actor '{actor.Name}' placement", notes),
@@ -327,8 +330,8 @@ public sealed class SceneCaptureService
         return keys;
     }
 
-    /// <summary>Only the user's own bone edits, as the offsets the animation's
-    /// frame is moved by (the authored pose stacks), never the frame itself.</summary>
+    /// <summary>Only the bone changes made in Poser, saved as offsets from what
+    /// the animation shows. The animation's own pose is not saved.</summary>
     private List<SceneBoneEdit> CaptureEdits(IReadOnlyList<ISkeleton> slots) =>
         Poser.Game.Posing.AuthoredPoseState.Capture(slots, _bonePosing).Bones
             .Select(bone => new SceneBoneEdit
@@ -355,15 +358,15 @@ public sealed class SceneCaptureService
     {
         if (_integration.ReadCollection(actor) is not { Success: true, Value: { } assignment })
             return null;
-        // Every plain spawn is ASSIGNED the player's collection, so wearing
-        // it is inheriting: saved, it would force an assignment and a redraw
-        // per actor on load, and name a GUID other machines do not have.
+        // Every spawned actor gets the player's Penumbra collection anyway.
+        // Saving it would set the collection and redraw each actor again on
+        // load, and would name a collection other computers do not have.
         if (!assignment.HasIndividualAssignment
             || _integration.ReadPlayerCollection() is { Success: true, Value: var player }
                 && player == assignment.EffectiveId)
             return null;
-        // A duplicate/MCDF temporary collection's ID dies with its actor.
-        // Only permanent local references can be reused on a later load.
+        // A temporary collection, made for a copied actor or an MCDF, goes away
+        // with its actor. Only collections that stay in Penumbra can be used again.
         if (assignment.EffectiveId == Guid.Empty)
             return Guid.Empty;
         return _integration.ListCollections() is { Success: true, Value: { } collections }
@@ -372,8 +375,8 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// Records the path and name of the actor's current MCDF package. Portable
-    /// scene saving can later embed that package. Missing source paths are reported.
+    /// Saves the path and name of the MCDF the actor wears, so the scene can
+    /// later pack that file in. An MCDF with no known path gets a note instead.
     /// </summary>
     private SceneActorMcdf? CaptureMcdf(
         Poser.Domain.Identity.ActorId id, List<string> notes)
@@ -391,15 +394,15 @@ public sealed class SceneCaptureService
         {
             Path = mcdf.SourcePath,
             FileName = Bounded(mcdf.FileName, "Character file"),
-            // A look an older Poser put on from a scene is still that scene's appearance.
+            // An appearance unpacked from a scene file belongs to that scene, so it is not marked as loaded onto the actor.
             LoadedOnto = !System.IO.Path.GetFileName(mcdf.SourcePath)
                 .StartsWith(Poser.Application.Scene.SceneAppearanceRule.PackedPrefix, StringComparison.OrdinalIgnoreCase),
         };
     }
 
     /// <summary>
-    /// Captures the attached companion's skeletons separately from its owner.
-    /// Missing bodies or skeletons omit the companion pose and add a note.
+    /// Saves the companion's pose apart from the actor it belongs to. If the
+    /// companion's body or skeleton cannot be found, its pose is left out with a note.
     /// </summary>
     private PoseFile? CaptureCompanionPose(IActor owner, List<string> notes)
     {
@@ -428,12 +431,12 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// Where each captured actor is looking. Runs as a SECOND pass because an
-    /// Entity-mode gaze names another actor: the target is written as that
-    /// actor's in-document key, which only exists once every actor has one.
-    /// A gaze following an actor the capture did not take records no target,
-    /// with a note — a saved GameObjectId would name nothing in a restored
-    /// scene, and following the wrong body is worse than following none.
+    /// Where each saved actor is looking. This runs after every actor is saved,
+    /// because an actor can look at another actor, which the file names by its
+    /// saved id, and those ids only exist once every actor is saved.
+    /// An actor looking at an actor that was not saved gets no target and a
+    /// note: the game's own id would mean nothing after loading, and looking at
+    /// the wrong actor is worse than looking at no one.
     /// </summary>
     private void CaptureGaze(
         List<(IActor Actor, SceneActor Entry)> captured,
@@ -452,8 +455,8 @@ public sealed class SceneCaptureService
             Guid? target = null;
             if (state.Mode == GazeTargetMode.Entity)
             {
-                // By stable id: a GPose copy shares its source's GameObjectId,
-                // so only the binding names which body the gaze follows.
+                // Match by Poser's own actor id: a GPose copy has the same game
+                // id as the actor it copies, so only Poser's id tells them apart.
                 if (state.TargetActor is { } followed)
                     foreach (var (candidate, _) in captured)
                     {
@@ -482,9 +485,9 @@ public sealed class SceneCaptureService
             entry.Gaze = new SceneActorGaze
             {
                 PoseAware = state.PoseAware,
-                // A remembered Entity target that no captured actor answers
-                // for cannot be restored as a follow, so the file states the
-                // mode WITHOUT a target rather than an unfollowable one.
+                // When the actor looked at was not saved, the file keeps the
+                // look-at-an-actor mode with no target, rather than a target
+                // that cannot be found after loading.
                 Mode = state.Mode,
                 Parts = state.TargetType & GazeTargetType.All,
                 TargetActorKey = target,
@@ -532,16 +535,16 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// The staged overlay nodes, each as its whole document. The list is left
-    /// ABSENT when there are none, so a scene with no staged dialogue writes
-    /// exactly the file it wrote before overlay nodes existed.
+    /// Saves the overlays in the scene, each one in full. When there are none,
+    /// the list is left out of the file, so a scene without overlays saves the
+    /// same file as a Poser without overlays would.
     /// </summary>
     private void CaptureOverlays(SceneFile scene)
     {
-        // Positions are stored relative to the screen CENTRE so an overlay
-        // lands sensibly on another resolution or aspect ratio. A centre
-        // that cannot be read keeps absolute pixels and says so on the
-        // entry.
+        // Positions are saved relative to the middle of the screen, so an
+        // overlay lands in a sensible place on another screen size. If the
+        // screen size cannot be read, positions are saved in plain pixels
+        // and the entry says so.
         var display = Dalamud.Bindings.ImGui.ImGui.GetIO().DisplaySize;
         bool centred = display.X > 0f && display.Y > 0f;
         var center = centred
@@ -569,9 +572,10 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// Captures both borrowed and spawned world objects, including their current
-    /// appearance and placement. MapPosition retains the original placement for
-    /// compatibility; scene loading creates a new object from the saved path.
+    /// Saves the world objects, both those taken over from the map and those
+    /// Poser spawned, with how they look and where they are. MapPosition keeps
+    /// where the object first stood on the map; loading a scene does not use it
+    /// to find the object, but creates a new one from the saved path.
     /// </summary>
     private void CaptureWorldObjects(SceneFile scene, List<string> notes)
     {
@@ -707,9 +711,9 @@ public sealed class SceneCaptureService
         }
     }
 
-    /// <summary>Resolves the followed actor through its exact stable
-    /// generation. Display names are presentation only and never identify a
-    /// camera relationship.</summary>
+    /// <summary>Finds the actor the camera follows by Poser's own actor id and
+    /// checks it is still the very same actor. Names are only for display and
+    /// are never used to find it.</summary>
     private Guid? ResolveTarget(
         IVirtualCamera camera, Dictionary<IActor, Guid> actorKeys)
     {
@@ -722,10 +726,11 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// The ONE world-toggle snapshot builder; the workflow's rollback baseline
-    /// uses it too. Physics states what the SCENE holds rather than the raw
-    /// global: the patch can be true because something else set it, and a
-    /// scene that claimed that hold would release a freeze it never took.
+    /// Saves whether water and physics are frozen. Loading a scene also uses
+    /// this to remember what to go back to if the load fails. Physics counts as
+    /// frozen only when the scene itself froze it: something else may have
+    /// frozen it, and a scene that claimed that freeze would later undo a
+    /// freeze it never made.
     /// </summary>
     internal SceneWorld CaptureWorld() => new()
     {
@@ -733,13 +738,13 @@ public sealed class SceneCaptureService
         IsPhysicsFrozen = _animation.SceneOwnsPhysics,
     };
 
-    /// <summary>The ONE environment snapshot builder; the workflow's
-    /// rollback baseline uses it too.</summary>
+    /// <summary>Saves the environment. Loading a scene also uses this to
+    /// remember what to go back to if the load fails.</summary>
     internal SceneEnvironment CaptureEnvironment() => _environment.Capture();
 
-    /// <summary>A native transform with a degenerate rotation captures as
-    /// identity rotation, with a note — the alternative is a whole-save
-    /// refusal over one broken native value.</summary>
+    /// <summary>A broken rotation read from the game is saved as no rotation,
+    /// with a note. Otherwise one bad value would stop the whole scene from
+    /// saving.</summary>
     private static LightFile.TransformData NormalizedTransform(
         Transform transform, string label, List<string> notes)
     {

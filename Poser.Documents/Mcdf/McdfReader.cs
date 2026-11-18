@@ -5,8 +5,9 @@ using Poser.Domain.Integration;
 
 namespace Poser.Documents.Mcdf;
 
-/// <summary>Reads MCDF v1 packages: the header-only summary, and the validated
-/// extraction into a caller-owned operation directory.</summary>
+/// <summary>Reads MCDF version 1 files. It can read just the opening of a file
+/// for a quick summary, or check and unpack all of it into a folder the
+/// caller made for this one import.</summary>
 internal static class McdfReader
 {
     public static IntegrationValue<McdfPackage> ReadPackage(
@@ -16,9 +17,9 @@ internal static class McdfReader
         Action<McdfProgressStep> progress,
         CancellationToken cancellation)
     {
-        // The caller owns the operation directory and registered it before
-        // calling; a failure here leaves partial extraction for the
-        // caller's visible, retryable cleanup.
+        // The caller made and recorded the folder before calling. If this
+        // fails halfway, the files already unpacked stay there, and the
+        // caller cleans them up in a way the person can see and retry.
         try
         {
             using var operationRoot =
@@ -42,8 +43,9 @@ internal static class McdfReader
             if (validation != null)
                 return IntegrationValue<McdfPackage>.Fail(validation);
 
-            // Extraction: generated file names inside a unique operation
-            // directory; archive-declared names are never used on disk.
+            // Unpacked files get names Poser makes up, inside the folder made
+            // for this import. Names written in the MCDF are never used on
+            // disk, so a file cannot be written outside that folder.
             if (!McdfOperationDirectories.OwnedDirectoryMatches(operationDirectory, operationRoot))
                 return IntegrationValue<McdfPackage>.Fail(
                     "The extraction directory ownership changed; extraction was refused.");
@@ -130,8 +132,8 @@ internal static class McdfReader
         }
     }
 
-    /// <summary>Reads only the look from a package's opening, without unpacking any mod
-    /// file.</summary>
+    /// <summary>Reads only the appearance from the opening of an MCDF, without unpacking
+    /// any mod file.</summary>
     public static IntegrationValue<McdfLook> ReadLook(string path)
     {
         try
@@ -162,10 +164,9 @@ internal static class McdfReader
             if (data == null)
                 return IntegrationValue<McdfSummary>.Fail(failure!);
 
-            // DECLARED bytes, and named so: nothing past the header is read,
-            // so this is what the package says its payloads weigh and not
-            // what they weigh. The import's own validation is what holds the
-            // declaration to the limits.
+            // This is the size the file claims for its contents, not a
+            // measured size, because nothing after the opening is read. The
+            // import checks the real contents against the size limits.
             long declared = 0;
             foreach (var entry in data.Files)
                 declared += Math.Max(0, entry.Length);
@@ -191,11 +192,10 @@ internal static class McdfReader
     }
 
     /// <summary>
-    /// The package's opening: magic, version, and the declaration JSON. Shared
-    /// by the extracting read and the header-only summary so there is ONE
-    /// account of what a valid MCDF opens with — and so a file the summary
-    /// accepted can never be refused for its header by the import that
-    /// follows. Leaves the stream positioned on the first payload byte.
+    /// Reads the opening of an MCDF: the "MCDF" mark, the version, and the
+    /// list of contents. The full import and the quick summary both use this,
+    /// so a file the summary accepts is never turned down by the import for
+    /// its opening. Afterwards the stream is at the first packed file.
     /// </summary>
     private static McdfWireData? ReadHeader(
         Stream lz4, BinaryReader reader, out string? failure)
