@@ -62,6 +62,7 @@ public interface IActorRestorePort
         string scenePath,
         SceneEntityHandle actor,
         SceneActor data,
+        TimeSpan bound,
         System.Threading.CancellationToken cancellation);
 
     /// <summary>Attaches the saved companion; null on success.</summary>

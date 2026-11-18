@@ -107,7 +107,10 @@ public class ConfigurationService : IDisposable
 
     public void Reset()
     {
+        // The install id is not a setting: it tells your own scenes from shared ones.
+        var install = Config.Library.InstallId;
         Config = new PoserConfiguration();
+        Config.Library.InstallId = install;
         ApplyChange();
     }
 

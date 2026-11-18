@@ -157,8 +157,9 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         string scenePath,
         SceneEntityHandle actor,
         SceneActor data,
+        TimeSpan bound,
         System.Threading.CancellationToken cancellation) =>
-        _appearance.ApplySceneAppearance(scenePath, actor, data, cancellation);
+        _appearance.ApplySceneAppearance(scenePath, actor, data, bound, cancellation);
 
     // Only called for an actor whose attachment is present: the workflow skips
     // an absent kind rather than asking the runtime to detach.

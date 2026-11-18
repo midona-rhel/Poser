@@ -538,6 +538,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         string scenePath,
         SceneEntityHandle actor,
         SceneActor data,
+        TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
         if (data.Mcdf is not { } saved)
@@ -558,7 +559,22 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 try { body = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(look.CustomizePlusData)); }
                 catch (FormatException) { return SceneMcdfOutcome.Refused("The scene appearance's body is not readable."); }
             }
-            var refusal = await _framework.RunOnFrameworkThread(() =>
+            // An actor the scene reuses, such as your own character, may have an MCDF
+            // applied. The scene appearance replaces it, so that MCDF comes off first.
+            var removed = await _framework.RunOnFrameworkThread(() =>
+            {
+                var target = _handles.Resolve<IActor>(actor, SceneEntityKind.Actor);
+                if (target == null || _bindings.GetActorId(target) is not { } id)
+                    return "The actor is no longer available.";
+                if (_integration.OverridesFor(id).Mcdf is null)
+                    return null;
+                var reset = _mcdf.Reset(id);
+                return reset.Success ? null : reset.Detail ?? "The MCDF applied to the actor could not be removed.";
+            });
+            if (removed != null)
+                return SceneMcdfOutcome.Refused(removed);
+            // Removing an MCDF can leave its clean-up running; the look waits for it.
+            var refusal = await BeginMcdfChild(() =>
             {
                 var target = _handles.Resolve<IActor>(actor, SceneEntityKind.Actor);
                 if (target == null || _bindings.GetActorId(target) is not { } id)
@@ -570,7 +586,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                     && _integration.ApplyBodyProfileJson(id, body, "Scene appearance") is { Success: false } bodyFailed)
                     return bodyFailed.Detail ?? "The scene appearance's body could not be applied.";
                 return null;
-            });
+            }, "An MCDF operation held the actor for the whole bound.", "The load was cancelled.", bound, cancellation);
             return refusal is null ? SceneMcdfOutcome.Ok(located.Changed) : SceneMcdfOutcome.Refused(refusal);
         }
         finally

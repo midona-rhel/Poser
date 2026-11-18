@@ -525,7 +525,8 @@ internal sealed class SceneLoadTransaction(
             if (actor.Mcdf is null)
                 continue;
             var appearance = Editable(actor)
-                ? await actorRestore.ApplySceneAppearance(path, _actorTokens[actor.Key], actor, cancellation)
+                ? await actorRestore.ApplySceneAppearance(path, _actorTokens[actor.Key], actor,
+                    McdfImportTimeout, cancellation)
                 : await actorRestore.ImportMcdf(
                     path, _actorTokens[actor.Key], actor,
                     McdfImportTimeout, cancellation);

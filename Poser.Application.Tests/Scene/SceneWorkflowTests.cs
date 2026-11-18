@@ -411,7 +411,7 @@ public sealed class SceneWorkflowTests
         }
 
         public Task<SceneMcdfOutcome> ApplySceneAppearance(
-            string scenePath, SceneEntityHandle actor, SceneActor data, CancellationToken cancellation)
+            string scenePath, SceneEntityHandle actor, SceneActor data, TimeSpan bound, CancellationToken cancellation)
         {
             Record($"SceneAppearance:{data.Name}");
             return Task.FromResult(SceneMcdfOutcome.Ok());
