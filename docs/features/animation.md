@@ -1,123 +1,51 @@
 # Animation
 
-The Animation tab plays animations on the selected actor. The bone edits you made on the Pose tab stay on top of whatever is playing.
+The **Animation** tab, next to the Pose tab in the middle of the main window, plays emotes and other animations on the selected actor. Any bones you've posed on the Pose tab stay posed on top of the animation, so you can, for example, play a dance and still adjust where the hands are.
 
-## Playing one animation
+## Playing an animation
 
-The **General** section is the simple way to play something.
+The **General** section at the top of the Animation tab is the simple way to play something. Press **Choose animation** to open a list of everything the actor can play. The buttons at the top of the list narrow it down: **Compatible** shows what fits this actor, **Emotes** and **Actions** show only those, and **Raw** shows the game's animation files directly. **All**, **Sheathed** and **Drawn** filter by whether the weapon is out.
 
-1. Press **Choose animation** and pick one from the list. Nothing plays yet.
-2. Press **Apply**. The actor plays it.
-3. Press **Reset** to go back to what the actor was doing before your first Apply.
+Picking an animation doesn't play it yet. Press **Apply** to start it, and **Reset** to go back to whatever the actor was doing before you applied anything.
 
-The other controls in this section:
+Below that, in the same section:
 
-- **Loop** starts the animation again each time it ends.
-- **Play emote start** plays an emote from its beginning, with its lead-in. With it off, the emote goes straight to the part that repeats.
-- **Stance** puts the actor in Idle, Chair, Ground or Sleep. The arrows beside it step through the poses of that stance, the same ones `/cpose` cycles through. Changing the stance clears the animation you chose.
-- **Weapon** draws or sheathes the weapon.
-- **Lock position** keeps the actor where you placed it while animations play.
+- **Loop** starts the animation again every time it ends.
+- **Play emote start** plays an emote from its very beginning, including how the actor gets into it. With it off, the emote goes straight to the part that repeats.
+- **Stance** puts the actor in its idle, chair, ground or sleep stance. The arrows next to it step through the variations of that stance, the same ones `/cpose` goes through in the game.
+- **Weapon** draws or sheathes the actor's weapon.
+- **Lock position** keeps the actor where you put it, even if the animation would normally walk it somewhere else.
 
-Emotes look different when a character is sitting or mounted. If you apply an emote to a sitting actor, Poser plays the sitting version, as the game does. If the emote has no version for how the actor is right now, Apply tells you and plays nothing.
+Some emotes look different depending on whether the actor is standing, sitting or mounted. Poser plays the version that matches how the actor is right now, like the game does, and tells you if the emote has no version for that.
 
 ## Playing several animations at once
 
-Turn on **Advanced animation** to use layers. Each layer plays its own animation while the others play theirs.
+Turn on **Advanced animation** to play more than one animation on the same actor. The tab then shows a section for each layer, and every layer plays its own animation:
 
-| Layer | What it moves |
-|---|---|
-| Full body | The whole actor. |
-| Upper body | The arms and torso, on top of the full body. |
-| Facial | The face. |
-| Additive | A small motion added on top, such as a nod. |
-| Lips | Mouth movement for speech. |
+- **Full body** moves the whole actor.
+- **Upper body** moves the arms and torso on top of the full body, for example to wave while walking.
+- **Facial** moves the face.
+- **Additive** adds a small motion on top of everything else, such as a nod.
+- **Lips** moves the mouth as if the actor were talking.
 
-Every layer has the same controls:
+Each layer has its own **Choose animation**, **Apply**, **Reset** and **Loop**, which work the same as in General. **Speed** goes from 0 to 2, where 0 stops the layer on its current frame and 1 is normal speed. **Weight** goes from 0 to 1 and decides how strongly the layer shows, so you can blend an animation in partly.
 
-- **Choose animation**, **Apply** and **Reset** work as in General. Reset puts back what that layer played before you changed it.
-- **Speed** runs from 0 to 2. At 0 the layer stops on its current frame, 1 is normal speed and 2 is double.
-- **Weight** runs from 0 to 1 and sets how strongly the layer shows.
-- **Scrub** moves through the animation by hand. The button beside it pauses or plays the layer.
-- **Loop** starts the animation again each time it ends. Lips has no Loop.
+While Advanced animation is on, the animation controls in General are greyed out, and the other way round. Turning Advanced animation off resets every layer.
 
-Things to know:
+## Scrubbing through an animation
 
-- While Advanced animation is on, Choose, Apply, Reset and Loop in the General section are greyed out. While it is off, the layers are greyed out.
-- Turning Advanced animation on changes nothing on the actor.
-- Turning it off resets every layer and takes off a held expression. If a layer can't be reset, Advanced animation stays on and Poser shows why.
-- The setting belongs to the actor. Two Properties windows showing the same actor show the same setting.
+Every layer has a **Scrub** bar. Drag it to move through the animation by hand, frame by frame. The layer pauses where you let go, and the play button next to the bar carries on from there. Props the animation brings along, like a cup in a drinking emote, and its effects follow along as you scrub. You can still scrub an animation that has already finished playing.
 
-## Looping
-
-Loop repeats the animation you applied on that layer.
-
-- Turn Loop on before or after Apply. If nothing you applied is playing, Poser remembers the choice and uses it at the next Apply.
-- Turning Loop off lets the animation play to its end. It does not jump.
-- Reset turns the loop off and puts back what the layer played before.
-- The Full body keeps repeating when you play or reset another layer.
-
-## Scrubbing
-
-Dragging **Scrub** pauses the layer and moves it to the frame under the pointer. It stays paused when you let go. Press the play button to carry on from there.
-
-- Props an animation brings in, such as a drink, follow the body.
-- Effects show as they would look at that point of the animation.
-- Dragging backwards gives the same picture as dragging forwards to that frame.
-- An animation that has ended can still be scrubbed. Poser plays it again and holds it under the pointer.
-- Only the window where you started the drag controls it. Releasing the mouse, hiding the interface, closing the window or losing the actor ends the drag.
-
-When an actor is redrawn, for example after changing its gear, the Full body, the Upper body and a held expression come back on the frame they were on.
+If the actor gets redrawn, for example because you changed its gear, the animation comes back on the frame it was on.
 
 ## Mounts, minions and ornaments
 
-A mount, minion or ornament attached to an actor has a shorter Animation tab: Choose animation, Apply, Reset, Speed and Scrub. It has no stance, weapon, layers, loop or expressions.
+A mount, minion or ornament attached to an actor has its own Animation tab when you select it in the sidebar. It's a shorter version, with **Choose animation**, **Apply**, **Reset**, **Speed** and **Scrub**.
 
-## Expressions
+## Turning a pose into an idle animation
 
-The Expression row is on the Pose tab.
+Poser can save an actor's current pose as a mod that replaces one of the game's standing poses, so anyone who installs the mod stands in that pose.
 
-1. Choose an expression.
-2. Press **Preview**. The face takes the expression and holds it.
-3. Press **Reset** to take it off, or **Bake expression** to turn it into bone edits you can keep changing by hand. Bake is one undo step.
+Right-click the actor in the sidebar and choose **More › Export Idle Pose**. In the window that opens, give the mod a name, pick which `/cpose` stance it replaces, and tick the races and genders to make it for. **Save and Export** then saves a `.pmp` file that Penumbra can install.
 
-If Preview seems to do nothing on a paused actor, press it again.
-
-The Facial layer on the Animation tab is different. It plays a facial animation that keeps moving and repeats. Applying one takes off a held expression.
-
-## Scenes
-
-A saved scene keeps each actor's animation, unless you turn that off when saving. See [A scene keeps its animation](scenes.md#a-scene-keeps-its-animation-unless-the-save-turns-it-off).
-
-## Exporting a pose as an idle animation
-
-You can save the actor's current pose as a mod that replaces one of the game's standing poses. Other people who install the mod see their character stand in your pose.
-
-1. Right-click the actor, then **More → Export Idle Pose**.
-2. Give it a name and pick which standing pose (`/cpose`) it replaces.
-3. Pick the races and genders to export for. Only the actor's own starts ticked.
-4. Press **Save and Export** and choose where to save the `.pmp` file.
-
-What ends up in the mod:
-
-- The body pose and the face, including a baked expression.
-- Extra bones from the actor's own skeleton, when you export for its own race. Whoever uses the mod then needs the same face, skeleton mods and Customize+ profile.
-
-What does not:
-
-- Hair and cloth movement, equipment and where the eyes look.
-- The change in body shape that Customize+ makes.
-
-Limits:
-
-- Only humanoid actors can be exported, and not while a pose is being imported.
-- An existing `.pmp` file is never overwritten.
-- If the face can't be captured, the export fails. It never saves the body alone.
-- A custom skeleton that moves a standard bone to a different parent can't be exported.
-
-### Exporting for other races
-
-Exporting for a race other than the actor's own is experimental. Poser fits the pose onto that race's ordinary body and its standard faces.
-
-- Bones are matched by name. A bone the other race doesn't have, or has under a different parent, keeps that race's own idle.
-- Proportions and face shape will differ, and hands may not touch what they touched on the original.
-- Custom skeletons are not carried over.
+The mod has the body pose and the face, including a baked expression. Hair and cloth movement, gear, where the eyes look, and body shape changes from Customize+ aren't part of it. Making the mod for other races than the actor's own is experimental: bones are matched by name, so proportions and the face will differ, and hands may not touch what they touched in the original.

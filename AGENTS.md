@@ -6,8 +6,8 @@ These are the rules for changing Poser: its code, its documentation, its issues 
 
 Everything written for this project must be readable by someone who has never opened the code: issues, pull requests, commit messages, documentation, code comments and names in the code.
 
-- Use short, ordinary sentences. One idea in each.
-- Say what a person does and what they then see. "Press Apply. The animation plays."
+- Write the way a person would explain it out loud: ordinary sentences that join related facts, not a string of short fragments.
+- Say where things are. Every location names what it is relative to: "the left side of the main window", "the game view", "below the main window".
 - Use the words the interface shows. If the tab is called Full body, write Full body.
 - Do not use a word that only the code uses. If you need one, say in the same sentence what it means.
 - Describe how things are now. Leave out how they used to be and how the work went.
@@ -57,6 +57,8 @@ When you change a file, bring the whole file in line with these rules in the sam
 - Write down what is true and worth knowing. Do not write a page per class.
 - Plans, audits, notes and records of what was tested do not go in the repository. Work is tracked in GitHub issues. What was tested goes in the pull request.
 - Delete text that is no longer true. Git keeps the history.
+- A feature page walks through the interface in the order a person meets it. Check every statement about what happens in the code or in the game before writing it.
+- Crop screenshots to the part of the window being described. Never show the game world, a character's real name or anything else personal.
 - Write each paragraph and each list item on one line. Do not break a line inside a paragraph; the editor wraps it.
 
 ## Issues and pull requests
