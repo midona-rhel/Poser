@@ -21,34 +21,31 @@ using Poser.Documents.Library;
 
 namespace Poser.UI;
 
-/// <summary>The auto-saves tab: scanning the folder, reading each file, minting its tiles.</summary>
+/// <summary>The auto-saves tab: scanning its folder and building a tile for each file.</summary>
 public sealed partial class PoseLibraryPane
 {
     private int _legacyAutoSavesStart = int.MaxValue;
     /// <summary>
-    /// Starts enumeration. A refresh retains published rows until replacement
-    /// rows arrive; first entry or a switch from another library type clears
-    /// the incompatible rows.
+    /// Starts a scan. On a refresh, the rows already shown stay until the new
+    /// rows arrive. Opening the tab, or switching from another library tab,
+    /// clears rows that do not belong here.
     /// </summary>
     private void KickAutoSaves()
     {
         _autoDirty = false;
-        // Capture this input before dispatch so the worker does not read UI
-        // state across threads. A later setting change schedules another pass.
+        // Read this setting now, before the scan starts on another thread, so
+        // the scan never reads interface state. Changing it later starts another scan.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
 
-        // Auto-saves use one rail root and omit the curated-library favourites
-        // row.
+        // Auto-saves have no favourites row at the top of the folder list.
         _vm.ShowRail = true;
         _vm.RailHeads = 0;
         _vm.ShowNoSources = false;
 
-        // Rows that stand keep their rail row and its span: a kick that leaves
-        // them showing must not filter them out from under the user while the
-        // worker runs.
-        // The previous view stays on screen until the new one is ready to
-        // present; only a scan still running after the grace shows the
-        // Scanning state, so a fast scan never flashes an empty grid.
+        // Tiles already shown keep their folder row, so they do not vanish
+        // while the scan runs. The previous view stays on screen until the new
+        // one is ready. Only a scan still running after a short wait shows
+        // Scanning, so a fast scan never flashes an empty grid.
         _autoAwaitSince = ImGui.GetTime();
         _autoAwaiting = !_autoRows;
 
@@ -57,17 +54,17 @@ public sealed partial class PoseLibraryPane
         _autoLibrary.RequestScan();
     }
 
-    /// <summary>Polls the worker's completed slot. An idle frame costs one
-    /// volatile read: no lock, no allocation, nothing to drain.</summary>
+    /// <summary>How long a scan may run before the tab shows Scanning in place
+    /// of the previous view.</summary>
     private const double PresentGraceSeconds = 0.3;
 
     private double _autoAwaitSince;
 
     private bool _autoAwaiting;
 
-    /// <summary>The Scanning state, shown only when a scan outlives the
-    /// presentation grace: the rail and the grid empty, the word in the
-    /// middle.</summary>
+    /// <summary>The Scanning state, shown only when a scan takes longer than
+    /// that short wait: the folder list and the grid are empty, with the word
+    /// in the middle.</summary>
     private void ShowAutoSavesScanning()
     {
         _autoAwaiting = false;
@@ -100,30 +97,28 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>
-    /// Publishes worker results as one root followed by one row per day and
-    /// place — "2026-08-14 – Limsa
-    /// Lominsa" — because a day folder spans a whole session and a session
-    /// visits more than one zone. The grid keeps tiles only; selecting a rail
-    /// row is what filters them.
+    /// Shows the scan results in the folder list: a top row, then one row per
+    /// day and place, such as "2026-08-14 – Limsa Lominsa". A day folder covers
+    /// a whole session, and a session can visit more than one zone. The grid
+    /// holds only tiles; choosing a folder row filters them.
     ///
-    /// <para>Rows appear in FIRST-ENCOUNTER order, which is the scan's own
-    /// newest-first order, so the newest day leads and the newest place inside
-    /// a day leads. Tiles stay in scan order so the combined view is
-    /// newest-first. A row's tiles need not be contiguous because folder
-    /// filtering tests the row index rather than
-    /// tile positions.</para>
+    /// <para>Rows appear in the order they are first met, which is the scan's
+    /// newest-first order, so the newest day comes first, and the newest place
+    /// within a day. Tiles stay in scan order, so the full view is newest
+    /// first. A row's tiles need not sit together, because filtering checks
+    /// each tile's row number, not its position.</para>
     ///
-    /// <para>List writes, a favourites lookup and a dictionary probe only —
-    /// every string a row shows was minted by the worker.</para>
+    /// <para>This only fills lists and looks up favourites. Every text a row
+    /// shows was built by the scan.</para>
     /// </summary>
     private void MintAutoSaves(List<AutoSaveFolder> scan)
     {
         _autoPending = false;
         _autoRows = true;
 
-        // The rail row the user was standing on, held by KEY: the rows are
-        // rebuilt from scratch on every pass, so an index would silently point
-        // at a different day after a prune.
+        // Remember the selected folder row by its key. The rows are rebuilt
+        // from scratch every time, so an index could point at a different day
+        // after old auto-saves are removed.
         string? held = _vm.SelectedFolder > 0 && _vm.SelectedFolder < _vm.Folders.Count
             ? _vm.Folders[_vm.SelectedFolder].Key
             : null;
@@ -137,17 +132,17 @@ public sealed partial class PoseLibraryPane
         _tileAuthors.Clear();
         _tileStatus.Clear();
 
-        // Run -> rail row index, for this pass only: a mint runs on tab
-        // entry and on an explicit rescan, never per frame. A run is the
-        // saves of one day at one place, in time order: leaving for another
-        // place and coming back makes two rows, so the rail reads as time.
+        // Finds the folder row for each run, for this pass only. This runs when
+        // the tab opens and on a rescan, never every frame. A run is the saves
+        // of one day at one place, in time order. Leaving for another place and
+        // coming back makes two rows, so the folder list reads in time order.
         int run = 0;
         string? runDay = null;
         string? runPlace = null;
         var rows = new Dictionary<string, int>(StringComparer.Ordinal);
 
-        // Two real subtree roots: recovery opens on scenes; old poses remain
-        // accessible without appearing in the default listing or its search.
+        // Two top rows. The tab opens on scene auto-saves; old pose auto-saves
+        // can still be reached, but do not show in the default list or its search.
         for (int section = 0; section < 2; section++)
         {
         bool legacy = section == 1;
@@ -190,8 +185,8 @@ public sealed partial class PoseLibraryPane
                     folders.Add(new PoseLibraryFolderRow
                     {
                         Key = key,
-                        // A file that records no place claims nothing about
-                        // where it was taken: it reads as the bare day.
+                        // A file that records no place says nothing about
+                        // where it was taken, so its row shows only the day.
                         Label = entry.Place.Length > 0
                             ? snapshot.Day + PlaceSeparator + entry.Place
                             : snapshot.Day,
@@ -215,9 +210,9 @@ public sealed partial class PoseLibraryPane
                     Sub = entry.Stamp,
                     Modified = entry.Stamp,
                     ThumbKey = entry.FilePath,
-                    // Only a file whose document says it embeds an image asks
-                    // the cache: auto-saves are written without one, and a
-                    // blanket claim made the cache open every visible file.
+                    // Only a file that says it holds an image asks the
+                    // thumbnail cache. Auto-saves are written without one, and
+                    // asking for every file would open every visible file.
                     HasThumbnail = entry.HasThumbnail,
                     Favorite = favorites.Contains(entry.FilePath),
                     Folder = group,
@@ -226,8 +221,8 @@ public sealed partial class PoseLibraryPane
         }
         }
 
-        // A row's total is known only once every file has landed in it, so the
-        // readouts are minted here. The head already carries its own.
+        // A row's total is only known once every file is in it, so the counts
+        // are written here.
         for (int i = 0; i < folders.Count; i++)
             folders[i].CountText = Count(folders[i].Count);
 
@@ -244,22 +239,12 @@ public sealed partial class PoseLibraryPane
         _refilter = true;
     }
 
-    /// <summary>The day header a snapshot groups under: the local date of the
-    /// folder's own UTC stamp. A folder the collision suffix renamed does not
-    /// parse and falls back to its write time.</summary>
     private static string Count(int value) =>
         value.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// The tab's entries in the order the grid must receive them: scan order
-    /// for kinds whose sections are folders, and section order for
-    /// scenes, whose sections are place-and-day pairs no directory records.
-    /// Newest day leads, places sort inside a day, and the newest file leads
-    /// inside a place. Ordering here rather than in the grid is what keeps the
-    /// section break a single key comparison.
-    /// </summary>
     /// <summary>Whether an entry kind belongs to the current tab. The
-    /// Objects tab is the one MANY-kind tab; every other tab is one kind.
+    /// Objects tab shows many kinds, and MCDFs share a tab with Chara files;
+    /// every other tab shows one kind.
     /// </summary>
     private static bool InTab(
         PoseLibraryEntryKind entryKind, PoseLibraryEntryKind primary) =>
@@ -276,6 +261,13 @@ public sealed partial class PoseLibraryPane
                 ? entryKind is PoseLibraryEntryKind.Mcdf or PoseLibraryEntryKind.Chara
                 : entryKind == primary;
 
+    /// <summary>
+    /// The tab's entries in the order the grid shows them. Scenes are grouped by
+    /// day and place, which no folder records, so they are sorted here: newest
+    /// day first, then by place, then by the chosen sort. Other kinds stay
+    /// grouped by folder. Sorting here, rather than in the grid, lets the grid
+    /// start a new section by comparing a single key.
+    /// </summary>
     private IEnumerable<PoseLibraryEntry> Ordered(
         IReadOnlyList<PoseLibraryEntry> entries, PoseLibraryEntryKind kind)
     {
@@ -285,8 +277,8 @@ public sealed partial class PoseLibraryPane
         {
             var modified = Comparer<DateTime>.Create((left, right) =>
                 LibraryBrowseOrdering.CompareModified(left, right, _sort));
-            // Keep structural groups contiguous; the date choice orders files
-            // inside the folder/scene section the browser already presents.
+            // Keep each folder or scene section together. The date sort only
+            // orders files within a section.
             return kind == PoseLibraryEntryKind.Scene
                 ? matching
                     .OrderByDescending(entry => SceneDay(entry).Date)
@@ -306,10 +298,10 @@ public sealed partial class PoseLibraryPane
             : matching;
     }
 
-    /// <summary>One scene section's heading: where it was captured and on
-    /// which day. A scene written before scenes recorded a place falls back to
-    /// the DAY ALONE — the place is not guessed, and such files gather under a
-    /// heading that claims nothing about where they were taken.</summary>
+    /// <summary>A scene section's heading: where the scene was taken and on
+    /// which day. A scene that records no place gets the day alone. The place is
+    /// not guessed, so such files gather under a heading that says nothing about
+    /// where they were taken.</summary>
     private static string SceneSectionLabel(PoseLibraryEntry entry)
     {
         string day = SceneDay(entry).ToString(DayFormat, CultureInfo.InvariantCulture);
@@ -318,13 +310,12 @@ public sealed partial class PoseLibraryPane
             : day;
     }
 
-    /// <summary>The day a scene claims it was taken on. The heading pairs a
-    /// place the DOCUMENT recorded with a day, so the day comes from the
-    /// document too wherever it answers; a file's mtime is when the file last
-    /// changed, which a copy or a sync moves. The mtime is the fallback for a
-    /// scene that records no capture time, never a preference — and the grid's
-    /// own ordering reads this same day, so heading and order cannot
-    /// disagree.</summary>
+    /// <summary>The day the scene says it was taken. The heading pairs the place
+    /// recorded in the scene file with a day, so the day comes from the file too
+    /// when it has one. A file's modified time is when the file last changed,
+    /// which copying or syncing moves, so it is only used when the scene records
+    /// no time. The grid's sorting reads this same day, so the heading and the
+    /// order always agree.</summary>
     private static DateTime SceneDay(PoseLibraryEntry entry) =>
         entry.SceneCapturedAt?.ToLocalTime().DateTime ?? entry.Modified;
 }

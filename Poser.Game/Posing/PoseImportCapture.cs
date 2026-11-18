@@ -21,32 +21,34 @@ using static Poser.Game.Posing.PoseImportPlanner;
 
 namespace Poser.Game.Posing;
 
-/// <summary>Schedules pose-file writes inside the native apply pass, using each
-/// bone's current basis after parent edits. Face imports can restore the head,
-/// reconcile attached partials, and flatten the result before recording history.
-/// Failure attempts rollback and reports any incomplete recovery.</summary>
+/// <summary>Writes a pose file onto an actor during the game's bone update, measuring
+/// each bone after its parents have changed. A face import can also put the head back,
+/// line the face up with the head, and merge the result into one edit before the undo
+/// step is recorded. If anything fails, the import is undone, and the result says if
+/// the undo did not fully work.</summary>
 public sealed class PoseImportCapture : IDisposable
 {
-    /// <summary>Framework ticks a registered batch is given to reach a pass
-    /// before the import gives up and rolls back — same guard as
-    /// <see cref="IkBakeCapture"/>: a skeleton that stops updating must not
-    /// leave the import pending forever.</summary>
+    /// <summary>How many frames a queued batch of bone writes gets to run before
+    /// the import gives up and is undone, the same limit as
+    /// <see cref="IkBakeCapture"/>. A skeleton that stops updating must not leave
+    /// the import waiting forever.</summary>
     private const int CompletionTimeoutTicks = 60;
 
-    /// <summary>Brio schedules its post-import Snapshot — the reconcile's
-    /// driver — at +4 ticks (PosingCapability.cs:249-250). Poser counts from
-    /// the apply batch's outcome instead of from registration; same spirit:
-    /// the post-reparent refresh has settled before the subtree re-export.
-    /// The single <see cref="CompletionTimeoutTicks"/> armed at Begin spans
-    /// both phases.</summary>
+    /// <summary>How many frames to wait before lining the face up with the head.
+    /// Brio waits 4 frames before the same step. Poser counts from when the bone
+    /// writes ran, not from when they were queued, so the bones have settled
+    /// before the face bones are read again. The one
+    /// <see cref="CompletionTimeoutTicks"/> limit set at the start covers both
+    /// steps.</summary>
     private const int ReconcileDelayTicks = 4;
 
-    /// <summary>Brio's Reconcile() runs its export-reset-reimport at +2
-    /// ticks (PosingCapability.cs:419,428).</summary>
+    /// <summary>How many frames to wait before the last step, which reads the
+    /// pose, clears it and imports it again. Brio waits the same.</summary>
     private const int FlattenDelayTicks = 2;
-    /// <summary>Driven-bone corrections: at most this many rounds (a lid and the
-    /// bones under it), each a pass apart so a child is measured against its
-    /// corrected parent.</summary>
+    /// <summary>Corrections for bones the game moves on its own, such as an
+    /// eyelid that follows the eye: at most this many rounds (a lid and the bones
+    /// under it), each on a later frame, so a child is measured after its parent
+    /// is corrected.</summary>
     private const int MaxDrivenRounds = 4;
     private const int DrivenRoundTicks = 2;
 
@@ -68,9 +70,9 @@ public sealed class PoseImportCapture : IDisposable
     private OperationEpoch? _lastOperationEpoch;
     private int _disposed;
 
-    /// <summary>Raised once for each accepted operation's terminal receipt.
-    /// Normal completion runs on the framework thread. Host teardown and
-    /// off-thread disposal publish on their calling thread.</summary>
+    /// <summary>Raised once with each accepted import's final result. Normally
+    /// this happens on the game's main thread. When Poser shuts down, or this is
+    /// disposed from another thread, it happens on that thread.</summary>
     public event Action<OperationReceipt>? ReceiptPublished
     {
         add => _terminal.ReceiptPublished += value;
@@ -107,7 +109,7 @@ public sealed class PoseImportCapture : IDisposable
         _scene.SceneChanged += OnSceneChanged;
     }
 
-    /// <summary>Whether an operation still owns the pending slot.</summary>
+    /// <summary>Whether an import is still waiting or applying.</summary>
     public bool IsPending => Volatile.Read(ref _pending) != null;
 
     /// <summary>True while another import or an IK bake is applying. A scene
@@ -119,9 +121,10 @@ public sealed class PoseImportCapture : IDisposable
         ReferenceEquals(import.Operation, operation) &&
         !import.Invalidation.IsInvalidated;
 
-    /// <summary>Framework-thread supersession path. The active operation is
-    /// invalidated before its ordered restore, and publishes exactly one
-    /// Cancelled (or RecoveryRequired) terminal receipt.</summary>
+    /// <summary>Cancels the running import, for example when another one
+    /// replaces it. Runs on the game's main thread. The import is marked dead
+    /// before its changes are undone in order, and it publishes exactly one final
+    /// result: Cancelled, or RecoveryRequired if the undo did not fully work.</summary>
     public GestureResult CancelActive(string detail = "Pose import superseded.")
     {
         if (!_framework.IsInFrameworkUpdateThread)
@@ -140,8 +143,9 @@ public sealed class PoseImportCapture : IDisposable
         };
     }
 
-    /// <summary>Reserves the actor and begins the name-keyed plan in one call.
-    /// A successful return accepts deferred work; the receipt reports completion.</summary>
+    /// <summary>Reserves the actor and starts the plan, which finds bones by name,
+    /// in one call. A successful return means the work is queued; the final result
+    /// says when it is done.</summary>
     public GestureResult Begin(
         IActor actor,
         PoseImportPlan plan,
@@ -241,24 +245,23 @@ public sealed class PoseImportCapture : IDisposable
         if (plan.IsEmpty)
             return FailAdmitted(import, "Nothing in this file applies to the chosen scope.");
 
-        // The target is the ADMITTED identity: the exact actor generation
-        // Reserve pinned, resolved through the binding registry at this
-        // moment. A wrapper object replaced for the same logical actor and
-        // generation IS the same actor; only a bumped generation refuses.
+        // The target is the actor Reserve recorded, looked up again now. A new
+        // wrapper object for the same actor is still the same actor. Only an
+        // actor the game has rebuilt since then is turned down.
         if (_bindings.Resolve(import.TargetActorId) is not
             { Success: true, Value: { } actor })
             return FailAdmitted(import, "The import actor was replaced before application.");
-        // Resolve and capture EVERYTHING before mutating anything, so a
-        // stale target fails synchronously with nothing to roll back.
+        // Look up and read everything before changing anything, so a target
+        // that has gone fails right away with nothing to undo.
         if (_planner.ResolveApply(import, actor, plan, expression,
                 out var resetBones, out var skeletons, out var model) is { } refusal)
             return FailAdmitted(import, refusal);
 
         try
         {
-            // Pending ownership was established by Reserve before this first
-            // mutation. Every setup step shares the same exception-safe
-            // transaction and therefore the same terminal receipt.
+            // Reserve claimed the import before this first change. Every setup
+            // step runs inside this one try block, so any failure ends in the
+            // same final result.
             _posing.SetIkImportSuppressed(import.ActorKey, true);
             foreach (var (bone, _) in resetBones)
             {
@@ -296,10 +299,10 @@ public sealed class PoseImportCapture : IDisposable
             foreach (var slot in import.Slots)
             {
                 var scope = slot;
-                // The registration takes the live skeleton resolved on THIS
-                // tick, but the batch itself is keyed by (actor, slot) in
-                // the posing service and the callback matches bones by
-                // name — nothing pins this instance past the call.
+                // The skeleton is the one looked up this frame, but the posing
+                // service files the batch by actor and slot, and the callback
+                // finds bones by name. So nothing here needs this skeleton
+                // object to last.
                 _posing.RegisterTransitiveAction(
                     skeletons[scope.Slot],
                     (bone, poseInfo) => _planner.ApplyBone(import, scope, bone, poseInfo));
@@ -321,23 +324,23 @@ public sealed class PoseImportCapture : IDisposable
         }
     }
 
-    /// <summary>Raised from the native hooks when the interval that owned a
-    /// batch ends. Records only — the completion itself needs the framework
-    /// thread.</summary>
+    /// <summary>Called from inside the game's bone update when the update that
+    /// ran a batch ends. It only records what happened; the next step is queued
+    /// for Poser's normal per-frame update.</summary>
     private void OnTransitiveActionsEnded(TransitiveActionOutcome outcome)
     {
-        // Native callbacks are record-only. In particular, do not read
-        // SceneSession, StableBindingRegistry, or session state here.
+        // Code called from the game's bone update only records. In particular,
+        // do not read SceneSession, StableBindingRegistry or the session here.
         if (Volatile.Read(ref _pending) is not { } import || !PoseImportPlanner.IsNativeLive(import))
             return;
         var complete = true;
         var known = false;
         foreach (var slot in import.Slots)
         {
-            // The outcome's skeleton is only READ here, for its stable keys
-            // — the batch identity is (actor, slot), same as the posing
-            // service's own, so a mid-window skeleton replacement still
-            // reports against the right batch.
+            // The skeleton is only read here, for its actor and slot. A batch
+            // is filed by actor and slot, as in the posing service, so a
+            // skeleton replaced partway through still reports to the right
+            // batch.
             if (!slot.Ended &&
                 outcome.Skeleton.Slot == slot.Slot &&
                 string.Equals(
@@ -358,11 +361,9 @@ public sealed class PoseImportCapture : IDisposable
         switch (import.Stage)
         {
             case PoseImportStage.Apply:
-                // The apply batches have run. An expression import restores
-                // the head first — Brio schedules its phase 2 at +4 ticks
-                // (PosingCapability.cs:249-250, the same delay its reconcile
-                // uses); everything else goes straight to the reconcile
-                // decision at the same delay.
+                // The bone writes have run. An expression import puts the head
+                // back first; every other import goes straight to lining up the
+                // face. Both wait 4 frames, as Brio does.
                 QueueFromNative(
                     import,
                     import.HeadRestores is { Count: > 0 }
@@ -371,10 +372,8 @@ public sealed class PoseImportCapture : IDisposable
                     ReconcileDelayTicks);
                 break;
             case PoseImportStage.HeadRestore:
-                // Brio's phase 2 runs with generateSnapshot: true, so its
-                // Snapshot — the reconcile driver — fires another 4 ticks
-                // after the restore pass (PosingCapability.cs:308-309,
-                // :249-250).
+                // Brio lines up the face another 4 frames after putting the
+                // head back. Poser does the same.
                 QueueFromNative(
                     import,
                     () => BeginReconcile(import.Generation),
@@ -399,8 +398,8 @@ public sealed class PoseImportCapture : IDisposable
         }
         catch (Exception ex)
         {
-            // Native hooks may only record failure. The already-armed timeout
-            // performs the framework-thread rollback and terminal publication.
+            // Code called from the game's bone update may only record a failure.
+            // The time limit set earlier undoes the import and publishes the result.
             import.Failure ??= $"Pose import phase scheduling failed: {ex.Message}";
         }
     }
@@ -411,12 +410,12 @@ public sealed class PoseImportCapture : IDisposable
         !import.Invalidation.IsInvalidated &&
         ReferenceEquals(Volatile.Read(ref _pending), import);
 
-    /// <summary>Framework-thread identity gate for every deferred phase.
-    /// Identity is the session, the admitted actor GENERATION, and — for
-    /// ordinary imports — exact scene membership of every captured target.
-    /// No instance is pinned: the registry's own ReferenceEquals staleness
-    /// check governs what its ids resolve to (issue #78), and a wrapper or
-    /// skeleton object replaced for the same identity changes nothing here.
+    /// <summary>Checked on the game's main thread before every later step: is
+    /// this still the same GPose session, the same actor (not one the game has
+    /// rebuilt), and, for normal imports, is every bone target still in the
+    /// scene? No object is held on to. The binding registry decides what each id
+    /// points at now, so a replaced wrapper or skeleton object for the same actor
+    /// changes nothing here.
     /// </summary>
     private bool IsFrameworkCurrent(PendingPoseImport import)
     {
@@ -430,9 +429,8 @@ public sealed class PoseImportCapture : IDisposable
         {
             if (ActorFor(target) != import.TargetActorId)
                 return false;
-            // Preview actors are auxiliary and intentionally absent from the
-            // committed scene model; ordinary imports require exact scene
-            // admission of every target generation.
+            // Preview actors are helpers and are deliberately left out of the
+            // scene. A normal import needs every target to be in the scene.
             if (!import.PreviewTarget && !_scene.Contains(target))
                 return false;
         }
@@ -464,12 +462,10 @@ public sealed class PoseImportCapture : IDisposable
             GuardFramework(import, "The pose import scene or target was replaced.");
     }
 
-    /// <summary>Where the reconcile outcome goes next: a body import is
-    /// done, an expression import continues into Brio's whole-pose flatten
-    /// (its phase-2 Snapshot runs Reconcile(reset: true) — the phase-2
-    /// ImportPose_Internal call leaves reset/reconcile at their TRUE
-    /// defaults, PosingCapability.cs:308-309 vs the body path's
-    /// reconcile: false at :156).</summary>
+    /// <summary>What comes after lining up the face. A body import is done. An
+    /// expression import goes on to the last step, which merges the whole pose
+    /// into one edit. Brio also does that last step for expression imports
+    /// only.</summary>
     private void FinishAfterReconcile(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
@@ -499,8 +495,9 @@ public sealed class PoseImportCapture : IDisposable
             return;
         if (!GuardFramework(import, "The pose import session or target was replaced."))
             return;
-        // The apply passes ran; only the driven-bone rounds are still going.
-        // Finish with what they reached rather than roll the import back.
+        // The bone writes ran; only the corrections for bones the game moves
+        // itself are still going. Finish with what they reached rather than
+        // undo the import.
         if (import.DrivenRounds > 0 && import.Failure == null)
         {
             import.DrivenRounds = MaxDrivenRounds;
@@ -519,9 +516,10 @@ public sealed class PoseImportCapture : IDisposable
         Complete(generation);
     }
 
-    /// <summary>Exports the current pose, clears interactive layers in the plan's
-    /// scope, and schedules its re-import. Named service layers remain active.
-    /// This follows Brio's final expression-import flatten stage.</summary>
+    /// <summary>Reads the current pose, clears the edit layers made by hand within
+    /// the import's scope, and queues the pose to be imported again as one edit.
+    /// Layers that other features keep under their own name stay. Brio ends an
+    /// expression import the same way.</summary>
     private void BeginFlatten(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
@@ -537,8 +535,8 @@ public sealed class PoseImportCapture : IDisposable
             foreach (var slot in import.Slots)
                 applied &= slot.Executed;
         }
-        // The live actor is resolved on THIS tick by its admitted identity;
-        // the flatten owns no instance from any earlier stage.
+        // The actor is looked up again this frame by the id the import started
+        // with; this step keeps no object from earlier steps.
         if (!applied || !import.WroteCharacter ||
             _bindings.Resolve(import.TargetActorId) is not
                 { Success: true, Value: { } actor })
@@ -561,12 +559,13 @@ public sealed class PoseImportCapture : IDisposable
 
         RefreshTargets(import);
 
-        // Brio's Reset before the re-import: every interactive stack goes;
-        // named service layers stay and re-drive themselves.
+        // Clear the pose before importing it again, as Brio does: every layer
+        // made by hand goes; layers other features keep stay and reapply
+        // themselves.
         foreach (var (bone, _) in resetBones)
         {
-            // Mark before the reset call: a provider may mutate state before
-            // reporting an exception, and rollback must remain truthful.
+            // Mark the change before the reset: the reset can change a bone and
+            // then throw, and the undo must know a change was made.
             import.MutationStarted = true;
             _posing.GetPoseInfo(bone.Skeleton)
                 .GetPoseInfo(bone.BoneName, bone.PartialId)
@@ -592,16 +591,14 @@ public sealed class PoseImportCapture : IDisposable
     }
 
     /// <summary>
-    /// Brio's expressionPhase2 (PosingCapability.cs:233-247 with
-    /// PoseImporter.cs:11-26), the middle stage of its expression dance: the
-    /// apply stage moved the head to the FILE's head so the face landed
-    /// face-local; now the head comes back. Per written j_kao instance, the
-    /// phase-1 head stack pops (RemoveLastStack — exact because import
-    /// writes are forceNewStack, like Brio's), and a POSITION-only restore
-    /// to the pre-import absolute registers as the next batch, diffed
-    /// in-pass against the post-removal basis exactly like any import
-    /// write. Head rotation reverts through the pop alone; the +4-tick
-    /// reconcile then re-expresses the face against the restored head.
+    /// The middle step of an expression import, as in Brio. The first step moved
+    /// the head to the head in the file, so the face landed right relative to the
+    /// head. Now the head goes back. For each head bone (j_kao) the first step
+    /// wrote, the first step's edit layer is removed. That is exact, because every
+    /// import write starts a new layer, as in Brio. Then the head's position from
+    /// before the import is queued as the next batch, measured like any import
+    /// write. The head's rotation goes back by removing the layer alone. Lining up
+    /// the face, 4 frames later, then fits the face to the restored head.
     /// </summary>
     private void BeginHeadRestore(long generation)
     {
@@ -624,8 +621,8 @@ public sealed class PoseImportCapture : IDisposable
             return;
         }
 
-        // The head restore names Character-slot bones the apply stage just
-        // wrote; the LIVE skeleton is resolved on this tick, not carried.
+        // The head restore names body bones the first step just wrote. The
+        // skeleton is looked up again this frame, not carried over.
         if (_bindings.Resolve(import.TargetActorId) is not
                 { Success: true, Value: { } actor } ||
             _skeletons.GetSkeleton(actor) is not { } skeleton)
@@ -639,17 +636,16 @@ public sealed class PoseImportCapture : IDisposable
             (TransformTargetId, Transform, TransformComponents)>(restores.Count);
         foreach (var headRestore in restores)
         {
-            // Only an instance the apply stage actually wrote carries a
-            // phase-1 stack to pop; the near-identity early-out means a
-            // head already at the file's pose gained none. A written
-            // instance's PreImport was re-expressed by that same pass in
-            // its own basis (PoseImportHeadRestore.PreImport), so the write below
-            // diffs two values of the SAME space and lands the head back
-            // on the pre-import authored state exactly.
+            // Only a head bone the first step actually wrote has a layer to
+            // remove. A head already at the file's pose was skipped, so it has
+            // none. For a written head bone, the first step stored its value from
+            // before the import in that bone's own terms. So the write below
+            // compares two values measured the same way, and puts the head back
+            // exactly where it was.
             if (!import.Written.Contains(headRestore.Target))
                 continue;
-            // The pop mutates the interactive stack before the deferred
-            // restore batch is registered; mark before entering that call.
+            // Removing the layer changes the bone before the restore batch is
+            // queued, so mark the change first.
             import.MutationStarted = true;
             _posing.GetPoseInfo(skeleton)
                 .GetPoseInfo(headRestore.Bone, headRestore.Partial)
@@ -660,8 +656,8 @@ public sealed class PoseImportCapture : IDisposable
 
         if (writes.Count == 0)
         {
-            // No instance was moved — nothing to restore, straight to the
-            // reconcile decision.
+            // No head bone was moved, so there is nothing to put back. Go
+            // straight to lining up the face.
             BeginReconcile(generation);
             return;
         }
@@ -685,19 +681,16 @@ public sealed class PoseImportCapture : IDisposable
     }
 
     /// <summary>
-    /// The reconcile decision point, on the framework thread after the apply
-    /// batches ran and reparenting settled. Skips (completing the import
-    /// as-is) when: the apply phase already failed or never executed; the
-    /// plan wrote no face-partial bones (a body/weapon-only import's spaces
-    /// agree — no second pass to burn); the actor has no j_kao (Brio
-    /// ReconcileHead's null check, PosingCapability.cs:326-327); IK is armed
-    /// (Brio Snapshot :316-317 runs ReconcileHead only when
-    /// <c>PoseInfo.HasIKStacks</c> is false — Brio stores IK per stack,
-    /// Poser per bone, so the mapped guard is
-    /// <see cref="IBonePosingService.HasEnabledIk"/>); or neither j_kao nor
-    /// any ancestor is overridden (:331-345 — without a posed head the
-    /// pre/post-reparent spaces coincide and there is nothing to converge).
-    /// Otherwise registers the subtree re-import as the second batch.
+    /// Decides whether to line the face up with the head. Runs on the game's main
+    /// thread after the bone writes ran and the bones settled. It skips this, and
+    /// finishes the import as it is, when: the bone writes failed or never ran;
+    /// the import wrote no face bones (a body or weapon import needs no second
+    /// step); the actor has no head bone j_kao (Brio checks the same); IK is on
+    /// (Brio only lines up the face without IK; Brio keeps IK per edit layer and
+    /// Poser per bone, so Poser checks
+    /// <see cref="IBonePosingService.HasEnabledIk"/>); or neither j_kao nor any
+    /// bone above it is posed (then the face is already in the right place).
+    /// Otherwise it queues the face bones to be imported again, as a second batch.
     /// </summary>
     private void BeginReconcile(long generation)
     {
@@ -708,8 +701,8 @@ public sealed class PoseImportCapture : IDisposable
 
         try
         {
-        // A failed or unexecuted apply phase completes (and rolls back) via
-        // Complete's own verdict on the still-current apply slots.
+        // Bone writes that failed or never ran are finished, and undone, by
+        // Complete, which checks the same batches.
         var applied = import.Failure == null;
         if (applied)
         {
@@ -724,9 +717,9 @@ public sealed class PoseImportCapture : IDisposable
 
         if (_planner.BuildReconcile(import) is not { } reconcile)
         {
-            // Nothing to converge — an expression import still owes the
-            // flatten (Brio's Snapshot runs Reconcile(reset) whether or not
-            // ReconcileHead had work).
+            // The face needs no lining up. An expression import still needs
+            // its last merge step; Brio runs it whether or not the face needed
+            // lining up.
             FinishAfterReconcile(import.Generation);
             return;
         }
@@ -744,8 +737,9 @@ public sealed class PoseImportCapture : IDisposable
         }
     }
 
-    /// <summary>Checks batch outcomes, corrects driven bones and records history.
-    /// Failures attempt rollback and publish the resulting recovery status.</summary>
+    /// <summary>Checks that the batches ran, corrects bones the game moves on its
+    /// own, and records the undo step. On failure it tries to undo the import and
+    /// publishes how far that got.</summary>
     private void Complete(long generation)
     {
         if (_pending is not { } import || import.Generation != generation)
@@ -799,8 +793,9 @@ public sealed class PoseImportCapture : IDisposable
 
         if (failure != null)
         {
-            // Invalidate before the ordered recovery sweep. Late native,
-            // timeout, and queued framework callbacks can now only no-op.
+            // Mark the import dead before undoing it. Late calls from the
+            // game's bone update, the time limit or queued frame updates then
+            // do nothing.
             Invalidate(import);
             _log.Warning($"Pose import failed: {failure}");
             var terminal = _terminal.CreateFailureTerminal(import, failure);
@@ -818,14 +813,15 @@ public sealed class PoseImportCapture : IDisposable
     }
 
     /// <summary>
-    /// A bone KineDriver writes (an eyelid) was measured in its own turn of the
-    /// pass, before the drivers saw the imported sources (the eye): the drivers
-    /// run after every bone, so its edit took the drivers' share once more and
-    /// the lid closed further on every save and load. Now that the pass has run
-    /// the drivers on the imported pose, each driven bone the file names, and
-    /// each file bone under one, is put onto its file value, in the same history
-    /// entry. A bone whose ancestor moved this round waits for the next pass.
-    /// Returns how many bones moved.
+    /// Corrects bones the game moves on its own (through its KineDriver), such as
+    /// an eyelid that follows the eye. Such a bone is measured in its own turn of
+    /// the bone update, before the game moves it to follow the imported eye. The
+    /// game moves it after every other bone, so without this correction the
+    /// game's movement would be added twice, and the lid would close a little
+    /// more on every save and load. Once the game has run on the imported pose,
+    /// each such bone the file names, and each file bone under one, is set to its
+    /// value in the file, in the same undo step. A bone whose parent moved this
+    /// round waits for the next round. Returns how many bones moved.
     /// </summary>
     private int CorrectDrivenBones(PendingPoseImport import)
     {
@@ -890,8 +886,9 @@ public sealed class PoseImportCapture : IDisposable
         };
     }
 
-    /// <summary>Host fallback when framework dispatch cannot run the drain.
-    /// The host must stop competing callbacks before this off-thread cleanup.</summary>
+    /// <summary>Used when Poser shuts down and the game's main thread cannot
+    /// finish the import. This runs on another thread, so the caller must stop
+    /// every other callback first.</summary>
     public void InvalidateForHostTeardown(
         string detail = "Pose import invalidated before host teardown; recovery was not attempted.")
     {
@@ -910,26 +907,27 @@ public sealed class PoseImportCapture : IDisposable
     private void Invalidate(PendingPoseImport import)
     {
         _posing.SetIkImportSuppressed(import.ActorKey, false);
-        // This interlocked token is the native callback's only liveness read.
-        // Set it before session/binding/provider teardown can begin.
+        // This thread-safe flag is the only thing the game's bone update reads to
+        // see whether the import is still running. Set it before anything else
+        // is torn down.
         import.Invalidation.Invalidate();
         import.Invalidated = true;
         if (ReferenceEquals(Volatile.Read(ref _pending), import))
             Volatile.Write(ref _pending, null);
     }
 
-    /// <summary>Invalidates pending work and publishes a terminal receipt.
-    /// Only framework-thread disposal attempts rollback.</summary>
+    /// <summary>Marks a running import dead and publishes its final result. Only
+    /// disposing on the game's main thread tries to undo the import.</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
         if (Volatile.Read(ref _pending) is { } import)
         {
-            // Direct disposal has no return channel, so it publishes the
-            // truthful terminal before releasing callbacks. Framework-thread
-            // disposal can drain; any other thread invalidates first and
-            // reports that recovery was not attempted.
+            // Disposing has no way to return a result, so it publishes the true
+            // final result before releasing callbacks. On the game's main thread
+            // the import can be undone. On any other thread it is only marked
+            // dead, and the result says no undo was tried.
             Invalidate(import);
             var terminal = _framework.IsInFrameworkUpdateThread
                 ? _terminal.CreateFailureTerminal(import, "Pose import disposed.", cancelled: true)

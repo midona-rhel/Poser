@@ -8,10 +8,10 @@ namespace Poser.UI.Widgets;
 public static class SwitchWidgets
 {
     /// <summary>
-    /// iOS-style toggle switch — pixel transcription of picto
-    /// shared/ui/ToggleSwitch/ToggleSwitch.module.css: 32×20 track (radius 10),
-    /// off bg rgba(128,128,128,.25), on bg #3297FF; 16px white knob at (2,2),
-    /// opacity .6 off → 1 on, sliding +12px; knob shadow 0 1px 3px rgba(0,0,0,.2).
+    /// An on/off switch like the ones on phones, drawn to match the picto
+    /// design's toggle switch: a 32×20 rounded track, grey when off and the
+    /// accent colour when on, and a 16px white knob that slides 12px, goes from
+    /// 60% to full opacity when switched on, and has a soft shadow.
     /// </summary>
     public static bool Switch(
         string id,
@@ -51,19 +51,18 @@ public static class SwitchWidgets
         return hit.Clicked;
     }
 
-    /// <summary>
-    /// The toggle's pixels alone — pill, knob shadow rings, knob. The knob
-    /// metrics are proportional to the resolved box, so the painter recovers the
-    /// caller's control scale from the rect it is handed rather than taking it
-    /// as a parameter: the box is the single source of that scale.
-    /// </summary>
-    /// <summary>Picto's <c>transition: transform .2s ease, opacity .2s ease</c>
-    /// and the track's <c>background-color .2s ease</c> — one ramp drives all
-    /// three, keyed by the caller's identity. Zero identity paints the end
-    /// state for callers that do not need an animated transition.</summary>
+    /// <summary>How the switch animates, as in the picto design: the knob's
+    /// slide, its opacity and the track colour all follow this one curve over
+    /// 0.2 seconds.</summary>
     private static readonly Transition SwitchTransition =
         Transition.CubicBezier(0.2f, 0.25f, 0.1f, 0.25f, 1f);
 
+    /// <summary>
+    /// Draws the switch alone: track, knob shadow and knob. The knob's size
+    /// follows the box it is given, so the box alone sets the switch's scale.
+    /// The animation is tracked per <paramref name="identity"/>; 0 draws the
+    /// end state with no animation.
+    /// </summary>
     private static void PaintSwitch(
         ImDrawListPtr dl, Vector2 min, Vector2 max, bool value, bool disabled,
         uint identity = 0)
@@ -73,7 +72,7 @@ public static class SwitchWidgets
         float logicalHeight = (max.Y - min.Y) / scale;
         float controlScale =
             logicalHeight / ActiveTheme.Controls.SwitchHeight;
-        // Shared control disabled fade.
+        // Disabled controls fade by the same amount everywhere.
         float opacity = disabled ? ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 
         float eased = value ? 1f : 0f;
@@ -90,7 +89,7 @@ public static class SwitchWidgets
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(trackColor)),
             ActiveTheme.Controls.SwitchHeight * 0.5f * scale);
 
-        // knob: 16px circle, left 2px (off) / 14px (on), bottom 2px
+        // The knob: a 16px circle, 2px from the left when off and 14px when on.
         float knobInset = ActiveTheme.Spacing.One * controlScale;
         float knobSize =
             ActiveTheme.Controls.SwitchKnobSize * controlScale;
@@ -101,13 +100,13 @@ public static class SwitchWidgets
             knobLeft + knobRadius,
             logicalHeight * 0.5f * scale);
 
-        // Approximate the 0 1px 3px knob shadow with two rings.
+        // Two rings stand in for the soft shadow under the knob.
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + scale,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveTheme.Chrome.SwitchShadow.Fade(opacity))), 32);
         dl.AddCircleFilled(center + new Vector2(0f, 1f * scale), knobRadius + 0.4f * scale,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(ActiveTheme.Chrome.SwitchHighlight.Fade(opacity))), 32);
 
-        // Knob is white in every scheme, opacity .6 off → 1 on per the spec.
+        // The knob is white in every theme: 60% opacity when off, full when on.
         var knobColor = ColorEx.PremultipliedLerp(
                 ActiveTheme.Chrome.SwitchKnob.Fade(0.6f),
                 ActiveTheme.Chrome.SwitchKnob,

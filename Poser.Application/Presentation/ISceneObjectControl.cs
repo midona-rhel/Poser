@@ -15,8 +15,9 @@ public sealed record WorldObjectReading(
     bool AnimationPaused, bool LoopVfx, float VfxSpeed, bool VfxPaused, float VfxIntensity);
 
 
-/// <summary>Exact-id property access for props, scenery, furniture and VFX.
-/// Reads are detached; native replacement and value history stay behind this boundary.</summary>
+/// <summary>Reads and changes the values of one prop, scenery object, furniture
+/// piece or VFX, found by its id. A reading is a copy; changing it does nothing.
+/// Respawning the object in the game and recording undo steps happen in here.</summary>
 public interface ISceneObjectControl
 {
     PropReading? Read(PropId id);
@@ -27,11 +28,11 @@ public interface ISceneObjectControl
     Outcome Set<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, T value);
     Outcome Update<T>(WorldObjectId id, EntityProperty<WorldObjectId, T> property, Func<T, T> change);
 
-    /// <summary>Respawns the prop as <paramref name="model"/>; only a landed
-    /// respawn is a step.</summary>
+    /// <summary>Respawns the prop as <paramref name="model"/>. An undo step is
+    /// recorded only if the respawn works.</summary>
     Outcome SetModel(PropId id, PropModel model);
 
-    /// <summary>Switches one furniture light as its own discrete step.</summary>
+    /// <summary>Turns one furniture light on or off as its own undo step.</summary>
     Outcome SetFurnitureLight(WorldObjectId id, string key, bool enabled);
 
     Task<Outcome> Respawn(WorldObjectId id, string path);

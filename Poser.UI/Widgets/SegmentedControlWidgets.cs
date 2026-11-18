@@ -108,8 +108,8 @@ public static class SegmentedControlWidgets
     }
 
     /// <summary>
-    /// Measures text tabs through the same layout helper used for drawing.
-    /// All returned dimensions are physical pixels.
+    /// Measures text tabs with the same layout code used for drawing.
+    /// All sizes are screen pixels, after UI scaling.
     /// </summary>
     private static SegmentLayout LabelSegmentLayout(
         string[] items,
@@ -141,11 +141,11 @@ public static class SegmentedControlWidgets
         return new(layout.TotalWidth, layout.TotalHeight);
     }
 
-    /// <summary>The MIXED variant: icon tabs, except where
-    /// <paramref name="textFor"/> hands a label back — a short word that
-    /// no glyph says better (the spawn strip's "All"). A text tab is
-    /// measured like the label variant's, an icon tab is the icon
-    /// variant's square.</summary>
+    /// <summary>Tabs that mix icons and text: each tab shows its icon, unless
+    /// <paramref name="textFor"/> gives a label for it, for a short word no
+    /// icon says better (such as "All" in the spawn browser). A text tab is
+    /// sized like a text tab, and an icon tab is the same square as in icon
+    /// tabs.</summary>
     public static bool SegmentedControl(
         string id,
         TablerIcon[] items,
@@ -211,7 +211,7 @@ public static class SegmentedControlWidgets
         return changed;
     }
 
-    /// <summary>Measures the mixed variant exactly the way it draws.</summary>
+    /// <summary>Measures mixed icon and text tabs exactly the way they are drawn.</summary>
     public static Vector2 MeasureSegmentedControl(
         TablerIcon[] items,
         Func<int, string?> textFor,
@@ -242,8 +242,8 @@ public static class SegmentedControlWidgets
         _ => ActiveTheme.Controls.ComfortableHeight * ImGuiHelpers.GlobalScale;
 
     /// <summary>
-    /// The icon variant's full per-tab geometry — the ONE layout resolution.
-    /// PHYSICAL pixels, like its label sibling.
+    /// The size and place of every icon tab; the only place this is worked
+    /// out. Sizes are screen pixels, after UI scaling, as for text tabs.
     /// </summary>
     private static SegmentLayout IconSegmentLayout(
         int count,
@@ -339,8 +339,8 @@ public static class SegmentedControlWidgets
         return changed;
     }
 
-    /// <summary>The selected tab's fill pair — the 1px SegmentShadow drop
-    /// under the SegmentSelected fill.</summary>
+    /// <summary>The selected tab's background: a 1px shadow (SegmentShadow)
+    /// under the selected fill (SegmentSelected).</summary>
     private static void PaintSegmentActive(
         ImDrawListPtr drawList, Vector2 tabMin, Vector2 tabMax)
     {
