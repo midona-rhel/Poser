@@ -9,7 +9,7 @@ using Poser.Game.Entities;
 
 namespace Poser.Game.Scene;
 
-/// <summary>The actor's authored values at removal, independent of its original spawn source.</summary>
+/// <summary>The actor's pose, placement and settings when it was removed, so undo can bring it back without the actor it was first copied from.</summary>
 internal readonly record struct ActorState(
     Transform Placement,
     bool Visible,
@@ -18,12 +18,13 @@ internal readonly record struct ActorState(
     public ActorRuntimeState? Runtime { get; init; }
     public IReadOnlyList<PoseImportWrite>? CopyBones { get; init; }
     public bool FreezePoseOnRestore { get; init; }
-    /// <summary>Whether the restored actor comes back paused: a posed
-    /// duplicate's frozen basis, or an actor that was paused when it was read
-    /// (#483). A running actor comes back running.</summary>
+    /// <summary>Whether the actor comes back paused: a duplicate is frozen on
+    /// its copied pose, and an actor that was paused when it was read stays
+    /// paused. A running actor comes back running.</summary>
     public bool RestoresPaused => FreezePoseOnRestore || Runtime?.Paused == true;
-    /// <summary>Partial-root scales keyed by "partial:bone". Pose files cannot
-    /// distinguish roots that share a name; these scales are set before import.</summary>
+    /// <summary>The scale of the root bone of each model part (body, face, hair
+    /// and so on), keyed by "partial:bone". A pose file cannot tell apart root
+    /// bones that share a name, so these scales are set before the pose import.</summary>
     public IReadOnlyDictionary<string, System.Numerics.Vector3>? PartialRootScales { get; init; }
 
     /// <summary>Physics-bone positions and scales relative to their parents,
@@ -32,9 +33,9 @@ internal readonly record struct ActorState(
 }
 
 /// <summary>
-/// Operations used to capture, remove, and recreate actors for history.
-/// The implementation schedules restoration after the native body and skeleton
-/// become ready; callers do not wait synchronously for that work.
+/// What undo and redo use to read, remove and recreate actors. Restoring an
+/// actor waits until the game has built its body and skeleton; callers do not
+/// wait for that.
 /// </summary>
 internal interface IActorLifecycle
 {
@@ -49,9 +50,9 @@ internal interface IActorLifecycle
     ActorState Read(object actor);
 
     /// <summary>Reads <paramref name="actor"/>'s pose for a copy and hands
-    /// it to <paramref name="done"/>, or null when it could not be read. The
-    /// live lifecycle answers on a later tick, once the source's caches are in
-    /// the frame the copy's import writes in.</summary>
+    /// it to <paramref name="done"/>, or null when it could not be read. In the
+    /// game it answers a frame or two later, once the source actor's bone
+    /// positions have been read fresh for the copy's pose import.</summary>
     void CapturePoseForCopy(object actor, Action<ActorState?> done) =>
         done(Read(actor) with { Runtime = null });
 
@@ -59,24 +60,25 @@ internal interface IActorLifecycle
 
     IActor? Recreate(ActorState state) => null;
 
-    /// <summary>Runs <paramref name="act"/> once the actor's body is
-    /// posable — the same wait a restore gets — or reports that it never
-    /// became so.</summary>
+    /// <summary>Runs <paramref name="act"/> once the actor's body can be
+    /// posed, with the same wait a restore gets, or reports that it never
+    /// could be.</summary>
     void WhenPosable(object actor, Action<object> act);
 
-    /// <summary>Schedules restoration onto a newly spawned actor. Later pose or
-    /// placement failures are reported through Note and do not fail the history
-    /// entry that already recreated the body.</summary>
+    /// <summary>Puts the saved state back onto a newly spawned actor once it is
+    /// ready. If the pose or placement fails later, that is reported through
+    /// <see cref="Note"/>; the undo step that brought the body back still counts
+    /// as done.</summary>
     void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null);
 
-    /// <summary>The seam's refusal channel. An act it cannot journal says so
-    /// here rather than passing for one it can.</summary>
+    /// <summary>Where problems are reported. An action that cannot be undone
+    /// says so here, instead of passing for one that can.</summary>
     void Note(string detail);
 }
 
 /// <summary>
-/// Retains the latest removal snapshot. Production recreates a fresh body
-/// from that state; the initial factory is only the fallback without a runtime snapshot.
+/// Keeps the snapshot taken the last time the actor was removed. In the game, undo
+/// builds a new body from that snapshot; the first spawn is only run again when there is none.
 /// </summary>
 internal sealed class ActorLifecycleSlot
 {
@@ -90,9 +92,9 @@ internal sealed class ActorLifecycleSlot
     public Action<IActor, Action>? ApplyBodyProfile;
 }
 
-/// <summary>Records actor creation and removal. Restoration recreates the body
-/// from its runtime snapshot, falling back to the original creation callback
-/// when no runtime snapshot exists, then restores its saved state.</summary>
+/// <summary>Records actor spawns and removals as undo steps. Bringing an actor
+/// back builds the body from the snapshot taken at removal, or runs the first
+/// spawn again when there is none, and then puts its saved state back.</summary>
 internal sealed class ActorLifecycleOwner
 {
     private readonly EditHistory _history;
@@ -118,8 +120,8 @@ internal sealed class ActorLifecycleOwner
     public void BindReplacement(IActor original, IActor replacement) =>
         _slots.BindReplacement(original, replacement);
 
-    /// <summary>Records one actor spawn. <paramref name="spawn"/> must be
-    /// re-runnable: it is the redo.</summary>
+    /// <summary>Records one actor spawn. <paramref name="spawn"/> must work
+    /// when run again, because redo runs it.</summary>
     public IActor? SpawnActor(string description, Func<IActor?> spawn, IActor? source = null, string? name = null)
     {
         var seed = name ?? (source == null ? "Actor" : _actors.GetName(source));
@@ -146,17 +148,18 @@ internal sealed class ActorLifecycleOwner
         _actors.WhenPosable(actor, a => act((IActor)a));
 
     /// <summary>
-    /// Creates a duplicate, captures the source pose after refreshing its caches,
-    /// and restores that pose after the copy's body profile is ready. The first
-    /// restore freezes the copy. Later undo/redo uses the state captured at removal.
+    /// Creates a duplicate. The source actor's pose is read once its bone positions
+    /// are fresh, and applied once the copy's Customize+ profile is in place. The
+    /// first time, the copy is frozen. Later undo and redo use the state read when
+    /// the copy was removed.
     /// </summary>
     public IActor? SpawnActorWithPose(
         string description, Func<IActor?> spawn, IActor source)
     {
         var name = _actors.GetName(source);
         var bodyProfile = _actors.CaptureBodyProfile(source);
-        // Read once, a tick or two after the click (see CapturePoseForCopy).
-        // Redo uses the removal snapshot captured by the lifecycle slot.
+        // The source pose is read once, a frame or two after the click.
+        // Redo uses the snapshot taken when the copy was removed.
         IActor? Posed() => spawn();
         var actor = Posed();
         if (actor == null)
@@ -181,7 +184,7 @@ internal sealed class ActorLifecycleOwner
             if (ReferenceEquals(_slots.CurrentInstance(slot), actor))
                 _actors.Restore(actor, captured, () => ReferenceEquals(_slots.CurrentInstance(slot), actor));
         }
-        // Restore the pose after the body profile has changed the skeleton.
+        // Apply the pose after the Customize+ profile has changed the skeleton.
         bodyProfile?.Invoke(actor, () => { profileReady = true; RestoreWhenReady(); });
         _actors.CapturePoseForCopy(source, captured =>
         {
@@ -196,10 +199,10 @@ internal sealed class ActorLifecycleOwner
         return actor;
     }
 
-    /// <summary>Removes an owned actor through the shared state capture,
-    /// regardless of whether it came from a scene file or its creation entry
-    /// still exists. <paramref name="note"/> tells the user what the recorded
-    /// undo cannot bring back.</summary>
+    /// <summary>Removes an actor Poser spawned and saves its state for undo, in
+    /// the same way whether it came from a scene file or its spawn is still in
+    /// the undo history. <paramref name="note"/> says what undo cannot bring
+    /// back.</summary>
     public bool DespawnActor(IActor actor, out string? note)
     {
         note = null;
@@ -230,11 +233,11 @@ internal sealed class ActorLifecycleOwner
     {
         if (_slots.CurrentInstance(slot) is not { } actor)
             return false;
-        // If another path already removed the actor, there is no native body
-        // left to capture or destroy.
+        // If something else already removed the actor, there is no body in the
+        // game left to read or destroy.
         if (_actors.IsSpawned(actor))
         {
-            // Capture the latest editable state at removal, rather than creation.
+            // Save the actor as it is now, not as it was when spawned.
             slot.Document = _actors.Read(actor);
             if (slot.PosedDuplicate && slot.Document.Runtime?.Paused == true)
                 slot.Document = slot.Document with { FreezePoseOnRestore = true };
@@ -252,7 +255,7 @@ internal sealed class ActorLifecycleOwner
             return true;
         if (!slot.HasRespawn)
             return false;
-        // A removal snapshot is independent of the original clone source.
+        // A snapshot taken at removal does not need the actor this one was copied from.
         var actor = slot.HasDocument && slot.Document.Runtime is not null
             ? _actors.Recreate(slot.Document)
             : slot.Respawn();
@@ -270,8 +273,8 @@ internal sealed class ActorLifecycleOwner
             applyBodyProfile(actor, RestoreState);
         else
             RestoreState();
-        // History succeeds once the body is recreated. Pose and placement may
-        // finish on later ticks; failures are reported by the runtime port.
+        // The undo step counts as done once the body is back. Pose and placement
+        // may finish on later frames; their failures are reported through Note.
         return true;
     }
 }

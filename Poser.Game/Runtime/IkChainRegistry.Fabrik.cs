@@ -11,10 +11,11 @@ namespace Poser.Game;
 
 internal sealed unsafe partial class IkChainRegistry
 {
-    /// <summary>Switching End rotation moves nothing: the switch records the
-    /// forearm, the end bone and the user's end rotation, and the solve goes on
-    /// from them. A chain enabled again with a record retakes it, since the
-    /// limb may have moved while it was off.</summary>
+    /// <summary>Switching End rotation moves nothing. The switch saves the
+    /// forearm, the end bone and the chosen end rotation as they are, and IK goes
+    /// on from there. When IK is turned on again for a chain with such a save,
+    /// the save is taken again, because the limb may have moved while IK was
+    /// off.</summary>
     private IkChainConfig PrepareEndAnchor(IBone endpoint, IkChainConfig config, IkChainConfig? previous)
     {
         if (config.Solver != IkSolver.TwoJoint || IkChains.ForEndpoint(endpoint.BoneName) is not { } definition)
@@ -32,15 +33,15 @@ internal sealed unsafe partial class IkChainRegistry
     {
         var previous = GetIkConfiguration(endpoint);
         config = PrepareEndAnchor(endpoint, config, previous);
-        // While this chain is on, the skeleton is in the pose pass, so the raw caches hold the
-        // pose the last solve left.
+        // While IK is on for this chain, Poser poses the skeleton every frame, so the bone
+        // positions Poser keeps hold the pose IK last produced.
         bool solving = previous is { Enabled: true };
         bool fromFabrik = solving && previous!.Solver is IkSolver.Fabrik or IkSolver.Rope;
         if (config.Solver is not (IkSolver.Fabrik or IkSolver.Rope))
         {
-            // This solver will move the limb, so the shape FABRIK kept no longer describes
-            // it. With it dropped here, switching back to FABRIK takes the shape afresh,
-            // while undo, redo and a loaded scene bring their own saved shape and keep it.
+            // This solver will move the limb, so the shape FABRIK kept no longer matches
+            // it. It is dropped here, so switching back to FABRIK reads the shape again.
+            // Undo, redo and a loaded scene bring their own saved shape and keep it.
             if (config.Enabled && config.Fabrik != null)
                 config = config with { Fabrik = null };
             // FABRIK and Rope keep no held target. The new target is the end bone where they
@@ -50,8 +51,9 @@ internal sealed unsafe partial class IkChainRegistry
             else if (config.Enabled && previous is { Enabled: true } && previous.TargetMode != config.TargetMode
                 && _ikChains.TryGetValue(ChainKey(endpoint), out var state))
                 config = _held.ChangeTargetMode(state, endpoint, config);
-            // Prepare before the value journal captures its after-state too:
-            // changing CCD depth changes which parent owns the target frame.
+            // This also runs before the change is recorded for undo, so undo keeps
+            // the result. Changing the CCD depth changes which parent bone the
+            // target is measured from.
             return config.Enabled && config.TargetMode == IkTargetMode.Actor
                 && (config.ActorAnchor == null || previous != null && config.ActorAnchor == previous.ActorAnchor
                     && (config.Solver != previous.Solver || config.CcdDepth != previous.CcdDepth))
@@ -62,8 +64,8 @@ internal sealed unsafe partial class IkChainRegistry
             && CaptureFabrikTarget(endpoint, config.TargetMode) is { } handle)
             config = config with { Fabrik = control with { Handle = handle } };
         if (config.Fabrik == null && config.Enabled)
-            // The raw caches are only current while the chain is solving. Otherwise this
-            // capture is a placeholder, marked so the pass takes it again.
+            // The bone positions Poser keeps are only up to date while IK runs on this chain.
+            // Otherwise this reading is a placeholder, marked so a later frame reads it again.
             return CaptureFabrikReference(endpoint, config) is { } captured
                 ? config with { Fabrik = captured with { Unseated = !solving } } : config;
         if (config.Fabrik != null && previous != null && ReferenceEquals(config.Fabrik, previous.Fabrik)
@@ -82,9 +84,9 @@ internal sealed unsafe partial class IkChainRegistry
             && members.Any(b => other.Bones.Contains(b.BoneName)));
     }
 
-    /// <summary>Captures the chain from the raw caches: the pose the last solve left, before
-    /// Customize+. FABRIK writes what it captured straight back into that pose, so capturing
-    /// the pose on screen would apply Customize+'s edits a second time.</summary>
+    /// <summary>Reads the chain from the bone positions Poser keeps: the pose IK last produced,
+    /// before Customize+ changes it. FABRIK writes what it reads straight back into that pose,
+    /// so reading the pose on screen would apply Customize+'s changes a second time.</summary>
     private FabrikControl? CaptureFabrikControl(IBone tip, IkChainConfig config)
     {
         var members = FabrikMembers(tip, config);
@@ -115,9 +117,10 @@ internal sealed unsafe partial class IkChainRegistry
         var control = config.Fabrik;
         if (control?.ReferenceBones == null)
         {
-            // Capture at most 50 parents + handle + 50 children once, before
-            // solving. In particular Rope's arc samples have shorter chords:
-            // recapturing them on a depth edit silently shortens the rest span.
+            // Read up to 50 parents, the handle bone and up to 50 children once,
+            // before IK moves them. Rope bends the chain into an arc, so its bones
+            // sit closer together: reading them again after a depth change would
+            // quietly make the chain shorter.
             var potential = FabrikMembers(tip, config with { ParentDepth = IkChainConfig.MaxDepth, ChildDepth = 0 })
                 .Concat(FabrikMembers(tip, config with { ParentDepth = 0, ChildDepth = IkChainConfig.MaxDepth }).Skip(1))
                 .ToArray();
@@ -133,8 +136,8 @@ internal sealed unsafe partial class IkChainRegistry
                     displayed = _stacks.FromApplySpace(bone, new Transform(saved.Position, saved.Rotation, Vector3.One));
                 var anchor = new FabrikTarget(IkTargetMode.Actor, displayed.Position, displayed.Rotation,
                     pose.AuthoredPosition, pose.AuthoredRotation, HoldRotation: false);
-                // Old saved controls have no reference span: retain their exact
-                // authored endpoints and seed rather than recapturing solved bones.
+                // Chains saved by older versions have no reference bones. Keep their
+                // saved end points as they are, rather than reading bones IK already moved.
                 if (saved != null && ReferenceEquals(saved, control!.Bones[0])) anchor = control.Root;
                 if (saved != null && ReferenceEquals(saved, control!.Bones[^1])) anchor = control.Tip;
                 return new FabrikReferenceBone(pose, anchor);
@@ -159,9 +162,10 @@ internal sealed unsafe partial class IkChainRegistry
         return FabrikTargetAt(endpoint, model, mode, bone, entity);
     }
 
-    /// <summary>A FABRIK target at this model-space point, stored the way its mode needs:
-    /// as is for Actor, as a world point for World, as an offset from the followed bone or
-    /// entity otherwise. Null when the followed bone or entity can't be found.</summary>
+    /// <summary>A FABRIK target at this point, given relative to the actor, and stored the
+    /// way its mode needs: as is for Actor, as a world position for World, and as an offset
+    /// from the followed bone or object otherwise. Null when the followed bone or object
+    /// can't be found.</summary>
     private FabrikTarget? FabrikTargetAt(IBone source, Transform model, IkTargetMode mode,
         BoneId? bone, SelectionId? entity)
     {
@@ -224,7 +228,7 @@ internal sealed unsafe partial class IkChainRegistry
 
     public Vector3 ClampIkTranslation(IBone bone, Vector3 delta, bool fromAuthoredBaseline = false, Vector3? inputPosition = null)
     {
-        // Rotation/scale gestures must not pay off a stale translation target.
+        // A rotate or scale drag does not move the bone, so it must not pull the bone toward an old move target.
         if (delta == Vector3.Zero) return delta;
         if (GetIkConfiguration(bone) is { Enabled: true, Solver: IkSolver.TwoJoint or IkSolver.Ccd } native)
             return ClampNativeIkTranslation(bone, native, delta, fromAuthoredBaseline);
@@ -237,14 +241,14 @@ internal sealed unsafe partial class IkChainRegistry
         var tip = ResolveFabrikTarget(members[^1], control.Tip, false);
         var handle = ResolveFabrikTarget(bone, control.Handle, true);
         if (root == null || tip == null || handle == null) return delta;
-        // Reach is measured in the solver's pre-reparent frame. Only the
-        // distance limit feeds back into authored coordinates, never contact lag.
+        // How far the chain can reach is measured in the pose IK works on. Only
+        // that reach limit is passed back to the move, never a lag from collisions.
         var displayed = _stacks.FromApplySpace(bone, new Transform(handle.Value.Position, Quaternion.Identity, Vector3.One));
-        // A collision-solved bone can be well short of its authored target.
-        // Mouse input starts at the gizmo, not at that hidden target. Preserve
-        // the gesture's input frame; never re-read the moving solved endpoint.
+        // With collisions on, a bone can stop well short of where it was dragged.
+        // The drag starts at the gizmo, not at that hidden target, so the drag keeps
+        // its own start point and never re-reads the end bone while IK moves it.
         // The gizmo sits on the bone as shown, after Customize+. The chain lives in the pose
-        // the solver works on, so the input is moved back by Customize+'s edit of this bone.
+        // IK works on, so the input is moved back by Customize+'s change to this bone.
         _ = bone.LastTransform;
         RefreshCache(bone);
         var input = displayed with
@@ -258,9 +262,9 @@ internal sealed unsafe partial class IkChainRegistry
         var source = control.Bones.Select(b => b.Position).ToArray();
         var limited = FabrikSolver.MoveHandle(source, control.HandleIndex, root.Value.Position, tip.Value.Position,
             inputApplied.Position, requested.Position - inputApplied.Position);
-        // Pose stacks store an offset from the held target; presentation stores
-        // an offset from the input position. They agree on the accepted point,
-        // not on the delta when contact has displaced the visible bone.
+        // The pose stores the move as an offset from the held target; the drag
+        // stores it as an offset from where the drag started. Both reach the same
+        // point, but their offsets differ when a collision has pushed the bone.
         var start = fromAuthoredBaseline ? displayed.Position : input.Position;
         return _stacks.FromApplySpace(bone, requested with { Position = limited }).Position - start;
     }
@@ -272,14 +276,14 @@ internal sealed unsafe partial class IkChainRegistry
         {
             if (identity.Skeleton != key || state.Config is not
                 { Enabled: true, Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control } config) continue;
-            if (control.Bones.Length < 2) continue; // Both spans disabled; retain the authored target for re-enabling.
+            if (control.Bones.Length < 2) continue; // Both depths are zero; keep the target for when one is raised.
             var tip = skeleton.GetBone(identity.Partial, identity.Bone);
             if (tip == null) continue;
             if (control.Unseated)
             {
-                // The first frame leaves the chain unsolved, so the pass refreshes the raw
-                // caches with the pose FABRIK must start from. The next frame captures it
-                // exactly as it stands, so switching FABRIK on moves nothing.
+                // On the first frame IK leaves the chain alone, so the bone positions Poser
+                // keeps catch up with the pose FABRIK must start from. The next frame reads
+                // that pose exactly as it stands, so switching FABRIK on moves nothing.
                 if (!state.FabrikWaited)
                 {
                     state.FabrikWaited = true;
@@ -287,7 +291,7 @@ internal sealed unsafe partial class IkChainRegistry
                 }
                 if (CaptureFabrikReference(tip, config with { Fabrik = null }) is not { } seated)
                     continue;
-                // A picked bone or entity stays what the handle follows.
+                // A picked bone or scene object stays what the handle follows.
                 var follows = control.Handle;
                 if (follows.Mode is IkTargetMode.Bone or IkTargetMode.Entity
                     && FabrikTargetAt(tip, tip.LastRawTransform, follows.Mode, follows.Bone, follows.Entity) is { } followed)
@@ -313,8 +317,9 @@ internal sealed unsafe partial class IkChainRegistry
         if (config?.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return config;
         var control = config.Fabrik;
         if (control == null) return config;
-        // Capture the owned visible route for scenes/copies/previews; copying
-        // the pre-collision seed would unwrap it in the new skeleton instance.
+        // Scenes, copies and previews take the chain as it is shown. Copying the
+        // shape from before collisions would undo its bend around the body on the
+        // new skeleton.
         if (config.Collisions && CaptureFabrikControl(tip, config) is { } visible)
             control = control with { Bones = visible.Bones, SwivelBaseline = visible.SwivelBaseline };
         var members = FabrikMembers(tip, config);
@@ -347,7 +352,7 @@ internal sealed unsafe partial class IkChainRegistry
         }
         return config with { Fabrik = control with
         {
-            ReferenceBones = null, // A copy/preview starts a new skeleton-local reference capture.
+            ReferenceBones = null, // A copy or preview reads its own reference bones on its new skeleton.
             Root = Capture(members[0], control.Root, false),
             Tip = Capture(members[^1], control.Tip, false),
             Handle = Capture(tip, control.Handle, true),

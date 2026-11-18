@@ -38,7 +38,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     }
 
     /// <summary>
-    /// Applies the settings and records the resulting captured target for Undo and Redo.
+    /// Applies the settings as one undo step. Undo and redo use the settings as they
+    /// were stored, with the target filled in, not the request as it was asked.
     /// Turning IK on or off never moves the limb. Off keeps the limb where IK put it,
     /// by baking it into the pose. On starts from the limb as it stands, with no swivel.
     /// </summary>
@@ -51,7 +52,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         if (before is { Enabled: false } && config.Enabled)
             config = config with { SwivelDegrees = 0 };
         var result = Write(target, config);
-        config = Get(target) ?? config; // Record captured endpoints, not the uncaptured request.
+        config = Get(target) ?? config; // Record the stored settings, with the target filled in.
         if (!result.Success || before is null || before == config)
             return result;
         _journal.Record(target.ToSelectionId(),
@@ -61,7 +62,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         return result;
     }
 
-    /// <summary>True when the runtime supports IK for this bone.</summary>
+    /// <summary>True when this bone can use IK.</summary>
     public bool IsSupported(TransformTargetId target) => Get(target) != null;
 
     public IReadOnlyList<IkChainSummary> Chains(SkeletonId skeleton)
@@ -124,7 +125,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     }
 
     /// <summary>What a chain follows, kept for undo: its settings, and the bone or scene
-    /// entity when it follows one.</summary>
+    /// object when it follows one.</summary>
     private readonly record struct Followed(IkChainConfig Config, BoneId? Bone, SelectionId? Entity);
 
     private Followed? Following(TransformTargetId target) => Get(target) is { } config
@@ -133,7 +134,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             config.TargetMode == IkTargetMode.Entity ? EntityTarget(target) : null)
         : null;
 
-    /// <summary>Picks a bone or scene entity to follow, as one undo step. Undo goes back to
+    /// <summary>Picks a bone or scene object to follow, as one undo step. Undo goes back to
     /// what the chain followed before, also when that was the actor or a world point.</summary>
     private Outcome PickTarget(TransformTargetId target, string description, Func<Outcome> pick)
     {
@@ -191,7 +192,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         if (current == null)
             return Outcome.Fail(
                 $"Bone {boneId.CanonicalName} cannot use IK.");
-        // Keep Enabled while restoring the limb or general-chain defaults.
+        // Restore the arm, leg or other chain defaults, but leave IK on or off as it is.
         var definition = IkChains.ForEndpoint(boneId.CanonicalName);
         return Set(target, definition == null
             ? IkChainConfig.DefaultsForChain(current.Enabled)
@@ -209,8 +210,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     {
         if (Get(target) is not { } initial)
             return Outcome.Fail("IK configuration requires a live bone target.");
-        // Depth edits capture a new authored span before the journal stages it.
-        // Redo restores that span, not another capture from the later live pose.
+        // A depth change reads the chain's bones before the change is recorded for
+        // undo. Redo uses that reading, not a new one from whatever the pose is later.
         if (target.Bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } endpoint })
             config = _bonePosing.PrepareIkConfiguration(endpoint, config);
         var result = _journal.Adjust((target, "IK"), "Set IK",

@@ -15,9 +15,11 @@ using Poser.Game.Services;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// Tracks borrowed and spawned world objects. Release restores captured state
-/// for borrowed objects and destroys owned objects. Failed cleanup retains the
-/// claim for retry; stale native identities are not written through.
+/// Keeps track of the map objects Poser borrowed and the objects it spawned.
+/// Releasing a borrowed object puts back the state it had when borrowed;
+/// releasing a spawned one destroys it. If cleanup fails, the object stays in
+/// the list so cleanup can be tried again. Poser never writes to an object that
+/// is no longer the one it holds.
 /// </summary>
 public sealed class WorldObjectService : IDisposable
 {
@@ -60,8 +62,8 @@ public sealed class WorldObjectService : IDisposable
             _framework.Update += OnFrameworkUpdate;
     }
 
-    /// <summary>Advances loading, replacement, cleanup, and deferred property
-    /// writes, then checks eligible spawned effects for replay.</summary>
+    /// <summary>Each frame, moves on loading, model replacement, cleanup and
+    /// value writes that had to wait, then restarts looping effects that ended.</summary>
     private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework frame)
     {
         if (_disposed)
@@ -78,14 +80,14 @@ public sealed class WorldObjectService : IDisposable
         }
         if (_adopted.Count == 0)
             return;
-        // Stain writes that beat their model's load land here, once the
-        // stain buffer exists.
+        // A stain set before the model finished loading is written here, once
+        // the model's dye data exists.
         if (_pendingStains.Count > 0)
             _pendingStains.RemoveWhere(pending =>
                 !_adopted.Contains(pending)
                 || !_port.IsAlive(pending.Address)
-                // A model that CANNOT take dye retires its retry — the
-                // buffer will never appear (undyeable models have none).
+                // A model that cannot be dyed stops retrying: it never gets
+                // dye data.
                 || _port.CanDyeBg(pending.Address) == false
                 || _port.WriteBgTint(pending.Address, pending.Tint));
         var now = DateTime.UtcNow;
@@ -97,9 +99,9 @@ public sealed class WorldObjectService : IDisposable
                 _port.WriteBgNightState(handle.Address, handle.NightState);
             }
             _animation.RetryPendingSpeed(handle);
-            // An adopted object's held dressing: the zone's layout keeps
-            // re-writing its own instances, so the user's choice is
-            // re-asserted whenever the game takes it back.
+            // A borrowed object's day or night state: the map keeps setting
+            // its own objects back, so the chosen state is written again
+            // whenever the game changes it.
             if (handle.NightStateHeld
                 && _port.ReadBgNightState(handle.Address) is { } current
                 && current != handle.NightState)
@@ -112,8 +114,9 @@ public sealed class WorldObjectService : IDisposable
         }
     }
 
-    /// <summary>Replaces a spawned object's native body without changing its
-    /// scene identity. Completion includes renderer readiness and property replay.</summary>
+    /// <summary>Replaces a spawned object's model in the game without changing
+    /// the object in the scene. It is done once the new model is drawn and the
+    /// object's values are applied to it again.</summary>
     internal Task<Outcome> Respawn(
         AdoptedWorldObject handle, string path, Func<bool>? stillCurrent = null,
         System.Threading.CancellationToken cancellation = default)
@@ -157,9 +160,8 @@ public sealed class WorldObjectService : IDisposable
         return _vfxPlayback.TrySetPaused(handle, paused);
     }
 
-    /// <summary>BG objects whose stain write is waiting for the model's
-    /// stain buffer to exist; retried on the framework tick, exactly
-    /// Stagehand's poll.</summary>
+    /// <summary>Map models whose stain is waiting for the model's dye data to
+    /// exist. Tried again every frame, the same way Stagehand does it.</summary>
     private readonly HashSet<AdoptedWorldObject> _pendingStains = new();
 
     internal bool? CanDye(AdoptedWorldObject handle) =>
@@ -176,9 +178,9 @@ public sealed class WorldObjectService : IDisposable
         _animation.WritePaused(handle);
     }
 
-    /// <summary>Run by the Game frame-phase owner after native animation.
-    /// Paused objects hold their transform and clock; anchored objects replay
-    /// native motion relative to the user's placement.</summary>
+    /// <summary>Called each frame after the game has animated its objects. A
+    /// paused object keeps its position and animation time. A moved object
+    /// plays the game's motion relative to where it was placed.</summary>
     public void HoldPausedAnimations()
     {
         if (_disposed)
@@ -223,8 +225,8 @@ public sealed class WorldObjectService : IDisposable
             _pendingStains.Add(handle);
     }
 
-    /// <summary>Restates the drawn opacity from the handle's own facts —
-    /// hidden writes zero, shown writes the stated opacity.</summary>
+    /// <summary>Writes the drawn opacity from the object's own values: zero when
+    /// it is hidden, its opacity when it is shown.</summary>
     internal void WriteOpacity(AdoptedWorldObject handle)
     {
         if (_disposed || (_teardownOnly && handle.IsVfx)
@@ -234,8 +236,8 @@ public sealed class WorldObjectService : IDisposable
             handle.Address, handle.IsFurniture || handle.Visible ? handle.Opacity : 0f);
     }
 
-    /// <summary>The live claims. It is the service's own list, so a caller
-    /// that releases while reading must work off a snapshot.</summary>
+    /// <summary>The objects Poser holds. This is the service's own list, so a
+    /// caller that releases objects while going through it must copy it first.</summary>
     public IReadOnlyList<AdoptedWorldObject> Adopted => _adopted;
 
     internal bool TryObserve(nint address, out WorldObjectIncarnation identity) =>
@@ -249,17 +251,17 @@ public sealed class WorldObjectService : IDisposable
 
     public int Count => _adopted.Count;
 
-    /// <summary>Whether the world's graph can be reached at all right now.
-    /// </summary>
+    /// <summary>Whether the game's list of map objects can be read at all right
+    /// now.</summary>
     public bool IsAvailable => !_disposed && _port.IsAvailable;
 
-    /// <summary>Returns unadopted world objects in the port's traversal order.
-    /// Range filtering and ordering belong to the overlay.</summary>
+    /// <summary>Map objects Poser does not hold yet, in the order the game lists
+    /// them. The overlay filters them by distance and sorts them.</summary>
     public IReadOnlyList<WorldObjectCandidate> GetCandidates() =>
         Candidates(effects: false);
 
-    /// <summary>Lists unadopted effect nodes separately from background models.
-    /// Enumeration does not filter by playback state.</summary>
+    /// <summary>Effects Poser does not hold yet, listed apart from map models.
+    /// Effects are listed whether or not they are playing.</summary>
     public IReadOnlyList<WorldObjectCandidate> GetEffectCandidates() =>
         Candidates(effects: true);
 
@@ -285,8 +287,8 @@ public sealed class WorldObjectService : IDisposable
         return candidates;
     }
 
-    /// <summary>Reads an object's outline for hover feedback. This accepts a
-    /// candidate address because hovering does not require adoption.</summary>
+    /// <summary>Reads an object's outline for the hover highlight. It takes any
+    /// object, because hovering does not need Poser to hold the object.</summary>
     public bool TryReadOutline(nint address, out byte outline)
     {
         if (_disposed)
@@ -297,8 +299,8 @@ public sealed class WorldObjectService : IDisposable
         return _port.TryReadOutline(address, out outline);
     }
 
-    /// <summary>Writes an object's transient hover outline. The caller owns
-    /// the captured value used to restore it.</summary>
+    /// <summary>Writes an object's hover outline while it is hovered. The caller
+    /// keeps the old value and puts it back.</summary>
     public void WriteOutline(nint address, byte outline)
     {
         if (_disposed)
@@ -306,7 +308,7 @@ public sealed class WorldObjectService : IDisposable
         _port.WriteOutline(address, outline);
     }
 
-    /// <summary>Whether this address is already claimed.</summary>
+    /// <summary>Whether Poser already holds the object at this address.</summary>
     public bool IsAdopted(nint address)
     {
         foreach (var adopted in _adopted)
@@ -315,8 +317,8 @@ public sealed class WorldObjectService : IDisposable
         return false;
     }
 
-    /// <summary>The claim on one address, or null when it is not claimed.
-    /// </summary>
+    /// <summary>The object Poser holds at this address, or null when it holds
+    /// none there.</summary>
     public AdoptedWorldObject? Find(nint address)
     {
         foreach (var adopted in _adopted)
@@ -326,8 +328,8 @@ public sealed class WorldObjectService : IDisposable
     }
 
     /// <summary>
-    /// Creates an owned model, furniture layout, or effect from a resource path.
-    /// Release destroys it. Returns null and a reason when creation fails.
+    /// Spawns a model, furniture piece or effect from a game file path.
+    /// Releasing it destroys it. Returns null and a reason when spawning fails.
     /// </summary>
     public AdoptedWorldObject? Spawn(
         string path, Transform placement, bool visible, out string? detail)
@@ -378,8 +380,8 @@ public sealed class WorldObjectService : IDisposable
             handle.NextVfxRefresh = DateTime.UtcNow + VfxPlaybackControl.RefreshInterval;
         }
         else
-            // The raw native object ships lit; the default dressing is
-            // day, written once the model streams in.
+            // A newly spawned map model starts with its lights on. The
+            // default is day, which is written once the model has loaded.
             handle.NightStatePending = true;
         _adopted.Add(handle);
         if (handle.IsFurniture)
@@ -397,13 +399,13 @@ public sealed class WorldObjectService : IDisposable
             _port.WriteFurnitureLights(handle.Address, lights);
     }
 
-    /// <summary>Whether a spawned furniture piece is still streaming its
+    /// <summary>Whether a spawned furniture piece is still loading its
     /// model.</summary>
     internal bool IsLoading(AdoptedWorldObject handle) =>
         _loadingFurniture.IsLoading(handle);
 
-    /// <summary>Keeps a piece that has not loaded; see
-    /// <see cref="FurnitureLoadTracker.Keep"/>.</summary>
+    /// <summary>Keeps a furniture piece whose model has not loaded, instead of
+    /// removing it when its load time runs out.</summary>
     internal void KeepUnloaded(AdoptedWorldObject handle) =>
         _loadingFurniture.Keep(handle);
 
@@ -503,9 +505,9 @@ public sealed class WorldObjectService : IDisposable
             detail = "Unable to undo: the current world object identity could not be read.";
             return null;
         }
-        // The graph's object type is authoritative even when its resource
-        // filename was unreadable; never route an observed VFX through BG
-        // restore merely because RowOf could not supply a path.
+        // Trust the object type the game reports, even when the file name
+        // could not be read. A VFX must never be put back the way a map model
+        // is, just because no path was found for it.
         bool isVfx = observed?.IsEffect == true || identity.IsVfx;
         if (isVfx && !_vfx.TryCapture(
                 address, out identity, out snapshot))
@@ -539,8 +541,8 @@ public sealed class WorldObjectService : IDisposable
             visible,
             isVfx: isVfx,
             initialOpacity: opacity);
-        // The original's own dressing, put back on release; the handle
-        // starts from the same value so the buttons read true.
+        // The object's own day or night state, put back on release. The entry
+        // starts from the same value, so the buttons show the real state.
         handle.InitialNightState = _port.ReadBgNightState(address);
         if (isVfx)
         {
@@ -557,9 +559,9 @@ public sealed class WorldObjectService : IDisposable
         return handle;
     }
 
-    /// <summary>Checks a released borrowed identity only after the current
-    /// graph enumeration proves its address is live. The saved address itself
-    /// is never resolved before that membership check.</summary>
+    /// <summary>Checks that a released map object can be borrowed again: first
+    /// that the game still lists its address, and only then that the object
+    /// there is the same one. The saved address is never read before that.</summary>
     internal bool CanReclaimBorrow(
         nint address, WorldObjectIncarnation expected, out string detail)
     {
@@ -574,9 +576,9 @@ public sealed class WorldObjectService : IDisposable
             return false;
         }
 
-        // This read is safe only after enumeration found the address in the
-        // live graph. It still compares a best-effort observed incarnation;
-        // same-address/same-resource BG reuse is not distinguishable here.
+        // Reading the address is only safe because the game lists it. The
+        // check is best effort: a map model the game rebuilt at the same
+        // address from the same file cannot be told apart here.
         if (!_port.TryReadIncarnation(address, out var current))
         {
             detail = "Unable to undo: the current world object identity could not be read.";
@@ -593,8 +595,8 @@ public sealed class WorldObjectService : IDisposable
         return true;
     }
 
-    /// <summary>Re-adopts a released borrowed object after live graph
-    /// membership and the captured incarnation both match.</summary>
+    /// <summary>Borrows a released map object again, once the game still lists
+    /// its address and the object there is the same one.</summary>
     internal AdoptedWorldObject? ReclaimBorrow(
         nint address, WorldObjectIncarnation expected, out string detail)
     {
@@ -609,9 +611,10 @@ public sealed class WorldObjectService : IDisposable
 
 
     /// <summary>
-    /// Releases a tracked object after cancelling any pending replacement.
-    /// Returns false for an unknown handle or when native cleanup fails; failed
-    /// cleanup keeps the claim so it can be retried.
+    /// Releases an object Poser holds, after cancelling any model replacement
+    /// in progress. Returns false for an object Poser does not hold, or when
+    /// cleanup in the game fails; then the object stays in the list so cleanup
+    /// can be tried again.
     /// </summary>
     public bool Release(AdoptedWorldObject? handle)
     {
@@ -627,8 +630,8 @@ public sealed class WorldObjectService : IDisposable
         return true;
     }
 
-    /// <summary>Gives every object back. The scene-clear edge, and the shared
-    /// body of the GPose-exit and unload edges.</summary>
+    /// <summary>Gives every object back. Used when the scene is cleared, when
+    /// GPose ends and when Poser unloads.</summary>
     public void ReleaseAll()
     {
         _respawner.CancelAll("Replacement cancelled because the scene was released.");
@@ -641,7 +644,7 @@ public sealed class WorldObjectService : IDisposable
         _events.Publish(new WorldObjectListChangedEvent());
     }
 
-    // ── the handle's write-through half ──────────────────────────────────
+    // ── Reading and writing one object in the game ───────────────────────
 
     internal bool IsLive(AdoptedWorldObject handle) =>
         !_disposed && _adopted.Contains(handle) && IsHandleCurrent(handle);
@@ -704,8 +707,8 @@ public sealed class WorldObjectService : IDisposable
             || !IsHandleCurrent(handle))
             return;
         _port.WriteVisible(handle.Address, visible);
-        // A dimmed object re-shows at ITS opacity, not full: the two facts
-        // compose here, the one place both are known.
+        // A dimmed object shows again at its own opacity, not at full. This
+        // is the one place that knows both values, so they are combined here.
         if (visible && handle.Opacity < 1f)
             _port.WriteOpacity(handle.Address, handle.Opacity);
     }
@@ -719,31 +722,30 @@ public sealed class WorldObjectService : IDisposable
     }
 
     /// <summary>
-    /// Uses the catalog label, including user overrides and decoded asset tokens.
-    /// Empty paths receive the generic world-object label.
+    /// The object's name from the asset catalog, including names a person has
+    /// set. An empty path gets the name "World object".
     /// </summary>
     public static string DisplayName(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
             return "World object";
-        // The catalog's derived label — "Rock [r2f0_rok01a]" — so the
-        // sidebar row, the viewport hover, and the entry name all speak
-        // the same words the pickers found the thing under.
+        // The catalog's name, such as "Rock [r2f0_rok01a]", so the scene
+        // list, the hover label and the saved name all use the words the
+        // pickers showed.
         return WorldAssetCatalog.LabelFor(path);
     }
 
     /// <summary>
-    /// The label with a number when, and only when, it repeats. A map stands
-    /// dozens of copies of one model, so borrowing three of them without this
-    /// puts three identical rows in the tree and the user cannot tell which is
-    /// which.
+    /// The name, with a number added only when the name is already used. A map
+    /// has dozens of copies of one model, so without this, borrowing three of
+    /// them would show three rows with the same name, and nobody could tell
+    /// which is which.
     ///
-    /// <para>The FIRST is unnumbered — unlike a light, whose every name is
-    /// generic and therefore numbered from one (<c>LightingService.UniqueName</c>).
-    /// A world object's name is already distinctive; numbering a lone one is
-    /// noise. The suffix is the lowest that is free, not a count, so releasing
-    /// the middle of three and borrowing again reuses the gap rather than
-    /// colliding.</para>
+    /// <para>The first one has no number. Lights are different: their names are
+    /// all generic, so they are numbered from one. A world object's name already
+    /// says what it is, so a number on a single one adds nothing. The number is
+    /// the lowest free one, not a count, so releasing the middle of three and
+    /// borrowing again fills the gap instead of repeating a name.</para>
     /// </summary>
     private string UniqueName(string baseName)
     {
@@ -785,13 +787,13 @@ public sealed class WorldObjectService : IDisposable
             _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         _teardownOnly = true;
-        // Try cleanup before marking disposal complete. Failed releases retain
-        // their claims for another attempt.
+        // Try cleanup before marking the service disposed. Objects that fail
+        // to release stay in the list for another try.
         ReleaseAll();
         _respawner.RetryPendingTeardowns();
-        // Keep the service recoverable when native teardown refused. The
-        // outstanding claim remains in the list and can be retried by the
-        // caller; declaring disposal complete would silently strand it.
+        // If cleanup in the game failed, the service stays usable. The object
+        // stays in the list so the caller can try again; marking the service
+        // disposed would quietly leave the object behind.
         _disposed = _adopted.Count == 0 && !_respawner.HasPendingTeardowns;
     }
 }
