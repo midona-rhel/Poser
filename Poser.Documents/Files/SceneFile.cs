@@ -115,6 +115,25 @@ public class SceneFile
     /// <summary>Stable logical scene identity; never empty in a valid file.</summary>
     public Guid SceneId { get; set; }
 
+    /// <summary>The name Poser gives an actor's scene appearance when it packs it while
+    /// saving. Older scenes kept this name when an earlier load had applied it as an MCDF.</summary>
+    public const string PackedAppearancePrefix = "poser-scene-appearance-";
+
+    /// <summary>True when the actor's saved look is an MCDF that was loaded onto the actor,
+    /// false when it is the actor's scene appearance or when nothing is saved. Older scenes
+    /// did not record it: a look named after its actor, or named like Poser's own packing,
+    /// counts as a scene appearance there.</summary>
+    public bool HasLoadedMcdf(SceneActor actor) => actor.Mcdf is { } packed
+        && (SavedBy is not null
+            ? packed.LoadedOnto
+            : !string.Equals(packed.FileName, actor.Name + ".mcdf", StringComparison.OrdinalIgnoreCase)
+                && !packed.FileName.StartsWith(PackedAppearancePrefix, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The Poser install that saved the scene. Absent in older scenes. See
+    /// <c>SceneAppearanceRule</c>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? SavedBy { get; set; }
+
     public string? Author { get; set; }
     public string? Description { get; set; }
     public DateTimeOffset? SavedAt { get; set; }
@@ -521,6 +540,12 @@ public class SceneActorMcdf
     /// EMPTY in portable mode, where the bytes are the document's own and no
     /// path on the saving machine means anything to a reader.</summary>
     public string Path { get; set; } = string.Empty;
+
+    /// <summary>True when this is an MCDF that was loaded onto the actor. False when it
+    /// is the actor's scene appearance, packed by Poser when the scene was saved.
+    /// See <c>SceneAppearanceRule</c> for how a load uses it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LoadedOnto { get; set; }
 
     /// <summary>The display name, kept beside the path so a load can name the
     /// file in a refusal without parsing a path that may no longer exist.

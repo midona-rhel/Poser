@@ -109,6 +109,8 @@ public sealed class McdfTransaction
     public IntegrationValue<McdfSummary> ReadSummary(string path) =>
         _files.ReadSummary(path);
 
+    public IntegrationValue<McdfLook> ReadLook(string path) => _files.ReadLook(path);
+
     // ── Admission ────────────────────────────────────────────────────────
 
     private IntegrationResult? AdmissionGate()
@@ -137,10 +139,13 @@ public sealed class McdfTransaction
             new McdfProgress(actor, fileName, kind, firstPhase, 0, 0, 0, 0, true, null),
             out cancellation);
 
-    public IntegrationResult BeginImport(ActorId actor, string path, bool preservePose = true) =>
-        BeginImport(actor, path, null, preservePose);
+    /// <param name="name">The name the MCDF is shown under; the file's own name when null.
+    /// A scene passes the name it saved, since it loads the MCDF from a temporary file.</param>
+    public IntegrationResult BeginImport(ActorId actor, string path, bool preservePose = true, string? name = null) =>
+        BeginImport(actor, path, null, preservePose, name);
 
-    private IntegrationResult BeginImport(ActorId actor, string path, McdfPackage? retained, bool preservePose = true)
+    private IntegrationResult BeginImport(ActorId actor, string path, McdfPackage? retained,
+        bool preservePose = true, string? name = null)
     {
         if (AdmissionGate() is { } refused)
             return refused;
@@ -149,7 +154,7 @@ public sealed class McdfTransaction
                 "No GPose session is active; an MCDF import needs the exact session identity.");
         var retainedDirectory = retained == null ? null : _teardown.Directory(retained.OperationDirectory);
         var operation = Admit(
-            actor, _files.GetFileName(path), McdfOperationKind.Import, session,
+            actor, name ?? _files.GetFileName(path), McdfOperationKind.Import, session,
             McdfPhase.Reading, out var cancellation);
         operation.SourcePath = path;
         _import.Track(operation);

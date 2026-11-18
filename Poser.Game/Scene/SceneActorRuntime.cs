@@ -153,6 +153,14 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         System.Threading.CancellationToken cancellation) =>
         _appearance.ImportMcdf(scenePath, actor, data, bound, cancellation);
 
+    public Task<SceneMcdfOutcome> ApplySceneAppearance(
+        string scenePath,
+        SceneEntityHandle actor,
+        SceneActor data,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation) =>
+        _appearance.ApplySceneAppearance(scenePath, actor, data, bound, cancellation);
+
     // Only called for an actor whose attachment is present: the workflow skips
     // an absent kind rather than asking the runtime to detach.
     public string? AttachCompanion(SceneEntityHandle actor, SceneActor data) =>

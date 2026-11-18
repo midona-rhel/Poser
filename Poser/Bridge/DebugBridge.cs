@@ -813,6 +813,8 @@ public sealed partial class DebugBridge : IDisposable
                     }
                     if (query.GetValueOrDefault("animation") == "1")
                         saveOptions = saveOptions with { IncludeAnimation = true };
+                    if (query.GetValueOrDefault("appearance") == "1")
+                        saveOptions = saveOptions with { IncludeModdedAppearance = true };
                     var saved = _scenes.BeginSave(scenePath, options: saveOptions);
                     return Json(new { ok = saved.Success, saved.Detail, progress = _scenes.Progress });
                 }

@@ -31,7 +31,8 @@ public sealed class ReleaseNotesSessionTests
 
     private sealed class MemoryStore : IConfigurationPersistence
     {
-        public PoserConfiguration Config { get; } = new();
+        // A stored config already has its install id, so starting Poser saves nothing.
+        public PoserConfiguration Config { get; } = new() { Library = { InstallId = Guid.NewGuid() } };
         public int Saves;
         public bool Fail;
         public ConfigurationLoadResult Load() => new(Config);

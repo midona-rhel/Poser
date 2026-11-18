@@ -130,6 +130,26 @@ internal static class McdfReader
         }
     }
 
+    /// <summary>Reads only the look from a package's opening, without unpacking any mod
+    /// file.</summary>
+    public static IntegrationValue<McdfLook> ReadLook(string path)
+    {
+        try
+        {
+            using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var lz4 = LZ4Legacy.Decode(file, leaveOpen: true);
+            using var reader = new BinaryReader(lz4, Encoding.UTF8, leaveOpen: true);
+            var data = ReadHeader(lz4, reader, out string? failure);
+            return data == null
+                ? IntegrationValue<McdfLook>.Fail(failure!)
+                : IntegrationValue<McdfLook>.Ok(new McdfLook(data.GlamourerData, data.CustomizePlusData));
+        }
+        catch (Exception ex)
+        {
+            return IntegrationValue<McdfLook>.Fail($"Reading the package's look failed: {ex.Message}");
+        }
+    }
+
     public static IntegrationValue<McdfSummary> ReadSummary(string path)
     {
         try

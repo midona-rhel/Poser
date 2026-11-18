@@ -33,6 +33,9 @@ public interface IMcdfFileBoundary
     /// </summary>
     IntegrationValue<McdfSummary> ReadSummary(string path);
 
+    /// <summary>The look a package holds, read without unpacking its mod files.</summary>
+    IntegrationValue<McdfLook> ReadLook(string path) => McdfReader.ReadLook(path);
+
     /// <summary>
     /// Reads, validates, and extracts a complete package into the
     /// CALLER-OWNED operation directory. The boundary never deletes it —

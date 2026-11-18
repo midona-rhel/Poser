@@ -32,6 +32,10 @@ public partial class LibraryConfiguration
     /// </summary>
     public bool DefaultsSeeded { get; set; }
 
+    /// <summary>A random id for this Poser install, made once. A scene records the id of
+    /// the install that saved it, so a load can tell your own scenes from shared ones.</summary>
+    public Guid InstallId { get; set; }
+
     /// <summary>Absolute file paths of favourited poses.</summary>
     public HashSet<string> Favorites { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 

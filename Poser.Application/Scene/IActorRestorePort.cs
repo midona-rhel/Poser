@@ -56,6 +56,15 @@ public interface IActorRestorePort
         TimeSpan bound,
         System.Threading.CancellationToken cancellation);
 
+    /// <summary>Puts the actor's scene appearance back and leaves it editable. See
+    /// <see cref="SceneAppearanceRule"/>.</summary>
+    Task<SceneMcdfOutcome> ApplySceneAppearance(
+        string scenePath,
+        SceneEntityHandle actor,
+        SceneActor data,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation);
+
     /// <summary>Attaches the saved companion; null on success.</summary>
     string? AttachCompanion(SceneEntityHandle actor, SceneActor data);
 

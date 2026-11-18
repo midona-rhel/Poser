@@ -33,6 +33,14 @@ public class ConfigurationService : IDisposable
         // Seeded in memory only; it persists with the next save the user causes.
         Config.Library.EnsureDefaults();
 
+        // Saved at once: an id that changed between sessions would make your own
+        // scenes look shared.
+        if (Config.Library.InstallId == Guid.Empty)
+        {
+            Config.Library.InstallId = Guid.NewGuid();
+            Save(notify: false);
+        }
+
     }
 
     /// <summary>
@@ -99,7 +107,10 @@ public class ConfigurationService : IDisposable
 
     public void Reset()
     {
+        // The install id is not a setting: it tells your own scenes from shared ones.
+        var install = Config.Library.InstallId;
         Config = new PoserConfiguration();
+        Config.Library.InstallId = install;
         ApplyChange();
     }
 

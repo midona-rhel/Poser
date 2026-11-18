@@ -28,6 +28,25 @@ The save dialog shows the same two options under the file list.
   themselves.
 - **Clothing only**, if you used it.
 
+### Scene appearance and MCDFs
+
+An MCDF is an appearance that never changes: it is never edited. A scene is a
+project you save, load and keep working on. Saving and loading a scene never locks
+an appearance you own. So a scene saved with **Include appearance files** loads
+like this:
+
+- An actor that had an MCDF applied gets that MCDF again, and its appearance can't
+  be edited.
+- Every other actor gets its scene appearance back: its Glamourer look and, for
+  actors other than your own character, its Customize+ body. It keeps the mods of
+  its collection and stays editable. A mod you added or changed since just shows
+  up. **Reset** in Appearance gives back the look it had before the load.
+- A scene saved on another computer (someone shared it with you) has none of that
+  computer's mods, so every actor in it gets its look as an MCDF, locked.
+
+Each Poser install has its own id, and a scene records the one that saved it.
+Scenes saved before this existed count as yours.
+
 Things to know:
 
 - Every actor a scene spawns is built from your own character. An actor that is
@@ -47,6 +66,12 @@ Selection tab saves a group. Loading it from the Library adds it to the scene.
 ## Loading a scene
 
 Press **Load…** on the Scene page, or open the scene from the Library.
+
+Click a scene in the Library to see what it holds before you load it: where and
+when it was saved, its weather and time of day, how many actors, MCDFs, scene
+appearances, objects, world objects, lights, cameras, overlays and groups it has,
+whether its animation is saved, whether it was saved on this computer, and its
+size.
 
 While a scene loads or saves, Poser's controls are greyed out and do nothing.
 **Cancel** on the progress row stays usable. The same happens while a character
@@ -240,9 +265,8 @@ Furniture comes from the **Furniture** tab of the spawn browser.
 
 - **Dye** colours it. A custom tint wins over a dye. Choosing a dye clears the
   tint in the same undo step.
-- Dye and tint only colour the parts the game lets you dye. On the Glade
-  Partition Door, for example, the door takes the colour and the wall around it
-  does not. Brio works the same way.
+- Dye and tint only colour the parts the game lets you dye. On a piece where only
+  some parts are dyeable, the rest keeps its own colour. Brio works the same way.
 - **Night** switches the furniture's own day and night look. What changes depends
   on the piece.
 - A piece with built-in lights has a switch for each (**Light 1**, **Light 2** and
