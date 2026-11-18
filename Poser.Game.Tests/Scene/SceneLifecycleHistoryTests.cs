@@ -782,7 +782,7 @@ public sealed class SceneLifecycleHistoryTests
                 return null;
             var prop = new FakeProp
             {
-                State = new PropState(model.Name, model, Transform.Identity, true),
+                State = new PropState(model.Name, model, Transform.Identity, true, Vector4.One),
             };
             _props.Add(prop);
             return prop;
@@ -817,6 +817,7 @@ public sealed class SceneLifecycleHistoryTests
         public string Name { get => State.Name; set => State = State with { Name = value }; }
         public PropModel Model => State.Model;
         public bool Visible { get => State.Visible; set => State = State with { Visible = value }; }
+        public Vector4 Tint { get => State.Tint; set => State = State with { Tint = value }; }
         public Transform Transform { get => State.Transform; set => State = State with { Transform = value }; }
         public Vector3 Position { get => Transform.Position; set { var t = Transform; t.Position = value; Transform = t; } }
         public Quaternion Rotation { get => Transform.Rotation; set { var t = Transform; t.Rotation = value; Transform = t; } }

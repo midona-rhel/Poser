@@ -18,6 +18,9 @@ public interface IPropHandle
     Quaternion Rotation { get; set; }
     Vector3 Scale { get; set; }
     bool Visible { get; set; }
+
+    /// <summary>A colour the whole model is multiplied by. White leaves it unchanged.</summary>
+    Vector4 Tint { get; set; }
     Transform Transform { get; set; }
     void Destroy();
 }

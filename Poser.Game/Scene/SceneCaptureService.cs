@@ -520,6 +520,7 @@ public sealed class SceneCaptureService
                 Stain1 = prop.Model.Stain1,
                 AnimationVariant = prop.Model.AnimationVariant,
                 Visible = prop.Visible,
+                Tint = prop.Tint == System.Numerics.Vector4.One ? null : prop.Tint,
                 Transform = NormalizedTransform(
                     prop.Transform, $"Object '{prop.Name}'", notes),
             });

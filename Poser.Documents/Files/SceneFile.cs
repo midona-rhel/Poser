@@ -620,6 +620,12 @@ public class SceneProp
     public byte AnimationVariant { get; set; }
 
     public bool Visible { get; set; } = true;
+
+    /// <summary>The colour the whole model is multiplied by. Absent is white, which
+    /// leaves the model unchanged.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public System.Numerics.Vector4? Tint { get; set; }
+
     public LightFile.TransformData Transform { get; set; } =
         LightFile.TransformData.Identity;
 }
