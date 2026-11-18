@@ -9,6 +9,16 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 27), "Editable scenes and tinted objects",
+        [
+            "Made actors in your own scenes load with an editable appearance. Only an actor that had an MCDF applied when the scene was saved comes back locked.",
+            "Made a scene shared from another computer load each actor's appearance as an MCDF.",
+            "Made loading a scene replace an MCDF applied to your character with the scene's appearance.",
+            "Kept an MCDF's own name when a scene applies it again.",
+            "Added the time of day, every count (actors, MCDFs, objects, lights and more), the saved animation, where it was saved and its size to a scene's details in the Library.",
+            "Stopped a scene that loads with some parts left out from showing up as a plugin error.",
+            "Added Tint to objects from the Props tab.",
+        ]),
         new(new(0, 9, 26), "Steady IK and one action at a time",
         [
             "Made switching Live IK on or off keep the limb exactly where it is.",

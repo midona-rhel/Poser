@@ -3,7 +3,7 @@
     "Author": "Midona",
     "Name": "Poser",
     "InternalName": "Poser",
-    "AssemblyVersion": "0.9.26.0",
+    "AssemblyVersion": "0.9.27.0",
     "Punchline": "Posing, lighting and whole-scene staging for group pose. Beta.",
     "Description": "Poser is a posing and scene tool for FINAL FANTASY XIV's group pose.\n\n- Pose actors bone by bone: overlay handles, a graphical body map, and numeric transforms\n- IK on any bone with a parent, plus mirror, link and named bone-visibility presets\n- Spawn actors and objects, or click a world handle to bring what is already there into the scene\n- Borrow the map's own objects by reference and give them back untouched on release\n- Save and restore the whole shot — actors, objects, lights, camera and environment — with load options\n- Custom lights, camera control and a free camera; snapping, group pivot and group moves\n- Gaze control and one-click expressions\n- A pose library with tags, authors and search; import and export poses, and MCDF appearance files\n- Time, weather and festival control\n- On-screen dialogue panels, chat bubbles and status lines drawn with the game's own UI\n- Reference pictures as floating, aspect-locked windows\n- Twenty-five rebindable actions with Poser, Brio and Ktisis presets\n\nThis is a beta. It is not stable and it is not finished. Poser is derivative of Anamnesis, Ktisis and Brio, and those three are the mature tools.\n\nPoser was coded with the use of artificial intelligence. The plugin says so on first launch and asks you to confirm you have read the notice.",
     "ApplicableVersion": "any",
@@ -21,13 +21,13 @@
     "CanUnloadAsync": false,
     "LoadPriority": 0,
     "AcceptsFeedback": true,
-    "Changelog": "- Made switching Live IK on or off keep the limb exactly where it is.\n- Made a limb that follows a bone move and turn with that bone, as if attached to it.\n- Kept the limb still when choosing Bone or Scene entity as a target, until one is picked.\n- Made picking a bone or scene entity to follow one undo step.\n- Made FABRIK start from the limb exactly as it stands.\n- Made a loaded scene bring back the time of day and the weather it was saved with.\n- Fixed map objects that move by themselves, such as aetheryte pieces, not coming back when a scene is loaded.\n- Added the place, contents, weather and file location to a scene's details in the Library.\n- Made a duplicate appear exactly where the original stands.\n- Made Poser's controls grey out and ignore clicks while a scene or character file loads or saves.\n- Made shortcuts do nothing while a drag is held.\n- Made bone searches put the bone with the best matching name first.",
-    "DownloadLinkInstall": "https://github.com/midona-rhel/Poser/releases/download/v0.9.26-beta/latest.zip",
-    "DownloadLinkTesting": "https://github.com/midona-rhel/Poser/releases/download/v0.9.26-beta/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/midona-rhel/Poser/releases/download/v0.9.26-beta/latest.zip",
+    "Changelog": "- Made actors in your own scenes load with an editable appearance. Only an actor that had an MCDF applied when the scene was saved comes back locked.\n- Made a scene shared from another computer load each actor's appearance as an MCDF.\n- Made loading a scene replace an MCDF applied to your character with the scene's appearance.\n- Kept an MCDF's own name when a scene applies it again.\n- Added the time of day, every count (actors, MCDFs, objects, lights and more), the saved animation, where it was saved and its size to a scene's details in the Library.\n- Stopped a scene that loads with some parts left out from showing up as a plugin error.\n- Added Tint to objects from the Props tab.",
+    "DownloadLinkInstall": "https://github.com/midona-rhel/Poser/releases/download/v0.9.27-beta/latest.zip",
+    "DownloadLinkTesting": "https://github.com/midona-rhel/Poser/releases/download/v0.9.27-beta/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/midona-rhel/Poser/releases/download/v0.9.27-beta/latest.zip",
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadCount": 157,
-    "LastUpdate": 1794958866
+    "LastUpdate": 1794962903
   }
 ]
