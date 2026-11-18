@@ -618,7 +618,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 if (_bindings.GetActorId(target) is not { } id)
                     return "The actor has no stable identity to import a character file onto.";
                 // The scene restores its saved pose after all appearances are ready.
-                var started = _mcdf.BeginImport(id, source, preservePose: false);
+                var started = _mcdf.BeginImport(id, source, preservePose: false, name: saved.FileName);
                 if (!started.Success)
                     return started.Detail ?? "The character file import was refused.";
                 // The transaction publishes a Pending receipt inside admission, so
