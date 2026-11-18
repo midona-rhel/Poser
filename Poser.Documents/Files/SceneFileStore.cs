@@ -83,7 +83,7 @@ public sealed class SceneReadOutcome
         new(null, failure, Array.Empty<SceneEntityRefusal>());
 }
 
-/// <summary>A packed appearance opened for reading, or why it could not be
+/// <summary>A saved appearance opened for reading, or why it could not be
 /// opened. The caller closes the stream.</summary>
 public sealed record SceneAppearanceOpen(Stream? Stream, string? Error);
 
@@ -253,7 +253,7 @@ public sealed class SceneWriteOutcome
 
 /// <summary>
 /// Reads and writes scene files. A scene file is a zip archive that holds
-/// the scene's JSON and any packed appearances. Every read checks the whole
+/// the scene's JSON and any saved appearances. Every read checks the whole
 /// file.
 ///
 /// A save writes a temporary file in the same folder, reads it back to check
@@ -283,17 +283,17 @@ public sealed class SceneFileStore
     /// </summary>
     public const string DocumentEntry = "scene.json";
 
-    /// <summary>The folder in the zip that holds packed appearances, one
+    /// <summary>The folder in the zip that holds saved appearances, one
     /// entry per different MCDF, named by its content hash.</summary>
     public const string AppearanceEntryPrefix = "appearance/";
 
-    /// <summary>The entry name for an MCDF with this hash. Two actors wearing
+    /// <summary>The entry name for an MCDF with this hash. Two actors with
     /// the same MCDF share one entry instead of storing it twice.</summary>
     public static string AppearanceEntry(string contentHash) =>
         $"{AppearanceEntryPrefix}{contentHash.ToUpperInvariant()}.mcdf";
 
     /// <summary>
-    /// Opens one packed appearance for reading. The caller closes the stream
+    /// Opens one saved appearance for reading. The caller closes the stream
     /// and copies the data where it needs it. It is never read into memory
     /// here, because a real MCDF can be hundreds of megabytes. When it cannot
     /// be opened, the reason says whether the entry is missing or the scene
@@ -519,8 +519,8 @@ public sealed class SceneFileStore
     };
 
     /// <summary>
-    /// Copies every packed appearance into the zip, piece by piece, one entry
-    /// per different MCDF: two actors wearing the same file share one entry.
+    /// Copies every saved appearance into the zip, piece by piece, one entry
+    /// per different MCDF: two actors with the same file share one entry.
     ///
     /// <para>Entries are stored without compression. An MCDF is already
     /// compressed, so compressing it again takes minutes and saves nothing.

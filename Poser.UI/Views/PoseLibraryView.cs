@@ -101,7 +101,7 @@ public sealed class PoseLibraryTileRow
     public bool Favorite;
     /// <summary>The icon the tile shows when there is no thumbnail: a skeleton
     /// for a pose, a plain file for an Anamnesis <c>.cmp</c>, a person for a
-    /// character file.</summary>
+    /// MCDF.</summary>
     public TablerIcon Fallback = TablerIcon.Armature;
     public string? Author;
     /// <summary>Whether the file behind the tile has been read: author,
@@ -277,13 +277,13 @@ public sealed class PoseLibraryViewModel
     /// <summary>The main button's label; the pane sets "Apply to {name}".</summary>
     public string ApplyLabel = "Apply";
     /// <summary>Whether the main button resets the animation, as applying a
-    /// character file does, and so uses the Disruptive colour.</summary>
+    /// MCDF does, and so uses the Disruptive colour.</summary>
     public bool ApplyDisruptive;
 
     public bool CanApply;
     public bool CanSpawn;
 
-    /// <summary>Whether a character file being applied is still working.
+    /// <summary>Whether an MCDF being applied is still working.
     /// Applying an MCDF takes a while and is started from this pane, so its
     /// stop button belongs next to the button that started it, not only on the
     /// appearance pane's progress row. Set by the pane, and only ever true on
@@ -669,7 +669,7 @@ public static class PoseLibraryView
         // taller than every other tab's.
         if (vm.ShowImportMenus)
             scope.Button("Options", vm.ImportMenuClick!);
-        // Applying a character file takes a while and starts from this pane,
+        // Applying an MCDF takes a while and starts from this pane,
         // so while it runs, its stop button comes first in the row: nobody has
         // to find another pane to get out of an import. The button stays in
         // place and greys out during steps that cannot be cancelled.
@@ -713,7 +713,7 @@ public static class PoseLibraryView
                 vm.OnPlacement!,
                 help: "Where a spawned entry lands");
         }
-        // Poses and character files apply to the actor named beside the
+        // Poses and MCDFs apply to the actor named beside the
         // button: the selected actor by default, or any actor in the scene.
         if (vm.ShowApplyTarget)
         {

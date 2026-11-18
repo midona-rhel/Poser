@@ -118,7 +118,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         {
             if (actor.Mcdf is not { } mcdf)
                 continue;
-            // A packed appearance already has the hash of the copy inside the
+            // An appearance saved in the scene already has the hash of the copy inside the
             // scene file. Hashing the original path would record a file the
             // scene no longer uses.
             if (mcdf.IsPortable)
@@ -155,7 +155,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             if (cancellation.IsCancellationRequested)
                 return new SceneSealOutcome(notes, temporaries);
 
-            // Use the MCDF the actor already wears. Only an actor without one
+            // Use the MCDF already applied to the actor. Only an actor without one
             // gets a new MCDF exported.
             string? source = actor.Mcdf is { } existing &&
                 !string.IsNullOrWhiteSpace(existing.Path) &&

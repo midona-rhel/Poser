@@ -33,8 +33,7 @@ namespace Poser.Documents.Files;
 public class SceneFile
 {
     /// <summary>The scene format version this build writes. Raise it for any
-    /// change an older Poser would lose or misread; the rule is in
-    /// <c>docs/features/scenes.md</c> under Format versioning. Files from
+    /// change an older Poser would lose or misread. Files from
     /// <see cref="MinimumVersion"/> up to this version are read, and newer
     /// files are refused.</summary>
     public const int CurrentVersion = 4;
@@ -258,7 +257,7 @@ public static class SceneFileLimits
     public const int ContentHashCharacters = 64;
 
     /// <summary>
-    /// The limit on one actor's packed appearance. It is the same as the limit
+    /// The limit on one actor's appearance saved in a scene. It is the same as the limit
     /// for importing an MCDF, so any MCDF Poser can import can also be saved
     /// in a scene. Real ones can be hundreds of megabytes.
     ///
@@ -279,7 +278,7 @@ public static class SceneFileLimits
 /// <summary>
 /// One saved actor: its key in the file, what is needed to spawn it again,
 /// its companion, where it stands, what it plays, where it looks, its whole
-/// pose, its Penumbra collection and, if saved, its packed appearance.
+/// pose, its Penumbra collection and, if saved, its appearance.
 /// </summary>
 [Serializable]
 public class SceneActor
@@ -315,13 +314,13 @@ public class SceneActor
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool LocalPlayer { get; set; }
 
-    /// <summary>The actor wore an appearance of its own that this file does
-    /// not carry, so it loads wearing the local player's.</summary>
+    /// <summary>The actor had an appearance of its own that this file does not
+    /// hold, so it loads looking like the local player.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool AppearanceNotSaved { get; set; }
 
     /// <summary>A permanent Penumbra collection on this computer, set before
-    /// posing. Temporary collections are saved in the packed appearance instead.</summary>
+    /// posing. Temporary collections are kept in the actor's saved appearance instead.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Guid? PenumbraCollection { get; set; }
 
@@ -387,9 +386,9 @@ public class SceneActor
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JsonElement? Fabrik { get; set; }
 
-    /// <summary>The packed appearance the actor wears: an MCDF loaded onto
-    /// it, or its scene appearance packed by Poser when saving. Absent when
-    /// no appearance was packed.</summary>
+    /// <summary>The appearance saved for the actor: an MCDF that was applied to
+    /// it, or its scene appearance. Absent when no appearance was
+    /// saved.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneActorMcdf? Mcdf { get; set; }
 
@@ -484,7 +483,7 @@ public class SceneBoneOffset
 }
 
 /// <summary>
-/// The packed appearance an actor wears, saved in one of two ways.
+/// The appearance saved for an actor, in one of two ways.
 ///
 /// <para>By reference (<see cref="PackageEntry"/> absent): the file stores
 /// where the MCDF was, and a load imports it from there again. This only
@@ -509,7 +508,7 @@ public class SceneActorMcdf
     public string Path { get; set; } = string.Empty;
 
     /// <summary>True when this is an MCDF that was loaded onto the actor. False when it
-    /// is the actor's scene appearance, packed by Poser when the scene was saved.
+    /// is the actor's scene appearance, saved by Poser with the scene.
     /// See <c>SceneAppearanceRule</c> for how a load uses it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool LoadedOnto { get; set; }

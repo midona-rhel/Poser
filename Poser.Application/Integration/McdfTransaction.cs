@@ -382,8 +382,8 @@ public sealed class McdfTransaction
     /// <summary>
     /// Reads the selected actor's Penumbra, Glamourer and Customize+ state right
     /// away, without changing the actor, then writes the package in the
-    /// background. It is turned away when the actor already wears an MCDF (an
-    /// MCDF is never packed again), while another job runs, and when another
+    /// background. It refuses when the actor already has an MCDF applied, while
+    /// another job runs, and when another
     /// plugin has locked the actor's Glamourer state.
     /// </summary>
     public IntegrationResult BeginExport(ActorId actor, string path, string description)

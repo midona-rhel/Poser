@@ -5,7 +5,7 @@ namespace Poser.Game.Scene;
 /// <summary>Temporary appearance files a scene uses. Each one is kept until its session ends, so undo can still read it.</summary>
 internal sealed class SessionAppearanceFiles(Action<string> delete) : IDisposable
 {
-    // File name starts: an appearance packed while saving a scene, and an MCDF waiting to be applied while a scene loads.
+    // File name starts: an appearance being saved into a scene, and an MCDF waiting to be applied while a scene loads.
     private const string Prefix = Poser.Application.Scene.SceneAppearanceRule.PackedPrefix;
     private const string StagedPrefix = "poser-scene-mcdf-";
 
@@ -23,7 +23,7 @@ internal sealed class SessionAppearanceFiles(Action<string> delete) : IDisposabl
     private bool _pending;
     private bool _disposed;
 
-    /// <summary>A new file for an appearance packed while saving, or, with
+    /// <summary>A new file for an appearance being saved into a scene, or, with
     /// <paramref name="staged"/>, for an MCDF about to be applied while a scene loads.</summary>
     internal static string NewTempPath(bool staged = false)
     {

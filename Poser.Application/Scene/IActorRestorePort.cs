@@ -29,7 +29,7 @@ public interface IActorRestorePort
     Task<string?> RestoreClothingOnly(SceneEntityHandle actor, System.Threading.CancellationToken cancellation);
 
     /// <summary>Assigns the saved Penumbra collection when the actor has one and
-    /// no character file. If that collection does not exist on this computer, the
+    /// no MCDF. If that collection does not exist on this computer, the
     /// step still succeeds with a note, and the actor keeps the collection it
     /// spawned with. A failure in Penumbra or in the redraw is still an error.
     /// Runs on the load's background task and moves its own game work to the
@@ -38,7 +38,7 @@ public interface IActorRestorePort
         System.Threading.CancellationToken cancellation);
 
     /// <summary>
-    /// Imports the actor's saved character file (MCDF) again, in exactly the way
+    /// Applies the actor's saved MCDF again, in exactly the way
     /// a person's own MCDF import does: the same checks, the same wait for the
     /// redraw, the same undo on failure. So when the actor is removed, its
     /// appearance is unlocked and put back just as for an MCDF imported by hand.

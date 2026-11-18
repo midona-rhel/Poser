@@ -373,7 +373,7 @@ public sealed partial class PoseLibraryPane
                 return;
             }
             // An object tile spawns or applies depending on what the file is.
-            // The actor picker is only for poses and character files.
+            // The actor picker is only for poses and MCDFs.
             if (_type == LibraryType.Objects)
             {
                 ActivateObject(_vm.Selected);
@@ -381,7 +381,7 @@ public sealed partial class PoseLibraryPane
             }
             ApplyToChosen(_vm.Selected);
         };
-        // Applying a character file is the one long task this pane starts, so
+        // Applying an MCDF is the one long task this pane starts, so
         // the pane also offers a way to stop it. It is the same cancel as the
         // one on the appearance progress row.
         _vm.OnCancelImport = _mcdf.Cancel;

@@ -375,7 +375,7 @@ public sealed class SceneCaptureService
     }
 
     /// <summary>
-    /// Saves the path and name of the MCDF the actor wears, so the scene can
+    /// Saves the path and name of the MCDF applied to the actor, so the scene can
     /// later pack that file in. An MCDF with no known path gets a note instead.
     /// </summary>
     private SceneActorMcdf? CaptureMcdf(
