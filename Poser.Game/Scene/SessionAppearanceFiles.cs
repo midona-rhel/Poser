@@ -2,20 +2,20 @@ using Poser.Domain.Operations;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Embedded packages remain readable by actor history until its session ends.</summary>
+/// <summary>Temporary appearance files a scene uses. Each one is kept until its session ends, so undo can still read it.</summary>
 internal sealed class SessionAppearanceFiles(Action<string> delete) : IDisposable
 {
-    // Looks packed while saving a scene; an MCDF staged to be put on during a load.
+    // File name starts: an appearance packed while saving a scene, and an MCDF waiting to be applied while a scene loads.
     private const string Prefix = Poser.Application.Scene.SceneAppearanceRule.PackedPrefix;
     private const string StagedPrefix = "poser-scene-mcdf-";
 
-    /// <summary>Poser's own folder for appearance packages, so a startup
-    /// sweep never touches another program's temp files.</summary>
+    /// <summary>Poser's own folder for these files, so the cleanup at startup
+    /// never touches another program's temporary files.</summary>
     internal static string TempDirectory { get; } =
         Path.Combine(Path.GetTempPath(), "Poser", "scene-appearance");
 
-    /// <summary>Age threshold for startup cleanup. This is a heuristic; file age
-    /// alone does not prove that another running client has stopped using it.</summary>
+    /// <summary>Files older than this are deleted when Poser starts. Age is
+    /// only a guess: a second running copy of the game could still use one.</summary>
     internal static readonly TimeSpan StaleAge = TimeSpan.FromDays(1);
 
     private readonly Dictionary<string, SessionGeneration> _files = new();
@@ -23,15 +23,15 @@ internal sealed class SessionAppearanceFiles(Action<string> delete) : IDisposabl
     private bool _pending;
     private bool _disposed;
 
-    /// <summary>A new file for a look packed while saving, or, with
-    /// <paramref name="staged"/>, for an MCDF about to be put on during a load.</summary>
+    /// <summary>A new file for an appearance packed while saving, or, with
+    /// <paramref name="staged"/>, for an MCDF about to be applied while a scene loads.</summary>
     internal static string NewTempPath(bool staged = false)
     {
         Directory.CreateDirectory(TempDirectory);
         return Path.Combine(TempDirectory, $"{(staged ? StagedPrefix : Prefix)}{Guid.NewGuid():N}.mcdf");
     }
 
-    /// <summary>Deletes appearance packages in <paramref name="directory"/>
+    /// <summary>Deletes these files in <paramref name="directory"/> that were
     /// last written before <paramref name="cutoffUtc"/>.</summary>
     internal static void DeleteStale(string directory, DateTime cutoffUtc, Action<string> delete)
     {
@@ -45,7 +45,7 @@ internal sealed class SessionAppearanceFiles(Action<string> delete) : IDisposabl
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // An unreadable temp folder costs disk, never startup.
+            // A folder that cannot be read only wastes disk space; it must not stop Poser starting.
         }
     }
 
@@ -60,8 +60,8 @@ internal sealed class SessionAppearanceFiles(Action<string> delete) : IDisposabl
         }
     }
 
-    /// <summary>Called every frame; does work only when the session changed
-    /// or a package from another session was retained.</summary>
+    /// <summary>Called every frame to delete files from other sessions. It
+    /// only does work when the session changed or such a file was added.</summary>
     public void Sweep(SessionGeneration? current)
     {
         lock (_files)

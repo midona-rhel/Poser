@@ -11,8 +11,8 @@ public static class SceneWorkflowRegistration
     public static IServiceCollection AddSceneWorkflow(this IServiceCollection services)
     {
         services.AddSingleton<ISceneDocumentStore, SceneDocumentStore>();
-        // One receipt table for every scene port: a handle one port issues is
-        // resolved by the others.
+        // All the scene services below share one table of handles, so a
+        // handle one of them gives out can be looked up by the others.
         services.AddSingleton(sp =>
         {
             var sessions = sp.GetRequiredService<ISessionGenerationSource>();
@@ -31,9 +31,10 @@ public static class SceneWorkflowRegistration
         services.AddSingleton<ISceneHistoryPort>(sp => sp.GetRequiredService<SceneHistoryBinder>());
         services.AddSingleton<ISceneStructure, SceneStructure>();
         services.AddSingleton<ISceneWorkflowObserver, SceneWorkflowObserver>();
-        // Resolve the runtime ports before the workflow: container disposal
-        // drains the workflow first, then tears down the ports' subscriptions
-        // and files.
+        // The workflow is created after the services it uses. Services are
+        // disposed in reverse order, so when the plugin closes the workflow
+        // finishes its work first, and only then do those services remove
+        // their event listeners and files.
         services.AddSingleton<SceneWorkflow>(sp => new SceneWorkflow(
             sp.GetRequiredService<ISceneStatePort>(),
             sp.GetRequiredService<ISceneCapturePort>(),

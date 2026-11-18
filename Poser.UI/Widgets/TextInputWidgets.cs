@@ -10,25 +10,24 @@ using static Poser.UI.Widgets.ValueEdits;
 namespace Poser.UI.Widgets;
 
 /// <summary>
-/// Draws plain and search text fields around native ImGui InputText controls.
-/// Native input handles editing and selection; this wrapper draws the border,
-/// placeholder, search icon, and optional clear button.
+/// Draws plain and search text fields on top of ImGui's own text field.
+/// ImGui handles typing and selecting; this draws the border, the placeholder
+/// text, the search icon and the optional clear button.
 /// </summary>
 public static class TextInputWidgets
 {
     /// <summary>The field a clear button hands focus back to.</summary>
     internal sealed class RefocusState
     {
-        // The clear affordance is a reserved hit area, so pressing it takes
-        // ImGui's active id away from the field the way any other control
-        // would. Clearing is an edit of the field the user is still in, so
-        // the field takes focus back on the IMMEDIATELY following frame.
+        // The clear button takes the mouse like any other control, so
+        // pressing it takes focus away from the text field. Clearing is still
+        // an edit of the field being typed in, so the field takes focus back
+        // on the very next frame.
         //
-        // The frame is part of the request because the identity alone is not
-        // enough: an id is only unique within a frame's id stack, so a request
-        // that outlived its frame could hand focus to a completely different
-        // control that happens to reuse the identity later. One frame of grace
-        // is exactly the lifetime the handover needs.
+        // The frame number is part of the request because the id alone is not
+        // enough: an id is only unique within one frame, so an old request
+        // could later give focus to a different control that reuses the id.
+        // One frame is exactly as long as the handover needs.
         internal uint Target;
         internal int Frame;
     }
@@ -47,21 +46,17 @@ public static class TextInputWidgets
             id, value, onChange, style, placeholder,
             clearable: false, search: false, disabled, help);
 
-    /// <summary>CSS px of the ascent-over-cap dead band KEPT above the cap
-    /// top when a native field's caret is trimmed: tall diacritics (É, Å)
-    /// reach into that band and keep their marks under this headroom.
-    /// Bigger reads as a taller caret.</summary>
+    /// <summary>Space, in unscaled pixels, kept above the top of capital
+    /// letters when the text cursor is cut shorter. Accents on tall letters
+    /// (É, Å) reach into this space and stay visible. A bigger value makes the
+    /// cursor look taller.</summary>
     internal const float CaretHeadroom = 2f;
 
-    /// <summary>UTF-8 byte cap handed to the native field. The binding turns
-    /// <c>InputText(label, ref string, maxLength)</c> into
-    /// <c>ImU8String.Reserve(maxLength + 1)</c>, which returns without
-    /// allocating only while that is under <c>ImU8String.AllocFreeBufferSize</c>
-    /// (512, the size of the struct's inline buffer); at or above it every
-    /// frame rents <c>MinimumRentSize</c> = 1024 bytes from the ArrayPool and
-    /// copies into them, per field. 510 is the largest value that stays inline,
-    /// and the binding's own default is 512, so this loses two bytes of maximum
-    /// input against what already shipped — no field here is near that.</summary>
+    /// <summary>The most bytes of text a field accepts. Below 512 bytes,
+    /// Dalamud's ImGui binding keeps the text in a small built-in buffer. At
+    /// 512 or more it borrows a 1024-byte buffer and copies the text into it
+    /// every frame, for every field. 510 is the largest value that stays in
+    /// the built-in buffer, and no field here needs more text than that.</summary>
     private const int NativeInputMaxBytes = 510;
 
     internal static bool TextInputCore(
@@ -90,16 +85,15 @@ public static class TextInputWidgets
         float border = 1f * scale;
         float padX = theme.Controls.InputPaddingX * scale;
         float iconSide = theme.Controls.SmallIconSize * scale;
-        // .input: padding-left 10. .searchWrap: 10 + a 14px icon + gap 6,
-        // so the field's own text starts 30 in.
+        // A plain field's text starts after the left padding. A search
+        // field's text starts after the padding, the search icon and a gap.
         float textInset = search
             ? padX + iconSide + theme.Controls.SearchIconGap * scale
             : padX;
 
-        // The native widget renders the VALUE, so the field's font is the
-        // one it is submitted under: --font-size-md, --font-family,
-        // regular. Resolving it first also makes FramePadding.y the true
-        // vertical centering for that font.
+        // ImGui draws the typed text itself, in whatever font is active when
+        // the field is drawn, so switch to the regular body font first. Doing
+        // that first also makes the vertical padding centre this font correctly.
         var font = FontRegistry.Resolve(
             FontFamily.Default,
             FontWeight.Regular,
@@ -108,15 +102,13 @@ public static class TextInputWidgets
         if (fontPushed)
             font!.Push();
 
-        // The metric ink seat for the native widget. FramePadding CANNOT
-        // reseat text inside a fixed box — ImGui derives the frame height
-        // FROM it (FontSize + 2·pad) — so the padding keeps the line-box
-        // value that makes the frame exactly `height` tall, and the WHOLE
-        // widget is submitted risen by the metric rise instead: value,
-        // caret, and selection lift together while the box chrome (fill,
-        // border, icons) is painted at the intended rect below. This
-        // replaces the per-surface textRise knob and the resting/active
-        // split that knob needed.
+        // Placing the text up and down. Padding cannot move text inside a box
+        // of fixed height, because ImGui works out the box height from the
+        // padding (font size plus twice the padding). So the padding stays at
+        // the value that makes the box exactly `height` tall, and the whole
+        // ImGui field is drawn moved up a little instead. The text, cursor and
+        // selection move up together, while the fill, border and icons are
+        // drawn at the real box below.
         float framePadY = MathF.Max(
             0f, (height - ImGui.GetTextLineHeight()) * 0.5f);
         float rise = FontRegistry.InkRise(
@@ -135,10 +127,10 @@ public static class TextInputWidgets
             ImGui.BeginDisabled();
         }
 
-        // .input's --color-black-20 fill, painted at the BOX rect (inside
-        // the disabled bracket so it dims with the group); the native
-        // frame below is transparent so the risen widget brings no box of
-        // its own. .searchInput has `background: none`.
+        // A plain field's dark fill, drawn at the real box. It is drawn after
+        // disabling starts, so it dims with the rest. ImGui's own box is made
+        // transparent below, so the moved-up field draws no box of its own.
+        // A search field has no fill.
         if (!search)
             draw.AddRectFilled(
                 boxMin,
@@ -157,18 +149,16 @@ public static class TextInputWidgets
         ImGui.PushStyleVar(
             ImGuiStyleVar.FramePadding, new Vector2(textInset, framePadY));
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, radius);
-        // Draw the border at the unshifted box rectangle after the native input.
+        // The border is drawn after the field, at the real box, not the moved-up one.
         ImGui.PushStyleVar(ImGuiStyleVar.FrameBorderSize, 0f);
         ImGui.SetCursorScreenPos(boxMin + new Vector2(0f, rise));
         ImGui.SetNextItemWidth(width);
 
-        // The native caret and selection span the full LINE BOX, whose top
-        // sits the ascent-over-cap dead band above any ink — a caret far
-        // taller than the text it belongs to (user: "the blinking text
-        // indicator is too tall"). The widget is clipped to the band the
-        // eye reads: the dead band is scissored off, minus
-        // CaretHeadroom so tall diacritics keep their marks. Glyph ink
-        // below cap top is untouched.
+        // ImGui's text cursor and selection are as tall as the whole line,
+        // which reaches well above the tops of the letters, so the cursor
+        // looks far taller than the text. The field is cut off just above
+        // the letters, leaving CaretHeadroom so accents on tall letters stay
+        // visible. Nothing below the top of capital letters is cut.
         float caretTrim = (FontRegistry.AscentOverCap(
                 FontFamily.Default, FontWeight.Regular,
                 theme.Typography.BodySize)
@@ -197,33 +187,34 @@ public static class TextInputWidgets
         }
 
         string next = value;
-        // A search field selects its whole text on focus, so a re-focused
-        // query is REPLACED by typing rather than appended to — the
-        // portal's spawn-again flow (ruled 2026-08-31).
+        // A search field selects all its text when clicked, so typing
+        // replaces the old search instead of adding to it. That makes it quick
+        // to search for the next thing to spawn.
         bool changed = ImGui.InputText(
             id, ref next, NativeInputMaxBytes,
             search
                 ? ImGuiInputTextFlags.AutoSelectAll
                 : ImGuiInputTextFlags.None);
-        // The native widget draws the value outside the text renderer, so
-        // it declares its own CJK glyphs (typed or IME-composed).
+        // ImGui draws the typed text without Poser's text drawing, so the
+        // field asks for Chinese, Japanese and Korean characters itself,
+        // whether typed directly or through an input method.
         FontRegistry.RequireGlyphs(next);
         bool committed = ImGui.IsItemDeactivatedAfterEdit()
             || (ImGui.IsItemActive() && ImGui.IsKeyPressed(ImGuiKey.Enter));
         if (caretClipped)
             draw.PopClipRect();
 
-        // The native item's rectangle includes the text-position adjustment.
-        // The border, icons, and placeholder use the original box rectangle.
+        // ImGui's field was moved up to place the text. The border, icons and
+        // placeholder use the real box instead.
         var inputMin = ImGui.GetItemRectMin();
-        // The flow cursor advanced from the risen item; put it back where
-        // the un-risen box would have left it.
+        // ImGui's layout position moved on from the moved-up field; put it
+        // back where the real box would have left it.
         var cursorAfterInput = ImGui.GetCursorScreenPos()
             - new Vector2(0f, rise);
         ImGui.SetCursorScreenPos(cursorAfterInput);
-        // InputText stays a native ImGui widget, so its help trigger takes
-        // the occlusion gate that Interactive.Reserve applies for us
-        // everywhere else.
+        // The text field is ImGui's own control, so it must check by hand
+        // that nothing covers it before showing help. Interactive.Reserve does
+        // this for every other control.
         bool hovered = ImGui.IsItemHovered() && !Interactive.PointerOccluded();
 
         ImGui.PopStyleVar(3);
@@ -253,12 +244,10 @@ public static class TextInputWidgets
                 opacity: 0.6f);
         }
 
-        // ::placeholder is not a focus-gated pseudo-element: an empty
-        // field shows it while the caret is in it, exactly as Blink does.
-        // Band-centred in the BOX rect — the same centring the search glyph
-        // gets — because the risen line-box top the value uses reads a few
-        // pixels low for a bare placeholder (user: "the preview text is a
-        // bit too low").
+        // An empty field shows its placeholder even while it is being typed
+        // in, as web browsers do. The placeholder is centred in the real box,
+        // like the search icon, because placing it like the typed text put it
+        // a few pixels too low.
         if (next.Length == 0 && !string.IsNullOrEmpty(placeholder))
             TextInBand(
                 new Vector2(boxMin.X + textInset, boxMin.Y),
@@ -280,10 +269,10 @@ public static class TextInputWidgets
                 boxMax.X - 13f * scale,
                 (boxMin.Y + boxMax.Y) * 0.5f);
             var hitPadding = new Vector2(9f) * scale;
-            // The clear affordance is a real reserved hit area on the one
-            // interaction path, so it is occlusion-gated like every other
-            // control. It overlaps the native InputText submitted above,
-            // which must therefore yield hover/active arbitration to it.
+            // The clear button takes the mouse through Interactive.Reserve like
+            // every other control, so it ignores the mouse when something
+            // covers it. It sits on top of the text field, so the field must
+            // let it have the mouse.
             ImGui.SetItemAllowOverlap();
             ImGui.SetCursorScreenPos(center - hitPadding);
             var clearHit = Interactive.Reserve(

@@ -15,16 +15,16 @@ public static class DropdownWidgets
     /// <summary>The dropdown scrolls after seven visible rows.</summary>
     private const int DropVisibleRows = 7;
 
-    /// <summary>Gap between the trigger and popup.</summary>
+    /// <summary>Gap between the closed box and the open list.</summary>
     private const float DropAnchorGap = 4f;
 
-    /// <summary>Fixed slot that centers the selector glyph.</summary>
+    /// <summary>Fixed width of the space at the right that the arrow icon is centred in.</summary>
     private const float ChevronSlot = 20f;
 
-    /// <summary>Selector glyph opacity.</summary>
+    /// <summary>Opacity of the arrow icon.</summary>
     private const float ChevronOpacity = 0.5f;
 
-    /// <summary>Selector glyph name.</summary>
+    /// <summary>Name of the arrow icon.</summary>
     private const string ChevronIcon = "selector";
 
     public static bool Dropdown(
@@ -40,7 +40,7 @@ public static class DropdownWidgets
         DropdownCore(id, items, selected, onChange, style, disabled, help, previewText, true,
             triggerIcon: icon is { } glyph ? Tabler.NameFor(glyph) : ChevronIcon);
 
-    /// <summary>Draws the shared dropdown trigger and glass popup.</summary>
+    /// <summary>Draws a dropdown: the closed box and the list that opens from it.</summary>
     private static bool DropdownCore(
         string id, string[] items, int selected, Action<int> onChange,
         ControlStyle style, bool disabled, string? help,
@@ -76,7 +76,7 @@ public static class DropdownWidgets
         var valueMax = trigger.ScreenMax;
 
         var boxPaint = PaintDropdownBox(trigger, disabled);
-        // A disruptive choice wears the purple outline, as a button does.
+        // A dropdown marked disruptive gets the purple outline, as a button does.
         if (disruptive)
             ImGui.GetWindowDrawList().AddRect(
                 valueMin + new Vector2(0.5f),
@@ -87,7 +87,7 @@ public static class DropdownWidgets
         var labelColor = boxPaint.LabelColor;
         float chevronOpacity = boxPaint.ChevronOpacity;
 
-        // Padding begins inside the trigger border.
+        // The padding starts inside the box's border.
         float contentLeft = valueMin.X + borderPx + padLeft;
         float contentRight = valueMax.X - borderPx - padRight;
         float chevronLeft = contentRight - chevronSlot;
@@ -101,7 +101,7 @@ public static class DropdownWidgets
         {
             var measured = MeasureText(currentText, triggerLabelStyle);
             labelClipped = measured.X > labelWidth;
-            // TextInBand centers the measured glyph ink in the control.
+            // TextInBand centres the visible letters in the box, not the font's line height.
             TextInBand(
                 new Vector2(contentLeft, valueMin.Y),
                 new Vector2(labelWidth, height),
@@ -110,12 +110,12 @@ public static class DropdownWidgets
                 TextConstraint.Truncate(labelWidth));
         }
 
-        // Truncation-only preview: same chrome, no explanatory delay.
+        // When the label is cut off, hovering shows the full text at once, styled like a tooltip.
         if (labelClipped && valueHovered)
             HoverHelp.Preview(
                 Ids.Join(id, "-full"), valueMin, valueMax, currentText);
 
-        // Center the selector glyph in its fixed trailing slot.
+        // Centre the arrow icon in its fixed space at the right.
         float iconSpan = theme.Controls.SmallIconSize * scale;
         var iconMin = new Vector2(
             chevronLeft + (chevronSlot - iconSpan) * 0.5f,
@@ -128,7 +128,7 @@ public static class DropdownWidgets
 
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));
 
-        // ---- popup ---------------------------------------------------
+        // ---- the open list -------------------------------------------
         var popupMetrics =
             MeasureDropdownPopup(items.Length, metrics.LogicalHeight);
         int visibleItems = popupMetrics.VisibleItems;
@@ -181,7 +181,7 @@ public static class DropdownWidgets
                             var hitSize = new Vector2(
                                 (scrolls ? region.ContentWidth : regionWidth) * scale,
                                 rowHeight);
-                            // The highlight stops where the rows stop: a gutter
+                            // The highlight stops where the rows stop: a margin
                             // short of the scrollbar when there is one.
                             var fillSize = hitSize;
 
@@ -237,8 +237,8 @@ public static class DropdownWidgets
         if (popupChanged)
         {
             changed = true;
-            // Release the popup owner first: a dialog opened inside it would be
-            // registered as its child and dismissed along with the dropdown.
+            // Run the choice only after the list has closed. A dialog the choice
+            // opens would otherwise count as part of the list and close with it.
             onChange(popupSelected);
         }
 
@@ -249,10 +249,10 @@ public static class DropdownWidgets
     }
 
     /// <summary>
-    /// The trigger's resolved box plus the geometry every piece of it is
-    /// measured from. Pixel fields are already scaled;
-    /// <see cref="LogicalHeight"/> is the unscaled span
-    /// <see cref="ControlSizing"/> resolved.
+    /// The size of the closed box and the measurements its parts are drawn
+    /// from. Pixel values already include the interface scale;
+    /// <see cref="LogicalHeight"/> is the height before scaling, as
+    /// <see cref="ControlSizing"/> worked it out.
     /// </summary>
     private readonly struct DropdownMetrics
     {
@@ -284,12 +284,12 @@ public static class DropdownWidgets
         public readonly float PadRight;
         public readonly float Gap;
         public readonly float ChevronSlot;
-        /// <summary>The text style shared by the trigger and option rows.</summary>
+        /// <summary>The text style shared by the closed box and the list's rows.</summary>
         public readonly TextStyle LabelStyle;
     }
 
-    /// <summary>Measures intrinsic width from the widest option. Fixed and
-    /// fill sizing may override that width.</summary>
+    /// <summary>Measures the width the dropdown needs for its widest option.
+    /// A fixed width or a fill-the-row width can override it.</summary>
     private static DropdownMetrics MeasureDropdown(
         string[] items, string? previewText, ControlStyle style)
     {
@@ -309,7 +309,7 @@ public static class DropdownWidgets
         if (!string.IsNullOrEmpty(previewText))
             widestLabel = MathF.Max(
                 widestLabel, MeasureText(previewText!, labelStyle).X);
-        // The border box includes both borders, padding, label, gap, and glyph.
+        // The full width: both borders, the padding, the label, the gap and the arrow icon.
         float intrinsicWidth =
             borderPx * 2f + padLeft + widestLabel + gap + chevronSlot + padRight;
 
@@ -319,9 +319,9 @@ public static class DropdownWidgets
         float minWidth =
             borderPx * 2f + padLeft + gap + chevronSlot + padRight + 20f * scale;
         if (totalWidth < minWidth) totalWidth = minWidth;
-        // The floor keeps a free-standing trigger usable; a track cap is a
-        // containment contract, so it outranks the floor and the label
-        // absorbs the squeeze.
+        // The minimum keeps a dropdown on its own usable. A maximum width set
+        // by the surrounding layout must always hold, so it wins over the
+        // minimum and the label is cut shorter instead.
         totalWidth = ControlSizing.Cap(totalWidth / scale, style.MaxWidth) * scale;
 
         return new DropdownMetrics(
@@ -329,7 +329,7 @@ public static class DropdownWidgets
             borderPx, padLeft, padRight, gap, chevronSlot, labelStyle);
     }
 
-    /// <summary>Text and glyph treatment for the closed trigger.</summary>
+    /// <summary>How the label and arrow icon of the closed box are drawn.</summary>
     private readonly struct DropdownTriggerPaint
     {
         public DropdownTriggerPaint(Vector4 labelColor, float chevronOpacity)
@@ -342,7 +342,7 @@ public static class DropdownWidgets
         public readonly float ChevronOpacity;
     }
 
-    /// <summary>Paints the closed trigger and returns its content treatment.</summary>
+    /// <summary>Draws the closed box and returns how its label and icon are drawn.</summary>
     private static DropdownTriggerPaint PaintDropdownBox(
         in InteractionResult hit, bool disabled)
     {
@@ -357,7 +357,7 @@ public static class DropdownWidgets
 
         if (disabled)
         {
-            // The shared disabled group keeps the label and glyph consistent.
+            // When disabled, the label and the icon are dimmed together, the same way.
             var content = ControlPaint.DisabledGroup(
                 drawList, hit.ScreenMin, hit.ScreenMax,
                 radius * scale, borderPx, triggerFill, triggerBorder,
@@ -379,9 +379,9 @@ public static class DropdownWidgets
         return new DropdownTriggerPaint(labelColor, ChevronOpacity);
     }
 
-    /// <summary>The open menu's own colour: the trigger's overlay flattened
-    /// over the page surface, so the menu is opaque by construction and
-    /// reads as the control opened taller.</summary>
+    /// <summary>The open list's colour: the closed box's hover colour mixed
+    /// onto the page colour. The list is fully opaque and looks like the box
+    /// grew taller.</summary>
     private static Vector4 DropdownPopupFill(in Theme theme) =>
         ColorEx.FlattenOver(theme.Chrome.ControlHover, theme.Surface);
 
@@ -416,7 +416,7 @@ public static class DropdownWidgets
         drawList.AddRectFilled(pos, pos + fillSize, rowFill, radius);
     }
 
-    /// <summary>Pixel measurements for the open dropdown surface.</summary>
+    /// <summary>Pixel measurements for the open list.</summary>
     private readonly struct DropdownPopupMetrics
     {
         public DropdownPopupMetrics(
@@ -439,11 +439,11 @@ public static class DropdownWidgets
         public readonly float DropInset;
         public readonly float ItemListHeight;
         public readonly float PopupHeight;
-        /// <summary>Additional gap beyond the shared anchored placement.</summary>
+        /// <summary>Extra space between the box and the list, beyond what the shared popup placement leaves.</summary>
         public readonly float AnchorGapCompensation;
     }
 
-    /// <summary>Sizes the popup from the trigger and visible row count.</summary>
+    /// <summary>Sizes the open list from the closed box's height and the number of visible rows.</summary>
     private static DropdownPopupMetrics MeasureDropdownPopup(
         int itemCount, float triggerLogicalHeight)
     {

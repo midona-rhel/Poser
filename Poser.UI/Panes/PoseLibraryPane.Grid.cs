@@ -21,7 +21,8 @@ using Poser.Documents.Library;
 
 namespace Poser.UI;
 
-/// <summary>Grid selection, the marquee and tile enrichment.</summary>
+/// <summary>Selecting tiles in the grid, by clicking or by dragging a box, and
+/// reading a file's details once its tile is selected.</summary>
 public sealed partial class PoseLibraryPane
 {
     private void Select(int index)
@@ -40,9 +41,9 @@ public sealed partial class PoseLibraryPane
         _vm.SelectedSet.Clear();
     }
 
-    /// <summary>Ctrl toggles a tile in the set; Shift selects the range from
-    /// the primary; a plain click selects the tile alone. The primary is
-    /// the tile the rail describes.</summary>
+    /// <summary>Ctrl-click adds or removes one tile. Shift-click selects every
+    /// tile from the main selected tile to this one. A plain click selects the
+    /// tile alone. The main selected tile is the one whose details are shown.</summary>
     private void SelectWith(int index, bool ctrl, bool shift)
     {
         if (index < 0 || index >= _vm.Tiles.Count)
@@ -85,8 +86,8 @@ public sealed partial class PoseLibraryPane
         EnrichTile(_vm.Selected);
     }
 
-    /// <summary>The tiles a verb acts on: the whole set when the tile
-    /// clicked is in it, else that tile alone.</summary>
+    /// <summary>The tiles an action applies to: all selected tiles when the
+    /// clicked tile is one of them, otherwise only the clicked tile.</summary>
     private List<int> VerbTargets(int index)
     {
         if (_vm.SelectedSet.Contains(index) && _vm.SelectedSet.Count > 1)
@@ -94,8 +95,8 @@ public sealed partial class PoseLibraryPane
         return [index];
     }
 
-    /// <summary>Queues metadata read after a tile is selected. File reads run
-    /// in the background; PumpEnrichments applies their results on the UI thread.</summary>
+    /// <summary>Details read from files whose tiles were selected. The files
+    /// are read in the background, and the next draw copies the details onto the tiles.</summary>
     private readonly System.Collections.Concurrent.ConcurrentQueue<TileFacts> _enrichments = new();
 
     private readonly record struct TileFacts(

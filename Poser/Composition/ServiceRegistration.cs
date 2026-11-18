@@ -39,14 +39,14 @@ using Poser.Game.Services;
 namespace Poser.Composition;
 
 /// <summary>
-/// Explicit composition modules for the plugin executable, arranged as a
-/// per-feature registration manifest. These methods only describe ownership;
-/// behavior remains in the registered services. A feature that must
-/// run before the UI draws registers its <see cref="Startable"/> here too;
-/// <see cref="StartStage"/> defines startup order.
+/// Lists every service the plugin creates, grouped by feature. These methods
+/// only say which services exist; what they do lives in the services
+/// themselves. A feature that must start before the window first draws also
+/// adds its <see cref="Startable"/> here; <see cref="StartStage"/> sets the
+/// order.
 ///
-/// Runtime modules precede presentation and reference no UI type; tests may
-/// append explicit runtime overrides.
+/// The game and logic services are added before the interface and use no
+/// interface types, so tests can add their own replacements after them.
 /// </summary>
 internal static class ServiceRegistration
 {
@@ -79,7 +79,7 @@ internal static class ServiceRegistration
         services.AddSingleton(framework);
         services.AddSingleton(objectTable);
         services.AddSingleton(sigScanner);
-        // Every hook Poser makes goes through the ledger, which the native check reads.
+        // Every hook Poser puts into the game is recorded here, so the check of game functions can read them.
         var hookLedger = new Game.Natives.HookLedger(gameInterop);
         services.AddSingleton(hookLedger);
         services.AddSingleton<IGameInteropProvider>(hookLedger);
@@ -123,8 +123,8 @@ internal static class ServiceRegistration
         services.AddOverlayFeature();
         services.AddFaceAndDevTools();
         services.AddFilePersistence();
-        // Feature-pending: new feature registrations land here until they move
-        // into (or become) a feature method above.
+        // A new feature can be added here until it gets a method of its own
+        // above.
         return services;
     }
 
@@ -133,8 +133,8 @@ internal static class ServiceRegistration
         services.AddFeaturePanes();
         services.AddWindows();
         services.AddUiShell();
-        // Feature-pending: new presentation registrations land here until they
-        // move into (or become) a feature method above.
+        // New interface services can be added here until they get a method of
+        // their own above.
         return services;
     }
 
@@ -154,8 +154,9 @@ internal static class ServiceRegistration
     private static IServiceCollection AddSessionLifecycle(
         this IServiceCollection services)
     {
-        // The real cycle: auto-save capture reaches the GPose service, whose
-        // coordinator owns this port. The port resolves auto-save at exit.
+        // Auto-save needs the GPose service, and the GPose session code needs
+        // this final save, so they depend on each other. To break the loop,
+        // the auto-save service is only looked up when GPose ends.
         services.AddSingleton<IFinalCapturePort>(sp =>
             new AutoSaveFinalCapturePort(
                 () => sp.GetRequiredService<SceneAutoSaveService>()));
@@ -200,26 +201,26 @@ internal static class ServiceRegistration
     private static IServiceCollection AddHistoryFeature(
         this IServiceCollection services)
     {
-        // The depth is a live setting read per recorded edit, so the history
-        // takes the config as a delegate rather than a captured number.
+        // The undo depth setting can change at any time, so undo history reads
+        // it for every new step instead of keeping the number from startup.
         services.AddSingleton(sp =>
         {
             var configuration = sp.GetRequiredService<ConfigurationService>();
             return new EditHistory(() => configuration.Config.UndoDepth);
         });
         services.AddSingleton<IPoseSnapshotPort, Game.Journal.PoseSnapshotPort>();
-        // Lazy: the snapshot port restores through the pose facade, which
-        // reaches the gesture service the journal sits above.
+        // Created on first use to break a loop: putting a saved pose back
+        // goes through services that themselves depend on undo history.
         services.AddSingleton(sp => new System.Lazy<IPoseSnapshotPort>(
             sp.GetRequiredService<IPoseSnapshotPort>));
         services.AddSingleton(sp => ActivatorUtilities.CreateInstance<UndoJournal>(sp,
             (Func<string, bool>)System.IO.File.Exists));
-        // The owner lookup reaches the binding registry per recorded edit, never
-        // at construction: the registry's own graph writes values through here.
+        // Which item an edit belongs to is looked up for each edit, never when
+        // this is created, because the item registry itself records edits here.
         services.AddSingleton(sp => new ValueJournal(sp.GetRequiredService<EditHistory>(),
             owner => Game.Journal.HistoryEntityLookup.Identify(owner, sp.GetRequiredService<IEntityBindings>())));
         services.AddSingleton<global::Poser.Application.Diagnostics.ActionRecorder>();
-        // Entity lifecycle and transforms share one ordered undo history.
+        // Adding and removing items and moving them share one undo history, in order.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Game.Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
@@ -257,8 +258,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Posing.ActorColliderCapture>();
         services.AddSingleton<IGroupGateState, GroupGateState>();
         services.AddSingleton<Application.Scene.GroupSteps>();
-        // Lazy: removal restores group structure through the group steps,
-        // whose gates remove and show entities through the removal port.
+        // Created on first use to break a loop: undoing a removal puts groups
+        // back through the group steps, and the group steps hide, show and
+        // remove items through removal.
         services.AddSingleton(sp => new System.Lazy<Application.Scene.GroupSteps>(
             sp.GetRequiredService<Application.Scene.GroupSteps>));
         services.AddSingleton<DisruptiveSteps>();
@@ -332,7 +334,7 @@ internal static class ServiceRegistration
     private static IServiceCollection AddPoseImportFeature(
         this IServiceCollection services)
     {
-        // The surfaces' ports over the runtime classes registered elsewhere.
+        // What the panes use to save, preview and import poses, backed by game services added elsewhere.
         services.AddSingleton<IPoseFileCapture, ActorPoseCaptureRuntime>();
         services.AddSingleton<IPosePreviewRuntime>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
         services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
@@ -345,7 +347,7 @@ internal static class ServiceRegistration
     private static IServiceCollection AddAnimationFeature(
         this IServiceCollection services)
     {
-        // The ports own native hooks; the session owns exact restoration.
+        // The services below hook the game's animation; AnimationSession puts animation back exactly as it was.
         services.AddSingleton<Game.Animation.AnimationNativeState>();
         services.AddSingleton<IAnimationTimelinePort, Game.Animation.AnimationTimelineRuntimePort>();
         services.AddSingleton<Game.Animation.AnimationSpeedRuntimePort>();
@@ -422,10 +424,10 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Documents.Mcdf.IMcdfFileBoundary, Documents.Mcdf.McdfFileBoundary>();
-        // The lazy registry hand-off breaks the load-time cycle
-        // StableBindingRegistry → IActorSpawnService → ISpawnCollectionPort →
-        // PenumbraIpc → IntegrationActorResolution → StableBindingRegistry:
-        // resolution reads the registry on first use, never during construction.
+        // The item registry is created on first use, to break a loop at
+        // startup: StableBindingRegistry needs IActorSpawnService, which needs
+        // ISpawnCollectionPort, then PenumbraIpc, then IntegrationActorResolution,
+        // which needs StableBindingRegistry again.
         services.AddSingleton(sp => new System.Lazy<Game.Bindings.StableBindingRegistry>(
             sp.GetRequiredService<Game.Bindings.StableBindingRegistry>));
         services.AddSingleton<Game.Integration.IntegrationActorResolution>();
@@ -434,8 +436,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Integration.PenumbraIpc>();
         services.AddSingleton<Application.Integration.IPenumbraPort>(
             sp => sp.GetRequiredService<Game.Integration.PenumbraIpc>());
-        // The same Penumbra client seen by address rather than by stable id:
-        // a clone has no binding yet at the moment it needs the source's collection.
+        // The same Penumbra connection, finding actors by where they are in game
+        // memory instead of by Poser's own id: a copied actor has no Poser id
+        // yet at the moment it needs the original's collection.
         services.AddSingleton<Game.Integration.ISpawnCollectionPort>(
             sp => sp.GetRequiredService<Game.Integration.PenumbraIpc>());
         services.AddSingleton<Game.Integration.GlamourerIpc>();
@@ -451,7 +454,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Integration.IntegrationOwnership>();
         services.AddSingleton(sp =>
         {
-            // The session source gives every MCDF operation its exact GPose identity.
+            // The session source tells each MCDF action which GPose session it belongs to.
             var mcdf = new Application.Integration.McdfTransaction(
                 sp.GetRequiredService<Application.Integration.IIntegrationResolutionPort>(),
                 sp.GetRequiredService<Application.Integration.IPenumbraPort>(),
@@ -461,8 +464,8 @@ internal static class ServiceRegistration
                 sp.GetRequiredService<ISessionGenerationSource>(),
                 sp.GetRequiredService<Application.Integration.IntegrationOwnership>(),
                 sp.GetRequiredService<System.Lazy<IPoseSnapshotPort>>());
-            // The MCDF hard limits are config-backed with conservative
-            // defaults; read once at composition.
+            // The MCDF size limits come from the settings, with careful
+            // defaults, and are read once here.
             var limits = sp.GetRequiredService<Application.Settings.ConfigurationService>()
                 .Config.Integration;
             mcdf.Limits = new global::Poser.Documents.Mcdf.McdfLimits(
@@ -473,8 +476,8 @@ internal static class ServiceRegistration
             return mcdf;
         });
         services.AddSingleton<Application.Integration.IntegrationSelectors>();
-        // Created after the ports it resets, so container disposal runs its
-        // unload edge before they tear down.
+        // Created after the services it resets. Services are disposed in
+        // reverse order, so on unload this runs before they shut down.
         services.AddSingleton<Application.Integration.IntegrationReset>();
         services.AddStartable<Application.Integration.IntegrationReset>(StartStage.Integration);
         return services;
@@ -508,8 +511,8 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Posing.PoseExportCapture>();
         services.AddSingleton<Application.Animation.IIdleModRuntime, Game.Animation.IdleModRuntime>();
         services.AddSingleton<Application.Animation.IdleModExport>();
-        // The pose library's CharaView preview. No force-resolve: the pane
-        // holds it, and it only subscribes the framework tick while open.
+        // The Library's pose preview. It is not started up front: the Library
+        // pane uses it, and it only runs each frame while it is open.
         services.AddSingleton<Game.Preview.PosePreviewService>();
         return services;
     }
@@ -555,8 +558,8 @@ internal static class ServiceRegistration
     private static IServiceCollection AddSpawnFeature(
         this IServiceCollection services)
     {
-        // World-actor discovery and ordinary spawning share the same concrete
-        // spawn service and ownership transaction.
+        // Taking over actors already in the world and spawning new ones use
+        // the same spawn service and the same steps for taking ownership.
         services.AddSingleton<ActorSpawnService>();
         services.AddSingleton<IActorSpawnService>(
             sp => sp.GetRequiredService<ActorSpawnService>());
@@ -586,11 +589,11 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Library.IPoseLibraryService>(sp =>
         {
             var config = sp.GetRequiredService<ConfigurationService>();
-            // Create every configured library root before the first scan.
+            // Create Poser's own library folders before the first scan.
             config.Config.Library.EnsureHomeRootsExist();
             var library = new Application.Library.PoseLibraryService(config);
-            // Scan once at startup. Saves request a rescan, and the refresh
-            // action covers external file changes.
+            // Scan once when the library is created. Saving asks for a rescan,
+            // and the rescan button picks up files changed outside Poser.
             library.RequestScan();
             return library;
         });
@@ -605,9 +608,9 @@ internal static class ServiceRegistration
         services.AddSingleton<IPropCatalog>(sp => sp.GetRequiredService<Game.PropSpawnService>());
         services.AddStartable<Game.PropSpawnService>(StartStage.PropSpawns);
         services.AddSingleton<Application.Presentation.ISceneObjectControl, Game.Scene.SceneObjectControl>();
-        // The map's own objects: the native walk, and the service that owns
-        // every adoption's restore. A singleton because the container's
-        // dispose is the unload edge that gives every borrowed object back.
+        // The map's own objects: the code that finds them in the game, and the
+        // service that puts back every object Poser took over. Disposing it
+        // when the plugin unloads gives every taken-over object back.
         services.AddSingleton<
             Game.WorldObjects.IWorldObjectPort,
             Game.WorldObjects.NativeWorldObjectPort>();
@@ -623,9 +626,9 @@ internal static class ServiceRegistration
     private static IServiceCollection AddOverlayFeature(
         this IServiceCollection services)
     {
-        // The overlay nodes' native seam and the service that owns their
-        // lives. Registered as singletons so the container's own dispose is
-        // the plugin-unload teardown edge.
+        // The code that draws overlays in the game, and the service that adds
+        // and removes them. Disposing them when the plugin unloads removes
+        // every overlay.
         services.AddSingleton<
             Game.Overlays.IOverlayNodePort,
             Game.Overlays.KamiToolKitOverlayPort>();
@@ -642,8 +645,8 @@ internal static class ServiceRegistration
     private static IServiceCollection AddFaceAndDevTools(
         this IServiceCollection services)
     {
-        // Expression is the face feature beside gaze; CommandRouter is the
-        // /poser chat command.
+        // Expressions are the face controls next to gaze; CommandRouter
+        // handles the /poser chat command.
         services.AddSingleton<IExpressionRuntimePort, ExpressionRuntimePort>();
         services.AddSingleton<IExpressionControl, ExpressionSession>();
         services.AddSingleton<IExpressionService, ExpressionService>();
@@ -659,12 +662,12 @@ internal static class ServiceRegistration
         services.AddSingleton<AutoSaveRuntime>();
         services.AddStartable<AutoSaveRuntime>(StartStage.AutoSave);
 
-        // Keep one checksum index so digests persist between scene loads.
+        // One shared list of MCDF checksums, so they are not worked out again for every scene load.
         services.AddSingleton<IMcdfHashIndex>(sp =>
             new McdfHashIndex(() => sp.GetRequiredService<ConfigurationService>().Config.Library.ResolveMcdfRoot()));
 
-        // SceneWorkflow owns the scene transaction; autosave reuses its
-        // capture and store through SceneCaptureService.
+        // SceneWorkflow saves and loads scenes; auto-save builds its scene
+        // files with the same SceneCaptureService.
         services.AddSingleton<SceneCaptureService>();
         services.AddSceneWorkflow();
         services.AddSingleton<ISceneWorkflow>(sp => sp.GetRequiredService<SceneWorkflow>());
@@ -681,7 +684,7 @@ internal static class ServiceRegistration
 #endif
             return new SceneAutoSaveService(
                 sp.GetRequiredService<ConfigurationService>(),
-                // Snapshots follow the save dialog's Animation choice.
+                // Auto-saves include animation when the save dialog's Animation option is on.
                 (sceneId, description, onCaptured) => sp.GetRequiredService<SceneCaptureService>().BeginCapture(
                     sceneId, description, onCaptured,
                     sp.GetRequiredService<global::Poser.Application.Scene.SceneLoadPreferences>().SaveOptions.IncludeAnimation),
@@ -701,12 +704,12 @@ internal static class ServiceRegistration
     private static IServiceCollection AddFeaturePanes(
         this IServiceCollection services)
     {
-        // Register the shared transient-message channel before presentation
-        // services; runtime services access it through the application port.
+        // The notifications service is added before the interface services.
+        // Game and logic services reach it through IUserNotices.
         services.AddSingleton<UserNotices>();
         services.AddSingleton<Application.Presentation.IUserNotices>(sp => sp.GetRequiredService<UserNotices>());
-        // Pane types are never registered here: the main window's graph and
-        // each pop-out's lease own theirs (PresentationScope).
+        // Panes are not added here: the main window and each pop-out window
+        // create their own (PresentationScope).
         services.AddSingleton<MainPresentation>();
         services.AddSingleton(sp => sp.GetRequiredService<MainPresentation>().Content);
         services.AddSingleton(sp => sp.GetRequiredService<MainPresentation>().Rail);
@@ -723,8 +726,8 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseLibraryPane>();
         services.AddSingleton<BoneMapEditorRegistry>();
         services.AddSingleton<SkeletonOverlayPresentation>();
-        // ConfigurationService.Reset replaces the configuration instance,
-        // so the preset store is reached through the service on every call.
+        // ConfigurationService.Reset replaces the whole settings object, so
+        // the presets are read through the service every time.
         services.AddSingleton(sp =>
         {
             var configuration = sp.GetRequiredService<ConfigurationService>();
@@ -745,8 +748,8 @@ internal static class ServiceRegistration
         services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldService>());
         services.AddSingleton<Game.WorldObjects.IWorldReleasePort>(sp => sp.GetRequiredService<Game.WorldObjects.WorldService>());
         services.AddSingleton<PoseThumbnailCache>();
-        // Owns every reference picture's texture, so the container's own
-        // dispose is what releases them at plugin teardown.
+        // Holds every reference picture, so disposing it when the plugin
+        // unloads frees them all.
         services.AddSingleton<ReferenceImageSession>();
         return services;
     }
@@ -754,8 +757,8 @@ internal static class ServiceRegistration
     private static IServiceCollection AddWindows(
         this IServiceCollection services)
     {
-        // Interaction state the windows and panes share, and the draw-cost
-        // ledger they all report into: one of each per plugin load.
+        // State the windows and panes share while dragging and picking, and
+        // the profiler they all report drawing time to: one of each per plugin load.
         services.AddSingleton<global::Poser.UI.Controls.ManipulationState>();
         services.AddSingleton<global::Poser.UI.Controls.BonePick>();
         services.AddSingleton<TransformClipboard>();
@@ -775,8 +778,8 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new global::Poser.Application.Settings.ReleaseNotesSession(
             sp.GetRequiredService<ConfigurationService>(), typeof(ServiceRegistration).Assembly.GetName().Version!));
         services.AddSingleton<global::Poser.UI.Views.ReleaseNotesView>();
-        // Provider-owned widget state; resolved before presentation at startup
-        // so it is released only after the windows and panes finish disposal.
+        // The shared state of the interface controls. It is created before
+        // the windows and panes at startup, so it is disposed only after them.
         services.AddSingleton(sp =>
         {
             var textures = sp.GetRequiredService<ITextureProvider>();

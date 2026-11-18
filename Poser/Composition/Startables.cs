@@ -5,10 +5,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Poser.Composition;
 
-/// <summary>Services started before the UI draws. Declaration order is startup
-/// order. Each feature module registers its own
-/// entries; a service that subscribes on construction and is not listed here
-/// stays inert until something resolves it.</summary>
+/// <summary>The services Poser starts before its window first draws, in the
+/// order listed here. Each feature adds its own entries. A service that only
+/// starts listening for events when it is created, and is not listed here,
+/// does nothing until other code asks for it.</summary>
 internal enum StartStage
 {
     AutoSave,
@@ -41,8 +41,7 @@ internal sealed record Startable(StartStage Stage, Action<IServiceProvider> Star
 
 internal static class Startables
 {
-    /// <summary>Starts a service whose constructor is its start: resolving
-    /// it subscribes it.</summary>
+    /// <summary>Adds a service that starts simply by being created.</summary>
     public static IServiceCollection AddStartable<T>(
         this IServiceCollection services, StartStage stage) where T : notnull =>
         services.AddStartable(stage, sp => sp.GetRequiredService<T>());

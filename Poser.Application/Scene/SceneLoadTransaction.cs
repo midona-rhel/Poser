@@ -6,13 +6,13 @@ using Poser.Documents.Scene;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// Loads one scene in ordered phases and records an outcome for each entity.
-/// Validation and preflight failures stop before mutation. Cancellation,
-/// session replacement, or failure to spawn a requested actor rolls back
-/// entities created by this load. Other entity-specific restore failures are
-/// reported by name, and successfully created entities remain as one undoable
-/// history step. A clear-first load cannot restore entities removed before
-/// this transaction, so the result reports that limitation.
+/// Loads one scene step by step and records, for each item, whether it came
+/// back. If the file cannot be read or the actors do not fit, nothing changes.
+/// If the load is cancelled, the session changes, or an actor cannot be
+/// spawned, everything this load created is removed again. Any other item that
+/// fails is named in the result, and everything that did load stays, as one
+/// undo step. When the load first clears the scene, undo cannot bring back
+/// what was cleared, and the result says so.
 /// </summary>
 internal sealed class SceneLoadTransaction(
     SceneWorkflow workflow,
@@ -31,14 +31,13 @@ internal sealed class SceneLoadTransaction(
     CancellationToken cancellation)
 {
     /// <summary>
-    /// Maximum time allowed for one character-file import. The import includes
-    /// file processing, application, and a redraw wait. Cancellation can end
-    /// the wait sooner.
+    /// The longest one MCDF may take: reading the file, applying it and
+    /// waiting for the actor to redraw. Cancelling can end the wait sooner.
     /// </summary>
     private static readonly TimeSpan McdfImportTimeout = TimeSpan.FromMinutes(10);
 
-    /// <summary>How a phase ends the transaction. Refused stops before this
-    /// load creates anything; Abort rolls back entities created by this load.</summary>
+    /// <summary>How a step ends the load. Refused stops before this load has
+    /// created anything. Abort removes what this load created.</summary>
     private sealed record Stop(string Detail, bool RollBack)
     {
         public static Stop Refused(string detail) => new(detail, false);
@@ -47,7 +46,7 @@ internal sealed class SceneLoadTransaction(
 
     private SceneLoadBarriers? _barriers;
     private readonly List<SceneEntityOutcome> _entities = new();
-    // Operation-level notes, such as a clear-first limitation or an excluded category.
+    // Notes about the load as a whole, such as what clearing the scene cannot undo, or a kind of item left out.
     private readonly List<string> _notes = new();
     private int _total;
     private int _done;
@@ -62,18 +61,18 @@ internal sealed class SceneLoadTransaction(
     private SceneEnvironment? _environment;
 
     private readonly Dictionary<Guid, SceneEntityHandle> _actorTokens = new();
-    // Saved with their animation, which wouldn't play here: these actors and
-    // companions get the baked pose the file carries for that case instead.
+    // Actors and companions saved with an animation that would not play here.
+    // They get the still pose the file also holds for this case.
     private readonly HashSet<Guid> _animationRefused = new();
     private readonly HashSet<Guid> _companionAnimationRefused = new();
-    // Per-kind key→token maps feed the structure restore: groups
-    // and the root order reference entities by these keys.
+    // For each kind of item, its key in the file and its handle in the scene.
+    // Groups and the order of the scene's items refer to items by these keys.
     private readonly Dictionary<Guid, SceneEntityHandle> _propTokens = new();
     private readonly Dictionary<Guid, SceneEntityHandle> _overlayTokens = new();
     private readonly Dictionary<Guid, SceneEntityHandle> _worldObjectTokens = new();
     private readonly Dictionary<Guid, SceneEntityHandle> _lightTokens = new();
     private readonly Dictionary<Guid, SceneEntityHandle> _cameraTokens = new();
-    // Named once their models have streamed, below.
+    // Spawned world objects. Each is reported once its model has loaded, further down.
     private readonly List<(SceneEntityHandle Token, string Name)> _spawnedWorldObjects = new();
 
     public async Task Run()
@@ -99,8 +98,8 @@ internal sealed class SceneLoadTransaction(
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            // A wait that honours the token throws; the cancel is still the
-            // user's, so it is reported as one rather than as a failure.
+            // A cancelled wait throws. Cancel was still pressed, so report a
+            // cancel, not a failure.
             await Abort("The load was cancelled.");
         }
         catch (Exception ex)
@@ -118,8 +117,9 @@ internal sealed class SceneLoadTransaction(
         }
         finally
         {
-            // Not during unload: Dispose blocks the framework thread this hop
-            // needs, and the slot goes with the plugin.
+            // Skip this while the plugin unloads: unloading blocks the game
+            // thread this call needs, and the hold on pose imports goes with
+            // the plugin anyway.
             if (!workflow.Disposed)
             {
                 try
@@ -132,7 +132,7 @@ internal sealed class SceneLoadTransaction(
                 }
                 catch (Exception)
                 {
-                    // The framework thread is gone; so is the slot.
+                    // The game thread is gone, and the hold on pose imports with it.
                 }
             }
         }
@@ -162,14 +162,14 @@ internal sealed class SceneLoadTransaction(
         }
         catch (Exception ex)
         {
-            // The framework thread is gone (shutdown teardown); nothing
-            // is left to restore into.
+            // The game thread is gone because the plugin is shutting down;
+            // there is nothing left to restore.
             return ex.Message;
         }
     }
 
-    // Roll back entities created by this load. If rollback leaves anything
-    // behind, report those entities so the user can remove them manually.
+    // Remove what this load created. If anything cannot be removed, name it
+    // so it can be removed by hand.
     private async Task Abort(string failure)
     {
         bool cancelled =
@@ -188,28 +188,27 @@ internal sealed class SceneLoadTransaction(
             detail);
     }
 
-    // ── Phase 1 — read and validate the WHOLE document off-thread ────────
+    // ── Step 1: read and check the whole file, off the game thread ───────
 
     private Task<Stop?> Read()
     {
-        // Nothing native has happened yet; a corrupt, oversized, or
-        // future file is a pure typed refusal.
-        // Storage translates supported formats to the same scene document.
+        // Older scene formats are read into the same scene document.
         var stored = documents.Read(path);
         _notes.AddRange(stored.Notes);
         var read = stored.Outcome;
         if (!read.Succeeded || read.Scene is not { } scene)
         {
-            // Nothing native has run, so there is nothing to roll back:
-            // a corrupt, oversized or future file is a plain Failed.
+            // Nothing in the game has changed yet, so there is nothing to
+            // undo. A damaged file, one that is too large, or one from a newer
+            // Poser simply fails.
             return Task.FromResult<Stop?>(Stop.Refused(read.Failure!.Detail));
         }
         _scene = scene;
         options = SceneLoadPreferences.ResolveDefault(options, scene.TerritoryId);
 
-        // Entities whose own data is invalid were left out of the
-        // document by name; the rest of the scene loads beside them. A
-        // refusal in a category this load leaves out is not this load's.
+        // Items whose own data is broken were left out of the document and
+        // are named here; the rest of the scene still loads. A broken item of
+        // a kind this load leaves out is not reported.
         foreach (var refusal in read.Refusals)
         {
             bool included = refusal.Kind switch
@@ -226,11 +225,11 @@ internal sealed class SceneLoadTransaction(
                 _entities.Add(new SceneEntityOutcome(refusal.Kind, refusal.Name, false, refusal.Detail));
         }
 
-        // The per-category views. An excluded category is an EMPTY view
-        // rather than a flag consulted at each of its phases: every phase
-        // then reads one list, and a category can never be half-skipped.
-        // A list of its own: an actor whose body never draws leaves it
-        // (kept in the session, named, and out of every later phase).
+        // One list per kind of item. A kind that is left out gets an empty
+        // list instead of a flag each step must check, so a kind can never be
+        // skipped by only some steps. The actors get their own copy: an actor
+        // whose body never draws is taken out of it, stays in the scene, is
+        // named in the result, and is skipped by every later step.
         _actors = options.IncludeActors
             ? scene.Actors.ToList()
             : new List<SceneActor>();
@@ -253,9 +252,9 @@ internal sealed class SceneLoadTransaction(
             ? scene.Environment
             : null;
 
-        // What the file HAS that this load was told to leave alone. Stated
-        // once, as a note, so a scene that came back with fewer entities
-        // than it was saved with says why rather than looking short.
+        // Note what the file holds that this load was told to leave out, so a
+        // scene that comes back with fewer items than it was saved with says
+        // why.
         AppendSkipNote("actors", options.IncludeActors, scene.Actors.Count);
         AppendSkipNote("objects", options.IncludeProps, scene.Props.Count);
         AppendSkipNote("lights", options.IncludeLights, scene.Lights.Count);
@@ -263,18 +262,18 @@ internal sealed class SceneLoadTransaction(
         AppendSkipNote("overlays", options.IncludeOverlays, scene.Overlays?.Count ?? 0);
         AppendSkipNote("world objects", options.IncludeWorldObjects, scene.WorldObjects?.Count ?? 0);
         AppendSkipNote("the environment", options.IncludeEnvironment, scene.Environment is null ? 0 : 1);
-        // Scenes saved before #229 carry FABRIK chains beside a pose that
-        // already holds their baked result; restoring them would restart
-        // a solver over it.
+        // Older scene files hold FABRIK chains next to a pose that already
+        // includes what they did. Turning them back on would run IK over that
+        // pose again.
         if (options.IncludeActors && scene.Actors.Any(actor => actor.Fabrik is not null))
             _notes.Add("Saved FABRIK chains from an older build were ignored; " +
                 "the baked pose loads as saved.");
         return Task.FromResult<Stop?>(null);
     }
 
-    /// <summary>One line stating a category the user left out, and only when
-    /// the FILE actually carries something in it: "props were not loaded" over
-    /// a scene with no props says nothing true about this load.</summary>
+    /// <summary>Adds a note for a kind of item that was left out, but only when
+    /// the file holds some. Saying objects were not loaded for a scene with no
+    /// objects would be misleading.</summary>
     private void AppendSkipNote(string category, bool included, int count)
     {
         if (included || count == 0)
@@ -284,7 +283,7 @@ internal sealed class SceneLoadTransaction(
             : $"The file's {count} {category} were not loaded.");
     }
 
-    // ── Placement — still before any native call ─────────────────────────
+    // ── Placement, still before anything changes in the game ────────────
 
     private async Task<Stop?> Place()
     {
@@ -296,7 +295,7 @@ internal sealed class SceneLoadTransaction(
             : null;
     }
 
-    // ── Phase 2 — baselines, then spawn/admit every entity ───────────────
+    // ── Step 2: remember what to restore, then create every item ────────
 
     private async Task<Stop?> Spawn()
     {
@@ -305,9 +304,9 @@ internal sealed class SceneLoadTransaction(
             _overlays.Count + _worldObjects.Count +
             (_environment is null ? 0 : 1);
 
-        // Capture reused actors before clearing or restoring the scene. Undo
-        // puts those actors back and removes the entities this load creates.
-        // Entities removed by Clear scene remain outside the load's undo.
+        // Remember the actors this load reuses before clearing or loading
+        // anything. Undo puts those actors back and removes what this load
+        // creates. Undo does not bring back what clearing the scene removed.
         Step(ScenePhase.SpawningEntities);
         bool refusedBeforeClear = false;
         var spawnFailure = await sceneState.OnFramework(() =>
@@ -335,8 +334,8 @@ internal sealed class SceneLoadTransaction(
                     return $"{preflight} The session was not cleared.";
                 }
                 operation.SessionCleared = true;
-                // A scene that holds the user's own character keeps it, so the
-                // load can put it back instead of spawning a copy.
+                // A scene that holds the player's own character keeps it, so
+                // the load can reuse it instead of spawning a copy.
                 if (sceneState.ClearScene(keepLocalPlayer: _actors.Any(actor => actor.LocalPlayer && actor.IdentityHash == null),
                         keepActors: _actorTokens.Values.ToArray())
                     .Summary() is { } cleared)
@@ -346,9 +345,9 @@ internal sealed class SceneLoadTransaction(
             // Keep other pose imports out while this scene is restoring actors.
             actorRestore.HoldPoseImports(true);
 
-            // A baseline is captured only for what this load will WRITE:
-            // restoring an environment the load never touched would undo
-            // edits the user made before it.
+            // Remember the current state only for what this load will change.
+            // Putting back an environment the load never touched would undo
+            // changes made before the load.
             if (_environment is not null || options.IncludeEnvironment)
             {
                 operation.EnvironmentBaseline = sceneState.CaptureEnvironmentState();
@@ -390,9 +389,9 @@ internal sealed class SceneLoadTransaction(
                 _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.Object, prop.Name, true));
             }
 
-            // An overlay node that will not stage is a NAMED refusal, not
-            // a structural one: the scene it decorates is still a scene
-            // without it, exactly as a prop's is.
+            // An overlay that cannot be added is named in the result but does
+            // not stop the load, just like an object: the scene still works
+            // without it.
             foreach (var overlay in _overlays)
             {
                 string name = overlay.Node?.Name ?? "Overlay";
@@ -430,16 +429,16 @@ internal sealed class SceneLoadTransaction(
             }
             return null;
         });
-        // Nothing native ran: a plain refusal, like an unreadable file.
+        // Nothing in the game changed yet, so this simply fails, like an unreadable file.
         if (refusedBeforeClear)
             return Stop.Refused(spawnFailure!);
         if (spawnFailure != null)
             return Stop.Abort(spawnFailure);
         _done = _props.Count + _overlays.Count + _worldObjects.Count;
 
-        // Housing furniture streams its model in after the spawn. One
-        // that has not loaded by the bound is KEPT and named — never
-        // reported restored and then released behind the outcome's back.
+        // Housing furniture loads its model after it is spawned. One that
+        // has not loaded in time is kept and named in the result, rather than
+        // reported as loaded and then quietly removed.
         if (_spawnedWorldObjects.Count > 0)
         {
             var unloaded = await materializer.AwaitWorldObjectsLoaded(
@@ -456,12 +455,12 @@ internal sealed class SceneLoadTransaction(
         return null;
     }
 
-    // ── Phase 3 — bounded readiness barrier ──────────────────────────────
+    // ── Step 3: wait, up to a time limit, for the actors to draw ────────
 
-    /// <summary>An actor whose body did not draw within the bound is OPTIONAL:
-    /// it stays in the session (the load's undo still removes it) and
-    /// leaves every later phase, so nothing tries to pose, target or
-    /// hang anything off a body that is not there.</summary>
+    /// <summary>An actor whose body did not draw in time stays in the scene,
+    /// and undoing the load still removes it. Every later step skips it, so
+    /// nothing tries to pose it, look at it or attach anything to a body that
+    /// is not there.</summary>
     private void DropUnready(IReadOnlyList<SceneEntityHandle> unready)
     {
         foreach (var token in unready)
@@ -479,8 +478,8 @@ internal sealed class SceneLoadTransaction(
 
     private async Task<Stop?> AwaitActors()
     {
-        // Pose needs the spawned actors' skeletons, which build with their
-        // draw objects.
+        // Posing needs the actors' skeletons, which only exist once their
+        // bodies are drawn.
         Step(ScenePhase.AwaitingActors);
         var ready = await Barriers.WaitForActors(_actorTokens.Values);
         if (ready.Stop != null)
@@ -489,23 +488,21 @@ internal sealed class SceneLoadTransaction(
         return null;
     }
 
-    // ── Phase 3b — character files, BEFORE anything that hangs off a body ─
+    // ── Step 3b: appearance, before anything is attached to a body ──────
 
     private async Task<Stop?> ApplyAppearance()
     {
-        // An MCDF import redraws the actor, which destroys its draw
-        // object and every skeleton with it: a pose applied first would be
-        // thrown away, and a companion attached first would go with the old
-        // body. Each import runs through the ORDINARY MCDF transaction, so
-        // the ownership it registers — and the by-name unlock-and-restore
-        // teardown that ownership buys — is the same one a hand-driven
-        // import leaves behind.
+        // Applying an MCDF redraws the actor, which throws away its body and
+        // skeletons. A pose applied before it would be lost, and a companion
+        // attached before it would go with the old body. Each MCDF is applied
+        // the same way as one applied by hand, so removing it later works the
+        // same way too.
         if (!_actors.Any(entry => entry.Mcdf is not null || entry.PenumbraCollection is not null || entry.ClothingOnly))
             return null;
         Step(ScenePhase.ApplyingAppearance);
-        // Collections are per-actor redraws with no shared slot: all
-        // of them run at once, so N actors cost one redraw's wait,
-        // not N of them back to back.
+        // Setting a Penumbra collection redraws only that actor, so all of
+        // them run at once. Many actors then wait for one redraw, not for
+        // one redraw after another.
         bool Editable(SceneActor actor) => SceneAppearanceRule.LoadsEditable(_scene, actor, thisInstall);
         var collections = _actors
             .Where(actor => (actor.Mcdf is null || Editable(actor)) && actor.PenumbraCollection is not null)
@@ -530,17 +527,17 @@ internal sealed class SceneLoadTransaction(
                 : await actorRestore.ImportMcdf(
                     path, _actorTokens[actor.Key], actor,
                     McdfImportTimeout, cancellation);
-            // A missing package is a refusal by name; a package whose
-            // bytes moved on is restored WITH the divergence named.
-            // Neither is ever a silent skip.
+            // A missing MCDF is named as not loaded. An MCDF that changed since
+            // the scene was saved is applied, and the result says it changed.
+            // Neither is skipped silently.
             if (appearance.Detail is { } detail)
                 _entities.Add(new SceneEntityOutcome(
                     SceneOutcomeKind.CharacterFile, actor.Name,
                     appearance.Restored, detail));
         }
 
-        // Clothing-only redraws must follow appearance and precede the final
-        // readiness barrier and pose import, which require the resulting body.
+        // Clothing only also redraws the actor. It must come after the
+        // appearance and before the wait below and the pose, which need the final body.
         foreach (var actor in _actors.Where(actor => actor.ClothingOnly))
         {
             if (Guard() is { } stop) return Stop.Abort(stop);
@@ -549,7 +546,7 @@ internal sealed class SceneLoadTransaction(
                 _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.CharacterFile, actor.Name, false, detail));
         }
 
-        // The redraws rebuilt the skeletons every later phase reads.
+        // The redraws rebuilt the skeletons, so wait for them again before later steps read them.
         Step(ScenePhase.AwaitingActors);
         var rebuilt = await Barriers.WaitForActors(_actorTokens.Values);
         if (rebuilt.Stop != null)
@@ -558,7 +555,7 @@ internal sealed class SceneLoadTransaction(
         return null;
     }
 
-    // ── Phase 4 — explicit relationships ────────────────────────────────
+    // ── Step 4: companions ──────────────────────────────────────────────
 
     private async Task<Stop?> AttachCompanions()
     {
@@ -584,11 +581,10 @@ internal sealed class SceneLoadTransaction(
 
     private async Task<Stop?> AwaitCompanions()
     {
-        // Phase 4a — a companion's own BODY builds several frames after
-        // its attachment lands, and a companion pose has nothing to land
-        // on until its skeleton exists. Bounded, and deliberately NOT
-        // structural: a companion that never draws costs one named refusal
-        // in the pose phase, never the whole scene.
+        // A companion's body is built several frames after it is attached,
+        // and its pose cannot be applied until its skeleton exists. The wait
+        // has a time limit. A companion that never draws is named in the
+        // result when posing, but does not stop the load.
         if (_actors.Any(entry => entry.CompanionPose is not null))
         {
             Step(ScenePhase.AwaitingActors);
@@ -597,12 +593,12 @@ internal sealed class SceneLoadTransaction(
         return null;
     }
 
-    // ── Phase 4b — FREEZE, before the pose ──────────────────────────────
+    // ── Step 4b: stop the animation, before the pose ────────────────────
 
     private async Task<Stop?> Freeze()
     {
         // Restore saved animation when present; otherwise freeze the actor before
-        // applying its pose. Failed animation restores can use the baked pose.
+        // applying its pose. If the animation cannot play, the saved still pose is used.
         Step(ScenePhase.FreezingActors);
         var freezeFailure = await sceneState.OnFramework(() =>
         {
@@ -610,15 +606,15 @@ internal sealed class SceneLoadTransaction(
                 return stop;
             foreach (var actor in _actors)
             {
-                // Set visibility before posing: a visibility implementation that
-                // rebuilds the draw object would otherwise discard the imported pose.
+                // Set visibility before posing. If hiding an actor rebuilt its
+                // body, it would throw away a pose applied earlier.
                 actorRestore.SetActorVisibility(_actorTokens[actor.Key], actor.Visible);
                 var nameDetail = actorRestore.RestoreActorName(_actorTokens[actor.Key], actor);
                 if (nameDetail != null)
                     _entities.Add(new SceneEntityOutcome(SceneOutcomeKind.ActorName, actor.Name, false, nameDetail));
-                // Saved with its animation: it plays that state again instead of
-                // stopping; its bone edits go on top in the pose phase. An animation
-                // that won't play falls back to the frozen baked pose.
+                // An actor saved with its animation plays it again instead of
+                // stopping, and its bone edits go on top when posing. If the
+                // animation will not play, the actor is frozen in the saved still pose.
                 var token = _actorTokens[actor.Key];
                 string? detail = null;
                 if (actor.Animation is not null)
@@ -647,9 +643,10 @@ internal sealed class SceneLoadTransaction(
                 }
                 if (actor.Gaze?.Mode == GazeTargetMode.Detached)
                 {
-                    // Import deltas use the live animated basis. Detaching
-                    // only afterward removes the native chest/neck aim
-                    // underneath those deltas, drifting every saved pose.
+                    // The pose is applied as changes on top of what the
+                    // animation shows now. Detaching the gaze after that would
+                    // remove the game's own chest and neck turn from under
+                    // those changes, and every saved pose would end up off.
                     var gazeDetail = actorRestore.ApplyActorGaze(
                         _actorTokens[actor.Key], actor, null);
                     if (gazeDetail != null)
@@ -662,14 +659,14 @@ internal sealed class SceneLoadTransaction(
         return freezeFailure != null ? Stop.Abort(freezeFailure) : null;
     }
 
-    // ── Phase 5 — pose ──────────────────────────────────────────────────
+    // ── Step 5: pose ────────────────────────────────────────────────────
 
     private async Task<Stop?> Pose()
     {
-        // One atomic pose import per actor, strictly sequential (the import
-        // engine is single-flight), each awaited to its own terminal receipt
-        // within a bound. A pose failure rolls ITSELF back and becomes a
-        // typed entity outcome; the actor stays restored.
+        // One pose per actor, one after another, because only one pose can be
+        // applied at a time. Each pose is applied whole or not at all, within
+        // a time limit. A pose that fails undoes itself and is named in the
+        // result; the actor stays.
         Step(ScenePhase.ApplyingPose);
         foreach (var actor in _actors)
         {
@@ -680,9 +677,10 @@ internal sealed class SceneLoadTransaction(
             string? placement;
             if (actor.Animation is not null && !_animationRefused.Contains(actor.Key))
             {
-                // Saved with its animation: only the user's own edits, as offsets
-                // over the animation, never the baked pose. An edit this skeleton
-                // lacks is named, and the actor is still placed.
+                // Saved with its animation: apply only the bone edits made in
+                // Poser, as offsets on top of the animation, not the still pose.
+                // An edit for a bone this skeleton lacks is named, and the actor
+                // is still placed.
                 var edits = await sceneState.OnFramework(() =>
                     Guard() ?? actorRestore.RestorePoseEdits(token, actor, companion: false));
                 var placed = await sceneState.OnFramework(() =>
@@ -715,10 +713,9 @@ internal sealed class SceneLoadTransaction(
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Companion, actor.Name, false, companion));
             }
-            // The companion's OWN pose, after its owner's: the same
-            // single-flight engine takes one import at a time, and a
-            // companion that could not be posed is a named refusal beside
-            // a restored actor, never a failed scene.
+            // The companion's own pose comes after its actor's, because only
+            // one pose can be applied at a time. A companion that cannot be
+            // posed is named in the result; it does not fail the scene.
             else if (actor.CompanionPose is not null)
             {
                 var companion = await Barriers.ImportPose(
@@ -738,12 +735,11 @@ internal sealed class SceneLoadTransaction(
         return null;
     }
 
-    // ── Phase 6 — presentation ──────────────────────────────────────────
+    // ── Step 6: where the actors look ───────────────────────────────────
 
     private async Task<Stop?> Present()
     {
-        // Visibility is NOT here; it rode with the animation, before the pose
-        // (see phase 4b).
+        // Visibility was already set in step 4b, before the pose.
         Step(ScenePhase.ApplyingPresentation);
         var presentationFailure = await sceneState.OnFramework(() =>
         {
@@ -752,12 +748,11 @@ internal sealed class SceneLoadTransaction(
             foreach (var actor in _actors)
             {
                 if (actor.Gaze?.Mode == GazeTargetMode.Detached)
-                    continue; // Already established before the pose's basis was sampled.
-                // Active gaze comes AFTER the pose: the look-at re-drives its
-                // channels every frame, and its Entity target is another
-                // RESTORED actor, so it needs every token to exist. The
-                // document validated the reference; it misses only when
-                // the target was left out or never drew.
+                    continue; // Already set before the pose was applied.
+                // Looking at something comes after the pose. The game turns
+                // the head and eyes again every frame anyway, and an actor
+                // being looked at must already be loaded. The file was checked,
+                // so a target is only missing when it was left out or never drew.
                 SceneEntityHandle? target = null;
                 if (actor.Gaze?.TargetActorKey is { } gazeTarget
                     && !_actorTokens.TryGetValue(gazeTarget, out target))
@@ -778,12 +773,13 @@ internal sealed class SceneLoadTransaction(
         return presentationFailure != null ? Stop.Abort(presentationFailure) : null;
     }
 
-    // ── Phase 7 — cameras ───────────────────────────────────────────────
+    // ── Step 7: cameras ─────────────────────────────────────────────────
 
     private async Task<Stop?> ApplyCameras()
     {
-        // Every saved camera becomes a new camera. Targets re-resolve against
-        // restored actors, and the saved live view becomes live.
+        // Every saved camera becomes a new camera. A camera that followed an
+        // actor follows the loaded actor, and the camera that was live when
+        // saving becomes live again.
         Step(ScenePhase.ApplyingCameras);
         var cameraFailure = await sceneState.OnFramework(() =>
         {
@@ -793,8 +789,8 @@ internal sealed class SceneLoadTransaction(
             SceneEntityHandle? liveCamera = null;
             foreach (var camera in _cameras)
             {
-                // A saved Main camera is a shot to restore, not authority to
-                // overwrite the current session's Main camera.
+                // A saved Main camera loads as a new camera; it does not
+                // overwrite the Main camera already in the session.
                 var token = materializer.CreateCamera(camera, out var detail);
                 if (token != null)
                 {
@@ -859,12 +855,12 @@ internal sealed class SceneLoadTransaction(
         return null;
     }
 
-    // ── Phase 8 — lights ────────────────────────────────────────────────
+    // ── Step 8: lights ──────────────────────────────────────────────────
 
     private async Task<Stop?> ApplyLights()
     {
-        // An unresolvable attachment is a typed refusal of that light, never
-        // a world-space spawn.
+        // A light attached to something that cannot be found is not loaded
+        // and is named. It is never spawned loose in the world instead.
         Step(ScenePhase.ApplyingLights);
         var lightFailure = await sceneState.OnFramework(() =>
         {
@@ -872,10 +868,9 @@ internal sealed class SceneLoadTransaction(
                 return stop;
             foreach (var light in _lights)
             {
-                // An attachment whose owner was not loaded is a NAMED
-                // refusal of that light, exactly as an unresolvable
-                // attachment already is: a light is never silently
-                // detached into world space.
+                // The same goes for a light attached to an actor this load
+                // did not load: it is named and not spawned, never quietly
+                // placed loose in the world.
                 if (light.Attachment is { } unresolved &&
                     !_actorTokens.ContainsKey(unresolved.ActorKey))
                 {
@@ -900,9 +895,9 @@ internal sealed class SceneLoadTransaction(
                 {
                     operation.SpawnedLights.Add(token);
                     _lightTokens[light.Key] = token;
-                    // A non-null detail beside a token is a named
-                    // degradation (a gobo the client no longer ships),
-                    // reported without refusing the light.
+                    // A light can load with a problem, such as a gobo the
+                    // game no longer has. The light is kept and the problem
+                    // is named.
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Light, light.Light!.Name, true, detail));
                 }
@@ -916,12 +911,13 @@ internal sealed class SceneLoadTransaction(
         return null;
     }
 
-    // ── Phase 9 — environment and the session-wide toggles ──────────────
+    // ── Step 9: environment, and frozen water and physics ───────────────
 
     private async Task<Stop?> ApplyEnvironment()
     {
-        // When environment loading is enabled, an absent world block restores
-        // default toggles. This releases freezes left over from the current session.
+        // When the environment is loaded and the file has no water or physics
+        // settings, both go back to normal. This unfreezes anything still
+        // frozen from before the load.
         Step(ScenePhase.ApplyingEnvironment);
         var environmentFailure = await sceneState.OnFramework(() =>
         {
@@ -941,11 +937,10 @@ internal sealed class SceneLoadTransaction(
                     SceneOutcomeKind.Environment, "Environment", true));
                 _done++;
             }
-            // Reported only when something DEGRADED: a toggle that
-            // landed is not worth a row beside the entities. The
-            // session-wide toggles belong to the environment category,
-            // so a load that leaves the environment out leaves them
-            // exactly as the user set them.
+            // Reported only when something went wrong; a setting that worked
+            // needs no line in the result. Frozen water and physics count as
+            // part of the environment, so a load that leaves the environment
+            // out leaves them as they were.
             if (options.IncludeEnvironment &&
                 sceneState.ApplyWorld(_scene.World ?? new SceneWorld())
                 is { } detail)
@@ -956,17 +951,17 @@ internal sealed class SceneLoadTransaction(
         return environmentFailure != null ? Stop.Abort(environmentFailure) : null;
     }
 
-    // ── Commit — re-guarded ─────────────────────────────────────────────
+    // ── Finish: check once more, then keep the result ───────────────────
 
     private async Task<Stop?> Commit()
     {
-        // A cancellation or session replacement landing after the last phase
-        // rolls back instead of committing.
+        // A cancel or a new session that arrives after the last step still
+        // removes everything instead of keeping it.
         var structureTokens = SceneLoadStructure.Tokens((SceneStructureKind.Actor, _actorTokens), (SceneStructureKind.Prop, _propTokens),
             (SceneStructureKind.Overlay, _overlayTokens), (SceneStructureKind.WorldObject, _worldObjectTokens),
             (SceneStructureKind.Light, _lightTokens), (SceneStructureKind.Camera, _cameraTokens));
-        // Only a stop (cancel, session replaced) aborts here: members that
-        // never bound are the structure restore's named refusals.
+        // Only a cancel or a new session stops the load here. Group members
+        // that never turned up are named when the groups are restored.
         if (await structure.WaitForBindings(operation, _scene, structureTokens,
                 workflow.StructureBindingBound, cancellation) is { } structureStop)
             return Stop.Abort(structureStop);
@@ -998,17 +993,17 @@ internal sealed class SceneLoadTransaction(
                   "restored (everything that did restore was kept): " +
                   string.Join("; ", failures.Select(failure =>
                       $"{failure.Kind} '{failure.Name}': {failure.Detail}"));
-            // Publishing inside the framework action orders the terminal
-            // before any subsequent framework-thread invalidation. Named
-            // refusals beside restored entities are typed partial
-            // recovery: Failed, with everything that DID restore kept.
+            // Reporting the result here, on the game thread, makes sure it is
+            // reported before anything later on that thread can cancel the
+            // load. A load where some items failed is reported as Failed, but
+            // everything that did load is kept.
             Finish(
                 failures.Count == 0
                     ? OperationReceiptState.Applied
                     : OperationReceiptState.Failed,
                 detail);
-            // Partial or not, what committed is in the session, so it is
-            // ONE undoable step: undo removes exactly what this load made.
+            // Whether every item loaded or not, what loaded is now in the
+            // scene, as one undo step. Undo removes exactly what this load made.
             history.Append(operation, path, options);
             return null;
         });
