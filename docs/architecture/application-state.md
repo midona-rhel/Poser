@@ -74,7 +74,7 @@ When GPose ends, Poser:
 
 Every part of step 4 runs even if an earlier part fails. If anything fails, one notice lists every failure, starting "Restoring the scene failed". Unloading Poser inside GPose runs the same steps.
 
-Autosave settings are described in [files-and-transfer.md](../features/files-and-transfer.md).
+Autosave settings are described in [Scenes](../features/scenes.md#automatic-snapshots).
 
 ### Actor names
 
