@@ -16,12 +16,13 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// Records entity creation and removal in the shared edit history.
-/// Each entity's entries share a slot so undo and redo resolve the current
-/// replacement instance. Removal captures the latest editable state.
-/// Actor restoration may continue on later ticks after the body is recreated;
-/// borrowed world objects can only be reclaimed while their original native
-/// instance still exists. Clearing history also clears these slots.
+/// Records adding and removing things in the scene as undo steps. Something
+/// brought back by undo or redo is a new object in the game, so every undo
+/// step for one thing shares a slot that points at its current copy.
+/// Removing something saves its latest state first. Bringing an actor back
+/// can go on for a few frames after its body is recreated. A map object can
+/// only be taken over again while the game's original object still exists.
+/// Clearing the undo history clears these slots too.
 /// </summary>
 public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     IEntityHistoryBinding<ILight>, IEntityHistoryBinding<IWorldObject>,
@@ -32,8 +33,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
 
-    /// <summary>Each family owner maps its instances to slots shared by
-    /// every history entry for that entity; this class only dispatches.</summary>
+    /// <summary>One helper per kind of thing keeps the slots for that kind.
+    /// This class only passes calls on to them.</summary>
     private readonly LightLifecycleOwner _lightOwner;
     private readonly CameraLifecycleOwner _cameraOwner;
     private readonly ActorLifecycleOwner _actorOwner;
@@ -43,9 +44,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     internal IActorLifecycle ActorStatePort => _actorOwner.Port;
 
-    /// <summary>Composition root for the Game-internal owners: the host
-    /// cannot name them, so the production ports' dependencies are taken
-    /// here and handed straight to those ports.</summary>
+    /// <summary>The helpers are internal to the game code, so the plugin
+    /// cannot create them. This constructor takes what they need and builds
+    /// them.</summary>
     public SceneLifecycleHistory(
         Application.Settings.ConfigurationService configuration,
         EditHistory history,
@@ -95,9 +96,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
                 ? TransformTargetId.ForCollider(id) : null)
     { }
 
-    /// <summary>Test seam: the actor, prop and overlay halves as ports, so an
-    /// entry's two directions can be exercised without a native scene object
-    /// and without a native UI node.</summary>
+    /// <summary>For tests: actors, props, overlays and world objects are
+    /// passed in as interfaces, so undo and redo can be tested without real
+    /// game objects.</summary>
     internal SceneLifecycleHistory(
         EditHistory history,
         ILightingService lighting,
@@ -120,10 +121,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         _actorOwner = new(history, actors);
         _propOwner = new(history, props, propTarget);
         _overlayOwner = new(history, overlays, overlayTarget);
-        // A slot exists only to serve entries, and is only ever minted by
-        // this seam recording one. When the history drops every entry —
-        // leaving GPose is the clear that matters — the slots are holding
-        // handles into a session that no longer exists, so they go with it.
+        // A slot only exists for undo steps. When the history is cleared,
+        // most importantly on leaving GPose, the slots point at objects that
+        // no longer exist, so they are cleared too.
         _history.Cleared += ForgetSlots;
     }
 
@@ -139,8 +139,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     // ── history identity ─────────────────────────────────────────────────
 
-    // History alone may resolve an old wrapper to its successor. Public IDs
-    // and acquisition receipts remain expired after release.
+    // Only undo and redo may follow an old object to the copy that replaced
+    // it. Ids handed out elsewhere stay invalid once the object is gone.
     ILight? IEntityHistoryResolver<ILight>.Resolve(ILight light) => _lightOwner.CurrentLight(light);
 
     IActor? IEntityHistoryResolver<IActor>.Resolve(IActor actor) => _actorOwner.Resolve(actor);
@@ -193,8 +193,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     // ── actors ───────────────────────────────────────────────────────────
 
-    /// <summary>Records one actor spawn. <paramref name="spawn"/> must be
-    /// re-runnable: it is the redo.</summary>
+    /// <summary>Records one actor spawn as an undo step. <paramref name="spawn"/>
+    /// must be safe to run again, because redo runs it.</summary>
     public IActor? SpawnActor(string description, Func<IActor?> spawn, IActor? source = null, string? name = null) =>
         _actorOwner.SpawnActor(description, spawn, source, name);
 
@@ -207,19 +207,21 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         _actorOwner.SpawnActorWithPose(description, spawn, source);
 
     /// <summary>
-    /// Removes an owned actor through the shared state capture, regardless of
-    /// whether it came from a scene file or its creation entry still exists.
+    /// Removes an actor Poser spawned, saving its state first so undo can
+    /// bring it back. This works whether the actor came from a scene file or
+    /// was added by hand, and whether or not the undo step that added it still
+    /// exists.
     /// </summary>
     public bool DespawnActor(IActor actor) => _actorOwner.DespawnActor(actor, out _);
 
-    /// <summary>As <see cref="DespawnActor(IActor)"/>; <paramref name="note"/> tells the
-    /// user what the recorded undo cannot bring back.</summary>
+    /// <summary>As <see cref="DespawnActor(IActor)"/>; <paramref name="note"/> says
+    /// what undo cannot bring back.</summary>
     public bool DespawnActor(IActor actor, out string? note) =>
         _actorOwner.DespawnActor(actor, out note);
 
     // ── props ────────────────────────────────────────────────────────────
 
-    /// <summary>Brio's default prop, for the row that names no model.</summary>
+    /// <summary>Spawns Brio's default prop, for when no model was chosen.</summary>
     public object? SpawnProp() => _propOwner.SpawnProp();
 
     public object? SpawnProp(PropModel model) => _propOwner.SpawnProp(model);
@@ -247,25 +249,24 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     internal void AbortOverlayGroup(OverlayLifecycleOwner.PendingOverlayGroup pending) =>
         _overlayOwner.AbortOverlayGroup(pending);
 
-    /// <summary>Records one overlay node the user added, from a complete
-    /// document: a fresh create, a duplicate of the selected node, or a
-    /// restored one.</summary>
+    /// <summary>Adds one overlay as an undo step, from its full state: a new
+    /// one, a duplicate of the selected one, or a restored one.</summary>
     public object? SpawnOverlay(OverlayNodeState state) => _overlayOwner.SpawnOverlay(state);
 
     public void DestroyOverlay(object overlay) => _overlayOwner.DestroyOverlay(overlay);
 
     // ── adopted world objects ────────────────────────────────────────────
 
-    /// <summary>Takes one BG object into the scene, journalled. Undoing it
-    /// RELEASES the claim, which puts the object back exactly where the map
-    /// stood it — an adoption's inverse is never a destroy.</summary>
+    /// <summary>Takes over one map object as an undo step. Undoing it gives
+    /// the object back to the map, exactly where the map placed it; it never
+    /// destroys the object.</summary>
     internal object? AdoptWorldObject(nint address)
         => _worldObjectOwner.Adopt(address);
 
     internal void RecordAcquiredWorldObject(IWorldObject worldObject) =>
         _worldObjectOwner.AppendAcquisition(worldObject);
 
-    /// <summary>Copies a world asset's authored properties with the next display name.</summary>
+    /// <summary>Copies a world object's settings into a new object, with the next free name.</summary>
     public IWorldObject? CloneWorldObject(IWorldObject source) =>
         _worldObjectOwner.Clone(source);
 
@@ -273,13 +274,13 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
     public object? SpawnWorldObject(string path, Transform placement, bool visible) =>
         _worldObjectOwner.Spawn(path, placement, visible);
 
-    /// <summary>Gives one adopted object back to the map, journalled. The
-    /// lifecycle owner captures a confirmed release before appending its entry.</summary>
+    /// <summary>Gives one taken-over object back to the map as an undo step.
+    /// The step is recorded only once the object has really been given back.</summary>
     internal bool ReleaseWorldObject(object worldObject) =>
         _worldObjectOwner.Release(worldObject);
 
-    /// <summary>Compatibility entry point for handle-based callers. Each entity
-    /// keeps its normal removal owner, and only confirmed removals are counted.</summary>
+    /// <summary>Removes the given things as one undo step. Each is removed the
+    /// usual way for its kind, and only those really removed are counted.</summary>
     public int DestroySelection(
         IReadOnlyList<IActor>? actors = null,
         IReadOnlyList<object>? props = null,

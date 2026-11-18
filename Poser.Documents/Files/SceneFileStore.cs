@@ -83,12 +83,12 @@ public sealed class SceneReadOutcome
         new(null, failure, Array.Empty<SceneEntityRefusal>());
 }
 
-/// <summary>An opened appearance payload — the caller owns the stream — or
-/// why it could not be opened.</summary>
+/// <summary>A packed appearance opened for reading, or why it could not be
+/// opened. The caller closes the stream.</summary>
 public sealed record SceneAppearanceOpen(Stream? Stream, string? Error);
 
-/// <summary>Typed status for one scene entry in a listing. The codec
-/// validated the complete document before reporting <see cref="Valid"/>.</summary>
+/// <summary>Whether a scene file in the library can be loaded.
+/// <see cref="Valid"/> means the whole file was read and checked.</summary>
 public enum SceneEntryStatus
 {
     Valid,
@@ -97,41 +97,41 @@ public enum SceneEntryStatus
     Oversized,
 }
 
-/// <summary>Bounded typed metadata observation for one scene file, for
-/// recent-scene listings. Reuses the full codec — a listing can never
-/// advertise a scene the load would reject.</summary>
+/// <summary>What the library shows about one scene file. The file gets the
+/// same full check as a load, so the library never offers a scene that would
+/// fail to load.</summary>
 public sealed class SceneMetadataReadOutcome
 {
     public SceneEntryStatus Status { get; }
     public bool Succeeded => Status == SceneEntryStatus.Valid;
     public Guid SceneId { get; }
 
-    /// <summary>Who authored the scene, when the document names anyone. Poser's
-    /// own capture names nobody, so this is normally absent — it is NOT the
-    /// description under another name.</summary>
+    /// <summary>Who made the scene, if the file names anyone. Poser does not
+    /// fill this in when saving, so it is usually absent. It is not the
+    /// description.</summary>
     public string? Author { get; }
 
     public string? Description { get; }
     public DateTimeOffset? SavedAt { get; }
 
-    /// <summary>Where the scene was captured, as the document recorded it.
-    /// Absent on a file written before scenes recorded it — a listing groups
-    /// those by their day alone rather than inventing a place for them.
+    /// <summary>Where the scene was saved, as the file records it. Absent in
+    /// older files; the library groups those by day only.
     /// </summary>
     public string? PlaceName { get; }
     public uint TerritoryId { get; }
 
-    /// <summary>The captured weather's display name; empty when the document
-    /// records no environment or predates the field.</summary>
+    /// <summary>The saved weather's name; empty when the file has no
+    /// environment or is older than this field.</summary>
     public string WeatherName { get; } = string.Empty;
 
-    /// <summary>The captured weather's id; 0 when the document records no
-    /// environment. A viewer with the weather sheet resolves this when the
-    /// name above is empty.</summary>
+    /// <summary>The saved weather's id; 0 when the file has no environment.
+    /// When the name is empty, the interface looks the name up from this
+    /// id.</summary>
     public uint WeatherId { get; }
 
-    /// <summary>Which placement anchors the document records — what decides
-    /// the placement choices a viewer may offer for it.</summary>
+    /// <summary>Whether the file records where the camera and the actor
+    /// stood when saving. These decide which placement choices are offered
+    /// for it.</summary>
     public bool HasCameraAnchor { get; }
     public bool HasActorAnchor { get; }
 
@@ -159,10 +159,8 @@ public sealed class SceneMetadataReadOutcome
     /// <summary>The Poser install that saved the scene; null for older scenes.</summary>
     public Guid? SavedBy { get; }
 
-    /// <summary>The document's own format name and version, read back rather
-    /// than assumed. A viewer states them beside the file so a scene's format
-    /// identity is visible BEFORE a load, which is the point of a versioned
-    /// format.</summary>
+    /// <summary>The file's format name and version, as read from the file.
+    /// The library shows them so the format is visible before loading.</summary>
     public string? TypeName { get; }
 
     public int FileVersion { get; }
@@ -222,8 +220,9 @@ public sealed class SceneWriteOutcome
     public bool Succeeded { get; }
     public SceneStoreFailure? Failure { get; }
 
-    /// <summary>Surviving temp/backup files after a failed or uncertain
-    /// commit; never empty-handed about bytes that may still matter.</summary>
+    /// <summary>Temporary and backup files left behind when a save failed or
+    /// may not have finished. They are reported so data that may still
+    /// matter can be found.</summary>
     public IReadOnlyList<string> RecoveryEvidencePaths { get; }
 
     private SceneWriteOutcome(
@@ -253,16 +252,16 @@ public sealed class SceneWriteOutcome
 }
 
 /// <summary>
-/// Typed scene codec and same-directory atomic store — the ordinary pose
-/// store's discipline applied to the whole-scene document. Operations are
-/// synchronous and stateless; callers must not mutate a scene during
-/// <see cref="Write"/>, and concurrent writers get last-successful-writer
-/// filesystem semantics. Every read validates the complete bounded document;
-/// every write validates and serializes completely, durably flushes a unique
-/// same-directory temp, reopens and validates it, replaces/moves atomically
-/// with a unique backup for existing destinations, confirms the committed
-/// bytes before deleting anything, and reports every surviving temp/backup as
-/// recovery evidence.
+/// Reads and writes scene files. A scene file is a zip archive that holds
+/// the scene's JSON and any packed appearances. Every read checks the whole
+/// file.
+///
+/// A save writes a temporary file in the same folder, reads it back to check
+/// it, then swaps it into place. A file it replaces is kept as a backup until
+/// the new one is confirmed. If something goes wrong, the leftover temporary
+/// and backup files are reported. Do not change a scene while
+/// <see cref="Write"/> runs; when two saves write the same file, the last one
+/// to finish wins.
 /// </summary>
 public sealed class SceneFileStore
 {
@@ -280,26 +279,25 @@ public sealed class SceneFileStore
         _fileSystem = fileSystem;
     }
 
-    /// <summary>The container entry holding the scene document itself.
+    /// <summary>The entry in the zip that holds the scene's JSON.
     /// </summary>
     public const string DocumentEntry = "scene.json";
 
-    /// <summary>The container folder holding appearance payloads, one entry
-    /// per distinct package, named by its content hash.</summary>
+    /// <summary>The folder in the zip that holds packed appearances, one
+    /// entry per different MCDF, named by its content hash.</summary>
     public const string AppearanceEntryPrefix = "appearance/";
 
-    /// <summary>The entry name a payload with this digest is stored under.
-    /// Content-addressed, so two actors wearing the same package share one
-    /// entry instead of writing it twice.</summary>
+    /// <summary>The entry name for an MCDF with this hash. Two actors wearing
+    /// the same MCDF share one entry instead of storing it twice.</summary>
     public static string AppearanceEntry(string contentHash) =>
         $"{AppearanceEntryPrefix}{contentHash.ToUpperInvariant()}.mcdf";
 
     /// <summary>
-    /// Opens ONE appearance payload as a stream. The caller owns the returned
-    /// stream and copies it wherever it needs the bytes — they are never
-    /// materialized here, because a real package is hundreds of megabytes.
-    /// Otherwise the reason: a missing entry and an unreadable container are
-    /// different refusals, and the user is told which.
+    /// Opens one packed appearance for reading. The caller closes the stream
+    /// and copies the data where it needs it. It is never read into memory
+    /// here, because a real MCDF can be hundreds of megabytes. When it cannot
+    /// be opened, the reason says whether the entry is missing or the scene
+    /// file could not be read.
     /// </summary>
     public SceneAppearanceOpen OpenAppearance(string scenePath, string entryName)
     {
@@ -314,8 +312,8 @@ public sealed class SceneFileStore
                 archive.Dispose();
                 return new(null, "the scene holds no such payload.");
             }
-            // The entry stream owns the archive: disposing what the caller was
-            // handed closes the container behind it.
+            // Closing the stream handed to the caller also closes the scene
+            // file.
             return new(new EntryStream(archive, entry.Open()), null);
         }
         catch (Exception ex)
@@ -379,10 +377,10 @@ public sealed class SceneFileStore
                     path);
             }
 
-            // Light and camera entries were once bare JSON documents. A
-            // .xivl/.xivc that is not a container (no "PK" signature) is read
-            // as that document and wrapped as the one-entity entry every
-            // writer now produces; nothing writes the old form any more.
+            // Older .xivl and .xivc files are plain JSON, not zip archives (a
+            // zip starts with "PK"). Such a file is read as a light or camera
+            // and wrapped as a scene with that one entity. Poser only writes
+            // the zip form.
             if (IsLegacyEntryExtension(path))
             {
                 int signature = stream.ReadByte();
@@ -417,8 +415,8 @@ public sealed class SceneFileStore
         }
         catch (InvalidDataException)
         {
-            // Not a container at all. Every scene Poser has ever written is
-            // one, so this is simply not a scene file.
+            // Not a zip archive. Every scene Poser writes is one, so this is
+            // not a scene file.
             return ValidationReadFailure(
                 SceneFileValidationFailure.Create(
                     SceneFileValidationFailureKind.Document,
@@ -434,9 +432,9 @@ public sealed class SceneFileStore
         }
     }
 
-    /// <summary>Reads and fully validates the document, returning only its
-    /// header metadata and counts, with a typed Valid/Corrupt/Future/Oversized
-    /// status for listings.</summary>
+    /// <summary>Reads and fully checks the file, and returns only what the
+    /// library shows about it, including whether it is valid, damaged, too
+    /// new or too large.</summary>
     public SceneMetadataReadOutcome ReadMetadata(string path)
     {
         var read = Read(path);
@@ -447,8 +445,8 @@ public sealed class SceneFileStore
 
     public SceneWriteOutcome Write(SceneFile scene, string destination)
     {
-        // The bytes are this build's shape whatever version the document was
-        // read at, so they carry this build's version (docs/features/scenes.md).
+        // The file is written in this version's format, whatever version it
+        // was read from, so it gets this version's number.
         scene.FileVersion = SceneFile.CurrentVersion;
         var validation = SceneFileValidation.Validate(scene);
         if (!validation.Succeeded)
@@ -492,9 +490,6 @@ public sealed class SceneFileStore
             using (var entry = document.Open())
                 entry.Write(bytes);
 
-            // Payloads are STREAMED in, one entry per distinct package,
-            // stored rather than compressed: an MCDF is already LZ4 inside,
-            // so deflating it costs minutes and saves nothing.
             if (WriteAppearancePayloads(scene, archive) is { } payloadError)
                 throw new AtomicWriteRefusedException(payloadError);
         }, new AtomicWriteOptions
@@ -524,13 +519,12 @@ public sealed class SceneFileStore
     };
 
     /// <summary>
-    /// Streams every portable payload into the container, one entry per
-    /// DISTINCT package: two actors wearing the same file share one entry, so
-    /// a scene never writes the same half-gigabyte twice.
+    /// Copies every packed appearance into the zip, piece by piece, one entry
+    /// per different MCDF: two actors wearing the same file share one entry.
     ///
-    /// <para>Stored, not deflated — an MCDF is already compressed, so
-    /// deflating it costs minutes of CPU for no bytes. Returns null on
-    /// success, else what went wrong.</para>
+    /// <para>Entries are stored without compression. An MCDF is already
+    /// compressed, so compressing it again takes minutes and saves nothing.
+    /// Returns null on success, or what went wrong.</para>
     /// </summary>
     private string? WriteAppearancePayloads(
         SceneFile scene, ZipArchive archive)
@@ -611,9 +605,9 @@ public sealed class SceneFileStore
             || extension.Equals(SceneFile.CameraEntryExtension, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Wraps a bare light or camera document as its one-entity
-    /// entry. The wrapped camera is a created one — live, not the default —
-    /// which is what the old loader made of it.</summary>
+    /// <summary>Wraps an old plain-JSON light or camera file as a scene with
+    /// that one entity. The camera loads as a new live camera, not the
+    /// default one, as older Poser versions loaded it.</summary>
     private static SceneReadOutcome DecodeLegacyEntry(Stream stream, string path)
     {
         if (stream.Length > SceneFileLimits.MaxDocumentBytes)

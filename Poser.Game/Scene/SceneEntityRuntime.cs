@@ -53,8 +53,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     private sealed record BorrowedBaseline(WorldObjectState State);
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SceneEntityHandle, BorrowedBaseline> _borrowedBaselines = new();
 
-    /// <summary>The selection, so a destroy path can never leave it pointing
-    /// at something that no longer exists.</summary>
+    /// <summary>The selection, so removing something never leaves it
+    /// selected.</summary>
     private readonly Poser.Application.Selection.SelectionSession _selection;
 
     private readonly IPluginLog _log;
@@ -106,10 +106,11 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
 
     public SceneEntityHandle? SpawnActor(SceneActor data, out string? detail)
     {
-        // Set the model inside the spawn's deferred-draw window. A second
-        // SetModelCharaId redraw races the next-tick collection assignment.
-        // A saved catalog kind respawns through the catalog, as history's
-        // recreate does, so a minion comes back as a minion.
+        // Set the model while spawning, before the actor is first drawn.
+        // Changing it afterwards redraws the actor while its collection is
+        // being set on the next frame, and the two collide. A saved minion,
+        // mount or ornament is spawned from the catalog, as undo does, so it
+        // comes back as what it was.
         string? refusal = null;
         var actor = data.SpawnedKind is { } kind
             ? _spawns.SpawnCatalogActor(new(kind, 0, "", "", 0, data.ModelCharaId))
@@ -194,8 +195,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
                     display.X / 2f, display.Y / 2f),
             };
         }
-        // An overlay entirely outside the screen exists but shows nothing —
-        // the restore says so instead of leaving the user hunting for it.
+        // An overlay entirely off screen exists but shows nothing. Say so,
+        // rather than leave someone searching for it.
         var size = Poser.Domain.Presentation.OverlayNodeGeometry
             .DesignSize(document.Kind) * document.Scale;
         if (document.Collider == null && display.X > 0f && display.Y > 0f &&
@@ -258,9 +259,9 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         IReadOnlyList<SceneEntityHandle> worldObjects, TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
-        // Framework thread. With keep, the pending ones are kept in the SAME
-        // framework action that names them: no timed release can land
-        // between the load naming one and keeping it.
+        // Runs on the game's main thread. With keep set, objects still
+        // loading are kept in the same step that finds them, so none can be
+        // let go on a timer between being found and being kept.
         List<SceneEntityHandle> Loading(bool keep)
         {
             var pending = new List<SceneEntityHandle>();
@@ -288,7 +289,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         _handles.Remove<IWorldObject>(token, SceneEntityKind.WorldObject, _history.WorldObjects.Resolve, entity =>
         {
             var world = (WorldObjects.AdoptedWorldObject)entity;
-            // Undo a repeated load by restoring the earlier load's edits and claim.
+            // The object was already taken over before this load: put back its
+            // earlier state instead of letting it go.
             if (_borrowedBaselines.TryGetValue(token, out var baseline))
             {
                 _worldObjects.RestoreState(world, baseline.State);
@@ -306,9 +308,9 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     {
         var document = data.Light!;
 
-        // Resolve the exact attachment bone BEFORE any native spawn — a
-        // light whose stated parent bone is missing is refused whole, never
-        // spawned detached into world space.
+        // Find the bone the light is attached to before spawning anything.
+        // If the bone is missing, the light is not restored at all, rather
+        // than spawned loose in the world.
         IBone? bone = null;
         if (data.Attachment is { } attachment)
         {
@@ -344,8 +346,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         if (bone is not null)
             light.AttachedBone = bone;
 
-        // A gobo the running client no longer ships degrades with a named
-        // detail; the light itself is restored.
+        // If the game no longer has the saved gobo, the light is still
+        // restored and the message names the gobo.
         detail = null;
         if (!string.IsNullOrEmpty(document.Gobo))
         {
@@ -369,9 +371,10 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     public SceneEntityHandle? DefaultCameraToken() => DefaultCamera is { } camera
         ? _handles.Track(SceneEntityKind.Camera, camera) : null;
 
-    /// <summary>The default camera's document AND what the load can change
-    /// beside it: the followed actor and which camera is live. A document
-    /// alone left the default camera following a rolled-back actor.</summary>
+    /// <summary>The default camera's settings, plus what a load can change
+    /// besides them: the actor it follows and which camera is live. Without
+    /// these, undoing a load could leave the default camera following an
+    /// actor that was removed.</summary>
     public SceneCameraBaseline CaptureDefaultCameraState()
     {
         var camera = DefaultCamera;
@@ -395,7 +398,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
 
     public SceneEntityHandle? CreateCamera(SceneCamera data, out string? detail)
     {
-        // SceneWorkflow activates the saved view after every camera and target is restored.
+        // The load makes the saved camera live only after every camera and target is restored.
         var camera = _cameras.CreateCamera(data.Camera!.Kind, makeLive: false);
         if (camera is null)
         {
@@ -415,8 +418,9 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         if (target is null)
             return "The session has no default camera.";
         var exactActor = _handles.Require<IActor>(targetActor, SceneEntityKind.Actor);
-        // Validate the exact generation before SetTargetActor can touch any
-        // native target state; a replacement occupant is never rebound.
+        // Check it is still the same actor before changing the camera's
+        // target. If another actor has taken its place, the camera does not
+        // follow that one.
         if (_bindings.GetActorId(exactActor) is not { } targetId ||
             _bindings.Resolve(targetId) is not
                 { Success: true, Value: { } resolved } ||
@@ -442,8 +446,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         if (DefaultCamera is not { } camera)
             return;
         Cameras.CameraDocument.Apply(baseline.Camera, camera);
-        // The pre-load target only if it is still the same live actor; the
-        // load's own target never survives its rollback.
+        // Follow the actor from before the load only if it is still the same
+        // actor. The actor the load set is never kept once the load is undone.
         if (_handles.Resolve<IActor>(baseline.Target, SceneEntityKind.Actor) is { } actor
             && _bindings.GetActorId(actor) is { } id
             && _cameras.SetTargetActor(camera, actor, id, baseline.TargetName))
@@ -457,9 +461,10 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
 
     // ── rollback ─────────────────────────────────────────────────────────
 
-    /// <summary>A load's rollback and undo: the same pre-delete cleanup a
-    /// clear runs, so gaze and appearance ownership go with the actor rather
-    /// than being reconciled later by name.</summary>
+    /// <summary>Removes an actor when a load fails or is undone. It runs the
+    /// same cleanup as clearing the scene, so Poser's gaze and appearance
+    /// changes for the actor go with it instead of being matched up later by
+    /// name.</summary>
     public void DestroyActor(SceneEntityHandle actor) => _handles.Remove<IActor>(
         actor, SceneEntityKind.Actor, _history.Actors.Resolve, entity =>
     {

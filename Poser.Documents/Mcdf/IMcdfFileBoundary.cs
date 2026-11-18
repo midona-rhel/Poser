@@ -3,33 +3,34 @@ using Poser.Domain.Integration;
 namespace Poser.Documents.Mcdf;
 
 /// <summary>
-/// The MCDF v1 file boundary: package reading with validation/extraction,
-/// and atomic package writing. Pure file work — no IPC, no actor state —
-/// runs off-thread and reports progress cooperatively.
+/// Reads, unpacks and writes MCDF files. It only works with files: it does
+/// not talk to other plugins or touch actors, so it runs in the background
+/// and reports its progress as it goes.
 /// </summary>
 public interface IMcdfFileBoundary
 {
-    /// <summary>Returns the display name for a user-selected MCDF path.</summary>
+    /// <summary>The name to show for a chosen MCDF file.</summary>
     string GetFileName(string path);
 
-    /// <summary>Allocates and creates one unique caller-owned extraction
-    /// directory. The caller registers the returned path before reading.</summary>
+    /// <summary>Creates a new, empty folder to unpack one MCDF into. The
+    /// caller records the folder before unpacking, so it can still delete it
+    /// if unpacking fails.</summary>
     IntegrationValue<McdfOperationDirectory> CreateOperationDirectory();
 
-    /// <summary>Inspects Penumbra's raw resource map. All filesystem policy
-    /// (canonicalization, readability, metadata, and real-root containment)
-    /// is completed before observations cross into the application.</summary>
+    /// <summary>Checks the files Penumbra says an actor is using before they
+    /// go into an MCDF: each file must be readable and lie inside Penumbra's
+    /// mod folder. All file checks happen here, and the caller only gets the
+    /// results.</summary>
     IntegrationValue<McdfExportInspection> InspectExportCandidates(
         string modRoot,
         IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
         CancellationToken cancellation);
 
     /// <summary>
-    /// Reads the package HEADER only — magic, version, and the declaration
-    /// JSON — and stops before the first payload byte. No operation
-    /// directory, nothing written, nothing owned: this is the read a surface
-    /// may make about a file the user merely highlighted, which
-    /// <see cref="ReadPackage"/> can never be.
+    /// Reads only the start of the file, which says what the MCDF holds, and
+    /// stops before the packed mod files. It creates no folder and writes
+    /// nothing, so it is safe to call for a file that is only highlighted in
+    /// a list. <see cref="ReadPackage"/> is not.
     /// </summary>
     IntegrationValue<McdfSummary> ReadSummary(string path);
 
@@ -37,11 +38,9 @@ public interface IMcdfFileBoundary
     IntegrationValue<McdfLook> ReadLook(string path) => McdfReader.ReadLook(path);
 
     /// <summary>
-    /// Reads, validates, and extracts a complete package into the
-    /// CALLER-OWNED operation directory. The boundary never deletes it —
-    /// the caller registered the directory before this call, so a failed
-    /// read leaves a visible, retryable cleanup obligation instead of a
-    /// silently orphaned directory.
+    /// Reads, checks and unpacks a whole MCDF into the given folder. This
+    /// never deletes the folder: the caller recorded it beforehand, so after
+    /// a failed read the caller still knows to delete it.
     /// </summary>
     Task<IntegrationValue<McdfPackage>> ReadPackage(
         string path,
@@ -50,15 +49,16 @@ public interface IMcdfFileBoundary
         Action<McdfProgressStep> progress,
         CancellationToken cancellation);
 
-    /// <summary>Copies already-validated payloads between proven owned directories for in-session history.</summary>
+    /// <summary>Copies an MCDF that was already unpacked and checked into a new folder.
+    /// Undo and redo use this to apply the same MCDF again without reading the file.</summary>
     Task<IntegrationValue<McdfPackage>> CopyPackage(McdfPackage package,
         McdfOperationDirectory source, McdfOperationDirectory destination, CancellationToken cancellation);
 
     /// <summary>
-    /// Writes the complete package to a unique same-directory temporary file,
-    /// flushes and closes the LZ4 stream, then atomically replaces the
-    /// destination. Failure or cancellation removes only that owned temporary
-    /// output and leaves an existing destination untouched.
+    /// Writes the whole MCDF to a temporary file in the destination's folder,
+    /// then swaps it into place in one step. If writing fails or is
+    /// cancelled, only the temporary file is removed, and a file already at
+    /// the destination stays as it was.
     /// </summary>
     Task<IntegrationValue<McdfWriteStats>> WritePackage(
         string destination,
@@ -66,9 +66,8 @@ public interface IMcdfFileBoundary
         Action<McdfProgressStep> progress,
         CancellationToken cancellation);
 
-    /// <summary>Deletes one extraction directory. Idempotent for
-    /// already-deleted directories; a failure is RETURNED so the caller
-    /// keeps directory ownership and can retry — extracted payloads must
-    /// never be released while something might still reference them.</summary>
+    /// <summary>Deletes one unpack folder. A folder that is already gone counts
+    /// as deleted. A failure is returned, so the caller keeps the folder on its
+    /// list and can try again later.</summary>
     IntegrationResult DeleteOperationDirectory(McdfOperationDirectory operationDirectory);
 }

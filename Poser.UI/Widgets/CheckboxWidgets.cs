@@ -10,16 +10,16 @@ public static class CheckboxWidgets
 {
     public static Vector2 MeasureCheckbox(ControlStyle style = default)
     {
-        // Square by default: the box's content width is its resolved side.
+        // Square by default: the box is as wide as it is tall.
         float side = ControlSizing.Height(
             style.Height, ActiveTheme.Controls.CheckboxSize);
         return ControlSizing.Resolve(style, side, side).Size;
     }
 
-    /// <param name="partial">Tristate paint: an unchecked box showing a
-    /// filled dot — "some, not all" for a checkbox that aggregates children
-    /// (the bone-filter group headers). Clicking still toggles through
-    /// <paramref name="onChange"/> with the plain boolean flip.</param>
+    /// <param name="partial">Shows an unchecked box with a dot, meaning "some
+    /// but not all", for a checkbox that stands for a group (the bone filter's
+    /// group headers). Clicking still just flips the value through
+    /// <paramref name="onChange"/>.</param>
     public static bool Checkbox(
         string id,
         bool value,
@@ -49,10 +49,9 @@ public static class CheckboxWidgets
     }
 
     /// <summary>
-    /// The box's paint alone — the fill, the unchecked inset ring, the
-    /// Tabler check polyline, the disabled fade, and nothing that reserves
-    /// layout. <paramref name="side"/> is the resolved physical side, the
-    /// leading square of whatever was reserved.
+    /// Draws only the box: the fill, the outline when unchecked, the tick,
+    /// and the faded look when disabled. It takes up no space itself.
+    /// <paramref name="side"/> is the box's size in screen pixels.
     /// </summary>
     private static void PaintCheckboxBox(
         ImDrawListPtr draw, Vector2 boxMin, float side, bool value,
@@ -84,8 +83,7 @@ public static class CheckboxWidgets
                 scale);
             if (partial)
             {
-                // Tristate dot: the primary fill as a centred disc — "some
-                // of this box's children are on".
+                // The dot in the middle says some of the group is on.
                 var dot = ActiveTheme.Chrome.Primary.Fade(opacity);
                 draw.AddCircleFilled(
                     boxMin + new Vector2(side * 0.5f),

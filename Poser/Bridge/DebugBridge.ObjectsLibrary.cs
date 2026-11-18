@@ -54,7 +54,8 @@ public sealed partial class DebugBridge
     }
 
     /// <summary>Dyes or tints a prop or world object through the same calls as its panel:
-    /// ?object=ID&amp;stain=N[&amp;stain2=N] or &amp;tint=R,G,B (0 to 1). Without either it reads.</summary>
+    /// ?object=ID&amp;stain=N[&amp;stain2=N] or &amp;tint=R,G,B (0 to 1). Without either it reads.
+    /// ?createprop spawns a prop; &amp;tocamera moves the object to the camera.</summary>
     private object ObjectDyeCommand(Dictionary<string, string> query)
     {
         if (query.ContainsKey("createprop"))
@@ -285,8 +286,8 @@ public sealed partial class DebugBridge
                 return new { accepted = false, outcome = "Refused", reason = "Unknown placement mode.", path };
             var before = ParentProbeEntities().Select(entity => entity.Id.ToString()).ToHashSet();
             var result = BridgeLibraryActions.SpawnEntry(path, kind, placement);
-            // Loading is asynchronous. The caller polls /scene and diffs /parenting;
-            // IDs cannot truthfully be reported before the production load commits.
+            // The load finishes later, so the new ids are not known yet. The caller
+            // polls /scene and compares /parenting with the ids listed here.
             return new { accepted = result.Success, path, kind = kind.ToString(),
                 outcome = result.Success ? "Pending" : "Refused", reason = result.Detail,
                 placement = placement.ToString(),
