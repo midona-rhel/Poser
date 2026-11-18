@@ -263,9 +263,8 @@ Furniture comes from the **Furniture** tab of the spawn browser.
 
 - **Dye** colours it. A custom tint wins over a dye. Choosing a dye clears the
   tint in the same undo step.
-- Dye and tint only colour the parts the game lets you dye. On the Glade
-  Partition Door, for example, the door takes the colour and the wall around it
-  does not. Brio works the same way.
+- Dye and tint only colour the parts the game lets you dye. On a piece where only
+  some parts are dyeable, the rest keeps its own colour. Brio works the same way.
 - **Night** switches the furniture's own day and night look. What changes depends
   on the piece.
 - A piece with built-in lights has a switch for each (**Light 1**, **Light 2** and
