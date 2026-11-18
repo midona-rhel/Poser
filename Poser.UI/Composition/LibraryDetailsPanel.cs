@@ -26,7 +26,8 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>The info rail and the objects rail beside the grid.</summary>
-internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
+internal sealed class LibraryDetailsPanel(EnvironmentControl _environment,
+    Poser.Application.Settings.ConfigurationService _configuration)
 {
     private string? _detailsPath;
     private SceneMetadataReadOutcome? _detailsMetadata;
@@ -169,7 +170,7 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
                             _detailsRows.Add(("Place", metadata.PlaceName!));
                         else if (metadata.TerritoryId != 0)
                             _detailsRows.Add(("Place", $"Territory {metadata.TerritoryId}"));
-                        if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Group)
+                        if (kind == PoseLibraryEntryKind.Group)
                             AppendContentsRows(metadata, _detailsRows);
                         if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Environment)
                         {
@@ -184,6 +185,8 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
                             if (weather.Length > 0)
                                 _detailsRows.Add(("Weather", weather));
                         }
+                        if (kind == PoseLibraryEntryKind.Scene)
+                            AppendSceneRows(metadata, path, _detailsRows);
                         if (!string.IsNullOrWhiteSpace(metadata.Description))
                             _detailsRows.Add(("Description", metadata.Description));
                         if (metadata.SavedAt is { } saved)
@@ -204,6 +207,33 @@ internal sealed class LibraryDetailsPanel(EnvironmentControl _environment)
         {
             _detailsRows.Add(("Details", "could not be read"));
         }
+    }
+
+    /// <summary>What a scene holds, every count shown even when it is zero, and how its
+    /// actors' looks will load.</summary>
+    private void AppendSceneRows(SceneMetadataReadOutcome scene, string path,
+        List<(string Label, string Value)> rows)
+    {
+        if (scene.MinuteOfDay is { } minute)
+            rows.Add(("Time of day", $"{minute / 60:00}:{minute % 60:00}"));
+        string Count(int value) => value.ToString(CultureInfo.InvariantCulture);
+        rows.Add(("Actors", Count(scene.ActorCount)));
+        rows.Add(("MCDFs", Count(scene.McdfCount)));
+        // Scene appearances: the actors whose saved look is not an MCDF.
+        rows.Add(("Appearances", Count(scene.SceneAppearanceCount)));
+        rows.Add(("Objects", Count(scene.PropCount)));
+        rows.Add(("World objects", Count(scene.WorldObjectCount)));
+        rows.Add(("Lights", Count(scene.LightCount)));
+        rows.Add(("Cameras", Count(scene.CameraCount)));
+        rows.Add(("Overlays", Count(scene.OverlayCount)));
+        rows.Add(("Groups", Count(scene.GroupCount)));
+        rows.Add(("Animation", scene.AnimationSaved ? "Saved" : "Not saved"));
+        // Decides whether scene appearances load editable or as MCDFs.
+        rows.Add(("Saved on", scene.SavedBy is not { } savedBy || savedBy == _configuration.Config.Library.InstallId
+            ? "This computer"
+            : "Another computer"));
+        rows.Add(("Size", (new System.IO.FileInfo(path).Length / 1048576.0)
+            .ToString("0.#", CultureInfo.InvariantCulture) + " MB"));
     }
 
     /// <summary>The entry's contents as one row per kind — "Actors 2",

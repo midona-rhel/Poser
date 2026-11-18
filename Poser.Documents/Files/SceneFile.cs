@@ -115,6 +115,20 @@ public class SceneFile
     /// <summary>Stable logical scene identity; never empty in a valid file.</summary>
     public Guid SceneId { get; set; }
 
+    /// <summary>The name Poser gives an actor's scene appearance when it packs it while
+    /// saving. Older scenes kept this name when an earlier load had applied it as an MCDF.</summary>
+    public const string PackedAppearancePrefix = "poser-scene-appearance-";
+
+    /// <summary>True when the actor's saved look is an MCDF that was loaded onto the actor,
+    /// false when it is the actor's scene appearance or when nothing is saved. Older scenes
+    /// did not record it: a look named after its actor, or named like Poser's own packing,
+    /// counts as a scene appearance there.</summary>
+    public bool HasLoadedMcdf(SceneActor actor) => actor.Mcdf is { } packed
+        && (SavedBy is not null
+            ? packed.LoadedOnto
+            : !string.Equals(packed.FileName, actor.Name + ".mcdf", StringComparison.OrdinalIgnoreCase)
+                && !packed.FileName.StartsWith(PackedAppearancePrefix, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>The Poser install that saved the scene. Absent in older scenes. See
     /// <c>SceneAppearanceRule</c>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

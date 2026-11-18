@@ -141,6 +141,23 @@ public sealed class SceneMetadataReadOutcome
     public int CameraCount { get; }
     public int OverlayCount { get; }
     public int WorldObjectCount { get; }
+    public int GroupCount { get; }
+
+    /// <summary>Actors whose saved look is an MCDF loaded onto them.</summary>
+    public int McdfCount { get; }
+
+    /// <summary>Actors whose scene appearance is saved in the file.</summary>
+    public int SceneAppearanceCount { get; }
+
+    /// <summary>The saved time of day in minutes after midnight; null when the scene
+    /// saved no environment.</summary>
+    public int? MinuteOfDay { get; }
+
+    /// <summary>Whether any actor's animation is saved.</summary>
+    public bool AnimationSaved { get; }
+
+    /// <summary>The Poser install that saved the scene; null for older scenes.</summary>
+    public Guid? SavedBy { get; }
 
     /// <summary>The document's own format name and version, read back rather
     /// than assumed. A viewer states them beside the file so a scene's format
@@ -177,6 +194,12 @@ public sealed class SceneMetadataReadOutcome
         CameraCount = scene.Cameras.Count;
         OverlayCount = scene.Overlays?.Count ?? 0;
         WorldObjectCount = scene.WorldObjects?.Count ?? 0;
+        GroupCount = scene.Groups?.Count ?? 0;
+        McdfCount = scene.Actors.Count(scene.HasLoadedMcdf);
+        SceneAppearanceCount = scene.Actors.Count(actor => actor.Mcdf is not null && !scene.HasLoadedMcdf(actor));
+        MinuteOfDay = scene.Environment?.MinuteOfDay;
+        AnimationSaved = scene.Actors.Any(actor => actor.Animation is not null);
+        SavedBy = scene.SavedBy;
     }
 
     internal static SceneMetadataReadOutcome Success(SceneFile scene) =>

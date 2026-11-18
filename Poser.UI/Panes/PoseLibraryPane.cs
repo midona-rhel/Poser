@@ -330,7 +330,7 @@ public sealed partial class PoseLibraryPane
         _imports = imports;
         _libraryScene = libraryScene;
         _scenes = scenes;
-        _details = new(environment);
+        _details = new(environment, config);
         _selection = selection;
         _scene = scene;
         _mcdf = mcdf;

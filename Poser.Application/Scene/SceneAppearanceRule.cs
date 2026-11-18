@@ -17,31 +17,22 @@ namespace Poser.Application.Scene;
 /// install's mods, so its scene appearances load as MCDFs, locked.</item>
 /// </list>
 ///
-/// Scenes saved before this rule did not record who saved them or which packed looks
-/// were MCDFs. They count as yours, and a packed look named after its actor, or named
-/// like Poser's own packing, counts as a scene appearance.
+/// Scenes saved before this rule did not record who saved them or which saved looks
+/// were MCDFs. They count as yours; see <see cref="SceneFile.HasLoadedMcdf"/> for how
+/// their MCDFs are told apart.
 /// </summary>
 public static class SceneAppearanceRule
 {
-    /// <summary>The name Poser gives a look it packs from the actor while saving. Older
-    /// scenes kept this name when an earlier load had put the packed look on as an MCDF.</summary>
-    public const string PackedPrefix = "poser-scene-appearance-";
+    public const string PackedPrefix = SceneFile.PackedAppearancePrefix;
 
-    /// <summary>True when the actor's packed look should go back on editable: it is a
+    /// <summary>True when the actor's saved look should be applied editable: it is a
     /// scene appearance, and this install saved the scene.</summary>
     public static bool LoadsEditable(SceneFile scene, SceneActor actor, Guid thisInstall)
     {
-        if (actor.Mcdf is not { } packed)
+        if (actor.Mcdf is null)
             return false;
         if (scene.SavedBy is { } savedBy && savedBy != thisInstall)
             return false;
-        bool loadedOnto = scene.SavedBy is null
-            ? !PackedByPoser(actor.Name, packed.FileName)
-            : packed.LoadedOnto;
-        return !loadedOnto;
+        return !scene.HasLoadedMcdf(actor);
     }
-
-    private static bool PackedByPoser(string actorName, string fileName) =>
-        string.Equals(fileName, actorName + ".mcdf", StringComparison.OrdinalIgnoreCase)
-        || fileName.StartsWith(PackedPrefix, StringComparison.OrdinalIgnoreCase);
 }

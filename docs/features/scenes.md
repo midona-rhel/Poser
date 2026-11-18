@@ -65,6 +65,12 @@ Selection tab saves a group. Loading it from the Library adds it to the scene.
 
 Press **Load…** on the Scene page, or open the scene from the Library.
 
+Click a scene in the Library to see what it holds before you load it: where and
+when it was saved, its weather and time of day, how many actors, MCDFs, scene
+appearances, objects, world objects, lights, cameras, overlays and groups it has,
+whether its animation is saved, whether it was saved on this computer, and its
+size.
+
 While a scene loads or saves, Poser's controls are greyed out and do nothing.
 **Cancel** on the progress row stays usable. The same happens while a character
 file is applied or saved.
