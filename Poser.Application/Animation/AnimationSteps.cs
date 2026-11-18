@@ -72,6 +72,7 @@ public sealed class AnimationSteps : IAnimationActions
         // Entering only exposes the existing layers. Leaving keeps the prior
         // layer changes if a later reset fails; Basic is selected only after success.
         _animation.SetAdvanced(actor, enabled);
+        _animation.ForgetGeneral(actor);
         return Outcome.Ok();
     }
 
@@ -86,14 +87,44 @@ public sealed class AnimationSteps : IAnimationActions
     public Outcome SetLoop(ActorId actor, AnimationSlot slot, bool on) =>
         _animation.SetSlotLoop(actor, slot, 0, on);
 
-    public Outcome ResetGeneral(ActorId actor, AnimationSlot slot = AnimationSlot.Base) =>
-        _animation.Tracked(actor, "Reset animation", () =>
+    /// <summary>The General section's Apply. Plays the chosen animation in the
+    /// version for how the actor is now, which for a sitting or mounted actor can
+    /// be another emote on another layer. When the last General animation played
+    /// on a different layer, that layer is reset first, so only one plays.</summary>
+    public Outcome ApplyGeneral(ActorId actor, TimelineEntry chosen, bool playFromStart)
+    {
+        var previous = _animation.GeneralFor(actor)?.Played;
+        if (_animation.PostureEntry(actor, chosen, out var refusal) is not { } entry)
+            return Outcome.Fail(refusal!);
+        if (previous is { } played && played.Slot != entry.Slot)
+        {
+            var cleared = ResetSlot(actor, played.Slot);
+            if (!cleared.Success)
+                return cleared;
+        }
+        var selected = _animation.ChooseSlot(actor, entry.Slot, (ushort)entry.TimelineId);
+        if (!selected.Success)
+            return selected;
+        _animation.SetGeneral(actor, new GeneralChoice(chosen, entry));
+        return Play(actor, entry.Slot, entry, playFromStart);
+    }
+
+    /// <summary>The General section's Reset: puts back what the actor did before
+    /// the first Apply, on the layer the General animation played on.</summary>
+    public Outcome ResetGeneral(ActorId actor)
+    {
+        var slot = _animation.GeneralFor(actor)?.Played?.Slot ?? AnimationSlot.Base;
+        var result = _animation.Tracked(actor, "Reset animation", () =>
         {
             var reset = ResetSlot(actor, slot);
             return reset.Success && _animation.LoopWantedFor(actor, AnimationSlot.Base)
                 ? SetLoop(actor, AnimationSlot.Base, false)
                 : reset;
         });
+        if (result.Success)
+            _animation.ForgetGeneral(actor);
+        return result;
+    }
 
     /// <summary>Restores outgoing advanced layers in their existing order.
     /// A failed restore leaves earlier successes intact and keeps the mode unchanged.</summary>
