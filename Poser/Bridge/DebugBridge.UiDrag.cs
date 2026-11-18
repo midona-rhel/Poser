@@ -14,6 +14,11 @@ public sealed partial class DebugBridge
     {
         public readonly Vector2 From = from, To = to;
         public readonly int Frames = frames;
+        /// <summary>The mouse button held: 0 left, 1 right.</summary>
+        public int Button;
+        /// <summary>Move with the button up and click only at the end, to hover a
+        /// submenu's row before clicking a row inside it.</summary>
+        public bool ClickAtEnd;
         public readonly DateTime Deadline = DateTime.UtcNow.AddSeconds(8);
         public int Step, LastFrame = -1;
     }
@@ -48,7 +53,10 @@ public sealed partial class DebugBridge
             int frames = Math.Clamp(int.Parse(query.GetValueOrDefault("frames", "12")), 2, 60);
             _restoreUiEvents = ImGui.GetIO().AppAcceptingEvents;
             _uiDragTrace.Clear();
-            _uiDrag = new(from, to, frames);
+            _uiDrag = new(from, to, frames) {
+                Button = query.GetValueOrDefault("button") == "1" ? 1 : 0,
+                ClickAtEnd = query.GetValueOrDefault("click") == "end",
+            };
         }
         return Json(new { running = _uiDrag != null, step = _uiDrag?.Step,
             acceptingEvents = ImGui.GetIO().AppAcceptingEvents, trace = _uiDragTrace });
@@ -89,7 +97,9 @@ public sealed partial class DebugBridge
         float progress = Math.Clamp((probe.Step - 3f) / probe.Frames, 0f, 1f);
         var position = Vector2.Lerp(probe.From, probe.To, progress);
         io.AddMousePosEvent(position.X, position.Y);
-        io.AddMouseButtonEvent(0, probe.Step >= 3 && probe.Step <= probe.Frames + 3);
+        io.AddMouseButtonEvent(probe.Button, probe.ClickAtEnd
+            ? probe.Step == probe.Frames + 4
+            : probe.Step >= 3 && probe.Step <= probe.Frames + 3);
         io.SetAppAcceptingEvents(false);
         if (probe.Step++ >= probe.Frames + 6) FinishUiDrag();
     }
@@ -104,7 +114,7 @@ public sealed partial class DebugBridge
         if (_uiDrag == null) return;
         var io = ImGui.GetIO();
         io.SetAppAcceptingEvents(true);
-        io.AddMouseButtonEvent(0, false);
+        io.AddMouseButtonEvent(_uiDrag.Button, false);
         io.SetAppAcceptingEvents(_restoreUiEvents);
         _uiDrag = null;
     }
