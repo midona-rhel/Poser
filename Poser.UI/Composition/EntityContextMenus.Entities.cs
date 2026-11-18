@@ -716,7 +716,6 @@ internal sealed partial class EntityContextMenus
                 anyActor ? () => DuplicateSelection(withPose: true) : null),
             VisibilityItem(anyVisible, () => SetSelectionVisible(!anyVisible)),
             MoveToCameraItem(_selection.Selected),
-            new("Deselect", TablerIcon.X) { OnInvoke = () => _selection.Clear() },
             DestroyItem(DestroySelection),
         };
         if (anyAnimated)
@@ -734,6 +733,7 @@ internal sealed partial class EntityContextMenus
                     global::Poser.Domain.Scene.EntityNames.Next("Group", _groups.All.Select(x => x.Name)),
                     name => _groupSteps.Create(name, _selection.Selected)),
             });
+        items.Add(new("Deselect", TablerIcon.X) { OnInvoke = () => _selection.Clear() });
         DrawMenu("##selection-ctx", ref _selectionCtxOpenRequested, items);
     }
 }
