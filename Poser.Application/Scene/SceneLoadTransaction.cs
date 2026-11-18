@@ -27,6 +27,7 @@ internal sealed class SceneLoadTransaction(
     SceneOperation operation,
     string path,
     SceneLoadOptions options,
+    Guid thisInstall,
     CancellationToken cancellation)
 {
     /// <summary>
@@ -505,8 +506,9 @@ internal sealed class SceneLoadTransaction(
         // Collections are per-actor redraws with no shared slot: all
         // of them run at once, so N actors cost one redraw's wait,
         // not N of them back to back.
+        bool Editable(SceneActor actor) => SceneAppearanceRule.LoadsEditable(_scene, actor, thisInstall);
         var collections = _actors
-            .Where(actor => actor.Mcdf is null && actor.PenumbraCollection is not null)
+            .Where(actor => (actor.Mcdf is null || Editable(actor)) && actor.PenumbraCollection is not null)
             .Select(actor => (actor.Name, Restore: actorRestore.RestoreCollection(
                 _actorTokens[actor.Key], actor, SceneWorkflow.ActorReadyTimeout, cancellation)))
             .ToList();
@@ -522,9 +524,11 @@ internal sealed class SceneLoadTransaction(
                 return Stop.Abort(stop);
             if (actor.Mcdf is null)
                 continue;
-            var appearance = await actorRestore.ImportMcdf(
-                path, _actorTokens[actor.Key], actor,
-                McdfImportTimeout, cancellation);
+            var appearance = Editable(actor)
+                ? await actorRestore.ApplySceneAppearance(path, _actorTokens[actor.Key], actor, cancellation)
+                : await actorRestore.ImportMcdf(
+                    path, _actorTokens[actor.Key], actor,
+                    McdfImportTimeout, cancellation);
             // A missing package is a refusal by name; a package whose
             // bytes moved on is restored WITH the divergence named.
             // Neither is ever a silent skip.

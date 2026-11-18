@@ -378,6 +378,22 @@ public sealed class IntegrationSelectors
     }
 
     /// <summary>
+    /// Puts a saved look on the actor without locking it, as a design: the actor stays
+    /// editable, and Reset gives back the look it had before. Used for a scene appearance.
+    /// </summary>
+    public IntegrationResult ApplySavedLook(ActorId actor, string state, string name)
+    {
+        var owned = OwnLook(actor);
+        if (!owned.Success)
+            return owned;
+        var applied = _glamourer.RestoreGlamourerState(actor, state);
+        if (!applied.Success)
+            return applied;
+        _ownership.Mutate(actor, OverridesFor(actor) with { DesignName = name });
+        return IntegrationResult.Ok();
+    }
+
+    /// <summary>
     /// Saves the current Glamourer state once, before wardrobe or character edits.
     /// Reset can restore that state instead of reverting to the game's appearance.
     /// </summary>

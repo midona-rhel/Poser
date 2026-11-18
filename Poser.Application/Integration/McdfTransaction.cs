@@ -109,6 +109,8 @@ public sealed class McdfTransaction
     public IntegrationValue<McdfSummary> ReadSummary(string path) =>
         _files.ReadSummary(path);
 
+    public IntegrationValue<McdfLook> ReadLook(string path) => _files.ReadLook(path);
+
     // ── Admission ────────────────────────────────────────────────────────
 
     private IntegrationResult? AdmissionGate()

@@ -59,6 +59,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     private readonly ISceneDocumentStore _documents;
     private readonly ISceneWorkflowObserver _observer;
     private readonly ISceneStructure _structure;
+    // This Poser install's id, which decides whether a loaded scene is your own.
+    private readonly Func<Guid> _thisInstall;
     private readonly TransformParenting _parenting;
     private readonly SceneLoadStructure _loadStructure;
     private readonly SceneLoadRollback _rollback;
@@ -81,8 +83,10 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         ISceneWorkflowObserver observer,
         EditHistory history,
         ISceneStructure structure,
-        TransformParenting parenting)
+        TransformParenting parenting,
+        Func<Guid>? thisInstall = null)
     {
+        _thisInstall = thisInstall ?? (() => Guid.Empty);
         _sceneState = sceneState;
         _capture = capture;
         _materializer = materializer;
@@ -269,7 +273,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         var load = new SceneLoadTransaction(
             this, _sceneState, _materializer, _actorRestore, _historyPort, _documents,
             _loadStructure, _rollback, _loadHistory,
-            operation, path, chosen, cancellation);
+            operation, path, chosen, _thisInstall(), cancellation);
         _flight.RaiseChanged();
         _flight.Run(() => load.Run());
         return Outcome.Ok();

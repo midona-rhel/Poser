@@ -33,6 +33,14 @@ public class ConfigurationService : IDisposable
         // Seeded in memory only; it persists with the next save the user causes.
         Config.Library.EnsureDefaults();
 
+        // Saved at once: an id that changed between sessions would make your own
+        // scenes look shared.
+        if (Config.Library.InstallId == Guid.Empty)
+        {
+            Config.Library.InstallId = Guid.NewGuid();
+            Save(notify: false);
+        }
+
     }
 
     /// <summary>

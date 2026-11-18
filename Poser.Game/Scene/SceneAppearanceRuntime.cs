@@ -238,6 +238,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
                 total += info.Length;
                 actor.Mcdf = new SceneActorMcdf
                 {
+                    LoadedOnto = actor.Mcdf?.LoadedOnto ?? false,
                     Path = string.Empty,
                     FileName = actor.Mcdf?.FileName is { Length: > 0 } named
                         ? named
@@ -415,7 +416,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
     public async Task<Outcome> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
-        if (data.PenumbraCollection is not { } collection || data.Mcdf is not null)
+        if (data.PenumbraCollection is not { } collection)
             return Outcome.Ok();
         var target = await _framework.RunOnFrameworkThread(() =>
             _bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)));
@@ -442,6 +443,143 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         return result.Outcome;
     }
 
+    /// <summary>Finds the saved look's package: an embedded one is copied to a staged file
+    /// and checked against its recorded digest; a referenced one is looked up by content,
+    /// then by its recorded path. <c>Changed</c> names a package that differs from what the
+    /// scene recorded. The caller deletes <c>Staged</c> when done with it.</summary>
+    private async Task<(string? Source, string? Staged, string? Changed, string? Refusal)> LocatePackage(
+        string scenePath, SceneActorMcdf saved, System.Threading.CancellationToken cancellation)
+    {
+        string? changed = null;
+        string? staged = null;
+        string source;
+        (string?, string?, string?, string?) Refused(string detail) => (null, staged, null, detail);
+        if (saved.IsPortable)
+        {
+            staged = SessionAppearanceFiles.NewTempPath(staged: true);
+            try
+            {
+                // Container entry to disk, as a STREAM. A real package is
+                // hundreds of megabytes; nothing here holds it. Hashed
+                // on the way through: the digest the document carries is
+                // what makes embedded bytes trustworthy, so bytes that do
+                // not match it are refused rather than worn.
+                var opened = _documents.OpenAppearance(scenePath, saved.PackageEntry!);
+                using var payload = opened.Stream
+                    ?? throw new System.IO.IOException(opened.Error ?? "the payload could not be opened.");
+                using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(
+                    System.Security.Cryptography.HashAlgorithmName.SHA256);
+                using (var staging = System.IO.File.Create(staged))
+                {
+                    var buffer = new byte[81920];
+                    int read;
+                    while ((read = await payload.ReadAsync(buffer, cancellation)) > 0)
+                    {
+                        hash.AppendData(buffer, 0, read);
+                        await staging.WriteAsync(buffer.AsMemory(0, read), cancellation);
+                    }
+                }
+                if (!string.Equals(Convert.ToHexString(hash.GetHashAndReset()),
+                        saved.ContentHash, StringComparison.OrdinalIgnoreCase))
+                    return Refused(
+                        $"The appearance package '{saved.FileName}' does not match the " +
+                        "digest the scene recorded for it, so it was not imported.");
+            }
+            catch (Exception ex)
+            {
+                return Refused(
+                    $"The appearance package '{saved.FileName}' could not be " +
+                    $"staged for import: {ex.Message}");
+            }
+            source = staged;
+        }
+        else
+        {
+            // BY CONTENT first; the decision itself lives in
+            // SceneAppearanceSource so the order can be stated and tested
+            // without a live client.
+            var resolved = SceneAppearanceSource.Resolve(
+                saved, _mcdfHashes, System.IO.File.Exists, cancellation);
+            if (resolved.Origin == SceneAppearanceOrigin.None ||
+                resolved.Path is not { } found)
+                return Refused(
+                    resolved.Detail
+                    ?? $"The character file '{saved.FileName}' could not be found.");
+
+            changed = resolved.Detail;
+            if (resolved.Origin == SceneAppearanceOrigin.RecordedPath &&
+                saved.ContentHash.Length > 0)
+            {
+                // A missing library match does not prove the file changed.
+                // Hash the fallback path and compare with the saved digest.
+                var hash = FileDigest.TryHashFile(found);
+                changed = hash is null
+                    ? $"The character file '{saved.FileName}' could not be " +
+                        "read to check it against the scene."
+                    : string.Equals(
+                        hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase)
+                        ? null
+                        : $"The character file '{saved.FileName}' has changed " +
+                            "since this scene was saved; the actor is wearing " +
+                            "the file as it is now.";
+            }
+            source = found;
+        }
+        return (source, staged, changed, null);
+    }
+
+    /// <summary>
+    /// Puts a scene appearance back on the actor and leaves it editable: the Glamourer
+    /// settings from the saved package, and, for anyone but your own character, its
+    /// Customize+ body. The actor keeps the mods of its own collection. Your own character
+    /// keeps its own Customize+ profile.
+    /// </summary>
+    public async Task<SceneMcdfOutcome> ApplySceneAppearance(
+        string scenePath,
+        SceneEntityHandle actor,
+        SceneActor data,
+        System.Threading.CancellationToken cancellation)
+    {
+        if (data.Mcdf is not { } saved)
+            return SceneMcdfOutcome.Silent;
+        string? staged = null;
+        try
+        {
+            var located = await LocatePackage(scenePath, saved, cancellation);
+            staged = located.Staged;
+            if (located.Refusal is { } missing)
+                return SceneMcdfOutcome.Refused(missing);
+            var read = _mcdf.ReadLook(located.Source!);
+            if (!read.Success || read.Value is not { } look)
+                return SceneMcdfOutcome.Refused(read.Detail ?? "The scene appearance could not be read.");
+            string? body = null;
+            if (look.CustomizePlusData.Length > 0)
+            {
+                try { body = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(look.CustomizePlusData)); }
+                catch (FormatException) { return SceneMcdfOutcome.Refused("The scene appearance's body is not readable."); }
+            }
+            var refusal = await _framework.RunOnFrameworkThread(() =>
+            {
+                var target = _handles.Resolve<IActor>(actor, SceneEntityKind.Actor);
+                if (target == null || _bindings.GetActorId(target) is not { } id)
+                    return "The actor is no longer available.";
+                if (look.GlamourerData.Length > 0
+                    && _integration.ApplySavedLook(id, look.GlamourerData, "Scene appearance") is { Success: false } lookFailed)
+                    return lookFailed.Detail ?? "The scene appearance could not be applied.";
+                if (body != null && !_actors.IsLocalPlayer(target)
+                    && _integration.ApplyBodyProfileJson(id, body, "Scene appearance") is { Success: false } bodyFailed)
+                    return bodyFailed.Detail ?? "The scene appearance's body could not be applied.";
+                return null;
+            });
+            return refusal is null ? SceneMcdfOutcome.Ok(located.Changed) : SceneMcdfOutcome.Refused(refusal);
+        }
+        finally
+        {
+            if (staged != null)
+                DeleteQuietly(staged);
+        }
+    }
+
     /// <summary>
     /// Imports through McdfTransaction. Portable packages are streamed to a temporary
     /// file and checked against their saved digest. Successful imports retain that
@@ -465,79 +603,12 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
             // File work first, off the framework thread: a missing package is a
             // refusal that never touches the actor, and a changed one is named
             // before anything is applied.
-            string? changed = null;
-            string source;
-            if (saved.IsPortable)
-            {
-                staged = SessionAppearanceFiles.NewTempPath();
-                try
-                {
-                    // Container entry to disk, as a STREAM. A real package is
-                    // hundreds of megabytes; nothing here holds it. Hashed
-                    // on the way through: the digest the document carries is
-                    // what makes embedded bytes trustworthy, so bytes that do
-                    // not match it are refused rather than worn.
-                    var opened = _documents.OpenAppearance(scenePath, saved.PackageEntry!);
-                    using var payload = opened.Stream
-                        ?? throw new System.IO.IOException(opened.Error ?? "the payload could not be opened.");
-                    using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(
-                        System.Security.Cryptography.HashAlgorithmName.SHA256);
-                    using (var staging = System.IO.File.Create(staged))
-                    {
-                        var buffer = new byte[81920];
-                        int read;
-                        while ((read = await payload.ReadAsync(buffer, cancellation)) > 0)
-                        {
-                            hash.AppendData(buffer, 0, read);
-                            await staging.WriteAsync(buffer.AsMemory(0, read), cancellation);
-                        }
-                    }
-                    if (!string.Equals(Convert.ToHexString(hash.GetHashAndReset()),
-                            saved.ContentHash, StringComparison.OrdinalIgnoreCase))
-                        return SceneMcdfOutcome.Refused(
-                            $"The appearance package '{saved.FileName}' does not match the " +
-                            "digest the scene recorded for it, so it was not imported.");
-                }
-                catch (Exception ex)
-                {
-                    return SceneMcdfOutcome.Refused(
-                        $"The appearance package '{saved.FileName}' could not be " +
-                        $"staged for import: {ex.Message}");
-                }
-                source = staged;
-            }
-            else
-            {
-                // BY CONTENT first; the decision itself lives in
-                // SceneAppearanceSource so the order can be stated and tested
-                // without a live client.
-                var resolved = SceneAppearanceSource.Resolve(
-                    saved, _mcdfHashes, System.IO.File.Exists, cancellation);
-                if (resolved.Origin == SceneAppearanceOrigin.None ||
-                    resolved.Path is not { } found)
-                    return SceneMcdfOutcome.Refused(
-                        resolved.Detail
-                        ?? $"The character file '{saved.FileName}' could not be found.");
-
-                changed = resolved.Detail;
-                if (resolved.Origin == SceneAppearanceOrigin.RecordedPath &&
-                    saved.ContentHash.Length > 0)
-                {
-                    // A missing library match does not prove the file changed.
-                    // Hash the fallback path and compare with the saved digest.
-                    var hash = FileDigest.TryHashFile(found);
-                    changed = hash is null
-                        ? $"The character file '{saved.FileName}' could not be " +
-                            "read to check it against the scene."
-                        : string.Equals(
-                            hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase)
-                            ? null
-                            : $"The character file '{saved.FileName}' has changed " +
-                                "since this scene was saved; the actor is wearing " +
-                                "the file as it is now.";
-                }
-                source = found;
-            }
+            var located = await LocatePackage(scenePath, saved, cancellation);
+            staged = located.Staged;
+            if (located.Refusal is { } missing)
+                return SceneMcdfOutcome.Refused(missing);
+            string source = located.Source!;
+            string? changed = located.Changed;
 
             Guid? operationId = null;
             var refusal = await BeginMcdfChild(() =>

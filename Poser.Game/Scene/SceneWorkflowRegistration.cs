@@ -44,7 +44,8 @@ public static class SceneWorkflowRegistration
             sp.GetRequiredService<ISceneWorkflowObserver>(),
             sp.GetRequiredService<EditHistory>(),
             sp.GetRequiredService<ISceneStructure>(),
-            sp.GetRequiredService<TransformParenting>()));
+            sp.GetRequiredService<TransformParenting>(),
+            () => sp.GetRequiredService<Poser.Application.Settings.ConfigurationService>().Config.Library.InstallId));
         return services;
     }
 }

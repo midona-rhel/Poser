@@ -410,6 +410,13 @@ public sealed class SceneWorkflowTests
             return Task.FromResult(SceneMcdfOutcome.Ok());
         }
 
+        public Task<SceneMcdfOutcome> ApplySceneAppearance(
+            string scenePath, SceneEntityHandle actor, SceneActor data, CancellationToken cancellation)
+        {
+            Record($"SceneAppearance:{data.Name}");
+            return Task.FromResult(SceneMcdfOutcome.Ok());
+        }
+
         public int CollectionRestoresRunning;
         public Task<string?> RestoreClothingOnly(SceneEntityHandle actor, CancellationToken cancellation)
         {

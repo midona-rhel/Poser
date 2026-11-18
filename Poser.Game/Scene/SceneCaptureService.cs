@@ -181,6 +181,7 @@ public sealed class SceneCaptureService
             var scene = new SceneFile
             {
                 SceneId = sceneId,
+                SavedBy = _configuration.Config.Library.InstallId,
                 Description = description is { Length: > SceneFileLimits.MaxDescriptionCharacters }
                     ? description[..SceneFileLimits.MaxDescriptionCharacters]
                     : description,
@@ -390,6 +391,9 @@ public sealed class SceneCaptureService
         {
             Path = mcdf.SourcePath,
             FileName = Bounded(mcdf.FileName, "Character file"),
+            // A look an older Poser put on from a scene is still that scene's appearance.
+            LoadedOnto = !System.IO.Path.GetFileName(mcdf.SourcePath)
+                .StartsWith(Poser.Application.Scene.SceneAppearanceRule.PackedPrefix, StringComparison.OrdinalIgnoreCase),
         };
     }
 

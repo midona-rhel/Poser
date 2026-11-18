@@ -28,6 +28,23 @@ The save dialog shows the same two options under the file list.
   themselves.
 - **Clothing only**, if you used it.
 
+### Scene appearance and MCDFs
+
+An MCDF you load onto an actor is a promise: the actor looks exactly like the file,
+and the look can't be edited. A scene is a project you keep working on. So a scene
+saved with **Include appearance files** loads like this:
+
+- An actor that had an MCDF loaded onto it gets that MCDF again, locked.
+- Every other actor gets its scene appearance back: its Glamourer look and, for
+  actors other than your own character, its Customize+ body. It keeps the mods of
+  its collection and stays editable. A mod you added or changed since just shows
+  up. **Reset** in Appearance gives back the look it had before the load.
+- A scene saved on another computer (someone shared it with you) has none of that
+  computer's mods, so every actor in it gets its look as an MCDF, locked.
+
+Each Poser install has its own id, and a scene records the one that saved it.
+Scenes saved before this existed count as yours.
+
 Things to know:
 
 - Every actor a scene spawns is built from your own character. An actor that is

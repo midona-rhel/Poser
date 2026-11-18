@@ -102,6 +102,10 @@ public sealed record McdfPackage(
 /// Header information for the Library preview. Reading it does not extract files
 /// or apply appearance to an actor. MCDF headers do not contain a thumbnail.
 /// </summary>
+/// <summary>The look a package holds: its Glamourer settings and its Customize+ body,
+/// each as the package stores it (base64). Either can be empty.</summary>
+public sealed record McdfLook(string GlamourerData, string CustomizePlusData);
+
 public sealed record McdfSummary(
     string FileName,
     string Description,
