@@ -76,7 +76,7 @@ public sealed class LightPane
     private static readonly string[] FalloffOptions =
         ["Linear", "Quadratic", "Cubic"];
 
-    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+    private readonly LibrarySavePrompt _librarySave;
 
     private readonly ScenePane _scenePane;
     private readonly ILightControl _values;
@@ -102,7 +102,7 @@ public sealed class LightPane
     {
         _parenting = parenting;
         _values = values;
-        _names = names;
+        _librarySave = new LibrarySavePrompt(scenePane, names);
         _notices = notices;
         _scene = scene;
         _selection = properties.Selection;
@@ -499,13 +499,8 @@ public sealed class LightPane
             actions.Button("Load", () => OpenLoad("Light ▸ Load"),
                 help: "Add a light from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(light.Id));
-            actions.Button("Save to library", () => _names.Open(
-                "Save light to library", light.Name,
-                name =>
-                {
-                    if (_values.Read(light.Id) is not null)
-                        _scenePane.SaveEntry(SelectionId.ForLight(light.Id), name);
-                }));
+            actions.Button("Save to library",
+                () => _librarySave.Ask(SelectionId.ForLight(light.Id), "light", light.Name));
         });
     }
 

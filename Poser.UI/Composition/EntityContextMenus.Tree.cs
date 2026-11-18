@@ -13,55 +13,35 @@ internal sealed partial class EntityContextMenus
     private string _ctxBranchLabel = "category";
     private SkeletonId? _ctxBranchSkeleton;
 
-    private ContextMenuItem[] BuildTreeSubmenu(string? key, out List<Action?> actions)
+    private ContextMenuItem[] BuildTreeSubmenu(string? key)
     {
         bool disabled = key == null || !string.IsNullOrEmpty(_sidebar.Filter);
-        actions =
-        [
-            () => { if (key != null) _sidebar.SetTreeCollapsed(key, false, false); },
-            () => { if (key != null) _sidebar.SetTreeCollapsed(key, true, false); },
-            () => { if (key != null) _sidebar.SetTreeCollapsed(key, false, true); },
-            () => { if (key != null) _sidebar.SetTreeCollapsed(key, true, true); },
-            null,
-            () => _openSkeletonSettings(),
-        ];
         string? help = !string.IsNullOrEmpty(_sidebar.Filter)
             ? "Clear the sidebar search to change disclosure" : null;
+        void Set(bool collapsed, bool subtree) { if (key != null) _sidebar.SetTreeCollapsed(key, collapsed, subtree); }
         return
         [
-            new("Expand", TablerIcon.SquarePlus, disabled: disabled, help: help),
-            new("Collapse", TablerIcon.SquareMinus, disabled: disabled, help: help),
-            new("Expand all", TablerIcon.SquarePlus, disabled: disabled, help: "This branch and its descendants"),
-            new("Collapse all", TablerIcon.SquareMinus, disabled: disabled, help: "This branch and its descendants"),
+            new("Expand", TablerIcon.SquarePlus, disabled: disabled, help: help) { OnInvoke = () => Set(false, false) },
+            new("Collapse", TablerIcon.SquareMinus, disabled: disabled, help: help) { OnInvoke = () => Set(true, false) },
+            new("Expand all", TablerIcon.SquarePlus, disabled: disabled, help: "This branch and its descendants") { OnInvoke = () => Set(false, true) },
+            new("Collapse all", TablerIcon.SquareMinus, disabled: disabled, help: "This branch and its descendants") { OnInvoke = () => Set(true, true) },
             ContextMenuItem.Separator,
-            new("Skeleton settings…", TablerIcon.Settings, help: "Shared settings for all actors, not just this branch"),
+            new("Skeleton settings…", TablerIcon.Settings, help: "Shared settings for all actors, not just this branch") { OnInvoke = () => _openSkeletonSettings() },
         ];
     }
 
-    private ContextMenuItem[] BuildActorPoseSubmenu(ActorId actorId, out List<Action?> actions)
+    private ContextMenuItem[] BuildActorPoseSubmenu(ActorId actorId)
     {
-        actions =
-        [
-            () => _poseFileSection.RequestImportMenu(withPresets: true, target: actorId),
-            () => _poseFileSection.OpenImportFromFile(actorId),
-            () => _poseFileSection.ImportFromClipboard(actorId),
-            null,
-            () => _cleanPose.Stash(actorId),
-        ];
         var items = new List<ContextMenuItem>
         {
-            new("Import", TablerIcon.Download),
-            new("Import from file", TablerIcon.FileText),
-            new("Import from clipboard", TablerIcon.Copy),
-            new("Export", TablerIcon.Upload,
-                submenuItems: _poseFileSection.BuildExportSubmenu(actorId)),
-            new("Stash", TablerIcon.Stack2),
+            new("Import", TablerIcon.Download) { OnInvoke = () => _poseFileSection.RequestImportMenu(withPresets: true, target: actorId) },
+            new("Import from file", TablerIcon.FileText) { OnInvoke = () => _poseFileSection.OpenImportFromFile(actorId) },
+            new("Import from clipboard", TablerIcon.Copy) { OnInvoke = () => _poseFileSection.ImportFromClipboard(actorId) },
+            new("Export", TablerIcon.Upload, submenuItems: _poseFileSection.BuildExportSubmenu(actorId)),
+            new("Stash", TablerIcon.Stack2) { OnInvoke = () => _cleanPose.Stash(actorId) },
         };
         if (_cleanPose.HasStash)
-        {
-            items.Add(new("Apply stashed", TablerIcon.ArrowBackUp));
-            actions.Add(() => _cleanPose.ApplyStash(actorId));
-        }
+            items.Add(new("Apply stashed", TablerIcon.ArrowBackUp) { OnInvoke = () => _cleanPose.ApplyStash(actorId) });
         return items.ToArray();
     }
 

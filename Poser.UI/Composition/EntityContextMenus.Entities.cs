@@ -28,11 +28,8 @@ namespace Poser.UI;
 /// <summary>The context menus per entity kind.</summary>
 internal sealed partial class EntityContextMenus
 {
-    /// <summary>The selected actor's skeleton, or null when nothing posable is
-    /// selected or its binding no longer resolves.</summary>
-
     /// <summary>Actor context menu. The stored <see cref="ActorId"/> is resolved
-    /// for each draw because lifetime services require a current live actor.</summary>
+    /// for each draw, because the actor may have left since the menu opened.</summary>
     public void DrawActorContextMenu()
     {
         if (!_ctxOpenRequested && !FloatingMenu.IsOpen("##actor-ctx")) return;
@@ -45,218 +42,89 @@ internal sealed partial class EntityContextMenus
             FloatingMenu.Dismiss("##actor-ctx");
             return;
         }
-        var descriptor = actor;
-        bool attached = descriptor?.OwnerActor is not null;
-        var attachment = _companions.ActionsFor(actorId);
+        var id = SelectionId.ForActor(actorId);
+        bool attached = actor.OwnerActor is not null;
+        bool posable = actor.CharacterSkeleton != null;
+        bool visible = IsEntityVisible(id) ?? false;
+        bool playing = _animation.AnyPlaying(actorId);
+        // The name shown, never the real one: with Anonymous mode on, the real
+        // name must not appear in the prompt.
+        string shown = ActorNames.Display(_configuration, actorId, actor.Name);
 
         var items = new List<ContextMenuItem>
         {
-            new("Set game target", TablerIcon.Crosshair),
-            new("Center camera on actor", TablerIcon.Crosshair),
-            new(!(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false) ? "Show" : "Hide", !(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false) ? TablerIcon.Eye : TablerIcon.EyeOff),
-            // The icon carries the verb the row performs: resume wears play,
-            // pause wears pause.
-            new(!_animation.AnyPlaying(actorId) ? "Play" : "Pause",
-                !_animation.AnyPlaying(actorId)
-                    ? TablerIcon.PlayerPlay
-                    : TablerIcon.PlayerPause,
+            HandleItem(id),
+            new("Center camera on actor", TablerIcon.Crosshair)
+            { OnInvoke = () => _cameraPane.CenterOnActor(actorId), Place = MenuPlace.Framing },
+            new("Set game target", TablerIcon.Crosshair)
+            { OnInvoke = () => _actorControl.SetGameTarget(actorId), Place = MenuPlace.View },
+            VisibilityItem(visible, () => SetEntityVisible(id, !visible)),
+            PlaybackItem(playing, () => { if (playing) _animation.Pause(actorId); else _animation.Resume(actorId); },
                 disabled: !_animation.IsSupported(actorId)),
-            new("Rename", TablerIcon.Edit),
-        };
-        var actions = new List<Action?>
-        {
-            () => _actorControl.SetGameTarget(actorId),
-            () => _cameraPane.CenterOnActor(actorId),
-            () => SetEntityVisible(SelectionId.ForActor(actorId),
-                !(IsEntityVisible(SelectionId.ForActor(actorId)) ?? false)),
-            () =>
-            {
-                if (_animation.AnyPlaying(actorId))
-                    _animation.Pause(actorId);
-                else
-                    _animation.Resume(actorId);
-            },
-            // Seeds what the UI shows — nickname, else the mask while
-            // anonymous mode is on. Prefilling the raw name would leak it.
-            () => _names.Open(
-                "Rename actor",
-                ActorNames.Display(_configuration, actorId, actor.Name),
-                name => _configuration.SetNickname(
-                    actorId.LogicalId, name),
-                clear: () => _configuration.SetNickname(
-                    actorId.LogicalId, null),
+            RenameItem("Rename actor", shown, name => _configuration.SetNickname(actorId.LogicalId, name),
+                clear: () => _configuration.SetNickname(actorId.LogicalId, null),
                 clearHelp: "Remove the nickname and show the real name"),
+            new("Create collider", TablerIcon.Cube, disabled: !posable || _actorColliderCapture.Busy)
+            { OnInvoke = () => CreateActorCollider(actorId, shown), Place = MenuPlace.More },
+            new("Export Idle Pose…", TablerIcon.Upload, disabled: !posable || _poseFileSection.IdleExportBusy,
+                help: "Bake body and expression into a Penumbra PMP")
+            { OnInvoke = () => _poseFileSection.OpenIdleExport(actorId), Place = MenuPlace.More },
+            Submenu("Tree", TablerIcon.Folder, MenuPlace.TreeMenu, BuildTreeSubmenu("actor:" + actorId)),
+            Submenu("Bone presets", TablerIcon.Eye, MenuPlace.BonePresetsMenu,
+                posable ? BuildBonePresetSubmenu(actorId) : [], disabled: !posable,
+                help: "Named sets of which bones this actor shows in the overlay"),
+            Submenu("Pose", TablerIcon.Walk, MenuPlace.PoseMenu, BuildActorPoseSubmenu(actorId), disabled: !posable,
+                help: "The clicked actor's pose, including its equipment slots"),
         };
 
-        // Attached bodies own pose/transform/presentation state, but their
-        // lifetime remains their owner's slot. They therefore have neither
-        // clone/save nor direct destroy verbs.
+        // A mount, minion or ornament on an actor comes and goes with its
+        // owner, so it has no Duplicate, Save or Destroy of its own.
         if (!attached)
         {
-            bool standaloneCreature = descriptor is { IsCompanion: true };
-            items.Add(new ContextMenuItem("Duplicate", TablerIcon.Copy,
-                disabled: standaloneCreature,
-                submenuItems: standaloneCreature
-                    ? null
-                    : DuplicateSubmenu((actor.CharacterSkeleton != null))));
-            actions.Add(null); // Duplicate — child clicks are read separately.
-            items.Add(new ContextMenuItem("Save to library", TablerIcon.Library,
-                disabled: !(actor.CharacterSkeleton != null)));
-            actions.Add(() => OpenEntityRename(
-                "Save actor to library",
-                ActorNames.Display(_configuration, actorId, actor.Name),
-                name => SaveOwnedActorEntry(actorId, name)));
+            items.Add(DuplicateItem(() => DuplicateAndSelect(id), () => DuplicateAndSelect(id, withPose: true),
+                posable: posable, disabled: actor.IsCompanion));
+            items.Add(SaveToLibraryItem(id, "actor", shown, disabled: !posable));
+            if (_actorControl.Read(actorId)?.CanRemove == true)
+                items.Add(DestroyItem(() => DestroyActor(actorId, actor.Name)));
         }
 
-        items.Add(new ContextMenuItem("Create collider", TablerIcon.Cube,
-            disabled: !(actor.CharacterSkeleton != null) || _actorColliderCapture.Busy));
-        actions.Add(() => CreateActorCollider(actorId, ActorNames.Display(_configuration, actorId, actor.Name)));
-
-        items.Add(new ContextMenuItem("Export Idle Pose…", TablerIcon.Upload,
-            disabled: actor.CharacterSkeleton == null || _poseFileSection.IdleExportBusy,
-            help: "Bake body and expression into a Penumbra PMP"));
-        actions.Add(() => _poseFileSection.OpenIdleExport(actorId));
-
-        items.Add(new ContextMenuItem("Tree", TablerIcon.Folder,
-            submenuItems: BuildTreeSubmenu("actor:" + actorId, out var treeActions)));
-        actions.Add(null);
-
-        List<Action?>? companionActions = null;
-        if (attachment is { } attachmentState)
+        if (_companions.ActionsFor(actorId) is { } companion)
         {
-            items.Add(ContextMenuItem.Separator);
-            actions.Add(null);
-            if (attachmentState.IsAttachedChild)
-            {
-                items.Add(new ContextMenuItem("Attachment", TablerIcon.Paw,
-                    help: "Change or detach this body through its owner",
-                    submenuItems:
-                    [
-                        new ContextMenuItem("Change", TablerIcon.UserPlus,
-                            disruptive: true),
-                        new ContextMenuItem("Detach", TablerIcon.UserMinus,
-                            disruptive: true),
-                    ]));
-                companionActions =
-                [
-                    () => _companions.OpenAttachPicker(actorId),
-                    () => _companions.Detach(actorId),
-                ];
-            }
-            else
-            {
-                string verb = attachmentState.Occupied ? "Change" : "Attach";
-                var rows = new List<ContextMenuItem>
-                {
-                    new(verb, TablerIcon.UserPlus, disruptive: true),
-                };
-                companionActions = [() => _companions.OpenAttachPicker(actorId)];
-                if (attachmentState.Occupied)
-                {
-                    rows.Add(new ContextMenuItem(
-                        "Detach", TablerIcon.UserMinus, disruptive: true));
-                    companionActions.Add(() => _companions.Detach(actorId));
-                }
-                items.Add(new ContextMenuItem("Companion", TablerIcon.Paw,
-                    help: "Attach, change or detach a minion, mount or ornament",
-                    submenuItems: BindSubmenu(rows.ToArray(), companionActions)));
-            }
-            actions.Add(null); // Attachment submenu.
+            var change = new ContextMenuItem(companion.IsAttachedChild || companion.Occupied ? "Change" : "Attach",
+                TablerIcon.UserPlus, disruptive: true) { OnInvoke = () => _companions.OpenAttachPicker(actorId) };
+            var detach = new ContextMenuItem("Detach", TablerIcon.UserMinus, disruptive: true)
+            { OnInvoke = () => _companions.Detach(actorId) };
+            items.Add(companion.IsAttachedChild
+                ? Submenu("Attachment", TablerIcon.Paw, MenuPlace.CompanionMenu, [change, detach],
+                    help: "Change or detach this body through its owner")
+                : Submenu("Companion", TablerIcon.Paw, MenuPlace.CompanionMenu,
+                    companion.Occupied ? [change, detach] : [change],
+                    help: "Attach, change or detach a minion, mount or ornament"));
         }
 
-        // Bone presets belong to this actor.
-        items.Add(ContextMenuItem.Separator);
-        items.Add(new ContextMenuItem(
-            "Bone presets", TablerIcon.Eye,
-            disabled: !(actor.CharacterSkeleton != null),
-            help: "Named sets of which bones this actor shows in the overlay",
-            submenuItems: (actor.CharacterSkeleton != null)
-                ? BuildBonePresetSubmenu(actorId)
-                : null));
-        actions.Add(null); // separator
-        actions.Add(null); // Child clicks are read separately.
+        DrawMenu("##actor-ctx", ref _ctxOpenRequested, items, id);
+    }
 
-        items.Add(ContextMenuItem.Separator);
-        actions.Add(null); // separator
-        items.Add(new ContextMenuItem("Pose", TablerIcon.Walk,
-            disabled: !(actor.CharacterSkeleton != null),
-            help: "The clicked actor's pose, including its equipment slots",
-            submenuItems: BuildActorPoseSubmenu(actorId, out var poseActions)));
-        actions.Add(null);
-
-        // Show Destroy only when the lifetime service currently admits it;
-        // companion children and stale actors have no destructive action.
-        if (!attached && _actorControl.Read(actorId)?.CanRemove == true)
+    private async void DestroyActor(ActorId actorId, string rawName)
+    {
+        var id = SelectionId.ForActor(actorId);
+        if (_scene.Snapshot.FindActor(actorId)?.IsAdopted == true)
         {
-            items.Add(ContextMenuItem.Separator);
-            items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true));
-            actions.Add(null);
-            actions.Add(async () =>
-            {
-                string name = ActorNames.Clean(actor.Name);
-                if (_scene.Snapshot.FindActor(actorId)?.IsAdopted == true)
-                {
-                    await RemoveEntitiesSafely([SelectionId.ForActor(actorId)]);
-                    return;
-                }
-                // Through the seam, exactly as Clone is: spawning an actor
-                // is a history step; destroying is undoable only when Poser
-                // spawned it and can respawn it.
-                var removed = await RemoveEntitiesSafely(
-                    [SelectionId.ForActor(actorId)]);
-                if (removed is null)
-                    return;
-                if (removed == 1)
-                {
-                    // Drop the whole selection lineage — the actor, its
-                    // bones, its bone groups — not every selection the user
-                    // holds.
-                    _selection.RemoveActorLineage(actorId.LogicalId);
-                    _notices.Done($"Destroyed '{name}'.");
-                }
-                else
-                {
-                    _notices.Report(Domain.Outcome.Fail($"'{name}' could not be destroyed."), "Destroy");
-                }
-            });
+            await RemoveEntitiesSafely([id]);
+            return;
         }
-
-        AddHandleAction(items, actions, SelectionId.ForActor(actorId));
-        var moreActions = MoveMoreActions(items, actions, SelectionId.ForActor(actorId));
-        if (_ctxOpenRequested)
+        var removed = await RemoveEntitiesSafely([id]);
+        if (removed is null)
+            return;
+        string name = ActorNames.Clean(rawName);
+        if (removed == 1)
         {
-            _ctxOpenRequested = false;
-            OpenContextMenu("##actor-ctx", items.ToArray());
+            // Deselect the actor with its bones and bone groups, and nothing else.
+            _selection.RemoveActorLineage(actorId.LogicalId);
+            _notices.Done($"Destroyed '{name}'.");
         }
-        // The preset rows show live checks: the menu takes this frame's
-        // rows so a toggle shows at once while the menu stays open.
-        FloatingMenu.Refresh("##actor-ctx", items.ToArray());
-        int clicked = FloatingMenu.Draw("##actor-ctx");
-        if (clicked >= 0 && clicked < actions.Count)
-            actions[clicked]?.Invoke();
-        // Route each submenu click through its parent row.
-        int subClicked = FloatingMenu.ConsumeSubmenuClick(
-            out int subParent);
-        if (InvokeComposedAction(items, subParent, subClicked)) return;
-        if (subClicked >= 0 && subParent >= 0 && subParent < items.Count)
-        {
-            var submenu = items[subParent].Label switch
-            {
-                "Bone presets" => _bonePresetActions,
-                "More" => moreActions,
-                "Companion" or "Attachment" => companionActions,
-                "Pose" => poseActions,
-                "Duplicate" => new List<Action?>
-                {
-                    () => DuplicateAndSelect(SelectionId.ForActor(actorId)),
-                    () => DuplicateAndSelect(SelectionId.ForActor(actorId), withPose: true),
-                },
-                "Tree" => treeActions,
-                _ => null,
-            };
-            if (submenu != null && subClicked < submenu.Count)
-                submenu[subClicked]?.Invoke();
-        }
+        else
+            _notices.Report(Domain.Outcome.Fail($"'{name}' could not be destroyed."), "Destroy");
     }
 
     private async void CreateActorCollider(ActorId actorId, string name)
@@ -280,54 +148,37 @@ internal sealed partial class EntityContextMenus
     private ContextMenuItem[] BuildBonePresetSubmenu(ActorId actorId)
     {
         if (_scene.Snapshot.FindActor(actorId.LogicalId) is not { } actor)
-            return Array.Empty<ContextMenuItem>();
+            return [];
         _presetActorId = actorId;
-        _bonePresetItems.Clear();
-        _bonePresetActions.Clear();
         var presets = _bonePresets.Presets;
+        var items = new List<ContextMenuItem>();
         if (presets.Count == 0)
-        {
-            _bonePresetItems.Add(new ContextMenuItem(
-                "No presets yet", TablerIcon.Circle, disabled: true,
+            items.Add(new("No presets yet", TablerIcon.Circle, disabled: true,
                 help: "Show the bones you want, then save them as a preset"));
-            _bonePresetActions.Add(null);
-        }
         foreach (var preset in presets)
         {
             var name = preset.Name;
-            _bonePresetItems.Add(new ContextMenuItem(
-                name,
-                _bonePresets.IsApplied(actor, name)
-                    ? TablerIcon.CircleDot
-                    : TablerIcon.Circle,
-                keepOpen: true,
-                help: $"{preset.Bones.Count} bones"));
-            _bonePresetActions.Add(() => _bonePresets.Toggle(actor, name));
+            items.Add(new(name, _bonePresets.IsApplied(actor, name) ? TablerIcon.CircleDot : TablerIcon.Circle,
+                keepOpen: true, help: $"{preset.Bones.Count} bones")
+            { OnInvoke = () => _bonePresets.Toggle(actor, name) });
         }
-
-        _bonePresetItems.Add(ContextMenuItem.Separator);
-        _bonePresetActions.Add(null);
-        _bonePresetItems.Add(new ContextMenuItem(
-            "Toggle other", TablerIcon.Crosshair,
-            disabled: presets.Count == 0,
-            help: "Hide everything the presets claim and show the rest"));
-        _bonePresetActions.Add(() => _bonePresets.ToggleOther(actor));
-        _bonePresetItems.Add(new ContextMenuItem(
-            "Hide every bone", TablerIcon.EyeOff,
-            help: "Take this actor's overlay back to nothing"));
-        _bonePresetActions.Add(() => _bonePresets.Clear(actor));
-        _bonePresetItems.Add(ContextMenuItem.Separator);
-        _bonePresetActions.Add(null);
-        _bonePresetItems.Add(new ContextMenuItem(
-            "Manage presets", TablerIcon.Edit,
-            help: "Save what this actor shows as a new preset, or delete one"));
-        _bonePresetActions.Add(() =>
+        items.Add(ContextMenuItem.Separator);
+        items.Add(new("Toggle other", TablerIcon.Crosshair, disabled: presets.Count == 0,
+            help: "Hide everything the presets claim and show the rest")
+        { OnInvoke = () => _bonePresets.ToggleOther(actor) });
+        items.Add(new("Hide every bone", TablerIcon.EyeOff, help: "Take this actor's overlay back to nothing")
+        { OnInvoke = () => _bonePresets.Clear(actor) });
+        items.Add(ContextMenuItem.Separator);
+        items.Add(new("Manage presets", TablerIcon.Edit, help: "Save what this actor shows as a new preset, or delete one")
         {
-            _presetNameValue = string.Empty;
-            _presetSaveNote = null;
-            _presetManagerOpen = true;
+            OnInvoke = () =>
+            {
+                _presetNameValue = string.Empty;
+                _presetSaveNote = null;
+                _presetManagerOpen = true;
+            },
         });
-        return _bonePresetItems.ToArray();
+        return items.ToArray();
     }
 
     /// <summary>The preset store, which is shared by every actor: create one
@@ -410,9 +261,9 @@ internal sealed partial class EntityContextMenus
     }
 
     /// <summary>
-    /// Right-click bone menu for hierarchy navigation and bone-local
-    /// operations. Hierarchy facts come from the scene snapshot; selection and
-    /// pose commands dispatch stable ids only.
+    /// Right-click bone menu for moving around the skeleton and for actions on
+    /// the bone itself. It reads the skeleton from the scene list and sends
+    /// only ids to the selection and pose commands.
     /// </summary>
     public void DrawBoneContextMenu()
     {
@@ -437,14 +288,11 @@ internal sealed partial class EntityContextMenus
                 if (parentId == boneId) { branch.Add(candidate.Id); break; }
         var overlayBones = _ctxBoneOverlayBones ?? new[] { boneId };
         bool visible = _overlayPresentation.AreVisible(overlayBones);
-        var tree = BindSubmenu(BuildTreeSubmenu(_ctxBoneExpandKey, out var treeActions), treeActions);
-        var pose = BindSubmenu(BuildActorPoseSubmenu(owner.Id, out var poseActions), poseActions);
-        var presets = BindSubmenu(BuildBonePresetSubmenu(owner.Id), _bonePresetActions);
-        ContextMenuItem[] items =
-        [
+        var items = new List<ContextMenuItem>
+        {
             new(visible ? "Hide from overlay" : "Show in overlay", visible ? TablerIcon.EyeOff : TablerIcon.Eye)
-            { OnInvoke = () => _overlayPresentation.SetVisible(overlayBones, !visible) },
-            new("Select", TablerIcon.Crosshair, submenuItems:
+            { OnInvoke = () => _overlayPresentation.SetVisible(overlayBones, !visible), Place = MenuPlace.Visibility },
+            Submenu("Select", TablerIcon.Crosshair, MenuPlace.SelectMenu,
             [
                 new("Parent", TablerIcon.SelectParent, disabled: descriptor.Parent == null)
                 { OnInvoke = () => { if (descriptor.Parent is { } parent) _selection.Select(SelectionId.ForBone(parent)); } },
@@ -455,36 +303,36 @@ internal sealed partial class EntityContextMenus
             ]),
             new("Flip bone", TablerIcon.Rotate)
             { OnInvoke = () => _cleanPose.FlipBone(TransformTargetId.ForBone(boneId), descriptor.DisplayName) },
-            new("Reset", TablerIcon.Refresh, submenuItems:
+            Submenu("Reset", TablerIcon.Refresh, MenuPlace.ResetMenu,
             [
                 new("Bone", TablerIcon.Refresh, disruptive: true)
                 { OnInvoke = () => _cleanPose.ResetBone(TransformTargetId.ForBone(boneId), descriptor.DisplayName) },
                 new("Bone and descendants", TablerIcon.Refresh, disruptive: true, disabled: branch.Count == 1)
                 { OnInvoke = () => _cleanPose.ResetBones(branch.Select(TransformTargetId.ForBone).ToArray(), "Reset bone branch") },
             ]),
-            new("Actor pose", TablerIcon.Walk, submenuItems: pose, help: "The whole owning actor, including equipment"),
-            new("Bone presets", TablerIcon.Eye, submenuItems: presets),
-            new("Tree", TablerIcon.Folder, submenuItems: tree),
-        ];
+            Submenu("Actor pose", TablerIcon.Walk, MenuPlace.PoseMenu, BuildActorPoseSubmenu(owner.Id),
+                help: "The whole owning actor, including equipment"),
+            Submenu("Bone presets", TablerIcon.Eye, MenuPlace.BonePresetsMenu, BuildBonePresetSubmenu(owner.Id)),
+            Submenu("Tree", TablerIcon.Folder, MenuPlace.TreeMenu, BuildTreeSubmenu(_ctxBoneExpandKey)),
+        };
         var mapTargets = _boneMap.AddToPresetActions(boneId);
         if (mapTargets.Length > 0)
-            items = items.Append(new ContextMenuItem("Preset", TablerIcon.Edit, submenuItems: mapTargets)).ToArray();
-        DrawComposedMenu(menu, ref _boneCtxOpenRequested, items);
+            items.Add(new ContextMenuItem("Preset", TablerIcon.Edit, submenuItems: mapTargets));
+        DrawMenu(menu, ref _boneCtxOpenRequested, items);
     }
 
     private ReferenceImageInstance? _ctxReferenceImage;
 
     private bool _referenceCtxOpenRequested;
 
-    /// <summary>Reference-image visibility, rename, duplicate, and close
-    /// actions. Reference images are outside the scene edit journal.</summary>
+    /// <summary>Reference pictures are not part of the scene's undo history.</summary>
     public void DrawReferenceImageContextMenu()
     {
         if (!_referenceCtxOpenRequested && !FloatingMenu.IsOpen("##reference-ctx")) return;
         if (_ctxReferenceImage is not { } image)
             return;
-        // A picture closed from its own bar while the menu is up leaves the
-        // roster; the menu goes with it rather than acting on a dead entry.
+        // A picture closed from its own bar while the menu is open takes the
+        // menu with it.
         if (!_referenceImages.Instances.Contains(image))
         {
             _ctxReferenceImage = null;
@@ -492,42 +340,22 @@ internal sealed partial class EntityContextMenus
             return;
         }
         bool hidden = ReferenceImageSession.IsHidden(image);
-        var items = new[]
+        var items = new List<ContextMenuItem>
         {
-            new ContextMenuItem(
-                hidden ? "Show" : "Hide",
-                hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
-            new ContextMenuItem("Rename", TablerIcon.Edit),
-            new ContextMenuItem("Duplicate", TablerIcon.Copy),
-            new ContextMenuItem("Remove", TablerIcon.Trash, danger: true),
+            VisibilityItem(!hidden, () => _referenceImages.SetHidden(image, !hidden)),
+            RenameItem("Rename reference image", image.Name, next => image.Entry.Name = next),
+            DuplicateItem(() => _referenceImages.Duplicate(image)),
+            new("Remove", TablerIcon.Trash, danger: true)
+            { OnInvoke = () => _referenceImages.Close(image), Place = MenuPlace.Lifetime },
         };
-        var actions = new Action?[]
-        {
-            () => _referenceImages.SetHidden(image, !hidden),
-            () => OpenEntityRename("Rename reference image", image.Name, next => image.Entry.Name = next),
-            () => _referenceImages.Duplicate(image),
-            () => _referenceImages.Close(image),
-        };
-        MoveMoreActions(ref items, ref actions);
-        if (_referenceCtxOpenRequested)
-        {
-            _referenceCtxOpenRequested = false;
-            OpenContextMenu("##reference-ctx", items);
-        }
-        FloatingMenu.Refresh("##reference-ctx", items);
-        int clicked = FloatingMenu.Draw("##reference-ctx");
-        if (clicked < 0)
-            return;
-        if (clicked < actions.Length) actions[clicked]?.Invoke();
-        _ctxReferenceImage = null;
+        DrawMenu("##reference-ctx", ref _referenceCtxOpenRequested, items);
     }
 
     private OverlayId? _ctxOverlayNodeId;
 
     private bool _overlayNodeCtxOpenRequested;
 
-    /// <summary>Context menu for a staged balloon, dialogue, or status node;
-    /// distinct from the bone-category overlay menu.</summary>
+    /// <summary>Menu for a chat bubble, dialogue box, status line or IK collider.</summary>
     public void DrawOverlayNodeContextMenu()
     {
         if (!_overlayNodeCtxOpenRequested && !FloatingMenu.IsOpen("##overlay-node-ctx")) return;
@@ -539,61 +367,28 @@ internal sealed partial class EntityContextMenus
             FloatingMenu.Dismiss("##overlay-node-ctx");
             return;
         }
-        var items = new[]
+        var id = SelectionId.ForOverlay(overlayId);
+        var items = new List<ContextMenuItem>
         {
-            new ContextMenuItem(node.State.Visible ? "Hide" : "Show",
-                node.State.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
-            new ContextMenuItem("Rename", TablerIcon.Edit),
-            new ContextMenuItem("Duplicate", TablerIcon.Copy),
-            new ContextMenuItem("Save to library", TablerIcon.Library),
-            ContextMenuItem.Separator,
-            new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
-            ContextMenuItem.Separator,
-            new ContextMenuItem("Destroy all overlays…", TablerIcon.Trash, danger: true,
-                disabled: _scene.Snapshot.Overlays.Count == 0),
-        };
-        var actions = new Action?[]
-        {
-            () => SetEntityVisible(SelectionId.ForOverlay(overlayId), !node.State.Visible),
-            () => OpenEntityRename(
-                "Rename overlay", node.State.Name, next => _overlayControl.Set(overlayId, Application.Presentation.OverlayProperties.Name, next)),
-            () => DuplicateAndSelect(SelectionId.ForOverlay(overlayId)),
-            () => OpenEntityRename(
-                "Save overlay to library", node.State.Name,
-                name => _scenePane.SaveEntry(SelectionId.ForOverlay(overlayId), name)),
-            null, // separator
-            () =>
-            {
-                _ = RemoveEntitiesSafely(
-                    [SelectionId.ForOverlay(overlayId)],
-                    () => _selection.Remove(SelectionId.ForOverlay(overlayId)));
-            },
-            null,
-            _removalDialog.ConfirmDestroyAllOverlays,
+            HandleItem(id),
+            VisibilityItem(node.State.Visible, () => SetEntityVisible(id, !node.State.Visible)),
+            RenameItem("Rename overlay", node.State.Name,
+                next => _overlayControl.Set(overlayId, Application.Presentation.OverlayProperties.Name, next)),
+            DuplicateItem(id),
+            SaveToLibraryItem(id, "overlay", node.State.Name),
+            DestroyItem(id),
+            DestroyAllItem("overlays", _scene.Snapshot.Overlays.Count == 0, _removalDialog.ConfirmDestroyAllOverlays),
         };
         if (node.State.Collider is { } collider)
         {
-            items = new[] {
-                new ContextMenuItem(collider.Locked ? "Unlock transform" : "Lock transform", TablerIcon.Lock),
-                new ContextMenuItem(collider.Enabled ? "Disable collision" : "Enable collision", TablerIcon.Cube) }
-                .Concat(items).ToArray();
-            actions = new Action?[] {
-                () => _entityActions.ToggleLock(SelectionId.ForOverlay(overlayId)),
-                () => _overlayControl.EditCollider(overlayId, c => c with { Enabled = !collider.Enabled }) }
-                .Concat(actions).ToArray();
+            items.Add(LockItem(collider.Locked, () => _entityActions.ToggleLock(id)));
+            items.Add(new(collider.Enabled ? "Disable collision" : "Enable collision", TablerIcon.Cube)
+            {
+                OnInvoke = () => _overlayControl.EditCollider(overlayId, c => c with { Enabled = !collider.Enabled }),
+                Place = MenuPlace.Collision,
+            });
         }
-        AddHandleAction(ref items, ref actions, SelectionId.ForOverlay(overlayId));
-        var moreActions = MoveMoreActions(ref items, ref actions, SelectionId.ForOverlay(overlayId));
-        if (_overlayNodeCtxOpenRequested)
-        {
-            _overlayNodeCtxOpenRequested = false;
-            OpenContextMenu("##overlay-node-ctx", items);
-        }
-        FloatingMenu.Refresh("##overlay-node-ctx", items);
-        int clicked = FloatingMenu.Draw("##overlay-node-ctx");
-        if (clicked >= 0 && clicked < actions.Length)
-            actions[clicked]?.Invoke();
-        DrawMoreAction(items, moreActions);
+        DrawMenu("##overlay-node-ctx", ref _overlayNodeCtxOpenRequested, items, id);
     }
 
     public void DrawOverlayContextMenu()
@@ -614,41 +409,41 @@ internal sealed partial class EntityContextMenus
         var ownerBones = owner.Skeletons.SelectMany(s => s.Bones).Select(b => b.Id).ToArray();
         bool visible = _overlayPresentation.Resolve(bones) != OverlayVisibility.None;
         string scope = _ctxBranchLabel;
-        var tree = BindSubmenu(BuildTreeSubmenu(_ctxBranchExpandKey, out var treeActions), treeActions);
-        var pose = BindSubmenu(BuildActorPoseSubmenu(owner.Id, out var poseActions), poseActions);
-        var presets = BindSubmenu(BuildBonePresetSubmenu(owner.Id), _bonePresetActions);
-        ContextMenuItem[] items =
-        [
+        var items = new List<ContextMenuItem>
+        {
             new(visible ? "Hide from overlay" : "Show in overlay", visible ? TablerIcon.EyeOff : TablerIcon.Eye)
-            { OnInvoke = () =>
+            {
+                OnInvoke = () =>
                 {
                     if (_ctxOverlayMemoryKey is { } memoryKey)
                         _overlayPresentation.ToggleVisibleWithMemory(memoryKey, bones);
                     else _overlayPresentation.SetVisible(bones, !visible);
-                }
+                },
+                Place = MenuPlace.Visibility,
             },
-            new("Select", TablerIcon.Crosshair, submenuItems:
+            Submenu("Select", TablerIcon.Crosshair, MenuPlace.SelectMenu,
             [
                 new("Bones in " + scope, TablerIcon.SelectChildren) { OnInvoke = () => SelectBones(bones) },
                 new("All actor bones", TablerIcon.SelectChildren) { OnInvoke = () => SelectBones(ownerBones) },
             ]),
-            new("Visibility", TablerIcon.Eye, submenuItems:
+            Submenu("Visibility", TablerIcon.Eye, MenuPlace.VisibilityMenu,
             [
                 new("Show only " + scope, TablerIcon.Crosshair)
                 { OnInvoke = () => { _overlayPresentation.SetVisible(ownerBones, false); _overlayPresentation.SetVisible(bones, true); } },
                 new("Show all actor bones", TablerIcon.Eye) { OnInvoke = () => _overlayPresentation.SetVisible(ownerBones, true) },
                 new("Hide all actor bones", TablerIcon.EyeOff) { OnInvoke = () => _overlayPresentation.SetVisible(ownerBones, false) },
             ]),
-            new("Reset", TablerIcon.Refresh, submenuItems:
+            Submenu("Reset", TablerIcon.Refresh, MenuPlace.ResetMenu,
             [
                 new("Bones in " + scope, TablerIcon.Refresh, disruptive: true)
                 { OnInvoke = () => _cleanPose.ResetBones(bones.Select(TransformTargetId.ForBone).ToArray(), "Reset " + scope) },
             ]),
-            new("Actor pose", TablerIcon.Walk, submenuItems: pose, help: "The whole owning actor, including equipment"),
-            new("Bone presets", TablerIcon.Eye, submenuItems: presets),
-            new("Tree", TablerIcon.Folder, submenuItems: tree),
-        ];
-        DrawComposedMenu(menu, ref _overlayCtxOpenRequested, items);
+            Submenu("Actor pose", TablerIcon.Walk, MenuPlace.PoseMenu, BuildActorPoseSubmenu(owner.Id),
+                help: "The whole owning actor, including equipment"),
+            Submenu("Bone presets", TablerIcon.Eye, MenuPlace.BonePresetsMenu, BuildBonePresetSubmenu(owner.Id)),
+            Submenu("Tree", TablerIcon.Folder, MenuPlace.TreeMenu, BuildTreeSubmenu(_ctxBranchExpandKey)),
+        };
+        DrawMenu(menu, ref _overlayCtxOpenRequested, items);
 
         void SelectBones(IReadOnlyList<BoneId> selected)
         {
@@ -671,15 +466,10 @@ internal sealed partial class EntityContextMenus
 
     private bool _propCtxOpenRequested;
 
-    /// <summary>Shared naming prompt for lights, cameras, and props. The
-    /// opener supplies the write callback.</summary>
+    /// <summary>The name prompt every Rename and Save to library uses.</summary>
     private readonly Controls.EntityNameModal _names;
-    private readonly Controls.IssueReportModal _issueReport;
+    private readonly LibrarySavePrompt _librarySave;
 
-    /// <summary>Right-click light menu: the lifetime verbs the actor menu
-    /// gives its rows, spoken in the light's vocabulary — the eye, the file,
-    /// and the ownership-aware destroy/release the actions section makes.
-    /// </summary>
     public void DrawLightContextMenu()
     {
         if (!_lightCtxOpenRequested && !FloatingMenu.IsOpen("##light-ctx")) return;
@@ -691,77 +481,24 @@ internal sealed partial class EntityContextMenus
             FloatingMenu.Dismiss("##light-ctx");
             return;
         }
-
+        var id = SelectionId.ForLight(lightId);
         var items = new List<ContextMenuItem>
         {
-            new(light.IsOn ? "Switch off" : "Switch on",
-                light.IsOn ? TablerIcon.EyeOff : TablerIcon.Eye),
-            new("Rename", TablerIcon.Edit),
-            new("Move to camera", TablerIcon.Camera),
-            new("Duplicate", TablerIcon.Copy),
-            new("Save to file…", TablerIcon.DeviceFloppy),
-            new("Save to library", TablerIcon.Library),
-            ContextMenuItem.Separator,
+            HandleItem(id),
+            new(light.IsOn ? "Switch off" : "Switch on", light.IsOn ? TablerIcon.EyeOff : TablerIcon.Eye)
+            { OnInvoke = () => SetEntityVisible(id, !light.IsOn), Place = MenuPlace.Visibility },
+            RenameItem("Rename light", light.Name,
+                next => _lightControl.Set(lightId, Application.Presentation.LightProperties.Name, next)),
+            DuplicateItem(id),
+            SaveToFileItem(() => _lightPane.OpenSave(lightId)),
+            SaveToLibraryItem(id, "light", light.Name),
+            // A light Poser made is destroyed; one taken from the world goes back.
+            light.Ownership == LightOwnership.Spawned ? DestroyItem(id) : ReleaseItem(id),
+            DestroyAllItem("lights", _scene.Snapshot.Lights.Count == 0, _removalDialog.ConfirmDestroyAllLights),
         };
-        var actions = new List<Action?>
-        {
-            () => SetEntityVisible(SelectionId.ForLight(lightId), !light.IsOn),
-            () => OpenEntityRename(
-                "Rename light", light.Name, next => _lightControl.Set(lightId, Application.Presentation.LightProperties.Name, next)),
-            () => MoveToCamera([SelectionId.ForLight(lightId)]),
-            () => DuplicateAndSelect(SelectionId.ForLight(lightId)),
-            () => _lightPane.OpenSave(lightId),
-            // The library save asks for the entry's NAME first — the same
-            // modal renames use, with the light's name as the start.
-            () => OpenEntityRename(
-                "Save light to library", light.Name,
-                name => _scenePane.SaveEntry(SelectionId.ForLight(lightId), name)),
-            null, // separator
-        };
-        if (light.Ownership == LightOwnership.Spawned)
-        {
-            items.Add(new ContextMenuItem(
-                "Destroy", TablerIcon.Trash, danger: true));
-            actions.Add(() =>
-            {
-                _ = RemoveEntitiesSafely(
-                    [SelectionId.ForLight(lightId)],
-                    () => _selection.Remove(SelectionId.ForLight(lightId)));
-            });
-        }
-        else
-        {
-            items.Add(new ContextMenuItem("Release", TablerIcon.X));
-            actions.Add(() =>
-            {
-                _ = RemoveEntitiesSafely(
-                    [SelectionId.ForLight(lightId)],
-                    () => _selection.Remove(SelectionId.ForLight(lightId)));
-            });
-        }
-
-        items.Add(ContextMenuItem.Separator);
-        actions.Add(null);
-        items.Add(new ContextMenuItem("Destroy all lights…", TablerIcon.Trash,
-            danger: true, disabled: _scene.Snapshot.Lights.Count == 0));
-        actions.Add(_removalDialog.ConfirmDestroyAllLights);
-
-        AddHandleAction(items, actions, SelectionId.ForLight(lightId));
-        var moreActions = MoveMoreActions(items, actions, SelectionId.ForLight(lightId));
-        if (_lightCtxOpenRequested)
-        {
-            _lightCtxOpenRequested = false;
-            OpenContextMenu("##light-ctx", items.ToArray());
-        }
-        FloatingMenu.Refresh("##light-ctx", items.ToArray());
-        int clicked = FloatingMenu.Draw("##light-ctx");
-        if (clicked >= 0 && clicked < actions.Count)
-            actions[clicked]?.Invoke();
-        DrawMoreAction(items, moreActions);
+        DrawMenu("##light-ctx", ref _lightCtxOpenRequested, items, id);
     }
 
-    /// <summary>Prop context menu. Props have no standalone document, so the
-    /// menu omits Save to file. Clone and destroy use scene history.</summary>
     public void DrawPropContextMenu()
     {
         if (!_propCtxOpenRequested && !FloatingMenu.IsOpen("##prop-ctx")) return;
@@ -773,57 +510,22 @@ internal sealed partial class EntityContextMenus
             FloatingMenu.Dismiss("##prop-ctx");
             return;
         }
-
-        var items = new ContextMenuItem[]
+        var id = SelectionId.ForProp(propId);
+        var items = new List<ContextMenuItem>
         {
-            new(prop.Visible ? "Hide" : "Show",
-                prop.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
-            new("Rename", TablerIcon.Edit),
-            new("Duplicate", TablerIcon.Copy),
-            new("Save to library", TablerIcon.Library),
-            ContextMenuItem.Separator,
-            new("Destroy", TablerIcon.Trash, danger: true),
-            ContextMenuItem.Separator,
-            new("Destroy all objects…", TablerIcon.Trash, danger: true,
-                disabled: _scene.Snapshot.Props.Count == 0),
+            HandleItem(id),
+            VisibilityItem(prop.Visible, () => SetEntityVisible(id, !prop.Visible)),
+            RenameItem("Rename object", prop.Name,
+                next => _objectControl.Set(propId, Application.Presentation.PropProperties.Name, next)),
+            DuplicateItem(id),
+            SaveToLibraryItem(id, "prop", prop.Name),
+            DestroyItem(id),
+            DestroyAllItem("objects", _scene.Snapshot.Props.Count == 0, _removalDialog.ConfirmDestroyAllProps),
         };
-        var actions = new Action?[]
-        {
-            () => SetEntityVisible(SelectionId.ForProp(propId), !prop.Visible),
-            () => OpenEntityRename(
-                "Rename object", prop.Name, next => _objectControl.Set(propId, Application.Presentation.PropProperties.Name, next)),
-            () => DuplicateAndSelect(SelectionId.ForProp(propId)),
-            () => OpenEntityRename(
-                "Save prop to library", prop.Name,
-                name => _scenePane.SaveEntry(SelectionId.ForProp(propId), name)),
-            null, // separator
-            () =>
-            {
-                _ = RemoveEntitiesSafely(
-                    [SelectionId.ForProp(propId)],
-                    () => _selection.Remove(SelectionId.ForProp(propId)));
-            },
-            null,
-            _removalDialog.ConfirmDestroyAllProps,
-        };
-
-        AddHandleAction(ref items, ref actions, SelectionId.ForProp(propId));
-        var moreActions = MoveMoreActions(ref items, ref actions, SelectionId.ForProp(propId));
-        if (_propCtxOpenRequested)
-        {
-            _propCtxOpenRequested = false;
-            OpenContextMenu("##prop-ctx", items);
-        }
-        FloatingMenu.Refresh("##prop-ctx", items);
-        int clicked = FloatingMenu.Draw("##prop-ctx");
-        if (clicked >= 0 && clicked < actions.Length)
-            actions[clicked]?.Invoke();
-        DrawMoreAction(items, moreActions);
+        DrawMenu("##prop-ctx", ref _propCtxOpenRequested, items, id);
     }
 
-    /// <summary>Right-click camera menu for live, framing, file, and lifetime
-    /// actions. The default camera cannot be destroyed.
-    /// </summary>
+    /// <summary>The camera menu. The main camera can't be destroyed.</summary>
     public void DrawCameraContextMenu()
     {
         if (!_cameraCtxOpenRequested && !FloatingMenu.IsOpen("##camera-ctx")) return;
@@ -835,87 +537,35 @@ internal sealed partial class EntityContextMenus
             FloatingMenu.Dismiss("##camera-ctx");
             return;
         }
-
-        bool canRecenterTracked = CanRecenterOnTracked(cameraId);
+        var id = SelectionId.ForCamera(cameraId);
         var items = new List<ContextMenuItem>
         {
-            new(camera.IsLive
-                    ? "Return to main camera"
-                    : "Look through", TablerIcon.Video,
-                disabled: camera.IsLive && camera.IsDefault),
-            new(camera.IsLocked ? "Unlock" : "Lock",
-                camera.IsLocked ? TablerIcon.LockOpen : TablerIcon.Lock),
-            new("Look at tracked actor", TablerIcon.Crosshair,
-                disabled: !canRecenterTracked,
-                help: "Swing the camera back onto whoever it tracks"),
-            new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
-            new("Duplicate", TablerIcon.Copy),
-            new("Save to file…", TablerIcon.DeviceFloppy),
-            new("Save to library", TablerIcon.Library),
-            new("Reset", TablerIcon.Refresh, submenuItems:
+            HandleItem(id),
+            new(camera.IsLive ? "Return to main camera" : "Look through", TablerIcon.Video,
+                disabled: camera.IsLive && camera.IsDefault)
+            { OnInvoke = () => _cameraControl.SetLive(cameraId, !camera.IsLive), Place = MenuPlace.View },
+            LockItem(camera.IsLocked, () => _entityActions.ToggleLock(id)),
+            new("Look at tracked actor", TablerIcon.Crosshair, disabled: !CanRecenterOnTracked(cameraId),
+                help: "Swing the camera back onto whoever it tracks")
+            { OnInvoke = () => RecenterCameraOnTrackedActor(cameraId), Place = MenuPlace.Framing },
+            RenameItem("Rename camera", camera.Name,
+                next => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Name, next),
+                disabled: camera.IsLocked),
+            DuplicateItem(id),
+            SaveToFileItem(() => _cameraPane.OpenSave(cameraId)),
+            SaveToLibraryItem(id, "camera", camera.Name),
+            Submenu("Reset", TablerIcon.Refresh, MenuPlace.ResetMenu,
             [
-                new("Transform", TablerIcon.Refresh,
-                    disabled: camera.IsLocked || !camera.Available),
-                new("Properties", TablerIcon.Refresh, disabled: camera.IsLocked),
+                new("Transform", TablerIcon.Refresh, disabled: camera.IsLocked || !camera.Available)
+                { OnInvoke = () => _cameraPane.ResetCameraTransform(cameraId) },
+                new("Properties", TablerIcon.Refresh, disabled: camera.IsLocked)
+                { OnInvoke = () => _cameraControl.ResetProperties(cameraId) },
             ]),
-        };
-        var actions = new List<Action?>
-        {
-            () => _cameraControl.SetLive(cameraId, !camera.IsLive),
-            () => _entityActions.ToggleLock(SelectionId.ForCamera(cameraId)),
-            () => RecenterCameraOnTrackedActor(cameraId),
-            () => OpenEntityRename(
-                "Rename camera", camera.Name, next => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Name, next)),
-            () => DuplicateAndSelect(SelectionId.ForCamera(cameraId)),
-            () => _cameraPane.OpenSave(cameraId),
-            () => OpenEntityRename(
-                "Save camera to library", camera.Name,
-                name => _scenePane.SaveEntry(SelectionId.ForCamera(cameraId), name)),
-            null,
+            DestroyAllItem("cameras", !_scene.Snapshot.Cameras.Any(c => !c.IsDefault), _removalDialog.ConfirmDestroyAllCameras),
         };
         if (!camera.IsDefault)
-        {
-            items.Add(ContextMenuItem.Separator);
-            items.Add(new ContextMenuItem(
-                "Destroy", TablerIcon.Trash, danger: true));
-            actions.Add(null);
-            actions.Add(() =>
-            {
-                _ = RemoveEntitiesSafely(
-                    [SelectionId.ForCamera(cameraId)],
-                    () => _selection.Remove(SelectionId.ForCamera(cameraId)));
-            });
-        }
-
-        items.Add(ContextMenuItem.Separator);
-        actions.Add(null);
-        items.Add(new ContextMenuItem("Destroy all cameras…", TablerIcon.Trash,
-            danger: true, disabled: !_scene.Snapshot.Cameras.Any(c => !c.IsDefault)));
-        actions.Add(_removalDialog.ConfirmDestroyAllCameras);
-
-        AddHandleAction(items, actions, SelectionId.ForCamera(cameraId));
-        var moreActions = MoveMoreActions(items, actions);
-        if (_cameraCtxOpenRequested)
-        {
-            _cameraCtxOpenRequested = false;
-            OpenContextMenu("##camera-ctx", items.ToArray());
-        }
-        FloatingMenu.Refresh("##camera-ctx", items.ToArray());
-        int clicked = FloatingMenu.Draw("##camera-ctx");
-        if (clicked >= 0 && clicked < actions.Count)
-            actions[clicked]?.Invoke();
-        int sub = FloatingMenu.ConsumeSubmenuClick(out int parent);
-        if (parent >= 0 && parent < items.Count)
-        {
-            if (InvokeComposedAction(items, parent, sub)) return;
-            if (items[parent].Label == "More" && sub >= 0 && sub < moreActions.Count)
-                moreActions[sub]?.Invoke();
-            else if (items[parent].Label == "Reset")
-            {
-                if (sub == 0) _cameraPane.ResetCameraTransform(cameraId);
-                else if (sub == 1) _cameraControl.ResetProperties(cameraId);
-            }
-        }
+            items.Add(DestroyItem(id));
+        DrawMenu("##camera-ctx", ref _cameraCtxOpenRequested, items);
     }
 
     // ── world-object / group / selection context menus ──────────────────
@@ -930,9 +580,8 @@ internal sealed partial class EntityContextMenus
 
     private bool _selectionCtxOpenRequested;
 
-    /// <summary>Right-click borrowed-object menu: the eye, the user's own
-    /// name over the map's model, and Release — never Destroy, because the
-    /// map owns the thing and gets it back where it stood.</summary>
+    /// <summary>The menu for scenery, furniture and effects, borrowed from the map
+    /// or spawned by Poser.</summary>
     public void DrawWorldObjectContextMenu()
     {
         if (!_worldObjectCtxOpenRequested && !FloatingMenu.IsOpen("##world-object-ctx")) return;
@@ -944,92 +593,49 @@ internal sealed partial class EntityContextMenus
             FloatingMenu.Dismiss("##world-object-ctx");
             return;
         }
-        var items = new[]
+        var id = SelectionId.ForWorldObject(worldObjectId);
+        string noun = worldObject.IsFurniture ? "furniture" : "object";
+        var items = new List<ContextMenuItem>
         {
-            new ContextMenuItem(worldObject.Visible ? "Hide" : "Show",
-                worldObject.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
-            new ContextMenuItem("Rename", TablerIcon.Edit),
-            new ContextMenuItem("Duplicate", TablerIcon.Copy),
-            new ContextMenuItem("Save to library", TablerIcon.Library),
-            ContextMenuItem.Separator,
-            // A spawned object is Poser's own and DESTROYS; a borrowed
-            // one is the map's and goes back where it stood.
-            worldObject.Spawned
-                ? new ContextMenuItem("Destroy", TablerIcon.Trash,
-                    danger: true)
-                : new ContextMenuItem("Release", TablerIcon.X),
-        };
-        var actions = new Action?[]
-        {
-            () => SetEntityVisible(SelectionId.ForWorldObject(worldObjectId), !worldObject.Visible),
-            () => OpenEntityRename(
-                worldObject.IsFurniture ? "Rename furniture" : "Rename object", worldObject.Name,
+            HandleItem(id),
+            VisibilityItem(worldObject.Visible, () => SetEntityVisible(id, !worldObject.Visible)),
+            RenameItem($"Rename {noun}", worldObject.Name,
                 next => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.Name, next)),
-            () =>
-            {
-                DuplicateAndSelect(SelectionId.ForWorldObject(worldObjectId));
-            },
-            () => OpenEntityRename(
-                worldObject.IsFurniture ? "Save furniture to library" : "Save object to library", worldObject.Name,
-                name => _scenePane.SaveEntry(SelectionId.ForWorldObject(worldObjectId), name)),
-            null, // separator
-            () =>
-            {
-                _ = RemoveEntitiesSafely(
-                    [SelectionId.ForWorldObject(worldObjectId)],
-                    () => _selection.Remove(
-                        SelectionId.ForWorldObject(worldObjectId)));
-            },
+            DuplicateItem(id),
+            SaveToLibraryItem(id, noun, worldObject.Name),
+            // An object Poser spawned is destroyed; one borrowed from the map
+            // goes back where it stood.
+            worldObject.Spawned ? DestroyItem(id) : ReleaseItem(id),
         };
-        var stateItems = new List<ContextMenuItem>();
-        var stateActions = new List<Action?>();
         if (worldObject.IsFurniture)
         {
             var lights = worldObject.FurnitureLights;
             for (int i = 0; i < lights.Count; i++)
             {
                 var light = lights[i];
-                stateItems.Add(new($"Light {i + 1}: {(light.Enabled ? "On" : "Off")}",
-                    TablerIcon.Bulb, keepOpen: true));
-                stateActions.Add(() => _objectControl.SetFurnitureLight(worldObjectId, light.Key, !light.Enabled));
+                items.Add(new($"Light {i + 1}: {(light.Enabled ? "On" : "Off")}", TablerIcon.Bulb, keepOpen: true)
+                { OnInvoke = () => _objectControl.SetFurnitureLight(worldObjectId, light.Key, !light.Enabled) });
             }
         }
         if (worldObject.IsVfx)
-        {
-            stateItems.Add(new(worldObject.VfxPaused ? "Play" : "Pause",
-                worldObject.VfxPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
-            stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.VfxPaused, !worldObject.VfxPaused));
-        }
+            items.Add(PlaybackItem(!worldObject.VfxPaused, () => _objectControl.Set(worldObjectId,
+                Application.Presentation.WorldObjectProperties.VfxPaused, !worldObject.VfxPaused)));
         else
         {
-            stateItems.Add(new(worldObject.NightState ? "Day" : "Night",
-                worldObject.NightState ? TablerIcon.Sun : TablerIcon.Moon));
-            stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.NightState, !worldObject.NightState));
-            if (!worldObject.Spawned)
+            items.Add(new(worldObject.NightState ? "Day" : "Night", worldObject.NightState ? TablerIcon.Sun : TablerIcon.Moon)
             {
-                stateItems.Add(new(worldObject.AnimationPaused ? "Play" : "Pause",
-                    worldObject.AnimationPaused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause));
-                stateActions.Add(() => _objectControl.Set(worldObjectId, Application.Presentation.WorldObjectProperties.AnimationPaused, !worldObject.AnimationPaused));
-            }
+                OnInvoke = () => _objectControl.Set(worldObjectId,
+                    Application.Presentation.WorldObjectProperties.NightState, !worldObject.NightState),
+            });
+            if (!worldObject.Spawned)
+                items.Add(PlaybackItem(!worldObject.AnimationPaused, () => _objectControl.Set(worldObjectId,
+                    Application.Presentation.WorldObjectProperties.AnimationPaused, !worldObject.AnimationPaused)));
         }
-        items = stateItems.Concat(items).ToArray();
-        actions = stateActions.Concat(actions).ToArray();
-        AddHandleAction(ref items, ref actions, SelectionId.ForWorldObject(worldObjectId));
-        var moreActions = MoveMoreActions(ref items, ref actions, SelectionId.ForWorldObject(worldObjectId));
-        if (_worldObjectCtxOpenRequested)
-        {
-            _worldObjectCtxOpenRequested = false;
-            OpenContextMenu("##world-object-ctx", items);
-        }
-        FloatingMenu.Refresh("##world-object-ctx", items);
-        int clicked = FloatingMenu.Draw("##world-object-ctx");
-        if (clicked >= 0 && clicked < actions.Length)
-            actions[clicked]?.Invoke();
-        DrawMoreAction(items, moreActions);
+        DrawMenu("##world-object-ctx", ref _worldObjectCtxOpenRequested, items, id);
     }
 
-    /// <summary>Group-structure actions. Selection actions are available from
-    /// the selected members' context menu.</summary>
+    /// <summary>The group's own actions. Actions on the selected members are in
+    /// the selection's menu.</summary>
     public void DrawGroupContextMenu()
     {
         if (!_groupCtxOpenRequested && !FloatingMenu.IsOpen("##group-ctx")) return;
@@ -1041,96 +647,41 @@ internal sealed partial class EntityContextMenus
             FloatingMenu.Dismiss("##group-ctx");
             return;
         }
-        bool locked = group.Locked;
         bool filtering = !string.IsNullOrEmpty(_sidebar.Filter);
-        // The gates read as the group's own state: closed shows the verb
-        // that opens it. A closed gate anywhere above still wins.
-        var items = new[]
+        var members = _groups.Descendants(group).ToArray();
+        var items = new List<ContextMenuItem>
         {
-            new ContextMenuItem("Rename", TablerIcon.Edit),
-            new ContextMenuItem("Duplicate", TablerIcon.Copy,
-                submenuItems: DuplicateSubmenu(posable: true)),
-            new ContextMenuItem("Save to library", TablerIcon.Library),
-            new ContextMenuItem(locked ? "Unlock" : "Lock",
-                locked ? TablerIcon.LockOpen : TablerIcon.Lock),
-            ContextMenuItem.Separator,
-            new ContextMenuItem(group.Hidden ? "Show" : "Hide",
-                group.Hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
-            new ContextMenuItem(_overlayPresentation.IsHandleShown(groupId) ? "Hide handle" : "Show handle",
-                _overlayPresentation.IsHandleShown(groupId) ? TablerIcon.EyeOff : TablerIcon.Eye,
-                keepOpen: true, help: "Only the overlay handle; does not hide the group or its members"),
-            new ContextMenuItem(group.Paused ? "Play" : "Pause",
-                group.Paused ? TablerIcon.PlayerPlay : TablerIcon.PlayerPause),
-            new ContextMenuItem(group.Night ? "Day" : "Night",
-                group.Night ? TablerIcon.Sun : TablerIcon.Moon),
-            ContextMenuItem.Separator,
-            new ContextMenuItem("Ungroup", TablerIcon.X),
-            new ContextMenuItem("Tree", TablerIcon.Folder, submenuItems:
+            HandleItem(groupId),
+            RenameItem("Rename group", group.Name, next => _groupSteps.Rename(groupId, next)),
+            DuplicateItem(() => DuplicateGroup(group, withPose: false), () => DuplicateGroup(group, withPose: true)),
+            SaveGroupToLibraryItem(members, group.Name),
+            LockItem(group.Locked, () => _entityActions.ToggleGroupLock(groupId)),
+            VisibilityItem(!group.Hidden, () => _groupSteps.SetHidden(group, !group.Hidden)),
+            PlaybackItem(!group.Paused, () => _groupSteps.SetPaused(group, !group.Paused)),
+            new(group.Night ? "Day" : "Night", group.Night ? TablerIcon.Sun : TablerIcon.Moon)
+            { OnInvoke = () => _groupSteps.SetNight(group, !group.Night) },
+            new("Ungroup", TablerIcon.X) { OnInvoke = () => _groupSteps.Dissolve(groupId) },
+            MoveToCameraItem(members, disabled: group.Locked || !members.Any(_placement.CanPlace)),
+            Submenu("Tree", TablerIcon.Folder, MenuPlace.TreeMenu,
             [
-                new("Expand", TablerIcon.SquarePlus, disabled: filtering),
-                new("Collapse", TablerIcon.SquareMinus, disabled: filtering),
-                new("Expand all", TablerIcon.SquarePlus, disabled: filtering),
-                new("Collapse all", TablerIcon.SquareMinus, disabled: filtering),
+                new("Expand", TablerIcon.SquarePlus, disabled: filtering)
+                { OnInvoke = () => SetGroupTreeCollapsed(groupId, collapsed: false, subtree: false) },
+                new("Collapse", TablerIcon.SquareMinus, disabled: filtering)
+                { OnInvoke = () => SetGroupTreeCollapsed(groupId, collapsed: true, subtree: false) },
+                new("Expand all", TablerIcon.SquarePlus, disabled: filtering)
+                { OnInvoke = () => SetGroupTreeCollapsed(groupId, collapsed: false, subtree: true) },
+                new("Collapse all", TablerIcon.SquareMinus, disabled: filtering)
+                { OnInvoke = () => SetGroupTreeCollapsed(groupId, collapsed: true, subtree: true) },
             ]),
-            ContextMenuItem.Separator,
-            new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
+            // Each member is removed the way its own kind is; the empty group
+            // then goes by itself.
+            DestroyItem(() => _ = RemoveEntitiesSafely(group.Members.ToArray())),
         };
-        var actions = new Action?[]
-        {
-            () => OpenEntityRename(
-                "Rename group", group.Name,
-                next => _groupSteps.Rename(groupId, next)),
-            null, // Duplicate — child clicks are read separately.
-            () => OpenEntityRename(
-                "Save group to library", group.Name,
-                name => _scenePane.SaveGroupEntry(
-                    _groups.Descendants(group).ToArray(), name)),
-            () => _entityActions.ToggleGroupLock(groupId),
-            null, // separator
-            () => _groupSteps.SetHidden(group, !group.Hidden),
-            () => _overlayPresentation.ToggleHandle(groupId),
-            () => _groupSteps.SetPaused(group, !group.Paused),
-            () => _groupSteps.SetNight(group, !group.Night),
-            null, // separator
-            () => _groupSteps.Dissolve(groupId),
-            null, // Tree submenu.
-            null, // separator
-            // The members go through each kind's own lifetime seam; the
-            // emptied group dissolves through the scene prune.
-            () => _ = RemoveEntitiesSafely(group.Members.ToArray()),
-        };
-        items = items.Append(new ContextMenuItem("Move to camera", TablerIcon.Camera,
-            disabled: locked || !_groups.Descendants(group).Any(_placement.CanPlace))).ToArray();
-        actions = actions.Append((Action?)(() => MoveToCamera(_groups.Descendants(group).ToArray()))).ToArray();
-        var moreActions = MoveMoreActions(ref items, ref actions);
-        if (_groupCtxOpenRequested)
-        {
-            _groupCtxOpenRequested = false;
-            OpenContextMenu("##group-ctx", items);
-        }
-        FloatingMenu.Refresh("##group-ctx", items);
-        int clicked = FloatingMenu.Draw("##group-ctx");
-        if (clicked >= 0 && clicked < actions.Length)
-            actions[clicked]?.Invoke();
-        int subClicked = FloatingMenu.ConsumeSubmenuClick(
-            out int subParent);
-        if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
-            && InvokeComposedAction(items, subParent, subClicked)) return;
-        if (subClicked >= 0 && subParent >= 0 && subParent < items.Length
-            && items[subParent].Label == "Duplicate")
-            DuplicateGroup(group, withPose: subClicked == 1);
-        else if (subClicked is >= 0 and < 4 && subParent >= 0 && subParent < items.Length
-            && items[subParent].Label == "Tree")
-            SetGroupTreeCollapsed(groupId, collapsed: subClicked % 2 == 1, subtree: subClicked >= 2);
-        else if (subClicked >= 0 && subClicked < moreActions.Count
-            && subParent >= 0 && subParent < items.Length
-            && items[subParent].Label == "More")
-            moreActions[subClicked]?.Invoke();
+        DrawMenu("##group-ctx", ref _groupCtxOpenRequested, items);
     }
 
-    /// <summary>Actions for a multi-entity selection. Each action dispatches
-    /// to supported entity kinds, skips unsupported kinds, and is disabled
-    /// when no selected entity supports it.</summary>
+    /// <summary>Actions for several selected things at once. An action is offered
+    /// when at least one selected thing supports it.</summary>
     public void DrawSelectionContextMenu()
     {
         if (!_selectionCtxOpenRequested && !FloatingMenu.IsOpen("##selection-ctx")) return;
@@ -1142,9 +693,8 @@ internal sealed partial class EntityContextMenus
             return;
         }
 
-        // Hide/Show and Pause/Play drive the set to ONE state: any
-        // visible member means Hide, anything running means Pause. The
-        // pause verb exists only when something in the set animates.
+        // Hide and Pause act on the whole set at once: Hide when anything is
+        // visible, Pause when anything is playing.
         bool anyVisible = false, anyAnimated = false, anyRunning = false;
         bool anyActor = false;
         foreach (var id in _selection.Selected)
@@ -1159,84 +709,31 @@ internal sealed partial class EntityContextMenus
         }
 
         var matched = _groups.ActiveSelection(_selection.Selected);
-        // With an actor in the set, Duplicate opens the plain/posed
-        // choice; without one there is nothing to pose.
         var items = new List<ContextMenuItem>
         {
-            new("Duplicate", TablerIcon.Copy,
-                submenuItems: anyActor ? DuplicateSubmenu(posable: true) : null),
-            new(anyVisible ? "Hide" : "Show",
-                anyVisible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            // Only a set with an actor in it can be copied in its pose.
+            DuplicateItem(() => DuplicateSelection(withPose: false),
+                anyActor ? () => DuplicateSelection(withPose: true) : null),
+            VisibilityItem(anyVisible, () => SetSelectionVisible(!anyVisible)),
+            MoveToCameraItem(_selection.Selected),
+            new("Deselect", TablerIcon.X) { OnInvoke = () => _selection.Clear() },
+            DestroyItem(DestroySelection),
         };
-        var actions = new List<Action?>
-        {
-            anyActor ? null : () => DuplicateSelection(withPose: false),
-            () => SetSelectionVisible(!anyVisible),
-        };
+        if (anyAnimated)
+            items.Add(PlaybackItem(anyRunning, () => SetSelectionPaused(anyRunning)));
         if (matched is { } selectedGroup)
         {
-            bool handleShown = _overlayPresentation.IsHandleShown(selectedGroup.Id);
-            items.Add(new ContextMenuItem(handleShown ? "Hide handle" : "Show handle",
-                handleShown ? TablerIcon.EyeOff : TablerIcon.Eye, keepOpen: true,
-                help: "Only the overlay handle; does not hide the group or its members"));
-            actions.Add(() => _overlayPresentation.ToggleHandle(selectedGroup.Id));
-        }
-        if (anyAnimated)
-        {
-            items.Add(new ContextMenuItem(anyRunning ? "Pause" : "Play",
-                anyRunning ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay));
-            actions.Add(() => SetSelectionPaused(anyRunning));
-        }
-        items.Add(new ContextMenuItem("Move to camera", TablerIcon.Crosshair));
-        actions.Add(() => MoveToCamera(_selection.Selected));
-        items.Add(ContextMenuItem.Separator);
-        actions.Add(null);
-        if (matched != null)
-        {
-            items.Add(new ContextMenuItem(
-                "Save to library", TablerIcon.Library));
-            actions.Add(() => OpenEntityRename(
-                "Save group to library", matched.Name,
-                name => _scenePane.SaveGroupEntry(
-                    _groups.Descendants(matched).ToArray(), name)));
-            items.Add(new ContextMenuItem("Ungroup", TablerIcon.X));
-            actions.Add(() => _groupSteps.Dissolve(matched.Id));
+            items.Add(HandleItem(selectedGroup.Id));
+            items.Add(SaveGroupToLibraryItem(_groups.Descendants(selectedGroup).ToArray(), selectedGroup.Name));
+            items.Add(new("Ungroup", TablerIcon.X) { OnInvoke = () => _groupSteps.Dissolve(selectedGroup.Id) });
         }
         else
-        {
-            items.Add(new ContextMenuItem("Group…", TablerIcon.Folder));
-            actions.Add(() => OpenEntityRename(
-                "Name the group",
-                global::Poser.Domain.Scene.EntityNames.Next("Group", _groups.All.Select(x => x.Name)),
-                name => _groupSteps.Create(name, _selection.Selected)));
-        }
-        items.Add(new ContextMenuItem("Deselect", TablerIcon.X));
-        actions.Add(() => _selection.Clear());
-        items.Add(ContextMenuItem.Separator);
-        actions.Add(null);
-        items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash,
-            danger: true));
-        actions.Add(DestroySelection);
-        var moreActions = MoveMoreActions(items, actions);
-        if (_selectionCtxOpenRequested)
-        {
-            _selectionCtxOpenRequested = false;
-            OpenContextMenu("##selection-ctx", items.ToArray());
-        }
-        FloatingMenu.Refresh("##selection-ctx", items.ToArray());
-        int clicked = FloatingMenu.Draw("##selection-ctx");
-        if (clicked >= 0 && clicked < actions.Count)
-            actions[clicked]?.Invoke();
-        int subClicked = FloatingMenu.ConsumeSubmenuClick(
-            out int subParent);
-        if (subClicked >= 0 && subParent >= 0 && subParent < items.Count
-            && InvokeComposedAction(items, subParent, subClicked)) return;
-        if (subClicked >= 0 && subParent >= 0 && subParent < items.Count
-            && items[subParent].Label == "Duplicate")
-            DuplicateSelection(withPose: subClicked == 1);
-        else if (subClicked >= 0 && subClicked < moreActions.Count
-            && subParent >= 0 && subParent < items.Count
-            && items[subParent].Label == "More")
-            moreActions[subClicked]?.Invoke();
+            items.Add(new("Group…", TablerIcon.Folder)
+            {
+                OnInvoke = () => OpenEntityRename("Name the group",
+                    global::Poser.Domain.Scene.EntityNames.Next("Group", _groups.All.Select(x => x.Name)),
+                    name => _groupSteps.Create(name, _selection.Selected)),
+            });
+        DrawMenu("##selection-ctx", ref _selectionCtxOpenRequested, items);
     }
 }
