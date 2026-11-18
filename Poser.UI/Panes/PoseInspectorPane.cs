@@ -2462,6 +2462,7 @@ public partial class PoseInspectorPane : IDisposable
     private ulong _railHeaderRevision;
     private bool _railHeaderLinked;
     private bool _railHeaderOverride;
+    private int _railHeaderNames;
     private bool _railHeaderConfigHooked;
 
     public (string Who, string Sub, int Linked) RailHeader()
@@ -2476,10 +2477,12 @@ public partial class PoseInspectorPane : IDisposable
         if (_railHeaderPrimed &&
             _railHeaderRevision == _scene.Revision &&
             _railHeaderLinked == linked &&
-            _railHeaderOverride == hasOverride)
+            _railHeaderOverride == hasOverride &&
+            _railHeaderNames == _configuration.NamesRevision)
             return _railHeader;
         _railHeaderPrimed = true;
         _railHeaderRevision = _scene.Revision;
+        _railHeaderNames = _configuration.NamesRevision;
         _railHeaderLinked = linked;
         _railHeaderOverride = hasOverride;
         _railHeader = ComputeRailHeader();

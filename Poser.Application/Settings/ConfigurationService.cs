@@ -182,12 +182,17 @@ public class ConfigurationService : IDisposable
     // actor's logical lineage Guid instead of a legacy entity id.
     private readonly Dictionary<Guid, string> _lineageNicknames = new();
 
+    /// <summary>Goes up every time an actor is renamed or the names are
+    /// cleared, so text that shows a name can tell it needs redrawing.</summary>
+    public int NamesRevision { get; private set; }
+
     public void SetNickname(Guid actorLineage, string? name)
     {
         if (string.IsNullOrWhiteSpace(name))
             _lineageNicknames.Remove(actorLineage);
         else
             _lineageNicknames[actorLineage] = name.Trim();
+        NamesRevision++;
     }
 
     public string? GetNickname(Guid actorLineage) =>
@@ -199,6 +204,7 @@ public class ConfigurationService : IDisposable
         // Keep them during same-session disappearance/undo, not across sessions.
         _lineageNicknames.Clear();
         _lineageAnonymousNames.Clear();
+        NamesRevision++;
     }
 
     private static readonly Random _random = new();
