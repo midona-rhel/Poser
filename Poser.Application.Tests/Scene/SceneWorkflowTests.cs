@@ -1029,7 +1029,7 @@ public sealed class SceneWorkflowTests
     {
         var runtime = new FakeRuntime
         {
-            ReadResult = SceneWith(Actor("Lead", out _)),
+            ReadResult = SceneWith(Actor("Actor 1", out _)),
             ActorReadyAfterPolls = 3,
         };
         using var load = Workflow(runtime);
@@ -1040,7 +1040,7 @@ public sealed class SceneWorkflowTests
         // It polled rather than giving up on the first look.
         Assert.True(runtime.ActorReadyPolls > 3);
         // And it still posed the actor once readiness landed.
-        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.Contains("ArmPoseImport:Actor 1", runtime.Calls);
         Assert.DoesNotContain(
             load.Progress!.Outcome!.Entities, entity => !entity.Restored);
         // Issue #41: the load answers on the import's terminal receipt, never its pending label.
