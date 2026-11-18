@@ -19,8 +19,28 @@ comments and names in the code.
 - Describe how things are now. Leave out how they used to be and how the work
   went.
 - Cut what the reader does not need.
+- Say the idea first, in one or two plain sentences, the way you would say it
+  to someone. Details come after. For example: "An MCDF is never supposed to be
+  edited: it is an appearance that never changes. A scene is a project you save,
+  load and keep working on, so saving and loading a scene whose actors'
+  appearance you own shouldn't lock anything."
 
 If a line reads like notes someone wrote for themselves, rewrite it.
+
+## Nothing personal
+
+Never write anything about the owner or the owner's own work. This applies to
+issues, pull requests, comments, release notes, documentation, code, tests and
+commit messages.
+
+- No names of the owner's characters, or of any character in their game.
+- No names of their scenes, poses, MCDFs, library files or Penumbra
+  collections, and nothing describing what is in their scenes or screenshots.
+- No local paths that contain a user name.
+
+Describe what was tested in neutral words: "a test scene with three actors",
+"the local player", "an actor with an MCDF applied". Test data uses made-up
+names such as "Lead". Read every text for this before you post or commit it.
 
 ## Code
 
