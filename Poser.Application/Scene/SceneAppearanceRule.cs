@@ -5,12 +5,13 @@ namespace Poser.Application.Scene;
 /// <summary>
 /// How a loaded scene gives each actor its look.
 ///
-/// An MCDF is a promise: the actor looks exactly like the file, and the look cannot be
-/// edited. A scene is a project you keep working on. So:
+/// An MCDF is an appearance that never changes: it is never edited. A scene is a project
+/// you save, load and keep working on, so saving and loading it never locks an
+/// appearance you own:
 ///
 /// <list type="bullet">
-/// <item>An actor that had an MCDF loaded onto it when the scene was saved gets that
-/// MCDF again, locked.</item>
+/// <item>An actor that had an MCDF applied when the scene was saved gets that MCDF
+/// again, and its appearance can't be edited.</item>
 /// <item>Every other actor gets its scene appearance put back and stays editable, on the
 /// install that saved the scene.</item>
 /// <item>A scene saved by another install (one someone shared with you) has none of that

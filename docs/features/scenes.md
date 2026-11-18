@@ -30,11 +30,13 @@ The save dialog shows the same two options under the file list.
 
 ### Scene appearance and MCDFs
 
-An MCDF you load onto an actor is a promise: the actor looks exactly like the file,
-and the look can't be edited. A scene is a project you keep working on. So a scene
-saved with **Include appearance files** loads like this:
+An MCDF is an appearance that never changes: it is never edited. A scene is a
+project you save, load and keep working on. Saving and loading a scene never locks
+an appearance you own. So a scene saved with **Include appearance files** loads
+like this:
 
-- An actor that had an MCDF loaded onto it gets that MCDF again, locked.
+- An actor that had an MCDF applied gets that MCDF again, and its appearance can't
+  be edited.
 - Every other actor gets its scene appearance back: its Glamourer look and, for
   actors other than your own character, its Customize+ body. It keeps the mods of
   its collection and stays editable. A mod you added or changed since just shows
