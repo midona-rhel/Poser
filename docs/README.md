@@ -1,23 +1,32 @@
 # Poser documentation
 
-What each part of Poser does, written for people who use it:
+New to Poser? Start with [Getting started](features/getting-started.md), which walks through the main window and the toolbar.
 
-- [Selecting and moving things](features/selection-and-transforms.md)
-- [Posing](features/pose-operations.md)
-- [Expressions, gaze and IK](features/expression-gaze-and-ik.md)
+## Features
+
+- [Posing](features/posing.md): the gizmo, the Pose tab, mirroring, resetting and copying poses
+- [IK](features/ik.md): posing a whole limb by dragging its end
+- [Expressions and gaze](features/expressions-and-gaze.md)
 - [Animation](features/animation.md)
-- [Pose files, character files and the Library](features/files-and-transfer.md)
-- [Scenes](features/scenes.md)
-- [Appearance](features/runtime-appearance.md)
+- [Actors](features/actors.md): adding actors, their model, tint and wetness, and companions
+- [Appearance](features/appearance.md): body, face, gear, mods and MCDFs
+- [Objects](features/objects.md): props, furniture, scenery and effects
+- [Lights](features/lights.md)
+- [Cameras](features/cameras.md)
+- [Environment](features/environment.md): time, weather, sky and atmosphere
+- [Overlays](features/overlays.md): dialogue boxes, chat bubbles and reference images
+- [Scenes](features/scenes.md): saving and loading everything at once
+- [Poses and the Library](features/poses-and-library.md)
+- [Basics](features/basics.md): undo, number fields, handles and reporting a bug
 
-How Poser is built, for people changing the code:
+## For developers
 
-- [What Poser is and what it leaves to other plugins](architecture/product-and-boundaries.md)
-- [How a pose reaches the game](architecture/posing-runtime.md)
-- [What Poser keeps track of](architecture/application-state.md)
-- [How the interface is put together](architecture/ui-workspace.md)
-- [Testing and deploying](process/testing.md)
-- [Keeping dependencies up to date](process/dependency-currency.md)
+- [How the code is split up](architecture/product-and-boundaries.md)
+- [Posing runtime](architecture/posing-runtime.md)
+- [Application state](architecture/application-state.md)
+- [Interface code](architecture/ui-workspace.md)
+- [Testing](process/testing.md)
+- [Updating dependencies](process/dependency-currency.md)
 - [Making a release](release/runbook.md) and [what a release must not contain](release/exclusions.md)
 
-[Release notes](release/CHANGELOG.md) list what changed in each version.
+[Release notes](release/CHANGELOG.md)

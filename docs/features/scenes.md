@@ -1,278 +1,56 @@
 # Scenes
 
-A scene is everything you set up in GPose: actors and their poses, objects, lights,
-cameras, the environment, overlays, groups and what follows what. Poser saves it
-as one `.xivs` file.
-
-Choose **Scene** at the top of the Poser window to open the Scene page.
+A scene is everything you've set up in GPose: the actors and their poses, objects, lights, cameras, the environment, overlays and groups. Poser saves it as one `.xivs` file that you can load again later, or share with someone else. Press **Scene** at the top of the main window to save and load scenes.
 
 ## Saving a scene
 
-On the Scene page, type an optional **Description** and press **Save…**.
+On the Scene page, type a **Description** if you want one and press **Save…** to choose where to save the file. Two options decide what goes into it:
 
-- **Include animation** (on by default) saves what each actor is playing. See
-  [below](#a-scene-keeps-its-animation-unless-the-save-turns-it-off).
-- **Include appearance files** (off by default) puts each actor's look and mods
-  into the file, so the scene looks the same on another computer. The save dialog
-  and the Library's save have the same option. It is never turned on for you.
-- **Size** shows how large the next save will be.
+- **Include animation**, on by default, saves what each actor is playing, so the scene comes back moving. With it off, the scene only keeps how everything looks at the moment you save.
+- **Include appearance files**, off by default, saves each actor's appearance and the mods it needs into the file, so the scene looks the same on another computer. It makes the file a lot bigger, and **Size**, under the options, shows how big the next save will be.
 
-The save dialog shows the same two options under the file list.
+The save window has the same two options under its list of files, and saving a scene from the Library has **Include appearance files** too.
 
-### What a scene keeps
+A scene always keeps each actor's pose, position, visibility, gaze, companion and model, and the name of the Penumbra collection you chose for it. It doesn't keep the mods themselves, unless you include appearance files. With **Anonymous mode** on, actors are saved as "Actor 1", "Actor 2" and so on.
 
-- Each actor's pose, placement, visibility, gaze, companion and model.
-- With Anonymous mode on, actors are saved as "Actor 1", "Actor 2" and so on.
-  Otherwise the name you see is saved.
-- A Penumbra collection you chose for an actor, by name. It does not save the mods
-  themselves.
-- **Clothing only**, if you used it.
+## Scenes and MCDFs
 
-### Scene appearance and MCDFs
+An MCDF is a finished appearance that's never edited, while a scene is something you keep coming back to and changing. So when you load a scene you saved with **Include appearance files**:
 
-An MCDF is an appearance that never changes: it is never edited. A scene is a
-project you save, load and keep working on. Saving and loading a scene never locks
-an appearance you own. So a scene saved with **Include appearance files** loads
-like this:
+- An actor that had an MCDF applied when you saved gets that MCDF again, and its appearance stays locked.
+- Every other actor gets its appearance back and stays editable, with the mods of its collection. **Reset** on the Actor tab gives back the look it had before you loaded the scene.
+- A scene someone else saved on their computer loads every actor's appearance as an MCDF, locked, because their mods aren't on your computer.
 
-- An actor that had an MCDF applied gets that MCDF again, and its appearance can't
-  be edited.
-- Every other actor gets its scene appearance back: its Glamourer look and, for
-  actors other than your own character, its Customize+ body. It keeps the mods of
-  its collection and stays editable. A mod you added or changed since just shows
-  up. **Reset** in Appearance gives back the look it had before the load.
-- A scene saved on another computer (someone shared it with you) has none of that
-  computer's mods, so every actor in it gets its look as an MCDF, locked.
-
-Each Poser install has its own id, and a scene records the one that saved it.
-Scenes saved before this existed count as yours.
-
-Things to know:
-
-- Every actor a scene spawns is built from your own character. An actor that is
-  saved without its look comes back wearing your character's look. Poser says so
-  when you save and when you load.
-- A look larger than Poser can load back is left out, and the save says so.
-- Large scenes are saved with a warning about their size. A save is never refused
-  for being large.
-- A temporary Penumbra collection is not saved. Use Include appearance files for that look.
-
-### Saving one thing to the Library
-
-**Save to library** (in the right-click menu of an actor, a light, a camera, an
-object or a group) saves just that thing. **Save group to library** on the
-Selection tab saves a group. Loading it from the Library adds it to the scene.
+Actors a scene adds start out as copies of your own character. An actor that was saved without its appearance comes back looking like your character, and Poser tells you when you save and when you load.
 
 ## Loading a scene
 
-Press **Load…** on the Scene page, or open the scene from the Library.
+Press **Load…** on the Scene page, or open the scene from the Library. Clicking a scene in the Library first shows what's in it: where and when it was saved, the weather and time of day, how many actors, MCDFs, objects, lights, cameras, overlays and groups it has, whether its animation is saved, whether it was saved on this computer, and how big it is.
 
-Click a scene in the Library to see what it holds before you load it: where and
-when it was saved, its weather and time of day, how many actors, MCDFs, scene
-appearances, objects, world objects, lights, cameras, overlays and groups it has,
-whether its animation is saved, whether it was saved on this computer, and its
-size.
+The load options are on the Scene page and in the load window:
 
-While a scene loads or saves, Poser's controls are greyed out and do nothing.
-**Cancel** on the progress row stays usable. The same happens while a character
-file is applied or saved.
+- **Clear the session first** removes everything from your current scene before loading. This can't be undone. With it off, the loaded scene is added to what's already there.
+- **Placement** decides where the scene ends up. **As saved** puts it exactly where it was saved. **Relative to camera** and **Relative to selected actor** keep the same distance and direction from the camera or the selected actor as when it was saved. **In front of camera** puts it 3 yalms in front of the camera.
+- **Include** picks which parts of the scene to load: **Actors**, **Objects**, **Lights**, **Cameras**, **Environment**, **Overlays** and **World objects**.
 
-The **Load** options are on the Scene page and in the load dialog:
+A scene saved in the area you're in starts on **As saved**, and anywhere else it starts on the **Placement** chosen in Settings › General. Characters from the scene that are already in GPose, like your own character, are used as they are instead of being added a second time.
 
-- **Clear the session first** removes everything before loading. This can't be
-  undone. Without it, the scene is added to what is already there.
-- **Placement** chooses where the scene lands:
-  - **As saved**: where it was saved.
-  - **Relative to camera** or **Relative to selected actor**: the same distance
-    and direction from the camera or the actor as when it was saved.
-  - **In front of camera**: 3 yalms in front of the camera.
-- **Include** chooses which parts to load: **Actors**, **Objects**, **Lights**,
-  **Cameras**, **Environment**, **Overlays** and **World objects**.
+While a scene loads or saves, Poser's controls are greyed out. The **In progress** section on the Scene page shows each step, and its cancel button stops the load and removes what it had added so far. Afterwards, **Last result** lists anything that didn't load, with the reason and what to do about it. If one actor's appearance or one light fails, the rest of the scene still loads.
 
-A scene saved on the map you are on starts on As saved. Elsewhere it starts on the
-**Placement** from Settings › General. A placement you pick for a file is
-remembered for that file until you leave the game.
+Loading a scene is one step in the undo history. Ctrl+Z removes what the load added and puts back what it replaced, such as the camera that was live, and Ctrl+Y loads the file again. Undo can't bring back what **Clear the session first** removed.
 
-Characters from the scene that are already in GPose, such as your own character,
-are used as they are. Poser does not spawn a second copy.
+## Animation in scenes
 
-### While it loads
+With **Include animation** on, the scene saves every animation layer each actor was playing, with its loop, speed, weight and the frame it had reached, as well as held expressions, stances, the weapon and **Lock position**. When you load it, every actor carries on from where it was, paused actors stay paused, and your posed bones go back on top of the animation.
 
-The **In progress** section shows each step. Its cancel button stops the load and
-removes what it had created. Near the end a load can no longer be cancelled.
-
-Afterwards, **Last result** lists everything that did not load, with the reason
-and what to do about it.
-
-- Reading the file and creating the actors must work, or the whole load is undone.
-- Anything else that fails, such as one actor's look, a light or a group member,
-  is named in the list. The rest still loads.
-- An actor that is not ready in time stays in the scene and is named.
-- A file from a newer Poser is refused before anything changes.
-
-### Undoing a load
-
-A load is one undo step, even when some parts failed.
-
-- Undo removes what the load created and puts back what it replaced, such as the
-  camera that was live.
-- Redo loads the file again, adding it to the scene. It needs the file to still be
-  there.
-- Undo does not bring back what **Clear the session first** removed.
-
-### Cameras in saved scenes
-
-- A saved orbit camera comes back where it was. You can still zoom and turn it.
-- A saved main camera comes back as a new camera. The game's own camera is never
-  changed. Undoing the load removes the new camera.
-
-## A scene keeps its animation unless the save turns it off
-
-With **Include animation** on, a scene saves what each actor, and each mount,
-minion or ornament on it, is doing:
-
-- every animation layer Poser played, with its loop, speed, weight and how far it
-  had got, or the frame it was paused on;
-- the held expression, the stance, the weapon, Lock position and Advanced
-  animation;
-- your own bone edits, on top of the animation.
-
-On loading, each actor plays on from where it was. Paused actors stay paused.
-Your bone edits go back on top, so they move with the animation.
-
-Animations are looked up in the game and mods of whoever loads the file. The same
-scene can therefore play something different on another computer.
-
-With Include animation off, the scene saves only the pose as it looks. Every actor
-is stopped when it loads, and the scene looks the same on every computer.
-
-Automatic snapshots follow the same choice.
+Animations are looked up in the game and mods of whoever loads the scene, so the same scene can play something different on another computer. Turn **Include animation** off if the scene should look exactly the same everywhere.
 
 ## Automatic snapshots
 
-**Auto-save scenes** (Settings › General, on by default) saves the whole scene
-while you are in GPose.
+While you're in GPose, Poser saves your whole scene by itself every so often. You can change this under **Auto-save scenes** in Settings › General: **Every** sets how many seconds apart the saves are, and **Backups kept** how many are kept. An empty scene, or one that hasn't changed, isn't saved again. **Delete backups on exit** removes them when you leave GPose normally, but after a crash they're kept so you can get your scene back.
 
-- **Every** sets how many seconds apart the saves are. The first one waits a full
-  interval.
-- **Backups kept** sets how many are kept. Older ones are deleted.
-- An empty scene, or one that has not changed, is not saved again.
-- If a scene save or load is running, that turn is skipped.
-- **Delete backups on exit** clears them when you leave GPose normally. After a
-  crash they stay, so you can get your scene back.
-
-Open them with **Snapshots…** on the Scene page, or the Library's **Auto-saves**
-tab. **Legacy poses** there lists older per-actor backups.
-
-## Parenting
-
-The **Parenting** section of an actor, object, scenery, effect, light or IK
-collider makes it follow something else.
-
-- **Target**: **None**, **Entity** (another thing in the scene) or **Bone** (a bone
-  of an actor).
-- **Detach** stops following and leaves it where it is.
-
-Things to know:
-
-- Attaching and detaching do not move anything.
-- Moving the child changes where it sits relative to its parent.
-- Scale is not passed on from the parent.
-- A link that would make something follow itself is refused.
-- If the parent leaves the scene, the child stays where it last was.
-- A scene saves these links and restores them.
-
-## Removing and bringing back
-
-Removing something is one undo step. Undo brings it back as it was when you removed
-it.
-
-- An actor comes back with its look, equipment, collection and Customize+
-  profile, then its placement, pose, gaze and IK.
-- Its animation does not come back. Only whether it was paused does.
-- If Glamourer could not read the actor's look, the actor is still removed, and
-  undo brings it back without that look. Poser says so.
-- Removing an actor Poser did not create can't be undone.
-
-## Names of new things
-
-New actors, cameras, lights, objects, overlays and groups get a number one higher
-than the highest of their kind. With "Key 1" and "Key 3" in the scene, a copy of
-Key 1 is "Key 4". A number freed by deleting is not reused.
-
-## Borrowing from the world
-
-The buttons at the bottom of the sidebar mark the actors, lights, objects and
-effects around you. Click a mark to add that thing to the scene.
-
-- A world light becomes a copy you can edit, and the original is hidden.
-  Releasing it, or leaving GPose, shows the original again.
-- A world object or effect is borrowed as it is. Releasing it puts it back.
-- A saved scene finds a borrowed object again by its model and where it stood.
-  For an object that moves by itself, such as the pieces circling an aetheryte, it
-  takes the nearest one with that model.
-- A borrowed actor has **Release** in a **Scene** section of the Actor tab.
-
-## Environment
-
-### Weather
-
-On the Environment page, **Weather** picks a weather and holds it.
-
-- **All weathers** lists every weather in the game, not only this area's. The
-  game may refuse one that doesn't belong here.
-- **Transition** sets how many seconds the change takes.
-- **Hold weather** keeps the weather against the game's own changes. Turning it
-  off lets the game change it again; it does not jump back.
-- **Restore on exit** gives the weather back to the game when you leave GPose.
-- A scene is saved with the time of day and the weather it had. Loading the
-  scene puts both back and holds them, also when you had not set them yourself.
-  The clock stays at the saved time. Sky, light and fog follow from those two;
-  the ones you changed by hand are saved and put back as well.
-
-### Housing interiors
-
-**Interior** brightness (Environment › Lighting) works inside a housing interior
-only.
-
-- It never changes the lighting level saved for the house. **Reset** goes back to
-  that level. **Release** goes back to the brightness from before you changed it.
-- Leaving GPose gives the brightness back. Moving to another area drops your
-  change without touching the new room.
-- Scenes don't save it, so loading a scene never changes the lighting of the house
-  you are in.
-
-### Lights
-
-- **Skew X** and **Skew Y** on an area light tilt where the light falls. They do
-  not turn the light itself.
-- **Cone angle** on a spotlight goes from 0 to 180 degrees. The outline drawn on
-  screen stays a fixed length so it always fits.
-
-### Objects
-
-An object from the **Props** tab of the spawn browser has **Dye**, **Dye 2**
-and **Tint**.
-
-- Dye and Dye 2 colour the model's dye channels. Choosing one rebuilds the object
-  in place; it keeps its name, place and tint.
-- **Tint** multiplies the colour of the whole model. White leaves it unchanged.
-  Scenes and copies keep it.
-
-### Furniture
-
-Furniture comes from the **Furniture** tab of the spawn browser.
-
-- **Dye** colours it. A custom tint wins over a dye. Choosing a dye clears the
-  tint in the same undo step.
-- Dye and tint only colour the parts the game lets you dye. On a piece where only
-  some parts are dyeable, the rest keeps its own colour. Brio works the same way.
-- **Night** switches the furniture's own day and night look. What changes depends
-  on the piece.
-- A piece with built-in lights has a switch for each (**Light 1**, **Light 2** and
-  so on) in its inspector and its right-click menu. Scenes and copies keep these.
+To open a snapshot, press **Snapshots…** on the Scene page, or go to the **Auto-saves** tab of the Library.
 
 ## Stagehand files
 
-**Export…** and **Import…** in the **Stage** row write and read Stagehand Stage
-files. The result names anything that could not be carried over.
+**Export…** and **Import…**, in the **Stage** row of the Scene page, write and read Stagehand's stage files. After an import or export, Poser lists anything that couldn't be carried over.
