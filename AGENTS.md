@@ -38,9 +38,9 @@ commit messages.
   collections, and nothing describing what is in their scenes or screenshots.
 - No local paths that contain a user name.
 
-Describe what was tested in neutral words: "a test scene with three actors",
-"the local player", "an actor with an MCDF applied". Test data uses made-up
-names such as "Lead". Read every text for this before you post or commit it.
+Call actors "Actor 1", "Actor 2" and so on, in texts and in test data. Describe
+what was tested in neutral words: "a test scene with three actors", "Actor 2 had
+an MCDF applied". Read every text for this before you post or commit it.
 
 ## Code
 
