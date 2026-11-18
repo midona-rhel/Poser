@@ -35,8 +35,8 @@ internal sealed class IkChainState
     /// <summary>The held point and the edits already included in it.
     /// Bone and Entity modes store an offset from the selected target.</summary>
     public HeldTarget? HeldCapture;
-    /// <summary>The first solve must align this displayed capture with its input pose.
-    /// Customize+ edits the pose after IK runs, so the displayed pose is not the solver's.</summary>
+    /// <summary>The first solve lines the held target up with the end bone as it will be
+    /// shown, because a capture read from the screen can be a frame old.</summary>
     public bool SeatPending;
     /// <summary>An unseated FABRIK chain has sat out its one frame, so the raw caches now hold
     /// the pose it starts from.</summary>
@@ -48,6 +48,10 @@ internal sealed class IkChainState
     /// An Actor target follows it. The frame is null until a solve has run.</summary>
     public IBone? SolveParent;
     public PoseTransform? SolveParentFrame;
+    /// <summary>How Customize+ moved this chain's end, root and tip bones at the end of the
+    /// last pass, by bone index. Inside the pass the bones above a chain still hold the pose
+    /// from before IK, so the solve uses these instead.</summary>
+    public readonly Dictionary<int, CustomizePlusShift> CustomizePlusShifts = new();
     public IBone? TargetBone;
     public SelectionId? TargetEntity;
     public bool PreviewModelSpace;
@@ -485,6 +489,29 @@ internal sealed unsafe partial class IkChainRegistry
             (short)endpoint.BoneIndex);
     }
 
+    /// <summary>Records how Customize+ moves each enabled chain's target bones. Runs once the
+    /// pass has stored every bone's final pose.</summary>
+    public void RecordCustomizePlus(SkeletonKey key, Skeleton skeleton)
+    {
+        foreach (var (identity, state) in _ikChains)
+        {
+            if (identity.Skeleton != key || !state.Config.Enabled
+                || skeleton.GetBone(identity.Partial, identity.Bone) is not { } endpoint)
+                continue;
+            state.CustomizePlusShifts.Clear();
+            state.CustomizePlusShifts[endpoint.BoneIndex] = _held.CustomizePlus.For(endpoint);
+            if (state.Config.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) continue;
+            var members = FabrikMembers(endpoint, state.Config);
+            if (members.Count == 0) continue;
+            state.CustomizePlusShifts[members[0].BoneIndex] = _held.CustomizePlus.For(members[0]);
+            state.CustomizePlusShifts[members[^1].BoneIndex] = _held.CustomizePlus.For(members[^1]);
+        }
+    }
+
+    /// <summary>How Customize+ moves <paramref name="bone"/>, for a solve inside the pass.</summary>
+    internal CustomizePlusShift ShiftFor(IkChainState state, IBone bone) =>
+        state.CustomizePlusShifts.TryGetValue(bone.BoneIndex, out var shift) ? shift : _held.CustomizePlus.For(bone);
+
     public bool HasEnabledIk(ISkeleton skeleton) =>
         HasEnabledChains(SkeletonKey.Of(skeleton));
 
@@ -495,16 +522,17 @@ internal sealed unsafe partial class IkChainRegistry
         if (members.Count < 2) return delta;
         var authored = _stacks.GetIkModification(bone) ?? Transform.Identity;
         if (_held.ResolveHeld(state, bone, authored.Position, authored.Rotation) is not { } handle) return delta;
-        // The limit is measured where the solver works: the held target against the limb as the
-        // last solve left it. Only the drag is converted from the screen and back.
+        // The limit is measured where the solver works: the limb as the last solve left it,
+        // against the held target moved back from where it is shown to that pose.
         var points = members.Select(member => _stacks.ToApplySpace(member, member.LastRawTransform).Position).ToArray();
         var reach = IkReach.FromChain(points, config);
-        var (toDisplayed, toSolve) = _held.DisplayedFrame(state, bone);
+        var shift = _held.CustomizePlus.For(bone);
+        var posed = shift.Posed(handle.Position);
         var displayed = _stacks.FromApplySpace(bone, new Transform(handle.Position, Quaternion.Identity, Vector3.One));
         var requested = _stacks.ToApplySpace(bone, displayed with { Position = displayed.Position + delta });
-        var limited = reach.Move(handle.Position, Vector3.TransformNormal(requested.Position - handle.Position, toSolve));
-        var start = fromAuthoredBaseline ? handle.Position : reach.Clamp(handle.Position);
-        var moved = handle.Position + Vector3.TransformNormal(limited - start, toDisplayed);
+        var limited = reach.Move(posed, shift.Posed(requested.Position) - posed);
+        var start = fromAuthoredBaseline ? posed : reach.Clamp(posed);
+        var moved = handle.Position + shift.ShownStep(limited - start);
         return _stacks.FromApplySpace(bone, displayed with { Position = moved }).Position - displayed.Position;
     }
 }

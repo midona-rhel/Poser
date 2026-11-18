@@ -309,6 +309,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             ReapplyDrivenEdits(skeleton, gameSkeleton, poseInfo, driven);
             UpdateAllLastTransforms(skeleton, gameSkeleton);
         }
+        _ik.RecordCustomizePlus(slotKey, skeleton);
         if (gazeFrame is { } captured) _gazeFrames.After(captured);
 #if DEBUG
         if (slotKey.Slot == PoseSlot.Character)
@@ -659,13 +660,16 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     {
         if (_ik.Held.ResolveHeld(ik, bone, authored.Position, authored.Rotation, pose) is not { } held)
             return;
-        var target = held.Position;
+        // The held target is where the end is shown; the solver needs it before Customize+.
+        var shift = _ik.ShiftFor(ik, bone);
+        var target = shift.Posed(held.Position);
         var rotSpace = NativePoseRead.Model(pose, boneIdx);
         var currentRotation = new Quaternion(
             rotSpace->Rotation.X, rotSpace->Rotation.Y,
             rotSpace->Rotation.Z, rotSpace->Rotation.W);
         bool holdRotation = ik.Config.HoldsEndRotation;
-        var heldRotation = holdRotation ? HeldEndRotation(ik, held.Rotation, authored.Rotation) : currentRotation;
+        var heldRotation = holdRotation
+            ? shift.Posed(HeldEndRotation(ik, held.Rotation, authored.Rotation)) : currentRotation;
         _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
             target, heldRotation, ik.Config, ik.Chain));
         if (!ik.Config.EnforceConstraints)
@@ -779,10 +783,12 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 && _ik.Held.ResolveHeld(ik!, bone, info.Transform.Position, info.Transform.Rotation, pose)
                     is { } held)
             {
-                target = held.Position;
+                // The held target is where the end is shown; the solver needs it before Customize+.
+                var shift = _ik.ShiftFor(ik!, bone);
+                target = shift.Posed(held.Position);
                 if (ik.Config.HoldsEndRotation)
                 {
-                    requestedRotation = HeldEndRotation(ik, held.Rotation, info.Transform.Rotation);
+                    requestedRotation = shift.Posed(HeldEndRotation(ik, held.Rotation, info.Transform.Rotation));
                     heldRotation = requestedRotation;
                 }
             }
