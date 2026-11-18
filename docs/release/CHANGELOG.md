@@ -1,19 +1,19 @@
 # Changelog
 
-## 0.9.27-beta — Editable scenes and tinted objects
+## 0.9.27-beta — Improved MCDF handling in scenes, and prop tinting
 
 ### Scenes
 
-- Made actors in your own scenes load with an editable appearance. Only an actor that had an MCDF applied when the scene was saved comes back locked.
-- Made a scene shared from another computer load each actor's appearance as an MCDF.
-- Made loading a scene replace an MCDF applied to your character with the scene's appearance.
-- Kept an MCDF's own name when a scene applies it again.
-- Added the time of day, every count (actors, MCDFs, objects, lights and more), the saved animation, where it was saved and its size to a scene's details in the Library.
-- Stopped a scene that loads with some parts left out from showing up as a plugin error.
+- Saving and loading a scene no longer locks actors' appearance. Only actors that had an MCDF applied when the scene was saved come back locked.
+- Scenes shared from another computer load every actor's appearance as an MCDF.
+- Loading a scene replaces an MCDF already applied to an actor with the appearance saved in the scene.
+- An MCDF applied by a scene keeps its own file name instead of a temporary one.
+- The Library shows what a scene contains before it is loaded: the number of actors, MCDFs, objects and lights, the time of day, whether animation is saved, whether it was saved on this computer, and the file size.
+- A scene that only partly loads is logged as a warning instead of an error.
 
 ### Objects
 
-- Added Tint to objects from the Props tab.
+- Objects from the Props tab can be tinted.
 
 ## 0.9.26-beta — Steady IK and one action at a time
 

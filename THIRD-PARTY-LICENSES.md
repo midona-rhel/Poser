@@ -10,7 +10,7 @@ This file records every third party whose work Poser derives from, redistributes
 
 The idle export Havok constructor signature, serialization and PAP/TMB format mechanisms derive from [VFXEditor](https://github.com/0ceal0t/Dalamud-VFXEditor), MIT, Copyright 2021 Michael Kaminsky. Its notice is distributed in `Data/Licenses/VFXEditor.txt`.
 
-Poser is derivative of, and heavily inspired by, Anamnesis, Ktisis and Brio. The credit and maintainer names live in [README.md](README.md#attribution); this section records the *licenses* and what was taken.
+Poser is derivative of, and heavily inspired by, Anamnesis, Ktisis and Brio. The credit and maintainer names live in [README.md](README.md#credits); this section records the *licenses* and what was taken.
 
 | Project | Repository | License | Relationship |
 |---|---|---|---|
