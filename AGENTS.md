@@ -57,6 +57,7 @@ When you change a file, bring the whole file in line with these rules in the sam
 - Write down what is true and worth knowing. Do not write a page per class.
 - Plans, audits, notes and records of what was tested do not go in the repository. Work is tracked in GitHub issues. What was tested goes in the pull request.
 - Delete text that is no longer true. Git keeps the history.
+- Write each paragraph and each list item on one line. Do not break a line inside a paragraph; the editor wraps it.
 
 ## Issues and pull requests
 

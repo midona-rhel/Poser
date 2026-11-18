@@ -9,10 +9,10 @@ Choose **Scene** at the top of the Poser window to open the Scene page.
 On the Scene page, type an optional **Description** and press **Save…**.
 
 - **Include animation** (on by default) saves what each actor is playing. See [below](#a-scene-keeps-its-animation-unless-the-save-turns-it-off).
-- **Include appearance files** (off by default) puts each actor's look and mods into the file, so the scene looks the same on another computer. The save dialog and the Library's save have the same option. It is never turned on for you.
+- **Include appearance files** (off by default) puts each actor's look and mods into the file, so the scene looks the same on another computer. It is never turned on for you.
 - **Size** shows how large the next save will be.
 
-The save dialog shows the same two options under the file list.
+The save dialog shows the same two options under the file list. The Library's save has Include appearance files too.
 
 ### What a scene keeps
 
@@ -33,7 +33,7 @@ Each Poser install has its own id, and a scene records the one that saved it. Sc
 
 Things to know:
 
-- Every actor a scene spawns is built from your own character. An actor that is saved without its look comes back wearing your character's look. Poser says so when you save and when you load.
+- Every actor a scene spawns is built from your own character. An actor that is saved without its look comes back looking like your character. Poser says so when you save and when you load.
 - A look larger than Poser can load back is left out, and the save says so.
 - Large scenes are saved with a warning about their size. A save is never refused for being large.
 - A temporary Penumbra collection is not saved. Use Include appearance files for that look.
@@ -48,7 +48,7 @@ Press **Load…** on the Scene page, or open the scene from the Library.
 
 Click a scene in the Library to see what it holds before you load it: where and when it was saved, its weather and time of day, how many actors, MCDFs, scene appearances, objects, world objects, lights, cameras, overlays and groups it has, whether its animation is saved, whether it was saved on this computer, and its size.
 
-While a scene loads or saves, Poser's controls are greyed out and do nothing. **Cancel** on the progress row stays usable. The same happens while a character file is applied or saved.
+While a scene loads or saves, Poser's controls are greyed out and do nothing. **Cancel** on the progress row stays usable. The same happens while an MCDF is applied or saved.
 
 The **Load** options are on the Scene page and in the load dialog:
 

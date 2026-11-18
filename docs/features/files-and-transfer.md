@@ -41,9 +41,9 @@ The preview starts from the actor's own pose and applies the file with your opti
 
 A saved pose, scene or library entry stores the bones as you see them, including what IK did. Saving does not turn IK off or change your edits. The IK settings themselves are not saved.
 
-## Character files
+## MCDFs and `.chara` files
 
-The **Character file (MCDF)** section of the Actor tab imports and exports character files. See [Appearance](runtime-appearance.md#character-file-mcdf).
+The **Character file (MCDF)** section of the Actor tab imports and exports these files. See [Appearance](runtime-appearance.md#character-file-mcdf).
 
 ### Anamnesis `.chara` files
 
@@ -59,8 +59,8 @@ A `.chara` file is a look: body, face, equipment, dyes and facewear. It needs Gl
 An `.mcdf` file holds a character's look and the mod files it needs. It does not hold a pose, an animation or a scene.
 
 - Poser checks the whole file before it changes the actor.
-- Only one character-file import, export or reset runs at a time.
-- If an import fails or is cancelled, Poser removes what it had put on the actor. If that can't finish, **Reset MCDF** finishes it.
+- Only one MCDF import, export or reset runs at a time.
+- If an import fails or is cancelled, Poser removes what it had applied to the actor. If that can't finish, **Reset MCDF** finishes it.
 - Export only reads from the actor. It names any files it had to skip.
 
 ## The Library

@@ -13,7 +13,7 @@ Poser is in beta. Expect rough edges, and update when a new version comes out.
 - **Build a scene.** Add characters, props, lights and cameras. Move or hide furniture and other things that are already on the map. Change the time of day and the weather.
 - **Save your work.** Save a pose, one character or the whole scene, and load it again later. Poser also saves the scene by itself while you work.
 - **Keep a library.** Browse your saved poses and scenes with previews, tags and search.
-- **Change how characters look.** Fade, tint or wet a character. With Penumbra, Glamourer and Customize+ installed you can also change gear, looks, mods and body shape, and load or save character files (MCDF).
+- **Change how characters look.** Fade, tint or wet a character. With Penumbra, Glamourer and Customize+ installed you can also change gear, looks, mods and body shape, and apply or save MCDFs.
 
 ## Installing
 

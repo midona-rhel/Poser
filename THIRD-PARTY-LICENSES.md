@@ -88,7 +88,7 @@ FINAL FANTASY XIV is © SQUARE ENIX CO., LTD. Poser is an unofficial, non-commer
 
 Nothing in this file is blocked. One judgement call is recorded rather than made:
 
-- **Source-header notices.** GPLv3 recommends a short copyright/permission header in each source file. Poser has none. The root `LICENSE`, this file and the README attribution satisfy the license's actual conveyance requirements; adding ~500 file headers is a separate mechanical change if the owner wants it.
+- **Source-header notices.** GPLv3 recommends a short copyright/permission header in each source file. Poser has none. The root `LICENSE`, this file and the credits in the README already meet what the license requires when Poser is shared. Adding a header to about 500 files is a separate change, if the owner wants it.
 
 ---
 
@@ -109,11 +109,11 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-### Required staged notices
+### Notices the release archive must carry
 
-The release archive carries these notices; the release manifest records each file hash. The generated SBOM and archive checksum are separate release assets:
+The release archive carries these files, and the release manifest records the hash of each. The bill of materials (SBOM) and the archive's checksum are published beside the archive, not inside it.
 
-| Staged file | Required source and coverage |
+| File | Where it comes from and what it covers |
 |---|---|
 | `THIRD-PARTY-LICENSES.md` | This attribution file, including the MIT notices above. |
 | `Data/Licenses/Stagehand-AGPL-3.0.txt` | AGPLv3 text from the exact Stagehand source commit above. |
@@ -121,7 +121,7 @@ The release archive carries these notices; the release manifest records each fil
 | `Data/Licenses/KamiToolKit-MIT.txt` | MIT notice from package 2.2.27 repository commit `1a7682a106d0a71340c7aa11de76fae9a41041e5`. |
 | `Data/Licenses/THIRD-PARTY-NOTICES.txt` | One byte-identical copy from Microsoft.Extensions.DependencyInjection 10.0.10 or Microsoft.Extensions.DependencyInjection.Abstractions 10.0.10; the manifest names both package IDs and versions. |
 
-These staged files, their hashes, the online vulnerability audit, the SBOM, the canonical tree/history scan, and the final ZIP scan are release-time gates. They are not claimed to be present in an unpublished archive.
+These files, their hashes, the vulnerability check, the SBOM and the scans of the repository and the final archive are checked when a release is made (see the [release runbook](docs/release/runbook.md)). An archive built outside that process may not have them.
 
 ## Ktisis invisible-skin data
 
@@ -129,5 +129,4 @@ Bundled files (`Poser/Data/Integration`): `skin-paths.json` and `mt_c0101b0001_a
 
 ## Geist and Geist Mono
 
-Bundled font files (`Poser/Data/Fonts`): Geist Regular / Medium / Italic and Geist Mono Regular, by Vercel. Licensed under the SIL Open Font License, Version 1.1 —
-<https://github.com/vercel/geist-font/blob/main/LICENSE.TXT>.
+Bundled font files (`Poser/Data/Fonts`): Geist Regular / Medium / Italic and Geist Mono Regular, by Vercel. Licensed under the SIL Open Font License, Version 1.1 — <https://github.com/vercel/geist-font/blob/main/LICENSE.TXT>.

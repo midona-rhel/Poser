@@ -2,7 +2,7 @@
 
 The **Actor** tab changes how the selected actor looks. It has three views:
 
-- **General**: the actor in the scene. Its model, visibility, tint, wetness, mods and character files.
+- **General**: the actor in the scene. Its model, visibility, tint, wetness, mods and MCDF.
 - **Appearance**: how it looks. Body, face and colours, through Glamourer.
 - **Equipment**: what it wears, through Glamourer.
 
@@ -38,9 +38,9 @@ The reset button beside each one puts back what the actor had before Poser chang
 
 ### Character file (MCDF)
 
-- **Import** puts an Anamnesis `.chara` file or a Mare `.mcdf` file on the actor. A posed actor keeps its pose. See [Pose files and transfer](files-and-transfer.md#character-files) for the file types.
-- **Export** saves the actor as a `.mcdf`, with its mods, look and body scale. Only an actor you spawned, or your own character, can be exported. An actor that wears an imported `.mcdf` can't be exported until you press Reset MCDF.
-- **Reset MCDF** removes everything an imported `.mcdf` put on the actor.
+- **Import** applies an Anamnesis `.chara` file or a Mare `.mcdf` file to the actor. A posed actor keeps its pose. See [Pose files and transfer](files-and-transfer.md#mcdfs-and-chara-files) for the file types.
+- **Export** saves the actor as a `.mcdf`, with its mods, look and body scale. Only an actor you spawned, or your own character, can be exported. An actor with an MCDF applied can't be exported until you press Reset MCDF.
+- **Reset MCDF** removes everything the applied MCDF changed on the actor.
 
 ### Companion
 
@@ -83,7 +83,7 @@ Each change is one undo step. Undo puts the slot back as it was.
 
 ## When Glamourer can't be used
 
-If another plugin has locked the actor in Glamourer, or Poser's own imported `.mcdf` holds it, an **Appearance access** box at the top says so. The Glamourer controls are then greyed out. Opacity, tint, wetness and **Open in Glamourer** still work.
+If another plugin has locked the actor in Glamourer, or an MCDF applied through Poser holds it, an **Appearance access** box at the top says so. The Glamourer controls are then greyed out. Opacity, tint, wetness and **Open in Glamourer** still work.
 
 Poser never unlocks another plugin's hold. Release it in that plugin.
 

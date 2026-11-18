@@ -6,7 +6,7 @@ What each part of Poser does, written for people who use it:
 - [Posing](features/pose-operations.md)
 - [Expressions, gaze and IK](features/expression-gaze-and-ik.md)
 - [Animation](features/animation.md)
-- [Pose files, character files and the Library](features/files-and-transfer.md)
+- [Pose files, MCDFs and the Library](features/files-and-transfer.md)
 - [Scenes](features/scenes.md)
 - [Appearance](features/runtime-appearance.md)
 
