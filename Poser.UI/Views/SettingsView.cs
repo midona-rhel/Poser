@@ -1486,7 +1486,6 @@ public static partial class SettingsView
                 "Release notes",
                 () => vm.OnOpenReleaseNotes?.Invoke(),
                 help: "Browse all release notes through your installed version"));
-            form.ReadOnly("Stack", "Poser.UI widgets");
             form.Actions("Source", actions => actions.Button(
                 "Open repository",
                 () => vm.OnOpenRepository?.Invoke()));
@@ -1495,7 +1494,7 @@ public static partial class SettingsView
                 () => vm.OnReportIssue?.Invoke(),
                 help: "Save a report to attach"));
             form.Status(
-                "Coded with the use of AI. Design system transcribed from Picto.");
+                "Coded with the use of AI.");
         }, divider: false);
         page.Section("Derived from", form =>
         {

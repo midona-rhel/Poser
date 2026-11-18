@@ -6,6 +6,7 @@ public sealed class ReleaseNotesSession
     private bool _presented;
     private readonly IReadOnlyList<ReleaseNotesEntry> _history;
 
+    /// <summary>The installed Poser version, such as "0.9.27.0".</summary>
     public string Version { get; }
     public bool IsOpen { get; private set; }
     public bool ShowingHistory { get; private set; }

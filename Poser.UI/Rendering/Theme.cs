@@ -432,16 +432,14 @@ public readonly record struct Theme
             Surface = surface,
             SurfaceRaised = raised,
             SurfaceSunken = sunken,
-            // Deviation from --color-text-primary (pure black): body text on a
-            // light ground uses the Windows 11 89% black, which reads as ink
-            // instead of a hole. Secondary/tertiary already carry their own
-            // alphas and are unchanged.
-            Text = ColorTokens.Light.TextPrimary with { W = 0.894f },
-            TextDim = ColorTokens.Light.TextSecondary,
-            TextMuted = ColorTokens.Light.TextTertiary,
-            FormLabel = ColorTokens.Light.TextTertiary,
-            FormHint = new(0f, 0f, 0f, 0.40f),
-            FormValue = new(0f, 0f, 0f, 0.90f),
+            // Darker than the Picto tokens: Dalamud's font renderer draws thin
+            // strokes, so grey text on a light background is hard to read.
+            Text = ColorTokens.Light.TextPrimary,
+            TextDim = new(0f, 0f, 0f, 0.85f),
+            TextMuted = new(0f, 0f, 0f, 0.65f),
+            FormLabel = new(0f, 0f, 0f, 0.65f),
+            FormHint = new(0f, 0f, 0f, 0.55f),
+            FormValue = ColorTokens.Light.TextPrimary,
             FormSeparator = border,
             Border = border,
             BorderStrong = borderStrong,
@@ -457,7 +455,7 @@ public readonly record struct Theme
             Chrome = theme.Chrome with
             {
                 Text = ColorTokens.Light.TextPrimary,
-                TextMuted = new(0f, 0f, 0f, 0.60f),
+                TextMuted = new(0f, 0f, 0f, 0.65f),
                 ControlBorder = borderStrong,
                 ControlFill = ColorTokens.Light.SurfaceHover,
                 ControlHover = ColorTokens.Light.SubtleOverlay,
