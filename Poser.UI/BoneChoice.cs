@@ -5,8 +5,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.UI;
 
-/// <summary>One bone in a picker: the host's categorised bone list, shared
-/// by the camera's tracking picker and IK's bone target.</summary>
+/// <summary>One bone in a bone picker. The camera's tracking picker and the
+/// IK bone target picker both use it.</summary>
 public sealed record BoneChoice(
     string Key,
     string Label,

@@ -17,11 +17,10 @@ using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 namespace Poser.Game;
 
 /// <summary>
-/// One spawned prop: a stable id and display name over the live native
-/// weapon. The handle owns no copy of the transform — every read goes
-/// through to the scene object, exactly as Brio's prop object does — and a
-/// handle whose prop has been destroyed reads as identity and writes
-/// nothing.
+/// One spawned prop: an id and a name for a weapon model in the game. It
+/// keeps no copy of the position: every read goes to the game's model, as
+/// Brio's props do. Once the prop is destroyed, reads return defaults and
+/// writes do nothing.
 /// </summary>
 public sealed unsafe class PropHandle : IPropHandle
 {
@@ -42,10 +41,9 @@ public sealed unsafe class PropHandle : IPropHandle
 
     public int Id { get; }
 
-    /// <summary>The row's display name. Settable for the same reason a
-    /// light's is: the prop context menu renames it and the scene snapshot
-    /// carries the name, so a write here republishes the row on the next
-    /// refresh. A blank name is refused rather than leaving a nameless row.
+    /// <summary>The prop's name in the list. The prop's right-click menu
+    /// renames it, and the list shows the new name on its next refresh. A
+    /// blank name is ignored, so a prop always has a name.
     /// </summary>
     public string Name
     {
@@ -57,15 +55,16 @@ public sealed unsafe class PropHandle : IPropHandle
         }
     }
 
-    /// <summary>The model triple this prop was spawned from — what a scene
-    /// file needs to respawn the same prop. It changes only through
-    /// <see cref="PropSpawnService.Respawn"/>: dyes and the animation
-    /// variant bake at creation, so editing one recreates the weapon.
+    /// <summary>The model this prop was spawned from, which a scene file needs
+    /// to spawn it again. It changes only through
+    /// <see cref="PropSpawnService.Respawn"/>: the game sets the dyes and the
+    /// animation variant when it creates the model, so changing one creates
+    /// the model again.
     /// </summary>
     public PropModel Model { get; internal set; }
 
-    /// <summary>Recreates this prop from the stated model, keeping the
-    /// handle: same id, name, placement, bindings.</summary>
+    /// <summary>Creates this prop again from the given model, keeping its id,
+    /// name, position and links.</summary>
     public bool Respawn(PropModel model, out string? detail) =>
         _owner.Respawn(this, model, out detail);
 
@@ -123,9 +122,9 @@ public sealed unsafe class PropHandle : IPropHandle
     }
 
     /// <summary>
-    /// Visibility IS transparency: a scene weapon carries no visibility flag,
-    /// so Brio hides a prop by driving it fully transparent and calls it
-    /// visible while its transparency is zero.
+    /// A weapon model has no switch to hide it. As in Brio, a hidden prop is
+    /// drawn fully transparent, and it counts as visible while its
+    /// transparency is zero.
     /// </summary>
     public bool Visible
     {
@@ -137,8 +136,8 @@ public sealed unsafe class PropHandle : IPropHandle
         }
     }
 
-    /// <summary>The three components as one legacy transform, the shape the
-    /// transform port speaks — one scene notify per write instead of three.
+    /// <summary>Position, rotation and scale as one value. Setting it tells
+    /// the game about the move once instead of three times.
     /// </summary>
     public Transform Transform
     {
@@ -176,12 +175,11 @@ public sealed unsafe class PropHandle : IPropHandle
 }
 
 /// <summary>
-/// Prop spawning through Brio's actual prop mechanism: a prop is a
-/// graphics-scene Weapon object added as a child of the world — NOT a
-/// game object and NOT a disguised actor clone. It occupies no
-/// object-table slot and has no skeleton entity. Spawned props live for
-/// the GPose session only: they are destroyed on GPose exit and plugin
-/// disposal (render cleanup + destructor), never leaked into the world.
+/// Spawns props the way Brio does: a prop is a weapon model added to the
+/// game's 3D world. It is not a game object or a copy of an actor, so it
+/// takes no object slot and has no skeleton. Props last only while in GPose:
+/// they are destroyed when GPose ends or the plugin unloads, and are never
+/// left behind in the world.
 /// </summary>
 public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
 {
@@ -200,8 +198,8 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
     }
 
-    /// <summary>The live handle list. It is the service's own list, so a
-    /// caller that destroys while reading must work off a snapshot.</summary>
+    /// <summary>The live list of props. It is the service's own list, so a
+    /// caller that destroys props while going through it must use a copy.</summary>
     public IReadOnlyList<PropHandle> Props => _props;
 
     public int Count => _props.Count;
@@ -210,9 +208,9 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
 
     private IReadOnlyList<PropModel>? _catalog;
 
-    /// <summary>The spawnable prop library, parsed once from the embedded
-    /// Ktisis props file. Rows whose model id is 0 are placeholders and are
-    /// dropped.</summary>
+    /// <summary>The props that can be spawned, read once from the props list
+    /// taken from Ktisis and built into Poser. Rows whose model id is 0 are
+    /// placeholders and are left out.</summary>
     public IReadOnlyList<PropModel> Catalog => _catalog ??= LoadCatalog();
 
     private IReadOnlyList<PropModel> LoadCatalog()
@@ -253,8 +251,8 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
         }
     }
 
-    /// <summary>Shape of Data/props.json, transcribed from the reference
-    /// file; the wield/sheathe columns are ignored.</summary>
+    /// <summary>The shape of Data/props.json, copied from Ktisis's file; the
+    /// drawn and sheathed columns are ignored.</summary>
     private sealed class PropRow
     {
         public string Item { get; set; } = string.Empty;
@@ -287,8 +285,8 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
                     Id = model.Model,
                     Type = model.Submodel,
                     Variant = model.Variant,
-                    // The dyes and the pose variant bake at creation — the
-                    // reason a dye edit is a respawn.
+                    // The game sets the dyes and the pose variant only when
+                    // it creates the model, so changing a dye spawns it again.
                     Stain0 = model.Stain0,
                     Stain1 = model.Stain1,
                 },
@@ -305,8 +303,8 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
             weapon->Rotation = Quaternion.Identity;
             weapon->Scale = Vector3.One;
 
-            // A weapon needs a loaded graphics world. Release the new object
-            // if the world is unavailable before adding it.
+            // A weapon model can only be shown in a loaded 3D world. If there
+            // is none, destroy the new model instead of adding it.
             var world = CSWorld.Instance();
             if (world == null)
             {
@@ -336,10 +334,11 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
         }
     }
 
-    /// <summary>Recreates one prop's native weapon from the stated model
-    /// — dyes and the animation variant bake at creation. The handle keeps
-    /// its id, name, placement, and bindings; the old weapon dies only
-    /// after the replacement is installed. A null create leaves the old weapon intact.</summary>
+    /// <summary>Creates one prop's model again from the given model, because
+    /// the game sets dyes and the animation variant only at creation. The prop
+    /// keeps its id, name, position and links. The old model is destroyed only
+    /// once the new one is in place; if the new one cannot be created, the old
+    /// one stays.</summary>
     public bool Respawn(
         PropHandle handle, PropModel model, out string? detail)
     {

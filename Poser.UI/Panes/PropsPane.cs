@@ -10,11 +10,12 @@ using static Poser.UI.Widgets.PageForm;
 namespace Poser.UI;
 
 /// <summary>
-/// Editor for the selected prop. The sidebar owns the prop list; this pane
-/// exposes properties and lifetime actions for one prop.
+/// The page for the selected object (a prop). The sidebar lists the objects;
+/// this page shows one object's settings and the buttons to save or destroy
+/// it.
 ///
-/// <para>Lifetime clicks are deferred to the end of the frame: destroying the
-/// prop republishes the scene mid-walk otherwise.</para>
+/// <para>Destroy waits until the page has finished drawing. Removing the
+/// object earlier would change the scene's list while it is being drawn.</para>
 /// </summary>
 public sealed class PropsPane
 {
@@ -23,8 +24,8 @@ public sealed class PropsPane
     private readonly SelectionScope _selection;
     private readonly IWardrobeCatalog _stains;
 
-    /// <summary>The dye sheet's picker; the owner string carries which of
-    /// the two channels is being chosen.</summary>
+    /// <summary>The dye picker. Its id ends in 0 or 1 to say which of the two
+    /// dyes is being chosen.</summary>
     private readonly Controls.DyePicker _dyePicker =
         new("prop-dye");
 
@@ -74,8 +75,8 @@ public sealed class PropsPane
                 return;
             }
 
-            // Transform lives on the inspector rail, exactly as a light's
-            // does; this pane owns only what the rail cannot say.
+            // Position, rotation and scale are in the inspector, as for a
+            // light. This page shows only what the inspector does not.
             page.Section(
                 "Object",
                 _openProp,
@@ -84,7 +85,7 @@ public sealed class PropsPane
                 divider: false);
         });
 
-        // Pumped after the page — the overlay pane's rule.
+        // The dye picker is drawn after the page, as on the overlay page.
         if (_dyePicker.Draw() is { } picked
             && _dyeTarget is { } targetId
             && SelectedProp() is { } target && target.Id == targetId)
@@ -119,7 +120,7 @@ public sealed class PropsPane
 
     private void PropRows(FormScope form, PropReading prop)
     {
-        // Identity first, the camera pattern: the name leads the page.
+        // The name comes first, as on the camera page.
         form.TextInput(
             "Name",
             prop.Name,
@@ -131,8 +132,8 @@ public sealed class PropsPane
             prop.Visible,
             next => _values.Set(prop.Id, PropProperties.Visible, next),
             help: "Hide this object without destroying it");
-        // The dyes bake at creation, so choosing one respawns the weapon
-        // in place — handle, name, and placement survive.
+        // The game sets dyes only when it creates the model, so choosing one
+        // spawns the model again in the same place, keeping its name.
         form.Pair(
             "Dye",
             cell => cell.Picker(
@@ -151,8 +152,8 @@ public sealed class PropsPane
                 prop.Tint,
                 value => _values.Set(prop.Id, PropProperties.Tint, value)),
             help: "White leaves the model unchanged");
-        // The variant edits a DRAFT and applies on release — a respawn
-        // per drag tick would churn the weapon.
+        // Dragging changes a draft value that is applied on release.
+        // Applying every drag step would spawn the model again each time.
         if (_animDraftFor != prop.Id || _animBaseline != prop.Model.AnimationVariant)
         {
             _animDraftFor = prop.Id;
@@ -188,7 +189,6 @@ public sealed class PropsPane
             }), help: "Save a spawnable copy of this prop"));
         form.Actions("Lifetime", actions =>
         {
-            // Use Destroy consistently for this lifecycle action.
             actions.Button(
                 "Destroy",
                 () =>

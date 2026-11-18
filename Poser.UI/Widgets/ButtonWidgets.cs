@@ -91,7 +91,7 @@ public static class ButtonWidgets
             onClick);
     }
 
-    /// <summary>Draws a persistent icon toggle with optional slash and dimming.</summary>
+    /// <summary>Draws an icon that switches on and off, optionally crossed out or dimmed.</summary>
     public static bool TemporaryIconToggle(
         TablerIcon icon,
         bool selected,
@@ -118,7 +118,7 @@ public static class ButtonWidgets
             dimmed);
     }
 
-    /// <summary>Persistent toggle using a registered SVG icon name.</summary>
+    /// <summary>The same on/off icon, using a registered icon name.</summary>
     public static bool TemporaryIconToggle(
         string icon,
         bool selected,
@@ -154,8 +154,8 @@ public static class ButtonWidgets
             ButtonHeight(style) * scale);
     }
 
-    /// <summary>CSS border-box intrinsic width: measured label + the
-    /// canonical horizontal padding per side + the 1px border per side.</summary>
+    /// <summary>The width the button needs: the label's width, plus the
+    /// padding and the 1px border on each side.</summary>
     internal static float IntrinsicButtonWidth(
         string label, ControlStyle style) =>
         MeasureText(label, ButtonLabelStyle(style)).X / ImGuiHelpers.GlobalScale
@@ -169,8 +169,8 @@ public static class ButtonWidgets
             IntrinsicButtonWidth(label, style),
             availableWidth);
 
-    /// <summary>Composition forwarding: the caller resolved the allocated
-    /// width; the canonical component still owns everything else.</summary>
+    /// <summary>Draws a button at a width the caller has already worked out.
+    /// Everything else is drawn as for any button.</summary>
     internal static bool ButtonAtWidth(
         string label,
         Action? onClick,
@@ -190,10 +190,10 @@ public static class ButtonWidgets
             help,
             onClick);
 
-    // ---- Canonical text button -------------------------------------
+    // ---- Text button -----------------------------------------------
 
-    // .btnDanger literals from actionButton.module.css — CSS constants,
-    // not theme tokens, identical across every Picto theme.
+    // The Danger button's colours. They are fixed rather than taken from
+    // the theme, because they are the same in every theme.
     private static readonly Vector4 DangerText =
         new(1f, 154f / 255f, 164f / 255f, 1f);            // #ff9aa4
     private static readonly Vector4 DangerBorder =
@@ -203,17 +203,16 @@ public static class ButtonWidgets
     private static readonly Vector4 DangerFillHover =
         new(1f, 71f / 255f, 87f / 255f, 0.15f);           // rgba(255,71,87,.15)
 
-    /// <summary>.btn's <c>transition: background 150ms ease</c> — CSS
-    /// `ease` is cubic-bezier(0.25, 0.1, 0.25, 1). Background only; the
-    /// border and text switch instantly, exactly like the CSS.</summary>
+    /// <summary>On hover the background fades over 150 ms with a standard
+    /// ease curve. Only the background fades; the border and text change at
+    /// once.</summary>
     private static readonly Transition BackgroundTransition =
         Transition.CubicBezier(0.15f, 0.25f, 0.1f, 0.25f, 1f);
 
-    // Motion channels this component owns. Both stores key by stable
-    // ImGui identity (the same seed InvisibleButton hashes); the two
-    // icon-button channels share one elapsed clock under that identity,
-    // while the text button's hover ramp is the identity's single
-    // constant-rate entry and needs no channel of its own.
+    // Animation slots for the icon button. Animations are stored by the
+    // button's id. The icon button's background and opacity share one timer
+    // under that id. The text button's hover fade is the only animation
+    // under its id, so it needs no slot number.
     private const int IconBackgroundChannel = 0;
     private const int IconOpacityChannel = 1;
 
@@ -246,8 +245,8 @@ public static class ButtonWidgets
     }
 
     /// <summary>
-    /// The text button's complete paint. Everything visual lives here; the
-    /// caller owns only reservation, help, and activation.
+    /// Draws the whole text button. The caller only places it, shows its
+    /// help text and handles the click.
     /// </summary>
     private static void PaintTextButton(
         in InteractionResult hit,
@@ -264,9 +263,9 @@ public static class ButtonWidgets
     }
 
     /// <summary>
-    /// The button BOX alone — background, border, and the disabled group —
-    /// returning the color its label must take, so the label is never painted
-    /// from a colour the box did not resolve.
+    /// Draws the button's box: background, border, and the faded look when
+    /// disabled. Returns the colour for the label, so the label always
+    /// matches the box.
     /// </summary>
     private static Vector4 PaintTextButtonBox(
         in InteractionResult hit,
@@ -310,9 +309,9 @@ public static class ButtonWidgets
         float radius = theme.Radii.Control * scale;
         float borderPx = 1f * scale;
         float inset = 0.5f * scale;
-        // The hover state advances EVERY frame — a disabled frame drives
-        // it toward idle, so disabling while hovered and re-enabling away
-        // from the pointer can never replay stale hover fill.
+        // The hover fade updates every frame, and a disabled button fades
+        // back to normal. So a button disabled while hovered and enabled
+        // again away from the pointer does not show an old hover colour.
         float eased = BackgroundTransition.Evaluate(
             Motion.Progress(
                 identity,
@@ -320,16 +319,12 @@ public static class ButtonWidgets
                 BackgroundTransition.DurationSeconds));
         if (disabled)
         {
-            // .btn:disabled is CSS GROUP opacity — the element flattens
-            // before 0.35 applies once. This is THE canonical recipe;
-            // ControlPaint.DisabledGroup owns it now, and the label draws
-            // through the canonical TextAt path with the compensated
-            // color the recipe hands back. For translucent fills that
-            // compensation is exact for every backdrop and every glyph
-            // coverage; for an opaque fill (Primary) it is exact over the
-            // theme surface and bounded by 0.2275·|surface − backdrop|
-            // elsewhere, because affine over-blending cannot express a
-            // group over an unknown backdrop.
+            // A disabled button fades as one piece: background, border and
+            // label together, as if drawn first and then faded once.
+            // ControlPaint.DisabledGroup draws that and returns the label
+            // colour that gives the same look. For see-through fills the
+            // result is exact. For a solid fill (Primary) it is exact over
+            // the page background and slightly off over anything else.
             var content = ControlPaint.DisabledGroup(
                 draw, hit.ScreenMin, hit.ScreenMax,
                 radius, borderPx, fill, borderIdle, opacity);
@@ -337,10 +332,10 @@ public static class ButtonWidgets
         }
         else
         {
-            // Enabled: the border blends over the fill exactly as the
-            // CSS element composites against the page; the background
-            // follows the 150ms hover transition with PREMULTIPLIED
-            // color interpolation, as Chromium interpolates rgba.
+            // Enabled: the border is drawn over the fill. The background
+            // fades between its normal and hover colours over 150 ms,
+            // mixing them with their transparency taken into account, as
+            // web browsers do.
             var background = ColorEx.PremultipliedLerp(fill, fillHover, eased);
             var border = hit.Hovered ? borderHover : borderIdle;
             draw.AddRectFilled(
@@ -370,8 +365,8 @@ public static class ButtonWidgets
         Color = color,
     };
 
-    /// <summary>Centered label through the canonical text path, clipped
-    /// to the button's visual bounds.</summary>
+    /// <summary>Draws the label centred, cut off at the button's
+    /// edges.</summary>
     private static void DrawButtonLabelClipped(
         ImDrawListPtr draw, Vector2 min, Vector2 max,
         string label, ControlStyle style, Vector4 color)
@@ -388,16 +383,16 @@ public static class ButtonWidgets
         }
     }
 
-    // ---- Picto momentary icon button --------------------------------
+    // ---- Icon button -----------------------------------------------
 
-    // iconButton.module.css: both animatable properties use the Picto
-    // --ease-default timing function for 150ms.
+    // The icon button's background and opacity fade over 150 ms with the
+    // design's default ease curve.
     private static readonly Transition IconButtonTransition =
         Transition.CubicBezier(0.15f, 0.4f, 0f, 0.22f, 1f);
 
-    /// <summary>.iconBtn:disabled — a CSS literal of the shared icon button,
-    /// not a theme token, and the ONE home for it: every disabled icon
-    /// affordance fades from here.</summary>
+    /// <summary>How faded a disabled icon button is. It is fixed rather than
+    /// taken from the theme, and every disabled icon button uses this
+    /// value.</summary>
     private const float IconButtonDisabledOpacity = 0.2f;
 
     private static bool RenderIconButton(
@@ -427,9 +422,8 @@ public static class ButtonWidgets
         // Hover and selection restore full opacity; a held press changes the
         // background. Selected icons also request their filled variant.
         float targetOpacity = selected || hit.Hovered ? 1f : 0.8f;
-        // One group under one identity: the background and the opacity
-        // share a clock, so pressing a button that is still fading in
-        // restarts both together, exactly like the CSS element does.
+        // The background and the opacity share one timer, so pressing a
+        // button that is still fading in restarts both together.
         Span<MotionChannel> visual =
         [
             MotionChannel.Color(
@@ -449,8 +443,8 @@ public static class ButtonWidgets
         }
 
         var draw = ImGui.GetWindowDrawList();
-        // Shared .iconBtn is exactly 5px, independent of the 6px radius
-        // used by Picto's bordered actionButton family.
+        // Icon buttons have 5px rounded corners, not the 6px of buttons
+        // with a border.
         float radius = 5f * scale;
         var fadedBackground = background.Fade(opacity);
         draw.PushClipRect(hit.ScreenMin, hit.ScreenMax, true);
@@ -543,7 +537,7 @@ public static class ButtonWidgets
         return (iconMin, iconMin + new Vector2(side));
     }
 
-    // ---- Persistent icon toggle ------------------------------------
+    // ---- On/off icon -----------------------------------------------
 
     internal static bool RenderTemporaryIconToggle(
         string id,
@@ -560,9 +554,9 @@ public static class ButtonWidgets
         disabled |= Interactive.GreyedOut;
         var hit = Interactive.Reserve(id, logicalSize * scale, disabled);
         float opacity = ToggleOpacity(disabled);
-        // A dimmed toggle states "not the active one" as a quieter glyph
-        // rather than a slash: still fully interactive, half present. Hover
-        // restores it, so the target reads live under the pointer.
+        // A dimmed toggle shows "not the active one" with a fainter icon
+        // instead of a slash. It still works as normal, and hovering shows
+        // it at full strength.
         if (dimmed && !disabled && !hit.Hovered)
             opacity *= 0.45f;
         var draw = ImGui.GetWindowDrawList();
@@ -581,9 +575,9 @@ public static class ButtonWidgets
     }
 
     /// <summary>
-    /// The persistent toggle's BOX: the selection fill, the hover overlay and
-    /// the disabled fade, at the control radius. Separate from the glyph so
-    /// both fade by the same <see cref="ToggleOpacity"/>.
+    /// Draws the toggle's box: the fill when selected, the hover shade and
+    /// the disabled fade. The icon is drawn separately, and both fade by the
+    /// same <see cref="ToggleOpacity"/>.
     /// </summary>
     private static void PaintTemporaryToggleBox(
         ImDrawListPtr draw,
@@ -607,8 +601,8 @@ public static class ButtonWidgets
             ActiveTheme.Radii.Control * scale);
     }
 
-    /// <summary>The toggle's SLASH — the inset diagonal that says "this state
-    /// is off", drawn OVER the glyph it crosses.</summary>
+    /// <summary>The toggle's slash: a diagonal line drawn over the icon to say
+    /// it is off.</summary>
     private static void PaintTemporaryToggleSlash(
         ImDrawListPtr draw, Vector2 min, Vector2 max)
     {
@@ -622,8 +616,8 @@ public static class ButtonWidgets
             scale);
     }
 
-    /// <summary>The toggle's group fade: ONE constant, so the box and the
-    /// glyph can never disagree about it.</summary>
+    /// <summary>How faded the toggle is. The box and the icon both use this,
+    /// so they always match.</summary>
     private static float ToggleOpacity(bool disabled) =>
         disabled ? ActiveTheme.Chrome.ControlDisabledOpacity : 1f;
 

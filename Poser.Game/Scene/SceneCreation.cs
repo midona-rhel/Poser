@@ -16,7 +16,8 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Shared creation policy for sidebar, spawn search, and library.</summary>
+/// <summary>Adds new things to the scene, and duplicates, the same way whether they come
+/// from the sidebar, the spawn search or the library.</summary>
 public sealed class SceneCreation : ISceneCreation
 {
     private readonly IFramework _framework;
@@ -132,8 +133,8 @@ public sealed class SceneCreation : ISceneCreation
             mode = fallback;
         }
         if (!_anchors.TryCurrentFor(mode, out var anchor, out _, out refusal)) return false;
-        // New entities have no saved anchor, so they land on the current one,
-        // just like a file without a saved anchor.
+        // Something new has no saved position, so it goes at the current
+        // camera or actor, as a library file with no saved position does.
         position = anchor;
         return true;
     }
@@ -168,8 +169,8 @@ public sealed class SceneCreation : ISceneCreation
             if (source is { } copied && Resolve(handle) is { } target && !_parenting.Copy(copied, target))
                 _log.Warning("The duplicated entity could not inherit its source's parent.");
         }
-        // Native spawning sets the actor's position. Place it and copy its
-        // attachment after that finishes, so the attachment uses the new position.
+        // The game sets a new actor's position while spawning it. Place it and
+        // copy its parent after that, so the parent link uses the new position.
         if (entity is IActor actor) _lifecycle.WhenPosable(actor, _ => Apply());
         else Apply();
         return result;
@@ -239,7 +240,7 @@ public sealed class SceneCreation : ISceneCreation
                 if (!_actors.IsAvailable(source) || !_actors.IsAvailable(target)) return;
                 _spawn.CopyDrawnAppearance(source, target);
                 _spawn.CopyEquipmentVisibility(source, target);
-                // Copy custom colours and opacity through their appearance provider.
+                // Copy custom colours and opacity through Glamourer.
                 if (parameters != null && _bindings.GetActorId(target) is { } targetId)
                 {
                     var applied = _integration.ApplyStateJson(targetId, parameters);

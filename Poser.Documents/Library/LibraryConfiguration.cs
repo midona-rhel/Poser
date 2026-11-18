@@ -6,7 +6,7 @@ using System.IO;
 namespace Poser.Documents.Library;
 
 /// <summary>
-/// One configured root the library scans.
+/// One folder the library lists files from.
 /// </summary>
 [Serializable]
 public class LibrarySourceConfig
@@ -18,8 +18,8 @@ public class LibrarySourceConfig
 }
 
 /// <summary>
-/// Persisted state of the pose library: where to scan, what is favourited and
-/// how the browser is presented.
+/// The library's saved settings: which folders it lists, which poses are
+/// favourites, and how it is shown.
 /// </summary>
 [Serializable]
 public partial class LibraryConfiguration
@@ -27,8 +27,8 @@ public partial class LibraryConfiguration
     public List<LibrarySourceConfig> Sources { get; set; } = [];
 
     /// <summary>
-    /// Set once the shipped defaults have been appended. Guards re-adding a
-    /// source the user has deliberately deleted.
+    /// Set once the Brio and Anamnesis pose folders have been added. They are
+    /// not added again after that, so a folder someone removed stays removed.
     /// </summary>
     public bool DefaultsSeeded { get; set; }
 
@@ -44,14 +44,16 @@ public partial class LibraryConfiguration
 
     public bool UseLibraryWhenImporting { get; set; }
 
-    /// <summary>The browser's live pose preview, off until asked for: it costs
-    /// a hidden actor and a render target for as long as the library is open.
+    /// <summary>The library's live pose preview. Off until switched on, because
+    /// it keeps a hidden actor and an off-screen image for as long as the
+    /// library is open.
     /// </summary>
     public bool PreviewEnabled { get; set; }
 
-    /// <summary>The source folder the last "To library" export landed in, by
-    /// PATH — a path survives source-list edits where an index cannot. The
-    /// export modal preselects it next time; empty until a first export.
+    /// <summary>The folder the last "To library" export went to; the export
+    /// window picks it again next time. It is kept as a path, not as a place
+    /// in the folder list, so it stays right when the list changes. Empty
+    /// until the first export.
     /// </summary>
     public string LastExportSourcePath { get; set; } = "";
 
@@ -59,51 +61,50 @@ public partial class LibraryConfiguration
     public bool ShowFileExtensions { get; set; }
 
     /// <summary>
-    /// Set once the shipped poses root has been appended. Its OWN flag for the
-    /// same reason <see cref="SceneRootSeeded"/> has one.
+    /// Set once the Poses folder has been added to the library. It has its own
+    /// flag for the same reason as <see cref="SceneRootSeeded"/>.
     /// </summary>
     public bool PoseRootSeeded { get; set; }
 
     /// <summary>
-    /// Set once the shipped scenes root has been appended. Its OWN flag, not
-    /// <see cref="DefaultsSeeded"/>: every existing configuration already has
-    /// that one set, so a scenes root gated on it would never reach anybody
-    /// who installed Poser before scenes had a home.
+    /// Set once the Scenes folder has been added to the library. It has its
+    /// own flag, not <see cref="DefaultsSeeded"/>, because that one is already
+    /// set for anyone who used Poser before the Scenes folder existed, and
+    /// they would never get it.
     /// </summary>
     public bool SceneRootSeeded { get; set; }
 
     /// <summary>
-    /// Set once the shipped character-file root has been appended. Its OWN
-    /// flag for the same reason <see cref="SceneRootSeeded"/> has one.
+    /// Set once the MCDFs folder has been added to the library. It has its own
+    /// flag for the same reason as <see cref="SceneRootSeeded"/>.
     /// </summary>
     public bool McdfRootSeeded { get; set; }
 
     /// <summary>
-    /// Set once the shipped objects root has been appended. Its OWN flag for
-    /// the same reason <see cref="SceneRootSeeded"/> has one.
+    /// Set once the Objects folder has been added to the library. It has its
+    /// own flag for the same reason as <see cref="SceneRootSeeded"/>.
     /// </summary>
     public bool ObjectsRootSeeded { get; set; }
 
-    /// <summary>The shipped poses root's source name.</summary>
+    /// <summary>The name of the Poses folder Poser adds to the library.</summary>
     public const string PoseSourceName = "Poser Poses";
 
-    /// <summary>The shipped scenes root's source name.</summary>
+    /// <summary>The name of the Scenes folder Poser adds to the library.</summary>
     public const string SceneSourceName = "Poser Scenes";
 
-    /// <summary>The shipped character-file root's source name. "MCDF" already
-    /// names the format; a "Poser" prefix on it said nothing.</summary>
+    /// <summary>The name of the MCDFs folder Poser adds to the library. It has
+    /// no "Poser" in front, because "MCDFs" already says what it holds.</summary>
     public const string McdfSourceName = "MCDFs";
 
-    /// <summary>The shipped objects root's source name: the home for every
-    /// library entry that is not a pose, a scene or a character file —
-    /// actors, lights, cameras, overlays, environments.</summary>
+    /// <summary>The name of the Objects folder Poser adds to the library. It
+    /// holds every library entry that is not a pose, a scene or an MCDF, such
+    /// as actors, lights, cameras, overlays and environments.</summary>
     public const string ObjectsSourceName = "Poser Objects";
 
     /// <summary>
-    /// The shipped home sources, in the order they seat on the rail.
-    /// One table so a surface that has to walk the homes — the settings page,
-    /// the composition root's pre-scan creation — cannot go out of step with
-    /// the seeding.
+    /// Poser's own library folders, in the order the library lists them.
+    /// Everything that goes through them, such as the settings page and the
+    /// folder creation at startup, uses this one list so they always agree.
     /// </summary>
     public static IReadOnlyList<(string Name, string Shipped)> Homes { get; } =
     [
@@ -114,10 +115,10 @@ public partial class LibraryConfiguration
     ];
 
     /// <summary>
-    /// The one Poser folder; every home is a reserved leaf inside it. It sits
-    /// under Documents beside the other tools' roots rather than in the plugin
-    /// config directory: a pose, a scene and a character file are documents a
-    /// user shares and backs up, not plugin state.
+    /// The Poser folder in Documents, which holds each of Poser's library
+    /// folders. It is in Documents, next to the other posing tools' folders,
+    /// rather than with the plugin's settings, because poses, scenes and MCDFs
+    /// are files people share and back up.
     /// </summary>
     public static string DefaultRoot => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
@@ -132,12 +133,13 @@ public partial class LibraryConfiguration
     private static string HomeRoot(string leaf) =>
         System.IO.Path.Combine(DefaultRoot, leaf);
 
-    /// <summary>The root the configured homes share: the parent of the
-    /// poses home when it ends in its reserved leaf, else the default.</summary>
+    /// <summary>The folder that holds Poser's library folders: the folder
+    /// above the Poses folder if that is still called Poses, otherwise the
+    /// default.</summary>
     public string ResolveRoot()
     {
-        // The managed root is a configuration choice even if its pose source
-        // is temporarily disabled. External source selection never changes it.
+        // A switched-off Poses folder still decides where Poser's folders are.
+        // Folders of other tools never change it.
         var poses = DefaultPoseRoot;
         foreach (var source in Sources)
             if (Classify(source) == LibrarySourceKind.PoserPoses && !string.IsNullOrWhiteSpace(source.Path))
@@ -155,24 +157,23 @@ public partial class LibraryConfiguration
             : DefaultRoot;
     }
 
-    /// <inheritdoc cref="HomeRoot"/>
+    /// <summary>Where the Poses folder is by default.</summary>
     public static string DefaultPoseRoot => HomeRoot("Poses");
 
-    /// <inheritdoc cref="HomeRoot"/>
+    /// <summary>Where the Scenes folder is by default.</summary>
     public static string DefaultSceneRoot => HomeRoot("Scenes");
 
-    /// <inheritdoc cref="HomeRoot"/>
+    /// <summary>Where the MCDFs folder is by default.</summary>
     public static string DefaultMcdfRoot => HomeRoot("MCDFs");
 
-    /// <inheritdoc cref="HomeRoot"/>
+    /// <summary>Where the Objects folder is by default.</summary>
     public static string DefaultObjectsRoot => HomeRoot("Objects");
 
     /// <summary>
-    /// The scanned root a save of that kind should land in: the shipped home
-    /// source when it is still configured and enabled, else the shipped path
-    /// itself. A user who repointed that source keeps their choice; one who
-    /// deleted it gets the shipped path back rather than a save that lands
-    /// somewhere the matching library tab cannot see.
+    /// The folder a save of this kind goes to: the matching Poser folder in
+    /// the library's list when it is switched on, otherwise its default path.
+    /// If the folder was moved, saves go to where it is now. If it was removed
+    /// or switched off, saves go to the default path.
     /// </summary>
     public string ResolveHomeRoot(string sourceName, string shipped)
     {
@@ -199,11 +200,11 @@ public partial class LibraryConfiguration
         ResolveHomeRoot(ObjectsSourceName, DefaultObjectsRoot);
 
     /// <summary>
-    /// Makes one home exist and answers with the configured path a file dialog
-    /// should open at. Failure is deliberately not redirected to Documents:
-    /// the caller that writes a library file must use
-    /// <see cref="TryEnsureDirectory"/> and stop when it fails.
-    /// Idempotent; every surface that needs a home calls it.
+    /// Creates one of Poser's library folders if it is missing, and returns
+    /// its path for a file dialog to open at. If creating it fails, the same
+    /// path is still returned rather than Documents; code that writes a
+    /// library file calls <see cref="TryEnsureDirectory"/> itself and stops
+    /// when it fails. Safe to call any number of times.
     /// </summary>
     public string EnsureHomeRootExists(string sourceName, string shipped)
     {
@@ -212,8 +213,9 @@ public partial class LibraryConfiguration
         return root;
     }
 
-    /// <summary>Checked command used immediately before a library write. The
-    /// requested path is the only path this method creates or approves.</summary>
+    /// <summary>Creates the folder right before a library file is written
+    /// into it, and says why when it cannot. It creates only the folder asked
+    /// for.</summary>
     public static bool TryEnsureDirectory(string path, out string detail)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -250,10 +252,10 @@ public partial class LibraryConfiguration
         EnsureHomeRootExists(McdfSourceName, DefaultMcdfRoot);
 
     /// <summary>
-    /// A collision-safe path for a new library entry: the cleaned name as
-    /// is, or with a four-digit timestamp when that file already exists — a
-    /// save never overwrites, and an on-disk name is parsed forever so the
-    /// stamp keeps its century.
+    /// A path for a new library file, so a save never overwrites one: the
+    /// cleaned-up name, or the name with the date and time added when that
+    /// file already exists. The year has all four digits, because the name is
+    /// read back for as long as the file exists.
     /// </summary>
     public static string NewEntryPath(string root, string name, string extension)
     {
@@ -267,13 +269,13 @@ public partial class LibraryConfiguration
         return path;
     }
 
-    /// <summary>Best-effort startup preparation. A home creation failure is
-    /// left visible to the library source-health scan and never throws from
-    /// service registration.</summary>
+    /// <summary>Creates Poser's library folders at startup where it can. A
+    /// folder that cannot be created shows up as a problem in the library's
+    /// folder list; startup never fails because of it.</summary>
     public void EnsureHomeRootsExist()
     {
-        // Startup creates only configured, enabled managed homes. Optional
-        // external sources and disabled user choices require an explicit action.
+        // Only Poser's own folders that are switched on are created here.
+        // Folders of other tools, and switched-off folders, are left alone.
         foreach (var source in Sources)
         {
             if (!source.Enabled)
@@ -284,14 +286,13 @@ public partial class LibraryConfiguration
     }
 
     /// <summary>
-    /// Appends the shipped Brio and Anamnesis roots the first time only, and
-    /// each Poser home under its own flag.
+    /// Adds the Brio and Anamnesis pose folders to the library the first time
+    /// only, and each of Poser's own folders once, each under its own flag.
     /// </summary>
     public void EnsureDefaults() =>
         EnsureDefaults(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
-    // The production seeding sequence, with a disposable Documents location
-    // supplied by focused filesystem tests.
+    // Tests pass a throwaway Documents folder here.
     internal void EnsureDefaults(string documents)
     {
         var root = Path.Combine(documents, "Poser");
@@ -304,11 +305,9 @@ public partial class LibraryConfiguration
             () => McdfRootSeeded = true);
         SeedHome(ObjectsSourceName, Path.Combine(root, ObjectsLeaf), ObjectsRootSeeded,
             () => ObjectsRootSeeded = true);
-        // The settings save once rebuilt the source list without the
-        // objects home (it had no folder row there), deleting it on every
-        // save while the seed flag kept it from ever coming back. No UI
-        // can delete this home deliberately, so a missing objects home is
-        // always that bug's residue: it returns at startup.
+        // Nothing in the interface removes the Objects folder, so a missing
+        // one is put back at startup. Older versions could drop it from the
+        // list when saving settings.
         EnsureHomeSourceListed(ObjectsSourceName, Path.Combine(root, ObjectsLeaf));
 
         if (DefaultsSeeded)

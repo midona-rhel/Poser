@@ -5,10 +5,10 @@ using Poser.Domain.Posing;
 namespace Poser.Application.Posing;
 
 /// <summary>
-/// One bone carrying IK configuration on a skeleton, with the canonical names
-/// of the bones its solver moves. The list is what every all-chains surface
-/// reads — the overlay's armed tinting, and any enable-all / disable-all
-/// control — so none of them has to probe bone by bone.
+/// One IK chain on a skeleton: its end bone, its settings, and the names of
+/// the bones it moves. Views that show every chain at once, such as the
+/// overlay colouring the bones of switched-on chains, read this list instead
+/// of asking about each bone in turn.
 /// </summary>
 public readonly record struct IkChainSummary(
     BoneId Endpoint,
@@ -20,22 +20,23 @@ public readonly record struct IkChainSummary(
 /// </summary>
 public interface IIkConfigurationPort
 {
-    /// <summary>Whether the target supports an IK chain.</summary>
+    /// <summary>Whether the bone can be the end of an IK chain.</summary>
     bool IsSupported(TransformTargetId target);
 
-    /// <summary>Every configured chain on the skeleton, armed or not.</summary>
+    /// <summary>Every chain set up on the skeleton, switched on or not.</summary>
     IReadOnlyList<IkChainSummary> Chains(SkeletonId skeleton);
 
-    /// <summary>Whether the endpoint's mandatory Two Joint chain resolves
-    /// exactly; Two Joint is offered only when true.</summary>
+    /// <summary>Whether the skeleton has every bone the Two Joint solver needs
+    /// above this end bone. Two Joint is offered only when it does.</summary>
     bool IsTwoJointAvailable(TransformTargetId target);
 
-    /// <summary>The target's current configuration, or its chain defaults
-    /// when none is stored; null for unsupported targets.</summary>
+    /// <summary>The chain's current settings, or its default settings if none
+    /// were saved. Null when the bone cannot be the end of a chain.</summary>
     IkChainConfig? Get(TransformTargetId target);
 
-    /// <summary>Validates and stores the configuration. Entering Fixed mode
-    /// or enabling a Fixed chain captures the current effective target.</summary>
+    /// <summary>Checks and saves the settings as one undo step. Switching the
+    /// target to World, or switching on a chain whose target is World, pins
+    /// the target where the end bone is now.</summary>
     Outcome Set(TransformTargetId target, IkChainConfig config);
     Outcome Adjust(TransformTargetId target, IkChainConfig config);
     Outcome SetFabrikTarget(TransformTargetId target, IkTargetMode mode,
@@ -45,15 +46,16 @@ public interface IIkConfigurationPort
     /// Enabled state.</summary>
     Outcome ResetDefaults(TransformTargetId target);
 
-    /// <summary>Points the chain at another bone (Bone mode): the endpoint
-    /// keeps its current offset from that bone and follows it.</summary>
+    /// <summary>Makes the end bone follow another bone (Target: Bone). The end
+    /// bone keeps its current distance from that bone.</summary>
     Outcome SetBoneTarget(
         TransformTargetId target, global::Poser.Domain.Identity.BoneId bone);
 
     /// <summary>The bone a Bone-mode chain follows, if one was picked.</summary>
     global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target);
 
-    /// <summary>Follow a stable non-skeletal scene target, keeping the tip's offset.</summary>
+    /// <summary>Makes the end bone follow something in the scene that is not a
+    /// bone (Target: Scene entity), keeping its current distance from it.</summary>
     Outcome SetEntityTarget(TransformTargetId target, SelectionId entity);
     SelectionId? EntityTarget(TransformTargetId target);
 }
