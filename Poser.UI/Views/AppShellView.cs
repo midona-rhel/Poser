@@ -1307,9 +1307,10 @@ public static class AppShellView
         // Toolbar and content share the horizontal inset; the shell owns the
         // origin while panes own their internal spacing.
         var childOrigin = new Vector2(min.X + leftEdge, toolbarBottom);
-        // The footer band is the shell's, under every view.
-        float footerHeight =
-            ActiveTheme.Floating.ModalBarHeight * s;
+        // The footer band is the shell's, under every view. Its top line meets
+        // the sidebar footer's line: the band plus the child's one-pixel gap
+        // is exactly the sidebar footer's height.
+        float footerHeight = (FooterHeight - 1f) * s;
         var childSize = new Vector2(
             max.X - min.X - 1f * s - leftEdge,
             MathF.Max(0f, max.Y - toolbarBottom - 1f * s - footerHeight));

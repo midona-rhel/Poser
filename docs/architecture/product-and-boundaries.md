@@ -1,25 +1,16 @@
 # Product scope and boundaries
 
-Poser is a Dalamud plugin for posing actors and building scenes in Final Fantasy
-XIV's group pose (GPose). What it does for a user is described in the
-[feature pages](../README.md). This page says what Poser leaves to other plugins
-and how the code is split into projects.
+Poser is a Dalamud plugin for posing actors and building scenes in Final Fantasy XIV's group pose (GPose). What it does for a user is described in the [feature pages](../README.md). This page says what Poser leaves to other plugins and how the code is split into projects.
 
 ## What Poser leaves to other plugins
 
-- **Looks.** Poser changes an actor's mods, gear, face and body shape by asking
-  Penumbra, Glamourer and Customize+ to do it. It does not keep its own copy of
-  gear, dyes or designs. Opacity, tint, Wet surface and the model id are Poser's own.
-- **Animations and effects.** Poser plays the game's animations and places the
-  game's effects. It cannot make or edit them. The one exception is
-  [Export Idle Pose](../features/animation.md#exporting-a-pose-as-an-idle-animation),
-  which saves a single pose as a mod.
+- **Looks.** Poser changes an actor's mods, gear, face and body shape by asking Penumbra, Glamourer and Customize+ to do it. It does not keep its own copy of gear, dyes or designs. Opacity, tint, Wet surface and the model id are Poser's own.
+- **Animations and effects.** Poser plays the game's animations and places the game's effects. It cannot make or edit them. The one exception is [Export Idle Pose](../features/animation.md#exporting-a-pose-as-an-idle-animation), which saves a single pose as a mod.
 - **Other plugins.** Poser offers no IPC for other plugins to call.
 
 ## The projects
 
-The solution is `Poser.slnx`. The intended split is three parts: the interface,
-the game, and Poser's own logic. In the code that is:
+The solution is `Poser.slnx`. The intended split is three parts: the interface, the game, and Poser's own logic. In the code that is:
 
 | Project | What it is for |
 |---|---|
@@ -41,44 +32,26 @@ the game, and Poser's own logic. In the code that is:
 | `Poser.UI` | Domain, Documents, Application |
 | `Poser` | all of the above |
 
-`Poser.Game` and `Poser.UI` do not know about each other. The interface asks
-`Poser.Application` for something, and `Poser.Application` asks the game through
-an interface that `Poser.Game` implements. The `Poser` project connects the two
-sides at startup, in `Poser/Composition/ServiceRegistration.cs`.
+`Poser.Game` and `Poser.UI` do not know about each other. The interface asks `Poser.Application` for something, and `Poser.Application` asks the game through an interface that `Poser.Game` implements. The `Poser` project connects the two sides at startup, in `Poser/Composition/ServiceRegistration.cs`.
 
-Domain, Documents and Application must build without Dalamud, the game's
-structures or ImGui. That keeps Poser's logic testable without the game.
-`tools/Test-ProjectBoundaries.ps1` checks the table above and this rule, and CI
-runs it on every pull request.
+Domain, Documents and Application must build without Dalamud, the game's structures or ImGui. That keeps Poser's logic testable without the game. `tools/Test-ProjectBoundaries.ps1` checks the table above and this rule, and CI runs it on every pull request.
 
-Every namespace starts with the name of its project, so a `using` line shows
-which project the code reaches into.
+Every namespace starts with the name of its project, so a `using` line shows which project the code reaches into.
 
 ## Interfaces between the parts
 
-`Poser.Application` declares two kinds of interfaces, and their names say which
-side they face:
+`Poser.Application` declares two kinds of interfaces, and their names say which side they face:
 
-- `I…Control`, `I…Commands` and similar are what the interface calls. For
-  example `IGazeControl` is how the Gaze controls change where an actor looks.
-- `I…Port` and `I…RuntimePort` are what Poser's logic needs from the game.
-  `Poser.Game` implements them. For example `IGazeRuntimePort` is implemented by
-  `GazeRuntimeAdapter` in `Poser.Game/Posing`.
+- `I…Control`, `I…Commands` and similar are what the interface calls. For example `IGazeControl` is how the Gaze controls change where an actor looks.
+- `I…Port` and `I…RuntimePort` are what Poser's logic needs from the game. `Poser.Game` implements them. For example `IGazeRuntimePort` is implemented by `GazeRuntimeAdapter` in `Poser.Game/Posing`.
 
-When there is no Poser logic in between, `Poser.Game` implements the
-interface-facing side directly. `ISceneObjectControl` and `IWorldService` are
-examples.
+When there is no Poser logic in between, `Poser.Game` implements the interface-facing side directly. `ISceneObjectControl` and `IWorldService` are examples.
 
-Values crossing these interfaces are ids and plain values, never game addresses.
-How the game side turns an id back into a game object is in
-[posing-runtime.md](posing-runtime.md).
+Values crossing these interfaces are ids and plain values, never game addresses. How the game side turns an id back into a game object is in [posing-runtime.md](posing-runtime.md).
 
 ## Where the code does not follow the split
 
-Some behaviour lives in `Poser.UI` although it is not about drawing: which bones
-the skeleton overlay shows and the bone-visibility presets, the reference
-pictures, the generated layout of the Body and Face maps, and which shortcut runs
-which action.
+Some behaviour lives in `Poser.UI` although it is not about drawing: which bones the skeleton overlay shows and the bone-visibility presets, the reference pictures, the generated layout of the Body and Face maps, and which shortcut runs which action.
 
 ## Where to look
 

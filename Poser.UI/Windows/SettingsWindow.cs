@@ -316,7 +316,7 @@ public class SettingsWindow : Window
 
             ConfigLoadFailure = _configuration.LoadFailure,
 
-            Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
+            Version = System.Version.Parse(_releaseNotes.Version).ToString(3),
             OnSave = SaveToConfig,
             OnResetConfig = ResetConfig,
             OnCancel = () => IsOpen = false,
