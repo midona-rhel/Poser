@@ -4,25 +4,28 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Posing;
 
-/// <summary>A prepared native import, addressed by bone names rather than live wrappers.</summary>
+/// <summary>A pose file that has been read and is ready to apply. It finds bones by
+/// name, so it holds on to nothing in game memory.</summary>
 public interface IPreparedPoseImport
 {
     bool IsEmpty { get; }
     int FileBoneCount { get; }
 }
 
-/// <summary>Exact admitted request; delayed work must still own this token.</summary>
+/// <summary>One import that was accepted. Work that runs later first checks that this is
+/// still the current import.</summary>
 public sealed class PoseImportOperation(OperationReceipt pending)
 {
     public OperationReceipt Pending { get; } = pending;
 }
 
-/// <summary>Game-side reservation, in-pass application and framework scheduling.</summary>
+/// <summary>The game side of a pose import. It holds the actor for the import, writes the
+/// pose while the game updates the skeleton, and runs work on the game's main thread.</summary>
 public interface IPoseImportRuntime
 {
     bool IsPending { get; }
-    /// <summary>Whether a reservation would be refused for a transient reason:
-    /// an import or IK bake is applying.</summary>
+    /// <summary>True while another import or an IK bake is being applied. A new
+    /// import has to wait until it is done.</summary>
     bool AdmissionBusy { get; }
     bool IsFrameworkThread { get; }
     bool FreezeOnImport { get; }

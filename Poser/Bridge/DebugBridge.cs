@@ -30,8 +30,9 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.Bridge;
 
 /// <summary>
-/// Debug-build-only local HTTP control surface used by the test tooling.
-/// Game calls are dispatched to the framework thread and responses are JSON.
+/// A small local web server, in Debug builds only, that test scripts use to drive
+/// Poser. Requests that touch the game run on the game's main thread, and every
+/// answer is JSON.
 /// </summary>
 public sealed partial class DebugBridge : IDisposable
 {
@@ -237,15 +238,16 @@ public sealed partial class DebugBridge : IDisposable
 
     private int _disposed;
 
-    /// <summary>Idempotent. The listener stops before token cancellation:
-    /// cancelling a token with an accept pending on it threw on unload,
-    /// which failed the unload and left the port held by a dead instance.</summary>
+    /// <summary>Safe to call twice. The listener stops before the token is
+    /// cancelled, because cancelling a token while a connection wait is pending
+    /// on it throws during unload. The unload would then fail and leave the port
+    /// held by the old copy of the plugin.</summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
-        // ImGui cleanup belongs to the framework thread, including unload.
-        // Do not block plugin disposal waiting for a tick that may own unload.
+        // ImGui cleanup must run on the game's main thread, also during unload.
+        // Do not wait for it here: unload may itself be running on that thread.
         _ = _framework.RunOnFrameworkThread(() =>
         {
             FinishUiDrag();
@@ -594,8 +596,8 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/shortcut":
             {
-                // Configuration is saved on unrelated edits and shutdown too.
-                // Never mutate it under a purported session-only diagnostic.
+                // Settings are also saved after other edits and on shutdown, so a
+                // change made here for testing would stay. This route only reads them.
                 if (query.ContainsKey("action") || query.ContainsKey("primary") ||
                     query.ContainsKey("secondary") || query.ContainsKey("reset") || query.ContainsKey("clear"))
                     return Json(new { error = "Change bindings in Settings. This endpoint only probes configured shortcuts." });
@@ -763,9 +765,9 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/uiinput":
             {
-                // Inject only into ImGui's input queue, never the desktop or
-                // game targeting. Each request is an event; release a held
-                // mouse button/key with down=0 after a drag/key press.
+                // Input goes only into ImGui's input queue, never to the desktop
+                // or the game's targeting. Each request is one event; after a drag
+                // or key press, release the held button or key with down=0.
                 var io = Dalamud.Bindings.ImGui.ImGui.GetIO();
                 var down = query.TryGetValue("down", out var pressed) && pressed == "1";
                 if (query.TryGetValue("x", out var x) && query.TryGetValue("y", out var y))
@@ -799,7 +801,7 @@ public sealed partial class DebugBridge : IDisposable
                     return Json(new { error = "An absolute scene path is required." });
                 if (query.TryGetValue("save", out var save) && save == "1")
                 {
-                    // Diagnostics never overwrite a user's existing scene.
+                    // A test save never overwrites an existing scene file.
                     if (File.Exists(scenePath))
                         return Json(new { error = "Choose a new file for the diagnostic save." });
                     var saveOptions = SceneSaveOptions.Default;
@@ -902,7 +904,8 @@ public sealed partial class DebugBridge : IDisposable
                 float Number(string key) => float.Parse(query.GetValueOrDefault(key, "0"), CultureInfo.InvariantCulture);
                 if (query.GetValueOrDefault("action") == "probe-native-pan")
                 {
-                    // Exercise CameraRestRecorder with a native change, like the game's pan controls.
+                    // Changes the pan directly, the way the game's own pan controls do,
+                    // to test CameraRestRecorder.
                     selected.Pan = new(Number("x"), Number("y"));
                     return Json(Domain.Outcome.Ok());
                 }
@@ -996,7 +999,7 @@ public sealed partial class DebugBridge : IDisposable
             case "/envhold":
             {
                 // Debug: ?section=Fog&on=1|0 holds a section; ?tail=VALUE writes the float at
-                // EnvState Fog +0x60 (past the 0x28 Poser mapped before); returns that float.
+                // EnvState Fog +0x60 (beyond the first 0x28 bytes Poser maps); returns that float.
                 var env = (Game.Environment.EnvironmentService)_environment;
                 if (query.TryGetValue("section", out var sectionText)
                     && Enum.TryParse<global::Poser.Domain.Scene.EnvSection>(sectionText, true, out var section)
@@ -1535,8 +1538,9 @@ public sealed partial class DebugBridge : IDisposable
                     foreach (var bone in skeleton.Bones)
                         if (bone.BoneName == name && (wantPartial < 0 || bone.PartialId == wantPartial))
                         {
-                            // Unselected, unmodified skeletons are not kept hot by the UI.
-                            // Refresh through the same read boundary before reporting a pose.
+                            // The interface keeps bones up to date only for selected or
+                            // edited skeletons. Read the model matrix the way it does, so
+                            // this skeleton's bones are fresh before they are reported.
                             if (_bindings.GetBoneId(bone) is { } liveBone)
                                 _viewport.GetSkeletonModelMatrix(liveBone);
                             var t = bone.LastTransform; var rw = bone.LastRawTransform;
@@ -1745,8 +1749,8 @@ public sealed partial class DebugBridge : IDisposable
                                 CcdIterations = query.TryGetValue("iterations", out var it) ? int.Parse(it) : current.CcdIterations,
                                 SwivelDegrees = query.TryGetValue("swivel", out var sw) ? float.Parse(sw, CultureInfo.InvariantCulture) : current.SwivelDegrees,
                             };
-                            // Discrete diagnostics use the same journaled configuration owner
-                            // as the inspector, including depth recapture and mode transitions.
+                            // This goes through the same IK settings code as the Inspector,
+                            // with its undo steps, so depth and mode changes behave the same.
                             var result = _ikConfiguration.Set(target, next);
                             return JsonSerializer.Serialize(new { ok = result.Success, result.Detail,
                                 actorId = id.ToString(), config = _ikConfiguration.Get(target), history = History() },
@@ -1826,8 +1830,8 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/setbone":
             {
-                // This absolute bone write uses the edit journal. /rotatebone
-                // below writes directly to the runtime for comparison.
+                // This sets the bone the normal way, with an undo step. /rotatebone
+                // below writes straight to the game side, for comparison.
                 string name = query["name"]; int part = query.TryGetValue("partial", out var sp) ? int.Parse(sp) : 0;
                 float deg = float.Parse(query.GetValueOrDefault("deg", "0"), CultureInfo.InvariantCulture);
                 var axis = query.TryGetValue("axis", out var ax) && ax == "x" ? System.Numerics.Vector3.UnitX : ax == "z" ? System.Numerics.Vector3.UnitZ : System.Numerics.Vector3.UnitY;
@@ -1935,7 +1939,8 @@ public sealed partial class DebugBridge : IDisposable
                 var r = part == GazeTargetType.None
                     ? _gaze.SetGazePosition(id, point)
                     : _gaze.SetPartPosition(id, part, point);
-                // HTTP calls are discrete controls, not a held ImGui gesture.
+                // Each request is one finished change, not a held drag, so its
+                // undo step is closed at once.
                 _gaze.Seal();
                 return Json(new { ok = r.Success, r.Detail });
             }
@@ -2228,7 +2233,7 @@ public sealed partial class DebugBridge : IDisposable
         return Json(new { ok = true, address = $"0x{address:X}" });
     }
 
-    /// <summary>Guarded read of any address: floats and ints per dword.</summary>
+    /// <summary>Reads any address safely, showing each 4 bytes as a float and an int.</summary>
     private static unsafe string Peek(Dictionary<string, string> query)
     {
         if (!query.TryGetValue("addr", out var a))

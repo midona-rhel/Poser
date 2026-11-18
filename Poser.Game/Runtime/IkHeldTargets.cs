@@ -23,11 +23,11 @@ using static Poser.Game.IkChainShapes;
 namespace Poser.Game;
 
 /// <summary>
-/// Where a held IK chain's target is: the capture each target mode takes
-/// when a chain starts holding (world point, offset from a bone or a scene
-/// entity, or an actor-frame anchor), and its resolution into the
-/// endpoint's model space each frame. Reads live transforms and scene
-/// bindings; stores nothing of its own.
+/// Works out where a held IK chain's target is. When a chain starts holding,
+/// this records the target the way its target mode needs: a point in the
+/// world, an offset from a bone or another object in the scene, or a point
+/// fixed to the actor. Each frame it turns that record into a position
+/// relative to the actor's model. It keeps nothing of its own.
 /// </summary>
 internal sealed unsafe class IkHeldTargets
 {
@@ -66,8 +66,9 @@ internal sealed unsafe class IkHeldTargets
         return CaptureOffset(endpoint, BoneWorld.Of(target), previous);
     }
 
-    // Changing what a chain follows preserves its held point in the solver's frame.
-    // A newly enabled chain starts at the displayed bone and is aligned on its first solve.
+    // Changing what a chain follows keeps its target where the IK solver had it.
+    // A chain that was just turned on starts at the bone as shown, and is lined up
+    // on its first solve.
     private HeldTarget? CaptureOffset(IBone endpoint, Transform? anchor, IkChainState? previous)
     {
         if (anchor is not { } followed) return null;
@@ -96,7 +97,8 @@ internal sealed unsafe class IkHeldTargets
             { Unseated = converted == null };
     }
 
-    /// <summary>Resolves the held target into solver coordinates, including edits made since capture.
+    /// <summary>Works out the held target in the IK solver's coordinates, including edits made
+    /// since it was recorded.
     /// With <paramref name="lastSolved"/>, returns the target the last solve used when there is one.
     /// Returns null when its actor or target is unavailable.</summary>
     public (Vector3 Position, Quaternion Rotation)? ResolveHeld(
@@ -173,8 +175,8 @@ internal sealed unsafe class IkHeldTargets
     /// where the solver sees the bone.</summary>
     private void Seat(IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose)
     {
-        // Each path clears its mark only once seated: a target that cannot be
-        // resolved this frame is tried again on the next.
+        // Each path clears its mark only once the target is lined up: a target
+        // that cannot be worked out this frame is tried again on the next.
         var native = Poser.Game.Entities.NativePoseRead.Model(pose, endpoint.BoneIndex);
         if (native == null)
             return;
@@ -184,7 +186,8 @@ internal sealed unsafe class IkHeldTargets
         var rotation = ik.PendingRetarget?.Rotation ?? end.Rotation;
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor })
         {
-            // A target converted from FABRIK or Rope keeps its point and only reads the parent.
+            // A target carried over from FABRIK or Rope keeps its point; only the parent
+            // bone is read again.
             var seated = anchor.ParentUnseated
                 ? anchor with
                 {
@@ -229,7 +232,8 @@ internal sealed unsafe class IkHeldTargets
             ik.SeatPending = true;
     }
 
-    /// <summary>Refreshes requested bone transforms. Read LastTransform first to request a new bone.</summary>
+    /// <summary>Updates the cached transforms of the bones that were asked for. Reading a
+    /// bone's LastTransform is what asks for it, so read that first.</summary>
     internal static void RefreshCache(IBone bone)
     {
         if (bone.Skeleton is global::Poser.Game.Entities.Skeleton skeleton && skeleton.IsValid)
@@ -262,8 +266,8 @@ internal sealed unsafe class IkHeldTargets
     /// the bone above the chain down to the end, from the solved pose to the screen. Where the
     /// steps don't span a direction (a straight limb), the limb's length on screen over its
     /// solved length is used.
-    /// Both are identity before the first solve, for a chain whose parent is in another partial,
-    /// and when the map can't be inverted.
+    /// Both are identity before the first solve, for a chain whose parent bone is in another part
+    /// of the skeleton (such as the face), and when the map can't be inverted.
     /// </summary>
     public (Matrix4x4 ToDisplayed, Matrix4x4 ToSolve) DisplayedFrame(IkChainState ik, IBone endpoint)
     {
@@ -339,7 +343,8 @@ internal sealed unsafe class IkHeldTargets
     {
         var end = _stacks.ToApplySpace(endpoint, endpoint.LastRawTransform);
         var parent = NativeIkMembers(endpoint, config).FirstOrDefault()?.ParentBone;
-        // An anchor kept from an earlier Two Joint period describes a pose that has since changed.
+        // An anchor left from when the chain last used Two Joint describes a pose that has
+        // since changed.
         return AnchorAt(endpoint, config with { ActorAnchor = null, WorldAnchor = null },
             (end.Position, end.Rotation),
             parent?.PartialId == endpoint.PartialId
@@ -373,7 +378,8 @@ internal sealed unsafe class IkHeldTargets
         return config;
     }
 
-    /// <summary>Captures the forearm, hand and authored rotation when End rotation changes.</summary>
+    /// <summary>Records the forearm and hand rotations, and the hand's own edited rotation, when
+    /// End rotation changes.</summary>
     public IkEndRotationAnchor? CaptureEndAnchor(IBone endpoint, int secondJoint)
     {
         var forearm = endpoint.Skeleton.Bones.FirstOrDefault(b => b.PartialId == endpoint.PartialId

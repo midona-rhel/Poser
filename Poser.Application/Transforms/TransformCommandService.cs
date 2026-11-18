@@ -60,7 +60,7 @@ public sealed class TransformCommandService
             description);
 
     /// <summary>
-    /// Refuses while an earlier failed edit is still being put back. An edit
+    /// Turns the edit away while an earlier failed edit is still being undone. An edit
     /// made during a drag goes through: a bone the drag holds is set back to
     /// the drag's value on its next update, and every other bone keeps the edit.
     /// </summary>
@@ -108,9 +108,9 @@ public sealed class TransformCommandService
     /// recording an undo step. Reset all uses this directly because it records
     /// one step for the pose and everything else it resets.
     /// A failed write changes nothing by itself. When a write fails after
-    /// earlier ones landed, those earlier targets are put back: resetting
+    /// earlier ones landed, those earlier targets are restored: resetting
     /// several actors can stop at one whose parent is gone. When the read
-    /// after writing fails, every target is put back.
+    /// after writing fails, every target is restored.
     /// </summary>
     internal GestureResult Write(
         IReadOnlyList<TransformTargetState> before,

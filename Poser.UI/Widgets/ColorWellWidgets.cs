@@ -81,8 +81,8 @@ public static class ColorWellWidgets
         return changed;
     }
 
-    /// <summary>Paints the swatch bounds; rows default to a leading square,
-    /// while explicit rectangular swatches use their full reserved width.</summary>
+    /// <summary>Paints the colour box. Normally it is a square at the start of the
+    /// row; with fillWidth it fills all the width it was given.</summary>
     private static void PaintColorWellBox(
         in InteractionResult hit, Vector2 wellMax, Vector4 color, bool disabled)
     {
@@ -119,10 +119,9 @@ public static class ColorWellWidgets
         });
     }
 
-    /// <summary>Builds the picker id from its control id.</summary>
     private static string ColorWellPopupId(string id) => id + "_picker";
 
-    /// <summary>Draws the anchored picker and reports edited colors.</summary>
+    /// <summary>Draws the colour picker next to the well and reports changed colours.</summary>
     private static bool DrawColorWellPopup(
         string id,
         Vector2 anchorMin,
@@ -158,7 +157,7 @@ public static class ColorWellWidgets
                     | ImGuiColorEditFlags.NoSmallPreview;
                 if (rgbOnly)
                     flags |= ImGuiColorEditFlags.NoAlpha;
-                // HDR mode preserves components above one.
+                // In HDR mode, colour values above 1 are kept.
                 if (hdr)
                     flags |= ImGuiColorEditFlags.Hdr
                         | ImGuiColorEditFlags.Float;
@@ -177,7 +176,8 @@ public static class ColorWellWidgets
         return changed;
     }
 
-    /// <summary>Draws one solid swatch with shared hover and selection chrome.</summary>
+    /// <summary>Draws one round colour swatch, with the same hover and selected rings
+    /// as every swatch.</summary>
     public static bool Swatch(
         string id,
         Vector4 color,
@@ -194,7 +194,8 @@ public static class ColorWellWidgets
                 SwatchSegments));
     }
 
-    /// <summary>Draws the split theme swatch with the shared interaction chrome.</summary>
+    /// <summary>Draws the theme mode swatch, split in two halves, with the same hover
+    /// and selected rings as every swatch.</summary>
     internal static bool ThemeModeSwatch(
         string id,
         bool active,
@@ -224,7 +225,8 @@ public static class ColorWellWidgets
         return hit.Clicked;
     }
 
-    /// <summary>Paints shared chrome around caller-provided swatch content.</summary>
+    /// <summary>Draws the hover and selected rings around a swatch. The caller draws
+    /// what is inside.</summary>
     private static void PaintSwatchDot(
         ImDrawListPtr dl,
         Vector2 boxMin,
@@ -262,7 +264,7 @@ public static class ColorWellWidgets
             theme.Chrome.ControlHover);
     }
 
-    /// <summary>Draws the shared pill and evenly spaced swatch slots.</summary>
+    /// <summary>Draws the rounded strip that holds a row of evenly spaced swatches.</summary>
     /// <param name="count">Number of swatch slots to lay out.</param>
     /// <param name="swatch">Draws the slot at the current cursor.</param>
     /// <param name="style">Overrides the natural size.</param>
@@ -296,7 +298,7 @@ public static class ColorWellWidgets
             (PaletteBorder + PalettePaddingX) * scale,
             (PaletteBorder + (contentHeight - SwatchWrapSize) * 0.5f)
                 * scale);
-        // Fixed-width callers clip slots at the palette edge.
+        // When the caller fixes the width, swatches past the edge are cut off.
         dl.PushClipRect(origin, paletteMax, true);
         try
         {
@@ -310,7 +312,8 @@ public static class ColorWellWidgets
         finally
         {
             dl.PopClipRect();
-            // Absolute-positioned children do not reserve the palette box.
+            // The swatches were placed by screen position and took no layout
+            // space, so the palette's space is taken here.
             ImGui.SetCursorScreenPos(origin);
             ImGui.Dummy(metrics.Size);
         }
@@ -345,7 +348,7 @@ public static class ColorWellWidgets
         return picked;
     }
 
-    /// <summary>Draws an annulus without tinting its interior.</summary>
+    /// <summary>Draws a ring and leaves its inside untouched.</summary>
     private static void SwatchRing(
         ImDrawListPtr drawList,
         Vector2 center,
