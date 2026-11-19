@@ -438,7 +438,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/weight?actor&slot=1&value=0.5 (1 releases)",
                         "/expression?actor&hold=TIMELINE | &release=1",
                         "/lips?actor&timeline=TIMELINE (0 restores)",
-                        "/emote?actor&emote=EMOTE_ROW&timeline=ITS_[0]_ROW&start=1&posture=1 (the General Apply: posture version, from its start)",
+                        "/emote?actor&emote=EMOTE_ROW&timeline=ITS_[0]_ROW&start=1 (the General section's Apply)",
                         "/stance?actor&stance=Idle|SitGround|SitChair|Sleeping&pose=0",
                         "/seeklayer?actor&slot=1&time=SECONDS (by the layer's own clock; an ended layer is played again held first)",
                         "/wear?actor&slot=3&item=ITEM_ID&dye1=0&dye2=0 (the wardrobe's journaled item change; without item: read the slot)",
@@ -1396,23 +1396,17 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/emote":
             {
-                // The General section's Apply: the emote's version for the actor's
-                // posture (posture=0 plays the row as given), from its start.
+                // The General section's Apply, through the same command the tab uses.
                 if (!query.TryGetValue("emote", out var et) || !uint.TryParse(et, out var emoteRow)
                     || !query.TryGetValue("timeline", out var tt) || !uint.TryParse(tt, out var standing))
                     return Json(new { error = "emote and timeline are required" });
                 var pick = new global::Poser.Domain.Animation.TimelineEntry(
                     standing, "bridge", global::Poser.Domain.Animation.AnimationKind.Emote, AnimationSlot.Base, 0, emoteRow, 0);
-                var entry = query.GetValueOrDefault("posture", "1") == "0"
-                    ? pick
-                    : _animation.PostureEntry(id, pick, out _);
-                if (entry == null)
-                    return Json(new { ok = false, refused = true });
-                var chosen = _animation.ChooseSlot(id, entry.Slot, (ushort)entry.TimelineId);
-                if (!chosen.Success)
-                    return Json(new { ok = false, step = "choose", chosen.Detail });
-                var r = _animation.PlaySelectedSlot(id, entry.Slot, entry, query.GetValueOrDefault("start", "1") != "0");
-                return Json(new { ok = r.Success, r.Detail, played = entry.TimelineId, slot = entry.Slot.ToString() });
+                var actions = (global::Poser.Application.Animation.IAnimationActions)_services.GetService(
+                    typeof(global::Poser.Application.Animation.IAnimationActions))!;
+                var r = actions.ApplyGeneral(id, pick, query.GetValueOrDefault("start", "1") != "0");
+                var played = _animation.GeneralFor(id)?.Played;
+                return Json(new { ok = r.Success, r.Detail, played = played?.TimelineId, slot = played?.Slot.ToString() });
             }
             case "/expressionbake":
             {
