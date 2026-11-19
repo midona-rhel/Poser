@@ -47,6 +47,7 @@ public unsafe class BonePosingService : IBonePosingService
     private readonly IkChainRegistry _ik;
     private readonly BoneApplyPass _apply;
     private readonly BoneSnapshotPass _snapshot;
+    private readonly CustomizePlusPose _customizePlus;
 
     public BonePosingService(
         IPluginLog log,
@@ -61,15 +62,19 @@ public unsafe class BonePosingService : IBonePosingService
         Poser.Application.Settings.ConfigurationService configuration,
         IGameInteropProvider hooking,
         ISigScanner scanner,
-        Poser.Game.Posing.GazePoseFrames gazeFrames)
+        Poser.Game.Posing.GazePoseFrames gazeFrames,
+        Poser.Application.Integration.IntegrationOwnership bodyProfiles)
     {
         _log = log;
         _framework = framework;
         _eventBus = eventBus;
         _configuration = configuration;
         _transitive = new TransitiveActionScheduler(log);
+        _customizePlus = new CustomizePlusPose(_stacks, actor =>
+            bindings.GetActorId(actor) is { } id && bodyProfiles.CaptureBodyProfile(id) is { Success: true } read
+                ? read.Value : null);
         _ik = new IkChainRegistry(
-            _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings));
+            _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings, _customizePlus));
 
         _apply = new BoneApplyPass(
             log, gPoseService, skeletonService, actorManager, ikService, gazeFrames,
@@ -99,6 +104,7 @@ public unsafe class BonePosingService : IBonePosingService
     {
         _apply.Rebuild();
         _snapshot.ClearCacheRequests();
+        _customizePlus.Refresh();
     }
 
     /// <summary>
@@ -216,20 +222,15 @@ public unsafe class BonePosingService : IBonePosingService
 
         var applied = ToApplySpace(bone, newTransform);
         var original = ToApplySpace(bone, originalTransform);
+        // An Actor target keeps its edits in the frame the bone above the chain had when the
+        // target was taken, so they turn with that bone. The target is where the bone is
+        // shown, so the drag on screen is already a move of the target.
         if (!_ik.IsImportSuppressed(SkeletonKey.Of(bone.Skeleton).Actor)
-            && GetIkConfiguration(bone) is { Enabled: true, Solver: IkSolver.TwoJoint or IkSolver.Ccd } held
+            && GetIkConfiguration(bone) is { Enabled: true, Solver: IkSolver.TwoJoint or IkSolver.Ccd,
+                TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor }
             && _ik.TryGetChain((SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex), out var chain))
-        {
-            // The drag was measured on screen; the solver's target moves in the solver's pose.
-            var step = Vector3.TransformNormal(
-                applied.Position - original.Position, _ik.Held.DisplayedFrame(chain, bone).ToSolve);
-            if (held.TargetMode != IkTargetMode.Actor)
-                applied.Position = original.Position + step;
-            else if (held.ActorAnchor is { } anchor)
-                // An Actor target keeps its edits in the frame the bone above the chain had when
-                // the target was taken, so they turn with that bone.
-                applied.Position = original.Position + anchor.ToReferenceDelta(step, chain.SolveParentFrame);
-        }
+            applied.Position = original.Position
+                + anchor.ToReferenceDelta(applied.Position - original.Position, chain.SolveParentFrame);
         bonePoseInfo.Apply(applied, original);
 
         // Linked bones (Anamnesis parity): transfer the SAME delta to the rest
