@@ -16,7 +16,7 @@ Below that, in the same section:
 - **Weapon** draws or sheathes the actor's weapon.
 - **Lock position** keeps the actor where you put it, even if the animation would normally walk it somewhere else.
 
-Some emotes look different depending on whether the actor is standing, sitting or mounted. Poser plays the version that matches how the actor is right now, like the game does, and tells you if the emote has no version for that.
+Some emotes look different depending on whether the actor is standing, sitting or mounted. Poser plays the version that matches how the actor is right now, like the game does, and tells you if the emote has no version for that. A sitting actor stays seated while it plays the seated version.
 
 ## Playing several animations at once
 
