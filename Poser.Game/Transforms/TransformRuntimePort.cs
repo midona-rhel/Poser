@@ -354,14 +354,23 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
 
     /// <summary>
     /// The parent's current rotation compared with its rotation in the skeleton's
-    /// starting pose. A face bone's parent is the head in the face skeleton, which
-    /// the starting pose lists under the body skeleton's head of the same name.
+    /// starting pose. The current rotation is read from the game's pose, because the
+    /// stored copy is only kept up to date for bones on screen. A face bone's parent
+    /// is the head in the face skeleton, which the starting pose lists under the
+    /// body skeleton's head of the same name.
     /// </summary>
-    private static Quaternion ParentRotationFromRest(IBone bone)
+    private static unsafe Quaternion ParentRotationFromRest(IBone bone)
     {
-        if (bone.ParentBone is not { } parent)
+        if (bone.ParentBone is not { } parent || bone.Skeleton is not Skeleton skeleton)
             return Quaternion.Identity;
-        var rest = bone.Skeleton.CaptureReferencePose();
+        var native = skeleton.GetGameSkeletonPointer();
+        if (native == null || parent.PartialId < 0 || parent.PartialId >= native->PartialSkeletonCount)
+            return Quaternion.Identity;
+        var current = NativePoseRead.Model(
+            native->PartialSkeletons[parent.PartialId].GetHavokPose(0), parent.BoneIndex);
+        if (current == null)
+            return Quaternion.Identity;
+        var rest = skeleton.CaptureReferencePose();
         var match = rest.FirstOrDefault(entry => entry.Bone == parent);
         if (match.Bone == null)
             match = rest.FirstOrDefault(entry =>
@@ -369,7 +378,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
         if (match.Bone == null)
             return Quaternion.Identity;
         return Quaternion.Normalize(
-            parent.LastTransform.Rotation * Quaternion.Inverse(match.Reference.Rotation));
+            new Quaternion(current->Rotation.X, current->Rotation.Y, current->Rotation.Z, current->Rotation.W)
+            * Quaternion.Inverse(match.Reference.Rotation));
     }
 
     private static TransformPortResult FromBinding(
