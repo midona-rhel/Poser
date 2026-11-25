@@ -90,13 +90,17 @@ public sealed class AnimationSteps : IAnimationActions
     /// <summary>The General section's Apply. Plays the chosen animation in the
     /// version for how the actor is now, which for a sitting or mounted actor can
     /// be another emote on another layer. When the last General animation played
-    /// on a different layer, that layer is reset first, so only one plays.</summary>
+    /// on a different layer, that layer is reset first, so only one plays. The
+    /// exception is a Full body animation that the actor sits or lies in: the
+    /// seated version of the next emote plays on top of it.</summary>
     public Outcome ApplyGeneral(ActorId actor, TimelineEntry chosen, bool playFromStart)
     {
         var previous = _animation.GeneralFor(actor)?.Played;
         if (_animation.PostureEntry(actor, chosen, out var refusal) is not { } entry)
             return Outcome.Fail(refusal!);
-        if (previous is { } played && played.Slot != entry.Slot)
+        bool keepsPosture = entry.TimelineId != chosen.TimelineId;
+        if (previous is { } played && played.Slot != entry.Slot
+            && !(keepsPosture && played.Slot == AnimationSlot.Base))
         {
             var cleared = ResetSlot(actor, played.Slot);
             if (!cleared.Success)
