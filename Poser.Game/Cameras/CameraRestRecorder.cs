@@ -16,11 +16,18 @@ namespace Poser.Game.Cameras;
 /// added, or when undo is pressed, is recorded first: it comes back before that
 /// step, and that undo takes it back. Poser's own
 /// camera edits (a slider being dragged, a gesture), undo and redo re-base the
-/// resting framing instead, so nothing is recorded twice.
+/// resting framing instead, so nothing is recorded twice. So does anything the
+/// camera does in the half second after a step, because the game camera follows
+/// an actor and turns when that actor sits down.
 /// </summary>
 public sealed class CameraRestRecorder : IDisposable
 {
     public const long RestMilliseconds = 5000;
+
+    /// <summary>How long after a step the camera's changes belong to that step.
+    /// The game camera follows an actor, so an actor sitting down turns it a
+    /// little in the frame after the emote starts.</summary>
+    private const long SettleMilliseconds = 500;
 
     private readonly IFramework _framework;
     private readonly IVirtualCameraService _cameras;
@@ -37,6 +44,7 @@ public sealed class CameraRestRecorder : IDisposable
     private bool _moved;
     private bool _rebase;
     private bool _poserEdit;
+    private long _settleUntil;
 
     public CameraRestRecorder(IFramework framework, IVirtualCameraService cameras,
         ValueJournal journal, EditHistory history, TransformGestureService gestures, UndoJournal undo,
@@ -87,11 +95,21 @@ public sealed class CameraRestRecorder : IDisposable
         var now = Framing.Read(live);
         if (!ReferenceEquals(live, _camera) || _rebase)
         {
+            if (_rebase)
+                _settleUntil = System.Environment.TickCount64 + SettleMilliseconds;
             _camera = live;
             _rested = _last = now;
             _moved = false;
             _rebase = false;
             _poserEdit = false;
+            return;
+        }
+        if (System.Environment.TickCount64 < _settleUntil)
+        {
+            // A step was just added, undone or redone: what the camera does
+            // now follows from that step, not from a person moving it.
+            _rested = _last = now;
+            _moved = false;
             return;
         }
         if (!now.Near(_last))
