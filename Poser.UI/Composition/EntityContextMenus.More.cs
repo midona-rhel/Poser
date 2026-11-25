@@ -8,179 +8,90 @@ namespace Poser.UI;
 
 internal sealed partial class EntityContextMenus
 {
-    private void AddHandleAction(List<ContextMenuItem> items, List<Action?> actions, SelectionId target)
+    /// <summary>Puts an entity's menu together and draws it. Every row carries its
+    /// own action and its place, so the order never depends on a row's text.
+    /// With a <paramref name="target"/>, the actions every movable thing shares
+    /// (Move to camera, Reset) are added too.</summary>
+    private void DrawMenu(string menu, ref bool requested, List<ContextMenuItem> items, SelectionId? target = null)
     {
-        bool shown = _overlayPresentation.IsHandleShown(target);
-        items.Insert(0, new ContextMenuItem(shown ? "Hide handle" : "Show handle",
-            shown ? TablerIcon.EyeOff : TablerIcon.Eye, keepOpen: true,
-            help: "Only the overlay handle; does not hide the entity"));
-        actions.Insert(0, () => _overlayPresentation.ToggleHandle(target));
+        if (target is { } id) AddCommonCommands(items, id);
+        var rows = Arrange(items);
+        if (requested)
+        {
+            requested = false;
+            OpenContextMenu(menu, rows);
+        }
+        FloatingMenu.Refresh(menu, rows);
+        int clicked = FloatingMenu.Draw(menu);
+        if (clicked >= 0 && clicked < rows.Length)
+            rows[clicked].OnInvoke?.Invoke();
+        int child = FloatingMenu.ConsumeSubmenuClick(out int parent);
+        if (parent >= 0 && parent < rows.Length && rows[parent].SubmenuItems is { } children
+            && child >= 0 && child < children.Length)
+            children[child].OnInvoke?.Invoke();
     }
 
-    private void AddHandleAction(ref ContextMenuItem[] items, ref Action?[] actions, SelectionId target)
+    /// <summary>Sorts the rows by their place, with a line between groups. Saving
+    /// and the rarer actions go into a More submenu, and the actions that remove
+    /// the thing go last.</summary>
+    private static ContextMenuItem[] Arrange(List<ContextMenuItem> items)
     {
-        var rows = items.ToList();
-        var callbacks = actions.ToList();
-        AddHandleAction(rows, callbacks, target);
-        items = rows.ToArray();
-        actions = callbacks.ToArray();
-    }
+        var rows = items.Where(item => !item.IsSeparator).Select(Flatten).ToList();
+        var main = rows.Where(row => row.Place is not (MenuPlace.More or MenuPlace.Lifetime))
+            .OrderBy(row => Group(row.Place)).ThenBy(row => (int)row.Place).ToList();
+        var more = rows.Where(row => row.Place == MenuPlace.More).ToArray();
+        var lifetime = rows.Where(row => row.Place == MenuPlace.Lifetime).ToList();
 
-    // Preserve the entity's existing capability gates and callbacks while
-    // giving its secondary actions the same home across every context menu.
-    private List<Action?> MoveMoreActions(List<ContextMenuItem> items, List<Action?> actions, SelectionId? target = null)
-    {
-        if (target is { } id) AddCommonCommands(items, actions, id);
-        FlattenSingleActions(items, actions);
-        var more = new List<ContextMenuItem>();
-        var callbacks = new List<Action?>();
-        for (int i = 0; i < items.Count;)
-        {
-            string label = items[i].Label;
-            if (label.StartsWith("Save to file", StringComparison.Ordinal)
-                || label == "Save to library"
-                || label is "Create collider" or "Export Idle Pose…"
-                || label.StartsWith("Destroy all", StringComparison.Ordinal))
-            {
-                more.Add(items[i]);
-                callbacks.Add(actions[i]);
-                items.RemoveAt(i);
-                actions.RemoveAt(i);
-            }
-            else
-                i++;
-        }
-        var lifetime = new List<ContextMenuItem>();
-        var lifetimeActions = new List<Action?>();
-        for (int i = 0; i < items.Count;)
-        {
-            if (items[i].Label is "Destroy" or "Delete" or "Remove" or "Release")
-            {
-                lifetime.Add(items[i]);
-                lifetimeActions.Add(actions[i]);
-                items.RemoveAt(i);
-                actions.RemoveAt(i);
-            }
-            else
-                i++;
-        }
-        // One composition rule for actor, camera, light, scenery, prop, collider
-        // and group menus; keep callbacks paired while arranging their sections.
-        var rows = items.Select((item, i) => (Item: item, Action: actions[i]))
-            .Where(row => !row.Item.IsSeparator).OrderBy(row => Section(row.Item.Label))
-            .ThenBy(row => Rank(row.Item.Label)).ToArray();
-        items.Clear(); actions.Clear();
+        var arranged = new List<ContextMenuItem>();
         int previous = -1;
-        foreach (var row in rows)
+        foreach (var row in main)
         {
-            int section = Section(row.Item.Label);
-            if (previous >= 0 && previous != section) { items.Add(ContextMenuItem.Separator); actions.Add(null); }
-            items.Add(row.Item); actions.Add(row.Action); previous = section;
+            int group = Group(row.Place);
+            if (previous >= 0 && previous != group) arranged.Add(ContextMenuItem.Separator);
+            arranged.Add(row);
+            previous = group;
         }
-        if (more.Count > 0)
+        if (more.Length > 0)
         {
-            if (items.Count > 0) { items.Add(ContextMenuItem.Separator); actions.Add(null); }
-            if (more.Count == 1) { items.Add(more[0]); actions.Add(callbacks[0]); }
-            else { items.Add(new ContextMenuItem("More", TablerIcon.Dots, submenuItems: more.ToArray())); actions.Add(null); }
+            if (arranged.Count > 0) arranged.Add(ContextMenuItem.Separator);
+            arranged.Add(more.Length == 1 ? more[0] : new ContextMenuItem("More", TablerIcon.Dots, submenuItems: more));
         }
         if (lifetime.Count > 0)
         {
-            items.Add(ContextMenuItem.Separator);
-            actions.Add(null);
-            items.AddRange(lifetime);
-            actions.AddRange(lifetimeActions);
+            if (arranged.Count > 0) arranged.Add(ContextMenuItem.Separator);
+            arranged.AddRange(lifetime);
         }
-        return callbacks;
+        return arranged.ToArray();
     }
 
-    private static int Section(string label) => label switch
+    /// <summary>How the thing is shown comes first, then its own actions, then
+    /// Rename and Duplicate, then the submenus.</summary>
+    private static int Group(MenuPlace place) => place switch
     {
-        "Show handle" or "Hide handle" or "Show" or "Hide" or "Switch on" or "Switch off" or "Show in overlay" or "Hide from overlay"
-            or "Lock" or "Unlock" or "Lock transform" or "Unlock transform"
-            or "Enable collision" or "Disable collision" or "Play" or "Pause"
-            or "Center camera on actor" or "Set game target" or "Look through"
-            or "Return to main camera" or "Look at tracked actor" => 0,
-        "Rename" or "Duplicate" => 2,
-        "Reset" or "Tree" or "Bone presets" or "Pose" or "Companion" or "Attachment" or "Placement" or "Playback" or "Select" or "Visibility" or "Actor pose" or "Actor bone presets" => 3,
+        >= MenuPlace.Handle and <= MenuPlace.Collision => 0,
+        MenuPlace.Rename or MenuPlace.Duplicate => 2,
+        >= MenuPlace.PlacementMenu and <= MenuPlace.TreeMenu => 3,
         _ => 1,
     };
 
-    private static int Rank(string label) => label switch
+    /// <summary>A submenu with a single row becomes that row, so a menu never
+    /// opens a list of one.</summary>
+    private static ContextMenuItem Flatten(ContextMenuItem item)
     {
-        "Show handle" or "Hide handle" => 0,
-        "Center camera on actor" or "Look at tracked actor" => 1,
-        "Set game target" or "Look through" or "Return to main camera" => 2,
-        "Show" or "Hide" or "Switch on" or "Switch off" or "Show in overlay" or "Hide from overlay" => 3,
-        "Play" or "Pause" => 4,
-        "Lock" or "Unlock" or "Lock transform" or "Unlock transform" => 5,
-        "Enable collision" or "Disable collision" => 6,
-        "Rename" => 0, "Duplicate" => 1,
-        "Placement" => 10, "Playback" => 20, "Select" => 30, "Visibility" => 40,
-        "Pose" or "Actor pose" => 50, "Reset" => 60, "Companion" or "Attachment" => 70,
-        "Bone presets" or "Actor bone presets" => 80, "Tree" => 90,
-        _ => 0,
-    };
-
-    private List<Action?> MoveMoreActions(ref ContextMenuItem[] items, ref Action?[] actions, SelectionId? target = null)
-    {
-        var rows = items.ToList();
-        var callbacks = actions.ToList();
-        var more = MoveMoreActions(rows, callbacks, target);
-        items = rows.ToArray();
-        actions = callbacks.ToArray();
-        return more;
-    }
-
-    private static void DrawMoreAction(IReadOnlyList<ContextMenuItem> items, List<Action?> more)
-    {
-        int clicked = FloatingMenu.ConsumeSubmenuClick(out int parent);
-        if (InvokeComposedAction(items, parent, clicked)) return;
-        if (parent >= 0 && parent < items.Count && items[parent].Label == "More"
-            && clicked >= 0 && clicked < more.Count)
-            more[clicked]?.Invoke();
-    }
-
-    private static bool InvokeComposedAction(IReadOnlyList<ContextMenuItem> items, int parent, int child)
-    {
-        if (parent < 0 || parent >= items.Count || items[parent].SubmenuItems is not { } children
-            || child < 0 || child >= children.Length || children[child].OnInvoke is not { } invoke) return false;
-        invoke();
-        return true;
-    }
-
-    private static ContextMenuItem[] BindSubmenu(ContextMenuItem[] items, IReadOnlyList<Action?> actions) =>
-        items.Select((item, index) => item with { OnInvoke = actions[index] }).ToArray();
-
-    private void DrawComposedMenu(string menu, ref bool requested, ContextMenuItem[] items)
-    {
-        var actions = items.Select(item => item.OnInvoke).ToArray();
-        var more = MoveMoreActions(ref items, ref actions);
-        if (requested) { requested = false; OpenContextMenu(menu, items); }
-        FloatingMenu.Refresh(menu, items);
-        int clicked = FloatingMenu.Draw(menu);
-        if (clicked >= 0 && clicked < actions.Length) actions[clicked]?.Invoke();
-        DrawMoreAction(items, more);
-    }
-
-    private static void FlattenSingleActions(List<ContextMenuItem> items, List<Action?> actions)
-    {
-        for (int i = 0; i < items.Count; i++)
+        var children = item.SubmenuItems?.Where(child => !child.IsSeparator).ToArray();
+        if (children is not { Length: 1 } || children[0].OnInvoke == null)
+            return item;
+        var child = children[0];
+        string label = item.Place switch
         {
-            var children = items[i].SubmenuItems?.Where(child => !child.IsSeparator).ToArray();
-            if (children is not { Length: 1 } || children[0].OnInvoke is not { } action) continue;
-            var child = children[0];
-            string label = items[i].Label switch
-            {
-                "Reset" => "Reset " + char.ToLowerInvariant(child.Label[0]) + child.Label[1..],
-                "Companion" => child.Label + " companion",
-                _ => child.Label,
-            };
-            items[i] = child with { Label = label, Disabled = items[i].Disabled || child.Disabled };
-            actions[i] = action;
-        }
+            MenuPlace.ResetMenu => "Reset " + char.ToLowerInvariant(child.Label[0]) + child.Label[1..],
+            MenuPlace.CompanionMenu => child.Label + " companion",
+            _ => child.Label,
+        };
+        return child with { Label = label, Disabled = item.Disabled || child.Disabled, Place = item.Place };
     }
 
-    private void AddCommonCommands(List<ContextMenuItem> items, List<Action?> actions, SelectionId id)
+    private void AddCommonCommands(List<ContextMenuItem> items, SelectionId id)
     {
         var reset = new List<ContextMenuItem>();
         bool movable = _placement.CanPlace(id);
@@ -190,11 +101,7 @@ internal sealed partial class EntityContextMenus
             disabled: !movable, help: help) { OnInvoke = action });
         if (worldEntity)
         {
-            if (!items.Any(item => item.Label == "Move to camera"))
-            {
-                items.Add(new("Move to camera", TablerIcon.Camera, disabled: !movable));
-                actions.Add(() => MoveToCamera([id]));
-            }
+            items.Add(MoveToCameraItem([id], disabled: !movable));
             AddReset("Rotation", () => _notices.Report(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Rotate).Outcome, "Reset rotation"), "Zero rotation; keep position and scale");
             if (id.Light == null)
                 AddReset("Scale", () => _notices.Report(_placement.ResetComponent(id, Domain.Transforms.TransformOperation.Scale).Outcome, "Reset scale"), "Unit scale; keep position and rotation");
@@ -214,7 +121,7 @@ internal sealed partial class EntityContextMenus
         else if (id.Overlay is { } overlay && !worldEntity)
             reset.Add(new("Size and opacity", TablerIcon.Refresh)
             { OnInvoke = () => _notices.Report(_overlayControl.Set(overlay, Application.Presentation.OverlayProperties.Size, (1f, 1f)), "Reset size and opacity") });
-        if (reset.Count == 0 || items.Any(item => item.Label == "Reset")) return;
-        items.Add(new("Reset", TablerIcon.Refresh, submenuItems: reset.ToArray())); actions.Add(null);
+        if (reset.Count == 0 || items.Any(item => item.Place == MenuPlace.ResetMenu)) return;
+        items.Add(Submenu("Reset", TablerIcon.Refresh, MenuPlace.ResetMenu, reset.ToArray()));
     }
 }

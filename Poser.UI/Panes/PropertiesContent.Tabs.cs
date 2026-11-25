@@ -379,10 +379,7 @@ public sealed partial class PropertiesContent
                     if (matched is { } group)
                     {
                         actions.Button("Save to library",
-                            () => OpenEntityRename(
-                                "Save group to library", group.Name,
-                                name => _scenePane.SaveGroupEntry(
-                                    _groups.Descendants(group).ToArray(), name)));
+                            () => _librarySave.AskGroup(_groups.Descendants(group).ToArray(), group.Name));
                         actions.Button("Ungroup",
                             () => _groupSteps.Dissolve(group.Id));
                     }

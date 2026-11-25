@@ -65,7 +65,7 @@ public sealed class CameraPane
     // has bound it, exactly like a spawned light.
     private readonly IPendingSceneCreation _pendingCreation;
 
-    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+    private readonly LibrarySavePrompt _librarySave;
 
     private readonly ScenePane _scenePane;
     private readonly ICameraControl _values;
@@ -90,7 +90,7 @@ public sealed class CameraPane
         _values = values;
         _creation = creation;
         _pendingCreation = pendingCreation;
-        _names = names;
+        _librarySave = new LibrarySavePrompt(scenePane, names);
         _scene = scene;
         _selection = properties.Selection;
         _scenePane = scenePane;
@@ -641,13 +641,8 @@ public sealed class CameraPane
             actions.Button("Load", () => OpenLoad("Camera ▸ Load"),
                 help: "Add a camera from a file to the scene");
             actions.Button("Save to file…", () => OpenSave(camera.Id));
-            actions.Button("Save to library", () => _names.Open(
-                "Save camera to library", camera.Name,
-                name =>
-                {
-                    if (_values.Read(camera.Id) is not null)
-                        _scenePane.SaveEntry(SelectionId.ForCamera(camera.Id), name);
-                }));
+            actions.Button("Save to library",
+                () => _librarySave.Ask(SelectionId.ForCamera(camera.Id), "camera", camera.Name));
         });
     }
 
