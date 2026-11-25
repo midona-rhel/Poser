@@ -31,6 +31,7 @@ internal sealed unsafe partial class IkChainRegistry
 
     public IkChainConfig PrepareIkConfiguration(IBone endpoint, IkChainConfig config)
     {
+        _held.CustomizePlus.Prepare(endpoint);
         var previous = GetIkConfiguration(endpoint);
         config = PrepareEndAnchor(endpoint, config, previous);
         // While IK is on for this chain, Poser poses the skeleton every frame, so the bone
@@ -84,6 +85,17 @@ internal sealed unsafe partial class IkChainRegistry
             && members.Any(b => other.Bones.Contains(b.BoneName)));
     }
 
+    /// <summary>Where Customize+ shows a bone posed at <paramref name="posed"/> (by default
+    /// where the last pass posed it), in the space FABRIK targets keep. FABRIK targets are
+    /// where a bone is shown; the chain itself is kept as posed.</summary>
+    private Transform Shown(IBone bone, Transform? posed = null)
+    {
+        var at = posed ?? _stacks.ToApplySpace(bone, bone.LastRawTransform);
+        var shift = _held.CustomizePlus.For(bone);
+        return _stacks.FromApplySpace(bone,
+            new Transform(shift.Shown(at.Position), shift.Shown(at.Rotation), at.Scale));
+    }
+
     /// <summary>Reads the chain from the bone positions Poser keeps: the pose IK last produced,
     /// before Customize+ changes it. FABRIK writes what it reads straight back into that pose,
     /// so reading the pose on screen would apply Customize+'s changes a second time.</summary>
@@ -98,12 +110,15 @@ internal sealed unsafe partial class IkChainRegistry
             return new FabrikBonePose(bone.BoneName, bone.PartialId, pose.Position, pose.Rotation,
                 authored.Position, authored.Rotation);
         }).ToArray();
-        FabrikTarget Point(int index) => new(IkTargetMode.Actor,
-            members[index].LastRawTransform.Position, members[index].LastRawTransform.Rotation,
-            poses[index].AuthoredPosition, poses[index].AuthoredRotation);
+        FabrikTarget Point(int index)
+        {
+            var shown = Shown(members[index]);
+            return new(IkTargetMode.Actor, shown.Position, shown.Rotation,
+                poses[index].AuthoredPosition, poses[index].AuthoredRotation);
+        }
         var targetBone = GetIkBoneTarget(tip) is { } anchor ? _bindings.GetBoneId(anchor) : null;
         var handle = config.Fabrik?.Handle
-            ?? FabrikTargetAt(tip, tip.LastRawTransform, config.TargetMode, targetBone, GetIkEntityTarget(tip))
+            ?? FabrikTargetAt(tip, Shown(tip), config.TargetMode, targetBone, GetIkEntityTarget(tip))
             ?? Point(members.IndexOf(tip));
         return new(poses, Point(0) with { HoldRotation = false },
             Point(poses.Length - 1) with { HoldRotation = false }, config.SwivelDegrees,
@@ -126,14 +141,14 @@ internal sealed unsafe partial class IkChainRegistry
                 .ToArray();
             var reference = potential.Select(bone =>
             {
-                var displayed = bone.LastRawTransform;
-                var applied = _stacks.ToApplySpace(bone, displayed);
+                var applied = _stacks.ToApplySpace(bone, bone.LastRawTransform);
+                var displayed = Shown(bone, applied);
                 var authored = _stacks.GetIkModification(bone) ?? Transform.Identity;
                 var saved = control?.Bones.FirstOrDefault(b => b.Name == bone.BoneName && b.Partial == bone.PartialId);
                 var pose = saved ?? new FabrikBonePose(bone.BoneName, bone.PartialId,
                     applied.Position, applied.Rotation, authored.Position, authored.Rotation);
                 if (saved != null)
-                    displayed = _stacks.FromApplySpace(bone, new Transform(saved.Position, saved.Rotation, Vector3.One));
+                    displayed = Shown(bone, new Transform(saved.Position, saved.Rotation, Vector3.One));
                 var anchor = new FabrikTarget(IkTargetMode.Actor, displayed.Position, displayed.Rotation,
                     pose.AuthoredPosition, pose.AuthoredRotation, HoldRotation: false);
                 // Chains saved by older versions have no reference bones. Keep their
@@ -155,7 +170,7 @@ internal sealed unsafe partial class IkChainRegistry
     {
         var config = GetIkConfiguration(endpoint);
         if (config?.Solver is not (IkSolver.Fabrik or IkSolver.Rope)) return null;
-        var model = endpoint.LastRawTransform;
+        var model = Shown(endpoint);
         if (config.Enabled && config.Fabrik is { } control
             && ResolveFabrikTarget(endpoint, control.Handle, true) is { } held)
             model = _stacks.FromApplySpace(endpoint, new Transform(held.Position, held.Rotation, model.Scale));
@@ -243,30 +258,26 @@ internal sealed unsafe partial class IkChainRegistry
         if (root == null || tip == null || handle == null) return delta;
         // How far the chain can reach is measured in the pose IK works on. Only
         // that reach limit is passed back to the move, never a lag from collisions.
+        // The targets and the gizmo are where the bones are shown, so the move is converted
+        // to the pose IK works in and back.
         var displayed = _stacks.FromApplySpace(bone, new Transform(handle.Value.Position, Quaternion.Identity, Vector3.One));
         // With collisions on, a bone can stop well short of where it was dragged.
         // The drag starts at the gizmo, not at that hidden target, so the drag keeps
         // its own start point and never re-reads the end bone while IK moves it.
-        // The gizmo sits on the bone as shown, after Customize+. The chain lives in the pose
-        // IK works on, so the input is moved back by Customize+'s change to this bone.
-        _ = bone.LastTransform;
-        RefreshCache(bone);
-        var input = displayed with
-        {
-            Position = inputPosition is { } shown
-                ? shown - (bone.LastTransform.Position - bone.LastRawTransform.Position)
-                : displayed.Position,
-        };
-        var inputApplied = _stacks.ToApplySpace(bone, input);
-        var requested = _stacks.ToApplySpace(bone, input with { Position = input.Position + delta });
+        var input = displayed with { Position = inputPosition ?? displayed.Position };
+        var shift = _held.CustomizePlus.For(bone);
+        var inputPosed = shift.Posed(_stacks.ToApplySpace(bone, input).Position);
+        var requestedPosed = shift.Posed(_stacks.ToApplySpace(bone, input with { Position = input.Position + delta }).Position);
         var source = control.Bones.Select(b => b.Position).ToArray();
-        var limited = FabrikSolver.MoveHandle(source, control.HandleIndex, root.Value.Position, tip.Value.Position,
-            inputApplied.Position, requested.Position - inputApplied.Position);
+        var limited = FabrikSolver.MoveHandle(source, control.HandleIndex,
+            _held.CustomizePlus.For(members[0]).Posed(root.Value.Position),
+            _held.CustomizePlus.For(members[^1]).Posed(tip.Value.Position),
+            inputPosed, requestedPosed - inputPosed);
         // The pose stores the move as an offset from the held target; the drag
         // stores it as an offset from where the drag started. Both reach the same
         // point, but their offsets differ when a collision has pushed the bone.
         var start = fromAuthoredBaseline ? displayed.Position : input.Position;
-        return _stacks.FromApplySpace(bone, requested with { Position = limited }).Position - start;
+        return _stacks.FromApplySpace(bone, new Transform(shift.Shown(limited), Quaternion.Identity, Vector3.One)).Position - start;
     }
 
     public void ApplyFabrikControls(SkeletonKey key, Skeleton skeleton)
@@ -294,7 +305,7 @@ internal sealed unsafe partial class IkChainRegistry
                 // A picked bone or scene object stays what the handle follows.
                 var follows = control.Handle;
                 if (follows.Mode is IkTargetMode.Bone or IkTargetMode.Entity
-                    && FabrikTargetAt(tip, tip.LastRawTransform, follows.Mode, follows.Bone, follows.Entity) is { } followed)
+                    && FabrikTargetAt(tip, Shown(tip), follows.Mode, follows.Bone, follows.Entity) is { } followed)
                     seated = seated with { Handle = followed };
                 state.Config = config = config with { Fabrik = control = seated };
             }
@@ -306,8 +317,12 @@ internal sealed unsafe partial class IkChainRegistry
             var tipTarget = ResolveFabrikTarget(members[^1], control.Tip, false);
             var handleTarget = ResolveFabrikTarget(tip, control.Handle, true);
             if (rootTarget is not { } root || tipTarget is not { } end || handleTarget is not { } handle) continue;
-            _ikService.Solve(tip, new IkSolveRequest(handle.Position, handle.Rotation,
-                config, state.Chain, root.Position, root.Rotation, end.Position, state.CollisionState));
+            // The targets are where the bones are shown; the solver needs them before Customize+.
+            var rootShift = ShiftFor(state, members[0]);
+            var handleShift = ShiftFor(state, tip);
+            _ikService.Solve(tip, new IkSolveRequest(handleShift.Posed(handle.Position), handleShift.Posed(handle.Rotation),
+                config, state.Chain, rootShift.Posed(root.Position), rootShift.Posed(root.Rotation),
+                ShiftFor(state, members[^1]).Posed(end.Position), state.CollisionState));
         }
     }
 

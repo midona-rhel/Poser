@@ -91,12 +91,10 @@ public sealed class OverlayPane
         _pendingCreation = pendingCreation;
         _entityActions = entityActions;
         _icons = new GameIconResolver(textures);
-        _scenePane = scenePane;
-        _names = names;
+        _librarySave = new LibrarySavePrompt(scenePane, names);
     }
 
-    private readonly ScenePane _scenePane;
-    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+    private readonly LibrarySavePrompt _librarySave;
     private readonly IOverlayControl _values;
 
     /// <summary>Selects a node some other surface just created — the spawn
@@ -457,13 +455,8 @@ public sealed class OverlayPane
     {
         form.Actions(string.Empty, actions =>
         {
-            actions.Button("Save to library", () => _names.Open(
-                    "Save overlay to library", node.State.Name,
-                    name =>
-                    {
-                        if (_values.Read(node.Id) != null)
-                            _scenePane.SaveEntry(SelectionId.ForOverlay(node.Id), name);
-                    }));
+            actions.Button("Save to library",
+                () => _librarySave.Ask(SelectionId.ForOverlay(node.Id), "overlay", node.State.Name));
             actions.Button(
                 "Duplicate",
                 () => _pending = () => Duplicate(node.Id),

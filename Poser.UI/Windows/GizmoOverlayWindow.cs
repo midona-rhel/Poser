@@ -763,16 +763,11 @@ public class GizmoOverlayWindow : Window
             : localFrame;
         var scaleFrame = localFrame;
 
-        // Parent pivot applies only to bone rotation with a valid parent.
-        bool pivotActive = tool == TransformTool.Rotate && isBone &&
-            pivotChoice != Domain.Preferences.RotationPivot.Self;
-        Vector3? restPivot = null;
-        if (pivotActive && gesture == null)
-        {
-            restPivot = _viewport.GetParentModelTransform(primaryBone!.Value)?.Position;
-            if (restPivot == null)
-                pivotActive = false;
-        }
+        // With Parent chosen, the rings sit on the joint above the bone, where
+        // a drag will turn it around.
+        Vector3? restPivot = isBone && gesture == null
+            ? _cleanTransforms.ParentPivotFor(primaryBone!.Value)
+            : null;
 
         bool ringDrag = gesture is { Handle.Kind: WorldHandleKind.RotateRing or WorldHandleKind.Roll };
         Quaternion ringFrame;
@@ -783,7 +778,7 @@ public class GizmoOverlayWindow : Window
         {
             ringFrame = _dragRingFrame;
         }
-        else if (pivotActive && gesture == null && restPivot is { } parentPosition)
+        else if (restPivot is { } parentPosition)
         {
             ringFrame = RotationGizmoRings.RadialFrame(
                 Vector3.Transform(parentPosition, modelMatrix),
@@ -795,9 +790,7 @@ public class GizmoOverlayWindow : Window
         }
 
         // While a ring is dragged the pivot stays where it started; when moving, it follows the item.
-        Vector3 pivotModel = pivotActive && restPivot is { } rest
-            ? rest
-            : currentTransform.Position;
+        Vector3 pivotModel = restPivot ?? currentTransform.Position;
         Vector3 pivotWorld = ringDrag
             ? _dragPivotWorld
             : Vector3.Transform(pivotModel, modelMatrix);
@@ -859,7 +852,7 @@ public class GizmoOverlayWindow : Window
         {
             BeginGesture(
                 grab, layout!, targetType, targets, primaryBone,
-                tool, orientation, pivotChoice, pivotActive, pivotModel,
+                tool, orientation, pivotChoice,
                 pivotWorld, currentTransform, modelMatrix, actorRotation,
                 translateFrame, scaleFrame, ringFrame, mouse);
         }
@@ -1043,8 +1036,6 @@ public class GizmoOverlayWindow : Window
         TransformTool tool,
         TransformOrientation orientation,
         Domain.Preferences.RotationPivot pivotChoice,
-        bool pivotActive,
-        Vector3 pivotModel,
         Vector3 pivotWorld,
         Transform currentTransform,
         Matrix4x4 modelMatrix,
@@ -1161,23 +1152,7 @@ public class GizmoOverlayWindow : Window
         if (operation == DomainOperation.Scale && layout.CapsuleScale)
             space = DomainSpace.Local;
 
-        // Turning around the parent uses the parent's position from the start
-        // of the drag. Several items turn around their shared centre.
-        var cleanPivotMode = PivotMode.PerTarget;
-        Vector3? cleanCustomPivot = null;
-        if (ringHandle && isBone && pivotActive)
-        {
-            cleanPivotMode = PivotMode.Custom;
-            cleanCustomPivot = pivotModel;
-        }
-        else if (!isBone && targets.Count > 1)
-        {
-            // A group turns and scales around its centre from the start of the drag.
-            cleanPivotMode = PivotMode.Centroid;
-        }
-
-        var begin = _cleanTransforms.BeginDrag(
-            targets, operation, space, cleanPivotMode, cleanCustomPivot);
+        var begin = _cleanTransforms.BeginDrag(targets, operation, space);
         if (!begin.Success || begin.GestureId is not { } gestureId)
         {
             _log.Verbose(
@@ -1198,7 +1173,7 @@ public class GizmoOverlayWindow : Window
             Start = currentTransform,
             Current = currentTransform,
             Projection = projection,
-            PivotMode = cleanPivotMode,
+            PivotMode = _cleanTransforms.ActivePivotMode!.Value,
             // The pivot the transform service fixed when the drag started.
             Pivot = _cleanTransforms.ActivePivot!.Value,
             PivotChoice = pivotChoice,
