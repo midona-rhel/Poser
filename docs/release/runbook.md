@@ -9,14 +9,14 @@
 
 ## 2. Write the release notes
 
-The notes are for people who use Poser. Each bullet says what they will notice, in a plain statement about Poser, for example "Saving and loading a scene no longer locks actors' appearance." or "Mirroring the eyes works with the head turned."
+The notes are for people who use Poser. Each bullet says what they will notice, in a plain statement about Poser.
 
 - Name what the person ran into or can now do, not how it was fixed.
 - Do not start a bullet with Added, Fixed or Made, and do not address the reader as "you".
 - Use the words the interface shows. No issue numbers, class names, offsets, or how it was built.
 - Leave out changes nobody would notice, such as a tidier menu order or code clean-up.
 - Put the changes people will care about most first. Group the bullets under `###` headings by area, such as Posing, Gaze, Scenes or Interface.
-- Give the release a title that names what changed, plainly: "Improved MCDF handling in scenes, and prop tinting". No slogans.
+- Give the release a title that names what changed, plainly. No slogans.
 
 The same notes go in four places:
 

@@ -6,11 +6,11 @@ These are the rules for anyone who changes Poser, people and AI agents alike. Th
 
 Everything written for this project must make sense to someone who has never opened the code and has never seen the work that led to it.
 
-- Say the idea first, in one or two plain sentences, the way you would say it to someone. Details come after. For example: "An MCDF is never supposed to be edited: it is an appearance that never changes. A scene is a project you save, load and keep working on, so saving and loading a scene whose actors' appearance you own shouldn't lock anything."
+- Say the idea first, in one or two plain sentences, the way you would say it to someone. Details come after.
 - Write the way a person would explain it out loud: whole sentences that join related facts, not a string of fragments.
-- Use the words the interface shows. If the tab is called Full body, write Full body. Call bones by the names the bone list shows, such as Neck or Cervical.
+- Use the words the interface shows: the names of its tabs, buttons and bones.
 - Do not use a word that only the code uses. If you need one, say in the same sentence what it means.
-- Say where things are, relative to something the reader can see: "the left side of the main window", "the toolbar at the bottom of the screen".
+- Say where things are, relative to something the reader can see, such as a window, a tab or the toolbar.
 - Describe how things are now. Leave out how they used to be and how the work went.
 - Leave out what the reader does not need, including changes nobody would notice.
 - Write plainly. No slogans, no clever phrasing, nothing written to impress.
@@ -23,10 +23,10 @@ Poser is public. Nothing written for it may identify a person or show what is in
 
 - No character names, whether from the game, a scene, a screenshot or a message. This includes the names Poser shows for actors, because those are character names.
 - No names of anyone's scenes, poses, MCDFs, library files or Penumbra collections, and nothing describing what is in their scenes or screenshots.
-- No names of people who reported something, and no quotes from Discord or other chats. Describe the problem instead: "Mirroring does nothing when the right eye is selected."
+- No names of people who reported something, and no quotes from Discord or other chats. Describe the problem instead.
 - No local paths that contain a user name, and no e-mail addresses.
 
-Call actors "Actor 1", "Actor 2" and so on, in texts, screenshots and test data. Describe what was tested in neutral words: "a test scene with three actors", "Actor 2 had an MCDF applied". This applies to issues, pull requests, release notes, documentation, code, tests and commit messages.
+Call actors Actor 1, Actor 2 and so on, in texts, screenshots and test data, and describe what was tested in neutral words. This applies to issues, pull requests, release notes, documentation, code, tests and commit messages.
 
 ## Code
 
@@ -34,7 +34,7 @@ Call actors "Actor 1", "Actor 2" and so on, in texts, screenshots and test data.
 - **Three parts.** The interface (`Poser.UI`) draws and passes on what was pressed. Poser's own logic (`Poser.Application`) decides what happens. The game code (`Poser.Game`) reads and writes the game. Behaviour does not belong in the interface.
 - **Names.** A name says what the thing is in plain words. Do not invent vocabulary.
 - **Checks.** Only check for something that can really happen and that matters when it does. Before keeping a check, find the action that leads to it.
-  - Do not guard against things a person cannot do, or would only do on purpose. Someone holding a drag cannot press Reset. Undo exists.
+  - Do not guard against things a person cannot do, or would only do on purpose. Undo is there for mistakes.
   - Do not catch errors around code that does not throw.
   - Do not write a fallback for a value that is always there.
   - Keep checks for things outside Poser's control: an actor that left, a body being redrawn, a file that is missing, a game function that moved.
@@ -84,7 +84,6 @@ When you change a file, bring the whole file in line with these rules in the sam
 - Build Debug only to try a change in the game. The game loads Poser from the Debug output of the main checkout, so a Debug build there replaces what is running. The steps are in [testing](docs/process/testing.md).
 - Try every change in the game before calling it done. A passing build is not proof that it works.
 
-## For AI agents
+## Merging and releasing
 
-- Do the work in the session you are in. Hand part of it to another agent only when asked to. If asked and no model is named, use Sol (`gpt-5.6-sol`).
-- Do not merge a pull request or publish a release unless you were asked to.
+Do not merge a pull request or publish a release unless the maintainer asked for it.
