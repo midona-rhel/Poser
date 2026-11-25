@@ -2198,6 +2198,7 @@ public sealed partial class DebugBridge : IDisposable
             baseOverride = reading?.BaseTimeline,
             emoteId = snapshot?.EmoteId,
             mode = snapshot?.Mode,
+            stance = reading?.Stance.ToString(),
             renderFlags = snapshot?.RenderFlags,
             hasDrawObject = snapshot?.HasDrawObject,
             physicsFrozen = _animation.IsPhysicsFrozen,

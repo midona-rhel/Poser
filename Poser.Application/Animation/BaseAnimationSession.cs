@@ -79,6 +79,18 @@ internal sealed class BaseAnimationSession
         return repeat;
     }
 
+    /// <summary>Plays a Full body animation again while the actor keeps sitting
+    /// or lying down, for undo after it has put that stance back.</summary>
+    public Outcome ReplayBaseInPosture(ActorId actor, ushort timeline)
+    {
+        var played = _timeline.ReplayBase(actor, timeline);
+        if (!played.Success)
+            return played;
+        _timeline.SetLayerOwned(actor, AnimationSlot.Base, true);
+        _store.Mutate(actor, o => o with { BaseTimeline = timeline });
+        return Outcome.Ok();
+    }
+
     public Outcome BlendCore(
         ActorId actor, ushort timeline, AnimationSlot? landing)
     {
