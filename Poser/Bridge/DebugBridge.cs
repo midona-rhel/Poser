@@ -438,7 +438,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/weight?actor&slot=1&value=0.5 (1 releases)",
                         "/expression?actor&hold=TIMELINE | &release=1",
                         "/lips?actor&timeline=TIMELINE (0 restores)",
-                        "/emote?actor&emote=EMOTE_ROW&timeline=ITS_[0]_ROW&start=1 (the General section's Apply)",
+                        "/emote?actor&name=EMOTE_NAME&pick=N&start=1 (the General section's Apply; pick chooses between emotes with the same name; a name that is not exact lists the matches)",
                         "/stance?actor&stance=Idle|SitGround|SitChair|Sleeping&pose=0",
                         "/seeklayer?actor&slot=1&time=SECONDS (by the layer's own clock; an ended layer is played again held first)",
                         "/wear?actor&slot=3&item=ITEM_ID&dye1=0&dye2=0 (the wardrobe's journaled item change; without item: read the slot)",
@@ -1396,15 +1396,28 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/emote":
             {
-                // The General section's Apply, through the same command the tab uses.
-                if (!query.TryGetValue("emote", out var et) || !uint.TryParse(et, out var emoteRow)
-                    || !query.TryGetValue("timeline", out var tt) || !uint.TryParse(tt, out var standing))
-                    return Json(new { error = "emote and timeline are required" });
-                var pick = new global::Poser.Domain.Animation.TimelineEntry(
-                    standing, "bridge", global::Poser.Domain.Animation.AnimationKind.Emote, AnimationSlot.Base, 0, emoteRow, 0);
-                var actions = (global::Poser.Application.Animation.IAnimationActions)_services.GetService(
-                    typeof(global::Poser.Application.Animation.IAnimationActions))!;
-                var r = actions.ApplyGeneral(id, pick, query.GetValueOrDefault("start", "1") != "0");
+                // The General section's Apply, with the emote its list offers under that name.
+                if (!query.TryGetValue("name", out var wanted))
+                    return Json(new { error = "name is required" });
+                ((IAnimationCatalogLoader)_services.GetService(typeof(IAnimationCatalogLoader))!).EnsureLoaded();
+                var catalog = (AnimationCatalog)_services.GetService(typeof(AnimationCatalog))!;
+                if (!catalog.IsLoaded)
+                    return Json(new { error = "The animation list is still loading. Ask again." });
+                var found = catalog.Search(wanted, AnimationKind.Emote);
+                var named = found.Where(entry => string.Equals(entry.Name, wanted, StringComparison.OrdinalIgnoreCase)).ToArray();
+                // Several emotes can share a name; ?pick=N chooses one of them, counting from 0.
+                int pick = int.Parse(query.GetValueOrDefault("pick", "0"));
+                if (named.Length == 0 || (named.Length > 1 && !query.ContainsKey("pick")) || pick < 0 || pick >= named.Length)
+                    return Json(new
+                    {
+                        error = named.Length == 0 ? "No emote has that name." : "Several emotes have that name; add pick=N.",
+                        matches = found.Take(20).Select(entry => new
+                        {
+                            entry.Name, entry.EmoteId, entry.TimelineId, slot = entry.Slot.ToString(),
+                        }),
+                    });
+                var actions = (IAnimationActions)_services.GetService(typeof(IAnimationActions))!;
+                var r = actions.ApplyGeneral(id, named[pick], query.GetValueOrDefault("start", "1") != "0");
                 var played = _animation.GeneralFor(id)?.Played;
                 return Json(new { ok = r.Success, r.Detail, played = played?.TimelineId, slot = played?.Slot.ToString() });
             }
