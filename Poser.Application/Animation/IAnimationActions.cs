@@ -12,5 +12,6 @@ public interface IAnimationActions
         bool playFromStart, bool resume = true);
     Outcome ResetSlot(ActorId actor, AnimationSlot slot);
     Outcome SetLoop(ActorId actor, AnimationSlot slot, bool on);
-    Outcome ResetGeneral(ActorId actor, AnimationSlot slot = AnimationSlot.Base);
+    Outcome ApplyGeneral(ActorId actor, TimelineEntry chosen, bool playFromStart);
+    Outcome ResetGeneral(ActorId actor);
 }
