@@ -1,30 +1,32 @@
 # Working on Poser
 
-These are the rules for changing Poser: its code, its documentation, its issues and its pull requests. They apply to people and to AI agents alike.
+These are the rules for anyone who changes Poser, people and AI agents alike. They cover the code, the documentation, commit messages, issues, pull requests and release notes.
 
 ## Write so anyone can read it
 
-Everything written for this project must be readable by someone who has never opened the code: issues, pull requests, commit messages, documentation, code comments and names in the code.
+Everything written for this project must make sense to someone who has never opened the code and has never seen the work that led to it.
 
-- Write the way a person would explain it out loud: ordinary sentences that join related facts, not a string of short fragments.
-- Say where things are. Every location names what it is relative to: "the left side of the main window", "the game view", "below the main window".
-- Use the words the interface shows. If the tab is called Full body, write Full body.
-- Do not use a word that only the code uses. If you need one, say in the same sentence what it means.
-- Describe how things are now. Leave out how they used to be and how the work went.
-- Cut what the reader does not need.
 - Say the idea first, in one or two plain sentences, the way you would say it to someone. Details come after. For example: "An MCDF is never supposed to be edited: it is an appearance that never changes. A scene is a project you save, load and keep working on, so saving and loading a scene whose actors' appearance you own shouldn't lock anything."
+- Write the way a person would explain it out loud: whole sentences that join related facts, not a string of fragments.
+- Use the words the interface shows. If the tab is called Full body, write Full body. Call bones by the names the bone list shows, such as Neck or Cervical.
+- Do not use a word that only the code uses. If you need one, say in the same sentence what it means.
+- Say where things are, relative to something the reader can see: "the left side of the main window", "the toolbar at the bottom of the screen".
+- Describe how things are now. Leave out how they used to be and how the work went.
+- Leave out what the reader does not need, including changes nobody would notice.
+- Write plainly. No slogans, no clever phrasing, nothing written to impress.
 
-If a line reads like notes someone wrote for themselves, rewrite it.
+Read every text back before you post or commit it. If a line reads like notes someone wrote for themselves, rewrite it.
 
 ## Nothing personal
 
-Never write anything about the owner or the owner's own work. This applies to issues, pull requests, comments, release notes, documentation, code, tests and commit messages.
+Poser is public. Nothing written for it may identify a person or show what is in their game.
 
-- No names of the owner's characters, or of any character in their game.
-- No names of their scenes, poses, MCDFs, library files or Penumbra collections, and nothing describing what is in their scenes or screenshots.
-- No local paths that contain a user name.
+- No character names, whether from the game, a scene, a screenshot or a message. This includes the names Poser shows for actors, because those are character names.
+- No names of anyone's scenes, poses, MCDFs, library files or Penumbra collections, and nothing describing what is in their scenes or screenshots.
+- No names of people who reported something, and no quotes from Discord or other chats. Describe the problem instead: "Mirroring does nothing when the right eye is selected."
+- No local paths that contain a user name, and no e-mail addresses.
 
-Call actors "Actor 1", "Actor 2" and so on, in texts and in test data. Describe what was tested in neutral words: "a test scene with three actors", "Actor 2 had an MCDF applied". Read every text for this before you post or commit it.
+Call actors "Actor 1", "Actor 2" and so on, in texts, screenshots and test data. Describe what was tested in neutral words: "a test scene with three actors", "Actor 2 had an MCDF applied". This applies to issues, pull requests, release notes, documentation, code, tests and commit messages.
 
 ## Code
 
@@ -58,22 +60,23 @@ When you change a file, bring the whole file in line with these rules in the sam
 - Plans, audits, notes and records of what was tested do not go in the repository. Work is tracked in GitHub issues. What was tested goes in the pull request.
 - Delete text that is no longer true. Git keeps the history.
 - A feature page walks through the interface in the order a person meets it. Check every statement about what happens in the code or in the game before writing it.
-- Crop screenshots to the part of the window being described. Never show the game world, a character's real name or anything else personal.
+- Crop screenshots to the part of the window being described. Never show the game world or anything personal.
 - Write each paragraph and each list item on one line. Do not break a line inside a paragraph; the editor wraps it.
 
 ## Issues and pull requests
 
-- Start with what goes wrong, then what should happen. End with how to check it.
+- Use the [issue template](.github/ISSUE_TEMPLATE/work_item.md) and the [pull request template](.github/PULL_REQUEST_TEMPLATE.md), and fill in every section.
+- Start with what goes wrong for the person using Poser, then what should happen. End with how to check it.
 - Link the code that shows the problem, as a GitHub link to a published commit and its lines. Say in a few words what the reader will find there.
-- Say whether something was seen in the game, read in the code, or is a guess.
-- Leave out line counts, model names and the story of the session.
-- Use the [issue template](.github/ISSUE_TEMPLATE/work_item.md).
+- Say whether something was seen in the game, read in the code, or is a guess. Say what was not tried.
+- Give the steps to try it: where to start, what to press, and what should be seen.
+- Report results as sentences a person can follow. Leave out line counts, model names and the story of the session.
 
 ## Commits and branches
 
 - The first line says in plain words what changed, with the issue number in brackets when there is one. No `fix:` or `docs:` prefixes. One change per commit.
 - Name a branch after what it is for: `feature/`, `bug/`, `ui/`, `docs/`, `test/`, `perf/`, `chore/` or `release/`.
-- Work is merged into `main`. A release is built from its own `release/<version>` branch. The steps are in [the release runbook](docs/release/runbook.md).
+- Work is merged into `main`. A release is built from its own `release/<version>` branch. The steps and the rules for release notes are in [the release runbook](docs/release/runbook.md).
 
 ## Building and trying a change
 
@@ -85,4 +88,3 @@ When you change a file, bring the whole file in line with these rules in the sam
 
 - Do the work in the session you are in. Hand part of it to another agent only when asked to. If asked and no model is named, use Sol (`gpt-5.6-sol`).
 - Do not merge a pull request or publish a release unless you were asked to.
-- When something needs trying by hand, give the exact steps: where to start, what to press, and what should be seen.
