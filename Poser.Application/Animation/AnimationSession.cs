@@ -349,8 +349,14 @@ public sealed class AnimationSession : IAnimationPlayback
             Note(SetStance(actor, target.Stance, target.Pose), "stance");
             now = Capture(actor);
         }
+        // Putting back a sitting or lying stance already sits the actor down.
+        // The Full body animation is then played without standing it up again.
+        bool keepPosture = target.Stance is AnimationStance.SitChair or AnimationStance.SitGround
+                or AnimationStance.Sleeping
+            && _timeline.Read(actor)?.Stance == target.Stance;
         foreach (var slot in AnimationSnapshot.Layers)
-            RestoreLayer(actor, slot, now.For(slot), target.For(slot), Note);
+            RestoreLayer(actor, slot, now.For(slot), target.For(slot), Note,
+                keepPosture && slot == AnimationSlot.Base);
         if (now.Lips != target.Lips)
             Note(SetLips(actor, target.Lips ?? 0), "lips");
         if (now.WeaponDrawn != target.WeaponDrawn)
@@ -374,7 +380,7 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     private void RestoreLayer(ActorId actor, AnimationSlot slot, LayerSnapshot now, LayerSnapshot target,
-        Action<Outcome, string> note)
+        Action<Outcome, string> note, bool keepPosture)
     {
         string name = AnimationSlots.DisplayName(slot);
         if (target.Applied is not { } timeline)
@@ -396,7 +402,9 @@ public sealed class AnimationSession : IAnimationPlayback
         else if (!now.Live || !sameAnimation)
         {
             note(_base.ChooseSlot(actor, slot, timeline), name);
-            note(PlaySelectedSlot(actor, slot, null, false), $"play {name}");
+            note(keepPosture
+                ? _base.ReplayBaseInPosture(actor, timeline)
+                : PlaySelectedSlot(actor, slot, null, false), $"play {name}");
         }
         else if (target.HeldSeconds == null && now.HeldSeconds != null)
         {

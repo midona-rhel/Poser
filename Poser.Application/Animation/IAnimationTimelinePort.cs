@@ -28,6 +28,10 @@ public interface IAnimationTimelinePort
     Outcome PlayBase(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured);
 
+    /// <summary>Plays a Full body animation without taking the actor out of
+    /// sitting, lying down or another emote loop it is in.</summary>
+    Outcome ReplayBase(ActorId actor, ushort timeline);
+
     /// <summary>Puts mode, mode parameter, and the base-override field
     /// back exactly as captured, then replays the captured base-slot
     /// timeline (idle only as fallback).</summary>

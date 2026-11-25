@@ -158,6 +158,15 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         return played;
     }
 
+    public Outcome ReplayBase(ActorId actor, ushort timeline)
+    {
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        PrepareSwap(character, timeline);
+        return _native.ReplayTimeline(character, timeline);
+    }
+
     /// <summary>The slot the sheet's Stance column routes a timeline
     /// onto, or null when the row is missing or unmapped.</summary>
     public AnimationSlot? TimelineSlot(ushort timeline) => _native.TimelineSlot(timeline);
