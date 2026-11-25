@@ -9,11 +9,7 @@
 
 ## 2. Write the release notes
 
-The notes are for people who use Poser. Read the previous release's notes first and follow their wording and order.
-
-- One sentence per bullet, in the past tense, starting with what happened: Added, Fixed, Made, Improved, Removed, Kept. Write "Fixed actors that couldn't be moved after …", not "PosingService seeds its actor map".
-- Use the words the interface uses. No issue numbers, class names, offsets, or how it was built. Leave out work that changes nothing a user sees.
-- Group the bullets under `###` headings by area (Animation, Scenes and files, Interface, …) and give the release a short theme.
+Write the notes the way [CONTRIBUTING.md](../../CONTRIBUTING.md#7-release) says.
 
 The same notes go in four places:
 
