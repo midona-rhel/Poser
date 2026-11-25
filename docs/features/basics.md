@@ -26,7 +26,7 @@ Poser keeps 500 steps. To change that, go to Settings › General › **Undo ste
 
 A handle is the marker and gizmo you see in the game view. To hide one, click the handle button on its row in the sidebar. The thing itself stays visible. To start with every handle hidden, turn on Settings › UI › **Hide handles by default**.
 
-Lock cameras, colliders, and groups so they don't get moved by accident. A locked group only moves as a whole.
+Lock cameras, colliders and groups so they don't get moved by accident. A lock stops moving, rotating and scaling. Everything else can still be changed, such as a camera's name or field of view, and a locked thing can still be removed. A locked group only moves as a whole.
 
 ## Parenting
 

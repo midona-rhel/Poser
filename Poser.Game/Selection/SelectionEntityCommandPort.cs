@@ -207,8 +207,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         if (current is null || current.Id != id) return Absent();
         if (current.Removal != removal || removal == SelectionRemoval.None)
             return Refused("That entity cannot be removed by this action.");
-        if (_groups.IsLockedMember(id))
-            return Refused("Unlock the group before removing its members.");
 
         switch (id)
         {

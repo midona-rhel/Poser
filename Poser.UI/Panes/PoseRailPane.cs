@@ -193,8 +193,9 @@ public class PoseRailPane
                 !_inspector.IsLightSelection &&
                 !_inspector.IsGazeSelection &&
                 !_inspector.IsOverlaySelection;
-            bool resetApplies = _inspector.IsCameraSelection ||
-                _inspector.IsActorSelection || bone;
+            bool resetApplies = _inspector.IsCameraSelection
+                    ? _inspector.BallCamera() is { IsLocked: false }
+                    : _inspector.IsActorSelection || bone;
             string resetLabel = bone ? "Reset bone" : "Reset transform";
             string resetHelp = _inspector.IsCameraSelection
                 ? "Restore the camera's framing"

@@ -164,7 +164,7 @@ public sealed class OverlayPane
                     disabled: collider.Shape == Domain.Posing.IkColliderShape.Mesh),
                 "Collision", cell => cell.Switch("##collider-enabled", collider.Enabled,
                     next => _values.EditCollider(node.Id, c => c with { Enabled = next })));
-            form.Pair("Lock transform", cell => cell.Switch("##collider-lock", collider.Locked,
+            form.Pair("Lock", cell => cell.Switch("##collider-lock", collider.Locked,
                     next => _values.EditCollider(node.Id, c => c with { Locked = next })),
                 "Visible", cell => cell.Switch("##collider-visible", node.State.Visible,
                     next => _values.Set(node.Id, OverlayProperties.Visible, next)));

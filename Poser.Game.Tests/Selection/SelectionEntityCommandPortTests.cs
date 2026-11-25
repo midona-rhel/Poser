@@ -45,22 +45,6 @@ public sealed class SelectionEntityCommandPortTests
         fixture.History.CommitRedo(removal);
     }
 
-    [Fact]
-    public async Task Group_locked_after_dispatch_is_rechecked_before_release()
-    {
-        var fixture = new Fixture();
-        var group = fixture.Groups.Create("Protected", [fixture.Id], allowThin: true)!;
-        var pending = fixture.Remove();
-        Assert.False(pending.IsCompleted);
-        fixture.Groups.SetLocked(group.Id, true);
-        fixture.Framework.Run();
-        var result = await pending;
-        Assert.Equal(SelectionRemovalStatus.Refused, Assert.Single(result.Items).Status);
-        Assert.Equal(0, fixture.Release.Calls);
-        Assert.True(fixture.Scene.Selection.IsSelected(fixture.Id));
-        Assert.False(fixture.History.CanUndo);
-    }
-
     [Theory]
     [InlineData(WorldCommandStatus.Applied, false, SelectionRemovalStatus.Removed, 1, false)]
     [InlineData(WorldCommandStatus.Refused, false, SelectionRemovalStatus.Refused, 0, true)]

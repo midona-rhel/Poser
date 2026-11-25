@@ -41,8 +41,13 @@ public static class CameraProperties
         DelimitAngle, Orthographic, OrthographicZoom, Portrait, IsTracking, TrackingMode, IsTargetLocked,
     ];
 
-    /// <summary>A locked camera keeps its framing: it takes no value but the
-    /// lock itself. Only the first write is checked; undo and redo replay.</summary>
+    /// <summary>What places or turns the camera. A lock stops moving, rotating and
+    /// scaling, so a locked camera refuses these and keeps every other setting
+    /// editable, such as its name, lens and flying speed.</summary>
+    private static readonly HashSet<EntityProperty> Placement =
+        [Zoom, Roll, Angle, Pan, PositionOffset, FixedPosition, Position, Rotation, Portrait];
+
+    /// <summary>Only the first write is checked; undo and redo replay.</summary>
     public static string? RefuseWhileLocked(IEntityValueTarget<CameraId> camera, EntityProperty property) =>
-        property != IsLocked && camera.Read(IsLocked) ? "Unlock the camera first." : null;
+        Placement.Contains(property) && camera.Read(IsLocked) ? "Unlock the camera first." : null;
 }
