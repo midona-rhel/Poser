@@ -75,7 +75,7 @@ public sealed class SceneWorkflowTests
             Target = new() { Kind = "light", Key = parentKey }, Offset = offset }];
         var runtime = new FakeRuntime { ReadResult = document };
         var groups = new SceneGroups(); var state = new GroupTransformState();
-        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource(), NSubstitute.Substitute.For<Poser.Application.Viewport.IViewportReads>());
         var history = new EditHistory(); var native = new ParentRuntime();
         var parenting = new TransformParenting(native, history, new(history));
         using var workflow = Workflow(runtime, history: history,
@@ -132,7 +132,7 @@ public sealed class SceneWorkflowTests
         var groups = new SceneGroups();
         var existing = groups.Create("Existing", [], allowThin: true)!;
         var state = new GroupTransformState();
-        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource(), NSubstitute.Substitute.For<Poser.Application.Viewport.IViewportReads>());
         var structure = new SceneStructure(groups, coordinator, state);
         var history = new EditHistory();
         using var load = Workflow(runtime, history: history, structure: structure);
@@ -855,7 +855,7 @@ public sealed class SceneWorkflowTests
         runtime.IsUnbound = token =>
             runtime.SpawnedLightTokens.Count == 3 && token == runtime.SpawnedLightTokens[2];
         var groups = new SceneGroups(); var state = new GroupTransformState();
-        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource());
+        using var coordinator = new GroupTransformCoordinator(new(new SelectionSession()), groups, state, new EmptyGroupSource(), NSubstitute.Substitute.For<Poser.Application.Viewport.IViewportReads>());
         var history = new EditHistory();
         var parenting = new TransformParenting(new ParentRuntime(), history, new(history));
         using var load = new SceneWorkflow(runtime, runtime, runtime, runtime, runtime, new FakeDocuments(runtime), new NoObserver(), history,
