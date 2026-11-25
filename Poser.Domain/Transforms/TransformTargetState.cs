@@ -25,6 +25,11 @@ public sealed record TransformTargetState(
     /// Mirroring uses it to account for the two bones' different starting orientations.
     /// </summary>
     public Quaternion AnimatedBaselineRotation { get; init; } = Quaternion.Identity;
+    /// <summary>
+    /// How far this bone's parent has rotated away from the skeleton's starting
+    /// pose, in model space. Only read for left and right bones, for mirroring.
+    /// </summary>
+    public Quaternion ParentRotationFromRest { get; init; } = Quaternion.Identity;
 }
 
 public readonly record struct TransformPortResult(

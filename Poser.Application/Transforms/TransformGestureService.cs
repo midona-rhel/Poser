@@ -225,9 +225,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         {
             var baseline = active.Before[index];
             // A symmetry partner gets an adjusted copy of the change.
-            // Mirrored: in Local space a change acts in each bone's own frame,
-            // so it is converted through both bones' animated rotations taken at
-            // the start; in other spaces it is simply reflected.
+            // Mirrored: the partner gets the mirror image of the change, taken
+            // across the body's left-right plane rotated along with each bone's parent.
             // Direct (Link): the partner repeats the first bone's motion in its
             // own local frame, so a world-space change is converted through both
             // starting rotations, and a Local-space change already acts per bone.
@@ -240,13 +239,13 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             {
                 targetDelta = mode switch
                 {
-                    TransformDeltaMode.Mirrored =>
-                        active.Command.Space == TransformSpace.Local
-                            ? TransformMath.MirrorRebased(
-                                delta,
-                                active.Before[0].AnimatedBaselineRotation,
-                                baseline.AnimatedBaselineRotation)
-                            : TransformMath.Mirror(delta),
+                    TransformDeltaMode.Mirrored => TransformMath.MirrorAcrossParents(
+                        delta,
+                        active.Command.Space,
+                        active.Before[0].AnimatedBaselineRotation,
+                        baseline.AnimatedBaselineRotation,
+                        active.Before[0].ParentRotationFromRest,
+                        baseline.ParentRotationFromRest),
                     TransformDeltaMode.Direct =>
                         active.Command.Space == TransformSpace.Local
                             ? delta

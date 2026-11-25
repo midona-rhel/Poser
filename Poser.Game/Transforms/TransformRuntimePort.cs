@@ -1,8 +1,10 @@
+using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 using Poser.Game.Bindings;
+using Poser.Game.Entities;
 using Poser.Game.Services;
 using DomainTransform = Poser.Domain.Transforms.PoseTransform;
 using LegacyLayer = Poser.Domain.Posing.BonePoseTransformInfo;
@@ -340,11 +342,34 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
         var stacks = _bones.CapturePoseStacks(bone);
         var animatedBaselineRotation =
             _bones.GetAnimatedBaseline(bone).Rotation;
-        return LegacyPoseStackConverter.Convert(
+        var result = LegacyPoseStackConverter.Convert(
             target,
             converted.Value,
             animatedBaselineRotation,
             stacks);
+        return result.State is { } state && PoseMath.GetMirrorBoneName(bone.BoneName) != null
+            ? result with { State = state with { ParentRotationFromRest = ParentRotationFromRest(bone) } }
+            : result;
+    }
+
+    /// <summary>
+    /// The parent's current rotation compared with its rotation in the skeleton's
+    /// starting pose. A face bone's parent is the head in the face skeleton, which
+    /// the starting pose lists under the body skeleton's head of the same name.
+    /// </summary>
+    private static Quaternion ParentRotationFromRest(IBone bone)
+    {
+        if (bone.ParentBone is not { } parent)
+            return Quaternion.Identity;
+        var rest = bone.Skeleton.CaptureReferencePose();
+        var match = rest.FirstOrDefault(entry => entry.Bone == parent);
+        if (match.Bone == null)
+            match = rest.FirstOrDefault(entry =>
+                entry.Bone.PartialId == 0 && entry.Bone.BoneName == parent.BoneName);
+        if (match.Bone == null)
+            return Quaternion.Identity;
+        return Quaternion.Normalize(
+            parent.LastTransform.Rotation * Quaternion.Inverse(match.Reference.Rotation));
     }
 
     private static TransformPortResult FromBinding(
