@@ -9,6 +9,18 @@ public static class ReleaseNotesHistory
 {
     public static ImmutableArray<ReleaseNotesEntry> Entries { get; } =
     [
+        new(new(0, 9, 28), "Mirroring, gaze and Customize+ fixes",
+        [
+            "Mirroring the eyes works with the head turned. The other eye no longer turns the wrong way.",
+            "Mirroring hands and other paired bones works when the two arms or legs aren't posed the same.",
+            "IK hands and feet no longer jump or drift on bodies with a Customize+ profile.",
+            "The head and body look at the gaze target even after the spine is posed. The Pose-aware checkbox is gone, because this is always on now.",
+            "The neck and head can be turned by hand while gaze is on.",
+            "Looking at another actor aims at that actor's head.",
+            "Renaming an actor updates its name in the inspector straight away.",
+            "The About page shows the right version number.",
+            "Light theme text is easier to read.",
+        ]),
         new(new(0, 9, 27), "Improved MCDF handling in scenes, and prop tinting",
         [
             "Saving and loading a scene no longer locks actors' appearance. Only actors that had an MCDF applied when the scene was saved come back locked.",

@@ -2,7 +2,7 @@
   "Author": "Midona",
   "Name": "Poser",
   "InternalName": "Poser",
-  "AssemblyVersion": "0.9.27.0",
+  "AssemblyVersion": "0.9.28.0",
   "Punchline": "Posing, lighting and whole-scene staging for group pose. Beta.",
   "Description": "Poser is a posing and scene tool for FINAL FANTASY XIV's group pose.\n\n- Pose actors bone by bone: overlay handles, a graphical body map, and numeric transforms\n- IK on any bone with a parent, plus mirror, link and named bone-visibility presets\n- Spawn actors and objects, or click a world handle to bring what is already there into the scene\n- Borrow the map's own objects by reference and give them back untouched on release\n- Save and restore the whole shot — actors, objects, lights, camera and environment — with load options\n- Custom lights, camera control and a free camera; snapping, group pivot and group moves\n- Gaze control and one-click expressions\n- A pose library with tags, authors and search; import and export poses, and MCDF appearance files\n- Time, weather and festival control\n- On-screen dialogue panels, chat bubbles and status lines drawn with the game's own UI\n- Reference pictures as floating, aspect-locked windows\n- Twenty-five rebindable actions with Poser, Brio and Ktisis presets\n\nThis is a beta. It is not stable and it is not finished. Poser is derivative of Anamnesis, Ktisis and Brio, and those three are the mature tools.\n\nPoser was coded with the use of artificial intelligence. The plugin says so on first launch and asks you to confirm you have read the notice.",
   "ApplicableVersion": "any",
@@ -20,5 +20,5 @@
   "CanUnloadAsync": false,
   "LoadPriority": 0,
   "AcceptsFeedback": true,
-  "Changelog": "- Saving and loading a scene no longer locks actors' appearance. Only actors that had an MCDF applied when the scene was saved come back locked.\n- Scenes shared from another computer load every actor's appearance as an MCDF.\n- Loading a scene replaces an MCDF already applied to an actor with the appearance saved in the scene.\n- An MCDF applied by a scene keeps its own file name instead of a temporary one.\n- The Library shows what a scene contains before it is loaded: the number of actors, MCDFs, objects and lights, the time of day, whether animation is saved, whether it was saved on this computer, and the file size.\n- A scene that only partly loads is logged as a warning instead of an error.\n- Objects from the Props tab can be tinted."
+  "Changelog": "- Mirroring the eyes works with the head turned. The other eye no longer turns the wrong way.\n- Mirroring hands and other paired bones works when the two arms or legs aren't posed the same.\n- IK hands and feet no longer jump or drift on bodies with a Customize+ profile.\n- The head and body look at the gaze target even after the spine is posed. The Pose-aware checkbox is gone, because this is always on now.\n- The neck and head can be turned by hand while gaze is on.\n- Looking at another actor aims at that actor's head.\n- Renaming an actor updates its name in the inspector straight away.\n- The About page shows the right version number.\n- Light theme text is easier to read."
 }
