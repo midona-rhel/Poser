@@ -15,7 +15,6 @@ namespace Poser.Game.Services;
 /// </summary>
 public class GazeState
 {
-    public bool PoseAware { get; set; }
     /// <summary>
     /// The CONFIGURED mode, which is remembered across a full untoggle — it is
     /// not a claim that anything is being enforced. Ask <see cref="Active"/>

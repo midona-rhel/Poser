@@ -396,7 +396,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     /// </summary>
     public string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target)
     {
-        if (data.Gaze is not { } saved || (saved.Mode == GazeTargetMode.None && !saved.PoseAware))
+        if (data.Gaze is not { } saved || saved.Mode == GazeTargetMode.None)
             return null;
         if (!_gaze.IsAvailable)
             return _gaze.UnavailableDetail ?? "Gaze control is unavailable.";
@@ -425,9 +425,6 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         var parts = _gaze.SetGazeParts(source, saved.Parts);
         if (!parts.Success)
             return parts.Detail ?? "The gaze parts were refused.";
-        var aware = _gaze.SetPoseAware(source, saved.PoseAware);
-        if (saved.PoseAware && !aware.Success)
-            return aware.Detail ?? "Pose-aware gaze was refused.";
 
         if (saved.Mode == GazeTargetMode.Position)
         {

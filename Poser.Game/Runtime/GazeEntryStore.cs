@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.Game.Entities;
 
 namespace Poser.Game;
 
@@ -15,7 +16,6 @@ internal sealed class GazeEntry
     /// Configured mode, retained when every body part is disabled.
     /// </summary>
     public GazeTargetMode Mode;
-    public bool PoseAware;
     public GazeTargetType Parts = GazeTargetType.All;
 
     /// <summary>The body this entry drives; the detour's lookup key.</summary>
@@ -30,6 +30,9 @@ internal sealed class GazeEntry
     /// GameObjectId written to the native target field. ActorId identifies the target in Poser.
     /// </summary>
     public ulong TargetId;
+
+    /// <summary>The followed actor, whose head Poser reads to aim at.</summary>
+    public IActor? TargetBody;
 
     /// <summary>
     /// The remembered target failed reconciliation. Selecting a live target clears this flag.

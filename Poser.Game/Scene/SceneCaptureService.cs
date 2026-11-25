@@ -449,7 +449,7 @@ public sealed class SceneCaptureService
         foreach (var (actor, entry) in captured)
         {
             var state = _gaze.GetGazeState(actor);
-            if (state.Mode == GazeTargetMode.None && !state.PoseAware)
+            if (state.Mode == GazeTargetMode.None)
                 continue;
 
             Guid? target = null;
@@ -484,7 +484,6 @@ public sealed class SceneCaptureService
 
             entry.Gaze = new SceneActorGaze
             {
-                PoseAware = state.PoseAware,
                 // When the actor looked at was not saved, the file keeps the
                 // look-at-an-actor mode with no target, rather than a target
                 // that cannot be found after loading.

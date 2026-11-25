@@ -10,8 +10,6 @@ public readonly record struct GazeSettings(
     Vector3 Position, Vector3 EyesPosition, Vector3 HeadPosition, Vector3 BodyPosition,
     bool EyesLocked, bool HeadLocked, bool BodyLocked)
 {
-    public bool PoseAware { get; init; }
-
     public bool IsPartLocked(GazeTargetType part) =>
         ((part & GazeTargetType.Eyes) != 0 && EyesLocked) ||
         ((part & GazeTargetType.Head) != 0 && HeadLocked) ||
@@ -36,7 +34,6 @@ public interface IGazeControl
     string? UnavailableDetail { get; }
     GazeReading? Read(ActorId actor);
     Outcome SetMode(ActorId actor, GazeTargetMode mode);
-    Outcome SetPoseAware(ActorId actor, bool enabled);
     Outcome SetParts(ActorId actor, GazeTargetType parts);
     Outcome SetTarget(ActorId actor, ActorId target);
     Outcome SetPartLock(ActorId actor, GazeTargetType part, bool locked);

@@ -8,6 +8,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Application.Viewport;
 using Poser.Domain.Scene;
+using Poser.Game.Entities;
 using Poser.Application.Lifecycle;
 using Poser.Game.Core;
 using static Poser.Game.GazeEntryStore;
@@ -151,7 +152,7 @@ internal sealed unsafe class GazeNativeDriver
                     GazeTargetType pendingRelease = GazeTargetType.None;
                     LookAtSource lookAt = default;
                     bool known = false;
-                    bool poseAware = false;
+                    IActor? followed = null;
                     bool eyesLocked = false, headLocked = false, bodyLocked = false;
                     lock (_store.Sync)
                     {
@@ -159,9 +160,9 @@ internal sealed unsafe class GazeNativeDriver
                         {
                             known = true;
                             mode = EffectiveMode(entry);
-                            poseAware = entry.PoseAware;
                             parts = entry.Parts;
                             pendingRelease = entry.PendingRelease;
+                            followed = entry.TargetBody;
                             // Native calls below use this snapshot outside the lock.
                             lookAt = entry.Target;
                             eyesLocked = entry.EyesLocked;
@@ -196,7 +197,7 @@ internal sealed unsafe class GazeNativeDriver
                         }
                     }
 
-                    bool compensate = poseAware && mode is GazeTargetMode.Camera or GazeTargetMode.Position;
+                    bool compensate = mode is GazeTargetMode.Camera or GazeTargetMode.Position or GazeTargetMode.Entity;
                     _gazeFrames.Request(targetActor.Address, compensate);
                     // Disabled mode has no active target writes.
                     if (mode == GazeTargetMode.None)
@@ -240,15 +241,29 @@ internal sealed unsafe class GazeNativeDriver
                         if (parts.HasFlag(GazeTargetType.Body) && !bodyLocked)
                             lookAt.Body.LookAtTarget.Position = forwardPos;
                     }
+                    else if (mode == GazeTargetMode.Entity && followed != null)
+                    {
+                        // Look at the followed actor's head as shown, as a point, so the
+                        // correction below applies. Without a head to read, the game
+                        // keeps following the actor by itself.
+                        if (_gazeFrames.HeadPosition(followed) is { } head)
+                        {
+                            if (parts.HasFlag(GazeTargetType.Eyes) && !eyesLocked)
+                                AimAt(ref lookAt.Eyes.LookAtTarget, head);
+                            if (parts.HasFlag(GazeTargetType.Head) && !headLocked)
+                                AimAt(ref lookAt.Head.LookAtTarget, head);
+                            if (parts.HasFlag(GazeTargetType.Body) && !bodyLocked)
+                                AimAt(ref lookAt.Body.LookAtTarget, head);
+                        }
+                    }
 
                     if (compensate)
                     {
-                        lookAt.Body.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
-                            GazeTargetType.Body, lookAt.Body.LookAtTarget.Position);
-                        lookAt.Head.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
-                            GazeTargetType.Head, lookAt.Head.LookAtTarget.Position);
-                        lookAt.Eyes.LookAtTarget.Position = _gazeFrames.Convert(targetActor.Address,
-                            GazeTargetType.Eyes, lookAt.Eyes.LookAtTarget.Position);
+                        // Only points can be corrected; a part following an actor
+                        // keeps the actor's id in the same place.
+                        Compensate(ref lookAt.Body.LookAtTarget, targetActor.Address, GazeTargetType.Body);
+                        Compensate(ref lookAt.Head.LookAtTarget, targetActor.Address, GazeTargetType.Head);
+                        Compensate(ref lookAt.Eyes.LookAtTarget, targetActor.Address, GazeTargetType.Eyes);
                     }
 
                     if (parts.HasFlag(GazeTargetType.Body))
@@ -260,6 +275,18 @@ internal sealed unsafe class GazeNativeDriver
                 }
             }
         }
+    }
+
+    private static void AimAt(ref LookAtTarget target, Vector3 point)
+    {
+        target.LookMode = LookMode.Position;
+        target.Position = point;
+    }
+
+    private void Compensate(ref LookAtTarget target, nint actor, GazeTargetType part)
+    {
+        if (target.LookMode == LookMode.Position)
+            target.Position = _gazeFrames.Convert(actor, part, target.Position);
     }
 
     public void DisposeHook()

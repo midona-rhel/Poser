@@ -323,7 +323,8 @@ public sealed class GazeCapabilityTests
                 NewProxy<IPluginLog>(),
                 framework: null,
                 factory,
-                bindings);
+                bindings,
+                new Poser.Game.Posing.GazePoseFrames(NewProxy<ISkeletonService>()));
 
             return GazeScene.From(
                 service, factory, blocks, slots,
