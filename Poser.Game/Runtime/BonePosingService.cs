@@ -70,8 +70,11 @@ public unsafe class BonePosingService : IBonePosingService
         _eventBus = eventBus;
         _configuration = configuration;
         _transitive = new TransitiveActionScheduler(log);
+        // A profile Poser applied is remembered after Customize+ is unloaded, but
+        // nothing changes the body then, so there is nothing to predict.
         _customizePlus = new CustomizePlusPose(_stacks, actor =>
-            bindings.GetActorId(actor) is { } id && bodyProfiles.CaptureBodyProfile(id) is { Success: true } read
+            bodyProfiles.CustomizePlusRunning
+            && bindings.GetActorId(actor) is { } id && bodyProfiles.CaptureBodyProfile(id) is { Success: true } read
                 ? read.Value : null);
         _ik = new IkChainRegistry(
             _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings, _customizePlus));
