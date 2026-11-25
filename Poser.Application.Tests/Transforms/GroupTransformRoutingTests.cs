@@ -57,7 +57,7 @@ public sealed class GroupTransformRoutingTests
         });
         var state = new GroupTransformState();
         var history = new EditHistory();
-        using var coordinator = new GroupTransformCoordinator(scene, new SceneGroups(), state, source);
+        using var coordinator = new GroupTransformCoordinator(scene, new SceneGroups(), state, source, NSubstitute.Substitute.For<Poser.Application.Viewport.IViewportReads>());
         using var gestures = new TransformGestureService(scene, runtime, history,
             groupTransforms: state, groupSource: source, groupCoordinator: coordinator);
         var facade = new TransformFacade(scene, gestures,

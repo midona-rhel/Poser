@@ -251,7 +251,7 @@ public sealed class GroupTransformStateTests
             for (int i = 0; i < count; i++) Live[Targets[i]] = Pose(new(i * 2, 0, 0));
             if (noncollinear) Live[Targets[2]] = Pose(new(1, 3, 2));
             Publish();
-            Coordinator = new(Scene, Groups, State, this);
+            Coordinator = new(Scene, Groups, State, this, NSubstitute.Substitute.For<Poser.Application.Viewport.IViewportReads>());
             Service = new(Scene, this, History, groupTransforms: State, groupSource: this,
                 groupCoordinator: Coordinator);
             Journal = new(History, Service, _ => true, new Fixtures.NoticeLog());

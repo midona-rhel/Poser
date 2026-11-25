@@ -24,12 +24,13 @@ public sealed class GroupTransformCoordinator : IDisposable
     private readonly SceneGroups _groups;
     private readonly GroupTransformState _state;
     private readonly IGroupTransformSource _source;
+    private readonly Viewport.IViewportReads _viewport;
     private readonly HashSet<Guid> _invalidImports = new();
 
     public GroupTransformCoordinator(SceneSession scene, SceneGroups groups,
-        GroupTransformState state, IGroupTransformSource source)
+        GroupTransformState state, IGroupTransformSource source, Viewport.IViewportReads viewport)
     {
-        _scene = scene; _groups = groups; _state = state; _source = source;
+        _scene = scene; _groups = groups; _state = state; _source = source; _viewport = viewport;
         _scene.Selection.SelectionChanged += SelectionChanged;
     }
     public void Dispose() => _scene.Selection.SelectionChanged -= SelectionChanged;
@@ -55,8 +56,8 @@ public sealed class GroupTransformCoordinator : IDisposable
     {
         if (!ResolveMembership(selected, out targets, out error)) return false;
         foreach (var id in selected)
-            if (_groups.IsLockedChild(id, selected))
-            { error = "A selected member is locked by its group."; return false; }
+            if (TransformSelectionPolicy.IsLocked(id, selected, _groups, _viewport))
+            { error = "Something selected is locked."; return false; }
         foreach (var target in targets)
             if (_source.Refusal(target) is { } refusal) { error = refusal; return false; }
         return true;

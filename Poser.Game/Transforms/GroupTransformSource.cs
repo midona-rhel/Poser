@@ -20,8 +20,6 @@ public sealed class GroupTransformSource(
     {
         if (!scene.Contains(target)) return "A selected group member is unavailable.";
         if (target.Kind == TransformTargetKind.Bone) return "Bones cannot join an entity group transform.";
-        if (target.Collider is { } collider && bindings.Resolve(collider).Value?.State.Collider?.Locked == true)
-            return "The IK collider transform is locked.";
         if (target.Light is { } light)
         {
             var resolved = bindings.Resolve(light);

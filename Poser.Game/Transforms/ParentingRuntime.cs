@@ -1,5 +1,6 @@
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
+using Poser.Application.Viewport;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Game.Entities;
@@ -8,14 +9,13 @@ using Poser.Game.Services;
 namespace Poser.Game.Transforms;
 
 public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService posing,
-    SceneSession scene, SceneGroups groups) : IParentingRuntime
+    SceneSession scene, SceneGroups groups, IViewportReads viewport) : IParentingRuntime
 {
     private readonly Dictionary<IBone, global::Poser.Domain.Transforms.Transform?> _boneFrames = new();
     public ActorId? CompanionOwner(ActorId actor) => scene.Snapshot.Actors.FirstOrDefault(a => a.Id == actor)?.OwnerActor;
     public ActorId? ResolveCompanion(ActorId owner) => scene.Snapshot.Actors.FirstOrDefault(a => a.OwnerActor == owner)?.Id;
     public void BeginRead() => _boneFrames.Clear();
-    public bool CanEdit(SelectionId child) => !groups.IsLockedMember(child)
-        && (child.Overlay is not { } overlay || bindings.Resolve(overlay).Value?.State.Collider?.Locked != true);
+    public bool CanEdit(SelectionId child) => !TransformSelectionPolicy.IsLocked(child, null, groups, viewport);
     public bool CanParent(SelectionId id) => id.Kind is SceneEntityKind.Actor or SceneEntityKind.Light
         or SceneEntityKind.Prop or SceneEntityKind.WorldObject or SceneEntityKind.Overlay && Read(id) != null;
 
