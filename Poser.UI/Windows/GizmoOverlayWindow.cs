@@ -1173,7 +1173,7 @@ public class GizmoOverlayWindow : Window
             Start = currentTransform,
             Current = currentTransform,
             Projection = projection,
-            PivotMode = _cleanTransforms.ActivePivotMode ?? PivotMode.PerTarget,
+            PivotMode = _cleanTransforms.ActivePivotMode!.Value,
             // The pivot the transform service fixed when the drag started.
             Pivot = _cleanTransforms.ActivePivot!.Value,
             PivotChoice = pivotChoice,
