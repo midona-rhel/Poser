@@ -5,6 +5,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.Game.Entities;
 using Poser.Application.Events;
 using Poser.Game.Services;
 using static Poser.Game.GazeEntryStore;
@@ -71,15 +72,15 @@ internal sealed class GazeReconciler
 
         // Resolve outside the lock so these lookups do not hold up the native hook.
         var bodies = new Dictionary<ActorId, (IGameObject Body, bool Writable)>(snapshot.Count);
-        var liveTargets = new HashSet<ActorId>();
+        var liveTargets = new Dictionary<ActorId, IActor>();
         foreach (var (id, target) in snapshot)
         {
             if (_bindings.Resolve(id) is { Success: true, Value: { } live }
                 && live.Address != nint.Zero
                 && _objectTable.CreateObjectReference(live.Address) is { } body)
                 bodies[id] = (body, CanWriteCharacter(body));
-            if (target is { } targetId && _bindings.Resolve(targetId).Success)
-                liveTargets.Add(targetId);
+            if (target is { } targetId && _bindings.Resolve(targetId) is { Success: true, Value: { } followed })
+                liveTargets[targetId] = followed;
         }
 
         bool modeChanged = false;
@@ -100,10 +101,12 @@ internal sealed class GazeReconciler
                 // Do not apply an old lookup result to a target selected since the snapshot.
                 if (entry.TargetActor != probedTarget)
                     continue;
+                if (entry.TargetActor is { } current && liveTargets.TryGetValue(current, out var followed))
+                    entry.TargetBody = followed;
                 bool wasStale = entry.TargetStale;
                 // Keep the stale flag until the user selects a live target.
                 entry.TargetStale = wasStale ||
-                    (entry.TargetActor is { } target && !liveTargets.Contains(target));
+                    (entry.TargetActor is { } target && !liveTargets.ContainsKey(target));
                 if (entry.TargetStale == wasStale)
                     continue;
                 // Other modes do not use the remembered actor target.

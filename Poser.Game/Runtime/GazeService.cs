@@ -98,7 +98,7 @@ public unsafe class GazeService : IDisposable
         IFramework? framework,
         IGazeNativeFactory nativeFactory,
         IEntityBindings bindings,
-        Poser.Game.Posing.GazePoseFrames? gazeFrames = null)
+        Poser.Game.Posing.GazePoseFrames gazeFrames)
     {
         _bindings = bindings;
         _cameraService = cameraService;
@@ -106,7 +106,7 @@ public unsafe class GazeService : IDisposable
         _eventBus = eventBus;
         _log = log;
         _framework = framework;
-        _gazeFrames = gazeFrames ?? new();
+        _gazeFrames = gazeFrames;
         _driver = new GazeNativeDriver(
             gPoseService, cameraService, objectTable, log, _store, _gazeFrames, nativeFactory,
             () => IsAvailable, () => OnOwnerThread);
@@ -248,7 +248,6 @@ public unsafe class GazeService : IDisposable
             return _store.TryGet(id, out var entry)
                 ? new GazeState
                 {
-                    PoseAware = entry.PoseAware,
                     Mode = entry.Mode,
                     Active = EffectiveMode(entry) != GazeTargetMode.None,
                     TargetStale = entry.TargetStale,
@@ -277,7 +276,6 @@ public unsafe class GazeService : IDisposable
             if (settings.Mode == GazeTargetMode.Entity && entry.TargetActor != null && entry.TargetStale)
                 return StaleRefusal(entry);
             entry.Mode = settings.Mode;
-            entry.PoseAware = settings.PoseAware;
             entry.Parts = settings.TargetType;
             entry.Position = settings.Position;
             ClearPartLock(entry, GazeTargetType.All);
@@ -300,16 +298,6 @@ public unsafe class GazeService : IDisposable
         return Outcome.Ok();
     }
 
-    public Outcome SetPoseAware(IActor actor, bool enabled)
-    {
-        if (!IsAvailable) return Unavailable();
-        if (!Resolve(actor, out var id, out var gameObject))
-            return Outcome.Fail("This actor is no longer resolvable.");
-        lock (_store.Sync) _store.Bind(id, gameObject.Address).PoseAware = enabled;
-        if (!enabled) _gazeFrames.Request(actor.Address, false);
-        _eventBus.Publish(new GazeStateChangedEvent());
-        return Outcome.Ok();
-    }
 
     /// <summary>
     /// Changes the gaze mode. Enabling a mode with no participating parts enables all
@@ -442,6 +430,7 @@ public unsafe class GazeService : IDisposable
             var beforeMode = EffectiveMode(entry);
             entry.TargetActor = targetKey;
             entry.TargetId = targetObject.GameObjectId;
+            entry.TargetBody = target;
             // Explicitly selecting a resolved target clears its stale flag.
             entry.TargetStale = false;
             entry.Mode = GazeTargetMode.Entity;
@@ -609,10 +598,10 @@ public unsafe class GazeService : IDisposable
                 entry.AppliedTargetId = 0;
             }
             entry.Mode = GazeTargetMode.None;
-            entry.PoseAware = false;
             entry.Parts = GazeTargetType.All;
             entry.TargetActor = null;
             entry.TargetId = 0;
+            entry.TargetBody = null;
             entry.TargetStale = false;
             entry.Position = default;
             ClearPartLock(entry, GazeTargetType.All);

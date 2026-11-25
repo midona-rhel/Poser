@@ -43,9 +43,6 @@ public sealed class GazeSession(ValueJournal journal, IGazeRuntimePort runtime) 
 
     public Outcome SetMode(ActorId actor, GazeTargetMode mode) =>
         Step(actor, "Set gaze mode", () => runtime.SetMode(actor, mode));
-    public Outcome SetPoseAware(ActorId actor, bool enabled) =>
-        Step(actor, "Set pose-aware gaze", () => Read(actor) is { } state
-            ? runtime.RestoreSettings(actor, state.Settings with { PoseAware = enabled }) : Missing());
     public Outcome SetParts(ActorId actor, GazeTargetType parts) =>
         Step(actor, "Set gaze parts", () => runtime.SetParts(actor, parts));
     public Outcome SetTarget(ActorId actor, ActorId target) =>
