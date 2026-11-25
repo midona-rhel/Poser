@@ -549,8 +549,7 @@ internal sealed partial class EntityContextMenus
                 help: "Swing the camera back onto whoever it tracks")
             { OnInvoke = () => RecenterCameraOnTrackedActor(cameraId), Place = MenuPlace.Framing },
             RenameItem("Rename camera", camera.Name,
-                next => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Name, next),
-                disabled: camera.IsLocked),
+                next => _cameraControl.Set(cameraId, Application.Presentation.CameraProperties.Name, next)),
             DuplicateItem(id),
             SaveToFileItem(() => _cameraPane.OpenSave(cameraId)),
             SaveToLibraryItem(id, "camera", camera.Name),

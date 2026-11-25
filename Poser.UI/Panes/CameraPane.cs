@@ -322,7 +322,7 @@ public sealed class CameraPane
             cells.Cell(
                 "Name",
                 cell => cell.TextInput("##camera-name", camera.Name,
-                    value => _values.Set(camera.Id, CameraProperties.Name, value), disabled: locked),
+                    value => _values.Set(camera.Id, CameraProperties.Name, value)),
                 help: "Name it in the sidebar");
             cells.Cell(
                 "Type",
@@ -504,19 +504,17 @@ public sealed class CameraPane
 
     private void MovementRows(FormScope form, CameraReading camera)
     {
-        bool locked = camera.IsLocked;
         form.Cells(cells =>
         {
             cells.Cell(
                 "Movement",
                 cell => cell.Switch("##camera-move", camera.MovementEnabled,
-                    value => _values.Set(camera.Id, CameraProperties.MovementEnabled, value),
-                    disabled: locked),
+                    value => _values.Set(camera.Id, CameraProperties.MovementEnabled, value)),
                 help: "Fly with WASD while live");
             cells.Cell(
                 "Lateral",
                 cell => cell.Switch("##camera-move2d", camera.Move2D,
-                    value => _values.Set(camera.Id, CameraProperties.Move2D, value), disabled: locked),
+                    value => _values.Set(camera.Id, CameraProperties.Move2D, value)),
                 help: "Stay in the horizontal plane");
         });
         // The slider ends are the wheel's clamp: the row and the notch read
@@ -527,17 +525,16 @@ public sealed class CameraPane
             cell => cell.Slider("##camera-speed", camera.MovementSpeed,
                 FreeCameraSpeed.Minimum, FreeCameraSpeed.Maximum,
                 value => _values.Set(camera.Id, CameraProperties.MovementSpeed, value),
-                format: "0.000", disabled: locked,
+                format: "0.000",
                 help: "Flight speed; the wheel adjusts it", onBegin: _values.Seal),
             "Sensitivity",
             cell => cell.Slider("##camera-sensitivity",
                 camera.MouseSensitivity, 0.001f, 0.2f,
                 value => _values.Set(camera.Id, CameraProperties.MouseSensitivity, value),
-                format: "0.000", disabled: locked,
+                format: "0.000",
                 help: "How far a right-drag turns the view", onBegin: _values.Seal));
         form.Switch("Delimit angle", camera.DelimitAngle,
             value => _values.Set(camera.Id, CameraProperties.DelimitAngle, value),
-            disabled: locked,
             help: "Let pitch wrap past vertical");
     }
 
@@ -548,14 +545,13 @@ public sealed class CameraPane
     {
         form.Cells(cells =>
         {
-            // FoV and roll share the compact cells row; their values remain
-            // independently editable while the camera lock is off.
+            // The lock stops roll, which turns the camera, but not the field of view.
             cells.Cell(
                 "FoV",
                 cell => cell.Slider("##camera-fov", camera.FoV * Rad2Deg,
                     -44f, 120f,
                     value => _values.Set(camera.Id, CameraProperties.FoV, value * Deg2Rad),
-                    format: "0.0", disabled: locked,
+                    format: "0.0",
                     altReset: camera.DefaultFoV * Rad2Deg, onBegin: _values.Seal),
                 help: "Lens offset, degrees");
             cells.Cell(
@@ -599,7 +595,6 @@ public sealed class CameraPane
 
     private void LimitRows(FormScope form, CameraReading camera)
     {
-        bool locked = camera.IsLocked;
         if (camera.Kind != CameraKind.Free)
         {
             form.Cells(cells =>
@@ -608,15 +603,13 @@ public sealed class CameraPane
                     "Collision",
                     cell => cell.Switch("##camera-collision",
                         !camera.DisableCollision,
-                        value => _values.Set(camera.Id, CameraProperties.DisableCollision, !value),
-                        disabled: locked),
+                        value => _values.Set(camera.Id, CameraProperties.DisableCollision, !value)),
                     help: "Let walls push the camera");
                 cells.Cell(
                     "Delimit",
                     cell => cell.Switch("##camera-delimit",
                         camera.DelimitCamera,
-                        value => _values.Set(camera.Id, CameraProperties.DelimitCamera, value),
-                        disabled: locked),
+                        value => _values.Set(camera.Id, CameraProperties.DelimitCamera, value)),
                     help: "Lift zoom and pitch limits");
             });
         }
@@ -624,13 +617,12 @@ public sealed class CameraPane
             "Orthographic",
             cell => cell.Switch("##camera-ortho", camera.Orthographic,
                 value => _values.Set(camera.Id, CameraProperties.Orthographic, value),
-                disabled: locked,
                 help: "Flatten perspective entirely"),
             "Ortho zoom",
             cell => cell.Slider("##camera-ortho-zoom",
                 camera.OrthographicZoom, 0.1f, 10f,
                 value => _values.Set(camera.Id, CameraProperties.OrthographicZoom, value),
-                disabled: locked || !camera.Orthographic,
+                disabled: !camera.Orthographic,
                 help: "Width of the flat view", onBegin: _values.Seal));
     }
 
