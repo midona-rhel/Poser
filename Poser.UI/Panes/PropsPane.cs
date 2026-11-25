@@ -58,12 +58,10 @@ public sealed class PropsPane
         _entityActions = entityActions;
         _stains = stains;
         _values = values;
-        _scenePane = scenePane;
-        _names = names;
+        _librarySave = new LibrarySavePrompt(scenePane, names);
     }
 
-    private readonly ScenePane _scenePane;
-    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+    private readonly LibrarySavePrompt _librarySave;
 
     public void Draw(Vector2 origin, Vector2 size)
     {
@@ -180,13 +178,9 @@ public sealed class PropsPane
             });
         if (_status.Length > 0)
             form.Status(_status, warning: true);
-        form.Actions("Library", actions => actions.Button("Save to library", () => _names.Open(
-            "Save prop to library", prop.Name,
-            name =>
-            {
-                if (_values.Read(prop.Id) is not null)
-                    _scenePane.SaveEntry(SelectionId.ForProp(prop.Id), name);
-            }), help: "Save a spawnable copy of this prop"));
+        form.Actions("Library", actions => actions.Button("Save to library",
+            () => _librarySave.Ask(SelectionId.ForProp(prop.Id), "prop", prop.Name),
+            help: "Save a spawnable copy of this prop"));
         form.Actions("Lifetime", actions =>
         {
             actions.Button(

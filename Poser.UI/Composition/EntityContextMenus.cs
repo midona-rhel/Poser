@@ -78,10 +78,6 @@ internal sealed partial class EntityContextMenus
     // owns the shared store. Both hold an id, never a descriptor.
     private ActorId? _presetActorId;
 
-    private readonly List<ContextMenuItem> _bonePresetItems = [];
-
-    private readonly List<Action?> _bonePresetActions = [];
-
     private bool _presetManagerOpen;
 
     private string _presetNameValue = "";
@@ -120,7 +116,6 @@ internal sealed partial class EntityContextMenus
         IScenePlaybackControl playback,
         Application.Presentation.ICameraTargetControl cameraTargets,
         Controls.EntityNameModal names,
-        Controls.IssueReportModal issueReport,
         Action openSkeletonSettings, EntityRemovalDialog removalDialog,
         Application.Transforms.ISelectionPlacement placement, ITransformFacade transforms, GraphicalBonePane boneMap)
     {
@@ -154,7 +149,7 @@ internal sealed partial class EntityContextMenus
         _playback = playback;
         _cameraTargets = cameraTargets;
         _names = names;
-        _issueReport = issueReport;
+        _librarySave = new LibrarySavePrompt(scenePane, names);
         _openSkeletonSettings = openSkeletonSettings;
         _removalDialog = removalDialog;
         _placement = placement;
@@ -271,9 +266,6 @@ internal sealed partial class EntityContextMenus
     }
     private void OpenEntityRename(string title, string current, Action<string> apply) =>
         _names.Open(title, current, apply);
-
-    private bool SaveOwnedActorEntry(ActorId actorId, string name) =>
-        _scenePane.SaveEntry(SelectionId.ForActor(actorId), name);
 
     private void MoveToCamera(IReadOnlyList<SelectionId> targets) =>
         _notices.Report(_placement.MoveToCamera(targets).Outcome, "Move to camera");

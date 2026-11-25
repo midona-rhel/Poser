@@ -53,7 +53,7 @@ public sealed class WorldObjectsPane
     private Task<Outcome>? _respawn;
     private WorldObjectId? _respawnTarget;
 
-    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+    private readonly LibrarySavePrompt _librarySave;
 
     public WorldObjectsPane(
         SceneSession scene,
@@ -66,16 +66,14 @@ public sealed class WorldObjectsPane
         ISceneObjectControl values)
     {
         _values = values;
-        _names = names;
+        _librarySave = new LibrarySavePrompt(scenePane, names);
         _scene = scene;
         _selection = properties.Selection;
         _entityActions = entityActions;
-        _scenePane = scenePane;
         _assets = assets;
         _wardrobe = wardrobe;
     }
 
-    private readonly ScenePane _scenePane;
     private readonly ISceneObjectControl _values;
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -359,13 +357,8 @@ public sealed class WorldObjectsPane
                     onBegin: _values.Seal));
         }
         form.Actions(string.Empty, actions => actions.Button("Save to library",
-                () => _names.Open(
-                    worldObject.IsFurniture ? "Save furniture to library" : "Save object to library", worldObject.Name,
-                    name =>
-                    {
-                        if (_values.Read(worldObject.Id) is not null)
-                            _scenePane.SaveEntry(SelectionId.ForWorldObject(worldObject.Id), name);
-                    }),
+                () => _librarySave.Ask(SelectionId.ForWorldObject(worldObject.Id),
+                    worldObject.IsFurniture ? "furniture" : "object", worldObject.Name),
                 help: "Save a spawnable copy of this entity"));
         form.Actions(worldObject.Spawned ? "Lifetime" : "Claim", actions =>
         {

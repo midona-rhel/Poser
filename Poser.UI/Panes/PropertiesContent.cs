@@ -32,6 +32,7 @@ public sealed partial class PropertiesContent
     private readonly ISelectionPlacement _placement;
     private readonly UserNotices _notices;
     private readonly EntityNameModal _names;
+    private readonly LibrarySavePrompt _librarySave;
     private readonly ICameraTargetControl _cameraTargets;
     private readonly IAnimationCatalogLoader _animationCatalog;
     private readonly IAnimationPlayback _animation;
@@ -105,7 +106,7 @@ public sealed partial class PropertiesContent
         Context = context; _scene = scene; _configuration = configuration; _gPoseService = gPoseService;
         _animation = animation;
         _objectControl = objectControl; _groups = groups; _groupSteps = groupSteps; _placement = placement;
-        _notices = notices; _names = names; _cameraTargets = cameraTargets; _animationCatalog = animationCatalog;
+        _notices = notices; _names = names; _librarySave = new LibrarySavePrompt(scenePane, names); _cameraTargets = cameraTargets; _animationCatalog = animationCatalog;
         _poseInspector = poseInspector; _animationPane = animationPane; _appearancePane = appearancePane;
         _lightPane = lightPane; _cameraPane = cameraPane; _environmentPane = environmentPane; _scenePane = scenePane;
         _propsPane = propsPane; _worldObjectsPane = worldObjectsPane; _overlayPane = overlayPane;
