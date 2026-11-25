@@ -148,7 +148,8 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
             gPose,
             bus,
             gate.Read,
-            isAvailable);
+            isAvailable,
+            NewProxy<Dalamud.Plugin.Services.IObjectTable>());
         return new Setup(service, framework, gPose, bus);
     }
 

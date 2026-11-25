@@ -150,6 +150,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         IEventBus events,
         Func<nint> nativeCameraOverride,
         bool isAvailable,
+        Dalamud.Plugin.Services.IObjectTable objectTable,
         IKeyState? keyState = null)
     {
         _log = log;
@@ -159,7 +160,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _nativeCameraOverride = nativeCameraOverride;
         IsAvailable = isAvailable;
         FreeCamera = new FreeCameraController(this, new Application.Input.CameraInputState(), keyState);
-        _targeting = new CameraTargeting(this, gPose, null);
+        _targeting = new CameraTargeting(this, gPose, objectTable);
 
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update += OnFrameworkUpdate;
