@@ -384,6 +384,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/selection?actors=INDEX,INDEX or entity=EXACT_ID or entities=EXACT_ID,EXACT_ID (omit to read; empty actors/entities to clear)",
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
+                        "/gpose?action=leave|enter (leaves or enters GPose like the game's /gpose)",
                         "/gamekeys?keys=SHIFT,A&frames=60&mode=messages (holds game keys for that many frames, then records as many without; mode=messages sends real key messages; omit keys to read the recorded camera values)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
@@ -562,6 +563,21 @@ public sealed partial class DebugBridge : IDisposable
                 var reading = _environmentControl.Read();
                 return Json(new { reading.IsHousingInterior, reading.InteriorBrightness,
                     reading.IsInteriorBrightnessOverridden, binding = _environment.HousingInteriorBinding, history = History() });
+            }
+            case "/gpose":
+            {
+                // Leaves or enters GPose the way the game's own /gpose does, to try
+                // what Poser does when GPose ends.
+                string action = query.GetValueOrDefault("action", "");
+                if (action is not ("leave" or "enter"))
+                    return Json(new { error = "action must be leave or enter" });
+                unsafe
+                {
+                    var ui = FFXIVClientStructs.FFXIV.Client.UI.UIModule.Instance();
+                    if (action == "leave") ui->ExitGPose();
+                    else ui->EnterGPose();
+                }
+                return Json(new { ok = true, action });
             }
             case "/gamekeys":
             {
