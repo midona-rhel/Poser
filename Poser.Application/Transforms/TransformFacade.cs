@@ -22,6 +22,7 @@ public sealed class TransformFacade : ITransformFacade
     private readonly ConfigurationService _configuration;
     private readonly EditorState _editor;
     private readonly IPoseInteraction _interaction;
+    private readonly Viewport.IViewportReads _viewport;
 
     public TransformFacade(
         SceneSession scene,
@@ -32,8 +33,10 @@ public sealed class TransformFacade : ITransformFacade
         ValueJournal values,
         ConfigurationService configuration,
         EditorState editor,
-        IPoseInteraction interaction)
+        IPoseInteraction interaction,
+        Viewport.IViewportReads viewport)
     {
+        _viewport = viewport;
         _configuration = configuration;
         _editor = editor;
         _interaction = interaction;
@@ -52,27 +55,28 @@ public sealed class TransformFacade : ITransformFacade
     /// handle on a target the pivot makes orbit.</summary>
     public Vector3? ActivePivot => _gestures.ActivePivot;
 
+    public PivotMode? ActivePivotMode => _gestures.ActivePivotMode;
+
     public bool CanUndo => _journal.CanUndo;
     public bool CanRedo => _journal.CanRedo;
     public string? UndoDescription => _journal.UndoDescription;
     public string? RedoDescription => _journal.RedoDescription;
 
     /// <summary>
-    /// Starts a drag from a gizmo. The caller says what is dragged, with which
-    /// tool and around which pivot. The rest is decided here, so every gizmo
-    /// behaves the same: whether linked and paired bones come along, how a group
-    /// scales, and what the undo step is called.
+    /// Starts a drag from a gizmo. The caller says what is dragged and whether it
+    /// moves, turns or scales. The rest is decided here, so every gizmo behaves
+    /// the same: the pivot, whether linked and paired bones come along, how a
+    /// group scales, and what the undo step is called.
     /// </summary>
     public GestureResult BeginDrag(
         IReadOnlyList<TransformTargetId> targets,
         TransformOperation operation,
         TransformSpace space,
-        PivotMode pivotMode = PivotMode.PerTarget,
-        Vector3? customPivot = null,
         IReadOnlyList<SelectionId>? selection = null)
     {
         var settings = _configuration.Config;
         bool bones = targets[0].Kind == TransformTargetKind.Bone;
+        var (pivotMode, customPivot) = PivotFor(targets, operation);
         return Begin(targets, operation, space, pivotMode, customPivot,
             description: DragName(targets),
             includeLinkedBones: bones && _interaction.LinkedBonesEnabled,
@@ -81,6 +85,30 @@ public sealed class TransformFacade : ITransformFacade
             groupScale: settings.Gizmo.GroupScale,
             selection: selection);
     }
+
+    /// <summary>What a drag turns and scales around. A bone turns around its own
+    /// joint, or, with the rotate tool and Parent chosen on the toolbar, around
+    /// the joint above it, fixed where that joint stood when the drag began.
+    /// Several things that are not bones turn and scale around their shared
+    /// centre.</summary>
+    private (PivotMode Mode, Vector3? Custom) PivotFor(
+        IReadOnlyList<TransformTargetId> targets, TransformOperation operation)
+    {
+        if (targets[0].Bone is { } bone)
+            return operation == TransformOperation.Rotate && ParentPivotFor(bone) is { } parent
+                ? (PivotMode.Custom, parent)
+                : (PivotMode.PerTarget, null);
+        return targets.Count > 1 ? (PivotMode.Centroid, null) : (PivotMode.PerTarget, null);
+    }
+
+    /// <summary>Where the joint above the bone is, when the rotate tool and Parent
+    /// are chosen on the toolbar, so a turn goes around that joint. Null when the
+    /// bone turns around its own joint, or has no joint above it.</summary>
+    public Vector3? ParentPivotFor(BoneId bone) =>
+        _editor.TransformTool == Domain.Preferences.TransformTool.Rotate &&
+        _editor.RotationPivot == Domain.Preferences.RotationPivot.Parent
+            ? _viewport.GetParentModelTransform(bone)?.Position
+            : null;
 
     /// <summary>How a bone's paired bone follows: its own setting when per-bone
     /// symmetry is on, otherwise the toolbar's symmetry mode.</summary>
