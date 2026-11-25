@@ -1638,17 +1638,13 @@ public partial class PoseInspectorPane : IDisposable
         {
             var theme = ActiveTheme;
             float gap = theme.Page.ActionGap * row.Scale;
-            float poseWidth = (theme.Controls.CheckboxSize + theme.Spacing.Three) * row.Scale
-                + MeasureText("Pose-aware", new TextStyle
-                    { Size = theme.Typography.CaptionSize, Weight = FontWeight.Regular }).X;
             float atWidth = wide
                 ? MeasureText("At", new TextStyle
                     { Size = theme.Typography.LabelSize, Weight = FontWeight.Regular }).X
                 : 0f;
-            // The choices share the remaining row; the trailing checkbox stays
-            // at the right edge, like the other mixed control rows.
+            // The two choices share the row.
             float choiceWidth = MathF.Max(1f,
-                (row.ControlWidth - poseWidth - atWidth - gap * (wide ? 3f : 1f))
+                (row.ControlWidth - atWidth - gap * (wide ? 2f : 0f))
                 / (wide ? 2f : 1f) / row.Scale);
             ActionBar("gaze-mode-row", row.ControlOrigin,
                 new Vector2(row.ControlWidth, ActiveTheme.Controls.WorkspaceHeight * row.Scale),
@@ -1664,9 +1660,6 @@ public partial class PoseInspectorPane : IDisposable
                             disabled: state.Settings.Mode != GazeTargetMode.Entity || others.Count == 0,
                             style: ControlStyle.Workspace with { Width = UiWidth.Fixed(choiceWidth) });
                     }
-                    actions.Checkbox("Pose-aware", state.Settings.PoseAware,
-                        enabled => Record(_gazeValues.SetPoseAware(actor, enabled)),
-                        help: "Compensate posed bones for Camera and Point targets, including locked points. Native gaze limits still apply; Actor and Forward keep their normal behavior.");
                 }, separator: ActionBarSeparator.None);
         });
 

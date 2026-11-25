@@ -218,46 +218,40 @@ public static class TransformMath
         delta.Scale.LengthSquared() < IdentityDeltaLengthSquaredTolerance &&
         MathF.Abs(Quaternion.Dot(delta.Rotation, Quaternion.Identity)) > IdentityDeltaMinRotationDot;
 
-    // Reflect a model-frame delta across the YZ plane: negate X and reflect
-    // the quaternion as (x, -y, -z, w).
-    public static TransformDelta Mirror(TransformDelta delta)
-    {
-        delta = delta.Normalized();
-        return new TransformDelta(
-            new Vector3(
-                -delta.Translation.X,
-                delta.Translation.Y,
-                delta.Translation.Z),
-            NormalizeRotation(MirrorRotation(delta.Rotation)),
-            delta.ScaleFactor);
-    }
-
     /// <summary>
-    /// Mirrors a rotation while accounting for the two bones' different starting orientations.
-    /// Translation flips across X; scale factors remain unchanged.
+    /// The change a mirrored bone gets when its partner on the other side is dragged.
+    /// The change is reflected across the body's left-right plane. When a parent has
+    /// rotated away from the skeleton's starting pose, the plane rotates with it, so
+    /// with the head turned the other eye still makes the mirror image of the move.
+    /// sourceParent and destinationParent are each parent's rotation away from that
+    /// starting pose. The baselines are the two bones' rotations, which a Local-space
+    /// change is measured in. Translation is in model space; scale is copied.
     /// </summary>
-    public static TransformDelta MirrorRebased(
+    public static TransformDelta MirrorAcrossParents(
         TransformDelta delta,
+        TransformSpace space,
         Quaternion sourceBaseline,
-        Quaternion destinationBaseline)
+        Quaternion destinationBaseline,
+        Quaternion sourceParent,
+        Quaternion destinationParent)
     {
         delta = delta.Normalized();
         sourceBaseline = NormalizeRotation(sourceBaseline);
         destinationBaseline = NormalizeRotation(destinationBaseline);
-        var mirroredSource = NormalizeRotation(MirrorRotation(sourceBaseline));
-        var rotation = NormalizeRotation(
-            Quaternion.Inverse(destinationBaseline) *
-            mirroredSource *
-            MirrorRotation(delta.Rotation) *
-            Quaternion.Inverse(mirroredSource) *
-            destinationBaseline);
-        return new TransformDelta(
-            new Vector3(
-                -delta.Translation.X,
-                delta.Translation.Y,
-                delta.Translation.Z),
-            rotation,
-            delta.ScaleFactor);
+        sourceParent = NormalizeRotation(sourceParent);
+        destinationParent = NormalizeRotation(destinationParent);
+        var rotation = space == TransformSpace.Local
+            ? sourceBaseline * delta.Rotation * Quaternion.Inverse(sourceBaseline)
+            : delta.Rotation;
+        rotation = destinationParent
+            * MirrorRotation(Quaternion.Inverse(sourceParent) * rotation * sourceParent)
+            * Quaternion.Inverse(destinationParent);
+        if (space == TransformSpace.Local)
+            rotation = Quaternion.Inverse(destinationBaseline) * rotation * destinationBaseline;
+        var translation = Vector3.Transform(delta.Translation, Quaternion.Inverse(sourceParent));
+        translation = Vector3.Transform(
+            new Vector3(-translation.X, translation.Y, translation.Z), destinationParent);
+        return new TransformDelta(translation, NormalizeRotation(rotation), delta.ScaleFactor);
     }
 
     /// <summary>

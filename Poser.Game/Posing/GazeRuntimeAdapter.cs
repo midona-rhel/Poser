@@ -24,7 +24,7 @@ public sealed class GazeRuntimeAdapter(
             state.EyesPosition, state.HeadPosition, state.BodyPosition,
             gaze.IsPartLocked(actor, GazeTargetType.Eyes),
             gaze.IsPartLocked(actor, GazeTargetType.Head),
-            gaze.IsPartLocked(actor, GazeTargetType.Body)) { PoseAware = state.PoseAware }, target, state.Active, state.TargetStale);
+            gaze.IsPartLocked(actor, GazeTargetType.Body)), target, state.Active, state.TargetStale);
     }
 
     private Outcome WithActor(ActorId id, Func<IActor, Outcome> change)

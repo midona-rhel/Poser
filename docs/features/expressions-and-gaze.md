@@ -24,6 +24,6 @@ Gaze makes an actor look at something. It's in the **Gaze** section on the **Oth
 
 In Point mode, the point appears between the actor and the camera, and you move it with the gizmo. The eyes, the head and the body each get their own point under a **Gaze control** row in the sidebar. The camera button next to a part moves its point to the camera.
 
-**Pose-aware** makes Camera and Point mode take your posed bones into account, so the eyes still land on the target. The game still limits how far the eyes and head can turn.
+In Camera, Point and Actor mode, the eyes, head and body still land on the target after you pose the spine. In Actor mode they look at the other actor's head. Posing the neck or the head turns it on top of where the gaze points. The game still limits how far the eyes and head can turn.
 
 If the actor someone is looking at leaves the scene, the gaze stops and the Gaze section tells you.

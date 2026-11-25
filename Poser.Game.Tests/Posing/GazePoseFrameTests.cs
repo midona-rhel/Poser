@@ -1,7 +1,5 @@
 using System.Numerics;
 using Poser.Game.Posing;
-using Newtonsoft.Json;
-using Poser.Documents.Files;
 
 namespace Poser.Game.Tests.Posing;
 
@@ -40,14 +38,6 @@ public sealed class GazePoseFrameTests
             var identity = GazePoseFrames.Map(gaze, gaze, world)!.Value;
             Assert.True(Vector3.Distance(new(24, 2, 52), Vector3.Transform(new(24, 2, 52), identity)) < .0001f);
         }
-    }
-
-    [Fact]
-    public void Scene_roundtrip_preserves_opt_in_and_old_scenes_default_off()
-    {
-        Assert.False(JsonConvert.DeserializeObject<SceneActorGaze>("{}")!.PoseAware);
-        var saved = JsonConvert.SerializeObject(new SceneActorGaze { PoseAware = true });
-        Assert.True(JsonConvert.DeserializeObject<SceneActorGaze>(saved)!.PoseAware);
     }
 }
 
