@@ -669,6 +669,11 @@ public sealed unsafe partial class AnimationNativeState
             return PlayEmoteRows(character, emote, loop);
         ushort intro = (ushort)emote.ActionTimeline[1].RowId;
         ushort standingLoop = (ushort)emote.ActionTimeline[0].RowId;
+        // The version for how the actor sits, dozes or rides, such as waving while
+        // seated, is played as it is. Starting the emote through the game would
+        // stand the actor up first and play the standing version.
+        if (loop != 0 && loop != standingLoop)
+            return Play(character, loop, leaveLoop: false).Success;
         ushort first = intro != 0 ? intro : standingLoop;
         if (first == 0)
             return false;
