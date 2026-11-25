@@ -21,7 +21,6 @@ using Poser.UI.Views;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
 using DomainDelta = Poser.Domain.Transforms.TransformDelta;
-using DomainPivot = Poser.Domain.Transforms.PivotMode;
 using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
 using Poser.UI.Widgets;
 using Poser.Domain.Preferences;
@@ -300,9 +299,6 @@ public partial class PoseInspectorPane : IDisposable
     private Transform? ViewportBoneModel(BoneId id) =>
         _viewport.GetBoneModelTransform(id) is { } value ? Transform.FromPose(value) : (Transform?)null;
 
-    private Transform? ViewportParentModel(BoneId id) =>
-        _viewport.GetParentModelTransform(id) is { } value ? Transform.FromPose(value) : (Transform?)null;
-
     private List<BoneId> SelectedBoneIds()
     {
         var result = new List<BoneId>();
@@ -451,11 +447,10 @@ public partial class PoseInspectorPane : IDisposable
                 : ViewportBoneModel(boneId)!.Value;
 
             Quaternion frameWorld;
-            if (_editorState.RotationPivot == Domain.Preferences.RotationPivot.Parent &&
-                ViewportParentModel(boneId) is { } parent)
+            if (_cleanTransforms.ParentPivotFor(boneId) is { } parent)
             {
                 frameWorld = Controls.RotationGizmoRings.RadialFrame(
-                    Vector3.Transform(parent.Position, actorMatrix),
+                    Vector3.Transform(parent, actorMatrix),
                     Vector3.Transform(model.Position, actorMatrix));
             }
             else
@@ -2761,25 +2756,8 @@ public partial class PoseInspectorPane : IDisposable
         // Callers start a drag only when ReadTransform allowed editing, and
         // that requires this same effective selection.
         var effective = EffectiveSelection()!;
-        var targets = effective.Targets;
-        // Several entities rotate around their shared centre; bones always
-        // rotate around their own joints.
-        var pivotMode = targets.Count > 1 && effective.Primary.Kind != TransformTargetKind.Bone
-            ? DomainPivot.Centroid
-            : DomainPivot.PerTarget;
-        Vector3? customPivot = null;
-        // A parent pivot is fixed where the parent stood when the drag began.
-        if (effective.Primary is { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId } &&
-            operation == DomainOperation.Rotate &&
-            _editorState.RotationPivot == Domain.Preferences.RotationPivot.Parent &&
-            ViewportParentModel(primaryBoneId)?.Position is { } frozenPivot)
-        {
-            pivotMode = DomainPivot.Custom;
-            customPivot = frozenPivot;
-        }
-
         var begin = _cleanTransforms.BeginDrag(
-            targets, operation, DomainSpace.World, pivotMode, customPivot, _selection.Selected);
+            effective.Targets, operation, DomainSpace.World, _selection.Selected);
         if (!begin.Success || begin.GestureId is not { } gesture)
             return;
 

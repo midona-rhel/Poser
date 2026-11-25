@@ -28,17 +28,24 @@ namespace Poser.Game;
 /// world, an offset from a bone or another object in the scene, or a point
 /// fixed to the actor. Each frame it turns that record into a position
 /// relative to the actor's model. It keeps nothing of its own.
+/// A target is where the end bone is shown, after Customize+ has changed the pose.
+/// The solve converts it to the pose it works in (<see cref="CustomizePlusPose"/>).
 /// </summary>
 internal sealed unsafe class IkHeldTargets
 {
     private readonly PoseStackStore _stacks;
     private readonly Poser.Game.Bindings.StableBindingRegistry _bindings;
 
-    public IkHeldTargets(PoseStackStore stacks, Poser.Game.Bindings.StableBindingRegistry bindings)
+    public IkHeldTargets(PoseStackStore stacks, Poser.Game.Bindings.StableBindingRegistry bindings,
+        CustomizePlusPose customizePlus)
     {
         _stacks = stacks;
         _bindings = bindings;
+        CustomizePlus = customizePlus;
     }
+
+    /// <summary>Where Customize+ shows a bone, and the way back.</summary>
+    public CustomizePlusPose CustomizePlus { get; }
 
     public HeldTarget? CaptureEntityOffset(IBone endpoint, SelectionId target, IkChainState? previous = null)
     {
@@ -170,9 +177,8 @@ internal sealed unsafe class IkHeldTargets
         return (position, rotation);
     }
 
-    /// <summary>Aligns a newly enabled target with the bone before solving.
-    /// Customize+ edits the pose after this stage, so a capture taken from the screen is not
-    /// where the solver sees the bone.</summary>
+    /// <summary>Aligns a newly enabled target with the end bone as it will be shown, before
+    /// the first solve. A capture read from the screen can be a frame old.</summary>
     private void Seat(IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose)
     {
         // Each path clears its mark only once the target is lined up: a target
@@ -180,7 +186,9 @@ internal sealed unsafe class IkHeldTargets
         var native = Poser.Game.Entities.NativePoseRead.Model(pose, endpoint.BoneIndex);
         if (native == null)
             return;
-        var end = BoneApplyPass.ReadTransform(native);
+        var posed = BoneApplyPass.ReadTransform(native);
+        var shift = CustomizePlus.For(endpoint);
+        var end = new Transform(shift.Shown(posed.Position), shift.Shown(posed.Rotation), posed.Scale);
         // Include the existing handle offset when enabling IK after a drag.
         var target = ik.PendingRetarget?.Position ?? end.Position + authoredPosition;
         var rotation = ik.PendingRetarget?.Rotation ?? end.Rotation;
@@ -255,62 +263,6 @@ internal sealed unsafe class IkHeldTargets
         ik.SolveParentFrame = native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
     }
 
-    /// <summary>
-    /// How a move in the pose the last solve produced appears on screen, and the reverse.
-    /// Customize+ edits the pose after the solve. An edit that is passed down (Propagate) moves
-    /// every bone below the edited one: scaled along the model axes about that bone, by the
-    /// bone's scale or its separate child scale, then turned about it. An edit that is not
-    /// passed down changes only its own bone. So no bone's own scale says how the limb below it
-    /// is displayed.
-    /// This measures it instead: the linear map that carries each step from bone to bone, from
-    /// the bone above the chain down to the end, from the solved pose to the screen. Where the
-    /// steps don't span a direction (a straight limb), the limb's length on screen over its
-    /// solved length is used.
-    /// Both are identity before the first solve, for a chain whose parent bone is in another part
-    /// of the skeleton (such as the face), and when the map can't be inverted.
-    /// </summary>
-    public (Matrix4x4 ToDisplayed, Matrix4x4 ToSolve) DisplayedFrame(IkChainState ik, IBone endpoint)
-    {
-        var none = (Matrix4x4.Identity, Matrix4x4.Identity);
-        if (ik.SolveParent is not { } parent || ik.SolveParentFrame == null)
-            return none;
-        var bones = NativeIkMembers(endpoint, ik.Config);
-        bones.Insert(0, parent);
-        foreach (var bone in bones) _ = bone.LastTransform;
-        RefreshCache(parent);
-        // Least squares for the map in "solved step × map = displayed step":
-        // (Σ solvedᵀ solved) × map = Σ solvedᵀ displayed.
-        Matrix4x4 solvedSquare = default, solvedByDisplayed = default;
-        float solvedLength = 0, displayedLength = 0;
-        for (int i = 1; i < bones.Count; i++)
-        {
-            var solved = _stacks.ToApplySpace(bones[i], bones[i].LastRawTransform).Position
-                - _stacks.ToApplySpace(bones[i - 1], bones[i - 1].LastRawTransform).Position;
-            var displayed = _stacks.ToApplySpace(bones[i], bones[i].LastTransform).Position
-                - _stacks.ToApplySpace(bones[i - 1], bones[i - 1].LastTransform).Position;
-            solvedSquare += Outer(solved, solved);
-            solvedByDisplayed += Outer(solved, displayed);
-            solvedLength += solved.Length();
-            displayedLength += displayed.Length();
-        }
-        // A weak pull toward the plain length ratio settles the directions the steps don't span.
-        float pull = 1e-4f * (solvedSquare.M11 + solvedSquare.M22 + solvedSquare.M33) / 3;
-        if (!Matrix4x4.Invert(solvedSquare + Matrix4x4.CreateScale(pull), out var inverse))
-            return none;
-        var toDisplayed = inverse
-            * (solvedByDisplayed + Matrix4x4.CreateScale(pull * displayedLength / solvedLength));
-        // Zero-scaled bones exist (a limb hidden by Customize+, a collapsed leash link) and give a
-        // map with no way back. A solver that returned NaN gives a NaN map, which Invert accepts.
-        return float.IsFinite(toDisplayed.GetDeterminant()) && Matrix4x4.Invert(toDisplayed, out var toSolve)
-            ? (toDisplayed, toSolve) : none;
-    }
-
-    private static Matrix4x4 Outer(Vector3 a, Vector3 b) => new(
-        a.X * b.X, a.X * b.Y, a.X * b.Z, 0,
-        a.Y * b.X, a.Y * b.Y, a.Y * b.Z, 0,
-        a.Z * b.X, a.Z * b.Y, a.Z * b.Z, 0,
-        0, 0, 0, 0);
-
     public IkActorAnchor CaptureActorAnchor(IBone endpoint, IkChainConfig config)
     {
         var members = NativeIkMembers(endpoint, config);
@@ -341,7 +293,9 @@ internal sealed unsafe class IkHeldTargets
     /// For a chain coming from FABRIK or Rope, which keep no held target of their own.</summary>
     public IkChainConfig AnchorOnSolvedEnd(IBone endpoint, IkChainConfig config)
     {
-        var end = _stacks.ToApplySpace(endpoint, endpoint.LastRawTransform);
+        var posed = _stacks.ToApplySpace(endpoint, endpoint.LastRawTransform);
+        var shift = CustomizePlus.For(endpoint);
+        var end = new Transform(shift.Shown(posed.Position), shift.Shown(posed.Rotation), posed.Scale);
         var parent = NativeIkMembers(endpoint, config).FirstOrDefault()?.ParentBone;
         // An anchor left from when the chain last used Two Joint describes a pose that has
         // since changed.

@@ -34,6 +34,9 @@ public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusP
         string.Equals(state.Mcdf?.OperationDirectory, directory, StringComparison.OrdinalIgnoreCase)
         || state.PendingDirectories.Contains(directory, StringComparer.OrdinalIgnoreCase));
 
+    /// <summary>Whether Customize+ is loaded and changing bodies right now.</summary>
+    public bool CustomizePlusRunning => customizePlus.CustomizePlus.Available;
+
     public IntegrationValue<string?> CaptureBodyProfile(ActorId actor)
     {
         var owned = OverridesFor(actor);

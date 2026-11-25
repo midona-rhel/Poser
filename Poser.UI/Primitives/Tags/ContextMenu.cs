@@ -35,6 +35,9 @@ public record struct ContextMenuItem
     /// Disruptive colour the way a destructive row wears Danger.</summary>
     public bool Disruptive;
 
+    /// <summary>Where the row goes in an entity's right-click menu.</summary>
+    public MenuPlace Place;
+
     public ContextMenuItem(
         string label,
         TablerIcon icon = TablerIcon.Circle,
@@ -59,4 +62,21 @@ public record struct ContextMenuItem
     }
 
     public static ContextMenuItem Separator => new() { IsSeparator = true, Label = string.Empty };
+}
+
+/// <summary>Where a row goes in an entity's right-click menu. Menus are sorted
+/// by this, with a line between groups: first how the thing is shown, then
+/// its own actions, then Rename and Duplicate, then the submenus, then More,
+/// and last the actions that remove it.</summary>
+public enum MenuPlace
+{
+    /// <summary>An action that belongs to this kind of thing only.</summary>
+    Own,
+    Handle, Framing, View, Visibility, Playback, Lock, Collision,
+    Rename, Duplicate,
+    PlacementMenu, PlaybackMenu, SelectMenu, VisibilityMenu, PoseMenu, ResetMenu, CompanionMenu, BonePresetsMenu, TreeMenu,
+    /// <summary>Goes into the More submenu: saving, and the rarer actions.</summary>
+    More,
+    /// <summary>Destroy, Remove or Release, at the very bottom.</summary>
+    Lifetime,
 }
