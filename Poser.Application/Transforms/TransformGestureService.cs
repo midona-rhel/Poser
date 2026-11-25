@@ -85,6 +85,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     /// when displaying rotation or scaling around a centroid or custom pivot.</summary>
     public Vector3? ActivePivot => _active?.Pivot;
 
+    /// <summary>What the running gesture turns and scales around.</summary>
+    public PivotMode? ActivePivotMode => _active?.Command.PivotMode;
+
     /// <summary>
     /// Values that a failed edit, cancelled drag or undo could not restore yet,
     /// usually because the actor was being redrawn. Until they are restored,

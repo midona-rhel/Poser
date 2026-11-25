@@ -10,6 +10,11 @@ using Poser.Application.World;
 
 namespace Poser.Application.Animation;
 
+/// <summary>What the General section of the Animation tab chose for an actor,
+/// and the version of it that Apply played. A sitting or mounted actor plays
+/// another version of an emote, sometimes on another layer.</summary>
+public sealed record GeneralChoice(TimelineEntry Chosen, TimelineEntry? Played);
+
 /// <summary>
 /// Handles each actor's animations: which one is chosen for each layer, playing,
 /// resetting, and undo. The helper classes for base, speed, stance, scrubbing and
@@ -450,6 +455,33 @@ public sealed class AnimationSession : IAnimationPlayback
     /// Not an undo step.</summary>
     public Outcome ChooseSlot(ActorId actor, AnimationSlot slot, ushort timeline) =>
         _base.ChooseSlot(actor, slot, timeline);
+
+    // ── The General section ───────────────────────────────────────────
+
+    private readonly Dictionary<ActorId, GeneralChoice> _general = new();
+
+    /// <summary>The actor's General choice, or null when there is none or the
+    /// layer it played has been reset since.</summary>
+    public GeneralChoice? GeneralFor(ActorId actor)
+    {
+        if (!_general.TryGetValue(actor, out var choice))
+            return null;
+        if (choice.Played is { } played && SelectedFor(actor, played.Slot) == null)
+        {
+            _general.Remove(actor);
+            return null;
+        }
+        return choice;
+    }
+
+    /// <summary>Remembers the animation chosen in the General section without
+    /// playing it. What was played before is kept, so Apply can clear its layer.</summary>
+    public void ChooseGeneral(ActorId actor, TimelineEntry entry) =>
+        _general[actor] = new GeneralChoice(entry, GeneralFor(actor)?.Played);
+
+    internal void SetGeneral(ActorId actor, GeneralChoice choice) => _general[actor] = choice;
+
+    public void ForgetGeneral(ActorId actor) => _general.Remove(actor);
 
     /// <summary>Sets whether one layer repeats.</summary>
     private Outcome SetSlotLoopUntracked(
@@ -1008,6 +1040,7 @@ public sealed class AnimationSession : IAnimationPlayback
         var scene = SetScenePhysicsFrozen(false);
         if (!scene.Success && scene.Detail is { } sceneDetail)
             failures.Add($"scene: {sceneDetail}");
+        _general.Clear();
         return failures.Count == 0
             ? Outcome.Ok()
             : Outcome.Fail(string.Join("; ", failures));
@@ -1022,6 +1055,8 @@ public sealed class AnimationSession : IAnimationPlayback
     {
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
         _advancedActors.RemoveWhere(actor => !present.Contains(actor));
+        foreach (var gone in _general.Keys.Where(id => !present.Contains(id)).ToList())
+            _general.Remove(gone);
         _scrub.Forget(present);
         // Physics is left out on purpose: the scene holds the freeze, and the
         // scene cannot leave, so no actor leaving can end it.

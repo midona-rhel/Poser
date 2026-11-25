@@ -48,8 +48,6 @@ public sealed class AnimationPane : IDisposable
     // A picker keeps its actor and feed until it closes.
     private ActorId? _pickActor;
     private TimelineFeed? _openFeed;
-    // General stages one catalog command; native ownership begins on Apply.
-    private readonly Dictionary<ActorId, GeneralSelection> _generalSelections = new();
     // Layer Apply retains the exact catalog row selected by its picker.
     private readonly Dictionary<(ActorId Actor, AnimationSlot Slot), TimelineEntry>
         _layerSelections = new();
@@ -562,7 +560,6 @@ public sealed class AnimationPane : IDisposable
             _notices.Report(changed, "Animation mode");
             return;
         }
-        _generalSelections.Remove(actor);
         if (enabled) _layerSelections.Remove((actor, AnimationSlot.Base));
         else
         {
@@ -592,43 +589,42 @@ public sealed class AnimationPane : IDisposable
                     "Loop"),
                 disabled: advanced));
 
-        _generalSelections.TryGetValue(actor, out var command);
-        if (command is { Applied: true } &&
-            _animation.SelectedFor(actor, command.PlayedSlot) == null)
-        {
-            _generalSelections.Remove(actor);
-            command = null;
-        }
-        // Without a staged pick, show the live base-slot emote. Idle stands
-        // render as an empty value so "None" continues to mean idle.
+        var command = _animation.GeneralFor(actor);
+        // The version Apply played can be on another layer than the one chosen,
+        // for example on Upper body for a sitting actor.
+        var shown = command?.Played ?? command?.Chosen;
+        var shownSlot = shown?.Slot ?? AnimationSlot.Base;
+        // With nothing chosen, show the emote on the Full body layer. Idle
+        // shows as "None".
         ushort liveBase = reading.TimelineFor(AnimationSlot.Base);
         if (liveBase is AnimationTimelines.Idle or AnimationTimelines.BattleIdle)
             liveBase = 0;
-        ushort live = command is { } staged
-            ? reading.TimelineFor(staged.PlayedSlot)
+        ushort live = command != null
+            ? reading.TimelineFor(shownSlot)
             : liveBase;
         var selectionStyle = FixedSelectionStyle();
         form.ReadOnlyWithActions(
             "Animation",
-            // The posture's version may play on another layer (Upper Body).
-            DisplayName(live, command?.PlayedSlot ?? AnimationSlot.Base, command?.Played ?? command?.Entry, "None"),
+            DisplayName(live, shownSlot, shown, "None"),
             actions =>
             {
                 actions.Button(
-                    command?.Entry.Name ?? "Choose animation",
+                    command?.Chosen.Name ?? "Choose animation",
                     () => OpenPicker(
                         _generalFeed,
                         actor,
-                        command?.Entry),
+                        command?.Chosen),
                     style: selectionStyle,
                     disabled: advanced);
                 actions.Button(
                     "Apply",
-                    () => ApplyGeneral(actor),
+                    () => _notices.Report(
+                        _steps.ApplyGeneral(actor, command!.Chosen, _playEmoteStart),
+                        "Animation"),
                     disabled: advanced || command == null);
                 actions.Button(
                     "Reset",
-                    () => ResetGeneral(actor),
+                    () => _notices.Report(_steps.ResetGeneral(actor), "Animation reset"),
                     disabled: advanced || (command == null &&
                         !_animation.OwnsSlot(actor, AnimationSlot.Base) &&
                         !_animation.LoopWantedFor(actor, AnimationSlot.Base)));
@@ -1077,11 +1073,6 @@ public sealed class AnimationPane : IDisposable
         AnimationPickTarget Target,
         AnimationSlot Slot);
 
-    // Played: the version Apply played for the actor's posture (null = Entry).
-    private sealed record GeneralSelection(TimelineEntry Entry, bool Applied, TimelineEntry? Played = null)
-    {
-        public AnimationSlot PlayedSlot => (Played ?? Entry).Slot;
-    }
     private static string StanceName(AnimationStance stance) => stance switch
     {
         AnimationStance.Idle => "Idle",
@@ -1139,7 +1130,7 @@ public sealed class AnimationPane : IDisposable
         switch (pick.Target)
         {
             case AnimationPickTarget.General:
-                _generalSelections[actor] = new GeneralSelection(pick.Entry, false);
+                _animation.ChooseGeneral(actor, pick.Entry);
                 break;
             case AnimationPickTarget.Base:
                 ChooseLayer(actor, AnimationSlot.Base, pick.Entry);
@@ -1181,58 +1172,6 @@ public sealed class AnimationPane : IDisposable
                 _expressionSelections.Remove(actor);
         }
         _notices.Report(reset, $"{label} reset");
-    }
-
-    private void ApplyGeneral(ActorId actor)
-    {
-        if (!_generalSelections.TryGetValue(actor, out var command))
-            return;
-        // The emote's version for how the actor is now (sitting, mounted, ...), as
-        // the game plays it; the Full body layer plays exactly its pick instead.
-        if (_animation.PostureEntry(actor, command.Entry, out var refusal) is not { } entry)
-        {
-            _notices.Report(Outcome.Fail(refusal ?? "This emote can't play now."), "Animation");
-            return;
-        }
-        // One General animation: the last one's layer goes when this one is elsewhere.
-        if (command.Applied && command.PlayedSlot != entry.Slot)
-        {
-            var cleared = _steps.ResetSlot(actor, command.PlayedSlot);
-            if (!cleared.Success)
-            {
-                _notices.Report(cleared, "Animation");
-                return;
-            }
-        }
-        var chosen = _animation.ChooseSlot(
-            actor,
-            entry.Slot,
-            (ushort)entry.TimelineId);
-        if (!chosen.Success)
-        {
-            _notices.Report(chosen, "Animation");
-            return;
-        }
-        _generalSelections[actor] = command with { Applied = true, Played = entry };
-        _notices.Report(
-            _steps.Play(
-                actor, entry.Slot, entry, _playEmoteStart),
-            "Animation");
-    }
-
-    private void ResetGeneral(ActorId actor)
-    {
-        var slot = _generalSelections.TryGetValue(actor, out var command) && command.Applied
-            ? command.PlayedSlot
-            : AnimationSlot.Base;
-        var reset = _steps.ResetGeneral(actor, slot);
-        if (!reset.Success)
-        {
-            _notices.Report(reset, "Animation reset");
-            return;
-        }
-        _generalSelections.Remove(actor);
-        _layerSelections.Remove((actor, AnimationSlot.Base));
     }
 
     private string ExpressionNameFor(ActorId actor, ushort timeline, string empty)
@@ -1287,9 +1226,6 @@ public sealed class AnimationPane : IDisposable
             _scrubActor = null;
             _scrubControl = null;
         }
-        foreach (var actor in _generalSelections.Keys.ToArray())
-            if (!ActorPresent(actor))
-                _generalSelections.Remove(actor);
         foreach (var actor in _expressionSelections.Keys.ToArray())
             if (!ActorPresent(actor))
                 _expressionSelections.Remove(actor);

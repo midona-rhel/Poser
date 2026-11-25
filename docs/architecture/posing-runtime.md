@@ -54,7 +54,11 @@ A Customize+ bone edit has a position, a rotation and a scale:
 - With a Propagate box ticked, the bones below follow the bone's own move. Propagate Scale also scales every bone below, about the edited bone and along the model's axes, by the bone's scale or by its separate child scale when that is set. Propagate Rotation also turns every bone below about the edited bone.
 - The root bone (`n_root`) is different. Its scale and position go to the whole model, not to the pose. In GPose Customize+ skips the position.
 
-A bone's own scale therefore says nothing about how the bones below it are shown. To learn that, compare bone positions between the two poses. An IK drag does this: the drag is measured on screen, so Poser converts it to the pose it produced by comparing how the limb's bones sit relative to each other in both poses, from the bone above the limb down to its end. How far a limb can reach is measured in the pose Poser produced.
+A bone's own scale therefore says nothing about how the bones below it are shown. Poser does not measure that. It reads the actor's Customize+ profile and runs the same rules Customize+ runs (`CustomizePlusBody`, copied from `ModelBone.ApplyModelTransform`), so it knows where each bone will be shown. Keep that copy the same as the Customize+ code, including its quirks: once any Propagate box is ticked, the bones below follow the bone's move whether Propagate Translation is ticked or not.
+
+IK targets are where the hand or foot is shown. Each solve converts the target to the pose Poser produces (`CustomizePlusPose`), and a drag on screen moves the target directly. So a limb on a reshaped body goes where it is dragged, and swivel or a solver switch leaves the shown hand or foot where it was. How far a limb can reach is measured in the pose Poser produced.
+
+The profile comes from `IntegrationOwnership.CaptureBodyProfile`: the one Poser applied from an MCDF or the Appearance tab, or otherwise the actor's active saved profile. It is read again every second while IK uses it, because Customize+ sends no notice when a profile changes on an actor in GPose. A temporary profile set by another plugin can't be read, and then no correction is made. Changes other posing plugins make to the pose are not predicted.
 
 ## Changing models and freeing objects
 
