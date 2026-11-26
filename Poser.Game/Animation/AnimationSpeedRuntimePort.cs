@@ -22,7 +22,7 @@ namespace Poser.Game.Animation;
 public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
 {
     private readonly IFramework _framework;
-    private readonly AnimationTimelineRuntimePort _timeline;
+    private readonly LayerPlayback _timeline;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationNativeState _native;
@@ -53,7 +53,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         AnimationNativeState native,
         TimelineSeekService seek,
         AnimationOverrideStore store,
-        AnimationTimelineRuntimePort timeline)
+        LayerPlayback timeline)
     {
         _seek = seek;
         _timeline = timeline;

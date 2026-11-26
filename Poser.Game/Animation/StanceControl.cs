@@ -18,8 +18,7 @@ namespace Poser.Game.Animation;
 internal sealed unsafe class StanceControl
 {
     private readonly AnimationOverrideStore _store;
-    private readonly AnimationTimelineRuntimePort _timeline;
-    private readonly BaseAnimationSession _base;
+    private readonly LayerPlayback _timeline;
     private readonly AnimationNativeState _native;
     private readonly PosingService _posing;
     private readonly PositionLockOwnership _positionLocks = new();
@@ -31,12 +30,10 @@ internal sealed unsafe class StanceControl
     private const uint EmoteModeSleeping = 3;
 
     public StanceControl(
-        AnimationOverrideStore store, AnimationTimelineRuntimePort timeline,
-        BaseAnimationSession baseSession, AnimationNativeState native, PosingService posing)
+        AnimationOverrideStore store, LayerPlayback timeline, AnimationNativeState native, PosingService posing)
     {
         _store = store;
         _timeline = timeline;
-        _base = baseSession;
         _native = native;
         _posing = posing;
     }
@@ -71,7 +68,7 @@ internal sealed unsafe class StanceControl
         }
         if (owned.BaseCapture != null || owned.BaseTimeline != null)
         {
-            var released = _base.ResetBaseSelection(actor, preserveLoopIntent: true);
+            var released = _timeline.ResetBaseSelection(actor, preserveLoopIntent: true);
             if (!released.Success)
                 return released;
         }

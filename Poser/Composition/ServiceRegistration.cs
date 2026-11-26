@@ -346,7 +346,7 @@ internal static class ServiceRegistration
     {
         // The services below hook the game's animation; AnimationSession puts animation back exactly as it was.
         services.AddSingleton<Game.Animation.AnimationNativeState>();
-        services.AddSingleton<Game.Animation.AnimationTimelineRuntimePort>();
+        services.AddSingleton<Game.Animation.LayerPlayback>();
         services.AddSingleton<Game.Animation.AnimationOverrideStore>();
         services.AddSingleton<Game.Animation.AnimationSpeedRuntimePort>();
         services.AddSingleton<Game.Animation.TimelineSeekService>();
@@ -360,7 +360,7 @@ internal static class ServiceRegistration
             var log = sp.GetRequiredService<IPluginLog>();
             return new Game.Animation.AnimationSession(
                 sp.GetRequiredService<Game.Animation.AnimationOverrideStore>(),
-                sp.GetRequiredService<Game.Animation.AnimationTimelineRuntimePort>(),
+                sp.GetRequiredService<Game.Animation.LayerPlayback>(),
                 sp.GetRequiredService<Game.Animation.AnimationSpeedRuntimePort>(),
                 sp.GetRequiredService<Game.Animation.AnimationNativeState>(),
                 sp.GetRequiredService<Game.PosingService>(),

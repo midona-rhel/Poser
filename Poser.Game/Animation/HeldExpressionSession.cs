@@ -15,17 +15,14 @@ namespace Poser.Game.Animation;
 internal sealed class HeldExpressionSession
 {
     private readonly AnimationOverrideStore _store;
-    private readonly AnimationTimelineRuntimePort _timeline;
-    private readonly BaseAnimationSession _base;
+    private readonly LayerPlayback _timeline;
     private readonly AnimationSpeedRuntimePort _speed;
 
     public HeldExpressionSession(
-        AnimationOverrideStore store, AnimationTimelineRuntimePort timeline,
-        BaseAnimationSession baseSession, AnimationSpeedRuntimePort speed)
+        AnimationOverrideStore store, LayerPlayback timeline, AnimationSpeedRuntimePort speed)
     {
         _store = store;
         _timeline = timeline;
-        _base = baseSession;
         _speed = speed;
     }
 
@@ -34,8 +31,8 @@ internal sealed class HeldExpressionSession
     {
         // A held expression stands still, so the Facial layer's Loop (Animation tab) ends.
         if (_store.For(actor).LoopWantedSlots.Contains(AnimationSlot.Facial))
-            _base.SetSlotLoop(actor, AnimationSlot.Facial, 0, false);
-        var chosen = _base.ChooseSlot(actor, AnimationSlot.Facial, timeline);
+            _timeline.SetSlotLoop(actor, AnimationSlot.Facial, 0, false);
+        var chosen = _timeline.ChooseSlot(actor, AnimationSlot.Facial, timeline);
         if (!chosen.Success)
             return chosen;
 
@@ -55,7 +52,7 @@ internal sealed class HeldExpressionSession
             _store.Mutate(actor, o => o with { HeldExpression = null });
         }
 
-        var played = _base.ApplySelectedSlotCore(actor, AnimationSlot.Facial);
+        var played = _timeline.ApplySelectedSlotCore(actor, AnimationSlot.Facial);
         if (!played.Success)
             return played;
 
@@ -84,7 +81,7 @@ internal sealed class HeldExpressionSession
                 : Outcome.Ok();
         // Chosen but never played: only the choice is forgotten.
         if (!current.SlotCaptures.ContainsKey(AnimationSlot.Facial))
-            return _base.ResetBlendSelection(actor, AnimationSlot.Facial);
+            return _timeline.ResetBlendSelection(actor, AnimationSlot.Facial);
 
         var unpinned = _speed.ClearSlotSpeed(actor, AnimationSlot.Facial);
         if (!unpinned.Success)
@@ -92,10 +89,10 @@ internal sealed class HeldExpressionSession
 
         // With the face free to move, play Straight Face, then put back the
         // Facial animation that played before Poser's first change.
-        var straight = _base.BlendCore(
+        var straight = _timeline.BlendCore(
             actor, AnimationTimelines.StraightFace, AnimationSlot.Facial);
         var restored = straight.Success
-            ? _base.ResetBlendSelection(actor, AnimationSlot.Facial)
+            ? _timeline.ResetBlendSelection(actor, AnimationSlot.Facial)
             : straight;
         // The face is no longer held, whether or not the game put the earlier
         // face back. After a failure Reset can be pressed again.
