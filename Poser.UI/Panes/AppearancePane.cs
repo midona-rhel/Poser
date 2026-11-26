@@ -652,9 +652,7 @@ public sealed partial class AppearancePane
     private string? ModelCatalogLoadStatus() =>
         _modelCatalog.IsLoaded
             ? null
-            : _modelLoader.IsBuilding
-                ? "Building model catalog…"
-                : _modelLoader.LastError ?? "Building model catalog…";
+            : _modelLoader.LastError ?? "Building model catalog…";
 
     /// <summary>Combines sheet kind and row id into a stable picker key.</summary>
     private string ModelRowKey(ModelCatalogEntry entry)

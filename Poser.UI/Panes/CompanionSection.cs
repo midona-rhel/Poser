@@ -98,6 +98,7 @@ public sealed class CompanionSection
         if (_companions.Read(subjectId) is not { } state)
             return false;
         _catalogLoader.EnsureLoaded();
+        _catalogLoader.Retry();
         _pickSubject = subjectId;
         _pickOwner = state.Owner;
         var current = state.Attachment;
@@ -112,13 +113,16 @@ public sealed class CompanionSection
             EntryName,
             _entryKey,
             Known(current) is { } entry ? RowKey(entry) : null,
-            _catalog.IsLoaded ? null : "Building minion catalog…",
+            LoadStatus(),
             Options(),
             // Opened from a context menu: the click IS the initiating
             // control, so the surface spawns where the user clicked.
             anchor: ImGui.GetMousePos());
         return true;
     }
+
+    private string? LoadStatus() =>
+        _catalog.IsLoaded ? null : _catalogLoader.LastError ?? "Building minion catalog…";
 
     /// <summary>Detaches through the current exact owner relationship.</summary>
     public bool Detach(ActorId subjectId)
@@ -134,7 +138,7 @@ public sealed class CompanionSection
     {
         // Refresh the status so a picker opened during loading notices completion.
         _picker.SetLoadStatus(
-            _catalog.IsLoaded ? null : "Building minion catalog…");
+            LoadStatus());
         _picker.Update(Options());
         if (_picker.Draw() is not { } chosen
             || _pickSubject is not { } subjectId
