@@ -78,7 +78,6 @@ public class GizmoOverlayWindow : Window
         public required TransformTool Tool { get; init; }
         public required TransformOrientation Orientation { get; init; }
         public required DomainSpace Space { get; init; }
-        public global::Poser.Domain.Transforms.GroupScaleMode GroupScale { get; init; }
         public bool IsGroup { get; init; }
         public bool CapsuleScale { get; init; }
         public required LegacyTransform Start { get; init; }
@@ -606,8 +605,8 @@ public class GizmoOverlayWindow : Window
         TransformSelectionPolicy.Editing(_selection.Selected, _scene.Snapshot, _groups, _viewport);
 
     /// <summary>Returns the running drag, or cancels it when Escape is pressed
-    /// or the tool, orientation, rotation pivot or group scale setting changed
-    /// since it began.</summary>
+    /// or the tool, orientation or rotation pivot changed since it began, since
+    /// the handle being dragged depends on them.</summary>
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
         TransformOrientation currentOrientation,
@@ -621,8 +620,7 @@ public class GizmoOverlayWindow : Window
             ClearGesture(suppress: true);
             return null;
         }
-        if (gesture.GroupScale != _configuration.Config.Gizmo.GroupScale ||
-            gesture.Tool != currentTool ||
+        if (gesture.Tool != currentTool ||
             gesture.Orientation != currentOrientation ||
             gesture.PivotChoice != currentPivot)
         {
@@ -1146,7 +1144,6 @@ public class GizmoOverlayWindow : Window
             Tool = tool,
             Orientation = orientation,
             Space = space,
-            GroupScale = _configuration.Config.Gizmo.GroupScale,
             IsGroup = !isBone && targets.Count > 1,
             CapsuleScale = layout.CapsuleScale,
             Start = currentTransform,
@@ -1369,7 +1366,8 @@ public class GizmoOverlayWindow : Window
             gesture.Current = newTransform;
     }
 
-    /// <summary>Sends the total change since the drag started, and cancels the drag if that fails.</summary>
+    /// <summary>Sends the total change since the drag started. When that fails,
+    /// the transform service has already ended the drag.</summary>
     private bool DispatchUpdate(GizmoGesture gesture, Transform newTransform)
     {
         var update = _cleanTransforms.Update(
@@ -1379,7 +1377,6 @@ public class GizmoOverlayWindow : Window
             return true;
         _log.Verbose(
             $"Gizmo: {_gestureTargetType} gesture ended at Update — {update.Detail}");
-        _cleanTransforms.Cancel(gesture.Id);
         ClearGesture(suppress: true);
         return false;
     }

@@ -117,17 +117,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
              !TransformMath.IsFinite(supplied)))
             return GestureResult.Fail("A custom pivot must be finite.");
 
-        var captured = new List<TransformTargetState>(command.Targets.Count);
-        foreach (var target in command.Targets)
-        {
-            if (!_scene.Contains(target))
-                return GestureResult.Fail($"Target {target} is stale.");
-            var result = _runtime.Capture(target);
-            if (!result.Success || result.State == null)
-                return GestureResult.Fail(
-                    result.Detail ?? $"Could not capture {target}.");
-            captured.Add(result.State);
-        }
+        var read = Read(command.Targets, out var captured);
+        if (!read.Success)
+            return read;
 
         // The pivot is fixed at the start, from the values captured then.
         // Working it out again each frame from the moving targets would feed
@@ -169,6 +161,28 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     }
 
     /// <summary>
+    /// Reads every target in order, for a drag or a typed value. Stops at the
+    /// first one that has left the scene or cannot be read, which happens
+    /// while its actor is being redrawn.
+    /// </summary>
+    internal GestureResult Read(
+        IReadOnlyList<TransformTargetId> targets,
+        out List<TransformTargetState> states)
+    {
+        states = new List<TransformTargetState>(targets.Count);
+        foreach (var target in targets)
+        {
+            if (!_scene.Contains(target))
+                return GestureResult.Fail($"Target {target} is stale.");
+            var captured = _runtime.Capture(target);
+            if (!captured.Success)
+                return GestureResult.Fail(captured.Detail!);
+            states.Add(captured.State!);
+        }
+        return GestureResult.Ok();
+    }
+
+    /// <summary>
     /// The average of the captured positions. The sum is kept in double
     /// precision so it stays accurate far from the world's origin; a single
     /// target returns its own position exactly.
@@ -206,7 +220,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 cancellation.Recovery!);
         }
         if (active.GroupBefore != null ? !GroupTransformControls.ValidDelta(delta) : !delta.IsValid)
-            return GestureResult.Fail("Transform delta is invalid.");
+            return CancelWithFailure(active, "Transform delta is invalid.");
 
         delta = Filter(delta with { Rotation = TransformMath.NormalizeRotation(delta.Rotation) },
             active.Command.Operation);
@@ -218,7 +232,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                 return CancelWithFailure(active, "The group changed during this gesture.");
             if (!frozen.Controls.TryAdvance(frozen.Baseline.Frame, delta,
                     active.Command.GroupScale, frozen.Controls.Position + delta.Translation, out var controls))
-                return GestureResult.Fail("The cumulative group factors would overflow or become zero.");
+                return CancelWithFailure(active, "The cumulative group factors would overflow or become zero.");
             nextControls = controls;
         }
         var desired = new PoseTransform[active.Before.Count];
@@ -310,7 +324,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         }
         catch (ArgumentOutOfRangeException)
         {
-            return GestureResult.Fail("A group member transform would exceed the supported numeric range.");
+            return CancelWithFailure(active, "A group member transform would exceed the supported numeric range.");
         }
 
         foreach (var index in Enumerable.Range(0, active.Before.Count)
