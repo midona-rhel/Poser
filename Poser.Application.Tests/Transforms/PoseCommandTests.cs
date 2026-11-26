@@ -47,7 +47,7 @@ public sealed class PoseCommandTests
         public readonly SceneSession Scene = new(new SelectionSession());
         public readonly EditHistory History = new();
         public readonly Dictionary<TransformTargetId, TransformTargetState> Live = new();
-        public readonly TransformTargetId Character, Weapon, Model;
+        public readonly TransformTargetId Character, Model;
         public readonly TransformGestureService Gestures;
         public readonly UndoJournal Journal;
         public readonly IPoseCommands Commands;
@@ -58,13 +58,12 @@ public sealed class PoseCommandTests
             var body = new BoneId(new SkeletonId(Actor, PoseSlot.Character, 0), 0, 0, "j_ude_a_l");
             var weapon = new BoneId(new SkeletonId(Actor, PoseSlot.MainHand, 0), 0, 0, "j_ude_a_l");
             Character = TransformTargetId.ForBone(body);
-            Weapon = TransformTargetId.ForBone(weapon);
             Model = TransformTargetId.ForActor(Actor);
             Assert.True(Scene.TryRefresh(new SceneSnapshot(1,
                 [new ActorDescriptor(Actor, "actor", [
                     new(body.Skeleton, [new(body, "arm", null)]),
                     new(weapon.Skeleton, [new(weapon, "weapon", null)])])], [], [], [])).Accepted);
-            foreach (var target in new[] { Character, Weapon, Model })
+            foreach (var target in new[] { Character, TransformTargetId.ForBone(weapon), Model })
                 Live[target] = new(target,
                     new(new Vector3(4, 5, 6), Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f), Vector3.One),
                     new BonePose([new(new(PoseLayerKind.Manual, "manual"), TransformComponents.All,

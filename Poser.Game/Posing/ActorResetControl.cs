@@ -57,7 +57,8 @@ public sealed class ActorResetControl(
         return result;
     }
 
-    /// <summary>A reset is refused while a pose import is still being applied.</summary>
+    /// <summary>A reset is refused when the actor is gone, and while a pose
+    /// import is still being applied.</summary>
     private PoseEditResult CanReset(ActorId actor) =>
         !scene.Contains(TransformTargetId.ForActor(actor)) ? Gone()
             : imports.IsImportBusy ? PoseEditResult.Fail("A pose import is applying.")

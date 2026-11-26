@@ -17,8 +17,9 @@ namespace Poser.Game.Posing;
 /// Saves and puts back an actor's whole state except animation, by asking the
 /// classes that own each part: the pose and IK, the Penumbra, Glamourer and
 /// Customize+ look, the model id, opacity and colours, gaze and expression.
-/// Putting it back runs in that order: first the look and model id, which can
-/// redraw the actor, then the pose once the redraw is done, then the rest.
+/// Putting it back goes in this order: first the look and the model id, which
+/// can redraw the actor; then the pose, once the redraw is done; then opacity,
+/// colours, gaze and expression.
 /// Undo of removing an actor uses the same steps to put its look back.
 /// </summary>
 public sealed class ActorStateSnapshots(

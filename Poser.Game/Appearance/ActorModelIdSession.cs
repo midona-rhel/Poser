@@ -94,9 +94,9 @@ public sealed class ActorModelIdSession(IEntityBindings bindings, IActorSpawnSer
             Reset(id);
     }
 
-    /// <summary>The game skips the write when the actor can't be reached or
-    /// already has that id, so reading the id back right away tells whether
-    /// the change was made.</summary>
+    /// <summary>ActorModelControl.SetModelCharaId returns without writing when
+    /// it can't reach the actor or the game refuses the write, so the id is read
+    /// back right away to tell whether the change was made.</summary>
     private Outcome Write(ActorId actor, int modelCharaId)
     {
         var resolved = bindings.Resolve(actor);
