@@ -60,17 +60,14 @@ public sealed class CameraTargetControl(
     public Outcome Reconcile(CameraId id)
     {
         if (Resolve(id) is not { } camera) return Refused("The camera is no longer available.");
-        bool staleTarget = false;
-        if (camera.TargetActorId is { } target)
-        {
-            if (Resolve(target) is not { } current || !ReferenceEquals(current, camera.TargetActor))
-            {
-                ClearTargetActor(camera);
-                staleTarget = true;
-            }
-        }
-        else if (camera.IsTargetLocked)
-            ClearTargetActor(camera);
+        // A camera follows an actor by its lasting ID, like selection, groups
+        // and parenting. When undo brings the actor back as a new version, the
+        // camera follows that one. While the actor is gone nothing changes, and
+        // no undo step is added: removing the actor is the step.
+        if (camera.TargetActorId is { } target &&
+            (Resolve(target) is not { } exact || !ReferenceEquals(exact, camera.TargetActor)) &&
+            bindings.CurrentActor(target) is { } back)
+            cameras.SetTargetActor(camera, back.Actor, back.Id, camera.TargetActorName);
 
         var owner = TrackingActor(camera);
         // A retained native wrapper is never authority for a replacement generation.
@@ -81,7 +78,7 @@ public sealed class CameraTargetControl(
                 boneId.Skeleton.Actor != owner || !ReferenceEquals(Resolve(boneId), bone))
                 camera.TrackedBones.RemoveAt(i);
         }
-        return staleTarget ? Refused("Follow: the target actor is no longer available.") : new(true);
+        return new(true);
     }
 
     private Outcome Edit(CameraId id, Func<IVirtualCamera, Outcome> action)
@@ -251,8 +248,7 @@ public sealed class CameraTargetControl(
         if (Current(original) is not { } live) return Refused(Unavailable);
         var put = PutTarget(bindings, cameras, live, state.Target);
         if (!put.Success) return put;
-        // Restore the lock only if the requested target was restored.
-        live.IsTargetLocked = state.Locked && live.TargetActorId == state.Target;
+        live.IsTargetLocked = state.Locked && state.Target is not null;
         return put;
     }
 
@@ -264,11 +260,9 @@ public sealed class CameraTargetControl(
             cameras.ClearTargetActor(camera);
             return Outcome.Ok();
         }
-        // Missing targets are treated as a successful no-op; existing target state remains.
-        var resolved = bindings.Resolve(id);
-        if (!resolved.Success || resolved.Value is not { } actor)
-            return Outcome.Ok();
-        return cameras.SetTargetActor(camera, actor, id, actor.Name)
+        if (bindings.CurrentActor(id) is not { } current)
+            return Refused("That actor is no longer in the scene.");
+        return cameras.SetTargetActor(camera, current.Actor, current.Id, current.Actor.Name)
             ? Outcome.Ok() : Refused("The camera could not follow the actor.");
     }
 }
