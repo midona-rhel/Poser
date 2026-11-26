@@ -1,16 +1,17 @@
 ## Issue
 
 
-## What this changes
+## Changes
 
 
-## How it was checked
+## Testing
 
-<!-- Say what was tried in the game and what was only built or read in the code. -->
+<!-- What was built and run, what was tested in the game and with which build,
+and what was only read in the code. -->
 
-## How to try it
+## How to test
 
-<!-- Where to start, what to press, and what should be seen. -->
+<!-- Steps for a reviewer: starting state, what to do, what should happen. -->
 
 ## Notes
 
