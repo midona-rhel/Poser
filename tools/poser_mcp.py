@@ -44,7 +44,7 @@ TOOLS = [
     ("poser_resumeall", "Play everything on the actor.", {"actor": ""}),
     ("poser_scrub", "Scrub a slot to a time in seconds (pauses the actor).",
      {"actor": "", "slot": "", "time": "seconds"}),
-    ("poser_loop", "Arm or disarm the loop on a slot.", {"actor": "", "slot": "", "on": "1 or 0"}),
+    ("poser_loop", "Switch the loop on a slot on or off, or read it when on is left out.", {"actor": "", "slot": "", "on": "1 or 0; leave out to read"}),
     ("poser_speed", "Set a slot's speed override.", {"actor": "", "slot": "", "value": "e.g. 0.5"}),
     ("poser_clearspeed", "Clear a slot's speed override.", {"actor": "", "slot": ""}),
     ("poser_reset", "Reset a slot (release Poser's ownership of that layer).", {"actor": "", "slot": ""}),
