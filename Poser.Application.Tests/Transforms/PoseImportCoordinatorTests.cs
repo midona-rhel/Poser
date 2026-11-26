@@ -90,7 +90,7 @@ public sealed class PoseImportCoordinatorTests
         public readonly PoseImportCoordinator Coordinator;
         public Fixture()
         {
-            Animation = new(Port<IAnimationTimelinePort>(), Port<IAnimationSpeedPort>(),
+            Animation = new(new AnimationOverrideStore(), Port<IAnimationTimelinePort>(), Port<IAnimationSpeedPort>(),
                 Port<IAnimationStancePort>(), Port<IAnimationScrubPort>(),
                 Port<IWorldRenderingRuntimePort>());
             Runtime = new(Events);

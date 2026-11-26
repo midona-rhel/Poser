@@ -7,12 +7,17 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// What Poser has changed in each actor's animation, shared by the animation
-/// sessions. Mutate removes actors with no remaining overrides.
+/// What Poser has changed in each actor's animation. This is the only copy:
+/// the animation sessions change it, and the game side reads it to hold
+/// speeds and weights every frame. Mutate removes actors with no remaining
+/// overrides.
 /// </summary>
-internal sealed class AnimationOverrideStore
+public sealed class AnimationOverrideStore
 {
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();
+
+    /// <summary>Raised after any actor's overrides change.</summary>
+    public event Action? Changed;
 
     /// <summary>Diagnostic tap for the pause/play path.</summary>
     public Action<string>? Trace { get; set; }
@@ -30,12 +35,21 @@ internal sealed class AnimationOverrideStore
             _overrides[actor] = updated;
         else
             _overrides.Remove(actor);
+        Changed?.Invoke();
         return updated;
     }
 
-    public void Set(ActorId actor, AnimationOverrides owned) => _overrides[actor] = owned;
+    public void Set(ActorId actor, AnimationOverrides owned)
+    {
+        _overrides[actor] = owned;
+        Changed?.Invoke();
+    }
 
-    public void Remove(ActorId actor) => _overrides.Remove(actor);
+    public void Remove(ActorId actor)
+    {
+        if (_overrides.Remove(actor))
+            Changed?.Invoke();
+    }
 
     public List<ActorId> Actors() => new(_overrides.Keys);
 }

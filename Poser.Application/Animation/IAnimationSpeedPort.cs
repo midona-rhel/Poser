@@ -5,14 +5,15 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Animation;
 
 /// <summary>
-/// Native animation speed writes. Speed overrides are enforced per frame;
-/// clearing one restores its captured value before releasing enforcement.
+/// Native animation speed writes. The speeds and weights Poser holds are the
+/// ones in <see cref="AnimationOverrideStore"/>, held every frame. The session
+/// changes the store right after each call here returns, so during a call the
+/// store still holds the values from before it. Clearing one restores its
+/// captured value.
 /// </summary>
 public interface IAnimationSpeedPort
 {
     Outcome SetOverallSpeed(ActorId actor, float speed);
-    /// <summary>Forgets speed overrides for a removed actor without writing game memory.</summary>
-    void Forget(ActorId actor);
 
     /// <summary>Stops enforcing overall speed so the game can update it again.</summary>
     Outcome ClearOverallSpeed(ActorId actor);

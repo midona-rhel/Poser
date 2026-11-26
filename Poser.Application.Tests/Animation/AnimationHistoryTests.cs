@@ -47,7 +47,7 @@ public sealed class AnimationHistoryTests
             Scrub.FindSlotControl(Actor, AnimationSlot.UpperBody, out Arg.Any<ulong>())
                 .Returns(_ => new ScrubControlReading(ScrubControlId.Timeline(AnimationSlot.UpperBody), Clock, 12f, 0f));
             Scrub.SetControlTime(Actor, Arg.Any<ScrubControlId>(), Arg.Any<float>(), Arg.Any<ulong>()).Returns(Outcome.Ok());
-            Session = new AnimationSession(Timeline, Speed, Substitute.For<IAnimationStancePort>(),
+            Session = new AnimationSession(new AnimationOverrideStore(), Timeline, Speed, Substitute.For<IAnimationStancePort>(),
                 Scrub, Substitute.For<IWorldRenderingRuntimePort>());
             var scene = new SceneSession(new SelectionSession());
             scene.TryRefresh(new SceneSnapshot(1, [new ActorDescriptor(Actor, "actor", [])], [], [], []));

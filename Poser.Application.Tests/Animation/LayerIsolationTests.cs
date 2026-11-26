@@ -31,7 +31,7 @@ public sealed class LayerIsolationTests
             .Returns(_ => { live[AnimationSlot.UpperBody] = EatAppleUpper; return Outcome.Ok(); });
         speed.SetSlotSpeed(actor, Arg.Any<AnimationSlot>(), Arg.Any<float>()).Returns(Outcome.Ok());
         speed.SetOverallSpeed(actor, Arg.Any<float>()).Returns(Outcome.Ok());
-        var session = new AnimationSession(timeline, speed, Substitute.For<IAnimationStancePort>(),
+        var session = new AnimationSession(new AnimationOverrideStore(), timeline, speed, Substitute.For<IAnimationStancePort>(),
             Substitute.For<IAnimationScrubPort>(), Substitute.For<IWorldRenderingRuntimePort>());
 
         Assert.True(session.PauseSlot(actor, AnimationSlot.Base).Success);
@@ -56,7 +56,7 @@ public sealed class LayerIsolationTests
         timeline.Blend(actor, EatAppleUpper, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
             .Returns(Outcome.Ok());
         speed.SetSlotSpeed(actor, Arg.Any<AnimationSlot>(), Arg.Any<float>()).Returns(Outcome.Ok());
-        var session = new AnimationSession(timeline, speed, Substitute.For<IAnimationStancePort>(),
+        var session = new AnimationSession(new AnimationOverrideStore(), timeline, speed, Substitute.For<IAnimationStancePort>(),
             Substitute.For<IAnimationScrubPort>(), Substitute.For<IWorldRenderingRuntimePort>());
         Assert.True(session.ChooseSlot(actor, AnimationSlot.UpperBody, EatAppleUpper).Success);
 

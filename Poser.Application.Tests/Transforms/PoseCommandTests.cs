@@ -135,7 +135,7 @@ public sealed class PoseCommandTests
             ModelPort.Read(Actor).Returns(0);
             Models = new ActorModelIdSession(ModelPort);
             ResetAll = new ActorResetControl(Scene, transforms, edits, this,
-                Idle<IGazeRuntimePort>(), new AnimationSession(Idle<IAnimationTimelinePort>(),
+                Idle<IGazeRuntimePort>(), new AnimationSession(new AnimationOverrideStore(), Idle<IAnimationTimelinePort>(),
                     Idle<IAnimationSpeedPort>(), Idle<IAnimationStancePort>(),
                     Idle<IAnimationScrubPort>(), Idle<IWorldRenderingRuntimePort>()),
                 new ActorPresentationSession(Idle<IPresentationRuntimePort>()), Models, _integration.Reset,
