@@ -356,7 +356,8 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new Game.Animation.AnimationScrubRuntimePort(
             sp.GetRequiredService<IPluginLog>(),
             sp.GetRequiredService<Game.Animation.AnimationNativeState>(),
-            sp.GetRequiredService<Game.Animation.TimelineSeekService>()));
+            sp.GetRequiredService<Game.Animation.TimelineSeekService>(),
+            sp.GetRequiredService<Game.Animation.AnimationSpeedRuntimePort>()));
         services.AddSingleton<Game.Animation.AnimationSession>(sp =>
         {
             var log = sp.GetRequiredService<IPluginLog>();
