@@ -188,8 +188,8 @@ internal sealed class SceneEntityRuntime
         return _handles.Track(SceneEntityKind.Prop, handle);
     }
 
-    /// <summary>Adds one overlay from its saved settings. The file check has
-    /// already left out entries without settings.</summary>
+    /// <summary>Adds one overlay from its saved node document. The file check
+    /// has already left out entries without one.</summary>
     public SceneEntityHandle? SpawnOverlay(SceneOverlay data, out string? detail)
     {
         var document = data.Node!;
@@ -440,7 +440,7 @@ internal sealed class SceneEntityRuntime
     /// Camera.</summary>
     public string? SetLiveCamera(SceneEntityHandle? camera)
     {
-        var target = camera == null ? DefaultCamera : _handles.Resolve<IVirtualCamera>(camera, SceneEntityKind.Camera);
+        var target = camera == null ? DefaultCamera : _handles.Require<IVirtualCamera>(camera, SceneEntityKind.Camera);
         if (target is null)
             return "The session has no default camera.";
         _cameras.SetLive(target);
