@@ -23,16 +23,15 @@ using Poser.Game.Services;
 namespace Poser.Game.Lighting;
 
 /// <summary>
-/// Spawns and owns plugin-created scene lights through the game's own light
-/// factory, and adopts the two kinds of light the plugin does not own: the
-/// GPose camera lights (delisted, never destroyed) and overworld lights
-/// (an owned editable replacement suppresses the original, as in Ktisis).
-/// GPose-scoped: leaving GPose destroys every spawned light and releases
-/// every adopted one.
+/// The light list. Poser makes its own lights with the game's light function
+/// and frees them again. It also lists two kinds of light that belong to the
+/// game: the GPose camera lights, which are only listed and never freed, and
+/// world lights the player takes over, which are hidden while Poser shows an
+/// editable copy in their place, as in Ktisis. Leaving GPose frees Poser's
+/// lights and gives every game light back.
 /// </summary>
 public sealed unsafe class LightingService : ILightingService
 {
-    // Light factory signature from the generated native registry.
     private const string CreateLightSignature =
         Poser.Game.Natives.NativeSignatures.Light_Create;
 
@@ -45,8 +44,8 @@ public sealed unsafe class LightingService : ILightingService
     private readonly WorldLightCapture _world;
     private readonly GPoseCameraLights _cameraLights;
 
-    /// <summary>Light.Create — the game allocates and returns the object;
-    /// the plugin never allocates one itself.</summary>
+    /// <summary>The game's function that makes a light. Poser never allocates
+    /// a light itself.</summary>
     private readonly delegate* unmanaged<uint, nint, void*, GameLight*> _createGameLight;
 
     private readonly List<Light> _lights = new();
@@ -79,8 +78,6 @@ public sealed unsafe class LightingService : ILightingService
             IsAvailable = true;
         }
 
-        // Scanned and hooked in the service's original order: the gobo pair,
-        // then Light.ctor, then the GPose light toggle.
         _goboControl = new LightGoboController(sigScanner, framework, log);
         _world = new WorldLightCapture(
             sigScanner, framework, log, camera, objects, hooks, worldGraph,
@@ -94,8 +91,8 @@ public sealed unsafe class LightingService : ILightingService
 
     public bool IsAvailable { get; }
 
-    /// <summary>False when either gobo signature failed or the embedded
-    /// library is empty; the light service itself stays usable.</summary>
+    /// <summary>False when the game's texture functions were not found;
+    /// lights still work.</summary>
     public bool AreGobosAvailable => _goboControl.AreGobosAvailable;
 
     public IReadOnlyList<ILight> Lights => _lights;
@@ -112,14 +109,38 @@ public sealed unsafe class LightingService : ILightingService
             }
             catch (Exception)
             {
-                // Fall through to the next pattern; only a total failure is
-                // worth a log line.
+                // Try the next pattern; only logged when none matches.
             }
         }
 
         log.Warning(
             $"LightingService: signature '{name}' not found ({patterns.Length} pattern(s) tried); the feature it backs is disabled.");
         return null;
+    }
+
+    /// <summary>Hooks a game function and turns the hook on. Returns null when
+    /// the function was not found or the hook would not turn on; a hook that
+    /// was made but would not turn on is removed again, so a hook that exists
+    /// is always one that runs.</summary>
+    internal static Hook<T>? TryHook<T>(
+        IGameInteropProvider hooks, IPluginLog log, nint? address, T detour, string unavailable)
+        where T : Delegate
+    {
+        if (address is not { } at)
+            return null;
+        Hook<T>? hook = null;
+        try
+        {
+            hook = hooks.HookFromAddress(at, detour);
+            hook.Enable();
+            return hook;
+        }
+        catch (Exception ex)
+        {
+            hook?.Dispose();
+            log.Warning($"LightingService: {unavailable}: {ex.Message}");
+            return null;
+        }
     }
 
     public ILight? SpawnLight(LightKind kind)
@@ -148,8 +169,7 @@ public sealed unsafe class LightingService : ILightingService
         if (!OnOwnerThread(nameof(DestroyLight)))
             return;
 
-        // Release understands the original/replacement pair for world lights;
-        // the original and GPose camera lights are never destroyed by Poser.
+        // A game light is given back, never freed.
         if (typed.Ownership != LightOwnership.Spawned)
         {
             ReleaseLight(light);
@@ -183,10 +203,8 @@ public sealed unsafe class LightingService : ILightingService
         DestroyAllLightsCore();
     }
 
-    /// <summary>The ungated body. Teardown (Dispose, GPose exit) must destroy
-    /// its natives even when it does not run inside a framework update:
-    /// refusing there would leak every spawned light instead of protecting
-    /// anything, so the thread gate lives on the public entry only.</summary>
+    /// <summary>Frees Poser's lights and gives the game's back, without the
+    /// thread check: leaving GPose and unloading Poser must always clean up.</summary>
     private void DestroyAllLightsCore()
     {
         if (_lights.Count == 0)
@@ -209,50 +227,34 @@ public sealed unsafe class LightingService : ILightingService
         typed.Ownership == LightOwnership.Spawned &&
         _lights.Contains(typed);
 
-    private void DestroyNative(Light light)
+    private static void DestroyNative(Light light)
     {
-        try
-        {
-            var native = light.NativePtr;
-            if (native != null)
-                native->Destroy();
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: failed to destroy light: {ex.Message}");
-        }
-
+        var native = light.NativePtr;
+        if (native != null)
+            native->Destroy();
         light.Invalidate();
     }
 
-    /// <summary>Restore source visibility and destroy only our replacement.
-    /// GPose lights are only delisted.</summary>
+    /// <summary>Gives a light back to the game. For a world light, the game's
+    /// light is shown again (only while it is still the same light, checked by
+    /// its generation) and Poser's replacement is freed. A GPose camera light
+    /// is only taken off the list.</summary>
     private void ReleaseInternal(Light light)
     {
-        try
-        {
-            if (light.WorldState is { } state &&
-                _world.IsCurrentWorldLight(light.WorldAddress, light.WorldGeneration))
-                state.Restore((GameLight*)light.WorldAddress);
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: failed to restore a borrowed world light: {ex.Message}");
-        }
-        finally
-        {
-            light.WorldState?.Dispose();
-            light.WorldState = null;
-            if (light.Ownership == LightOwnership.World)
-                DestroyNative(light);
-            else
-                light.Invalidate();
-        }
+        if (light.WorldState is { } state &&
+            _world.IsCurrentWorldLight(light.WorldAddress, light.WorldGeneration))
+            state.Restore((GameLight*)light.WorldAddress);
+        light.WorldState?.Dispose();
+        light.WorldState = null;
+        if (light.Ownership == LightOwnership.World)
+            DestroyNative(light);
+        else
+            light.Invalidate();
     }
 
-    /// <summary>The native calls run inline on the caller's thread, so every
-    /// entry using this guard refuses off-thread. Teardown paths bypass it
-    /// deliberately; callers must arrange appropriate shutdown ordering.</summary>
+    /// <summary>The game's light functions are called directly, so they must
+    /// run on the frame update. Leaving GPose and unloading Poser skip this
+    /// check, because refusing there would leave Poser's lights behind.</summary>
     private bool OnOwnerThread(string operation)
     {
         if (_framework.IsInFrameworkUpdateThread)
@@ -265,7 +267,6 @@ public sealed unsafe class LightingService : ILightingService
     {
         if (!IsAvailable)
         {
-            // Report why spawning is unavailable rather than returning a silent miss.
             _log.Warning(
                 "LightingService: lights are unavailable — the game's light "
                 + "factory was not found.");
@@ -276,8 +277,6 @@ public sealed unsafe class LightingService : ILightingService
             _log.Warning("LightingService: lights can only be spawned in GPose");
             return false;
         }
-        // UI commands arrive on the framework thread, so the native call runs
-        // inline — queueing would defer the new light past the caller's return.
         if (!_framework.IsInFrameworkUpdateThread)
         {
             _log.Warning("LightingService: light spawn must run on the framework thread");
@@ -288,47 +287,39 @@ public sealed unsafe class LightingService : ILightingService
 
     private ILight? SpawnInternal(LightKind kind, Light? source)
     {
-        try
-        {
-            var forward = _camera.GetLookDirection();
-            if (forward == Vector3.Zero)
-                forward = Vector3.Transform(-Vector3.UnitZ, CameraRotation());
-            var transform = source != null
-                ? source.Transform
-                : LightPlacement.FromCamera(
-                    _camera.GetCameraPosition(), forward,
-                    Vector3.One);
+        var forward = _camera.GetLookDirection();
+        if (forward == Vector3.Zero)
+            forward = Vector3.Transform(-Vector3.UnitZ, CameraRotation());
+        var transform = source != null
+            ? source.Transform
+            : LightPlacement.FromCamera(
+                _camera.GetCameraPosition(), forward,
+                Vector3.One);
 
-            var light = SpawnNative(
-                kind, transform, LightOwnership.Spawned, source == null
-                    ? GenerateName(kind)
-                    : Poser.Domain.Scene.EntityNames.Next(source.Name, _lights.Select(x => x.Name)));
-            if (light == null)
-                return null;
-
-            if (source != null)
-            {
-                CopyProperties(source, light);
-                if (source.GoboPath is { } gobo)
-                    _goboControl.ApplyGoboPath(light, gobo);
-            }
-
-            light.NativePtr->Update();
-
-            _log.Debug($"LightingService: spawned {kind} light '{light.Name}'");
-            _events.Publish(new LightListChangedEvent());
-            return light;
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: failed to spawn light: {ex}");
+        var light = SpawnNative(
+            kind, transform, LightOwnership.Spawned, source == null
+                ? GenerateName(kind)
+                : Poser.Domain.Scene.EntityNames.Next(source.Name, _lights.Select(x => x.Name)));
+        if (light == null)
             return null;
+
+        if (source != null)
+        {
+            CopyProperties(source, light);
+            if (source.GoboPath is { } gobo)
+                _goboControl.ApplyGoboPath(light, gobo);
         }
+
+        light.NativePtr->Update();
+
+        _log.Debug($"LightingService: spawned {kind} light '{light.Name}'");
+        _events.Publish(new LightListChangedEvent());
+        return light;
     }
 
-    /// <summary>Allocates one native light through the game factory, writes
-    /// the spawn defaults, and lists it. Publishes nothing — the caller owns
-    /// the notification once it has finished configuring the light.</summary>
+    /// <summary>Has the game make one light, gives it Poser's starting values
+    /// and adds it to the list. Sends no list-changed event; the caller does
+    /// that once it has finished setting the light up.</summary>
     private Light? SpawnNative(
         LightKind kind,
         PoserTransform transform,
@@ -343,11 +334,10 @@ public sealed unsafe class LightingService : ILightingService
             return null;
         }
 
-        // The factory runs the same constructor the ctor hook watches, so the
-        // plugin's own light lands in the overworld set; take it back out.
+        // The constructor hook listed Poser's own light as a world light.
         _world.Forget((nint)native);
 
-        // Initialize the transform before giving the render object its address.
+        // The position is set before the render object is pointed at it.
         native->Transform.Position = transform.Position;
         native->Transform.Rotation = transform.Rotation;
         native->Transform.Scale = transform.Scale;
@@ -411,8 +401,7 @@ public sealed unsafe class LightingService : ILightingService
         _ => 15f,
     };
 
-    /// <summary>Camera look rotation, taken from the inverse of the view
-    /// matrix — the camera service exposes no rotation of its own.</summary>
+    /// <summary>The camera's rotation, worked out from the view matrix.</summary>
     private Quaternion CameraRotation()
     {
         var view = _camera.GetViewMatrix();
@@ -435,17 +424,6 @@ public sealed unsafe class LightingService : ILightingService
         return Poser.Domain.Scene.EntityNames.Next(baseName, _lights.Select(x => x.Name));
     }
 
-    private string UniqueName(string baseName)
-    {
-        var taken = 0;
-        foreach (var light in _lights)
-        {
-            if (light.Name.StartsWith(baseName, StringComparison.Ordinal))
-                taken++;
-        }
-        return $"{baseName} {taken + 1}";
-    }
-
     #region Gobos
 
     public bool ApplyGobo(ILight light, GoboEntry gobo)
@@ -466,8 +444,10 @@ public sealed unsafe class LightingService : ILightingService
 
     #region Overworld capture
 
-    /// <summary>A native the plugin borrowed has gone away: drop anything
-    /// bound to it without touching the freed memory.</summary>
+    /// <summary>The game freed a world light Poser took over. Poser's
+    /// replacement is freed too; the game's light is not touched, because its
+    /// generation no longer matches. Camera lights and Poser's own lights are
+    /// never on the world list, so they never come here.</summary>
     private void OnNativeLightDied(nint handle, long generation)
     {
         if (_disposed)
@@ -476,24 +456,12 @@ public sealed unsafe class LightingService : ILightingService
         var changed = false;
         foreach (var light in _lights.ToArray())
         {
-            if (light.Ownership == LightOwnership.World &&
-                light.WorldAddress == handle && light.WorldGeneration == generation)
-            {
-                _lights.Remove(light);
-                // Release checks the original generation before restoring;
-                // our separately allocated replacement is still ours to free.
-                ReleaseInternal(light);
-                changed = true;
+            if (light.Ownership != LightOwnership.World ||
+                light.WorldAddress != handle || light.WorldGeneration != generation)
                 continue;
-            }
-
-            if (light.Ownership == LightOwnership.GPose &&
-                (nint)light.NativePtr == handle)
-            {
-                _lights.Remove(light);
-                light.Invalidate();
-                changed = true;
-            }
+            _lights.Remove(light);
+            ReleaseInternal(light);
+            changed = true;
         }
 
         if (changed)
@@ -539,9 +507,9 @@ public sealed unsafe class LightingService : ILightingService
         Light? light = null;
         try
         {
-            // Ktisis AddFromOverworld: game-authored lights keep updating, so
-            // edit a separate allocation and suppress only the original's draw.
-            var name = UniqueName("World Light");
+            // As in Ktisis, the game keeps updating its own light, so Poser
+            // makes a copy to edit and only hides the game's light.
+            var name = Poser.Domain.Scene.EntityNames.Next("World Light", _lights.Select(x => x.Name));
             state = new BorrowedLightState(original);
             light = SpawnNative(Light.ToKind(original->LightRenderObject->EmissionType),
                 new PoserTransform(original->Transform.Position, original->Transform.Rotation,
@@ -666,6 +634,5 @@ public sealed unsafe class LightingService : ILightingService
         DestroyAllLightsCore();
         _cameraLights.Dispose();
         _world.Dispose();
-        GC.SuppressFinalize(this);
     }
 }

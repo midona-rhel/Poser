@@ -10,10 +10,10 @@ using Poser.Game.Services;
 namespace Poser.Game.Lighting;
 
 /// <summary>
-/// Projected light textures (gobos): the native set-texture/classify pair,
-/// the embedded library, and the apply/clear/adopt writes on one light.
-/// Availability is tracked apart from the light factory's on purpose: a patch
-/// that only breaks the texture pair must cost gobos, not lights.
+/// Gobos: textures a spot or area light projects. Holds the list of gobos
+/// built into Poser and puts a gobo on a light or takes it off. Gobos can be
+/// unavailable while lights still work, for example after a game patch moves
+/// only the texture functions.
 /// </summary>
 internal sealed unsafe class LightGoboController
 {
@@ -78,66 +78,55 @@ internal sealed unsafe class LightGoboController
     public static bool SupportsGobo(LightKind kind) =>
         kind is LightKind.Spot or LightKind.Area;
 
-    [SkipLocalsInit]
+    /// <summary>Projects the texture at <paramref name="path"/>. When the game
+    /// refuses it, the light's previous gobo is put back and false is returned.</summary>
     public bool ApplyGoboPath(Light light, string path)
     {
-        if (!AreGobosAvailable || string.IsNullOrEmpty(path))
+        if (!AreGobosAvailable || light.NativePtr == null)
             return false;
-
-        var native = light.NativePtr;
-        if (native == null)
-            return false;
-
-        // The native assignment early-returns when a texture handle is already
-        // present, so any previous gobo has to be released first.
-        ClearGoboNative(light);
-
-        try
-        {
-            var byteCount = Encoding.UTF8.GetByteCount(path);
-            Span<byte> buffer = byteCount > 511
-                ? (Span<byte>)new byte[byteCount + 1]
-                : stackalloc byte[512];
-            Encoding.UTF8.GetBytes(path.AsSpan(), buffer);
-            buffer[byteCount] = 0;
-
-            fixed (byte* pathPtr = buffer)
-            {
-                var category = 0xFFFFFFFFu;
-                _classifyPath(&category, pathPtr);
-                var result = _setLightTexture(native, &category, pathPtr);
-
-                native->UpdateRender();
-                native->Update();
-
-                if (result == 0)
-                {
-                    _log.Warning(
-                        $"LightingService: the game refused gobo '{path}' for light '{light.Name}'");
-                    return false;
-                }
-            }
-
-            light.SetGoboPath(path);
+        var previous = light.GoboPath;
+        if (SetTexture(light, path))
             return true;
-        }
-        catch (Exception ex)
+        _log.Warning($"LightingService: the game refused gobo '{path}' for light '{light.Name}'");
+        if (previous != null)
+            SetTexture(light, previous);
+        return false;
+    }
+
+    [SkipLocalsInit]
+    private bool SetTexture(Light light, string path)
+    {
+        // The game's texture call does nothing while the light already has a
+        // texture, so the old one is taken off first.
+        ClearGoboNative(light);
+        var native = light.NativePtr;
+
+        var byteCount = Encoding.UTF8.GetByteCount(path);
+        Span<byte> buffer = byteCount > 511
+            ? (Span<byte>)new byte[byteCount + 1]
+            : stackalloc byte[512];
+        Encoding.UTF8.GetBytes(path.AsSpan(), buffer);
+        buffer[byteCount] = 0;
+
+        byte result;
+        fixed (byte* pathPtr = buffer)
         {
-            _log.Error($"LightingService: failed to apply gobo '{path}': {ex.Message}");
-            return false;
+            var category = 0xFFFFFFFFu;
+            _classifyPath(&category, pathPtr);
+            result = _setLightTexture(native, &category, pathPtr);
         }
+        native->UpdateRender();
+        native->Update();
+        if (result == 0)
+            return false;
+        light.SetGoboPath(path);
+        return true;
     }
 
     public void ClearGoboNative(Light light)
     {
         var native = light.NativePtr;
-        if (native == null)
-        {
-            light.SetGoboPath(null);
-            return;
-        }
-
-        try
+        if (native != null)
         {
             if (native->ProjectedCubemapTexture != null)
             {
@@ -147,33 +136,18 @@ internal sealed unsafe class LightGoboController
             if (native->LightRenderObject != null)
                 native->LightRenderObject->Texture = null;
         }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: failed to clear a gobo: {ex.Message}");
-        }
-
         light.SetGoboPath(null);
     }
 
-    /// <summary>Records the original projected texture path for a supported light kind.
-    /// The path need not appear in the embedded library.</summary>
+    /// <summary>Records the texture a world light already projects, so the
+    /// light that replaces it shows the same gobo. The texture doesn't have to
+    /// be one of Poser's gobos.</summary>
     public void AdoptGobo(Light light, GameLight* original)
     {
-        if (!AreGobosAvailable || original->ProjectedCubemapTexture == null)
+        if (!AreGobosAvailable || original->ProjectedCubemapTexture == null || !SupportsGobo(light.Kind))
             return;
-
-        string path;
-        try
-        {
-            path = original->ProjectedCubemapTexture->FileName.ToString();
-        }
-        catch (Exception)
-        {
-            return;
-        }
-
-        if (string.IsNullOrEmpty(path) || !SupportsGobo(light.Kind))
-            return;
-        light.SetGoboPath(path);
+        var path = original->ProjectedCubemapTexture->FileName.ToString();
+        if (!string.IsNullOrEmpty(path))
+            light.SetGoboPath(path);
     }
 }

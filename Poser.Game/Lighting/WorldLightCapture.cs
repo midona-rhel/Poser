@@ -11,17 +11,17 @@ using Poser.Game.Services;
 namespace Poser.Game.Lighting;
 
 /// <summary>
-/// The overworld light set: every scene light the game has constructed and
-/// not yet destroyed, minus this plugin's own, each with a generation so a
-/// reused address is never mistaken for the light a capture borrowed. The
-/// Light.ctor hook adds, the destructor hook (installed from the first light's
-/// virtual table) prunes, and a graph walk seeds the lights that predate the
-/// hooks.
+/// The list of world lights Poser can take over: every light the game has made
+/// and not yet freed, apart from Poser's own lights and the GPose camera
+/// lights. Each light gets a generation number when it is listed, so a new
+/// light the game makes at the address of a freed one is never mistaken for
+/// the light that was taken over. A hook on the light constructor adds lights,
+/// a hook on the light destructor removes them, and a walk of the scene finds
+/// the lights that were made before the hooks.
 /// </summary>
 internal sealed unsafe class WorldLightCapture : IDisposable
 {
-    // Light.ctor — every scene light in the process passes through here,
-    // which is how overworld lights become capture candidates.
+    // Every light the game makes passes through its constructor.
     private const string LightCtorSignature =
         Poser.Game.Natives.NativeSignatures.Light_ctor;
 
@@ -41,20 +41,19 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     private Hook<LightDtorDelegate>? _lightDtorHook;
     private nint _destructorAddress;
 
-    /// <summary>Every scene light the game has constructed and not yet
-    /// destroyed, minus this plugin's own. Written from the ctor/dtor detours
-    /// as well as the framework thread, hence the gate.</summary>
+    /// <summary>The listed lights. The game can make and free lights on other
+    /// threads than the frame update, so every use takes the lock.</summary>
     private readonly HashSet<nint> _worldLights = new();
     private readonly Dictionary<nint, long> _worldLightGenerations = new();
     private long _nextWorldLightGeneration;
     private readonly object _worldGate = new();
 
-    /// <summary>Whether this session has attempted to discover pre-existing lights.
-    /// Prevents an empty list from triggering a graph walk every frame.</summary>
+    /// <summary>True once the scene has been walked for lights in this GPose
+    /// session, so an empty list doesn't cause a walk every frame.</summary>
     private bool _worldLightsSeeded;
 
-    /// <param name="nativeLightDied">Run on the next framework tick when a
-    /// tracked native light is destroyed, with its handle and generation.</param>
+    /// <param name="nativeLightDied">Called on the next frame when the game
+    /// frees a listed light, with its address and generation.</param>
     public WorldLightCapture(
         ISigScanner sigScanner,
         IFramework framework,
@@ -75,42 +74,30 @@ internal sealed unsafe class WorldLightCapture : IDisposable
         _disposed = disposed;
         _nativeLightDied = nativeLightDied;
 
-        var ctorAddress = LightingService.TryScan(sigScanner, log, "Light.ctor", LightCtorSignature);
-        if (ctorAddress is { } ctor)
-        {
-            try
-            {
-                _lightCtorHook = _hooks.HookFromAddress<LightCtorDelegate>(
-                    ctor, LightCtorDetour);
-                _lightCtorHook.Enable();
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(
-                    $"LightingService: could not hook Light.ctor, overworld capture unavailable: {ex.Message}");
-            }
-        }
+        _lightCtorHook = LightingService.TryHook<LightCtorDelegate>(_hooks, log,
+            LightingService.TryScan(sigScanner, log, "Light.ctor", LightCtorSignature),
+            LightCtorDetour, "could not hook Light.ctor, world lights can't be taken over");
     }
 
     public bool HasConstructorHook => _lightCtorHook != null;
 
-    /// <summary>Without the destructor hook nothing is pruned, so nothing is
-    /// tracked or trusted.</summary>
+    /// <summary>Without the destructor hook a freed light would stay listed,
+    /// so nothing is listed at all.</summary>
     public bool HasDestructorHook => _lightDtorHook != null;
 
-    /// <summary>The next listing walks the graph again.</summary>
+    /// <summary>The next listing walks the scene again.</summary>
     public void Unseed() => _worldLightsSeeded = false;
 
-    /// <summary>Drops a handle the plugin itself owns or delists (its own
-    /// spawn, a camera light) from the overworld set.</summary>
+    /// <summary>Takes a light that isn't a world light, such as one Poser
+    /// made or a GPose camera light, off the list.</summary>
     public void Forget(nint handle)
     {
         lock (_worldGate)
             ForgetWorldLight(handle);
     }
 
-    /// <summary>Drops a handle from the overworld set together with its
-    /// generation, so neither outlives the native. Caller holds _worldGate.</summary>
+    /// <summary>Takes a light and its generation off the list. The caller
+    /// holds the lock.</summary>
     private bool ForgetWorldLight(nint handle)
     {
         _worldLightGenerations.Remove(handle);
@@ -127,85 +114,63 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     private GameLight* LightCtorDetour(GameLight* light)
     {
         var result = _lightCtorHook!.Original(light);
-        try
+        if (_disposed())
+            return result;
+
+        // A light is only listed while the destructor hook runs, because only
+        // then is it taken off the list when the game frees it. Lights made
+        // before that hook existed are found by walking the scene again.
+        if (_lightDtorHook != null)
         {
-            if (_disposed() || light == null)
-                return result;
-
-            // A handle is tracked only while the destructor hook can prune
-            // it; one constructed before that hook exists is found by the
-            // re-walk the hook's installation schedules.
-            if (_lightDtorHook != null)
+            lock (_worldGate)
             {
-                lock (_worldGate)
-                {
-                    _worldLights.Add((nint)light);
-                    _worldLightGenerations[(nint)light] = ++_nextWorldLightGeneration;
-                }
-            }
-
-            // The destructor has no signature of its own; its address comes
-            // out of the first constructed light's virtual table, and the hook
-            // is installed off the detour rather than inside it.
-            if (_destructorAddress == nint.Zero && light->VirtualTable != null)
-            {
-                _destructorAddress = (nint)light->VirtualTable->Destructor;
-                var address = _destructorAddress;
-                _framework.RunOnTick(() => HookDestructor(address));
+                _worldLights.Add((nint)light);
+                _worldLightGenerations[(nint)light] = ++_nextWorldLightGeneration;
             }
         }
-        catch (Exception ex)
+
+        // The destructor can't be found by a signature; its address is read
+        // from the first light's function table. The hook is made on the next
+        // frame instead of inside this detour.
+        if (_destructorAddress == nint.Zero && light->VirtualTable != null)
         {
-            _log.Error($"LightingService: light constructor tracking failed: {ex}");
+            _destructorAddress = (nint)light->VirtualTable->Destructor;
+            var address = _destructorAddress;
+            _framework.RunOnTick(() => HookDestructor(address));
         }
         return result;
     }
 
     private void HookDestructor(nint address)
     {
-        if (_disposed() || _lightDtorHook != null || address == nint.Zero)
+        if (_disposed() || _lightDtorHook != null)
             return;
-        try
-        {
-            _lightDtorHook =
-                _hooks.HookFromAddress<LightDtorDelegate>(address, LightDtorDetour);
-            _lightDtorHook.Enable();
-            // Lights constructed before this point were never tracked; the
-            // next listing walks the graph for them.
+        _lightDtorHook = LightingService.TryHook<LightDtorDelegate>(_hooks, _log, address,
+            LightDtorDetour, "could not hook the light destructor, world lights can't be taken over");
+        // Lights made before this point were never listed; the next listing
+        // walks the scene for them.
+        if (_lightDtorHook != null)
             _worldLightsSeeded = false;
-        }
-        catch (Exception ex)
-        {
-            _log.Warning(
-                $"LightingService: could not hook the light destructor, stale capture candidates will not be pruned: {ex.Message}");
-        }
     }
 
     private nint LightDtorDetour(GameLight* light, bool free)
     {
-        try
+        var handle = (nint)light;
+        bool known;
+        long generation;
+        lock (_worldGate)
         {
-            var handle = (nint)light;
-            var known = false;
-            long generation;
-            lock (_worldGate)
-            {
-                generation = _worldLightGenerations.GetValueOrDefault(handle);
-                known = ForgetWorldLight(handle);
-            }
-            if (known && !_disposed())
-                _framework.RunOnTick(() => _nativeLightDied(handle, generation));
+            generation = _worldLightGenerations.GetValueOrDefault(handle);
+            known = ForgetWorldLight(handle);
         }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: light destructor tracking failed: {ex}");
-        }
+        if (known && !_disposed())
+            _framework.RunOnTick(() => _nativeLightDied(handle, generation));
         return _lightDtorHook!.Original(light, free);
     }
 
     /// <summary>
-    /// Adds existing scene-graph lights that were created before the constructor
-    /// hook was installed. The destructor hook is required before storing them.
+    /// Lists the lights in the scene that were made before the constructor
+    /// hook existed.
     /// </summary>
     public void SeedWorldLights()
     {
@@ -227,22 +192,22 @@ internal sealed unsafe class WorldLightCapture : IDisposable
             return;
         }
 
-        // Every stored handle must be one the destructor hook will prune.
-        // These were walked this frame, so their virtual tables are live:
-        // install the hook from the first before storing anything, and store
-        // nothing when it cannot be installed.
+        // A light may only be listed while the destructor hook runs. When no
+        // light has been made since Poser loaded, the hook doesn't exist yet,
+        // so it is made from the first light found here. Nothing is listed
+        // when it can't be made.
         if (_lightDtorHook == null && _destructorAddress == nint.Zero)
         {
             foreach (var handle in found)
             {
                 var native = (GameLight*)handle;
-                if (native == null || native->VirtualTable == null)
+                if (native->VirtualTable == null)
                     continue;
                 _destructorAddress = (nint)native->VirtualTable->Destructor;
                 HookDestructor(_destructorAddress);
                 break;
             }
-            // A successful install asked for a re-walk; this walk is it.
+            // Making the hook asks for another walk; this walk is that one.
             _worldLightsSeeded = true;
         }
         if (_lightDtorHook == null)
@@ -266,17 +231,15 @@ internal sealed unsafe class WorldLightCapture : IDisposable
                 $"LightingService: seeded {added} pre-existing world light(s) from the scene graph.");
     }
 
-    /// <summary>The tracked lights not already captured, nearest the player
-    /// first. The caller has checked availability and the framework thread.</summary>
+    /// <summary>The listed lights that aren't taken over yet, nearest the
+    /// player first. The caller has checked that lights work and that this
+    /// runs on the frame update.</summary>
     public IReadOnlyList<WorldLightCandidate> Candidates(Func<nint, bool> isCaptured)
     {
-        // The lazy half of the seed, for the session this service was
-        // constructed INSIDE of — a hot reload raises no GPose-enter event —
-        // and for the lights that predate the destructor hook.
+        // Walks the scene when Poser was loaded while already in GPose, which
+        // sends no "GPose started" event, and after the destructor hook was made.
         if (!_worldLightsSeeded)
             SeedWorldLights();
-        // Without the destructor hook nothing is pruned, so nothing is
-        // tracked or trusted.
         if (_lightDtorHook == null)
             return Array.Empty<WorldLightCandidate>();
 
@@ -296,7 +259,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
             if (isCaptured(handle))
                 continue;
             var native = (GameLight*)handle;
-            if (native == null || native->LightRenderObject == null)
+            if (native->LightRenderObject == null)
                 continue;
             Vector3 position = native->Transform.Position;
             long generation;
@@ -310,7 +273,6 @@ internal sealed unsafe class WorldLightCapture : IDisposable
         return candidates;
     }
 
-    /// <summary>Disposes the destructor hook, then the constructor hook.</summary>
     public void Dispose()
     {
         _lightDtorHook?.Dispose();
