@@ -193,7 +193,7 @@ internal sealed unsafe partial class IkChainRegistry
         var rotation = Quaternion.Normalize(frame.Rotation * model.Rotation);
         Transform? anchor = mode switch
         {
-            IkTargetMode.Bone when bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } live }
+            IkTargetMode.Bone when bone is { } id && _held.FindBone(id) is { } live
                 => BoneWorld.Of(live),
             IkTargetMode.Entity when entity is { } id => ResolveIkEntityTransform(_bindings, id),
             _ => null,
@@ -214,7 +214,7 @@ internal sealed unsafe partial class IkChainRegistry
             Transform? anchor = target.Mode switch
             {
                 IkTargetMode.Bone when target.Bone is { } id
-                    && _bindings.Resolve(id) is { Success: true, Value: { } live } => BoneWorld.Of(live),
+                    && _held.FindBone(id) is { } live => BoneWorld.Of(live),
                 IkTargetMode.Entity when target.Entity is { } id => ResolveIkEntityTransform(_bindings, id),
                 _ => null,
             };
@@ -353,8 +353,8 @@ internal sealed unsafe partial class IkChainRegistry
                 rotation = Quaternion.Normalize(frame.Rotation * rotation);
                 Transform? anchor = target.Mode switch
                 {
-                    IkTargetMode.Bone when target.Bone is { } id && _bindings.Resolve(id)
-                        is { Success: true, Value: { } live } => BoneWorld.Of(live),
+                    IkTargetMode.Bone when target.Bone is { } id
+                        && _held.FindBone(id) is { } live => BoneWorld.Of(live),
                     IkTargetMode.Entity when target.Entity is { } id => ResolveIkEntityTransform(_bindings, id),
                     _ => null,
                 };

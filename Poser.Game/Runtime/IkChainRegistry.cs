@@ -40,8 +40,9 @@ internal sealed class IkChainState
     public bool SeatPending;
     // A target change keeps this solver-space point until its new anchor is read during evaluation.
     public (Vector3 Position, Quaternion Rotation)? PendingRetarget;
-    /// <summary>The bone the chain follows in Bone mode, found again by name each time.</summary>
-    public BoneKey? TargetBone;
+    /// <summary>The bone the chain follows in Bone mode. <see cref="IkHeldTargets.FindBone"/>
+    /// finds it again by name each time, so it survives a redraw of the followed actor.</summary>
+    public BoneId? TargetBone;
     public SelectionId? TargetEntity;
     public bool PreviewModelSpace;
     /// <summary>The values worked out for the skeleton the chain was last used on.
@@ -314,11 +315,13 @@ internal sealed unsafe partial class IkChainRegistry
         }
         else if (mode == Poser.Domain.Posing.IkTargetMode.Bone)
         {
-            if (state.TargetBone is not { } targetKey || _held.FindBone(targetKey) is not { } targetBone)
+            if (state.TargetBone is not { } targetId)
                 state.HeldCapture = null;
             else if (fresh)
             {
-                state.HeldCapture = _held.CaptureBoneOffset(bone, targetBone);
+                // A followed bone that is not drawn right now leaves nothing to hold.
+                state.HeldCapture = _held.FindBone(targetId) is { } targetBone
+                    ? _held.CaptureBoneOffset(bone, targetBone) : null;
                 state.SeatPending = state.HeldCapture != null;
             }
         }
@@ -348,7 +351,8 @@ internal sealed unsafe partial class IkChainRegistry
     {
         if (ReferenceEquals(endpoint, target))
             return "A bone cannot follow itself.";
-        if (target.Skeleton is not global::Poser.Game.Entities.Skeleton targetSkeleton || !targetSkeleton.IsValid)
+        if (target.Skeleton is not global::Poser.Game.Entities.Skeleton targetSkeleton || !targetSkeleton.IsValid
+            || _bindings.GetBoneId(target) is not { } targetId)
             return "That bone is not drawn.";
         var config = GetIkConfiguration(endpoint);
         if (config == null)
@@ -362,7 +366,7 @@ internal sealed unsafe partial class IkChainRegistry
             TryGetChain(endpoint, out state);
         }
         var capture = state!.Config.Enabled ? _held.CaptureBoneOffset(endpoint, target, state) : null;
-        state.TargetBone = BoneKey.Of(target);
+        state.TargetBone = targetId;
         state.TargetEntity = null;
         state.Config = state.Config with
         {
@@ -462,8 +466,8 @@ internal sealed unsafe partial class IkChainRegistry
                 if (SetIkConfiguration(tip, summary.Config with
                     { TargetMode = IkTargetMode.Actor, ActorAnchor = null }) != null)
                     continue;
-                var copied = _ikChains[BoneKey.Of(tip)];
-                copied.PreviewModelSpace = true;
+                TryGetChain(tip, out var copied);
+                copied!.PreviewModelSpace = true;
                 var baseline = _stacks.GetIkModification(tip) ?? Transform.Zero;
                 copied.HeldCapture = new HeldTarget(target.Item1, target.Item2,
                     baseline.Position, baseline.Rotation);
@@ -475,8 +479,7 @@ internal sealed unsafe partial class IkChainRegistry
     {
         if (bone is VirtualBone)
             return false;
-        return Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName) != null
-            && ResolveChain(bone).TwoJointAvailable;
+        return ResolveChain(bone).TwoJointAvailable;
     }
 
     public void ClearIkConfigurations(ISkeleton skeleton) => Purge(SkeletonKey.Of(skeleton));

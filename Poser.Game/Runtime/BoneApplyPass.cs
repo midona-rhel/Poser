@@ -416,7 +416,11 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 // have marshaled (it was resolved BY that name on both paths),
                 // so the pose store is keyed identically without the marshal.
                 var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
-                _ik.TryGetChain(bone, out var chainState);
+                // A name used twice in one partial maps both numbers to the first bone. Its
+                // chain is solved only at that bone's own number.
+                IkChainState? chainState = null;
+                if (bone.BoneIndex == boneIdx)
+                    _ik.TryGetChain(bone, out chainState);
                 if (chainState?.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope })
                     chainState = null; // Authored spans solve once around the selected handle, after pose layers.
                 // Import deltas must be measured against the ordinary pose,

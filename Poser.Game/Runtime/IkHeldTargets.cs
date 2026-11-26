@@ -36,15 +36,13 @@ internal sealed unsafe class IkHeldTargets
 {
     private readonly PoseStackStore _stacks;
     private readonly Poser.Game.Bindings.StableBindingRegistry _bindings;
-    private readonly IActorManager _actors;
     private readonly ISkeletonService _skeletons;
 
     public IkHeldTargets(PoseStackStore stacks, Poser.Game.Bindings.StableBindingRegistry bindings,
-        CustomizePlusPose customizePlus, IActorManager actors, ISkeletonService skeletons)
+        CustomizePlusPose customizePlus, ISkeletonService skeletons)
     {
         _stacks = stacks;
         _bindings = bindings;
-        _actors = actors;
         _skeletons = skeletons;
         CustomizePlus = customizePlus;
     }
@@ -52,12 +50,14 @@ internal sealed unsafe class IkHeldTargets
     /// <summary>Where Customize+ shows a bone, and the way back.</summary>
     public CustomizePlusPose CustomizePlus { get; }
 
-    /// <summary>The bone <paramref name="key"/> names, in the skeleton its actor has now.
+    /// <summary>The bone a chain follows, found by partial and name in the skeleton its
+    /// actor has now. A redraw builds a new skeleton and makes <paramref name="id"/> stale,
+    /// but the actor and the bone's name stay, so the chain keeps following the bone.
     /// Null when the actor, the slot or the bone is gone.</summary>
-    public Bone? FindBone(BoneKey key) =>
-        BoneApplyPass.FindActor(_actors, key.Skeleton.Actor) is { } actor
-        && _skeletons.GetSkeleton(actor, key.Skeleton.Slot) is Skeleton { IsValid: true } skeleton
-            ? skeleton.GetBoneByName(key.Name, key.Partial)
+    public Bone? FindBone(BoneId id) =>
+        _bindings.Resolve(id.Skeleton.Actor) is { Success: true, Value: { } actor }
+        && _skeletons.GetSkeleton(actor, id.Slot) is Skeleton { IsValid: true } skeleton
+            ? skeleton.GetBoneByName(id.CanonicalName, id.PartialId)
             : null;
 
     public HeldTarget? CaptureEntityOffset(IBone endpoint, SelectionId target, IkChainState? previous = null)
@@ -153,7 +153,7 @@ internal sealed unsafe class IkHeldTargets
                 worldRotation = capture.Rotation;
                 break;
             case Poser.Domain.Posing.IkTargetMode.Bone:
-                if (ik.TargetBone is not { } targetKey || FindBone(targetKey) is not { } targetBone)
+                if (ik.TargetBone is not { } targetId || FindBone(targetId) is not { } targetBone)
                     return null;
                 RefreshCache(targetBone);
                 if (global::Poser.Game.Entities.BoneWorld.Of(targetBone) is not { } anchor)

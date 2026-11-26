@@ -78,7 +78,7 @@ public unsafe class BonePosingService : IBonePosingService
             && bindings.GetActorId(actor) is { } id && bodyProfiles.CaptureBodyProfile(id) is { Success: true } read
                 ? read.Value : null);
         _ik = new IkChainRegistry(
-            _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings, _customizePlus, actorManager, skeletonService));
+            _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings, _customizePlus, skeletonService));
 
         _apply = new BoneApplyPass(
             log, gPoseService, skeletonService, actorManager, ikService, gazeFrames,

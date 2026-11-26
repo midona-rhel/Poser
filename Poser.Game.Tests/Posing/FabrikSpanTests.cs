@@ -22,7 +22,7 @@ public sealed class FabrikSpanTests
         var control = new FabrikControl(source, Target(Vector3.Zero), Target(new(2, 0, 0)), 0, 2, Target(new(2, 0, 0)));
         var stacks = new PoseStackStore();
         var registry = new IkChainRegistry(stacks, null!, null!, null!,
-            new IkHeldTargets(stacks, null!, new CustomizePlusPose(stacks, _ => null), null!, null!));
+            new IkHeldTargets(stacks, null!, new CustomizePlusPose(stacks, _ => null), null!));
         try
         {
             Assert.Null(registry.SetIkConfiguration(nodes[2].Bone, IkChainConfig.DefaultsForChain() with
