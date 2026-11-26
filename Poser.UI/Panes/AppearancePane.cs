@@ -316,8 +316,7 @@ public sealed partial class AppearancePane
         {
             _modelLoader.EnsureLoaded();
             // Model controls remain available for creature models.
-            bool supported = _values.IsSupported(actor)
-                && _values.Read(actor) is not null;
+            bool supported = _values.Read(actor) is not null;
             page.Section("General", _openGeneral,
                 next => _openGeneral = next,
                 form =>
@@ -376,8 +375,7 @@ public sealed partial class AppearancePane
         PageScope page,
         ActorId actor)
     {
-        bool supported = _values.IsSupported(actor)
-            && _values.Read(actor) is not null;
+        bool supported = _values.Read(actor) is not null;
         page.Section("General", _openGeneral,
             next => _openGeneral = next,
             form =>

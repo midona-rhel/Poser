@@ -20,8 +20,9 @@ namespace Poser.Game.Presentation;
 /// never saves again: the saved value is the actor's own, not the new body's
 /// temporary default.
 ///
-/// These values last for the GPose session only. They are not part of the
-/// pose or a pose file, and undo for them goes through the normal undo history.
+/// These values last for the GPose session only and are not part of the pose
+/// or a pose file. This class records no undo steps; ActorValueSession and
+/// AppearanceColorSession do.
 /// </summary>
 public sealed partial class ActorPresentationSession(PresentationRuntimePort port)
 {

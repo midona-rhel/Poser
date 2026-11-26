@@ -9,10 +9,11 @@ using Poser.Game.Services;
 namespace Poser.Game.Presentation;
 
 /// <summary>
-/// The Appearance tab's opacity, tint, wetness and visibility commands, each
-/// as one undo step. A slider drag is one step for the whole drag. Undo writes
-/// the value back to whatever body the actor has now; these values are not
-/// part of the pose.
+/// Opacity, tint, wetness and visibility commands for one actor, each as one
+/// undo step. The Appearance tab uses all of them; the context menus, the
+/// sidebar, the selection section and group gates use visibility. A slider
+/// drag is one step for the whole drag. Undo writes the value back to
+/// whatever body the actor has now; these values are not part of the pose.
 /// </summary>
 public sealed class ActorValueSession(
     ValueJournal journal, ActorPresentationSession presentation,
@@ -23,7 +24,6 @@ public sealed class ActorValueSession(
 
     public void Seal() => _journal.Seal();
 
-    public bool IsSupported(ActorId actor) => _presentation.IsSupported(actor);
     public PresentationReading? Read(ActorId actor) => _presentation.Read(actor);
     public PresentationOverrides OverridesFor(ActorId actor) => _presentation.OverridesFor(actor);
 
@@ -81,8 +81,7 @@ public sealed class ActorValueSession(
             return result;
         _journal.Record(SelectionId.ForActor(actor), "Reset appearance", before, (PresentationOverrides?)null, next =>
         {
-            var restored = _presentation.RestoreOverrides(actor, next);
-            return new Outcome(restored.Success, restored.Detail);
+            return _presentation.RestoreOverrides(actor, next);
         }, () => Alive(actor));
         return result;
     }

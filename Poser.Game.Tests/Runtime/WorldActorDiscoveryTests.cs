@@ -5,9 +5,7 @@ using Poser.Game;
 using Poser.Application.Transforms;
 using Poser.Game.Journal;
 using Poser.Game.Scene;
-using Poser.Application.Presentation;
 using Poser.Domain.Identity;
-using Poser.Domain.Presentation;
 using System.Numerics;
 using System.Reflection;
 using Poser.Application.Lifecycle;
@@ -23,7 +21,7 @@ namespace Poser.Game.Tests.Runtime;
 public sealed class WorldActorDiscoveryTests
 {
     [Fact]
-    public void Gpose_exit_restores_after_capture_and_before_binding_removal()
+    public void Gpose_exit_raises_capture_then_exiting_then_state_change()
     {
         var framework = new FakeFramework();
         var inGpose = true;
@@ -35,8 +33,8 @@ public sealed class WorldActorDiscoveryTests
         var lifecycle = new SessionLifecycleCoordinator(new ExitCapture(() => order.Add("capture")));
         using var gpose = new GPoseService(client, framework, bus, log, lifecycle);
 
-        // Bindings are removed on the state-change event. Restoring the actors'
-        // own values must happen first, on the separate GPoseExitingEvent.
+        // Bindings are removed on the state-change event. Features put the
+        // actors' own values back on GPoseExitingEvent, so it has to come first.
         bus.Subscribe<GPoseStateChangedEvent>(evt =>
         {
             if (!evt.IsGPosing) order.Add("remove");

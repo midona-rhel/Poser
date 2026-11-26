@@ -1,6 +1,5 @@
 using System;
 using Poser.Application.Transforms;
-using Poser.Application.Presentation;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;

@@ -6,7 +6,6 @@ using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using Poser.Application.Integration;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
-using Poser.Application.Presentation;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
