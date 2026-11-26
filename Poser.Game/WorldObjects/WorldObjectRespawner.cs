@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Poser.Domain;
+using Poser.Domain.Transforms;
 using Poser.Application.Events;
 using Poser.Game.Core;
 
@@ -46,6 +47,36 @@ internal sealed class WorldObjectRespawner
 
     public bool HasPendingTeardowns => _pendingTeardowns.Count > 0;
 
+    /// <summary>
+    /// Spawns an object and reads back which object the game made. Spawning
+    /// a new object and replacing a model both start here. The identity comes
+    /// from the spawn itself, so when anything after it fails, the object that
+    /// was made is torn down by that identity, or queued for teardown, and
+    /// never by its address alone.
+    /// </summary>
+    public WorldObjectIncarnation? SpawnIdentified(string path, in Transform placement, out string? detail)
+    {
+        detail = null;
+        var address = _port.Spawn(path, placement, out var allocated);
+        if (address == nint.Zero)
+        {
+            if (allocated.Address != nint.Zero) TryCleanupFresh(allocated);
+            detail = $"'{WorldObjectService.DisplayName(path)}' could not be spawned — the game did not take it.";
+            return null;
+        }
+        if (!_port.TryReadIncarnation(address, out var identity)
+            || !allocated.SameAllocation(identity)
+            || (NativeWorldObjectPort.IsVfxPath(path)
+                && (!identity.IsVfx || identity.ResourceIdentity == nint.Zero)))
+        {
+            detail = TryCleanupFresh(allocated)
+                ? "The new object could not be identified."
+                : "The new object could not be identified, and its cleanup is still waiting.";
+            return null;
+        }
+        return identity;
+    }
+
     /// <summary>Starts a replacement for an admitted spawned handle. The
     /// caller has already checked that the service and the handle accept it.</summary>
     public Task<Outcome> Respawn(AdoptedWorldObject handle, string path,
@@ -60,26 +91,9 @@ internal sealed class WorldObjectRespawner
         if (string.IsNullOrWhiteSpace(path))
             return Refused("The path names nothing.");
         path = path.Trim();
-        var placement = handle.Transform;
-        var fresh = _port.Spawn(path, placement, out var allocated);
-        if (fresh == nint.Zero)
-        {
-            if (allocated.Address != nint.Zero) TryCleanupFresh(allocated);
-            return Refused($"'{WorldObjectService.DisplayName(path)}' could not be spawned — the game did not take it.");
-        }
-        if (!_port.TryReadIncarnation(fresh, out var freshIdentity)
-            || !allocated.SameAllocation(freshIdentity)
-            || (NativeWorldObjectPort.IsVfxPath(path.Trim())
-                && (!freshIdentity.IsVfx
-                    || freshIdentity.ResourceIdentity == nint.Zero)))
-        {
-            bool cleaned = allocated.Address != nint.Zero
-                ? TryCleanupFresh(allocated)
-                : TryCleanupUnidentified(path, fresh);
-            return Refused(cleaned
-                ? "The new native incarnation could not be identified."
-                : "Respawn cleanup remains outstanding.");
-        }
+        if (SpawnIdentified(path, handle.Transform, out var spawnDetail) is not { } freshIdentity)
+            return Refused(spawnDetail!);
+        var fresh = freshIdentity.Address;
         var pending = new PendingRespawn(freshIdentity, path,
             DateTime.UtcNow.AddSeconds(15),
             new(TaskCreationOptions.RunContinuationsAsynchronously), stillCurrent, cancellation);
@@ -282,17 +296,6 @@ internal sealed class WorldObjectRespawner
             _log.Warning($"WorldObjectService: respawn teardown remains pending: {ex.Message}");
             return false;
         }
-    }
-
-    public bool TryCleanupUnidentified(string path, nint address)
-    {
-        if (NativeWorldObjectPort.IsVfxPath(path.Trim()))
-        {
-            // A failed identity read cannot safely authorize a raw-address
-            // VFX destroy: that address may already hold a replacement.
-            return false;
-        }
-        return _port.TryDestroy(address);
     }
 
     public void RetryPendingTeardowns()
