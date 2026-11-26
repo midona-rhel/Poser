@@ -675,40 +675,19 @@ public sealed class StableBindingRegistry : IEntityBindings
         _stagedCandidate = null;
     }
 
-    /// <summary>Binding admission is the authority for actor generations.
-    /// Clear camera follow state here, including while its pane is hidden, so
-    /// a stale target cannot keep applying an old offset or name.</summary>
+    /// <summary>Clears follow leftovers on a camera that follows no actor. A
+    /// camera whose actor is gone keeps following it by its lasting ID, and
+    /// the camera's target control points it at that actor again when it is
+    /// back.</summary>
     private void ReconcileCameraTargets()
     {
         foreach (var camera in _cameraBindings.Values)
         {
-            if (camera.TargetActorId is { } targetId)
-            {
-                if (IsCurrentCameraTarget(
-                        targetId, camera.TargetActor, _actorBindings))
-                    continue;
-                _cameras.ClearTargetActor(camera);
-                continue;
-            }
-
-            if (HasCameraTargetResidual(
+            if (camera.TargetActorId is null && HasCameraTargetResidual(
                     camera.TargetActor, camera.TargetActorName,
                     camera.TargetOffset, camera.IsTargetLocked))
                 _cameras.ClearTargetActor(camera);
         }
-    }
-
-    /// <summary>Binding admission retains follow state only when its native
-    /// actor reference is the exact object for the same generation. A
-    /// same-id replacement is stale and is never rebound.</summary>
-    internal static bool IsCurrentCameraTarget(
-        ActorId targetId,
-        IActor? retainedTarget,
-        IReadOnlyDictionary<ActorId, IActor> actorBindings)
-    {
-        return retainedTarget is not null &&
-            actorBindings.TryGetValue(targetId, out var currentTarget) &&
-            ReferenceEquals(retainedTarget, currentTarget);
     }
 
     /// <summary>Any retained follow component or lock is residual state when
@@ -919,6 +898,14 @@ public sealed class StableBindingRegistry : IEntityBindings
         static (r, _, actor) => r._actors.IsAvailable(actor) ? null
             : Missing<IActor>("The actor's native body is no longer available."),
         static (r, actor) => r.GetActorId(actor), static (r, id) => r.AbsentActor(id));
+
+    public (ActorId Id, IActor Actor)? CurrentActor(ActorId id)
+    {
+        foreach (var current in _actorBindings.Keys)
+            if (current.LogicalId == id.LogicalId)
+                return Resolve(current) is { Success: true, Value: { } actor } ? (current, actor) : null;
+        return null;
+    }
 
     public BindingResult<IBone> Resolve(BoneId id) => Resolve("Bone", id, _boneBindings,
         static (r, id, bone) => r.RefuseBone(id, bone),

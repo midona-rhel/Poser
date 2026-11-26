@@ -66,8 +66,10 @@ public interface IVirtualCamera
     /// <summary>Display name for the followed actor; empty when none.</summary>
     string TargetActorName { get; set; }
 
-    /// <summary>The exact actor generation followed by this camera. The name
-    /// is presentation only and must never recover this identity.</summary>
+    /// <summary>The actor followed by this camera. While that actor is gone
+    /// this keeps its lasting ID, and when undo brings it back as a new
+    /// version the camera follows that one. The name is only for display and
+    /// never finds the actor.</summary>
     ActorId? TargetActorId { get; set; }
 
     /// <summary>Retains the exact target actor until explicitly unlocked.

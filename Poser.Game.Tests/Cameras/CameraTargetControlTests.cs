@@ -53,32 +53,6 @@ public sealed class CameraTargetControlTests
         Assert.True(step.Redo());
         Assert.Null(f.Camera.TargetActorId);
         Assert.False(f.Camera.IsTargetLocked);
-
-        // If the actor was replaced, undo leaves the target cleared and unlocked.
-        Assert.True(step.Undo());
-        Assert.True(step.Redo());
-        f.CurrentActorId = f.ActorId.NextGeneration();
-        Assert.True(step.Undo());
-        Assert.Null(f.Camera.TargetActorId);
-        Assert.False(f.Camera.IsTargetLocked);
-    }
-
-    [Fact]
-    public void Reconciliation_drops_stale_bones_without_retargeting_a_new_actor_generation()
-    {
-        var f = new Fixture();
-        Assert.True(f.Control.Follow(f.Id, f.ActorId, "Actor").Success);
-        Assert.True(f.Control.ToggleTrackedBone(f.Id, f.BoneId).Success);
-        var reading = f.Control.Read(f.Id)!;
-        Assert.Single(reading.TrackedBones);
-        f.CurrentActorId = f.ActorId.NextGeneration();
-        Assert.False(f.Control.Reconcile(f.Id).Success);
-        Assert.Null(f.Camera.TargetActorId);
-        Assert.Empty(f.Camera.TrackedBones);
-        Assert.Single(reading.TrackedBones); // The earlier reading keeps its own copy of the tracked bones.
-        Assert.False(f.Control.ToggleTrackedBone(f.Id, f.BoneId).Success);
-        Assert.False(f.Control.Follow(f.Id, f.ActorId, "Actor").Success);
-        Assert.True(f.Control.Follow(f.Id, f.CurrentActorId, "Actor").Success);
     }
 
     private sealed class Fixture
@@ -117,6 +91,8 @@ public sealed class CameraTargetControlTests
                 "GetCameraId" => Id,
                 "GetActorId" => CurrentActorId,
                 "GetBoneId" => BoneId,
+                "CurrentActor" => ((ActorId)args![0]!).LogicalId == CurrentActorId.LogicalId
+                    ? (CurrentActorId, actor) : null,
                 "Resolve" => args![0] switch
                 {
                     CameraId id when id == Id => new BindingResult<IVirtualCamera>(BindingStatus.Success, Camera),
