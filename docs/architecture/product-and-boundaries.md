@@ -47,6 +47,8 @@ Every namespace starts with the name of its project, so a `using` line shows whi
 
 When there is no Poser logic in between, `Poser.Game` implements the interface-facing side directly. `ISceneObjectControl` and `IWorldService` are examples.
 
+Code that mostly talks to the game lives in `Poser.Game`, next to the game code it calls, and the interface reaches it through one interface declared in `Poser.Application`. Cameras (`ICameraControl`), animation (`IAnimationPlayback`) and saving and loading scenes (`ISceneWorkflow`) work this way. A `…Port` interface stays only where Poser's logic really is separate from the game.
+
 Values crossing these interfaces are ids and plain values, never game addresses. How the game side turns an id back into a game object is in [posing-runtime.md](posing-runtime.md).
 
 ## Where the code does not follow the split
