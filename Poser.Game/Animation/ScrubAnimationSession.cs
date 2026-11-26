@@ -5,15 +5,17 @@ using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
-namespace Poser.Application.Animation;
+using Poser.Application.Animation;
+
+namespace Poser.Game.Animation;
 
 /// <summary>Tracks the animation control and actor being scrubbed by one drag.</summary>
 internal sealed class ScrubAnimationSession
 {
-    private readonly IAnimationScrubPort _port;
+    private readonly AnimationScrubRuntimePort _port;
     private readonly SpeedAnimationSession _speed;
 
-    public ScrubAnimationSession(IAnimationScrubPort port, SpeedAnimationSession speed)
+    public ScrubAnimationSession(AnimationScrubRuntimePort port, SpeedAnimationSession speed)
     {
         _port = port;
         _speed = speed;

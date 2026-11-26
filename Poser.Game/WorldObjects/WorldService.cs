@@ -32,7 +32,7 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
     private readonly LightingService _lights;
     private readonly SceneLifecycleHistory _history;
     private readonly IEntityBindings _bindings;
-    private readonly AnimationSession _animation;
+    private readonly Poser.Game.Animation.AnimationSession _animation;
     private readonly ConfigurationService _config;
     private readonly WorldCandidateBook _book = new();
     private readonly Dictionary<WorldKinds, long> _refreshed = new();
@@ -65,7 +65,7 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
 
     public WorldService(IFramework framework, IGPoseService gpose, WorldActorDiscovery actors,
         WorldActorSession actorClaims, WorldObjectService objects, LightingService lights,
-        SceneLifecycleHistory history, IEntityBindings bindings, AnimationSession animation, ConfigurationService config,
+        SceneLifecycleHistory history, IEntityBindings bindings, Poser.Game.Animation.AnimationSession animation, ConfigurationService config,
         ISessionGenerationSource sessions, IPluginLog log)
     {
         _framework = framework; _gpose = gpose; _actors = actors; _actorClaims = actorClaims;

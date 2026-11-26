@@ -1,8 +1,14 @@
+using System;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Animation;
+
+/// <summary>What the General section of the Animation tab chose for an actor,
+/// and the version of it that Apply played. A sitting or mounted actor plays
+/// another version of an emote, sometimes on another layer.</summary>
+public sealed record GeneralChoice(TimelineEntry Chosen, TimelineEntry? Played);
 
 /// <summary>Playback, transport and physics freeze; native state stays behind the runtime port.</summary>
 public interface IAnimationPlayback
@@ -53,4 +59,16 @@ public interface IAnimationPlayback
     Outcome ReplayEndedForScrub(ActorId actor, AnimationSlot slot);
     /// <summary>Seeks a layer by its own timeline clock (seconds from its begin).</summary>
     Outcome SeekLayer(ActorId actor, AnimationSlot slot, float seconds);
+    /// <summary>What Poser holds in the actor's animation, for undo.</summary>
+    AnimationSnapshot Capture(ActorId actor);
+    /// <summary>Puts a captured animation back without recording another undo step.</summary>
+    Outcome Restore(ActorId actor, AnimationSnapshot target);
+    /// <summary>Puts back everything Poser changed in the actor's animation.</summary>
+    Outcome ResetActor(ActorId actor);
+    /// <summary>Moves every paused animation back to its first frame. Not an undo step.</summary>
+    Outcome RewindPausedControls(ActorId actor);
+    /// <summary>Records no animation undo steps until the returned scope is disposed.</summary>
+    IDisposable Untracked();
+    /// <summary>Runs several commands as one undo step.</summary>
+    void Grouped(Action action);
 }

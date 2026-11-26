@@ -38,7 +38,7 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
     private readonly SceneCaptureService _capture;
     private readonly EnvironmentControl _environmentControl;
     private readonly IWorldRenderingRuntimePort _rendering;
-    private readonly AnimationSession _animation;
+    private readonly Poser.Game.Animation.AnimationSession _animation;
 
     public SceneStateRuntime(
         SceneRuntimeHandles handles,
@@ -51,7 +51,7 @@ internal sealed class SceneStateRuntime : ISceneStatePort, IDisposable
         SceneCaptureService capture,
         EnvironmentControl environmentControl,
         IWorldRenderingRuntimePort rendering,
-        AnimationSession animation)
+        Poser.Game.Animation.AnimationSession animation)
     {
         _handles = handles;
         _clear = clear;

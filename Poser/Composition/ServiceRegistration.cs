@@ -349,34 +349,33 @@ internal static class ServiceRegistration
     {
         // The services below hook the game's animation; AnimationSession puts animation back exactly as it was.
         services.AddSingleton<Game.Animation.AnimationNativeState>();
-        services.AddSingleton<IAnimationTimelinePort, Game.Animation.AnimationTimelineRuntimePort>();
-        services.AddSingleton<AnimationOverrideStore>();
+        services.AddSingleton<Game.Animation.AnimationTimelineRuntimePort>();
+        services.AddSingleton<Game.Animation.AnimationOverrideStore>();
         services.AddSingleton<Game.Animation.AnimationSpeedRuntimePort>();
-        services.AddSingleton<IAnimationSpeedPort>(sp => sp.GetRequiredService<Game.Animation.AnimationSpeedRuntimePort>());
-        services.AddSingleton<IAnimationStancePort, Game.Animation.AnimationStanceRuntimePort>();
+        services.AddSingleton<Game.Animation.AnimationStanceRuntimePort>();
         services.AddSingleton<Game.Animation.TimelineSeekService>();
-        services.AddSingleton<IAnimationScrubPort>(sp => new Game.Animation.AnimationScrubRuntimePort(
+        services.AddSingleton(sp => new Game.Animation.AnimationScrubRuntimePort(
             sp.GetRequiredService<IPluginLog>(),
             sp.GetRequiredService<Game.Animation.AnimationNativeState>(),
             sp.GetRequiredService<Game.Animation.TimelineSeekService>()));
-        services.AddSingleton<AnimationSession>(sp =>
+        services.AddSingleton<Game.Animation.AnimationSession>(sp =>
         {
             var log = sp.GetRequiredService<IPluginLog>();
-            return new AnimationSession(
-                sp.GetRequiredService<AnimationOverrideStore>(),
-                sp.GetRequiredService<IAnimationTimelinePort>(),
-                sp.GetRequiredService<IAnimationSpeedPort>(),
-                sp.GetRequiredService<IAnimationStancePort>(),
-                sp.GetRequiredService<IAnimationScrubPort>(),
+            return new Game.Animation.AnimationSession(
+                sp.GetRequiredService<Game.Animation.AnimationOverrideStore>(),
+                sp.GetRequiredService<Game.Animation.AnimationTimelineRuntimePort>(),
+                sp.GetRequiredService<Game.Animation.AnimationSpeedRuntimePort>(),
+                sp.GetRequiredService<Game.Animation.AnimationStanceRuntimePort>(),
+                sp.GetRequiredService<Game.Animation.AnimationScrubRuntimePort>(),
                 sp.GetRequiredService<IWorldRenderingRuntimePort>())
             {
                 Trace = message => log.Information($"[AnimState] {message}"),
             };
         });
-        services.AddStartable<AnimationSession>(StartStage.Animation);
-        services.AddSingleton<AnimationSteps>();
-        services.AddSingleton<IAnimationActions>(sp => sp.GetRequiredService<AnimationSteps>());
-        services.AddSingleton<IAnimationPlayback>(sp => sp.GetRequiredService<AnimationSession>());
+        services.AddStartable<Game.Animation.AnimationSession>(StartStage.Animation);
+        services.AddSingleton<Game.Animation.AnimationSteps>();
+        services.AddSingleton<IAnimationActions>(sp => sp.GetRequiredService<Game.Animation.AnimationSteps>());
+        services.AddSingleton<IAnimationPlayback>(sp => sp.GetRequiredService<Game.Animation.AnimationSession>());
         services.AddSingleton<IExpressionPreview, Game.Animation.ExpressionPreview>();
         services.AddSingleton<IScenePlaybackControl, ScenePlaybackControl>();
         return services;

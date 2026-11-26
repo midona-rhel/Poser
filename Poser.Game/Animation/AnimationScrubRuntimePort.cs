@@ -12,7 +12,7 @@ using Poser.Game.Natives;
 namespace Poser.Game.Animation;
 
 /// <summary>Havok control enumeration and the scrub's clock writes.</summary>
-public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
+public sealed unsafe class AnimationScrubRuntimePort
 {
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;

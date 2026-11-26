@@ -49,7 +49,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     private readonly IActorManager _actors;
     private readonly IPlaceService _place;
     private readonly IActorLifecycle _actorState;
-    private readonly AnimationSession _animation;
+    private readonly Poser.Game.Animation.AnimationSession _animation;
     private sealed record BorrowedBaseline(WorldObjectState State);
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SceneEntityHandle, BorrowedBaseline> _borrowedBaselines = new();
 
@@ -76,7 +76,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         Poser.Application.Integration.IntegrationReset integration,
         IActorManager actors,
         Poser.Application.Selection.SelectionSession selection,
-        IPluginLog log, IPlaceService place, SceneLifecycleHistory lifecycle, AnimationSession animation)
+        IPluginLog log, IPlaceService place, SceneLifecycleHistory lifecycle, Poser.Game.Animation.AnimationSession animation)
     {
         _handles = handles;
         _history = history;

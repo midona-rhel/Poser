@@ -13,9 +13,9 @@ namespace Poser.Application.Animation;
 public sealed class AnimationSceneActions
 {
     private readonly SceneSession _scene;
-    private readonly AnimationSession _animation;
+    private readonly IAnimationPlayback _animation;
 
-    public AnimationSceneActions(SceneSession scene, AnimationSession animation)
+    public AnimationSceneActions(SceneSession scene, IAnimationPlayback animation)
     {
         _scene = scene;
         _animation = animation;

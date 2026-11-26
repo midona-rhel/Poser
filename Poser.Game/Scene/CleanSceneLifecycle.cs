@@ -25,7 +25,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly TransformGestureService _gestures;
     private readonly EditHistory _history;
     private readonly GroupTransformCoordinator? _groupCoordinator;
-    private readonly Poser.Application.Animation.AnimationSession _animation;
+    private readonly Poser.Game.Animation.AnimationSession _animation;
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
     private readonly Poser.Application.Appearance.ActorModelIdSession _modelId;
     private readonly Poser.Application.Integration.IntegrationReset _integration;
@@ -68,7 +68,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         SceneSession scene,
         TransformGestureService gestures,
         EditHistory history,
-        Poser.Application.Animation.AnimationSession animation,
+        Poser.Game.Animation.AnimationSession animation,
         Poser.Application.Presentation.ActorPresentationSession presentation,
         Poser.Application.Appearance.ActorModelIdSession modelId,
         Poser.Application.Integration.IntegrationReset integration,

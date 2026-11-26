@@ -4,7 +4,9 @@ using System.Diagnostics.CodeAnalysis;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
-namespace Poser.Application.Animation;
+using Poser.Application.Animation;
+
+namespace Poser.Game.Animation;
 
 /// <summary>
 /// What Poser has changed in each actor's animation. This is the only copy:

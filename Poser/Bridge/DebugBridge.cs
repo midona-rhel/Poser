@@ -44,7 +44,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.UI.PoseFileInspectorSection _poseFiles;
     private readonly global::Poser.UI.PoseLibraryPane _poseLibrary;
     private readonly IPluginLog _log;
-    private readonly AnimationSession _animation;
+    private readonly Game.Animation.AnimationSession _animation;
     private readonly Game.Animation.AnimationNativeState _port;
     private readonly IActorManager _actors;
     private readonly StableBindingRegistry _bindings;
@@ -131,7 +131,7 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.UI.PoseLibraryPane poseLibrary,
         IFramework framework,
         IPluginLog log,
-        AnimationSession animation,
+        Game.Animation.AnimationSession animation,
         Game.Animation.AnimationNativeState port,
         IActorManager actors,
         StableBindingRegistry bindings,

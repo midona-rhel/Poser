@@ -5,20 +5,22 @@ using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
-namespace Poser.Application.Animation;
+using Poser.Application.Animation;
+
+namespace Poser.Game.Animation;
 
 /// <summary>Changes stance, weapon visibility, and position lock, recording
 /// the values needed to restore stance and weapon visibility.</summary>
 internal sealed class StanceAnimationSession
 {
     private readonly AnimationOverrideStore _store;
-    private readonly IAnimationTimelinePort _timeline;
-    private readonly IAnimationStancePort _port;
+    private readonly AnimationTimelineRuntimePort _timeline;
+    private readonly AnimationStanceRuntimePort _port;
     private readonly BaseAnimationSession _base;
 
     public StanceAnimationSession(
-        AnimationOverrideStore store, IAnimationTimelinePort timeline,
-        IAnimationStancePort port, BaseAnimationSession baseSession)
+        AnimationOverrideStore store, AnimationTimelineRuntimePort timeline,
+        AnimationStanceRuntimePort port, BaseAnimationSession baseSession)
     {
         _store = store;
         _timeline = timeline;

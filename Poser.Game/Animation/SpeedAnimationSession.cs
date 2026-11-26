@@ -6,7 +6,9 @@ using Poser.Domain.Animation;
 using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 
-namespace Poser.Application.Animation;
+using Poser.Application.Animation;
+
+namespace Poser.Game.Animation;
 
 /// <summary>
 /// Changes animation speed for the whole actor or an individual layer.
@@ -15,11 +17,11 @@ namespace Poser.Application.Animation;
 internal sealed class SpeedAnimationSession
 {
     private readonly AnimationOverrideStore _store;
-    private readonly IAnimationTimelinePort _timeline;
-    private readonly IAnimationSpeedPort _port;
+    private readonly AnimationTimelineRuntimePort _timeline;
+    private readonly AnimationSpeedRuntimePort _port;
 
     public SpeedAnimationSession(
-        AnimationOverrideStore store, IAnimationTimelinePort timeline, IAnimationSpeedPort port)
+        AnimationOverrideStore store, AnimationTimelineRuntimePort timeline, AnimationSpeedRuntimePort port)
     {
         _store = store;
         _timeline = timeline;

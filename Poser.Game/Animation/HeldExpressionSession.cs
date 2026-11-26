@@ -6,21 +6,23 @@ using Poser.Domain.Animation;
 using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 
-namespace Poser.Application.Animation;
+using Poser.Application.Animation;
+
+namespace Poser.Game.Animation;
 
 /// <summary>Applies and pauses a facial expression, then restores the previous
 /// facial animation and speed when the expression is released.</summary>
 internal sealed class HeldExpressionSession
 {
     private readonly AnimationOverrideStore _store;
-    private readonly IAnimationTimelinePort _timeline;
-    private readonly IAnimationSpeedPort _speedPort;
+    private readonly AnimationTimelineRuntimePort _timeline;
+    private readonly AnimationSpeedRuntimePort _speedPort;
     private readonly BaseAnimationSession _base;
     private readonly SpeedAnimationSession _speed;
 
     public HeldExpressionSession(
-        AnimationOverrideStore store, IAnimationTimelinePort timeline,
-        IAnimationSpeedPort speedPort, BaseAnimationSession baseSession,
+        AnimationOverrideStore store, AnimationTimelineRuntimePort timeline,
+        AnimationSpeedRuntimePort speedPort, BaseAnimationSession baseSession,
         SpeedAnimationSession speed)
     {
         _store = store;

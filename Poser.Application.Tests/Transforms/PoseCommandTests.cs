@@ -135,9 +135,7 @@ public sealed class PoseCommandTests
             ModelPort.Read(Actor).Returns(0);
             Models = new ActorModelIdSession(ModelPort);
             ResetAll = new ActorResetControl(Scene, transforms, edits, this,
-                Idle<IGazeRuntimePort>(), new AnimationSession(new AnimationOverrideStore(), Idle<IAnimationTimelinePort>(),
-                    Idle<IAnimationSpeedPort>(), Idle<IAnimationStancePort>(),
-                    Idle<IAnimationScrubPort>(), Idle<IWorldRenderingRuntimePort>()),
+                Idle<IGazeRuntimePort>(), DispatchProxy.Create<IAnimationPlayback, IdleAnimation>(),
                 new ActorPresentationSession(Idle<IPresentationRuntimePort>()), Models, _integration.Reset,
                 History, new ValueJournal(History), this);
         }
@@ -185,6 +183,22 @@ public sealed class PoseCommandTests
 
     // These sessions own no overrides in this fixture. Only their no-op reset
     // mechanisms may run; an unexpected read or mutation fails the test.
+    // The animation holds nothing in this fixture: reset and restore have
+    // nothing to put back.
+    public class IdleAnimation : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
+        {
+            "ResetActor" or "Restore" => Outcome.Ok(),
+            "Capture" => new Poser.Domain.Animation.AnimationSnapshot(default, default, default, default,
+                null, null, null, default, 0, false, false, false),
+            "Untracked" => new Scope(),
+            _ => throw new InvalidOperationException($"Unexpected animation call: {method.Name}"),
+        };
+
+        private sealed class Scope : IDisposable { public void Dispose() { } }
+    }
+
     public class IdleResetPort : DispatchProxy
     {
         protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch

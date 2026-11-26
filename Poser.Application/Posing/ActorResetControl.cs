@@ -15,7 +15,7 @@ namespace Poser.Application.Posing;
 /// looks go back to the game's, in that order, as one undo step.</summary>
 public sealed class ActorResetControl(
     SceneSession scene, TransformCommandService transforms, PoseEditService poses,
-    IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, AnimationSession animation,
+    IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, IAnimationPlayback animation,
     ActorPresentationSession presentation, ActorModelIdSession models, IntegrationReset integration,
     EditHistory history, ValueJournal values, IActorStateSnapshots snapshots)
     : IActorResetControl

@@ -3,6 +3,7 @@ using Poser.Application.Animation;
 using Poser.Application.Posing;
 using Poser.Application.World;
 using Poser.Domain;
+using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Transforms;
@@ -86,39 +87,40 @@ public sealed class PoseImportCoordinatorTests
     {
         public readonly List<string> Events = [];
         public readonly Runtime Runtime;
-        public readonly AnimationSession Animation;
+        public readonly IAnimationPlayback Animation;
         public readonly PoseImportCoordinator Coordinator;
         public Fixture()
         {
-            Animation = new(new AnimationOverrideStore(), Port<IAnimationTimelinePort>(), Port<IAnimationSpeedPort>(),
-                Port<IAnimationStancePort>(), Port<IAnimationScrubPort>(),
-                Port<IWorldRenderingRuntimePort>());
+            Animation = DispatchProxy.Create<IAnimationPlayback, AnimationStandIn>();
+            ((AnimationStandIn)(object)Animation).Events = Events;
             Runtime = new(Events);
             Coordinator = new(Runtime, Animation);
         }
-
-        private T Port<T>() where T : class
-        {
-            var port = DispatchProxy.Create<T, AnimationPort>();
-            ((AnimationPort)(object)port).Events = Events;
-            return port;
-        }
     }
 
-    // Only the animation mechanisms used by the import workflow are permitted.
-    public class AnimationPort : DispatchProxy
+    // Only the animation calls the import workflow uses are permitted. Pause
+    // state is remembered the way the animation session remembers it.
+    public class AnimationStandIn : DispatchProxy
     {
         public List<string> Events = null!;
+        private float? _speed;
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
-            if (method!.Name == "IsSupported") return true;
-            // The session subscribes to the timeline port's layer-end event.
-            if (method.Name is "add_LayerEnded" or "remove_LayerEnded") return null;
-            if (method.Name == "RewindPausedControls") Events.Add("rewind");
-            if (method.Name is "SetOverallSpeed" or "ClearOverallSpeed" or "RewindPausedControls")
-                return Outcome.Ok();
+            switch (method!.Name)
+            {
+                case "IsSupported": return true;
+                case "IsPaused": return _speed == 0f;
+                case "OverridesFor": return AnimationOverrides.None with { OverallSpeed = _speed };
+                case "Untracked": return new Scope();
+                case "Pause": _speed = 0f; return Outcome.Ok();
+                case "Resume": _speed = null; return Outcome.Ok();
+                case "SetSpeed": _speed = (float)args![1]!; return Outcome.Ok();
+                case "RewindPausedControls": Events.Add("rewind"); return Outcome.Ok();
+            }
             throw new InvalidOperationException("Unexpected animation call: " + method.Name);
         }
+
+        private sealed class Scope : IDisposable { public void Dispose() { } }
     }
 
     private sealed class Runtime(List<string> events) : IPoseImportRuntime

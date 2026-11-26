@@ -39,7 +39,7 @@ public sealed class UIManager : IUIManager
     private readonly Application.Presentation.ICameraControl _cameraControl;
     private readonly SceneSession _scene;
     private readonly AnimationSceneActions _sceneActions;
-    private readonly AnimationSession _animation;
+    private readonly IAnimationPlayback _animation;
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
     private readonly Keybind[] _keybinds;
     private bool _uiHidden;
@@ -75,7 +75,7 @@ public sealed class UIManager : IUIManager
         Application.Presentation.ICameraControl cameraControl,
         SceneSession scene,
         AnimationSceneActions sceneActions,
-        AnimationSession animation,
+        IAnimationPlayback animation,
         Dalamud.Plugin.Services.IPluginLog log,
         Dalamud.Plugin.Services.IGameGui gameGui,
         ActionGate gate)
