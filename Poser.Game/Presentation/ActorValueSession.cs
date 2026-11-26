@@ -1,36 +1,33 @@
 using System.Numerics;
+using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
+using Poser.Game.Services;
 
-namespace Poser.Application.Presentation;
+namespace Poser.Game.Presentation;
 
 /// <summary>
-/// The actor-level values a surface sets — presentation (opacity, tints,
-/// wetness) and visibility — as journal
-/// steps. These carry no pose snapshot: they are not bone state, and they
-/// re-apply to whatever body the actor has when undone.
+/// The Appearance tab's opacity, tint, wetness and visibility commands, each
+/// as one undo step. A slider drag is one step for the whole drag. Undo writes
+/// the value back to whatever body the actor has now; these values are not
+/// part of the pose.
 /// </summary>
-public sealed class ActorValueSession : IActorValueControl
+public sealed class ActorValueSession(
+    ValueJournal journal, ActorPresentationSession presentation,
+    IEntityBindings bindings, IActorSpawnService spawns) : IActorValueControl
 {
-    private readonly ValueJournal _journal;
-    private readonly ActorPresentationSession _presentation;
-    private readonly IActorValueRuntime _runtime;
-
-    public ActorValueSession(
-        ValueJournal journal,
-        ActorPresentationSession presentation,
-        IActorValueRuntime runtime)
-    {
-        _journal = journal;
-        _presentation = presentation;
-        _runtime = runtime;
-    }
+    private readonly ValueJournal _journal = journal;
+    private readonly ActorPresentationSession _presentation = presentation;
 
     public void Seal() => _journal.Seal();
 
-    private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);
+    public bool IsSupported(ActorId actor) => _presentation.IsSupported(actor);
+    public PresentationReading? Read(ActorId actor) => _presentation.Read(actor);
+    public PresentationOverrides OverridesFor(ActorId actor) => _presentation.OverridesFor(actor);
+
+    private bool Alive(ActorId actor) => bindings.Resolve(actor).Success;
 
     // ── presentation ────────────────────────────────────────────────────
     public Outcome SetOpacity(ActorId actor, float value) =>
@@ -74,8 +71,8 @@ public sealed class ActorValueSession : IActorValueControl
         return _journal.Set((actor, property), description, read, write, value, () => Alive(actor));
     }
 
-    /// <summary>Hands every presentation value back; the step's undo
-    /// re-applies each value that was held.</summary>
+    /// <summary>Puts back the actor's own opacity, tints, wetness and colours.
+    /// Undo sets Poser's values again.</summary>
     public Outcome ResetPresentation(ActorId actor)
     {
         var before = _presentation.OverridesFor(actor);
@@ -91,7 +88,8 @@ public sealed class ActorValueSession : IActorValueControl
     }
 
     // ── visibility ──────────────────────────────────────────────────────
-    public bool? ReadVisibility(ActorId actor) => _runtime.ReadVisibility(actor);
+    public bool? ReadVisibility(ActorId actor) =>
+        bindings.Resolve(actor) is { Success: true, Value: { } live } ? spawns.IsVisible(live) : null;
 
     public Outcome SetVisibility(ActorId actor, bool visible)
     {
@@ -101,8 +99,18 @@ public sealed class ActorValueSession : IActorValueControl
             (actor, "Visible"),
             visible ? "Show actor" : "Hide actor",
             () => before,
-            next => _runtime.SetVisibility(actor, next),
+            next => WriteVisibility(actor, next),
             visible,
             () => Alive(actor));
+    }
+
+    private Outcome WriteVisibility(ActorId actor, bool visible)
+    {
+        if (bindings.Resolve(actor) is not { Success: true, Value: { } live })
+            return new(false, "The actor is no longer available.");
+        spawns.SetVisibility(live, visible);
+        return spawns.IsVisible(live) == visible
+            ? Outcome.Ok()
+            : new(false, "The game refused the visibility change.");
     }
 }

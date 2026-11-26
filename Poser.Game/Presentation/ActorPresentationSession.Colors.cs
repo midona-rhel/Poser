@@ -5,15 +5,16 @@ using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
 using TransformMath = Poser.Domain.Transforms.TransformMath;
 
-namespace Poser.Application.Presentation;
+namespace Poser.Game.Presentation;
 
+/// <summary>The shader colours (skin, hair, eyes and the rest) Poser set on an actor.</summary>
 public sealed partial class ActorPresentationSession
 {
     public IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> ReadColors(ActorId actor) => _port.ReadColors(actor);
 
     public Outcome SetColor(ActorId actor, AppearanceColorChannel channel, Vector4 value)
     {
-        if (!Enum.IsDefined(channel) || !TransformMath.IsFinite(AppearanceColorSpace.ToShader(value)))
+        if (!TransformMath.IsFinite(AppearanceColorSpace.ToShader(value)))
             return Outcome.Fail("The colour is invalid.");
         var owned = OverridesFor(actor);
         var reading = _port.ReadColors(actor);
@@ -32,9 +33,9 @@ public sealed partial class ActorPresentationSession
     {
         var owned = OverridesFor(actor);
         if (!owned.Colors.ContainsKey(channel)) return Outcome.Ok();
-        if (!owned.ColorCaptures.TryGetValue(channel, out var incoming))
-            return Outcome.Fail("The incoming colour was not captured.");
-        var result = _port.RestoreColor(actor, channel, incoming);
+        // SetColor saves the actor's own colour before it sets one, so a set
+        // colour always has a saved one.
+        var result = _port.RestoreColor(actor, channel, owned.ColorCaptures[channel]);
         if (!result.Success) return result;
         // Keep the original capture for later edits and whole-actor reset.
         Mutate(actor, state =>

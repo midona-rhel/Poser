@@ -8,6 +8,7 @@ using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
 using Poser.Game.Entities;
 using Poser.Game.Services;
+using Poser.Game.Presentation;
 
 namespace Poser.Game.Journal;
 

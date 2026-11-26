@@ -69,7 +69,6 @@ public sealed partial class AppearancePane
         }
     }
 
-    private readonly ActorPresentationSession _presentation;
     private readonly IAppearanceColorControl _colors;
     private readonly ModelCatalog _modelCatalog;
     private readonly IModelCatalogLoader _modelLoader;
@@ -158,7 +157,6 @@ public sealed partial class AppearancePane
     private bool _addMcdfToLibrary;
 
     public AppearancePane(
-        ActorPresentationSession presentation,
         ModelCatalog modelCatalog,
         IModelCatalogLoader modelLoader,
         IActorAppearanceControl integration,
@@ -204,7 +202,6 @@ public sealed partial class AppearancePane
         _notices = notices;
         _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
-        _presentation = presentation;
         _modelCatalog = modelCatalog;
         _modelLoader = modelLoader;
         _integration = integration;
@@ -319,25 +316,25 @@ public sealed partial class AppearancePane
         {
             _modelLoader.EnsureLoaded();
             // Model controls remain available for creature models.
-            bool supported = _presentation.IsSupported(actor)
-                && _presentation.Read(actor) is not null;
+            bool supported = _values.IsSupported(actor)
+                && _values.Read(actor) is not null;
             page.Section("General", _openGeneral,
                 next => _openGeneral = next,
                 form =>
                 {
                     ModelRows(form, actor);
-                    if (supported && _presentation.Read(actor) is { } r)
+                    if (supported && _values.Read(actor) is { } r)
                         GeneralRows(form, actor,
-                            _presentation.OverridesFor(actor), r);
+                            _values.OverridesFor(actor), r);
                     _poseFiles.Draw(form, actor);
                 },
                 divider: false);
             DrawAttachmentSection(page, actor);
             bool first = false;
 
-            if (supported && _presentation.Read(actor) is { } reading)
+            if (supported && _values.Read(actor) is { } reading)
             {
-                var owned = _presentation.OverridesFor(actor);
+                var owned = _values.OverridesFor(actor);
                 page.Section("Tint", _openModel,
                     next => _openModel = next,
                     form => TintRow(form, actor, owned, reading),
@@ -379,21 +376,21 @@ public sealed partial class AppearancePane
         PageScope page,
         ActorId actor)
     {
-        bool supported = _presentation.IsSupported(actor)
-            && _presentation.Read(actor) is not null;
+        bool supported = _values.IsSupported(actor)
+            && _values.Read(actor) is not null;
         page.Section("General", _openGeneral,
             next => _openGeneral = next,
             form =>
             {
-                if (supported && _presentation.Read(actor) is { } reading)
+                if (supported && _values.Read(actor) is { } reading)
                     BasicPresentationRows(
-                        form, actor, _presentation.OverridesFor(actor), reading);
+                        form, actor, _values.OverridesFor(actor), reading);
                 _poseFiles.Draw(form, actor);
             }, divider: false);
 
-        if (supported && _presentation.Read(actor) is { } present)
+        if (supported && _values.Read(actor) is { } present)
         {
-            var owned = _presentation.OverridesFor(actor);
+            var owned = _values.OverridesFor(actor);
             page.Section("Tint", _openModel,
                 next => _openModel = next,
                 form => CharacterTintRow(form, actor, owned, present));
@@ -853,7 +850,7 @@ public sealed partial class AppearancePane
             help: "Hold wetness against weather and water");
 
         // Read the latest override after the switch callback.
-        var refreshed = _presentation.OverridesFor(actor);
+        var refreshed = _values.OverridesFor(actor);
         bool wetOn = refreshed.Wetness != null;
         WetnessState wet = refreshed.Wetness ?? reading.Wetness;
 
@@ -1165,8 +1162,8 @@ public sealed partial class AppearancePane
 
     /// <summary>Reads wetness when the slider action is dispatched.</summary>
     private WetnessState CurrentWetness(ActorId actor) =>
-        _presentation.OverridesFor(actor).Wetness
-        ?? (_presentation.Read(actor) is { } reading ? reading.Wetness : default);
+        _values.OverridesFor(actor).Wetness
+        ?? (_values.Read(actor) is { } reading ? reading.Wetness : default);
 
     private void RefreshReadouts(ActorId actor)
     {

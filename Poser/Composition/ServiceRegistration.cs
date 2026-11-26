@@ -377,9 +377,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Game.Presentation.PresentationRuntimePort>();
-        services.AddSingleton<Application.Presentation.IPresentationRuntimePort>(
-            sp => sp.GetRequiredService<Game.Presentation.PresentationRuntimePort>());
-        services.AddSingleton<Application.Presentation.ActorPresentationSession>();
+        services.AddSingleton<Game.Presentation.ActorPresentationSession>();
         services.AddSingleton<
             Application.Presentation.ICustomizeReadRuntimePort,
             Game.Presentation.CustomizeReadRuntimePort>();
@@ -387,8 +385,7 @@ internal static class ServiceRegistration
             Game.Presentation.ReferenceSkeletonReadPort>();
         services.AddSingleton<Game.Appearance.ActorModelIdSession>();
         services.AddSingleton<Application.Appearance.IActorAppearanceControl, Game.Appearance.ActorAppearanceControl>();
-        services.AddSingleton<Application.Presentation.IActorValueRuntime, Game.Presentation.ActorValueRuntime>();
-        services.AddSingleton<Application.Presentation.IActorValueControl, Application.Presentation.ActorValueSession>();
+        services.AddSingleton<Application.Presentation.IActorValueControl, Game.Presentation.ActorValueSession>();
         services.AddSingleton<Application.Companions.ICompanionControl, Game.Companions.CompanionEditor>();
         services.AddSingleton<IWardrobeControl, WardrobeSession>();
         services.AddSingleton<ICustomizeControl, CustomizeSession>();

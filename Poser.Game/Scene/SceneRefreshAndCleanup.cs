@@ -7,6 +7,7 @@ using Poser.Game.Bindings;
 using Poser.Application.Events;
 using Poser.Game.Appearance;
 using Poser.Game.Core;
+using Poser.Game.Presentation;
 
 namespace Poser.Game.Scene;
 
@@ -28,7 +29,7 @@ public sealed class SceneRefreshAndCleanup : IDisposable
     private readonly EditHistory _history;
     private readonly GroupTransformCoordinator? _groupCoordinator;
     private readonly Poser.Game.Animation.AnimationSession _animation;
-    private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
+    private readonly ActorPresentationSession _presentation;
     private readonly ActorModelIdSession _modelId;
     private readonly Poser.Application.Integration.IntegrationReset _integration;
     private readonly Poser.Game.Animation.AnimationSpeedRuntimePort _animationPort;
@@ -71,7 +72,7 @@ public sealed class SceneRefreshAndCleanup : IDisposable
         TransformGestureService gestures,
         EditHistory history,
         Poser.Game.Animation.AnimationSession animation,
-        Poser.Application.Presentation.ActorPresentationSession presentation,
+        ActorPresentationSession presentation,
         ActorModelIdSession modelId,
         Poser.Application.Integration.IntegrationReset integration,
         Poser.Game.Animation.AnimationSpeedRuntimePort animationPort,
