@@ -92,11 +92,9 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     // Per Poser character: its 14 slot timelines and the slot owning the group-0
     // prop (-1 none), as of this tick. Main thread only; swapped whole.
     private Dictionary<nint, (nint[] Roots, int Owner0)> _fadeOwners = new();
-    private bool _fadeThreadLogged;
     // Per Poser actor control: the prop model the highest layer requests, per
     // request group (0 = none). Rebuilt each tick and swapped whole.
     private volatile Dictionary<nint, (ulong Group0, ulong Group1)> _layerProps = new();
-    private bool _applierThreadLogged;
     // Prop timelines a lower layer animates on a weapon a higher layer owns: held
     // at weight 0 so they can't move the higher layer's prop.
     private HashSet<nint> _suppressedProps = new();

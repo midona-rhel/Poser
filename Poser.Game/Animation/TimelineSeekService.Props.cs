@@ -197,11 +197,6 @@ public sealed unsafe partial class TimelineSeekService
     {
         try
         {
-            if (!_fadeThreadLogged)
-            {
-                _fadeThreadLogged = true;
-                _log.Information($"[TimelineSeek] C094 mask runs on the framework thread: {_framework.IsInFrameworkUpdateThread}");
-            }
             nint root = clip != 0 ? *(nint*)(clip + NativeFields.SchedulerClip_RootTimeline) : 0;
             if (root != 0 && (*(byte*)(clip + NativeFields.C094_SlotMask) & (1 << 3)) != 0)
                 foreach (var (roots, owner0) in _fadeOwners.Values)
@@ -284,11 +279,6 @@ public sealed unsafe partial class TimelineSeekService
     {
         try
         {
-            if (!_applierThreadLogged)
-            {
-                _applierThreadLogged = true;
-                _log.Information($"[TimelineSeek] prop request applier runs on the framework thread: {_framework.IsInFrameworkUpdateThread}");
-            }
             var map = _layerProps;
             if (control != 0 && map.TryGetValue(control, out var wanted))
             {
