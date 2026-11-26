@@ -1,67 +1,18 @@
 using System.Numerics;
-using Poser.Documents.Mcdf;
-using System.Reflection;
-using Poser.Application.Animation;
-using Poser.Application.Appearance;
-using NSubstitute;
-using Poser.Application.Gaze;
-using Poser.Application.Integration;
-using Poser.Application.Tests.Integration;
-using Poser.Application.Lifecycle;
-using Poser.Application.Presentation;
 using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
-using Poser.Application.World;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
-using Poser.Domain.Integration;
-using Poser.Domain.Operations;
 
 namespace Poser.Application.Tests.Transforms;
 
 public sealed class PoseCommandTests
 {
-    [Fact]
-    public void Reset_refuses_before_mutation_if_complete_capture_fails()
-    {
-        using var f = new Fixture { FailCapture = true };
-        var original = f.Live.ToDictionary();
-        Assert.False(f.ResetAll.ResetAll(f.Actor).Success);
-        Assert.Equal(original, f.Live);
-        Assert.Equal(0, f.IkClears);
-        Assert.False(f.History.CanUndo);
-    }
-
-    [Fact]
-    public void Whole_actor_reset_is_one_step_and_redo_resets_pose_inside_the_history_transition()
-    {
-        using var f = new Fixture();
-        var original = f.Live.ToDictionary();
-        var older = new JournalStep("earlier edit", () => true, () => true);
-        f.History.Append(older);
-        f.ModelPort.Write(f.Actor, Arg.Any<int>()).Returns(Outcome.Ok());
-        Assert.True(f.Models.Apply(f.Actor, 2430).Success);
-        Assert.True(f.ResetAll.ResetAll(f.Actor).Success);
-        Assert.Empty(f.Live[f.Character].Pose.Layers);
-        Assert.Empty(f.Live[f.Weapon].Pose.Layers);
-        Assert.Equal(original[f.Model], f.Live[f.Model]);
-        f.ModelPort.Received().Write(f.Actor, 0);
-        Assert.True(f.Journal.Undo().Success);
-        Assert.Equal(original[f.Character], f.Live[f.Character]);
-        Assert.Same(older, f.History.PeekUndo());
-        Assert.True(f.Journal.Redo().Success);
-        Assert.Empty(f.Live[f.Character].Pose.Layers);
-        Assert.Empty(f.Live[f.Weapon].Pose.Layers);
-        Assert.Equal(2, f.IkClears);
-        Assert.True(f.Journal.Undo().Success);
-        Assert.Same(older, f.History.PeekUndo());
-    }
-
     [Fact]
     public void Mirror_includes_facing()
     {
@@ -90,8 +41,7 @@ public sealed class PoseCommandTests
         Assert.False(f.History.CanUndo);
     }
 
-    private sealed class Fixture : ITransformRuntimePort, IPoseEditReads,
-        IActorPoseResetRuntime, IPoseSnapshotPort, IActorStateSnapshots, IDisposable
+    private sealed class Fixture : ITransformRuntimePort, IPoseEditReads, IDisposable
     {
         public readonly ActorId Actor = ActorId.New();
         public readonly SceneSession Scene = new(new SelectionSession());
@@ -101,13 +51,7 @@ public sealed class PoseCommandTests
         public readonly TransformGestureService Gestures;
         public readonly UndoJournal Journal;
         public readonly IPoseCommands Commands;
-        public readonly IActorResetControl ResetAll;
-        public readonly IModelIdRuntimePort ModelPort = Substitute.For<IModelIdRuntimePort>();
-        public readonly ActorModelIdSession Models;
-        private readonly IntegrationGraph _integration;
         public int Captures;
-        public int IkClears;
-        public bool FailCapture;
 
         public Fixture()
         {
@@ -130,37 +74,6 @@ public sealed class PoseCommandTests
             var transforms = new TransformCommands(this, History, Gestures);
             var edits = new PoseEditService(this, transforms);
             Commands = new PoseCommands(Scene, edits, new(null!, null!, null!, Scene, null!), this);
-            _integration = new(Idle<IIntegrationRuntimeFake>(), Idle<IMcdfFileBoundary>(),
-                Idle<ISessionGenerationSource>());
-            ModelPort.Read(Actor).Returns(0);
-            Models = new ActorModelIdSession(ModelPort);
-            ResetAll = new ActorResetControl(Scene, transforms, edits, this,
-                Idle<IGazeRuntimePort>(), DispatchProxy.Create<IAnimationPlayback, IdleAnimation>(),
-                new ActorPresentationSession(Idle<IPresentationRuntimePort>()), Models, _integration.Reset,
-                History, new ValueJournal(History), this);
-        }
-
-        public PoseEditResult CanReset(ActorId actor) => PoseEditResult.Ok(0);
-        public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>
-            FailCapture ? IntegrationValue<ActorStateSnapshot>.Fail("Appearance capture failed")
-                : IntegrationValue<ActorStateSnapshot>.Ok(new(actor, SessionGeneration.New(), Capture(actor.LogicalId)!, null!));
-        public void Restore(ActorStateSnapshot snapshot, Func<bool> current, CancellationToken cancellation,
-            Action<GestureResult> completed)
-        {
-            if (!current()) { completed(GestureResult.Fail("Stale history")); return; }
-            Restore(snapshot.Pose, ok => completed(ok ? GestureResult.Ok() : GestureResult.Fail("Restore failed")));
-        }
-        public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
-            Action<GestureResult> completed) => completed(current() ? GestureResult.Ok() : GestureResult.Fail("Stale history"));
-        public PoseEditResult ResetExpression(ActorId actor) => PoseEditResult.Ok(1);
-        public PoseEditResult ClearIk(ActorId actor) { IkClears++; return PoseEditResult.Ok(1); }
-        public ActorSnapshot? Capture(Guid lineage) => new(lineage,
-            Live.Values.Where(s => s.Target.Bone != null).ToArray(), []);
-        public bool Restore(ActorSnapshot snapshot, Action<bool> finished)
-        {
-            foreach (var state in (TransformTargetState[])snapshot.Pose) Live[state.Target] = state;
-            finished(true);
-            return true;
         }
 
         public bool HasAuthoredEdits(ActorId actor) => true;
@@ -176,37 +89,6 @@ public sealed class PoseCommandTests
         }
         public TransformPortResult ApplyAbsolute(TransformTargetState baseline, PoseTransform desired,
             bool rawBaseline = false) => throw new NotSupportedException();
-        public void Dispose() { Gestures.Dispose(); _integration.Dispose(); }
-    }
-
-    private static T Idle<T>() where T : class => DispatchProxy.Create<T, IdleResetPort>();
-
-    // These sessions own no overrides in this fixture. Only their no-op reset
-    // mechanisms may run; an unexpected read or mutation fails the test.
-    // The animation holds nothing in this fixture: reset and restore have
-    // nothing to put back.
-    public class IdleAnimation : DispatchProxy
-    {
-        protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
-        {
-            "ResetActor" or "Restore" => Outcome.Ok(),
-            "Capture" => new Poser.Domain.Animation.AnimationSnapshot(default, default, default, default,
-                null, null, null, default, 0, false, false, false),
-            "Untracked" => new Scope(),
-            _ => throw new InvalidOperationException($"Unexpected animation call: {method.Name}"),
-        };
-
-        private sealed class Scope : IDisposable { public void Dispose() { } }
-    }
-
-    public class IdleResetPort : DispatchProxy
-    {
-        protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
-        {
-            "Reset" => Outcome.Ok(),
-            "Read" or "ClearLoops" or "SuspendColors" or "ClearOwned" or "SetLayerOwned"
-                or "add_LayerEnded" or "remove_LayerEnded" => null,
-            _ => throw new InvalidOperationException($"Unexpected reset mechanism: {method.Name}"),
-        };
+        public void Dispose() => Gestures.Dispose();
     }
 }

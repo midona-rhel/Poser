@@ -28,7 +28,7 @@ public sealed class SceneRefreshAndCleanup : IDisposable
     private readonly GroupTransformCoordinator? _groupCoordinator;
     private readonly Poser.Game.Animation.AnimationSession _animation;
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
-    private readonly Poser.Application.Appearance.ActorModelIdSession _modelId;
+    private readonly Poser.Game.Appearance.ActorModelIdSession _modelId;
     private readonly Poser.Application.Integration.IntegrationReset _integration;
     private readonly Poser.Game.Animation.AnimationSpeedRuntimePort _animationPort;
     private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
@@ -71,7 +71,7 @@ public sealed class SceneRefreshAndCleanup : IDisposable
         EditHistory history,
         Poser.Game.Animation.AnimationSession animation,
         Poser.Application.Presentation.ActorPresentationSession presentation,
-        Poser.Application.Appearance.ActorModelIdSession modelId,
+        Poser.Game.Appearance.ActorModelIdSession modelId,
         Poser.Application.Integration.IntegrationReset integration,
         Poser.Game.Animation.AnimationSpeedRuntimePort animationPort,
         Poser.Game.Animation.FacialPoseCapture facialCapture,

@@ -1,7 +1,6 @@
-using Poser.Application.Appearance;
-using Poser.Application.Gaze;
 using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
+using Poser.Application.Posing;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
@@ -9,36 +8,27 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Operations;
-using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
+using Poser.Game.Appearance;
 
-namespace Poser.Application.Posing;
+namespace Poser.Game.Posing;
 
-public sealed record ActorPropertiesSnapshot(int ModelId, ActorAppearanceSnapshot Appearance,
-    PresentationOverrides Presentation, GazeReading? Gaze,
-    IReadOnlyList<(string Id, float Weight)>? Expression);
-
-public sealed record ActorStateSnapshot(ActorId Actor, SessionGeneration Session,
-    ActorSnapshot Pose, ActorPropertiesSnapshot Properties);
-
-public interface IActorStateSnapshots
-{
-    IntegrationValue<ActorStateSnapshot> Capture(ActorId actor);
-    void Restore(ActorStateSnapshot snapshot, Func<bool> stillCurrent, CancellationToken cancellation,
-        Action<GestureResult> completed);
-    void WaitForReset(ActorId actor, Func<bool> stillCurrent, CancellationToken cancellation,
-        Action<GestureResult> completed);
-}
-
-/// <summary>Coordinates the existing state owners; no animation playback is captured or restored.</summary>
+/// <summary>
+/// Saves and puts back an actor's whole state except animation, by asking the
+/// classes that own each part: the pose and IK, the Penumbra, Glamourer and
+/// Customize+ look, the model id, opacity and colours, gaze and expression.
+/// Putting it back runs in that order: first the look and model id, which can
+/// redraw the actor, then the pose once the redraw is done, then the rest.
+/// Undo of removing an actor uses the same steps to put its look back.
+/// </summary>
 public sealed class ActorStateSnapshots(
     SceneSession scene, ISessionGenerationSource sessions, Lazy<IPoseSnapshotPort> poses,
     IntegrationSelectors appearance, McdfTransaction mcdf, ActorPresentationSession presentation,
     ActorModelIdSession models, GazeSession gaze, IExpressionRuntimePort expressions,
     IIntegrationResolutionPort runtime, IPenumbraPort penumbra) : IActorStateSnapshots
 {
-    // Cache the last successful authored pose/IK capture for this actor and session.
-    // Capture reuses it when the runtime returns no pose, such as during a redraw.
+    // The last pose and IK saved for each actor in this GPose session. While
+    // the actor is being redrawn its pose can't be read, so Capture uses this.
     private readonly Dictionary<ActorId, (SessionGeneration Session, ActorSnapshot Pose)> _lastPose = new();
 
     public IntegrationValue<ActorPropertiesSnapshot> CaptureProperties(ActorId actor, bool captureCollection = true,
@@ -106,7 +96,8 @@ public sealed class ActorStateSnapshots(
             : GestureResult.Fail("The actor restoration is no longer current."));
     }, completed);
 
-    /// <summary>Appearance/model first. Call pose and presentation restoration only after this completes.</summary>
+    /// <summary>Puts back the look and the model id, then redraws the actor and
+    /// waits until it is drawn again. Restore the pose and the rest only after this.</summary>
     public async Task<IntegrationResult> RestoreAppearance(ActorId actor, ActorPropertiesSnapshot properties,
         Func<bool> stillCurrent, CancellationToken cancellation)
     {
@@ -120,19 +111,19 @@ public sealed class ActorStateSnapshots(
                 ? Outcome.Ok() : models.Apply(actor, properties.ModelId);
         });
         if (!model.Success) return IntegrationResult.From(model);
-        // MCDF already uses the same barrier, but a restored model id can require
-        // a subsequent redraw. Ordinary looks and collections also finish here.
+        // A changed collection, design or model id only shows after a redraw.
         return await RedrawIfPenumbra(actor, cancellation);
     }
 
-    /// <summary>Redraws through Penumbra and waits for the actor to be ready;
-    /// skips the redraw when Penumbra is unavailable.</summary>
+    /// <summary>Redraws through Penumbra and waits for the actor to be drawn
+    /// again. Without Penumbra there is nothing to redraw for.</summary>
     private async Task<IntegrationResult> RedrawIfPenumbra(ActorId actor, CancellationToken cancellation) =>
         await runtime.OnFrameworkThread(() => penumbra.Penumbra.Available)
             ? await penumbra.RedrawAndWait(actor, TimeSpan.FromSeconds(10), cancellation)
             : IntegrationResult.Ok();
 
-    /// <summary>Shared post-readiness restoration. The pose importer remains the sole pose/IK owner.</summary>
+    /// <summary>Puts back opacity and colours, gaze and expression. Call it after
+    /// the actor is drawn again; the pose is put back by the pose import, not here.</summary>
     public GestureResult RestoreProperties(ActorId actor, ActorPropertiesSnapshot properties)
     {
         var present = presentation.RestoreOverrides(actor, properties.Presentation);
@@ -181,7 +172,7 @@ public sealed class ActorStateSnapshots(
         try { result = await run(); }
         catch (OperationCanceledException) { result = GestureResult.Fail("Actor restoration was cancelled."); }
         catch (Exception ex) { result = GestureResult.Fail($"Actor restoration failed: {ex.Message}"); }
-        // History and state ownership are application-thread confined.
+        // Undo history and the saved states are only touched on the game's framework thread.
         await runtime.OnFrameworkThread(() => { completed(result); return true; });
     }
 }

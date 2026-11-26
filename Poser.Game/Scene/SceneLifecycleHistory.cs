@@ -7,6 +7,7 @@ using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Identity;
 using Poser.Game.Overlays;
+using Poser.Game.Posing;
 using Poser.Game.WorldObjects;
 using Poser.Application.Scene;
 using Poser.Domain.Transforms;

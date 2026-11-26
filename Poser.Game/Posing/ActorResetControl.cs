@@ -1,21 +1,25 @@
 using Poser.Application.Animation;
-using Poser.Application.Appearance;
-using Poser.Application.Gaze;
 using Poser.Application.Integration;
+using Poser.Application.Posing;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
+using Poser.Game.Appearance;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 
-namespace Poser.Application.Posing;
+namespace Poser.Game.Posing;
 
-/// <summary>Reset all for one actor: its expression, gaze, pose, IK, animation and
+/// <summary>Reset → All for one actor: its expression, gaze, pose, IK, animation and
 /// looks go back to the game's, in that order, as one undo step.</summary>
 public sealed class ActorResetControl(
     SceneSession scene, TransformCommands transforms, PoseEditService poses,
-    IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, IAnimationPlayback animation,
+    IEntityBindings bindings, ISkeletonService skeletons, IBonePosingService posing,
+    IExpressionService expressions, IPoseImportCommands imports,
+    GazeSession gaze, IAnimationPlayback animation,
     ActorPresentationSession presentation, ActorModelIdSession models, IntegrationReset integration,
     EditHistory history, ValueJournal values, IActorStateSnapshots snapshots)
     : IActorResetControl
@@ -53,10 +57,14 @@ public sealed class ActorResetControl(
         return result;
     }
 
+    /// <summary>A reset is refused while a pose import is still being applied.</summary>
     private PoseEditResult CanReset(ActorId actor) =>
-        scene.Contains(TransformTargetId.ForActor(actor))
-            ? runtime.CanReset(actor)
-            : PoseEditResult.Fail("This actor is no longer available.");
+        !scene.Contains(TransformTargetId.ForActor(actor)) ? Gone()
+            : imports.IsImportBusy ? PoseEditResult.Fail("A pose import is applying.")
+            : bindings.Resolve(actor).Success ? PoseEditResult.Ok(0)
+            : Gone();
+
+    private static PoseEditResult Gone() => PoseEditResult.Fail("This actor is no longer available.");
 
     private PoseEditResult ResetCore(ActorId actor)
     {
@@ -72,8 +80,8 @@ public sealed class ActorResetControl(
             }
             catch (Exception ex) { failures.Add($"{name}: {ex.Message}"); }
         }
-        Run("Expression", () => { var r = runtime.ResetExpression(actor); return (r.Success, r.Detail); });
-        Run("Gaze", () => { var r = gaze.Reset(actor); return (r.Success, r.Detail); });
+        Run("Expression", () => { var r = WithActor(actor, expressions.ResetExpression); return (r.Success, r.Detail); });
+        Run("Gaze", () => { var r = gaze.ResetWithoutUndoStep(actor); return (r.Success, r.Detail); });
         Run("Pose", () =>
         {
             var targets = scene.Snapshot.Actors.Where(a => a.Id == actor)
@@ -82,7 +90,15 @@ public sealed class ActorResetControl(
             var r = poses.ResetBones(targets);
             return (r.Success, r.Detail);
         });
-        Run("IK", () => { var r = runtime.ClearIk(actor); return (r.Success, r.Detail); });
+        Run("IK", () =>
+        {
+            var r = WithActor(actor, live =>
+            {
+                foreach (var skeleton in skeletons.GetSkeletons(live))
+                    posing.ClearIkConfigurations(skeleton);
+            });
+            return (r.Success, r.Detail);
+        });
         // Animation and appearance are reset after the pose. Changes from
         // Penumbra, Glamourer and Customize+ go last, because putting back the
         // Penumbra collection can redraw the actor.
@@ -97,5 +113,13 @@ public sealed class ActorResetControl(
         Run("External appearance", () => { var r = integration.ResetActor(actor); return (r.Success, r.Detail); });
         return failures.Count == 0 ? PoseEditResult.Ok(1)
             : PoseEditResult.Fail(string.Join(" | ", failures));
+    }
+
+    private PoseEditResult WithActor(ActorId id, Action<IActor> action)
+    {
+        if (bindings.Resolve(id) is not { Success: true, Value: { } actor })
+            return Gone();
+        action(actor);
+        return PoseEditResult.Ok(1);
     }
 }
