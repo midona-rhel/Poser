@@ -115,6 +115,9 @@ public class ConfigurationService : IDisposable
         var install = Config.Library.InstallId;
         Config = new PoserConfiguration();
         Config.Library.InstallId = install;
+        // The library's own folders and the Brio and Anamnesis folders are
+        // part of the defaults, as on a first start.
+        Config.Library.EnsureDefaults();
         Save();
     }
 
