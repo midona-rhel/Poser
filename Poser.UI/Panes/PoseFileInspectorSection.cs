@@ -611,6 +611,21 @@ public sealed class PoseFileInspectorSection : IDisposable
     private string? _faceWarningPath;
 
 
+    private (string Path, PoseFileReadOutcome Read)? _highlightedRead;
+
+    /// <summary>Reads the file highlighted in the import window once per
+    /// highlight. The face warning and the preview both use this read.</summary>
+    private PoseFileReadOutcome ReadHighlighted(string path)
+    {
+        if (_highlightedRead is not { } cached
+            || !string.Equals(cached.Path, path, StringComparison.Ordinal))
+        {
+            cached = (path, PoseFile.Read(path));
+            _highlightedRead = cached;
+        }
+        return cached.Read;
+    }
+
     private void SyncFaceWarning(string? highlighted)
     {
         if (string.Equals(
@@ -623,9 +638,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             || _importTarget is not { } actorId)
             return;
 
-        bool isCmp = highlighted.EndsWith(
-            ".cmp", StringComparison.OrdinalIgnoreCase);
-        if (LoadForSmartRouting(highlighted, isCmp) is not { } file)
+        if (ReadHighlighted(highlighted).Pose is not { } file)
             return;
         _faceWarning =
             _imports.InspectPose(actorId, file)?.FaceGeneration switch
@@ -680,6 +693,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         {
             _importPreview.Pose(
                 highlighted,
+                ReadHighlighted(highlighted),
                 PosePreviewController.Trim(
                     CmpImportOverride(highlighted, out _, out _)
                         ?? BuildOptions()));
@@ -704,6 +718,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         SyncCmpComponentLock(null);
         _faceWarning = null;
         _faceWarningPath = null;
+        _highlightedRead = null;
         _importTarget = null;
         if (PreviewClaimed)
             _importPreview.StandDown();
@@ -1822,20 +1837,26 @@ public sealed class PoseFileInspectorSection : IDisposable
 
     private void ImportFromPath(ActorId actorId, string path, bool fromDialog = false)
     {
-        bool isCmp = path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase);
-        string notice = string.Empty;
-        if (_smartImport && LoadForSmartRouting(path, isCmp) is { } smartFile)
-            notice = SmartRoute(actorId, smartFile);
-
+        string control = fromDialog ? "Pose ▸ Import" : "Reapply last";
         _lastImportPath = path;
         _lastImportPose = null;
+
+        var read = PoseFile.Read(path);
+        if (read.Pose is not { } file)
+        {
+            _notices.Report(Poser.Domain.Outcome.Fail(read.Failure!.Detail), control);
+            return;
+        }
+        string notice = string.Empty;
+        if (_smartImport)
+            notice = SmartRoute(actorId, file);
 
         var cmp = CmpImportOverride(path, out bool blocked, out var cmpNotice);
         if (cmpNotice != null)
             notice = cmpNotice;
         if (blocked)
         {
-            _notices.Report(Poser.Domain.Outcome.Fail(notice), fromDialog ? "Pose ▸ Import" : "Reapply last", refusal: true);
+            _notices.Report(Poser.Domain.Outcome.Fail(notice), control, refusal: true);
             return;
         }
 
@@ -1853,14 +1874,15 @@ public sealed class PoseFileInspectorSection : IDisposable
         }
         var imported = _imports.ImportPose(
             expectedActor,
-            path,
+            file,
             options,
-            frozenSelection,
-            TrackImport(expectedActor));
+            $"Import {System.IO.Path.GetFileName(path)}",
+            TrackImport(expectedActor),
+            frozenSelection);
         if (!imported.Success)
-            _notices.Report(imported.Outcome, fromDialog ? "Pose ▸ Import" : "Reapply last");
+            _notices.Report(imported.Outcome, control);
         else if (notice.Length > 0)
-            _notices.Report(Poser.Domain.Outcome.Fail(notice), fromDialog ? "Pose ▸ Import" : "Reapply last", refusal: true);
+            _notices.Report(Poser.Domain.Outcome.Fail(notice), control, refusal: true);
     }
 
     private bool HasSelectedBonesForImportTarget()
@@ -1931,27 +1953,6 @@ public sealed class PoseFileInspectorSection : IDisposable
             _notices.Report(imported.Outcome, statusPrefix);
         else if (notice.Length > 0)
             _notices.Report(Poser.Domain.Outcome.Fail(notice), statusPrefix, refusal: true);
-    }
-
-    private static PoseFile? LoadForSmartRouting(string path, bool isCmp)
-    {
-        if (isCmp)
-        {
-            try
-            {
-                return CMToolPoseFile.Load(path)?.Upgrade();
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
-        if (!path.EndsWith(".pose", StringComparison.OrdinalIgnoreCase))
-            return null;
-        if (PoseFile.Load(path) is not { } file)
-            return null;
-        file.SanitizeBoneNames();
-        return file;
     }
 
     private PoseImportOptions CmpImportOptions()

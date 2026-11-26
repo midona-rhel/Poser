@@ -48,11 +48,6 @@ public sealed class NativePoseImportService : IPoseImportCommands
             PoseFileService.CompareFaceGeneration(pose, skeleton));
     }
 
-    public PoseEditResult ImportPose(ActorId actor, string path, PoseImportOptions options,
-        IReadOnlyList<BoneId>? selectedBones = null, Action<OperationReceipt>? onReceipt = null) =>
-        ResolveTarget(actor, out var current) is { } refusal ? refusal :
-        ImportPose(current, path, options, selectedBones, onReceipt);
-
     public PoseEditResult ImportPose(ActorId actor, PoseFile poseFile, PoseImportOptions options,
         string description, Action<OperationReceipt>? onReceipt = null,
         IReadOnlyList<BoneId>? selectedBones = null) =>
@@ -87,30 +82,10 @@ public sealed class NativePoseImportService : IPoseImportCommands
 
     private readonly IPoseFileService _poseFiles;
 
-    /// <summary>Builds a plan and submits it to the import coordinator. A successful
-    /// return accepts the operation; its terminal receipt reports application or
-    /// failure, including rollback problems. History may be suppressed.</summary>
-    private PoseEditResult ImportPose(
-        IActor actor,
-        string path,
-        PoseImportOptions options,
-        IReadOnlyList<BoneId>? selectedBones = null,
-        Action<OperationReceipt>? onReceipt = null)
-    {
-        if (ReduceSelectedScope(actor, selectedBones, ref options) is { } refused)
-            return refused;
-
-        var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
-        if (plan == null)
-            return PoseEditResult.Fail("The pose file could not be read or failed validation.");
-        return BeginImport(actor, plan, options,
-            $"Import {System.IO.Path.GetFileName(path)}", onReceipt);
-    }
-
-    /// <summary>In-memory variant of the file import — same plan builder,
-    /// same pause bracket, same in-pass application, one history entry named
-    /// <paramref name="description"/>. The rest-pose presets and the
-    /// reference-pose action apply through here without a disk path.</summary>
+    /// <summary>Builds a plan and submits it to the import coordinator, as one
+    /// undo step named <paramref name="description"/>. A successful return
+    /// means the import was accepted; its final receipt says whether it was
+    /// applied.</summary>
     private PoseEditResult ImportPose(
         IActor actor,
         PoseFile poseFile,

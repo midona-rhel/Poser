@@ -178,51 +178,11 @@ public class PoseFileService : IPoseFileService
         }
     }
 
-    public PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null)
-    {
-        try
-        {
-            // Legacy CMTool .cmp: hex-encoded rotations/scales, NO positions —
-            // convert to a PoseFile and drop Position from the delta mask so
-            // nothing zeroes. .cmp is Character-only by format.
-            if (path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase))
-            {
-                var cmp = CMToolPoseFile.Load(path);
-                if (cmp == null)
-                {
-                    _log.Error($"Failed to load CMTool pose file from {path}");
-                    return null;
-                }
-
-                return BuildImportPlan(
-                    slots,
-                    cmp.Upgrade(),
-                    options,
-                    TransformComponents.Rotation | TransformComponents.Scale);
-            }
-
-            var read = AtomicPoseFileStore.Default.Read(path);
-            if (!read.Succeeded || read.Pose == null)
-            {
-                _log.Error($"Failed to load pose file from {path}: {read.Failure?.Detail ?? "unknown persistence failure"}");
-                return null;
-            }
-            var poseFile = read.Pose;
-
-            // Sanitize bone names for Anamnesis compatibility
-            poseFile.SanitizeBoneNames();
-
-            return BuildImportPlan(slots, poseFile, options);
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"Failed to import pose: {ex.Message}");
-            return null;
-        }
-    }
-
     public PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null) =>
-        BuildImportPlan(slots, poseFile, options, TransformComponents.All);
+        BuildImportPlan(slots, poseFile, options,
+            poseFile.HasPositions
+                ? TransformComponents.All
+                : TransformComponents.Rotation | TransformComponents.Scale);
 
     private PoseImportPlan? BuildImportPlan(
         IReadOnlyList<ISkeleton> slots,

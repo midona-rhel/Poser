@@ -441,17 +441,11 @@ public class CMToolPoseFile
         ReadCommentHandling = JsonCommentHandling.Skip,
     };
 
-    public static CMToolPoseFile? Load(string path)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<CMToolPoseFile>(File.ReadAllText(path), SerializerOptions);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    /// <summary>Reads a .cmp file. Throws when the file can't be read or isn't
+    /// a CMTool pose; <see cref="PoseFile.Read"/> turns that into a message.</summary>
+    public static CMToolPoseFile Load(string path) =>
+        JsonSerializer.Deserialize<CMToolPoseFile>(File.ReadAllText(path), SerializerOptions)
+        ?? throw new InvalidDataException("The file holds no CMTool pose.");
 
     /// <summary>
     /// Converts to a Brio-shaped <see cref="PoseFile"/>: reflect over the bone

@@ -1663,7 +1663,10 @@ public sealed partial class DebugBridge : IDisposable
                     options.ResetBeforeImport = true;
                     options.FreezeOnImport = true;
                 }
-                var imported = imports.ImportPose(id, posePath, options);
+                var read = Documents.Files.PoseFile.Read(posePath);
+                if (read.Pose is not { } pose)
+                    return Json(new { ok = false, Detail = read.Failure!.Detail });
+                var imported = imports.ImportPose(id, pose, options, $"Import {Path.GetFileName(posePath)}");
                 return Json(new { ok = imported.Success, imported.Detail });
             }
             case "/library":

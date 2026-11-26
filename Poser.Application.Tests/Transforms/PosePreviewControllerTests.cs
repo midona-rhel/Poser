@@ -23,7 +23,7 @@ public sealed class PosePreviewControllerTests
         capture.Callbacks[1](expected);
         capture.Callbacks[0](new PoseFile());
         Assert.True(controller.Begin(replacement, "a.pose", options, 2));
-        controller.Pose("a.pose", options);
+        controller.Pose("a.pose", AtomicPoseFileStore.Default.Parse("{}"), options);
         Assert.Same(expected, Assert.Single(runtime.Sequences).First.Pose);
         Assert.Equal(replacement, runtime.Source);
     }

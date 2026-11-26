@@ -105,6 +105,14 @@ public class PoseFile
     public Vector3 Scale { get; set; }
 
     /// <summary>
+    /// False for a pose read from an old <c>.cmp</c> file. Those files store
+    /// only rotations and scales, so an import of one never writes positions.
+    /// Not saved in the file.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasPositions { get; set; } = true;
+
+    /// <summary>
     /// Every root member this model does not name, carried verbatim.
     /// System.Text.Json skips unmapped members by default, so without this any
     /// read-modify-write of a document Poser did not author would silently
@@ -210,15 +218,33 @@ public class PoseFile
     }
 
     /// <summary>
-    /// Lossy compatibility load. Returns null for every typed read, size,
-    /// JSON, or validation failure; new storage workflows use
-    /// <see cref="AtomicPoseFileStore.Read"/>.
+    /// Reads a pose file a person picked to import: a <c>.pose</c> file, or an
+    /// old CMTool <c>.cmp</c> file converted to the same shape. Every pose import
+    /// from a file reads it here once, and the caller passes the result on, so
+    /// a broken file is reported with the reason this read gives.
+    /// Old Anamnesis bone names are changed to the game's names.
     /// </summary>
-    public static PoseFile? Load(string path)
+    public static PoseFileReadOutcome Read(string path)
     {
-        // Intentionally lossy compatibility wrapper. New storage callers use
-        // AtomicPoseFileStore.Read so the typed failure and path survive.
-        return AtomicPoseFileStore.Default.Read(path).Pose;
+        if (!path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase))
+        {
+            var read = AtomicPoseFileStore.Default.Read(path);
+            read.Pose?.SanitizeBoneNames();
+            return read;
+        }
+        try
+        {
+            var pose = CMToolPoseFile.Load(path).Upgrade();
+            pose.HasPositions = false;
+            return PoseFileReadOutcome.Success(pose);
+        }
+        catch (Exception ex)
+        {
+            return PoseFileReadOutcome.Failed(PoseFileStoreFailure.Create(
+                PoseFileStoreFailureKind.Read,
+                $"Reading the .cmp pose file failed: {ex.Message}",
+                path));
+        }
     }
 
     /// <summary>

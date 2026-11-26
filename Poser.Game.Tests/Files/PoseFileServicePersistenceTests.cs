@@ -4,6 +4,7 @@ using System.IO;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using NSubstitute;
+using Poser.Application.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
@@ -16,6 +17,14 @@ namespace Poser.Game.Tests.Files;
 
 public sealed class PoseFileServicePersistenceTests
 {
+    // A file import reads the file with PoseFile.Read and plans the pose it got.
+    private static PoseImportPlan? ImportPlan(
+        PoseFileService service, IReadOnlyList<ISkeleton> slots, string path,
+        PoseImportOptions? options = null) =>
+        PoseFile.Read(path).Pose is { } pose
+            ? service.BuildImportPlan(slots, pose, options)
+            : null;
+
     [Fact]
     public void Legacy_cmp_import_never_applies_positions_even_when_requested()
     {
@@ -24,7 +33,7 @@ public sealed class PoseFileServicePersistenceTests
             {"Race":"1","Head":"00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F",
              "HeadSize":"00 00 80 3F 00 00 80 3F 00 00 80 3F"}
             """);
-        var plan = Service().BuildImportPlan(new[] { Skeleton(Bone("j_kao", Transform.Identity)) },
+        var plan = ImportPlan(Service(), new[] { Skeleton(Bone("j_kao", Transform.Identity)) },
             file.Path, new PoseImportOptions { ApplyPosition = true, ApplyRotation = true, ApplyScale = true, ApplyFace = true });
         Assert.NotNull(plan);
         var write = Assert.Single(plan.Writes);
@@ -41,7 +50,7 @@ public sealed class PoseFileServicePersistenceTests
             {"Race":"1","Head":"00 00 00 00 00 00 00 00 00 00 00 00 00 00 80 3F",
              "HeadSize":"00 00 C0 7F 00 00 80 3F 00 00 80 3F"}
             """);
-        Assert.Null(Service().BuildImportPlan(
+        Assert.Null(ImportPlan(Service(),
             new[] { Skeleton(Bone("j_kao", Transform.Identity)) }, file.Path));
 
         Assert.Null(PoseClipboard.Decode("""{"Bones":null}""", out var nullBones));
@@ -56,7 +65,7 @@ public sealed class PoseFileServicePersistenceTests
     {
         using var file = new TempFile();
         File.WriteAllText(file.Path, """{"Bones":{"Head":{"Rotation":"1E-45, -1E-45, 0, 0","Scale":"0, 0, 0"}}}""");
-        var plan = Service().BuildImportPlan(new[] { Skeleton(Bone("j_kao", Transform.Identity)) }, file.Path);
+        var plan = ImportPlan(Service(), new[] { Skeleton(Bone("j_kao", Transform.Identity)) }, file.Path);
         Assert.NotNull(plan);
         Assert.Empty(plan.Writes);
     }
@@ -113,7 +122,7 @@ public sealed class PoseFileServicePersistenceTests
         using var file = new TempFile();
         File.WriteAllText(file.Path, "{\"Bones\":{\"j_kao\":{\"Rotation\":\"NaN, 0, 0, 1\"}}}");
         var service = Service();
-        Assert.Null(service.BuildImportPlan(
+        Assert.Null(ImportPlan(service,
             new[] { Skeleton(Bone("j_kao", Transform.Identity)) }, file.Path));
 
         File.WriteAllText(file.Path, "old destination");
@@ -146,7 +155,7 @@ public sealed class PoseFileServicePersistenceTests
         posing.GetOriginalTransform(actor).Returns(Transform.Identity);
         var service = new PoseFileService(Substitute.For<IPluginLog>(), posing);
 
-        var plan = service.BuildImportPlan(new[] { skeleton }, file.Path,
+        var plan = ImportPlan(service, new[] { skeleton }, file.Path,
             new PoseImportOptions
             {
                 ApplyBody = true, ApplyFace = true, ApplyRotation = true,

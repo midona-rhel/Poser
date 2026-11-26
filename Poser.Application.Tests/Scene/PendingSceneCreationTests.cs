@@ -7,6 +7,7 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Posing;
+using Poser.Documents.Files;
 
 namespace Poser.Application.Tests.Scene;
 
@@ -16,14 +17,14 @@ public sealed class PendingSceneCreationTests
     public void Session_exit_discards_pending_work_even_if_the_old_receipt_resolves_later()
     {
         var f = new Fixture();
-        f.Pending.ApplyPoseWhenReady(f.Handle, "pose.pose", new());
+        f.Pending.ApplyPoseWhenReady(f.Handle, new PoseFile(), new(), "Import");
         f.Sessions.ActiveSessionGeneration.Returns((SessionGeneration?)null);
         f.Pending.Tick();
         f.Sessions.ActiveSessionGeneration.Returns(SessionGeneration.New());
         f.Creation.Resolve(f.Handle, true).Returns(SelectionId.ForActor(f.Actor));
         f.Pending.Tick();
         Assert.Null(f.Selection.Primary);
-        f.Imports.DidNotReceiveWithAnyArgs().ImportPose(default, "", null!);
+        f.Imports.DidNotReceiveWithAnyArgs().ImportPose(default, (PoseFile)null!, null!, "");
     }
 
     private sealed class Fixture
@@ -41,7 +42,7 @@ public sealed class PendingSceneCreationTests
         public Fixture()
         {
             Sessions.ActiveSessionGeneration.Returns(Handle.Session);
-            Imports.ImportPose(default, "", null!).ReturnsForAnyArgs(PoseEditResult.Ok(1));
+            Imports.ImportPose(default, (PoseFile)null!, null!, "").ReturnsForAnyArgs(PoseEditResult.Ok(1));
             Pending = new(Creation, Sessions, Selection, Imports, Animation, Failures);
         }
     }

@@ -28,7 +28,6 @@ public sealed class PoseImportBoundaryTests
         Assert.Null(imports.InspectPose(id, new PoseFile()));
         var results = new[]
         {
-            imports.ImportPose(id, "not-read.pose", new()),
             imports.ImportPose(id, new PoseFile(), new(), "Import"),
             imports.ApplyRestPose(id, RestPose.APose),
             imports.ApplyReferencePose(id),

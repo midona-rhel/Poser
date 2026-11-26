@@ -11,8 +11,10 @@ public interface IPoseImportCommands
     bool IsImportBusy { get; }
     bool HasPosableSkeleton(ActorId actor);
     PoseImportInspection? InspectPose(ActorId actor, PoseFile pose);
-    PoseEditResult ImportPose(ActorId actor, string path, PoseImportOptions options,
-        IReadOnlyList<BoneId>? selectedBones = null, Action<OperationReceipt>? onReceipt = null);
+
+    /// <summary>Imports a pose onto the actor. A pose from a file is read
+    /// first with <see cref="PoseFile.Read"/>; <paramref name="description"/>
+    /// is the name of the undo step.</summary>
     PoseEditResult ImportPose(ActorId actor, PoseFile poseFile, PoseImportOptions options,
         string description, Action<OperationReceipt>? onReceipt = null,
         IReadOnlyList<BoneId>? selectedBones = null);

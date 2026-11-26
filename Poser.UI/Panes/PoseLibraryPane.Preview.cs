@@ -15,6 +15,7 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.UI.Views;
+using Poser.Documents.Files;
 
 namespace Poser.UI;
 
@@ -74,14 +75,18 @@ public sealed partial class PoseLibraryPane
         }
 
         var path = _vm.Tiles[_vm.Selected].ThumbKey;
-        // The candidate is the FILE-FREE half of the real build, so the poll
-        // costs no read per frame; the real build happens only when the binder
-        // says something moved — the file load, the expression routing and the
-        // filter governance all stay in the one place.
+        // Begin is asked every frame with options that need no file, so the
+        // file is read only when the tile or the options change. That one
+        // read is what the preview shows.
         if (source is { } actorId && _previewBinder.Begin(
                 actorId, path, PosePreviewController.Trim(BuildImportOptionsCore()), ImGui.GetFrameCount()))
-            _previewBinder.Pose(
-                path, PosePreviewController.Trim(BuildImportOptions(path)));
+        {
+            var read = PoseFile.Read(path);
+            var options = read.Pose is { } pose
+                ? BuildImportOptions(path, pose)
+                : BuildImportOptionsCore();
+            _previewBinder.Pose(path, read, PosePreviewController.Trim(options));
+        }
 
         // The inspector reads the rendered image and status from the preview service.
         _files.SetPreviewVisible(true);
