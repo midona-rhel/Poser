@@ -95,11 +95,10 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                 _bones.RestorePoseStacks(
                     bone,
                     ToLegacyLayers(baseline.Pose));
-                // The raw basis is read from the LIVE bone at apply time:
-                // the facial bake applies its captured absolutes against
-                // the settled LastRawTransform, exactly as a pose file
-                // loads. The captured baseline transform (LastTransform)
-                // diverges on face partials.
+                // Baking an expression into the pose works from the bone's
+                // value as it is now, before face bones are moved onto the
+                // head, the way a pose file loads. The value read when the
+                // change began differs from it on face bones.
                 _bones.ApplyTransform(
                     bone,
                     LegacyTransform.FromPose(desired),
@@ -330,8 +329,9 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
         if (!resolved.Success)
             return FromBinding(resolved.Status, resolved.Detail);
         var bone = resolved.Value!;
-        // If the live value is outside the transform domain, capture a finite
-        // fallback so the gesture can still establish a restorable baseline.
+        // A bone can hold a value that is not a usable position, rotation and
+        // scale. Its nearest usable value is read instead, so a move can still
+        // start and be put back.
         var converted = FromLegacy(bone.LastTransform)
             ?? FromLegacy(Sanitized(bone.LastTransform));
         if (converted == null)

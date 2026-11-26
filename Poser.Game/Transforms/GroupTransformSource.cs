@@ -8,6 +8,8 @@ using Poser.Game.Bindings;
 
 namespace Poser.Game.Transforms;
 
+/// <summary>Reads what the group code needs from the game: where a member is,
+/// whether it can move, and the camera's view for a new group's frame.</summary>
 public sealed class GroupTransformSource(
     SceneSession scene, StableBindingRegistry bindings, IViewportReads viewport,
     ICameraProjection camera, EditHistory? history = null) : IGroupTransformSource
@@ -30,11 +32,11 @@ public sealed class GroupTransformSource(
     public bool TryFrame(Vector3 origin, out GroupTransformFrame frame) =>
         GroupTransformFrame.TryFromView(camera.GetViewMatrix(), origin, out frame);
 
-    /// <summary>The live target for <paramref name="target"/>: itself or its
-    /// lineage successor, else the entity a lifecycle undo brought back in
-    /// its place (a new id). Group members are remapped through this before
-    /// the prune, so a structure restored with a removal's undo keeps the
-    /// members that came back (#494).</summary>
+    /// <summary>The thing <paramref name="target"/> stands for now: itself, the
+    /// same thing after a redraw, or the thing undo brought back in place of a
+    /// deleted one. Group members are looked up through this before members
+    /// that are gone leave their group, so undoing a removal puts the members
+    /// back into their groups.</summary>
     public TransformTargetId? CurrentTarget(TransformTargetId target) =>
         scene.CurrentTransformTarget(target)
         ?? (history?.ResolveLifecycleTarget(target) is { } successor && successor != target

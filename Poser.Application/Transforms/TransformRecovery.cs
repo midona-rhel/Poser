@@ -2,15 +2,14 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
+/// <summary>Puts back values read before a change that failed, and words
+/// what could not be put back.</summary>
 internal static class TransformRecovery
 {
     public static TransformRecoveryReceipt RestoreAll(
         ITransformRuntimePort runtime,
         IEnumerable<TransformTargetState> states)
     {
-        ArgumentNullException.ThrowIfNull(runtime);
-        ArgumentNullException.ThrowIfNull(states);
-
         var attempts = new List<TransformRecoveryAttempt>();
         foreach (var state in states.OrderBy(state => runtime.DependencyDepth(state.Target)))
         {
@@ -21,9 +20,9 @@ internal static class TransformRecovery
             }
             catch (Exception exception)
             {
-                // A thrown native boundary is mutation-unknown just like an
-                // explicit failure. Record it and continue so the receipt is
-                // exhaustive and every later frozen baseline is attempted.
+                // A game call that throws may have changed something, like
+                // one that fails. Note it and go on, so every value is tried
+                // and the result lists every one that failed.
                 result = TransformPortResult.Fail(
                     TransformPortStatus.NativeUnavailable,
                     $"Restore threw for {state.Target}: {exception.Message}");

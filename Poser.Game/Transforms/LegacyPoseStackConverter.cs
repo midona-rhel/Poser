@@ -9,8 +9,8 @@ using LegacyLayer = Poser.Domain.Posing.BonePoseTransformInfo;
 namespace Poser.Game.Transforms;
 
 /// <summary>
-/// Serialized conversion seam from the transitional runtime stack shape to
-/// the pointer-free transform-port state.
+/// Converts a bone's pose layers between the form the bone code keeps and the
+/// form a move's undo step stores.
 /// </summary>
 internal static class LegacyPoseStackConverter
 {

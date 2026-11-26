@@ -73,7 +73,8 @@ public sealed class ValueJournal
     /// staged after value unchanged.
     /// </summary>
     /// <param name="key">What is being set: the target and the property.
-    /// Equal keys share a baseline within a continuous edit.</param>
+    /// Changes with the same key during one drag of a control are one undo
+    /// step that starts from the value before the drag.</param>
     /// <param name="alive">Whether the target still exists; a dead target
     /// makes the step's undo and redo no-ops.</param>
     public Outcome Set<T>(object key, string description, Func<T> read,
@@ -153,11 +154,12 @@ public sealed class ValueJournal
         catch (Exception ex) { return new(false, ex.Message); }
     }
 
-    /// <summary>Commits the pending gesture. A later edit starts with a new baseline.</summary>
+    /// <summary>Records the value change in progress as one undo step, so the
+    /// next change starts a step of its own.</summary>
     public void Seal()
     {
-        // Session methods may seal discrete actions themselves. The shared
-        // control owns the boundary while it is applying a live value.
+        // While a slider or field is being dragged (between BeginEdit and
+        // EndEdit), the drag decides when its step ends.
         if (_editing > 0) return;
         CommitPending();
     }

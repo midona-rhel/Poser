@@ -17,19 +17,19 @@ public sealed record ActorSnapshot(
     IReadOnlyList<IkChainSnapshot> IkChains);
 
 /// <summary>
-/// The third entry shape beside the transform patch and the lifecycle
-/// patch: a step with its own inverse. It runs the way a lifecycle patch
-/// does, with explicit completion when restoration spans frames. A refusal
-/// repeated on the same step discards it unless <see cref="InverseEntry.OnRefusal"/>
-/// keeps it.
+/// An undo step that carries its own undo and redo code, for changes that are
+/// not a plain move and not adding or removing a thing. When it fails twice in
+/// a row it is dropped, unless <see cref="InverseEntry.OnRefusal"/> keeps it.
 /// </summary>
 public sealed record JournalStep(
     string Description,
     Func<bool> Undo,
     Func<bool> Redo) : InverseEntry(Description, Undo, Redo)
 {
-    /// <summary>Completion of a multi-frame replay, after its synchronous verb.
-    /// Invokes the callback on the application thread; history stays put until then.</summary>
+    /// <summary>For a step that takes several frames to undo or redo, such as
+    /// putting back a redrawn actor: runs after <c>Undo</c> or <c>Redo</c> and
+    /// calls back on the game's main thread when it is done. The step stays in
+    /// its list until then.</summary>
     public Action<bool, Func<bool>, CancellationToken, Action<GestureResult>>? CompleteReplay { get; init; }
 
     /// <summary>The value before and after, when the step is a value
@@ -54,8 +54,8 @@ public interface IPoseSnapshotPort
     /// callback then never fires.</summary>
     bool Restore(ActorSnapshot snapshot, Action<bool> finished);
 
-    /// <summary>A deferred restore must still belong to its initiating
-    /// history operation before beginning native work.</summary>
+    /// <summary>Starts the restore only if the undo or redo that asked for it
+    /// is still the one running, since a restore can start frames later.</summary>
     bool Restore(ActorSnapshot snapshot, Func<bool> stillCurrent, Action<bool> finished) =>
         stillCurrent() && Restore(snapshot, finished);
 }

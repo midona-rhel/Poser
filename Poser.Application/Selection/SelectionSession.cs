@@ -4,13 +4,10 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Selection;
 
 /// <summary>
-/// Explicit ordered selection state for a live or scoped view.
+/// An ordered list of selected things and the rules for changing it: bones
+/// are selected only with bones of the same actor, scene things only with
+/// other scene things. The first item is the primary selection.
 /// </summary>
-/// <remarks>
-/// This type owns selection mutation and reconciliation rules so callers can
-/// operate on a scope directly without entering a session compatibility
-/// adapter. A scope has no ambient link to any other scope.
-/// </remarks>
 public sealed class SelectionScope
 {
     private readonly List<SelectionId> _selected = new();
@@ -136,8 +133,9 @@ public sealed class SelectionScope
         var fromIndex = IndexOf(displayOrder, from);
         var toIndex = IndexOf(displayOrder, to);
 
-        // A hidden anchor or incompatible input replaces the selection with
-        // the clicked target, matching the existing Ctrl-input contract.
+        // When the row the range starts from is hidden, or cannot be selected
+        // together with the clicked row, only the clicked row is selected,
+        // as with a Ctrl-click.
         if (fromIndex < 0 || toIndex < 0 || !IsCompatible(to, from))
         {
             Select(to);
@@ -150,8 +148,8 @@ public sealed class SelectionScope
         for (var index = start; index <= end; index++)
         {
             var candidate = displayOrder[index];
-            // The clicked target anchors compatibility, so an incompatible
-            // row inside the span cannot change the selected group.
+            // Rows in the range that cannot be selected together with the
+            // clicked row are skipped.
             if (IsCompatible(to, candidate) && !_selected.Contains(candidate))
                 _selected.Add(candidate);
         }

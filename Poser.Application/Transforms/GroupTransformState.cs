@@ -23,8 +23,10 @@ public sealed record GroupTransformHistoryChange(
     }
 }
 
-/// <summary>Session-owned records. Only explicit creation, selection,
-/// membership, binding and transaction boundaries write this store.</summary>
+/// <summary>The position, rotation and scale each group, and each selection of
+/// several things, shows in the inspector. It changes when a group is made or
+/// loaded, when the selection or a group's members change, when the scene's
+/// things are found again after a redraw, and when a group drag ends.</summary>
 public sealed class GroupTransformState
 {
     public const int AnonymousCapacity = 128;
