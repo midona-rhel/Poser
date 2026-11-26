@@ -277,10 +277,10 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
     }
 
     /// <summary>
-    /// An adopted world object's transform is its whole editable state, exactly
-    /// as a prop's is. Undoing one is a WRITE BACK onto the same borrowed
-    /// object — never a release: the transform history moves things, and only
-    /// the lifecycle history gives them back.
+    /// A borrowed world object's position, rotation and scale are all of it
+    /// that can be edited, as for an object. Undoing a move writes the old
+    /// value back onto the same borrowed object and never releases it; only
+    /// undoing the borrowing gives it back to the world.
     /// </summary>
     private TransformPortResult CaptureWorldObject(
         TransformTargetId target,
@@ -330,8 +330,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return FromBinding(resolved.Status, resolved.Detail);
         var bone = resolved.Value!;
         // A bone can hold a value that is not a usable position, rotation and
-        // scale. Its nearest usable value is read instead, so a move can still
-        // start and be put back.
+        // scale. Each unusable part is then read as zero position, no rotation
+        // or a scale of one, so a move can still start and be put back.
         var converted = FromLegacy(bone.LastTransform)
             ?? FromLegacy(Sanitized(bone.LastTransform));
         if (converted == null)

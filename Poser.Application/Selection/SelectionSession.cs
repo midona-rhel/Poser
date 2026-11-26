@@ -38,10 +38,10 @@ public sealed class SelectionScope
     public ActorId? PrimaryActor => Primary?.OwningActor;
 
     /// <summary>
-    /// Optionally supplies a paired selection, such as a bone's left/right
-    /// counterpart. Select and Add include a compatible partner before notifying
-    /// listeners, without changing the clicked anchor. Remove removes both.
-    /// Range selection and reconciliation do not add partners.
+    /// Finds the thing selected together with another, such as a bone's left or
+    /// right partner. Select and Add also select the partner, without moving
+    /// the clicked anchor, and Remove removes both. Selecting a range, and
+    /// finding the selection again after a redraw, do not add partners.
     /// </summary>
     public Func<SelectionId, SelectionId?>? CompanionResolver { get; set; }
 
@@ -95,8 +95,8 @@ public sealed class SelectionScope
     }
 
     /// <summary>
-    /// Removes every selection with this actor's logical ID, including bones
-    /// and bone groups, then sends one notification. Removing only the actor
+    /// Removes the actor and everything selected that belongs to it, such as its
+    /// bones and bone groups, from the selection in one change. Removing only the actor
     /// row would leave stale selections after actor destruction.
     /// </summary>
     public void RemoveActorLineage(Guid lineage)
@@ -134,8 +134,7 @@ public sealed class SelectionScope
         var toIndex = IndexOf(displayOrder, to);
 
         // When the row the range starts from is hidden, or cannot be selected
-        // together with the clicked row, only the clicked row is selected,
-        // as with a Ctrl-click.
+        // together with the clicked row, only the clicked row is selected.
         if (fromIndex < 0 || toIndex < 0 || !IsCompatible(to, from))
         {
             Select(to);
@@ -223,8 +222,8 @@ public sealed class SelectionScope
 
     private static bool IsCompatible(SelectionId left, SelectionId right)
     {
-        // Bones may span skeleton slots but must belong to the same logical actor.
-        // Scene entities can be selected together across kinds.
+        // Bones of one actor can be selected together, also from its weapons;
+        // scene things of any kind can be selected together.
         if (left.Kind == SceneEntityKind.Bone
             || right.Kind == SceneEntityKind.Bone)
             return left.Kind == right.Kind
@@ -236,8 +235,8 @@ public sealed class SelectionScope
     }
 }
 
-/// <summary>Owns the live selection. Entity kinds may be mixed; selected bones
-/// must belong to the same logical actor.</summary>
+/// <summary>The selection the windows show and edit. Scene things of any kind
+/// can be selected together; selected bones belong to one actor.</summary>
 public sealed class SelectionSession
 {
     private readonly SelectionScope _live;
@@ -249,10 +248,10 @@ public sealed class SelectionSession
 
     public event Action<IReadOnlyList<SelectionId>>? SelectionChanged;
 
-    /// <summary>The independently addressable live selection.</summary>
+    /// <summary>The selection itself, for code that changes it directly.</summary>
     public SelectionScope Live => _live;
 
-    /// <summary>The live selection, for session-member callers.</summary>
+    /// <summary>The selected things, first one first.</summary>
     public IReadOnlyList<SelectionId> Selected => Target.Selected;
 
     public SelectionId? Primary => Target.Primary;

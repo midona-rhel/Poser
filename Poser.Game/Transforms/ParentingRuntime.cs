@@ -8,9 +8,9 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Transforms;
 
-/// <summary>Reads and writes where actors, bones, lights, objects, world
-/// objects and IK colliders are in the world, for parenting: a child follows
-/// its parent at a fixed offset.</summary>
+/// <summary>Reads where actors, bones, lights, objects, world objects and IK
+/// colliders are in the world, and writes all of them but bones, for
+/// parenting: a child follows its parent at a fixed offset.</summary>
 public sealed class ParentingRuntime(IEntityBindings bindings, IPosingService posing,
     SceneSession scene, SceneGroups groups, IViewportReads viewport) : IParentingRuntime
 {

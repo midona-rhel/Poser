@@ -2,8 +2,8 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>Puts back values read before a change that failed, and words
-/// what could not be put back.</summary>
+/// <summary>Puts back values read earlier, for undo and redo of a move and
+/// after a change that failed, and words what could not be put back.</summary>
 internal static class TransformRecovery
 {
     public static TransformRecoveryReceipt RestoreAll(

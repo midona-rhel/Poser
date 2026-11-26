@@ -9,8 +9,9 @@ using LegacyLayer = Poser.Domain.Posing.BonePoseTransformInfo;
 namespace Poser.Game.Transforms;
 
 /// <summary>
-/// Converts a bone's pose layers between the form the bone code keeps and the
-/// form a move's undo step stores.
+/// Converts a bone's pose layers from the form the bone code keeps into the
+/// form a move's undo step stores. TransformRuntimePort.ToLegacyLayers converts
+/// them back.
 /// </summary>
 internal static class LegacyPoseStackConverter
 {
@@ -29,7 +30,8 @@ internal static class LegacyPoseStackConverter
         for (var index = 0; index < stacks.Count; index++)
         {
             var stack = stacks[index];
-            // Named producer layers remain runtime-owned and are not gesture history.
+            // Named layers belong to the code that made them, such as IK, and
+            // are not part of a move's undo step.
             if (stack.Layer != null)
                 continue;
 
