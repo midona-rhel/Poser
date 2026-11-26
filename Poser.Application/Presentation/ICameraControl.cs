@@ -7,7 +7,7 @@ using Poser.Domain.Scene;
 namespace Poser.Application.Presentation;
 
 public sealed record CameraReading(
-    CameraId Id, bool Available,
+    CameraId Id,
     string Name,
     CameraKind Kind,
     bool IsLive,

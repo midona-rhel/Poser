@@ -318,7 +318,7 @@ public class PoseRailPane
         float discRadius = ringRadius - 10f * s;
 
         var camera = _inspector.BallCamera();
-        bool canEdit = camera is { IsLocked: false, Available: true };
+        bool canEdit = camera is { IsLocked: false };
 
         ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
         ImGui.InvisibleButton("##rail-camera-joystick", new Vector2(d, d));

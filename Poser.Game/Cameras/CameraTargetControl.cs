@@ -86,8 +86,8 @@ public sealed class CameraTargetControl(
 
     private Outcome Edit(CameraId id, Func<IVirtualCamera, Outcome> action)
     {
-        if (Resolve(id) is not { } camera || !cameras.IsAvailable)
-            return Refused("Camera controls are unavailable.");
+        if (Resolve(id) is not { } camera)
+            return Refused(Unavailable);
         if (camera.IsLocked) return Refused("Unlock the camera first.");
         return action(camera);
     }
@@ -219,8 +219,6 @@ public sealed class CameraTargetControl(
     /// target, or clears it.</summary>
     private bool SetTargetActor(IVirtualCamera camera, IActor actor, ActorId actorId, string displayName)
     {
-        if (camera.IsLocked)
-            return false;
         var before = FollowState.Read(camera);
         if (!cameras.SetTargetActor(camera, actor, actorId, displayName))
             return false;

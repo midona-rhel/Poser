@@ -555,7 +555,7 @@ internal sealed partial class EntityContextMenus
             SaveToLibraryItem(id, "camera", camera.Name),
             Submenu("Reset", TablerIcon.Refresh, MenuPlace.ResetMenu,
             [
-                new("Transform", TablerIcon.Refresh, disabled: camera.IsLocked || !camera.Available)
+                new("Transform", TablerIcon.Refresh, disabled: camera.IsLocked)
                 { OnInvoke = () => _cameraPane.ResetCameraTransform(cameraId) },
                 new("Properties", TablerIcon.Refresh, disabled: camera.IsLocked)
                 { OnInvoke = () => _cameraControl.ResetProperties(cameraId) },

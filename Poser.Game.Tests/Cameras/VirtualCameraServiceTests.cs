@@ -67,8 +67,8 @@ public sealed unsafe class VirtualCameraServiceTests : IDisposable
         var camera = service.CreateCamera(Poser.Domain.Scene.CameraKind.Game)!;
         var history = new Poser.Application.Transforms.EditHistory();
         var id = new Poser.Domain.Identity.CameraId(Guid.NewGuid(), 0);
-        var control = new CameraControl(CameraBinding(camera, id), setup.Framework, service,
-            new Poser.Application.Transforms.ValueJournal(history));
+        var control = new CameraControl(CameraBinding(camera, id), service,
+            new Poser.Application.Transforms.ValueJournal(history), new SameCamera());
         camera.FoV = 0.4f;
         camera.Zoom = 7f;
         camera.FixedPosition = new Vector3(1, 2, 3);
@@ -118,6 +118,11 @@ public sealed unsafe class VirtualCameraServiceTests : IDisposable
             nativeEye + zoomDelta + camera.PositionOffset + camera.TargetOffset);
         Assert.Null(camera.FixedPosition);
         Assert.Null(camera.PendingOrbitPosition);
+    }
+
+    private sealed class SameCamera : Poser.Application.Transforms.IEntityHistoryResolver<Poser.Game.Entities.IVirtualCamera>
+    {
+        public Poser.Game.Entities.IVirtualCamera? Resolve(Poser.Game.Entities.IVirtualCamera original) => original;
     }
 
     private sealed record Setup(

@@ -1,5 +1,4 @@
 using System.Reflection;
-using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -141,10 +140,10 @@ public sealed class CameraTargetControlTests
                 }
                 throw new InvalidOperationException(method);
             });
+            var history = Stub<IEntityHistoryResolver<IVirtualCamera>>((_, args) => args![0]);
             Control = new(bindings, cameras,
                 Stub<IActorManager>((method, _) => method == "GetGPoseTarget" ? actor : throw new InvalidOperationException(method)),
-                null!, Journal, new CameraControl(bindings, Stub<IFramework>((_, _) => true), cameras, Journal),
-                Stub<IEntityHistoryResolver<IVirtualCamera>>((_, args) => args![0]));
+                null!, Journal, new CameraControl(bindings, cameras, Journal, history), history);
         }
     }
 

@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Reflection;
-using Dalamud.Plugin.Services;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Game.Cameras;
@@ -72,14 +71,14 @@ public sealed class CameraControlTests
                 });
             var cameras = Stub<IVirtualCameraService>((m, a) =>
             {
-                if (m.Name == "get_IsAvailable") return true;
                 if (m.Name == "get_Cameras") return new[] { Main, Camera };
                 if (m.Name == "get_LiveCamera") return Live;
                 if (m.Name == "SetLive") { Live = (IVirtualCamera)a![0]!; return null; }
                 throw new InvalidOperationException(m.Name);
             });
             Journal = new(History);
-            Control = new(bindings, Stub<IFramework>((_, _) => true), cameras, Journal);
+            Control = new(bindings, cameras, Journal,
+                Stub<Poser.Application.Transforms.IEntityHistoryResolver<IVirtualCamera>>((_, a) => a![0]));
         }
     }
 
