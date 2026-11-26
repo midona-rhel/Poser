@@ -86,18 +86,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private Vector3? _trackedPivot;
     private readonly HashSet<Skeleton> _trackRefreshed = new();
 
-    // Set when GPose was entered before the native camera manager was ready;
-    // the per-tick handler retries the default-camera mint until it lands or
-    // GPose ends. One pointer read per frame, no scans, no new subscriptions.
-    // The GPose entry event may precede service activation during a reload.
-    // Reconcile once on the framework thread even without a new entry edge.
-    private bool _defaultCameraPending = true;
-
-    // Test seam: replaces the CameraManager singleton read so the retry
-    // policy is drivable without the game. Null in production.
+    // Test seam: a stand-in for the game camera, so tests run without the
+    // game. Null in production.
     private readonly Func<nint>? _nativeCameraOverride;
-
-    private bool _disposed;
 
     private readonly global::Poser.Application.Settings.ConfigurationService ? _configuration;
 
@@ -140,9 +131,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         startup.Complete();
     }
 
-    /// <summary>Test ctor: no signature scans, no hooks; availability and the
-    /// native camera presence are supplied so the default-camera retry policy
-    /// runs its production path without the game.</summary>
+    /// <summary>Test ctor: no signature scans, no hooks; availability and a
+    /// stand-in for the game camera are supplied.</summary>
     internal VirtualCameraService(
         IFramework framework,
         IPluginLog log,
@@ -210,25 +200,18 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     }
 #endif
 
-    /// <summary>The native orbit camera; null when the manager is not up.</summary>
-    internal NativeCamera* Native
-    {
-        get
-        {
-            if (_nativeCameraOverride is { } custom)
-                return (NativeCamera*)custom();
-            var manager = CameraManager.Instance();
-            if (manager == null)
-                return null;
-            return (NativeCamera*)manager->GetActiveCamera();
-        }
-    }
+    /// <summary>The game camera on screen. The game always has one once you
+    /// are logged in, so this is never null.</summary>
+    internal NativeCamera* Native =>
+        _nativeCameraOverride is { } custom
+            ? (NativeCamera*)custom()
+            : (NativeCamera*)CameraManager.Instance()->GetActiveCamera();
 
     // ── camera management ────────────────────────────────────────────────
 
     public IVirtualCamera? CreateCamera(CameraKind kind, bool makeLive = true)
     {
-        if (!IsAvailable || !_gPose.IsGPosing || Native == null)
+        if (!IsAvailable || !_gPose.IsGPosing)
             return null;
         // A free camera without the matrix-load call would freeze the view.
         if (kind == CameraKind.Free &&
@@ -317,11 +300,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         {
             _live = null;
             target.IsLive = false;
-            var fallback = _cameras.Find(candidate => candidate.IsDefault);
-            if (fallback != null)
-                SetLive(fallback);
-            else
-                RestoreNativeOverrides();
+            SetLive(_cameras.Find(candidate => candidate.IsDefault)!);
         }
 
         target.IsValid = false;
@@ -341,8 +320,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         if (camera is not VirtualCamera target ||
             !_cameras.Contains(target) ||
-            _live == target ||
-            Native == null)
+            _live == target)
             return;
 
         if (_live is { } outgoing)
@@ -390,9 +368,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     internal void ApplyDelimit(bool delimit)
     {
         var native = Native;
-        if (native == null)
-            return;
-
         if (delimit)
         {
             _originalLimits ??= (
@@ -420,13 +395,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// <summary>Sets orthographic projection and zoom on the render camera.</summary>
     internal void ApplyOrthographic(bool enabled, float zoom)
     {
-        var native = Native;
-        if (native == null)
-            return;
         var render =
-            (RenderCameraEx*)native->Camera.CameraBase.SceneCamera.RenderCamera;
-        if (render == null)
-            return;
+            (RenderCameraEx*)Native->Camera.CameraBase.SceneCamera.RenderCamera;
         render->OrthographicEnabled = enabled;
         render->OrthographicZoom = enabled ? zoom : 10f;
     }
@@ -440,15 +410,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     // ── per-tick upkeep ──────────────────────────────────────────────────
 
-    /// <summary>Mints the "Main Camera" over the game's orbit camera. False
-    /// when the native manager is not up yet — the caller decides whether
-    /// that means "retry" (GPose entry) or nothing.</summary>
-    private bool TryMintDefaultCamera()
+    /// <summary>Makes the "Main Camera" over the game's orbit camera.</summary>
+    private void MintDefaultCamera()
     {
-        if (_cameras.Exists(camera => camera.IsDefault))
-            return true;
-        if (Native == null)
-            return false;
         var defaultCamera =
             new VirtualCamera(this, CameraKind.Game, isDefault: true)
             {
@@ -459,20 +423,16 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _live = defaultCamera;
         defaultCamera.IsLive = true;
         Publish();
-        return true;
     }
 
-    /// <summary>Derives the tracked pivot for the frame and drops bones whose
-    /// skeletons died — the same per-tick shape the light attach uses.</summary>
+    /// <summary>Makes the Main Camera on the first frame of GPose, also when
+    /// Poser is reloaded while GPose is already open. Then derives the tracked
+    /// pivot for the frame and drops bones whose skeletons died — the same
+    /// per-tick shape the light attach uses.</summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
-        if (_defaultCameraPending)
-        {
-            if (!IsAvailable || !_gPose.IsGPosing)
-                _defaultCameraPending = false;
-            else if (TryMintDefaultCamera())
-                _defaultCameraPending = false;
-        }
+        if (IsAvailable && _gPose.IsGPosing && !_cameras.Exists(camera => camera.IsDefault))
+            MintDefaultCamera();
 
         if (!_gPose.IsGPosing || _live is not { IsTracking: true } live ||
             live.TrackedBones.Count == 0)
@@ -506,21 +466,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)
     {
+        // Entering GPose: the next frame makes the Main Camera.
         if (evt.IsGPosing)
-        {
-            if (!IsAvailable)
-                return;
-            // The native camera manager can lag GPose entry. A miss here is
-            // retried per framework tick instead of freezing the capability
-            // for the whole session — Brio's DrawWhenReady/RunUntilSatisfied
-            // treat native readiness the same tick-gated way.
-            if (!TryMintDefaultCamera())
-                _defaultCameraPending = true;
             return;
-        }
 
         // Release limit/projection overrides and discard the virtual cameras.
-        _defaultCameraPending = false;
         RestoreNativeOverrides();
         foreach (var camera in _cameras)
         {
@@ -535,19 +485,10 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
-        _disposed = true;
+        // Unloading Poser leaves GPose first, which already put the game
+        // camera's limits and projection back.
         _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
-        try
-        {
-            RestoreNativeOverrides();
-        }
-        catch
-        {
-            // The game may already be tearing down.
-        }
         _native?.DisposeUpdateHooks();
         if (_framePhases != null && _native != null)
             _framePhases.CameraUpdate -= _native.UpdateSceneCamera;

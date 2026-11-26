@@ -9,7 +9,7 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Cameras;
 
-public sealed unsafe class DefaultCameraRetryTests : IDisposable
+public sealed unsafe class VirtualCameraServiceTests : IDisposable
 {
     [Theory]
     [InlineData(MouseState.Right, false, true)]
@@ -38,14 +38,24 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
     }
 
     private readonly nint _nativeBlock;
+    private readonly nint _renderBlock;
 
-    public DefaultCameraRetryTests()
+    public VirtualCameraServiceTests()
     {
         _nativeBlock = Marshal.AllocHGlobal(sizeof(NativeCamera));
         new Span<byte>((void*)_nativeBlock, sizeof(NativeCamera)).Clear();
+        // A game camera always has a render camera.
+        _renderBlock = Marshal.AllocHGlobal(sizeof(RenderCameraEx));
+        new Span<byte>((void*)_renderBlock, sizeof(RenderCameraEx)).Clear();
+        ((NativeCamera*)_nativeBlock)->Camera.CameraBase.SceneCamera.RenderCamera =
+            (FFXIVClientStructs.FFXIV.Client.Graphics.Render.Camera*)_renderBlock;
     }
 
-    public void Dispose() => Marshal.FreeHGlobal(_nativeBlock);
+    public void Dispose()
+    {
+        Marshal.FreeHGlobal(_nativeBlock);
+        Marshal.FreeHGlobal(_renderBlock);
+    }
 
     [Fact]
     public void Property_reset_is_one_undoable_edit_and_respects_lock()
@@ -85,27 +95,6 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
         Assert.Null(camera.FixedPosition);
         Assert.False(camera.IsPortraitMode);
         Assert.Equal(0f, camera.FoV);
-    }
-
-    [Fact]
-    public void Pending_native_retry_recovers_once_and_then_stops_polling()
-    {
-        var gate = new NativeGate { Value = 0 };
-        var setup = NewService(gate, isAvailable: true);
-        setup.GPose.IsGPosing = true;
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        setup.Framework.RaiseUpdate();
-        Assert.Empty(setup.Service.Cameras);
-
-        gate.Value = _nativeBlock;
-        setup.Framework.RaiseUpdate();
-        var main = Assert.Single(setup.Service.Cameras);
-        Assert.True(main.IsDefault);
-        Assert.Equal("Main Camera", main.Name);
-        var calls = gate.Calls;
-        setup.Framework.RaiseUpdate();
-        Assert.Same(main, setup.Service.LiveCamera);
-        Assert.Equal(calls, gate.Calls);
     }
 
     [Fact]
@@ -156,13 +145,8 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
     private sealed class NativeGate
     {
         public nint Value { get; set; }
-        public int Calls { get; private set; }
 
-        public nint Read()
-        {
-            Calls++;
-            return Value;
-        }
+        public nint Read() => Value;
     }
 
     private static IEntityBindings CameraBinding(Poser.Game.Entities.IVirtualCamera camera, Poser.Domain.Identity.CameraId id)

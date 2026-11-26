@@ -282,8 +282,6 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
     internal void SaveState()
     {
         var native = _service.Native;
-        if (native == null)
-            return;
         _angle = native->Angle;
         _pan = native->Pan;
         _roll = native->Roll;
@@ -301,8 +299,6 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
     internal void LoadState()
     {
         var native = _service.Native;
-        if (native == null)
-            return;
         native->SetOrbitAngle(_angle);
         native->Pan = _pan;
         native->Roll = _roll;
@@ -321,8 +317,6 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
     internal void SeedFreeCam()
     {
         var native = _service.Native;
-        if (native == null)
-            return;
         if (native->TryGetRenderedPose(out var position, out var rotation, out var roll))
         {
             Position = position;
