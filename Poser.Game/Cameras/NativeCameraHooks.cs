@@ -250,16 +250,14 @@ internal sealed unsafe partial class NativeCameraHooks
     public void UpdateSceneCamera(SceneCamera* camera)
     {
         if (!_gPose.IsGPosing ||
-            Live is not { Kind: CameraKind.Free } live ||
-            _cameraMatrixLoad == null)
+            Live is not { Kind: CameraKind.Free } live)
             return;
 
+        // A free camera is only made when this game function was found.
         camera->ViewMatrix = _owner.FreeCamera.UpdateMatrix(live);
-        var native = Native;
-        if (native != null)
-            _cameraMatrixLoad(
-                native->Camera.CameraBase.SceneCamera.RenderCamera,
-                (nint)(&camera->ViewMatrix));
+        _cameraMatrixLoad!(
+            Native->Camera.CameraBase.SceneCamera.RenderCamera,
+            (nint)(&camera->ViewMatrix));
     }
 
     /// <summary>Consumes free-camera movement and look input after the game fills

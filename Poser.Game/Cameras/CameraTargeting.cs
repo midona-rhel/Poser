@@ -88,7 +88,7 @@ internal sealed unsafe class CameraTargeting(
         if (!gameObject->IsReadyToDraw() || gameObject->DrawObject == null || !gameObject->DrawObject->IsVisible)
             return "Center: that actor is not drawn yet.";
         var native = owner.Native;
-        if (!owner.IsAvailable || !gPose.IsGPosing || native == null || owner.Live is not { IsLive: true } live)
+        if (!owner.IsAvailable || !gPose.IsGPosing || owner.Live is not { IsLive: true } live)
             return "Center: the game camera is not ready.";
         camera = live;
         if (camera.Kind == CameraKind.Free)
