@@ -23,7 +23,7 @@ public sealed record GeneralChoice(TimelineEntry Chosen, TimelineEntry? Played);
 /// </summary>
 public sealed class AnimationSession : IAnimationPlayback
 {
-    private readonly AnimationOverrideStore _store = new();
+    private readonly AnimationOverrideStore _store;
     private readonly IAnimationTimelinePort _timeline;
     private readonly IAnimationSpeedPort _speedPort;
     private readonly IAnimationStancePort _stancePort;
@@ -53,12 +53,14 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     public AnimationSession(
+        AnimationOverrideStore store,
         IAnimationTimelinePort timeline,
         IAnimationSpeedPort speed,
         IAnimationStancePort stance,
         IAnimationScrubPort scrub,
         IWorldRenderingRuntimePort rendering)
     {
+        _store = store;
         _timeline = timeline;
         _speedPort = speed;
         _stancePort = stance;
@@ -862,7 +864,6 @@ public sealed class AnimationSession : IAnimationPlayback
         if (!_timeline.IsSupported(actor) && _timeline.Read(actor) == null)
         {
             _timeline.ClearLoops(actor);
-            _speedPort.Forget(actor);
             _store.Remove(actor);
             return Outcome.Ok();
         }
@@ -901,6 +902,7 @@ public sealed class AnimationSession : IAnimationPlayback
         {
             _speedPort.ClearOverallSpeed(actor);
             remaining = remaining with { OverallSpeed = null };
+            _store.Mutate(actor, o => o with { OverallSpeed = null });
         }
 
         // Restore the saved layers other than Base.
@@ -975,12 +977,14 @@ public sealed class AnimationSession : IAnimationPlayback
         {
             _speedPort.ClearSlotWeight(actor, slot);
             remaining = remaining with { SlotWeights = remaining.SlotWeights.Without(slot) };
+            _store.Mutate(actor, o => o with { SlotWeights = o.SlotWeights.Without(slot) });
         }
 
         foreach (var (slot, restore) in owned.SlotSpeedCaptures)
         {
             _speedPort.ClearSlotSpeed(actor, slot, restore);
             remaining = remaining.WithoutSlotSpeed(slot);
+            _store.Mutate(actor, o => o.WithoutSlotSpeed(slot));
         }
 
         if (owned.StanceCaptureValue is { } stance &&

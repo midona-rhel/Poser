@@ -25,7 +25,7 @@ public sealed class SceneAnimationCaptureTests
         speed.SetOverallSpeed(actor, Arg.Any<float>()).Returns(Outcome.Ok());
         scrub.FindSlotControl(actor, AnimationSlot.Base, out Arg.Any<ulong>())
             .Returns(new ScrubControlReading(ScrubControlId.Timeline(AnimationSlot.Base), 2.25f, 2.33f, 0f));
-        var session = new AnimationSession(timeline, speed, Substitute.For<IAnimationStancePort>(),
+        var session = new AnimationSession(new AnimationOverrideStore(), timeline, speed, Substitute.For<IAnimationStancePort>(),
             scrub, Substitute.For<IWorldRenderingRuntimePort>());
         return (session, actor);
     }
@@ -72,7 +72,7 @@ public sealed class SceneAnimationCaptureTests
         timeline.Blend(actor, SitLoop, Arg.Any<BaseAnimationCapture?>(), out Arg.Any<BaseAnimationCapture?>())
             .Returns(_ => { live = SitLoop; return Outcome.Ok(); });
         stance.SetStance(actor, AnimationStance.SitGround, 0).Returns(Outcome.Ok());
-        var session = new AnimationSession(timeline, Substitute.For<IAnimationSpeedPort>(), stance,
+        var session = new AnimationSession(new AnimationOverrideStore(), timeline, Substitute.For<IAnimationSpeedPort>(), stance,
             Substitute.For<IAnimationScrubPort>(), Substitute.For<IWorldRenderingRuntimePort>());
         var none = new LayerSnapshot(null, false, false, null, 1f, null, null);
         var target = new AnimationSnapshot(

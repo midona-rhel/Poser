@@ -20,23 +20,16 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationNativeState _native;
-    // Requested overrides, keyed by stable actor id.
-    private readonly Dictionary<ActorId, Enforcement> _enforcement = new();
-    // Address lookup rebuilt from the requested overrides for native hooks.
-    private readonly Dictionary<nint, Enforcement> _byAddress = new();
+    // What Poser holds for each actor. The hooks read it every frame.
+    private readonly AnimationOverrideStore _store;
+    // Which actor is at which address, for the actors the store holds something
+    // for. Rebuilt whenever the store or the scene changes.
+    private readonly Dictionary<nint, ActorId> _byAddress = new();
 
     // Managed exceptions in Poser's override logic are logged once per hook.
     // The original native calls run outside these catch blocks.
     private bool _speedFaultLogged;
     private bool _slotSpeedFaultLogged;
-
-    private sealed class Enforcement
-    {
-        public float? OverallSpeed;
-        public readonly Dictionary<int, float> SlotSpeeds = new();
-        public readonly Dictionary<int, float> SlotWeights = new();
-        public bool IsEmpty => OverallSpeed == null && SlotSpeeds.Count == 0 && SlotWeights.Count == 0;
-    }
 
     private delegate bool CalculateAndApplyOverallSpeedDelegate(TimelineContainer* container);
     private readonly Hook<CalculateAndApplyOverallSpeedDelegate>? _speedHook;
@@ -52,9 +45,12 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         IPluginLog log,
         StableBindingRegistry bindings,
         AnimationNativeState native,
-        TimelineSeekService seek)
+        TimelineSeekService seek,
+        AnimationOverrideStore store)
     {
         _seek = seek;
+        _store = store;
+        _store.Changed += SyncEnforcementIndex;
         _framework = framework;
         _log = log;
         _bindings = bindings;
@@ -63,9 +59,12 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         // Report the requested override; the native speed field may change between updates.
         native.ProbeEnforcedSpeeds = actor =>
         {
-            if (!_enforcement.TryGetValue(actor, out var enforced))
+            if (!_store.TryGet(actor, out var held))
                 return null;
-            return (enforced.OverallSpeed, enforced.SlotSpeeds);
+            var slots = new Dictionary<int, float>();
+            foreach (var (slot, speed) in held.SlotSpeeds)
+                slots[(int)slot] = speed;
+            return (held.OverallSpeed, slots);
         };
 #endif
 
@@ -82,38 +81,24 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         }
     }
 
-    // ── Enforcement index ─────────────────────────────────────────────
-
-    private Enforcement EnforcementFor(ActorId actor)
-    {
-        if (!_enforcement.TryGetValue(actor, out var value))
-            _enforcement[actor] = value = new Enforcement();
-        return value;
-    }
-
-    private void PruneEnforcement(ActorId actor)
-    {
-        if (_enforcement.TryGetValue(actor, out var value) && value.IsEmpty)
-            _enforcement.Remove(actor);
-        SyncEnforcementIndex();
-    }
+    // ── Actor index ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Rebuilds the detour-facing address index from the stable-id table.
-    /// Must run on the framework thread; called after every override
-    /// change and once per structural scene change, which is what keeps a
-    /// redrawn actor from inheriting the previous body's enforcement.
+    /// Rebuilds the address index from the stable-id table. Must run on the
+    /// framework thread; runs after every store change and once per structural
+    /// scene change, which is what keeps a redrawn actor from inheriting the
+    /// previous body's speeds.
     /// </summary>
     public void SyncEnforcementIndex()
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return;
         _byAddress.Clear();
-        foreach (var (id, enforcement) in _enforcement)
+        foreach (var id in _store.Actors())
         {
             var resolved = _bindings.Resolve(id);
             if (resolved.Success && resolved.Value is { } legacy && legacy.Address != nint.Zero)
-                _byAddress[legacy.Address] = enforcement;
+                _byAddress[legacy.Address] = id;
         }
     }
 
@@ -139,27 +124,28 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     {
         var owner = (nint)container->OwnerObject;
         if (owner != nint.Zero &&
-            _byAddress.TryGetValue(owner, out var enforcement))
+            _byAddress.TryGetValue(owner, out var actor) &&
+            _store.TryGet(actor, out var held))
         {
-            if (enforcement.OverallSpeed is { } speed)
+            if (held.OverallSpeed is { } speed)
             {
                 // Run after the game's calculation so the override wins
                 // whatever the game just decided.
                 container->OverallSpeed = speed;
                 result = true;
-                _seek.HoldActorSpeed((Character*)owner, speed, enforcement.SlotSpeeds);
+                _seek.HoldActorSpeed((Character*)owner, speed, held.SlotSpeeds);
             }
             // Layer speeds go onto the slot timelines (and the layer's prop
             // controls) natively each tick; the props of an actor paused as a
             // whole follow the game's own per-frame push of the overall speed.
-            if (enforcement.SlotSpeeds.Count > 0)
+            if (held.SlotSpeeds.Count > 0)
             {
-                _seek.HoldSlotSpeeds((Character*)owner, enforcement.SlotSpeeds, enforcement.OverallSpeed ?? 1f);
+                _seek.HoldSlotSpeeds((Character*)owner, held.SlotSpeeds, held.OverallSpeed ?? 1f);
                 result = true;
             }
             // Layer weights: new holders start at 1, so this runs every tick.
-            if (enforcement.SlotWeights.Count > 0)
-                _seek.ApplySlotWeights((Character*)owner, enforcement.SlotWeights);
+            if (held.SlotWeights.Count > 0)
+                _seek.ApplySlotWeights((Character*)owner, held.SlotWeights);
         }
         return result;
     }
@@ -171,12 +157,13 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         {
             var owner = (nint)sequencer->Parent;
             if (owner != nint.Zero &&
-                _byAddress.TryGetValue(owner, out var enforcement) &&
-                enforcement.SlotSpeeds.TryGetValue((int)slot, out var overrideSpeed))
+                _byAddress.TryGetValue(owner, out var actor) &&
+                _store.TryGet(actor, out var held) &&
+                held.SlotSpeeds.TryGetValue((AnimationSlot)slot, out var overrideSpeed))
             {
                 // A layer's speed scales with Poser's overall speed (the whole-
                 // actor pause stops a layer that has its own speed too).
-                finalSpeed = overrideSpeed * (enforcement.OverallSpeed ?? 1f);
+                finalSpeed = overrideSpeed * (held.OverallSpeed ?? 1f);
             }
         }
         catch (Exception ex)
@@ -197,11 +184,8 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        var enforcement = EnforcementFor(actor);
-        enforcement.OverallSpeed = speed;
-        SyncEnforcementIndex();
         ApplySpeedNow(character, speed);
-        ApplySameTickEdges(character, speed, enforcement);
+        ApplySameTickEdges(character, speed, _store.For(actor).SlotSpeeds);
         return Outcome.Ok();
     }
 
@@ -212,27 +196,18 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
             return Outcome.Fail(detail!);
         if (!_seek.Available)
             return Outcome.Fail("Layer weight is unavailable: the native timeline layout is not resolved.");
-        EnforcementFor(actor).SlotWeights[(int)slot] = Math.Clamp(weight, 0f, 1f);
-        SyncEnforcementIndex();
-        _seek.ApplySlotWeights(character, EnforcementFor(actor).SlotWeights);
+        _seek.ApplySlotWeights(character, new Dictionary<AnimationSlot, float> { [slot] = Math.Clamp(weight, 0f, 1f) });
         return Outcome.Ok();
     }
 
     public Outcome ClearSlotWeight(ActorId actor, AnimationSlot slot)
     {
-        if (!_enforcement.TryGetValue(actor, out var enforcement) || !enforcement.SlotWeights.Remove((int)slot))
+        if (!_store.For(actor).SlotWeights.ContainsKey(slot))
             return Outcome.Ok();
-        PruneEnforcement(actor);
         var character = _native.Resolve(actor, out _);
         if (character != null)
-            _seek.ApplySlotWeights(character, new Dictionary<int, float> { [(int)slot] = 1f });
+            _seek.ApplySlotWeights(character, new Dictionary<AnimationSlot, float> { [slot] = 1f });
         return Outcome.Ok();
-    }
-
-    public void Forget(ActorId actor)
-    {
-        if (_enforcement.Remove(actor))
-            SyncEnforcementIndex();
     }
 
     public Outcome ClearOverallSpeed(ActorId actor)
@@ -241,20 +216,17 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         if (character == null)
             return Outcome.Fail(detail!);
 
-        // Resolve ownership before dropping enforcement. The hand-back write
-        // runs only for a speed Poser enforced.
-        if (!_enforcement.TryGetValue(actor, out var enforcement) ||
-            enforcement.OverallSpeed == null)
+        // The hand-back write runs only for a speed Poser held.
+        var held = _store.For(actor);
+        if (held.OverallSpeed == null)
             return Outcome.Ok();
 
-        enforcement.OverallSpeed = null;
-        PruneEnforcement(actor);
         // Hand the actor back at normal speed. The container write alone
         // is not enough: the game re-drives the container but not every
         // Havok control, so a Poser pause (controls at 0) is released
         // here or not at all.
         ApplySpeedNow(character, 1f);
-        ApplySameTickEdges(character, 1f, enforcement);
+        ApplySameTickEdges(character, 1f, held.SlotSpeeds);
         return Outcome.Ok();
     }
 
@@ -270,35 +242,24 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     /// detour would let through (the slot override × the overall, else the overall), written
     /// into seq+0x154 through the original and onto the slot timeline directly.
     /// </summary>
-    private void ApplySameTickEdges(Character* character, float overall, Enforcement enforcement)
+    private void ApplySameTickEdges(
+        Character* character, float overall, IReadOnlyDictionary<AnimationSlot, float> slotSpeeds)
     {
-        if (!_seek.Available)
+        if (!_seek.Available || character->GameObject.DrawObject == null)
             return;
-        // Actor resolution requires the framework thread. RunOnFrameworkThread
-        // keeps these scheduler writes on that thread, alongside the control writes.
-        var values = new (int Slot, float Value)[EdgeSlots.Length];
-        for (int i = 0; i < EdgeSlots.Length; i++)
-            values[i] = (EdgeSlots[i], enforcement.SlotSpeeds.TryGetValue(EdgeSlots[i], out var held) ? held * overall : overall);
-        var address = (nint)character;
-        var heldSlots = new Dictionary<int, float>(enforcement.SlotSpeeds);
-        _framework.RunOnFrameworkThread(() =>
+        var sequencer = &character->Timeline.TimelineSequencer;
+        foreach (int slot in EdgeSlots)
         {
-            var live = (Character*)address;
-            if (live->GameObject.DrawObject == null)
-                return;
-            var sequencer = &live->Timeline.TimelineSequencer;
-            foreach (var (slot, value) in values)
-            {
-                _slotSpeedHook!.Original(sequencer, (uint)slot, value);
-                _seek.ApplySlotSpeed(sequencer, slot, value);
-            }
-            _seek.ApplyPropSpeed(live, overall);
-            _seek.ApplyVfxSpeed(live, overall);
-            // A layer with its own speed keeps it on its props and effects (the two
-            // lines above give every prop the plain overall).
-            if (heldSlots.Count > 0)
-                _seek.HoldSlotSpeeds(live, heldSlots, overall);
-        });
+            float value = slotSpeeds.TryGetValue((AnimationSlot)slot, out var held) ? held * overall : overall;
+            _slotSpeedHook!.Original(sequencer, (uint)slot, value);
+            _seek.ApplySlotSpeed(sequencer, slot, value);
+        }
+        _seek.ApplyPropSpeed(character, overall);
+        _seek.ApplyVfxSpeed(character, overall);
+        // A layer with its own speed keeps it on its props and effects (the two
+        // lines above give every prop the plain overall).
+        if (slotSpeeds.Count > 0)
+            _seek.HoldSlotSpeeds(character, slotSpeeds, overall);
     }
 
     /// <summary>Writes the container speed and every Havok control's
@@ -330,16 +291,13 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        var enforcement = EnforcementFor(actor);
-        enforcement.SlotSpeeds[(int)slot] = speed;
-        SyncEnforcementIndex();
-        character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, speed);
+        // Straight to the game: the store still holds the old speed until this
+        // returns, and the hook would put that one back.
+        float overall = _store.For(actor).OverallSpeed ?? 1f;
+        _slotSpeedHook!.Original(&character->Timeline.TimelineSequencer, (uint)slot, speed * overall);
         // Same tick: the slot timeline, its props and effects now, not on the
         // sequencer's next consume.
-        var address = (nint)character;
-        var held = new Dictionary<int, float> { [(int)slot] = speed };
-        float overall = enforcement.OverallSpeed ?? 1f;
-        _framework.RunOnFrameworkThread(() => _seek.HoldSlotSpeeds((Character*)address, held, overall));
+        _seek.HoldSlotSpeeds(character, new Dictionary<AnimationSlot, float> { [slot] = speed }, overall);
         _log.Debug(
             $"[AnimState] native SetSlotSpeed slot={(int)slot} speed={speed:0.##}; "
             + $"field now {character->Timeline.TimelineSequencer.TimelineSpeeds[(int)slot]:0.##}");
@@ -353,25 +311,19 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         if (character == null)
             return Outcome.Fail(detail!);
 
-        // Remove Poser's override before restoring the supplied speed, so the hook
-        // does not replace the restoration value.
-        if (!_enforcement.TryGetValue(actor, out var enforcement) ||
-            !enforcement.SlotSpeeds.Remove((int)slot))
+        var held = _store.For(actor);
+        if (!held.SlotSpeeds.ContainsKey(slot))
             return Outcome.Ok();
 
-        float overall = enforcement.OverallSpeed ?? 1f;
-        PruneEnforcement(actor);
-        character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restoreSpeed * overall);
+        // Straight to the game: the store still holds the override until this
+        // returns, and the hook would put it back over the restored speed.
+        float overall = held.OverallSpeed ?? 1f;
+        _slotSpeedHook!.Original(&character->Timeline.TimelineSequencer, (uint)slot, restoreSpeed * overall);
         // Nothing holds the layer any more: hand its timeline, props and effects
         // back at the restored speed on this tick (the wand lagged at x0.5 when
         // only the field was restored).
-        var address = (nint)character;
-        var restored = new Dictionary<int, float> { [(int)slot] = restoreSpeed };
-        _framework.RunOnFrameworkThread(() =>
-        {
-            _seek.HoldSlotSpeeds((Character*)address, restored, overall);
-            _seek.ApplyVfxSpeed((Character*)address, overall);
-        });
+        _seek.HoldSlotSpeeds(character, new Dictionary<AnimationSlot, float> { [slot] = restoreSpeed }, overall);
+        _seek.ApplyVfxSpeed(character, overall);
         return Outcome.Ok();
     }
 
@@ -379,7 +331,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
     {
         _speedHook?.Dispose();
         _slotSpeedHook?.Dispose();
-        _enforcement.Clear();
+        _store.Changed -= SyncEnforcementIndex;
         _byAddress.Clear();
     }
 }

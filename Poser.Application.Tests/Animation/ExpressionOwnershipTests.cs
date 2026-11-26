@@ -33,7 +33,7 @@ public sealed class ExpressionOwnershipTests
             Speed.SetSlotSpeed(Actor, AnimationSlot.Facial, Arg.Any<float>()).Returns(Outcome.Ok());
             Speed.ClearSlotSpeed(Actor, AnimationSlot.Facial, Arg.Any<float>()).Returns(Outcome.Ok());
             Speed.ClearOverallSpeed(Actor).Returns(Outcome.Ok());
-            Session = new AnimationSession(Timeline, Speed, Substitute.For<IAnimationStancePort>(),
+            Session = new AnimationSession(new AnimationOverrideStore(), Timeline, Speed, Substitute.For<IAnimationStancePort>(),
                 Substitute.For<IAnimationScrubPort>(), Substitute.For<IWorldRenderingRuntimePort>());
         }
 

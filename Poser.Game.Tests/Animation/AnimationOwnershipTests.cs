@@ -140,7 +140,7 @@ public sealed class AnimationOwnershipTests
         public static FakePort Create() => new();
 
         public AnimationSession Session() => new(
-            Proxy<IAnimationTimelinePort>(), Proxy<IAnimationSpeedPort>(),
+            new AnimationOverrideStore(), Proxy<IAnimationTimelinePort>(), Proxy<IAnimationSpeedPort>(),
             Proxy<IAnimationStancePort>(), Proxy<IAnimationScrubPort>(),
             Proxy<IWorldRenderingRuntimePort>());
 

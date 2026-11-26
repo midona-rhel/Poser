@@ -20,7 +20,7 @@ public sealed class AnimationInteractionOwnershipTests
         var speed = Substitute.For<IAnimationSpeedPort>();
         speed.SetSlotWeight(actor, AnimationSlot.Additive, Arg.Any<float>()).Returns(Outcome.Ok());
         speed.ClearSlotWeight(actor, AnimationSlot.Additive).Returns(Outcome.Ok());
-        var session = new AnimationSession(Substitute.For<IAnimationTimelinePort>(), speed,
+        var session = new AnimationSession(new AnimationOverrideStore(), Substitute.For<IAnimationTimelinePort>(), speed,
             Substitute.For<IAnimationStancePort>(), Substitute.For<IAnimationScrubPort>(),
             Substitute.For<IWorldRenderingRuntimePort>());
 
@@ -53,7 +53,7 @@ public sealed class AnimationInteractionOwnershipTests
         });
         speed.SetOverallSpeed(actor, 0).Returns(Outcome.Ok());
         port.SetControlTime(actor, control, Arg.Any<float>(), 7).Returns(Outcome.Ok());
-        var session = new AnimationSession(Substitute.For<IAnimationTimelinePort>(), speed,
+        var session = new AnimationSession(new AnimationOverrideStore(), Substitute.For<IAnimationTimelinePort>(), speed,
             Substitute.For<IAnimationStancePort>(), port, Substitute.For<IWorldRenderingRuntimePort>());
         var first = Guid.NewGuid();
         var second = Guid.NewGuid();
@@ -93,7 +93,7 @@ public sealed class AnimationInteractionOwnershipTests
         var timeline = Substitute.For<IAnimationTimelinePort>();
         var speed = Substitute.For<IAnimationSpeedPort>();
         speed.SetOverallSpeed(actor, 0).Returns(Outcome.Ok());
-        var session = new AnimationSession(timeline, speed,
+        var session = new AnimationSession(new AnimationOverrideStore(), timeline, speed,
             Substitute.For<IAnimationStancePort>(), Substitute.For<IAnimationScrubPort>(),
             Substitute.For<IWorldRenderingRuntimePort>());
         Assert.True(session.Pause(actor).Success);
@@ -103,7 +103,6 @@ public sealed class AnimationInteractionOwnershipTests
         speed.ClearReceivedCalls();
         Assert.True(session.ResetActor(actor).Success);
         Assert.False(session.IsPaused(actor));
-        speed.Received(1).Forget(actor);
         speed.DidNotReceive().ClearOverallSpeed(actor);
     }
 }

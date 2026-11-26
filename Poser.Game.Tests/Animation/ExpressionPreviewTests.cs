@@ -99,7 +99,7 @@ public sealed class ExpressionPreviewTests
                 Stub<IEntityBindings>((m, a) => new BindingResult<IActor>(
                     BindingStatus.Success, (ActorId)a![0]! == Actor ? Body : null)),
                 Stub<ISessionGenerationSource>((_, _) => Session),
-                scene, new AnimationSession(Stub<IAnimationTimelinePort>(port),
+                scene, new AnimationSession(new AnimationOverrideStore(), Stub<IAnimationTimelinePort>(port),
                     Stub<IAnimationSpeedPort>(port), Stub<IAnimationStancePort>(port),
                     Stub<IAnimationScrubPort>(port), Stub<IWorldRenderingRuntimePort>(port)),
                 Stub<IFacialPoseCapture>((m, a) =>

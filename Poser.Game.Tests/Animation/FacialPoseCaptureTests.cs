@@ -195,7 +195,7 @@ public sealed class FacialPoseCaptureTests
     private class AnimationPortProxy : DispatchProxy
     {
         public static AnimationSession Session() => new(
-            DispatchProxy.Create<IAnimationTimelinePort, AnimationPortProxy>(),
+            new AnimationOverrideStore(), DispatchProxy.Create<IAnimationTimelinePort, AnimationPortProxy>(),
             DispatchProxy.Create<IAnimationSpeedPort, AnimationPortProxy>(),
             DispatchProxy.Create<IAnimationStancePort, AnimationPortProxy>(),
             DispatchProxy.Create<IAnimationScrubPort, AnimationPortProxy>(),

@@ -48,7 +48,7 @@ public sealed unsafe partial class TimelineSeekService
     /// effects at 0 when it is paused (the C012 speed handler drops 0). A replayed
     /// timeline is a new one and takes the speed on its first tick.
     /// </summary>
-    internal void HoldSlotSpeeds(Character* character, IReadOnlyDictionary<int, float> speeds, float overall)
+    internal void HoldSlotSpeeds(Character* character, IReadOnlyDictionary<AnimationSlot, float> speeds, float overall)
     {
         if (!Available || speeds.Count == 0)
             return;
@@ -56,8 +56,9 @@ public sealed unsafe partial class TimelineSeekService
         {
             var sequencer = &character->Timeline.TimelineSequencer;
             Dictionary<nint, (float Speed, int Tick)>? propSpeeds = null;
-            foreach (var (slot, speed) in speeds)
+            foreach (var (layer, speed) in speeds)
             {
+                int slot = (int)layer;
                 nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
                 if (root == 0 || SlotEnded(character, slot))
                     continue;
@@ -120,7 +121,7 @@ public sealed unsafe partial class TimelineSeekService
     /// spawned at 1), and a mounted rider's slot 0 (its push takes the mount's
     /// speed, +0x5E8). A slot with its own layer speed is HoldSlotSpeeds'.
     /// </summary>
-    internal void HoldActorSpeed(Character* character, float overall, IReadOnlyDictionary<int, float> slotSpeeds)
+    internal void HoldActorSpeed(Character* character, float overall, IReadOnlyDictionary<AnimationSlot, float> slotSpeeds)
     {
         if (!Available)
             return;
@@ -129,7 +130,7 @@ public sealed unsafe partial class TimelineSeekService
             nint address = (nint)character;
             if (overall != 1f)
                 _engine.SetStatusVfxSpeed(address, overall);
-            bool mounted = *(ushort*)(address + NativeFields.Character_MountId) != 0 && !slotSpeeds.ContainsKey(0);
+            bool mounted = *(ushort*)(address + NativeFields.Character_MountId) != 0 && !slotSpeeds.ContainsKey(AnimationSlot.Base);
             if (mounted)
                 _engine.SetSlotTimelineSpeed(&character->Timeline.TimelineSequencer, 0, overall);
             _actorHeld[address] = (_tick, mounted);
@@ -163,16 +164,16 @@ public sealed unsafe partial class TimelineSeekService
     }
 
     /// <summary>Holds layer weights (see TimelineSeekEngine.SetSlotWeight).</summary>
-    internal void ApplySlotWeights(Character* character, IReadOnlyDictionary<int, float> weights)
+    internal void ApplySlotWeights(Character* character, IReadOnlyDictionary<AnimationSlot, float> weights)
     {
         if (weights.Count == 0)
             return;
         try
         {
             var suppressed = _suppressedProps;
-            foreach (var (slot, weight) in weights)
-                if (!SlotEnded(character, slot))
-                    _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, slot, weight, suppressed);
+            foreach (var (layer, weight) in weights)
+                if (!SlotEnded(character, (int)layer))
+                    _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, (int)layer, weight, suppressed);
         }
         catch (Exception ex) { LogOnce("weight", $"[TimelineSeek] layer weight faulted: {ex.Message}"); }
     }

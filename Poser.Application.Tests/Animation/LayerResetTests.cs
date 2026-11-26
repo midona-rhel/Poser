@@ -35,7 +35,7 @@ public sealed class LayerResetTests
         timeline.ClearSlotTimeline(actor, AnimationSlot.Additive)
             .Returns(_ => { live.Remove(AnimationSlot.Additive); return Outcome.Ok(); });
         timeline.CaptureBase(actor).Returns(new BaseAnimationCapture(0, 0, Emote));
-        var session = new AnimationSession(timeline, Substitute.For<IAnimationSpeedPort>(),
+        var session = new AnimationSession(new AnimationOverrideStore(), timeline, Substitute.For<IAnimationSpeedPort>(),
             Substitute.For<IAnimationStancePort>(), Substitute.For<IAnimationScrubPort>(),
             Substitute.For<IWorldRenderingRuntimePort>());
 
