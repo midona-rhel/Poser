@@ -478,6 +478,13 @@ public sealed unsafe class LayerPlayback : IDisposable
         return repeat;
     }
 
+    /// <summary>Drops the Full body's saved state once no layer Poser changed
+    /// still needs it for its own Reset.</summary>
+    private static AnimationOverrides WithoutUnusedBaseCapture(AnimationOverrides o) =>
+        o.BaseTimeline == null && o.SelectedSlots.Count == 0 && o.SlotCaptures.Count == 0
+            ? o with { BaseCapture = null }
+            : o;
+
     public Outcome ResetBaseSelection(
         ActorId actor, bool preserveLoopIntent = false)
     {
@@ -497,39 +504,34 @@ public sealed unsafe class LayerPlayback : IDisposable
             if (!restored.Success)
                 return restored;
         }
-        _store.Mutate(actor, o =>
+        _store.Mutate(actor, o => WithoutUnusedBaseCapture(o with
         {
-            var selected = o.SelectedSlots.Without(AnimationSlot.Base);
-            // Another layer Poser changed still needs the capture for its own Reset.
-            bool baseStillNeeded = selected.Count > 0 || o.SlotCaptures.Count > 0;
-            return o with
-            {
-                SelectedSlots = selected,
-                BaseTimeline = null,
-                BaseCapture = baseStillNeeded ? o.BaseCapture : null,
-                LoopedSlots = o.LoopedSlots.Without(AnimationSlot.Base),
-                LoopWantedSlots = preserveLoopIntent
-                    ? o.LoopWantedSlots
-                    : o.LoopWantedSlots.Without(AnimationSlot.Base),
-            };
-        });
+            SelectedSlots = o.SelectedSlots.Without(AnimationSlot.Base),
+            BaseTimeline = null,
+            LoopedSlots = o.LoopedSlots.Without(AnimationSlot.Base),
+            LoopWantedSlots = preserveLoopIntent
+                ? o.LoopWantedSlots
+                : o.LoopWantedSlots.Without(AnimationSlot.Base),
+        }));
         return Outcome.Ok();
     }
 
     public Outcome ResetBlendSelection(ActorId actor, AnimationSlot slot)
     {
         var current = _store.For(actor);
-        if (!current.SelectedSlots.ContainsKey(slot))
+        // A layer that could not be started again after another layer's Reset
+        // has a saved animation but no choice; it is put back too.
+        if (!current.SelectedSlots.ContainsKey(slot) && !current.SlotCaptures.ContainsKey(slot))
             return Outcome.Ok();
         if (!current.SlotCaptures.TryGetValue(slot, out var incoming))
         {
             // The animation was chosen but never applied, so there is nothing
             // in the game to put back.
-            _store.Mutate(actor, o => o with
+            _store.Mutate(actor, o => WithoutUnusedBaseCapture(o with
             {
                 SelectedSlots = o.SelectedSlots.Without(slot),
                 LoopWantedSlots = o.LoopWantedSlots.Without(slot),
-            });
+            }));
             return Outcome.Ok();
         }
 
@@ -566,24 +568,15 @@ public sealed unsafe class LayerPlayback : IDisposable
         if (baseRestored is { Success: false } baseFailure)
             return baseFailure;
 
-        _store.Mutate(actor, o =>
+        _store.Mutate(actor, o => WithoutUnusedBaseCapture(o with
         {
-            var selected = o.SelectedSlots.Without(slot);
-            var captures = o.SlotCaptures.Without(slot);
-            return o with
-            {
-                SelectedSlots = selected,
-                AppliedSlots = o.AppliedSlots.Without(slot),
-                SlotCaptures = captures,
-                LoopedSlots = o.LoopedSlots.Without(slot),
-                LoopWantedSlots = o.LoopWantedSlots.Without(slot),
-                HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
-                // Nothing of Poser's is left on this actor's layers: drop the Full body capture.
-                BaseCapture = o.BaseTimeline == null && selected.Count == 0 && captures.Count == 0
-                    ? null
-                    : o.BaseCapture,
-            };
-        });
+            SelectedSlots = o.SelectedSlots.Without(slot),
+            AppliedSlots = o.AppliedSlots.Without(slot),
+            SlotCaptures = o.SlotCaptures.Without(slot),
+            LoopedSlots = o.LoopedSlots.Without(slot),
+            LoopWantedSlots = o.LoopWantedSlots.Without(slot),
+            HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
+        }));
         return Outcome.Ok();
     }
 
@@ -682,19 +675,19 @@ public sealed unsafe class LayerPlayback : IDisposable
         var current = _store.For(actor);
         if (current.Lips == null && current.LipsCapture == null)
         {
-            _store.Mutate(actor, o => o with { SelectedSlots = o.SelectedSlots.Without(AnimationSlot.Lips) });
+            _store.Mutate(actor, o => WithoutUnusedBaseCapture(o with { SelectedSlots = o.SelectedSlots.Without(AnimationSlot.Lips) }));
             return Outcome.Ok();
         }
         ushort target = current.LipsCapture ?? 0;
         var result = WriteLips(actor, target);
         if (!result.Success)
             return result;
-        _store.Mutate(actor, o => o with
+        _store.Mutate(actor, o => WithoutUnusedBaseCapture(o with
         {
             SelectedSlots = o.SelectedSlots.Without(AnimationSlot.Lips),
             Lips = null,
             LipsCapture = null,
-        });
+        }));
         return Outcome.Ok();
     }
 
