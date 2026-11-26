@@ -77,6 +77,10 @@ public interface IVirtualCameraService : IDisposable
     /// follow, target, link, parent, or ownership state.</summary>
     Outcome CenterOnActor(IActor actor);
 
+    /// <summary>Why the live camera can't be centred on this actor right now,
+    /// or null when it can.</summary>
+    string? CenterRefusal(IActor actor);
+
     /// <summary>Frames an exact, currently drawn bone through the live Game
     /// camera using its current world transform. Like actor centering, this
     /// changes framing only and never rewrites tracking ownership.</summary>

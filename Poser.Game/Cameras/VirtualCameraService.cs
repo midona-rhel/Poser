@@ -369,6 +369,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     /// <summary>See <see cref="CameraTargeting.CenterOnActor"/>.</summary>
     public Outcome CenterOnActor(IActor actor) => _targeting.CenterOnActor(actor);
 
+    public string? CenterRefusal(IActor actor) => _targeting.Refusal(actor, out _, out _, out _);
+
     /// <summary>See <see cref="CameraTargeting.CenterOnBone"/>.</summary>
     public Outcome CenterOnBone(IBone bone) => _targeting.CenterOnBone(bone);
 
