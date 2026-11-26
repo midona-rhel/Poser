@@ -1,6 +1,7 @@
 using Poser.Application.Transforms;
+using Poser.Application.Scene;
 
-namespace Poser.Application.Scene;
+namespace Poser.Game.Scene;
 
 /// <summary>
 /// Removes a load's groups and parent links, restores environment and camera
@@ -8,7 +9,7 @@ namespace Poser.Application.Scene;
 /// Used both when a load aborts and when the user undoes a committed load.
 /// </summary>
 internal sealed class SceneLoadRollback(
-    ISceneStatePort sceneState, ISceneMaterializer materializer, ISceneStructure structure,
+    SceneStateRuntime sceneState, SceneEntityRuntime sceneEntities, ISceneStructure structure,
     TransformParenting parenting)
 {
     /// <summary>
@@ -63,7 +64,7 @@ internal sealed class SceneLoadRollback(
         {
             try
             {
-                materializer.RestoreDefaultCamera(camera);
+                sceneEntities.RestoreDefaultCamera(camera);
                 operation.DefaultCameraBaseline = null;
             }
             catch (Exception ex)
@@ -74,17 +75,17 @@ internal sealed class SceneLoadRollback(
 
         // Release map objects before destroying other entities so cleanup failures
         // below cannot prevent restoration of borrowed objects.
-        Release(operation.BorrowedWorldObjects, materializer.ReleaseWorldObject,
+        Release(operation.BorrowedWorldObjects, sceneEntities.ReleaseWorldObject,
             "world object release", failures);
-        Release(operation.CreatedCameras, materializer.DestroyCamera,
+        Release(operation.CreatedCameras, sceneEntities.DestroyCamera,
             "camera", failures);
-        Release(operation.SpawnedLights, materializer.DestroyLight,
+        Release(operation.SpawnedLights, sceneEntities.DestroyLight,
             "light", failures);
-        Release(operation.StagedOverlays, materializer.DestroyOverlay,
+        Release(operation.StagedOverlays, sceneEntities.DestroyOverlay,
             "overlay", failures);
-        Release(operation.SpawnedProps, materializer.DestroyProp,
+        Release(operation.SpawnedProps, sceneEntities.DestroyProp,
             "object", failures);
-        Release(operation.SpawnedActors, materializer.DestroyActor,
+        Release(operation.SpawnedActors, sceneEntities.DestroyActor,
             "actor", failures);
 
         foreach (var restore in operation.ActorRestores)

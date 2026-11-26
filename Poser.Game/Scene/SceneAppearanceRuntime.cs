@@ -31,7 +31,7 @@ namespace Poser.Game.Scene;
 /// appearance back. Every MCDF import and export goes through the usual MCDF
 /// code; this class only handles the files a scene needs for it.
 /// </summary>
-internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
+internal sealed class SceneAppearanceRuntime : IDisposable
 {
     private readonly SessionAppearanceFiles _historyAppearanceFiles = new(DeleteQuietly);
     private readonly SceneRuntimeHandles _handles;
@@ -104,6 +104,9 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
 
     internal void RememberActorIdentity(IActor actor, string? hash) => _capture.RememberIdentity(actor, hash);
 
+    /// <summary>Asks for the scene to be copied once the bone positions have been
+    /// read fresh on the next frame. <paramref name="onCaptured"/> gets the copy.
+    /// Returns why the copy could not be asked for, or null. Main thread.</summary>
     public string? ArmSceneCapture(
         Guid sceneId,
         string? description,
@@ -111,6 +114,10 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         bool includeAnimation = false) =>
         _capture.BeginCapture(sceneId, description, onCaptured, includeAnimation);
 
+    /// <summary>Works out a checksum for every MCDF the scene names and writes it
+    /// into the scene, so a later load can tell whether the file has changed.
+    /// Returns a note for each file that could not be read. Runs on the save's
+    /// background task.</summary>
     public IReadOnlyList<string> StampMcdfHashes(SceneFile scene)
     {
         var notes = new List<string>();
@@ -141,6 +148,11 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
 
     // ── portable appearance ──────────────────────────────────────────────
 
+    /// <summary>Builds the appearance package each saved actor needs: an MCDF the
+    /// actor was loaded from is reused, otherwise the actor's current look is
+    /// exported. Returns a note for each actor whose appearance could not be
+    /// included, and the temporary files to delete once the save ends. Runs on the
+    /// save's background task and reads the game on the main thread.</summary>
     public async Task<SceneSealOutcome> SealAppearance(
         SceneFile scene,
         IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> identities,
@@ -365,6 +377,8 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         }, true);
     }
 
+    /// <summary>The total size of the appearance packages the actors in the scene
+    /// would add to a save.</summary>
     public long EstimateAppearanceBytes()
     {
         long total = 0;
@@ -391,6 +405,7 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
         return total;
     }
 
+    /// <summary>Deletes a temporary appearance package once the save has ended.</summary>
     public void DeleteTemporary(string path) => DeleteQuietly(path);
 
     /// <summary>Deletes a temporary file once the MCDF import or export using
@@ -417,6 +432,11 @@ internal sealed class SceneAppearanceRuntime : ISceneCapturePort, IDisposable
 
     // ── load side ────────────────────────────────────────────────────────
 
+    /// <summary>Gives the actor its saved Penumbra collection, when it has one and
+    /// no MCDF. If that collection does not exist on this computer, the step still
+    /// succeeds with a note and the actor keeps the collection it spawned with. A
+    /// failure in Penumbra or in the redraw is an error. Runs on the load's
+    /// background task and does its game work on the main thread.</summary>
     public async Task<Outcome> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {

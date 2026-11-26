@@ -24,25 +24,20 @@ public static class SceneWorkflowRegistration
         services.AddSingleton<SceneAppearanceRuntime>();
         services.AddSingleton<SceneActorRuntime>();
         services.AddSingleton<SceneEntityRuntime>();
-        services.AddSingleton<ISceneStatePort>(sp => sp.GetRequiredService<SceneStateRuntime>());
-        services.AddSingleton<ISceneCapturePort>(sp => sp.GetRequiredService<SceneAppearanceRuntime>());
-        services.AddSingleton<ISceneMaterializer>(sp => sp.GetRequiredService<SceneEntityRuntime>());
-        services.AddSingleton<IActorRestorePort>(sp => sp.GetRequiredService<SceneActorRuntime>());
-        services.AddSingleton<ISceneHistoryPort>(sp => sp.GetRequiredService<SceneHistoryBinder>());
         services.AddSingleton<ISceneStructure, SceneStructure>();
-        services.AddSingleton<ISceneWorkflowObserver, SceneWorkflowObserver>();
+        services.AddSingleton<SceneWorkflowObserver>();
         // The workflow is created after the services it uses. Services are
         // disposed in reverse order, so when the plugin closes the workflow
         // finishes its work first, and only then do those services remove
         // their event listeners and files.
         services.AddSingleton<SceneWorkflow>(sp => new SceneWorkflow(
-            sp.GetRequiredService<ISceneStatePort>(),
-            sp.GetRequiredService<ISceneCapturePort>(),
-            sp.GetRequiredService<ISceneMaterializer>(),
-            sp.GetRequiredService<IActorRestorePort>(),
-            sp.GetRequiredService<ISceneHistoryPort>(),
+            sp.GetRequiredService<SceneStateRuntime>(),
+            sp.GetRequiredService<SceneAppearanceRuntime>(),
+            sp.GetRequiredService<SceneEntityRuntime>(),
+            sp.GetRequiredService<SceneActorRuntime>(),
+            sp.GetRequiredService<SceneHistoryBinder>(),
             sp.GetRequiredService<ISceneDocumentStore>(),
-            sp.GetRequiredService<ISceneWorkflowObserver>(),
+            sp.GetRequiredService<SceneWorkflowObserver>(),
             sp.GetRequiredService<EditHistory>(),
             sp.GetRequiredService<ISceneStructure>(),
             sp.GetRequiredService<TransformParenting>(),

@@ -9,7 +9,7 @@ namespace Poser.Application.Scene;
 /// Adjusts positions in the loaded document before creating game entities.
 /// Invalid placement returns a reason without requiring scene rollback.
 /// </summary>
-internal static class SceneLoadPlacement
+public static class SceneLoadPlacement
 {
     /// <summary>Rebases <paramref name="scene"/> in place. <paramref name="origin"/>
     /// is where the user stands now; only a relative-to-origin load reads it.

@@ -4,7 +4,7 @@ using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
-internal static class SceneParentingCodec
+public static class SceneParentingCodec
 {
     internal static SceneStructureRef? Reference(SelectionId id, IReadOnlyDictionary<Guid, ActorId> actors,
         Func<ActorId, ActorId?>? companionOwner = null)

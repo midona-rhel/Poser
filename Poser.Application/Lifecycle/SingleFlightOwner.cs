@@ -4,7 +4,7 @@ using Poser.Domain.Operations;
 namespace Poser.Application.Lifecycle;
 
 /// <summary>Shared state for an operation that may be cancelled or invalidated.</summary>
-internal abstract class SingleFlightOperation
+public abstract class SingleFlightOperation
 {
     public required Guid OperationId { get; init; }
     public required OperationEpoch Epoch { get; init; }
@@ -20,7 +20,7 @@ internal abstract class SingleFlightOperation
 /// enforce either. Updates from a replaced operation are ignored, and its
 /// final result can be published only once.
 /// </summary>
-internal sealed class SingleFlightOwner<TOperation, TProgress>
+public sealed class SingleFlightOwner<TOperation, TProgress>
     where TOperation : SingleFlightOperation
     where TProgress : class
 {

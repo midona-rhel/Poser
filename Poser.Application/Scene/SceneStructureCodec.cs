@@ -5,7 +5,7 @@ using Poser.Documents.Files;
 namespace Poser.Application.Scene;
 
 /// <summary>Maps captured application values to legacy scene-file references.</summary>
-internal static class SceneStructureCodec
+public static class SceneStructureCodec
 {
     public static void Write(
         SceneFile scene, SceneStructureSnapshot snapshot,

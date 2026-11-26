@@ -4,15 +4,16 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Documents.Files;
+using Poser.Application.Scene;
 
-namespace Poser.Application.Scene;
+namespace Poser.Game.Scene;
 
 /// <summary>
 /// The load's last optional phase: sidebar groups, root order and transform
 /// parent links restored over the entities the load created.
 /// </summary>
 internal sealed class SceneLoadStructure(
-    ISceneStatePort sceneState, ISceneStructure structure, TransformParenting parenting)
+    SceneStateRuntime sceneState, ISceneStructure structure, TransformParenting parenting)
 {
     public static Dictionary<(string Kind, Guid Key), SceneEntityHandle> Tokens(
         params (string Kind, IReadOnlyDictionary<Guid, SceneEntityHandle> Entities)[] maps)

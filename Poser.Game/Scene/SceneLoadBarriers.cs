@@ -1,8 +1,9 @@
 using Poser.Application.Lifecycle;
 using Poser.Domain.Operations;
 using Poser.Documents.Files;
+using Poser.Application.Scene;
 
-namespace Poser.Application.Scene;
+namespace Poser.Game.Scene;
 
 /// <summary>
 /// Waits for actors, companion bodies, and pose imports with time limits.
@@ -10,7 +11,7 @@ namespace Poser.Application.Scene;
 /// only the named entity.
 /// </summary>
 internal sealed class SceneLoadBarriers(
-    SceneWorkflow workflow, ISceneStatePort sceneState, IActorRestorePort actorRestore,
+    SceneWorkflow workflow, SceneStateRuntime sceneState, SceneActorRuntime actorRestore,
     SceneOperation operation,
     CancellationToken cancellation)
 {
@@ -66,7 +67,7 @@ internal sealed class SceneLoadBarriers(
             }
             return !armed.Busy;
         }
-        await FrameworkPoll.Until(Arm, workflow.PoseImportBound, PollInterval, cancellation);
+        await FrameworkPoll.Until(Arm, SceneWorkflow.PoseImportTimeout, PollInterval, cancellation);
         if (dispatchFailure != null)
             return dispatchFailure;
         if (armed.Busy)
@@ -75,7 +76,7 @@ internal sealed class SceneLoadBarriers(
             return armed.Refusal;
 
         var finished = await Task.WhenAny(
-            completion.Task, Task.Delay(workflow.PoseImportBound, cancellation));
+            completion.Task, Task.Delay(SceneWorkflow.PoseImportTimeout, cancellation));
         if (finished != completion.Task)
         {
             // Cancel the pending import so it cannot change an actor after
@@ -139,7 +140,7 @@ internal sealed class SceneLoadBarriers(
         }
         try
         {
-            await FrameworkPoll.Until(Ready, workflow.ActorReadyBound, PollInterval, workflow.DisposalToken);
+            await FrameworkPoll.Until(Ready, SceneWorkflow.ActorReadyTimeout, PollInterval, workflow.DisposalToken);
         }
         catch (OperationCanceledException) when (workflow.DisposalToken.IsCancellationRequested)
         {
