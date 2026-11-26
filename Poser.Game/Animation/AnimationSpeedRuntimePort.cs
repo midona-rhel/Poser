@@ -8,15 +8,21 @@ using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using Poser.Application.Animation;
 using Poser.Domain;
 using Poser.Domain.Animation;
+using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 using Poser.Game.Bindings;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Native animation speed writes and the hooks that enforce them.</summary>
+/// <summary>
+/// Animation speed and layer weight, for the whole actor and per layer. Each
+/// change is stored first, with the value from before Poser's first change for
+/// Reset, then written to the game; two hooks hold the stored values every frame.
+/// </summary>
 public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
 {
     private readonly IFramework _framework;
+    private readonly AnimationTimelineRuntimePort _timeline;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationNativeState _native;
@@ -46,9 +52,11 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         StableBindingRegistry bindings,
         AnimationNativeState native,
         TimelineSeekService seek,
-        AnimationOverrideStore store)
+        AnimationOverrideStore store,
+        AnimationTimelineRuntimePort timeline)
     {
         _seek = seek;
+        _timeline = timeline;
         _store = store;
         _store.Changed += SyncEnforcementIndex;
         _framework = framework;
@@ -177,56 +185,206 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         _slotSpeedHook!.Original(sequencer, slot, finalSpeed);
     }
 
-    // ── Speed ─────────────────────────────────────────────────────────
+    // ── Whole actor ───────────────────────────────────────────────────
 
-    public Outcome SetOverallSpeed(ActorId actor, float speed)
+    public bool IsPaused(ActorId actor) => _store.For(actor).IsPaused;
+
+    public Outcome SetSpeed(ActorId actor, float speed)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
+        _store.Mutate(actor, o => o with { OverallSpeed = speed });
         ApplySpeedNow(character, speed);
         ApplySameTickEdges(character, speed, _store.For(actor).SlotSpeeds);
         return Outcome.Ok();
     }
 
-    public Outcome SetSlotWeight(ActorId actor, AnimationSlot slot, float weight)
+    /// <summary>Lets the game drive the whole actor's speed again.</summary>
+    public Outcome ClearSpeed(ActorId actor)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        if (!_seek.Available)
-            return Outcome.Fail("Layer weight is unavailable: the native timeline layout is not resolved.");
-        _seek.ApplySlotWeights(character, new Dictionary<AnimationSlot, float> { [slot] = Math.Clamp(weight, 0f, 1f) });
-        return Outcome.Ok();
-    }
-
-    public Outcome ClearSlotWeight(ActorId actor, AnimationSlot slot)
-    {
-        if (!_store.For(actor).SlotWeights.ContainsKey(slot))
-            return Outcome.Ok();
-        var character = _native.Resolve(actor, out _);
-        if (character != null)
-            _seek.ApplySlotWeights(character, new Dictionary<AnimationSlot, float> { [slot] = 1f });
-        return Outcome.Ok();
-    }
-
-    public Outcome ClearOverallSpeed(ActorId actor)
-    {
-        var character = _native.Resolve(actor, out var detail);
-        if (character == null)
-            return Outcome.Fail(detail!);
-
-        // The hand-back write runs only for a speed Poser held.
         var held = _store.For(actor);
         if (held.OverallSpeed == null)
             return Outcome.Ok();
-
+        _store.Mutate(actor, o => o with { OverallSpeed = null });
         // Hand the actor back at normal speed. The container write alone
         // is not enough: the game re-drives the container but not every
         // Havok control, so a Poser pause (controls at 0) is released
         // here or not at all.
         ApplySpeedNow(character, 1f);
         ApplySameTickEdges(character, 1f, held.SlotSpeeds);
+        return Outcome.Ok();
+    }
+
+    public Outcome Pause(ActorId actor)
+    {
+        _store.Trace?.Invoke($"Pause(all) {actor}");
+        return SetSpeed(actor, 0f);
+    }
+
+    /// <summary>Resumes paused animation layers and clears the whole-actor speed override.
+    /// A held facial expression stays in place until the Facial controls release it.</summary>
+    public Outcome Resume(ActorId actor)
+    {
+        _store.Trace?.Invoke($"Resume(all) {actor}");
+        var current = _store.For(actor);
+        foreach (var slot in current.SlotSpeeds.Keys)
+        {
+            if (slot == AnimationSlot.Facial && current.HeldExpression != null)
+                continue;
+            ResumeSlotSpeedCore(actor, slot);
+        }
+        return ClearSpeed(actor);
+    }
+
+    /// <summary>True when a layer has an animation that Poser does not hold
+    /// still and the whole actor is not paused. It reads what the game plays,
+    /// not whether bones move.</summary>
+    public bool AnyPlaying(ActorId actor)
+    {
+        if (IsPaused(actor))
+            return false;
+        if (_timeline.Read(actor) is not { } reading)
+            return false;
+        var owned = _store.For(actor);
+        foreach (var slotReading in reading.Slots)
+        {
+            if (slotReading.TimelineId != 0
+                && owned.SlotSpeeds.GetValueOrDefault(slotReading.Slot, 1f) != 0f)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Pauses other live layers that have no speed override, then
+    /// clears the whole-actor speed override so the chosen layer can play.</summary>
+    public Outcome ResumeForLayerPlay(ActorId actor, AnimationSlot playing)
+    {
+        var current = _store.For(actor);
+        if (_timeline.Read(actor) is { } reading)
+        {
+            foreach (var slotReading in reading.Slots)
+            {
+                if (slotReading.TimelineId == 0
+                    || slotReading.Slot == playing
+                    || current.SlotSpeeds.ContainsKey(slotReading.Slot))
+                    continue;
+                var held = SetSlotSpeed(actor, slotReading.Slot, 0f);
+                _store.Trace?.Invoke(
+                    $"  hold slot={slotReading.Slot} (tl {slotReading.TimelineId})"
+                    + $" -> {(held.Success ? "ok" : held.Detail)}");
+                if (!held.Success)
+                    return held;
+            }
+        }
+        _store.Trace?.Invoke($"  lift overall for {playing}");
+        return ClearSpeed(actor);
+    }
+
+    // ── One layer ─────────────────────────────────────────────────────
+
+    /// <summary>Whether Poser holds this one layer still (its speed is 0).</summary>
+    public bool IsSlotHeld(ActorId actor, AnimationSlot slot) =>
+        _store.For(actor).SlotSpeeds.TryGetValue(slot, out var speed) && speed == 0f;
+
+    /// <summary>Holds a layer at a speed. <paramref name="firstCapture"/> is the
+    /// speed Reset puts back, when it is not the layer's current one.</summary>
+    public Outcome SetSlotSpeed(
+        ActorId actor, AnimationSlot slot, float speed, float? firstCapture = null)
+    {
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        var current = _store.For(actor);
+        float live = current.SlotSpeeds.TryGetValue(slot, out var ownedSpeed)
+            ? ownedSpeed
+            : _timeline.Read(actor)?.SpeedFor(slot) ?? 1f;
+        // Play returns to the last speed above zero: the new one, or the one being paused.
+        float resume = speed > 0f ? speed : live;
+        _store.Mutate(actor, o => o with
+        {
+            SlotSpeeds = o.SlotSpeeds.With(slot, speed),
+            SlotSpeedCaptures = o.SlotSpeedCaptures.ContainsKey(slot)
+                ? o.SlotSpeedCaptures
+                : o.SlotSpeedCaptures.With(slot, firstCapture ?? live),
+            SlotResumeSpeeds = resume > 0f ? o.SlotResumeSpeeds.With(slot, resume) : o.SlotResumeSpeeds,
+        });
+        // The hook gives the layer the stored speed times the whole-actor speed.
+        character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, speed);
+        // Same tick: the slot timeline, its props and effects now, not on the
+        // sequencer's next consume.
+        _seek.HoldSlotSpeeds(character, new Dictionary<AnimationSlot, float> { [slot] = speed },
+            _store.For(actor).OverallSpeed ?? 1f);
+        return Outcome.Ok();
+    }
+
+    /// <summary>Lets the game drive the layer's speed again, from the speed it
+    /// had before Poser's first change.</summary>
+    public Outcome ClearSlotSpeed(ActorId actor, AnimationSlot slot)
+    {
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        var held = _store.For(actor);
+        _store.Mutate(actor, o => o.WithoutSlotSpeed(slot));
+        if (!held.SlotSpeeds.ContainsKey(slot))
+            return Outcome.Ok();
+        float restore = held.SlotSpeedCaptures.TryGetValue(slot, out var captured) ? captured : 1f;
+        float overall = held.OverallSpeed ?? 1f;
+        // Nothing holds the layer any more, so the hook lets this through.
+        character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restore * overall);
+        // Hand its timeline, props and effects back at the restored speed on
+        // this tick (the wand lagged at x0.5 when only the field was restored).
+        _seek.HoldSlotSpeeds(character, new Dictionary<AnimationSlot, float> { [slot] = restore }, overall);
+        _seek.ApplyVfxSpeed(character, overall);
+        return Outcome.Ok();
+    }
+
+    public Outcome PauseSlot(ActorId actor, AnimationSlot slot)
+    {
+        // Pause only this layer. Pausing the whole actor here would also freeze
+        // any animation the user starts on another layer afterwards.
+        return SetSlotSpeed(actor, slot, 0f);
+    }
+
+    /// <summary>Plays one layer Poser holds still again. A layer that is not
+    /// held still is left alone.</summary>
+    public Outcome ResumeSlotSpeedCore(ActorId actor, AnimationSlot slot)
+    {
+        var current = _store.For(actor);
+        if (!current.SlotSpeeds.TryGetValue(slot, out var speed) || speed != 0f)
+            return Outcome.Ok();
+        // A layer that was already still when Poser paused it has no remembered
+        // resume speed. Use its original positive speed, or normal speed (1).
+        if (!current.SlotResumeSpeeds.TryGetValue(slot, out var resume))
+            resume = current.SlotSpeedCaptures.TryGetValue(slot, out var captured) && captured > 0f
+                ? captured
+                : 1f;
+        return SetSlotSpeed(actor, slot, resume);
+    }
+
+    /// <summary>Holds a layer's blend weight in [0, 1]; 1 lets the game's 1 back.</summary>
+    public Outcome SetSlotWeight(ActorId actor, AnimationSlot slot, float weight)
+    {
+        if (weight >= 1f && !_store.For(actor).SlotWeights.ContainsKey(slot))
+            return Outcome.Ok();
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        if (weight >= 1f)
+        {
+            _store.Mutate(actor, o => o with { SlotWeights = o.SlotWeights.Without(slot) });
+            _seek.ApplySlotWeights(character, new Dictionary<AnimationSlot, float> { [slot] = 1f });
+            return Outcome.Ok();
+        }
+        if (!_seek.Available)
+            return Outcome.Fail("Layer weight is unavailable: the native timeline layout is not resolved.");
+        float held = Math.Clamp(weight, 0f, 1f);
+        _store.Mutate(actor, o => o with { SlotWeights = o.SlotWeights.With(slot, held) });
+        _seek.ApplySlotWeights(character, new Dictionary<AnimationSlot, float> { [slot] = held });
         return Outcome.Ok();
     }
 
@@ -283,47 +441,6 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
             if (binding.ptr != null && binding.ptr->Animation.ptr != null && control->PlaybackSpeed == 0)
                 control->hkaAnimationControl.LocalTime = 0;
         });
-        return Outcome.Ok();
-    }
-
-    public Outcome SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed)
-    {
-        var character = _native.Resolve(actor, out var detail);
-        if (character == null)
-            return Outcome.Fail(detail!);
-        // Straight to the game: the store still holds the old speed until this
-        // returns, and the hook would put that one back.
-        float overall = _store.For(actor).OverallSpeed ?? 1f;
-        _slotSpeedHook!.Original(&character->Timeline.TimelineSequencer, (uint)slot, speed * overall);
-        // Same tick: the slot timeline, its props and effects now, not on the
-        // sequencer's next consume.
-        _seek.HoldSlotSpeeds(character, new Dictionary<AnimationSlot, float> { [slot] = speed }, overall);
-        _log.Debug(
-            $"[AnimState] native SetSlotSpeed slot={(int)slot} speed={speed:0.##}; "
-            + $"field now {character->Timeline.TimelineSequencer.TimelineSpeeds[(int)slot]:0.##}");
-        return Outcome.Ok();
-    }
-
-    public Outcome ClearSlotSpeed(
-        ActorId actor, AnimationSlot slot, float restoreSpeed = 1f)
-    {
-        var character = _native.Resolve(actor, out var detail);
-        if (character == null)
-            return Outcome.Fail(detail!);
-
-        var held = _store.For(actor);
-        if (!held.SlotSpeeds.ContainsKey(slot))
-            return Outcome.Ok();
-
-        // Straight to the game: the store still holds the override until this
-        // returns, and the hook would put it back over the restored speed.
-        float overall = held.OverallSpeed ?? 1f;
-        _slotSpeedHook!.Original(&character->Timeline.TimelineSequencer, (uint)slot, restoreSpeed * overall);
-        // Nothing holds the layer any more: hand its timeline, props and effects
-        // back at the restored speed on this tick (the wand lagged at x0.5 when
-        // only the field was restored).
-        _seek.HoldSlotSpeeds(character, new Dictionary<AnimationSlot, float> { [slot] = restoreSpeed }, overall);
-        _seek.ApplyVfxSpeed(character, overall);
         return Outcome.Ok();
     }
 

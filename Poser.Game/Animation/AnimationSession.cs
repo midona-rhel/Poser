@@ -22,11 +22,10 @@ public sealed class AnimationSession : IAnimationPlayback
 {
     private readonly AnimationOverrideStore _store;
     private readonly AnimationTimelineRuntimePort _timeline;
-    private readonly AnimationSpeedRuntimePort _speedPort;
     private readonly AnimationStanceRuntimePort _stancePort;
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly BaseAnimationSession _base;
-    private readonly SpeedAnimationSession _speed;
+    private readonly AnimationSpeedRuntimePort _speed;
     private readonly StanceAnimationSession _stance;
     private readonly ScrubAnimationSession _scrub;
     private readonly HeldExpressionSession _expression;
@@ -59,14 +58,13 @@ public sealed class AnimationSession : IAnimationPlayback
     {
         _store = store;
         _timeline = timeline;
-        _speedPort = speed;
+        _speed = speed;
         _stancePort = stance;
         _rendering = rendering;
         _base = new BaseAnimationSession(_store, timeline);
-        _speed = new SpeedAnimationSession(_store, timeline, speed);
         _stance = new StanceAnimationSession(_store, timeline, stance, _base);
         _scrub = new ScrubAnimationSession(scrub, _speed);
-        _expression = new HeldExpressionSession(_store, timeline, speed, _base, _speed);
+        _expression = new HeldExpressionSession(_store, timeline, _base, _speed);
         _timeline.LayerEnded += OnLayerEnded;
     }
 
@@ -527,7 +525,7 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>Moves every paused animation back to its first frame. Not an undo step.</summary>
     public Outcome RewindPausedControls(ActorId actor) =>
-        _speedPort.RewindPausedControls(actor);
+        _speed.RewindPausedControls(actor);
 
     /// <summary>The layer's held blend weight, or 1 when Poser holds none.</summary>
     public float WeightFor(ActorId actor, AnimationSlot slot) =>
@@ -536,16 +534,7 @@ public sealed class AnimationSession : IAnimationPlayback
     /// <summary>Holds a layer's blend weight in [0, 1]; 1 releases it.</summary>
     private Outcome SetSlotWeightUntracked(ActorId actor, AnimationSlot slot, float weight)
     {
-        var result = weight >= 1f
-            ? _speedPort.ClearSlotWeight(actor, slot)
-            : _speedPort.SetSlotWeight(actor, slot, weight);
-        if (!result.Success)
-            return result;
-        _store.Mutate(actor, o => o with
-        {
-            SlotWeights = weight >= 1f ? o.SlotWeights.Without(slot) : o.SlotWeights.With(slot, weight),
-        });
-        return Outcome.Ok();
+        return _speed.SetSlotWeight(actor, slot, weight);
     }
 
     /// <summary>
@@ -897,9 +886,8 @@ public sealed class AnimationSession : IAnimationPlayback
 
         if (owned.OverallSpeed != null)
         {
-            _speedPort.ClearOverallSpeed(actor);
+            _speed.ClearSpeed(actor);
             remaining = remaining with { OverallSpeed = null };
-            _store.Mutate(actor, o => o with { OverallSpeed = null });
         }
 
         // Restore the saved layers other than Base.
@@ -972,16 +960,14 @@ public sealed class AnimationSession : IAnimationPlayback
 
         foreach (var slot in owned.SlotWeights.Keys)
         {
-            _speedPort.ClearSlotWeight(actor, slot);
+            _speed.SetSlotWeight(actor, slot, 1f);
             remaining = remaining with { SlotWeights = remaining.SlotWeights.Without(slot) };
-            _store.Mutate(actor, o => o with { SlotWeights = o.SlotWeights.Without(slot) });
         }
 
-        foreach (var (slot, restore) in owned.SlotSpeedCaptures)
+        foreach (var slot in owned.SlotSpeedCaptures.Keys)
         {
-            _speedPort.ClearSlotSpeed(actor, slot, restore);
+            _speed.ClearSlotSpeed(actor, slot);
             remaining = remaining.WithoutSlotSpeed(slot);
-            _store.Mutate(actor, o => o.WithoutSlotSpeed(slot));
         }
 
         if (owned.StanceCaptureValue is { } stance &&

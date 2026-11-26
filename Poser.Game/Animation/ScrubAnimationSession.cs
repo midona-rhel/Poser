@@ -13,9 +13,9 @@ namespace Poser.Game.Animation;
 internal sealed class ScrubAnimationSession
 {
     private readonly AnimationScrubRuntimePort _port;
-    private readonly SpeedAnimationSession _speed;
+    private readonly AnimationSpeedRuntimePort _speed;
 
-    public ScrubAnimationSession(AnimationScrubRuntimePort port, SpeedAnimationSession speed)
+    public ScrubAnimationSession(AnimationScrubRuntimePort port, AnimationSpeedRuntimePort speed)
     {
         _port = port;
         _speed = speed;

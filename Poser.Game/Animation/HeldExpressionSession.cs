@@ -16,18 +16,15 @@ internal sealed class HeldExpressionSession
 {
     private readonly AnimationOverrideStore _store;
     private readonly AnimationTimelineRuntimePort _timeline;
-    private readonly AnimationSpeedRuntimePort _speedPort;
     private readonly BaseAnimationSession _base;
-    private readonly SpeedAnimationSession _speed;
+    private readonly AnimationSpeedRuntimePort _speed;
 
     public HeldExpressionSession(
         AnimationOverrideStore store, AnimationTimelineRuntimePort timeline,
-        AnimationSpeedRuntimePort speedPort, BaseAnimationSession baseSession,
-        SpeedAnimationSession speed)
+        BaseAnimationSession baseSession, AnimationSpeedRuntimePort speed)
     {
         _store = store;
         _timeline = timeline;
-        _speedPort = speedPort;
         _base = baseSession;
         _speed = speed;
     }
@@ -44,24 +41,18 @@ internal sealed class HeldExpressionSession
 
         // When the face is already held, let it go first: the new expression
         // has to start playing before it is held on its first frame.
+        // The face's speed from before Poser's first change, kept for Reset
+        // across letting go and holding again.
         var current = _store.For(actor);
-        float? speedCapture = current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial)
-            ? null
+        float? speedCapture = current.SlotSpeedCaptures.TryGetValue(AnimationSlot.Facial, out var first)
+            ? first
             : _timeline.Read(actor)?.SpeedFor(AnimationSlot.Facial);
         if (current.SlotSpeeds.ContainsKey(AnimationSlot.Facial))
         {
-            float restore = current.SlotSpeedCaptures.TryGetValue(
-                AnimationSlot.Facial, out var captured) ? captured : 1f;
-            var unpinned = _speedPort.ClearSlotSpeed(
-                actor, AnimationSlot.Facial, restore);
+            var unpinned = _speed.ClearSlotSpeed(actor, AnimationSlot.Facial);
             if (!unpinned.Success)
                 return unpinned;
-            _store.Mutate(actor, o => o with
-            {
-                SlotSpeeds = o.SlotSpeeds.Without(AnimationSlot.Facial),
-                SlotResumeSpeeds = o.SlotResumeSpeeds.Without(AnimationSlot.Facial),
-                HeldExpression = null,
-            });
+            _store.Mutate(actor, o => o with { HeldExpression = null });
         }
 
         var played = _base.ApplySelectedSlotCore(actor, AnimationSlot.Facial);
@@ -95,10 +86,7 @@ internal sealed class HeldExpressionSession
         if (!current.SlotCaptures.ContainsKey(AnimationSlot.Facial))
             return _base.ResetBlendSelection(actor, AnimationSlot.Facial);
 
-        float restoreSpeed = current.SlotSpeedCaptures.TryGetValue(
-            AnimationSlot.Facial, out var capturedSpeed) ? capturedSpeed : 1f;
-        var unpinned = _speedPort.ClearSlotSpeed(
-            actor, AnimationSlot.Facial, restoreSpeed);
+        var unpinned = _speed.ClearSlotSpeed(actor, AnimationSlot.Facial);
         if (!unpinned.Success)
             return unpinned;
 
