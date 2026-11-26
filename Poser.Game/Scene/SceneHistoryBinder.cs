@@ -21,7 +21,7 @@ internal sealed class SceneHistoryBinder(
     IEntityHistoryBinding<IOverlayNode> overlays,
     IEntityHistoryBinding<IWorldObject> worldObjects,
     IEntityHistoryBinding<ILight> lights,
-    IEntityHistoryBinding<IVirtualCamera> cameras) : ISceneHistoryPort
+    IEntityHistoryBinding<IVirtualCamera> cameras)
 {
     public IEntityHistoryBinding<IActor> Actors => actors;
     public IEntityHistoryBinding<IPropHandle> Props => props;
@@ -30,6 +30,8 @@ internal sealed class SceneHistoryBinder(
     public IEntityHistoryBinding<ILight> Lights => lights;
     public IEntityHistoryBinding<IVirtualCamera> Cameras => cameras;
 
+    /// <summary>The entity an undo step stands for, following it to the new entity
+    /// a redo created. Null when it no longer exists.</summary>
     public SelectionId? ResolveHistoryEntity(SceneEntityHandle token) => SelectionOf(bindings, handles.Resolve(token) switch
     {
         IActor actor => actors.Resolve(actor),
@@ -41,6 +43,8 @@ internal sealed class SceneHistoryBinder(
         _ => null,
     });
 
+    /// <summary>After a redo loads the scene again, links each new entity to the one
+    /// it replaces, so older undo steps find the new one.</summary>
     public void BindHistoryReplacement(SceneEntityHandle previous, SceneEntityHandle replacement)
     {
         if (previous.Kind != replacement.Kind) return;

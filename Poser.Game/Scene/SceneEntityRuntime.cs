@@ -28,7 +28,7 @@ namespace Poser.Game.Scene;
 /// Creates or reuses the entities in a saved scene. Keeps the previous state
 /// of reused map objects so Undo can put back their earlier edits.
 /// </summary>
-internal sealed class SceneEntityRuntime : ISceneMaterializer
+internal sealed class SceneEntityRuntime
 {
     private static readonly TimeSpan WorldObjectPollInterval = TimeSpan.FromMilliseconds(50);
 
@@ -100,10 +100,13 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         _animation = animation;
     }
 
+    /// <summary>The name the object list shows for a map object's model path.</summary>
     public string WorldObjectName(string path) => WorldObjects.WorldObjectService.DisplayName(path);
 
     // ── actors ───────────────────────────────────────────────────────────
 
+    /// <summary>Spawns one actor and gives it the saved model id. Returns null and
+    /// the spawn's reason when it fails.</summary>
     public SceneEntityHandle? SpawnActor(SceneActor data, out string? detail)
     {
         // Set the model while spawning, before the actor is first drawn.
@@ -124,6 +127,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return _handles.Track(SceneEntityKind.Actor, actor);
     }
 
+    /// <summary>Your own character, for a saved entry marked as yours. Null when it
+    /// is not in GPose; the load then spawns a copy.</summary>
     public SceneEntityHandle? FindLocalPlayer() =>
         _actors.Actors.FirstOrDefault(actor =>
             actor.ActorKind is not (ActorKind.Companion or ActorKind.Mount or ActorKind.Ornament)
@@ -131,6 +136,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
             ? _handles.Track(SceneEntityKind.Actor, player)
             : null;
 
+    /// <summary>Finds the saved character among the actors already in GPose,
+    /// skipping actors this load has already used.</summary>
     public SceneEntityHandle? FindMatchingActor(SceneActor data, IReadOnlyCollection<SceneEntityHandle> used)
     {
         var hash = data.IdentityHash ?? SceneActorNames.Hash(SceneActorNames.Resolve(data));
@@ -141,6 +148,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return actor == null ? null : _handles.Track(SceneEntityKind.Actor, actor);
     }
 
+    /// <summary>Remembers an actor the load reuses, so undo can put it back as it
+    /// was without removing it.</summary>
     public Action CaptureActorRestore(SceneEntityHandle token)
     {
         var actor = _handles.Require<IActor>(token, SceneEntityKind.Actor);
@@ -161,6 +170,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
 
     // ── props and overlays ───────────────────────────────────────────────
 
+    /// <summary>Spawns one object with its saved position and visibility.</summary>
     public SceneEntityHandle? SpawnProp(SceneProp data, out string? detail)
     {
         var handle = _props.SpawnProp(new PropModel(
@@ -178,6 +188,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return _handles.Track(SceneEntityKind.Prop, handle);
     }
 
+    /// <summary>Adds one overlay from its saved settings.</summary>
     public SceneEntityHandle? SpawnOverlay(SceneOverlay data, out string? detail)
     {
         if (data.Node is not { } document)
@@ -255,6 +266,10 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return token;
     }
 
+    /// <summary>Waits, up to <paramref name="bound"/>, for spawned map objects whose
+    /// models are still loading, such as housing furniture. Returns the ones still
+    /// not loaded. Those are kept rather than removed later, so the load can name
+    /// them in its result. Runs on the load's background task.</summary>
     public async Task<IReadOnlyList<SceneEntityHandle>> AwaitWorldObjectsLoaded(
         IReadOnlyList<SceneEntityHandle> worldObjects, TimeSpan bound,
         System.Threading.CancellationToken cancellation)
@@ -285,6 +300,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return await _framework.RunOnFrameworkThread(() => Loading(keep: true));
     }
 
+    /// <summary>Gives one map object back: a borrowed object gets its earlier state
+    /// back, and a spawned copy is removed. Undo of <see cref="AdoptWorldObject"/>.</summary>
     public void ReleaseWorldObject(SceneEntityHandle token) =>
         _handles.Remove<IWorldObject>(token, SceneEntityKind.WorldObject, _history.WorldObjects.Resolve, entity =>
         {
@@ -368,6 +385,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
     private IVirtualCamera? DefaultCamera =>
         _cameras.Cameras.FirstOrDefault(camera => camera.IsDefault);
 
+    /// <summary>The Main Camera, so a saved group that held it gets it back on load.</summary>
     public SceneEntityHandle? DefaultCameraToken() => DefaultCamera is { } camera
         ? _handles.Track(SceneEntityKind.Camera, camera) : null;
 
@@ -388,6 +406,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
             camera?.IsTargetLocked ?? false, live);
     }
 
+    /// <summary>Gives the Main Camera the saved camera settings. Returns why it
+    /// failed, or null.</summary>
     public string? ApplyDefaultCamera(SceneCamera data)
     {
         if (DefaultCamera is not { } camera)
@@ -396,6 +416,7 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return null;
     }
 
+    /// <summary>Creates one more camera from its saved settings.</summary>
     public SceneEntityHandle? CreateCamera(SceneCamera data, out string? detail)
     {
         // The load makes the saved camera live only after every camera and target is restored.
@@ -410,6 +431,9 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return _handles.Track(SceneEntityKind.Camera, camera);
     }
 
+    /// <summary>Sets the actor a camera follows, and whether it stays locked to that
+    /// actor. A null camera means the Main Camera. Returns why it failed, or
+    /// null.</summary>
     public string? SetCameraTarget(
         SceneEntityHandle? camera, SceneEntityHandle targetActor, string displayName,
         bool targetLocked)
@@ -432,6 +456,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return null;
     }
 
+    /// <summary>Makes a camera the one the game shows. A null camera means the Main
+    /// Camera.</summary>
     public string? SetLiveCamera(SceneEntityHandle? camera)
     {
         var target = camera == null ? DefaultCamera : _handles.Resolve<IVirtualCamera>(camera, SceneEntityKind.Camera);
@@ -441,6 +467,8 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
         return null;
     }
 
+    /// <summary>Puts the Main Camera back as <see cref="CaptureDefaultCameraState"/>
+    /// found it.</summary>
     public void RestoreDefaultCamera(SceneCameraBaseline baseline)
     {
         if (DefaultCamera is not { } camera)
@@ -477,17 +505,33 @@ internal sealed class SceneEntityRuntime : ISceneMaterializer
             _selection.RemoveActorLineage(gone);
     });
 
+    /// <summary>Removes an object the load spawned.</summary>
     public void DestroyProp(SceneEntityHandle prop) => _handles.Remove<IPropHandle>(
         prop, SceneEntityKind.Prop, _history.Props.Resolve, entity => _props.Destroy((PropHandle)entity));
 
+    /// <summary>Removes an overlay the load added.</summary>
     public void DestroyOverlay(SceneEntityHandle overlay) =>
         _handles.Remove<IOverlayNode>(overlay, SceneEntityKind.Overlay, _history.Overlays.Resolve,
             entity => _overlays.Destroy((Poser.Game.Overlays.OverlayNodeHandle)entity));
 
+    /// <summary>Removes a light the load spawned.</summary>
     public void DestroyLight(SceneEntityHandle light) => _handles.Remove<ILight>(
         light, SceneEntityKind.Light, _history.Lights.Resolve, _lighting.DestroyLight);
 
+    /// <summary>Removes a camera the load created.</summary>
     public void DestroyCamera(SceneEntityHandle camera) =>
         _handles.Remove<IVirtualCamera>(
             camera, SceneEntityKind.Camera, _history.Cameras.Resolve, _cameras.DestroyCamera);
 }
+
+/// <summary>What a load can change about the session's cameras besides the
+/// cameras it creates: the default camera's settings, the actor it follows
+/// (null when it follows none) and which camera is live. Undoing the load puts
+/// all three back, so the default camera never keeps following an actor the
+/// undo removed.</summary>
+internal sealed record SceneCameraBaseline(
+    CameraFile Camera,
+    SceneEntityHandle? Target,
+    string TargetName,
+    bool TargetLocked,
+    SceneEntityHandle? Live);

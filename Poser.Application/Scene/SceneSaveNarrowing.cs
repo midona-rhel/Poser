@@ -12,7 +12,7 @@ namespace Poser.Application.Scene;
 /// clears actor references left dangling by filtering. DetachDangling records
 /// each cleared reference and preserves attached lights' world positions.
 /// </summary>
-internal static class SceneSaveNarrowing
+public static class SceneSaveNarrowing
 {
     /// <summary>Keeps the selected entities. Returns an error if none were captured.</summary>
     public static string? Narrow(

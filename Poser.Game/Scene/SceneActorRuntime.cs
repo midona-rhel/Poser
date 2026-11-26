@@ -29,7 +29,7 @@ namespace Poser.Game.Scene;
 /// waiting until the actor is ready, then pose, animation, placement, gaze, name and
 /// visibility. SceneAppearanceRuntime handles appearance.
 /// </summary>
-internal sealed class SceneActorRuntime : IActorRestorePort
+internal sealed class SceneActorRuntime
 {
     private readonly SceneRuntimeHandles _handles;
     private readonly SceneAppearanceRuntime _appearance;
@@ -129,10 +129,15 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         return true;
     }
 
+    /// <summary>Whether the companion's own skeleton exists yet. A companion's body
+    /// is built several frames after it is attached, and its pose cannot be
+    /// applied before then.</summary>
     public bool CompanionReady(SceneEntityHandle actor) =>
         _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion &&
         Posable(companion);
 
+    /// <summary>Makes the actor's skin invisible again for an actor saved with only
+    /// its clothing showing. Returns why it failed, or null.</summary>
     public async Task<string?> RestoreClothingOnly(SceneEntityHandle actor, System.Threading.CancellationToken cancellation)
     {
         var id = await _framework.RunOnFrameworkThread(() =>
@@ -140,26 +145,6 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         return id is { } target ? await _invisibleSkin.Apply(target, cancellation)
             : "The clothing-only actor is no longer bound.";
     }
-
-    public Task<Outcome> RestoreCollection(SceneEntityHandle actor, SceneActor data, TimeSpan bound,
-        System.Threading.CancellationToken cancellation) =>
-        _appearance.RestoreCollection(actor, data, bound, cancellation);
-
-    public Task<SceneMcdfOutcome> ImportMcdf(
-        string scenePath,
-        SceneEntityHandle actor,
-        SceneActor data,
-        TimeSpan bound,
-        System.Threading.CancellationToken cancellation) =>
-        _appearance.ImportMcdf(scenePath, actor, data, bound, cancellation);
-
-    public Task<SceneMcdfOutcome> ApplySceneAppearance(
-        string scenePath,
-        SceneEntityHandle actor,
-        SceneActor data,
-        TimeSpan bound,
-        System.Threading.CancellationToken cancellation) =>
-        _appearance.ApplySceneAppearance(scenePath, actor, data, bound, cancellation);
 
     // Only called when the scene saved a companion for the actor. With none
     // saved, the scene load skips this step rather than removing a companion.
@@ -186,8 +171,13 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         FreezeOnImport = true,
     };
 
+    /// <summary>Whether a pose import would be turned down right now, because one is
+    /// already waiting or being applied, or an IK bake is being applied. A load
+    /// waits for this to clear instead of using up an actor's one try.</summary>
     public bool PoseImportBusy => _imports.IsSlotBusy;
 
+    /// <summary>While held, every pose import except the load's own is turned down,
+    /// so nothing replaces the load's imports.</summary>
     public void HoldPoseImports(bool held)
     {
         if (held)
@@ -196,9 +186,15 @@ internal sealed class SceneActorRuntime : IActorRestorePort
             _imports.Release(this);
     }
 
+    /// <summary>Cancels the load's pose import with this operation id if it is still
+    /// waiting, so a load that timed out or was cancelled never leaves one
+    /// behind.</summary>
     public void CancelPoseImport(Guid operationId) =>
         _imports.Cancel(operationId, "The scene load stopped waiting for this pose import.");
 
+    /// <summary>Queues the actor's saved pose to be applied in one go. Returns why it
+    /// was turned down, or null when queued. The final result arrives through
+    /// <paramref name="onReceipt"/>.</summary>
     public string? ArmPoseImport(
         SceneEntityHandle actor,
         SceneActor data,
@@ -237,6 +233,9 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         return result.Success ? null : result.Detail ?? "The pose import refused.";
     }
 
+    /// <summary>Queues the companion's saved pose in the same one-at-a-time queue an
+    /// actor's pose uses. Returns why it was turned down, or null when
+    /// queued.</summary>
     public string? ArmCompanionPoseImport(
         SceneEntityHandle actor,
         SceneActor data,
@@ -256,6 +255,8 @@ internal sealed class SceneActorRuntime : IActorRestorePort
             : result.Detail ?? "The companion pose import refused.";
     }
 
+    /// <summary>Gives the actor its saved name as a nickname. Runs whether or not
+    /// its pose and placement worked.</summary>
     public string? RestoreActorName(SceneEntityHandle actor, SceneActor data)
     {
         var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
@@ -268,9 +269,14 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         return null;
     }
 
+    /// <summary>Moves the actor to where the scene saved it. Older files that saved
+    /// no placement use the position stored in the pose. Returns why the placement
+    /// did not take, or null.</summary>
     public string? PlaceActor(SceneEntityHandle actor, SceneActor data) =>
         PlaceModel(_handles.Require<IActor>(actor, SceneEntityKind.Actor), data.ModelTransform, data.Pose);
 
+    /// <summary>Moves the companion to where it was saved, after its pose is
+    /// applied.</summary>
     public string? PlaceCompanion(SceneEntityHandle actor, SceneActor data) =>
         _spawns.GetCompanionActor(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is { } companion
             ? PlaceModel(companion, null, data.CompanionPose)
@@ -345,6 +351,9 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         return refused.Success ? null : $"Companion: {refused.Detail ?? "its animation could not be restored"}";
     }
 
+    /// <summary>For a scene saved with its animation: puts the bone edits made in
+    /// Poser back on top of the animation, instead of applying the whole saved
+    /// pose. Returns why it failed, or null.</summary>
     public string? RestorePoseEdits(SceneEntityHandle actor, SceneActor data, bool companion)
     {
         var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
@@ -377,6 +386,10 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         return complete;
     }
 
+    /// <summary>Pauses the actor so its pose is applied on a still frame. A scene
+    /// saved without its animation has none to play, because an animation id can
+    /// mean something different on another computer. Returns why it failed, or
+    /// null.</summary>
     public string? FreezeActor(SceneEntityHandle actor)
     {
         if (_bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is not { } id)
@@ -445,6 +458,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         return null;
     }
 
+    /// <summary>Shows or hides the actor as the scene saved it.</summary>
     public void SetActorVisibility(SceneEntityHandle actor, bool visible) =>
         _spawns.SetVisibility(_handles.Require<IActor>(actor, SceneEntityKind.Actor), visible);
 }

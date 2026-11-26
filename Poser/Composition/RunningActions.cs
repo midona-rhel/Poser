@@ -20,7 +20,7 @@ internal static class RunningActions
         void Add(ActionKind kind, Func<string?> running) =>
             gate.Register(() => running() is { } name ? new RunningAction(name, kind) : null);
 
-        var scenes = services.GetRequiredService<SceneWorkflow>();
+        var scenes = services.GetRequiredService<ISceneWorkflow>();
         Add(ActionKind.Long, () => !scenes.Busy ? null
             : scenes.Progress?.Kind == SceneOperationKind.Save ? "Save scene" : "Load scene");
 

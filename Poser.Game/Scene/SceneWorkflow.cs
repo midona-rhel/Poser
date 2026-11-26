@@ -1,6 +1,5 @@
 using Poser.Domain;
 using Poser.Domain.Scene;
-using Poser.Application.Scene;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,8 +11,9 @@ using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Documents.Files;
 using Poser.Documents.Scene;
+using Poser.Application.Scene;
 
-namespace Poser.Application.Scene;
+namespace Poser.Game.Scene;
 
 /// <summary>
 /// Runs one scene save or load at a time. It checks that GPose is still the
@@ -36,7 +36,12 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
     /// <summary>How long to wait for the pose import queue to be free, and then
     /// for one queued pose import to finish.</summary>
-    private static readonly TimeSpan PoseImportTimeout = TimeSpan.FromSeconds(15);
+    internal static readonly TimeSpan PoseImportTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>How long to wait for every loaded actor, object, light and
+    /// camera to show up in Poser's scene list, so the scene's groups can be
+    /// rebuilt.</summary>
+    internal static readonly TimeSpan StructureBindingTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>How long to wait for the scene capture to answer. The pose
     /// refresh it waits for has its own time limit and always answers, so this
@@ -52,13 +57,13 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
-    private readonly ISceneStatePort _sceneState;
-    private readonly ISceneCapturePort _capture;
-    private readonly ISceneMaterializer _materializer;
-    private readonly IActorRestorePort _actorRestore;
-    private readonly ISceneHistoryPort _historyPort;
+    private readonly SceneStateRuntime _sceneState;
+    private readonly SceneAppearanceRuntime _appearance;
+    private readonly SceneEntityRuntime _sceneEntities;
+    private readonly SceneActorRuntime _actorRestore;
+    private readonly SceneHistoryBinder _historyBinder;
     private readonly ISceneDocumentStore _documents;
-    private readonly ISceneWorkflowObserver _observer;
+    private readonly SceneWorkflowObserver _observer;
     private readonly ISceneStructure _structure;
     // This Poser install's id, which decides whether a loaded scene is your own.
     private readonly Func<Guid> _thisInstall;
@@ -74,52 +79,39 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             ? progress with { Phase = ScenePhase.Cancelling, Cancellable = false }
             : progress);
 
-    public SceneWorkflow(
-        ISceneStatePort sceneState,
-        ISceneCapturePort capture,
-        ISceneMaterializer materializer,
-        IActorRestorePort actorRestore,
-        ISceneHistoryPort historyPort,
+    internal SceneWorkflow(
+        SceneStateRuntime sceneState,
+        SceneAppearanceRuntime appearance,
+        SceneEntityRuntime sceneEntities,
+        SceneActorRuntime actorRestore,
+        SceneHistoryBinder historyBinder,
         ISceneDocumentStore documents,
-        ISceneWorkflowObserver observer,
+        SceneWorkflowObserver observer,
         EditHistory history,
         ISceneStructure structure,
         TransformParenting parenting,
-        Func<Guid>? thisInstall = null)
+        Func<Guid> thisInstall)
     {
-        _thisInstall = thisInstall ?? (() => Guid.Empty);
+        _thisInstall = thisInstall;
         _sceneState = sceneState;
-        _capture = capture;
-        _materializer = materializer;
+        _appearance = appearance;
+        _sceneEntities = sceneEntities;
         _actorRestore = actorRestore;
-        _historyPort = historyPort;
+        _historyBinder = historyBinder;
         _documents = documents;
         _observer = observer;
         _structure = structure;
         _parenting = parenting;
         _loadStructure = new SceneLoadStructure(sceneState, structure, parenting);
-        _rollback = new SceneLoadRollback(sceneState, materializer, structure, parenting);
-        _loadHistory = new SceneLoadHistory(history, sceneState, historyPort, _rollback, this);
+        _rollback = new SceneLoadRollback(sceneState, sceneEntities, structure, parenting);
+        _loadHistory = new SceneLoadHistory(history, sceneState, historyBinder, _rollback, this);
     }
 
 
     /// <summary>How many bytes including modded appearance would add to a save
     /// right now. The interface reads it every frame, so it is only a quick sum
     /// over the actors in the scene.</summary>
-    public long EstimatedAppearanceBytes => _capture.EstimateAppearanceBytes();
-
-    /// <summary>Longest wait for the scene capture. Tests set it shorter.</summary>
-    internal TimeSpan CaptureBound { get; init; } = SceneCaptureTimeout;
-
-    /// <summary>Maximum time to wait for spawned actors to become ready.</summary>
-    internal TimeSpan ActorReadyBound { get; init; } = ActorReadyTimeout;
-
-    /// <summary>Longest wait for the pose import queue and the pose import.</summary>
-    internal TimeSpan PoseImportBound { get; init; } = PoseImportTimeout;
-
-    /// <summary>Longest wait for every loaded actor, object, light and camera to
-    /// show up in Poser's scene list, so the scene's groups can be rebuilt.</summary>
-    internal TimeSpan StructureBindingBound { get; init; } = TimeSpan.FromSeconds(2);
+    public long EstimatedAppearanceBytes => _appearance.EstimateAppearanceBytes();
 
     /// <summary>Raised whenever the progress or the result changes. The
     /// interface reads only <see cref="Progress"/> and <see cref="Receipt"/>,
@@ -274,7 +266,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         if (replay is not null)
             replay.Current = operation;
         var load = new SceneLoadTransaction(
-            this, _sceneState, _materializer, _actorRestore, _historyPort, _documents,
+            this, _sceneState, _sceneEntities, _actorRestore, _appearance, _historyBinder, _documents,
             _loadStructure, _rollback, _loadHistory,
             operation, path, chosen, _thisInstall(), cancellation);
         _flight.RaiseChanged();
@@ -322,7 +314,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             {
                 armRefusal = await _sceneState.OnFramework(() =>
                     operation.Guard(_sceneState, cancellation)
-                        ?? _capture.ArmSceneCapture(
+                        ?? _appearance.ArmSceneCapture(
                             operation.SceneScopeId, description,
                             includeAnimation: options.IncludeAnimation,
                             onCaptured: outcome =>
@@ -360,7 +352,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
             var settled = await Task.WhenAny(
                 completion.Task,
-                Task.Delay(CaptureBound, cancellation));
+                Task.Delay(SceneCaptureTimeout, cancellation));
             if (settled != completion.Task)
             {
                 Finish(false, cancellation.IsCancellationRequested
@@ -405,7 +397,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 PublishStep(operation, new SceneProgress(
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.ApplyingAppearance, 0, 0, false, null));
-                var sealed_ = await _capture.SealAppearance(
+                var sealed_ = await _appearance.SealAppearance(
                     scene, actorIdentities, AppearanceSealTimeout,
                     cancellation);
                 notes.AddRange(sealed_.Notes);
@@ -426,7 +418,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             }
 
             // Hash the packages here, off the game's main thread, before writing the scene.
-            if (_capture.StampMcdfHashes(scene) is { Count: > 0 } stamped)
+            if (_appearance.StampMcdfHashes(scene) is { Count: > 0 } stamped)
                 notes.AddRange(stamped);
 
             // Validate the final contents, including appearance package sizes.
@@ -495,7 +487,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         {
             // Delete the temporary package files when the save ends, even when it ends early.
             foreach (var temporary in sealTemporaries)
-                _capture.DeleteTemporary(temporary);
+                _appearance.DeleteTemporary(temporary);
         }
     }
 

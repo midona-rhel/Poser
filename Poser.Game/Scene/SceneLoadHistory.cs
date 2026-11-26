@@ -1,7 +1,8 @@
 using Poser.Application.Transforms;
 using Poser.Domain.Transforms;
+using Poser.Application.Scene;
 
-namespace Poser.Application.Scene;
+namespace Poser.Game.Scene;
 
 /// <summary>The most recent operation represented by a scene-load history
 /// step. Redo creates new entities, so undo must use the new operation.</summary>
@@ -20,7 +21,7 @@ internal sealed class SceneLoadReplay(SceneOperation current)
 /// recorded and cannot be undone by this step.
 /// </summary>
 internal sealed class SceneLoadHistory(
-    EditHistory history, ISceneStatePort sceneState, ISceneHistoryPort historyPort,
+    EditHistory history, SceneStateRuntime sceneState, SceneHistoryBinder historyBinder,
     SceneLoadRollback rollback,
     SceneWorkflow workflow)
 {
@@ -91,9 +92,9 @@ internal sealed class SceneLoadHistory(
         // Register before removal publishes missing bindings. Both transform
         // patches and group snapshots follow the same replacement on redo.
         foreach (var (key, token) in load.Entities)
-            if (historyPort.ResolveHistoryEntity(token) is { } entity)
+            if (historyBinder.ResolveHistoryEntity(token) is { } entity)
                 history.RetainLifecycleEntity(entity, () =>
-                    load.Entities.TryGetValue(key, out var current) ? historyPort.ResolveHistoryEntity(current) : null);
+                    load.Entities.TryGetValue(key, out var current) ? historyBinder.ResolveHistoryEntity(current) : null);
         return rollback.Run(load.Current) is null;
     }
 }

@@ -7,7 +7,6 @@ using Poser.Application.Library;
 namespace Poser.Game.Scene;
 
 internal sealed class SceneWorkflowObserver(IPluginLog log, IPoseLibraryService library)
-    : ISceneWorkflowObserver
 {
     public void Saved() => library.RequestScan();
 

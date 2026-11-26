@@ -9,7 +9,7 @@ namespace Poser.Application.Scene;
 /// Modded appearance is removed unless requested and packaged as embedded data;
 /// an unpackaged file reference is removed and reported in the save notes.
 /// </summary>
-internal static class SceneSavePolicy
+public static class SceneSavePolicy
 {
     /// <summary>Applies category and appearance options. Returns the number of
     /// requested appearance packages removed because they were not portable,

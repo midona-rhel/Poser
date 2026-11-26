@@ -3,13 +3,14 @@ using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Domain.Scene;
 using Poser.Documents.Files;
+using Poser.Application.Scene;
 
-namespace Poser.Application.Scene;
+namespace Poser.Game.Scene;
 
 /// <summary>
-/// One admitted whole-scene save or load: its receipt identity, its guard
-/// flags, and — for a load — the ledger of what it created, which
-/// <see cref="SceneLoadRollback"/> walks in reverse.
+/// One running scene save or load: the ids its result is filed under, whether
+/// it was cancelled, and, for a load, the list of everything it created.
+/// <see cref="SceneLoadRollback"/> removes those again, newest first.
 /// </summary>
 internal sealed class SceneOperation : SingleFlightOperation
 {
@@ -27,8 +28,8 @@ internal sealed class SceneOperation : SingleFlightOperation
     /// session back what the clear took, and the outcome says so.</summary>
     public bool SessionCleared;
 
-    // What THIS operation created, in creation order; rollback walks
-    // these in reverse. Receipts contain no native references.
+    // What this load created, oldest first. Undoing the load removes them
+    // newest first. They are handles, never game memory.
     public readonly List<SceneEntityHandle> SpawnedActors = new();
     public readonly List<Action> ActorRestores = new();
     public readonly List<SceneEntityHandle> SpawnedProps = new();
@@ -36,8 +37,8 @@ internal sealed class SceneOperation : SingleFlightOperation
     public readonly List<SceneEntityHandle> SpawnedLights = new();
     public readonly List<SceneEntityHandle> CreatedCameras = new();
 
-    // World-object handles returned by AdoptWorldObject, including spawned copies.
-    // Rollback releases them through the materializer.
+    // Map objects the load borrowed or spawned. Undoing the load gives each
+    // one back through SceneEntityRuntime.ReleaseWorldObject.
     public readonly List<SceneEntityHandle> BorrowedWorldObjects = new();
     public readonly List<Guid> ImportedGroups = new();
     public IReadOnlyDictionary<Guid, Guid> HistoryGroups = new Dictionary<Guid, Guid>();
@@ -58,7 +59,7 @@ internal sealed class SceneOperation : SingleFlightOperation
     /// <summary>Checked at the top of every framework-thread action before
     /// its mutations. A replaced session generation is an invalidation: the
     /// token that admitted this operation no longer exists.</summary>
-    public string? Guard(ISceneStatePort sceneState, CancellationToken cancellation)
+    public string? Guard(SceneStateRuntime sceneState, CancellationToken cancellation)
     {
         if (Invalidated || cancellation.IsCancellationRequested)
             return Kind == SceneOperationKind.Save
