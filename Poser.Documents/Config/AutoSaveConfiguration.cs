@@ -1,9 +1,7 @@
 namespace Poser.Documents.Config;
 
-/// <summary>
-/// Whole-scene autosave settings. Legacy pose settings remain readable for
-/// compatibility, but the production timer writes only scene snapshots.
-/// </summary>
+/// <summary>The settings for saving the whole scene by itself while in
+/// GPose, and the folder where older Poser versions kept pose backups.</summary>
 public class AutoSaveConfiguration
 {
     /// <summary>Whether the timed auto-save runs at all.</summary>
@@ -16,32 +14,21 @@ public class AutoSaveConfiguration
     public int IntervalSeconds { get; set; } = 180;
 
     /// <summary>
-    /// How many snapshot folders are retained on disk. Older folders are pruned
-    /// after every save. Floored at 1 by the service.
-    /// </summary>
-    public int MaxAutoSaves { get; set; } = 200;
-
-    /// <summary>
     /// Delete every snapshot when GPose is left instead of taking a final one
     /// (Brio <c>CleanAutoSaveOnLeavingGpose</c>). A crash never runs this, so
     /// snapshots still survive for recovery — only a clean exit clears them.
     /// </summary>
     public bool CleanOnExit { get; set; } = false;
 
-    /// <summary>
-    /// Legacy setting retained for configuration compatibility. Whole-scene
-    /// autosave now follows Enabled regardless of this value.
-    /// </summary>
-    public bool SceneSnapshots { get; set; } = true;
-
     /// <summary>How many whole-scene snapshots are retained on disk. Floored
     /// at 1 by the service.</summary>
     public int MaxSceneSnapshots { get; set; } = 5;
 
     /// <summary>
-    /// Folder for legacy per-actor pose snapshots. An empty value selects
-    /// <c>&lt;configDir&gt;/AutoSaves</c>. The service reads this setting during
-    /// construction, so changing it requires a plugin reload.
+    /// The folder where older Poser versions saved pose backups. Poser no
+    /// longer writes there; the Library's Auto-saves tab still lists what is in
+    /// it. An empty value means <c>&lt;configDir&gt;/AutoSaves</c>. It is read
+    /// once when Poser starts.
     /// </summary>
     public string RootDirectory { get; set; } = "";
 
