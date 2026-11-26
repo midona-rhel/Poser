@@ -50,6 +50,7 @@ public static class TransformTargetResolver
         Func<SelectionId, bool>? isLocked = null)
     {
         var targets = new List<TransformTargetId>();
+        HashSet<BoneId>? actorBones = null;
         bool? bones = null;
         foreach (var id in selected)
         {
@@ -58,12 +59,29 @@ public static class TransformTargetResolver
             bones ??= id.Kind == SceneEntityKind.Bone;
             if (Target(id) is not { } target || bones != (target.Kind == TransformTargetKind.Bone))
                 continue;
-            if (Exists(target, snapshot))
+            if (target.Bone is { } bone ? (actorBones ??= BonesOf(bone, snapshot)).Contains(bone) : Exists(target, snapshot))
                 targets.Add(target);
             else if (target.Kind != TransformTargetKind.Collider)
                 return null;
         }
         return targets.Count == 0 ? null : new EffectiveTransformSelection(targets[0], targets);
+    }
+
+    /// <summary>Every bone of the bone's actor, in all its skeletons. A bone
+    /// selection belongs to one actor, so this is read once per call.</summary>
+    private static HashSet<BoneId> BonesOf(BoneId bone, SceneSnapshot snapshot)
+    {
+        var set = new HashSet<BoneId>();
+        foreach (var actor in snapshot.Actors)
+        {
+            if (actor.Id.LogicalId != bone.Skeleton.Actor.LogicalId)
+                continue;
+            foreach (var skeleton in actor.Skeletons)
+                foreach (var descriptor in skeleton.Bones)
+                    set.Add(descriptor.Id);
+            break;
+        }
+        return set;
     }
 
     private static bool Exists(TransformTargetId target, SceneSnapshot snapshot)
@@ -74,18 +92,6 @@ public static class TransformTargetResolver
                 foreach (var actor in snapshot.Actors)
                     if (actor.Id.Equals(actorId))
                         return true;
-                return false;
-            case { Bone: { } boneId }:
-                foreach (var actor in snapshot.Actors)
-                {
-                    if (actor.Id.LogicalId != boneId.Skeleton.Actor.LogicalId)
-                        continue;
-                    foreach (var skeleton in actor.Skeletons)
-                        foreach (var bone in skeleton.Bones)
-                            if (bone.Id.Equals(boneId))
-                                return true;
-                    return false;
-                }
                 return false;
             case { Light: { } lightId }:
                 foreach (var light in snapshot.Lights)

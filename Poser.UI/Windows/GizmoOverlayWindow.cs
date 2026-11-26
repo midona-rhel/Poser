@@ -658,9 +658,6 @@ public class GizmoOverlayWindow : Window
         var primary = selection.Primary;
         BoneId? primaryBone = targetType == GizmoTargetType.Bone ? primary.Bone : null;
         ActorId? primaryActor = primary.Actor;
-        LightId? primaryLight = primary.Light;
-        PropId? primaryProp = primary.Prop;
-        WorldObjectId? primaryWorldObject = primary.WorldObject;
         bool isBone = primaryBone != null;
         var modelMatrix = Matrix4x4.Identity;
 
@@ -722,29 +719,11 @@ public class GizmoOverlayWindow : Window
         {
             currentTransform = Transform.FromPose(actorRest);
         }
-        else if (primaryLight is { } lightTarget &&
-            _viewport.GetModelTransform(TransformTargetId.ForLight(lightTarget))
-                is { } lightRest)
+        else if (primaryBone == null && primaryActor == null &&
+            _viewport.GetModelTransform(primary) is { } rest)
         {
-            currentTransform = Transform.FromPose(lightRest);
-        }
-        else if (primaryProp is { } propTarget &&
-            _viewport.GetModelTransform(TransformTargetId.ForProp(propTarget))
-                is { } propRest)
-        {
-            currentTransform = Transform.FromPose(propRest);
-        }
-        else if (targetType == GizmoTargetType.Collider &&
-            _viewport.GetModelTransform(primary) is { } colliderTransform)
-        {
-            currentTransform = Transform.FromPose(colliderTransform);
-        }
-        else if (primaryWorldObject is { } worldObjectTarget &&
-            _viewport.GetModelTransform(
-                TransformTargetId.ForWorldObject(worldObjectTarget))
-                is { } worldObjectRest)
-        {
-            currentTransform = Transform.FromPose(worldObjectRest);
+            // A light, object, world object or IK collider.
+            currentTransform = Transform.FromPose(rest);
         }
         else
         {
