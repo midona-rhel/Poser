@@ -8,10 +8,10 @@ namespace Poser.Application.Posing;
 
 /// <summary>Runs a pose import: pauses the actor's animation, waits for it to settle,
 /// applies the pose, then restores the speed. A new import cancels one still running.</summary>
-public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, AnimationSession animation)
+public sealed class PoseImportCoordinator(IPoseImportRuntime runtime, IAnimationPlayback animation)
 {
     private readonly IPoseImportRuntime _runtime = runtime;
-    private readonly AnimationSession _animation = animation;
+    private readonly IAnimationPlayback _animation = animation;
     private ImportArm? _importArm;
     private Action? _pendingSpeedRestore;
 

@@ -9,7 +9,7 @@ using Poser.Domain.Identity;
 namespace Poser.Game.Animation;
 
 /// <summary>Native stance, weapon-draw and position-lock writes.</summary>
-public sealed unsafe class AnimationStanceRuntimePort : IAnimationStancePort
+public sealed unsafe class AnimationStanceRuntimePort
 {
     private readonly AnimationNativeState _native;
     private readonly PosingService _posing;

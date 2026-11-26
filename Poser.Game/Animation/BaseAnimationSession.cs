@@ -6,7 +6,9 @@ using Poser.Domain.Animation;
 using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 
-namespace Poser.Application.Animation;
+using Poser.Application.Animation;
+
+namespace Poser.Game.Animation;
 
 /// <summary>
 /// Chooses, plays, loops and resets the animation on each of an actor's layers.
@@ -16,9 +18,9 @@ namespace Poser.Application.Animation;
 internal sealed class BaseAnimationSession
 {
     private readonly AnimationOverrideStore _store;
-    private readonly IAnimationTimelinePort _timeline;
+    private readonly AnimationTimelineRuntimePort _timeline;
 
-    public BaseAnimationSession(AnimationOverrideStore store, IAnimationTimelinePort timeline)
+    public BaseAnimationSession(AnimationOverrideStore store, AnimationTimelineRuntimePort timeline)
     {
         _store = store;
         _timeline = timeline;

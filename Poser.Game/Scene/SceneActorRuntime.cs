@@ -40,7 +40,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
     private readonly PoseImportCoordinator _imports;
     private readonly IPosingService _posing;
     private readonly Poser.Application.Settings.ConfigurationService _configuration;
-    private readonly AnimationSession _animation;
+    private readonly Poser.Game.Animation.AnimationSession _animation;
     private readonly IBonePosingService _bonePosing;
     private readonly GazeService _gaze;
     private readonly IFramework _framework;
@@ -59,7 +59,7 @@ internal sealed class SceneActorRuntime : IActorRestorePort
         PoseImportCoordinator imports,
         IPosingService posing,
         Poser.Application.Settings.ConfigurationService configuration,
-        AnimationSession animation,
+        Poser.Game.Animation.AnimationSession animation,
         GazeService gaze,
         IPluginLog log,
         IBonePosingService bonePosing,

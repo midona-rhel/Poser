@@ -13,7 +13,7 @@ using Poser.Game.Entities;
 namespace Poser.Game.Animation;
 
 /// <summary>Native reads, timeline playback, loops and lips.</summary>
-public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort, IDisposable
+public sealed unsafe class AnimationTimelineRuntimePort : IDisposable
 {
     private readonly IFramework _framework;
     private readonly IPluginLog _log;

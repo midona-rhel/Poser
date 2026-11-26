@@ -8,12 +8,9 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Application.World;
 
-namespace Poser.Application.Animation;
+using Poser.Application.Animation;
 
-/// <summary>What the General section of the Animation tab chose for an actor,
-/// and the version of it that Apply played. A sitting or mounted actor plays
-/// another version of an emote, sometimes on another layer.</summary>
-public sealed record GeneralChoice(TimelineEntry Chosen, TimelineEntry? Played);
+namespace Poser.Game.Animation;
 
 /// <summary>
 /// Handles each actor's animations: which one is chosen for each layer, playing,
@@ -24,9 +21,9 @@ public sealed record GeneralChoice(TimelineEntry Chosen, TimelineEntry? Played);
 public sealed class AnimationSession : IAnimationPlayback
 {
     private readonly AnimationOverrideStore _store;
-    private readonly IAnimationTimelinePort _timeline;
-    private readonly IAnimationSpeedPort _speedPort;
-    private readonly IAnimationStancePort _stancePort;
+    private readonly AnimationTimelineRuntimePort _timeline;
+    private readonly AnimationSpeedRuntimePort _speedPort;
+    private readonly AnimationStanceRuntimePort _stancePort;
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly BaseAnimationSession _base;
     private readonly SpeedAnimationSession _speed;
@@ -54,10 +51,10 @@ public sealed class AnimationSession : IAnimationPlayback
 
     public AnimationSession(
         AnimationOverrideStore store,
-        IAnimationTimelinePort timeline,
-        IAnimationSpeedPort speed,
-        IAnimationStancePort stance,
-        IAnimationScrubPort scrub,
+        AnimationTimelineRuntimePort timeline,
+        AnimationSpeedRuntimePort speed,
+        AnimationStanceRuntimePort stance,
+        AnimationScrubRuntimePort scrub,
         IWorldRenderingRuntimePort rendering)
     {
         _store = store;

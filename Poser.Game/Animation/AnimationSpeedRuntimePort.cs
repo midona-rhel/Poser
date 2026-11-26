@@ -14,7 +14,7 @@ using Poser.Game.Bindings;
 namespace Poser.Game.Animation;
 
 /// <summary>Native animation speed writes and the hooks that enforce them.</summary>
-public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDisposable
+public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
 {
     private readonly IFramework _framework;
     private readonly IPluginLog _log;

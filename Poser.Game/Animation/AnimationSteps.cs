@@ -4,7 +4,9 @@ using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
-namespace Poser.Application.Animation;
+using Poser.Application.Animation;
+
+namespace Poser.Game.Animation;
 
 /// <summary>
 /// Connects animation actions to undo history using before/after snapshots.

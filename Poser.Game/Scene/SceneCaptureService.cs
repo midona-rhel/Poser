@@ -51,7 +51,7 @@ public sealed class SceneCaptureService
     private readonly IPlaceService _place;
     private readonly IObjectTable _objects;
     private readonly IPosingService _posing;
-    private readonly AnimationSession _animation;
+    private readonly Poser.Game.Animation.AnimationSession _animation;
     private readonly IBonePosingService _bonePosing;
     private readonly Poser.Application.Appearance.IInvisibleSkinService _invisibleSkin;
     private readonly GazeService _gaze;
@@ -78,7 +78,7 @@ public sealed class SceneCaptureService
         IPlaceService place,
         IObjectTable objects,
         IPosingService posing,
-        AnimationSession animation,
+        Poser.Game.Animation.AnimationSession animation,
         GazeService gaze,
         PoseExportCapture exports,
         Poser.Application.Integration.IntegrationSelectors integration,
