@@ -146,17 +146,17 @@ public class GizmoOverlayWindow : Window
     private static readonly Vector2 UniformScaleDirection =
         Vector2.Normalize(new Vector2(1f, -1f));
 
-    /// <summary>Drops the drag when the transform service already ended it
-    /// (a selection change or a despawned target cancels it there), or when
-    /// the selected kind of thing changed under it. The transform service
-    /// ignores a cancel for a drag it no longer runs.</summary>
+    /// <summary>Drops the drag when the transform service already ended it (a
+    /// failed update, Escape, a selection change or a removed target), or
+    /// cancels it when the selected kind of thing changed under it.</summary>
     private void ReconcileInteractionLifecycle(GizmoTargetType currentTarget)
     {
         if (_gesture is { } gesture
             && (_cleanTransforms.ActiveGesture != gesture.Id
                 || _gestureTargetType != currentTarget))
         {
-            _cleanTransforms.Cancel(gesture.Id);
+            if (_cleanTransforms.ActiveGesture == gesture.Id)
+                _cleanTransforms.Cancel(gesture.Id);
             ClearGesture(suppress: true);
         }
 
@@ -604,9 +604,10 @@ public class GizmoOverlayWindow : Window
     private EffectiveTransformSelection? EffectiveSelection() =>
         TransformSelectionPolicy.Editing(_selection.Selected, _scene.Snapshot, _groups, _viewport);
 
-    /// <summary>Returns the running drag, or cancels it when Escape is pressed
-    /// or the tool, orientation or rotation pivot changed since it began, since
-    /// the handle being dragged depends on them.</summary>
+    /// <summary>Returns the running drag, or cancels it when the tool,
+    /// orientation or rotation pivot changed since it began, since the handle
+    /// being dragged depends on them. Escape is handled for every window in
+    /// UIManager.</summary>
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
         TransformOrientation currentOrientation,
@@ -614,12 +615,6 @@ public class GizmoOverlayWindow : Window
     {
         if (_gesture is not { } gesture)
             return null;
-        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-        {
-            _cleanTransforms.Cancel(gesture.Id);
-            ClearGesture(suppress: true);
-            return null;
-        }
         if (gesture.Tool != currentTool ||
             gesture.Orientation != currentOrientation ||
             gesture.PivotChoice != currentPivot)

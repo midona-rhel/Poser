@@ -111,14 +111,11 @@ public partial class PoseInspectorPane : IDisposable
         if (_cleanGesture is not { } gesture)
             return;
 
+        // The move code ended the drag: it failed, Escape was pressed, or the
+        // selection changed. Do not start another one until the mouse is released.
         if (_cleanTransforms.ActiveGesture != gesture)
         {
             ClearTransformSession();
-            _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-        }
-        else if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-        {
-            ClearTransformSession(cancel: true);
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
     }

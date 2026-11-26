@@ -26,7 +26,9 @@ public interface ITransformFacade
     GestureResult BeginDrag(IReadOnlyList<TransformTargetId> targets, TransformOperation operation, TransformSpace space, IReadOnlyList<SelectionId>? selection = null);
     /// <summary>Moves the drag's targets by the total change since it began.
     /// When this fails, the drag has ended and its targets are back where they
-    /// started, so the caller only forgets the drag.</summary>
+    /// started, so the caller only forgets the drag. The one exception is a
+    /// restore from an earlier failed change that is still waiting: then the
+    /// drag is refused and keeps running until that restore finishes.</summary>
     GestureResult Update(TransformGestureId id, TransformDelta delta);
     GestureResult Commit(TransformGestureId id);
     GestureResult Cancel(TransformGestureId id);
