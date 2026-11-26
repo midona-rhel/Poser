@@ -1,5 +1,4 @@
 using Poser.Domain.Scene;
-using Poser.Application.World;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,15 +15,24 @@ using FestivalRow = Lumina.Excel.Sheets.Festival;
 namespace Poser.Game.Environment;
 
 /// <summary>
-/// Queues festival slot changes until the layout engine reports idle or ready,
-/// following Brio's update ordering. Captures the initial slots for restoration
-/// on GPose exit or disposal. A territory change discards the old zone's queue
-/// and snapshot.
+/// Adds, removes and changes the seasonal festivals the area shows, and puts
+/// the area's own festivals back when the player leaves GPose.
+///
+/// The game has eight festival slots. A change is not written at once: it
+/// waits until the game is not in the middle of switching festivals, because
+/// writing during a switch breaks the area's layout (Brio does the same). The
+/// slots waiting to be written are kept as one set, and every change starts
+/// from that set, so two changes in a row both arrive.
+///
+/// The first change remembers the area's own festivals. Reset, and leaving
+/// GPose, make those the set waiting to be written.
 /// </summary>
-public sealed unsafe class FestivalService : IFestivalRuntimePort, IDisposable
+public sealed unsafe class FestivalService : IDisposable
 {
+    /// <summary>The game has eight festival slots.</summary>
+    public const int MaxFestivals = 8;
     private const string FestivalDataResource = "Poser.Game.Data.Festivals.json";
-    // The layout engine is only safe to write to between festival transitions.
+    // The game can take festival changes while its festival status is one of these.
     private const byte FestivalStatusIdle = 0;
     private const byte FestivalStatusReady = 5;
 
@@ -36,16 +44,22 @@ public sealed unsafe class FestivalService : IFestivalRuntimePort, IDisposable
     private readonly IEventBus _events;
     private readonly Action<GPoseStateChangedEvent> _onGPoseStateChanged;
 
-    private readonly Queue<GameMain.Festival[]> _pending = new();
+    // The slots waiting to be written; null when nothing is waiting.
+    private GameMain.Festival[]? _pending;
+    // The area's own festivals, remembered at Poser's first change.
     private GameMain.Festival[]? _original;
 
     private readonly Dictionary<uint, FestivalEntry> _festivals = new();
     private readonly Dictionary<uint, AreaExclusion> _exclusions = new();
 
+    /// <summary>Every festival in the game data, by id.</summary>
     public IReadOnlyDictionary<uint, FestivalEntry> FestivalList => _festivals;
 
+    /// <summary>True when Poser has changed the festivals and Reset has
+    /// something to put back.</summary>
     public bool HasOverride => _original != null;
 
+    /// <summary>Festivals can only be changed in GPose.</summary>
     public bool CanModify => _gpose.IsGPosing;
 
     public FestivalService(
@@ -67,142 +81,100 @@ public sealed unsafe class FestivalService : IFestivalRuntimePort, IDisposable
         BuildFestivalList(data);
 
         _framework.Update += OnFrameworkUpdate;
-        _clientState.TerritoryChanged += OnTerritoryChanged;
         _onGPoseStateChanged = OnGPoseStateChanged;
         _events.Subscribe(_onGPoseStateChanged);
     }
 
-    // ── Engine slots ──────────────────────────────────────────────────
+    // ── Slots ─────────────────────────────────────────────────────────
 
-    private static GameMain.Festival[] EngineFestivals()
+    /// <summary>A copy of the slots as they will be once nothing is waiting:
+    /// the waiting set if there is one, otherwise what the game shows.</summary>
+    private GameMain.Festival[] Slots()
     {
-        var slots = new GameMain.Festival[IFestivalRuntimePort.MaxFestivals];
-        var main = GameMain.Instance();
-        if (main == null)
-            return slots;
-        var active = main->ActiveFestivals;
-        for (var i = 0; i < IFestivalRuntimePort.MaxFestivals; i++)
+        if (_pending != null)
+            return [.. _pending];
+        var slots = new GameMain.Festival[MaxFestivals];
+        var active = GameMain.Instance()->ActiveFestivals;
+        for (var i = 0; i < MaxFestivals; i++)
             slots[i] = active[i];
         return slots;
     }
 
+    /// <summary>All eight slots, empty ones included, as they will be once
+    /// the waiting changes are written.</summary>
     public IReadOnlyList<ActiveFestival> ActiveFestivals
-        => EngineFestivals().Select(f => new ActiveFestival(f.Id, f.Phase)).ToList();
+        => Slots().Select(f => new ActiveFestival(f.Id, f.Phase)).ToList();
 
-    public bool HasFreeSlot => EngineFestivals().Any(f => f.Id == 0);
+    public bool HasFreeSlot => Slots().Any(f => f.Id == 0);
 
-    // ── Mutations ─────────────────────────────────────────────────────
+    // ── Changes ───────────────────────────────────────────────────────
 
-    /// <summary>Mutations enqueue onto the framework tick's queue and read the
-    /// engine's live slots, so they own both conditions the UI already checks
-    /// before offering them: GPose, and the framework thread. Refusing here
-    /// makes that structural rather than a UI convention.</summary>
-    private bool CanMutate(string operation)
+    /// <summary>Puts a festival into the first empty slot. False outside
+    /// GPose, when no slot is free, or where the festival isn't allowed.</summary>
+    public bool Add(uint id, ushort phase = 1) =>
+        CanModify && IsAllowedHere(id) &&
+        Write(slot => slot.Id == 0, new GameMain.Festival { Id = (ushort)id, Phase = phase });
+
+    /// <summary>Empties the slot that holds the festival. False outside GPose,
+    /// when it isn't running, or where the festival isn't allowed.</summary>
+    public bool Remove(uint id) =>
+        CanModify && IsAllowedHere(id) &&
+        Write(slot => slot.Id == id, new GameMain.Festival { Id = 0, Phase = 0 });
+
+    /// <summary>Changes the stage a running festival shows, or adds the
+    /// festival at that stage when it isn't running.</summary>
+    public bool ChangePhase(uint id, ushort phase) =>
+        CanModify &&
+        (Write(slot => slot.Id == id, new GameMain.Festival { Id = (ushort)id, Phase = phase }) ||
+            Add(id, phase));
+
+    /// <summary>Writes <paramref name="value"/> into the first slot that
+    /// matches, as the new waiting set.</summary>
+    private bool Write(Func<GameMain.Festival, bool> match, GameMain.Festival value)
+    {
+        var slots = Slots();
+        for (var i = 0; i < MaxFestivals; i++)
+        {
+            if (!match(slots[i]))
+                continue;
+            // The set this change starts from is the area's own festivals
+            // when Poser hasn't changed them yet.
+            _original ??= Slots();
+            slots[i] = value;
+            _pending = slots;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>Makes these eight slots the set waiting to be written. Undoing
+    /// Reset uses it to put every slot back where it was.</summary>
+    public void SetSlots(IReadOnlyList<ActiveFestival> slots)
     {
         if (!CanModify)
-        {
-            _log.Warning($"FestivalService: {operation} requires GPose");
-            return false;
-        }
-        if (!_framework.IsInFrameworkUpdateThread)
-        {
-            _log.Warning($"FestivalService: {operation} must run on the framework thread");
-            return false;
-        }
-        return true;
+            return;
+        _original ??= Slots();
+        _pending = slots.Select(s => new GameMain.Festival { Id = (ushort)s.Id, Phase = s.Phase }).ToArray();
     }
 
-    public bool Add(uint id, ushort phase = 1)
-    {
-        if (!CanMutate(nameof(Add)))
-            return false;
-        if (!IsAllowedHere(id))
-            return false;
-
-        var active = EngineFestivals();
-        for (var i = 0; i < IFestivalRuntimePort.MaxFestivals; i++)
-        {
-            if (active[i].Id != 0)
-                continue;
-            SnapshotIfNeeded();
-            active[i] = new GameMain.Festival { Id = (ushort)id, Phase = phase };
-            _pending.Enqueue(active);
-            return true;
-        }
-
-        return false;
-    }
-
-    public bool Remove(uint id)
-    {
-        if (!CanMutate(nameof(Remove)))
-            return false;
-        if (!IsAllowedHere(id))
-            return false;
-
-        var active = EngineFestivals();
-        for (var i = 0; i < IFestivalRuntimePort.MaxFestivals; i++)
-        {
-            if (active[i].Id != id)
-                continue;
-            SnapshotIfNeeded();
-            active[i] = new GameMain.Festival { Id = 0, Phase = 0 };
-            _pending.Enqueue(active);
-            return true;
-        }
-
-        return false;
-    }
-
-    public bool ChangePhase(uint id, ushort phase)
-    {
-        if (!CanMutate(nameof(ChangePhase)))
-            return false;
-
-        var active = EngineFestivals();
-        for (var i = 0; i < IFestivalRuntimePort.MaxFestivals; i++)
-        {
-            if (active[i].Id != id)
-                continue;
-            SnapshotIfNeeded();
-            active[i] = new GameMain.Festival { Id = (ushort)id, Phase = phase };
-            _pending.Enqueue(active);
-            return true;
-        }
-
-        // Phasing a festival that is not running means running it at that phase.
-        return Add(id, phase);
-    }
-
-    public void Reset() => Restore(viaTick: true);
-
-    /// <summary>Puts the snapshot back, either through the tick gate or — when
-    /// no further tick will run — straight onto the engine's own queue.</summary>
-    private void Restore(bool viaTick)
+    /// <summary>Puts back the area's own festivals.</summary>
+    public void Reset()
     {
         if (_original == null)
             return;
-        if (viaTick)
-            _pending.Enqueue([.. _original]);
-        else
-            Apply(_original, queueOnly: true);
+        _pending = _original;
         _original = null;
     }
 
-    private void SnapshotIfNeeded() => _original ??= EngineFestivals();
-
     /// <summary>
-    /// Writes the slots. The normal path sets them; the shutdown path can only
-    /// queue them, because there is no further tick to wait for a safe layout
-    /// state on. The pairing (0,4), (1,5), (2,6), (3,7) is the engine's
-    /// argument order, not a slot reordering.
+    /// The game takes the eight slots as four pairs, (0,4), (1,5), (2,6) and
+    /// (3,7); the slots themselves keep their order. Setting them shows them
+    /// at once. Queueing them lets the game apply them when it can, which is
+    /// the only way left when Poser is unloading.
     /// </summary>
     private static void Apply(GameMain.Festival[] festivals, bool queueOnly)
     {
         var main = GameMain.Instance();
-        if (main == null)
-            return;
-
         if (queueOnly)
         {
             main->QueueActiveFestivals(
@@ -223,59 +195,34 @@ public sealed unsafe class FestivalService : IFestivalRuntimePort, IDisposable
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        if (_pending.Count == 0)
+        if (_pending == null)
             return;
-
-        var world = LayoutWorld.Instance();
-        if (world == null)
-            return;
-        var layout = world->ActiveLayout;
+        // The layout is missing while the game is loading an area.
+        var layout = LayoutWorld.Instance()->ActiveLayout;
         if (layout == null)
             return;
         if (layout->FestivalStatus != FestivalStatusReady && layout->FestivalStatus != FestivalStatusIdle)
             return;
 
-        Apply(_pending.Dequeue(), queueOnly: false);
+        Apply(_pending, queueOnly: false);
+        _pending = null;
     }
 
-    // ── Reference data ────────────────────────────────────────────────
+    // ── Festival list ─────────────────────────────────────────────────
 
     /// <summary>
-    /// Every sheet row is offered. The curated file supplies names, phase names
-    /// and the area exclusions; a row the file does not cover is still usable,
-    /// flagged Unknown so the UI can say so rather than hide it.
+    /// Every festival in the game data is offered. Brio's festival file, built
+    /// into Poser, gives the names, the stage names and the places where a
+    /// festival is not allowed. A festival the file doesn't know is still
+    /// offered, named Unknown.
     /// </summary>
     private void BuildFestivalList(IDataManager data)
     {
         var known = LoadFestivalFile();
-
-        Lumina.Excel.ExcelSheet<FestivalRow>? sheet = null;
-        try
+        foreach (var row in data.GetExcelSheet<FestivalRow>())
         {
-            sheet = data.GetExcelSheet<FestivalRow>();
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"Festivals: sheet unavailable ({ex.Message}); only the curated list is offered.");
-        }
-
-        if (sheet != null)
-        {
-            foreach (var row in sheet)
-            {
-                if (row.RowId == 0)
-                    continue;
+            if (row.RowId != 0)
                 AddEntry(row.RowId, known.GetValueOrDefault(row.RowId));
-            }
-        }
-        else
-        {
-            foreach (var (id, entry) in known)
-            {
-                if (id == 0)
-                    continue;
-                AddEntry(id, entry);
-            }
         }
     }
 
@@ -301,41 +248,23 @@ public sealed unsafe class FestivalService : IFestivalRuntimePort, IDisposable
         }
     }
 
-    private Dictionary<uint, FestivalFileEntry> LoadFestivalFile()
+    private static Dictionary<uint, FestivalFileEntry> LoadFestivalFile()
     {
-        var known = new Dictionary<uint, FestivalFileEntry>();
-        try
+        using var stream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream(FestivalDataResource)!;
+        var options = new JsonSerializerOptions
         {
-            using var stream = Assembly.GetExecutingAssembly()
-                .GetManifestResourceStream(FestivalDataResource);
-            if (stream == null)
-            {
-                _log.Warning($"Festivals: {FestivalDataResource} is missing; every festival will show as unknown.");
-                return known;
-            }
-
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                IncludeFields = true,
-            };
-            var entries = JsonSerializer.Deserialize<List<FestivalFileEntry>>(stream, options);
-            if (entries == null)
-                return known;
-            foreach (var entry in entries)
-                known[entry.Id] = entry;
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"Festivals: reference data failed to load ({ex.Message}); every festival will show as unknown.");
-        }
-        return known;
+            PropertyNameCaseInsensitive = true,
+            IncludeFields = true,
+        };
+        return JsonSerializer.Deserialize<List<FestivalFileEntry>>(stream, options)!
+            .ToDictionary(entry => entry.Id);
     }
 
     /// <summary>
-    /// Some festivals break the zone when applied inside a specific interactive
-    /// area. The exclusion is positional, so it is only refused where the player
-    /// actually stands; a player that cannot be located refuses too.
+    /// Some festivals break the area when they are shown inside one marked
+    /// part of it. They are refused only while the player stands inside that
+    /// part.
     /// </summary>
     private bool IsAllowedHere(uint id)
     {
@@ -374,37 +303,28 @@ public sealed unsafe class FestivalService : IFestivalRuntimePort, IDisposable
 
     // ── Lifetime ──────────────────────────────────────────────────────
 
+    // Leaving GPose always comes before a zone change, so the area's own
+    // festivals are waiting to be written by then and are written in the new
+    // area as soon as it has loaded.
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)
     {
         if (!evt.IsGPosing)
-            Restore(viaTick: true);
-    }
-
-    private void OnTerritoryChanged(uint territory)
-    {
-        _pending.Clear();
-        _original = null;
+            Reset();
     }
 
     public void Dispose()
     {
-        // No tick will run after this, so the restore goes to the engine queue.
-        Restore(viaTick: false);
-
         _framework.Update -= OnFrameworkUpdate;
-        _clientState.TerritoryChanged -= OnTerritoryChanged;
         _events.Unsubscribe(_onGPoseStateChanged);
-
-        _pending.Clear();
-        _festivals.Clear();
-        _exclusions.Clear();
-
-        GC.SuppressFinalize(this);
+        // No frame runs after this, so the area's own festivals are queued for
+        // the game to apply.
+        if ((_original ?? _pending) is { } own)
+            Apply(own, queueOnly: true);
     }
 
     private readonly record struct AreaExclusion(string Reason, ushort TerritoryType, Vector2[] Polygon);
 
-    // Shapes of Data/Festivals.json, transcribed from the reference file.
+    // The shape of Data/Festivals.json, which comes from Brio.
     private sealed class FestivalFileEntry
     {
         public uint Id { get; set; }

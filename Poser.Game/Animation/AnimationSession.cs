@@ -6,7 +6,6 @@ using Poser.Domain.Animation;
 using Poser.Domain.Collections;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
-using Poser.Application.World;
 
 using Poser.Application.Animation;
 
@@ -23,7 +22,7 @@ public sealed class AnimationSession : IAnimationPlayback
 {
     private readonly AnimationOverrideStore _store;
     private readonly LayerPlayback _playback;
-    private readonly IWorldRenderingRuntimePort _rendering;
+    private readonly Poser.Game.Environment.WorldRenderingService _rendering;
     private readonly AnimationSpeedRuntimePort _speed;
     private readonly StanceControl _stance;
     private readonly AnimationScrubRuntimePort _scrub;
@@ -54,7 +53,7 @@ public sealed class AnimationSession : IAnimationPlayback
         AnimationNativeState native,
         PosingService posing,
         AnimationScrubRuntimePort scrub,
-        IWorldRenderingRuntimePort rendering)
+        Poser.Game.Environment.WorldRenderingService rendering)
     {
         _store = store;
         _playback = playback;

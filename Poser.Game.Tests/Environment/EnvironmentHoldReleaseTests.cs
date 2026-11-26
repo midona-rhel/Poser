@@ -93,7 +93,7 @@ public sealed class EnvironmentHoldReleaseTests
             NewProxy<IPluginLog>(),
             new TestEventBus(),
             factory,
-            housing);
+            housing ?? new TestHousingBrightness());
     }
 
     private static T NewProxy<T>() where T : class =>

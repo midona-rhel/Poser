@@ -307,7 +307,7 @@ public sealed partial class PoseLibraryPane
         PropertiesContent properties,
         IPosePreview preview,
         ISceneWorkflow scenes,
-        EnvironmentControl environment,
+        IEnvironmentControl environment,
         UserNotices notices,
         ICharacterFiles characterFiles,
         Application.Library.ILibraryFileOperations fileOperations,

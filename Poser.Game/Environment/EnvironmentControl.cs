@@ -1,25 +1,30 @@
+using System;
+using System.Linq;
 using Poser.Application.Transforms;
+using Poser.Application.World;
 using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Documents.Files;
 
-namespace Poser.Application.World;
+namespace Poser.Game.Environment;
 
-/// <summary>Every value a surface sets on the environment — time, weather,
-/// the held sections and their values, water, festivals — as a journal
-/// step.</summary>
-public sealed class EnvironmentControl
+/// <summary>
+/// Changes the time, weather, sky sections, interior brightness, water and
+/// festivals, and records each change as one undo step. The Environment window,
+/// the Library and scene loading all change the environment through here.
+/// </summary>
+public sealed class EnvironmentControl : IEnvironmentControl
 {
     private readonly ValueJournal _journal;
-    private readonly IEnvironmentRuntimePort _environment;
-    private readonly IWorldRenderingRuntimePort _rendering;
-    private readonly IFestivalRuntimePort _festivals;
+    private readonly EnvironmentService _environment;
+    private readonly WorldRenderingService _rendering;
+    private readonly FestivalService _festivals;
 
     public EnvironmentControl(
         ValueJournal journal,
-        IEnvironmentRuntimePort environment,
-        IWorldRenderingRuntimePort rendering,
-        IFestivalRuntimePort festivals)
+        EnvironmentService environment,
+        WorldRenderingService rendering,
+        FestivalService festivals)
     {
         _journal = journal;
         _environment = environment;
@@ -75,7 +80,22 @@ public sealed class EnvironmentControl
 
     public void SetResetSectionsOnGPoseExit(bool v) => Set("ResetSectionsOnGPoseExit", "Set section restore", () => _environment.ResetSectionsOnGPoseExit, x => _environment.ResetSectionsOnGPoseExit = x, v);
 
-    // ── housing interior brightness ──────────────────────────
+    public void SetSky(EnvSkyValues v) => Set("Sky", "Set sky", () => _environment.Sky, x => _environment.Sky = x, v);
+    public void SetClouds(EnvCloudsValues v) => Set("Clouds", "Set clouds", () => _environment.Clouds, x => _environment.Clouds = x, v);
+    public void SetLighting(EnvLightingValues v) => Set("Lighting", "Set lighting", () => _environment.Lighting, x => _environment.Lighting = x, v);
+    public void SetFog(EnvFogValues v) => Set("Fog", "Set fog", () => _environment.Fog, x => _environment.Fog = x, v);
+    public void SetRain(EnvRainValues v) => Set("Rain", "Set rain", () => _environment.Rain, x => _environment.Rain = x, v);
+    public void SetParticles(EnvParticlesValues v) => Set("Particles", "Set particles", () => _environment.Particles, x => _environment.Particles = x, v);
+    public void SetStars(EnvStarsValues v) => Set("Stars", "Set stars", () => _environment.Stars, x => _environment.Stars = x, v);
+    public void SetWind(EnvWindValues v) => Set("Wind", "Set wind", () => _environment.Wind, x => _environment.Wind = x, v);
+
+    // ── housing interior brightness ─────────────────────────────────────
+    // Each step remembers which interior it was made in. Undo and redo skip the
+    // step once the player has left that interior, so a value is never written
+    // into a different house.
+
+    /// <summary>Owned means Poser holds the brightness; not owned means the
+    /// house's own value is back.</summary>
     private Outcome RestoreInteriorBrightness(ulong binding, (bool Owned, float Value) state) =>
         new(state.Owned
             ? _environment.TrySetInteriorBrightness(state.Value, binding)
@@ -83,7 +103,7 @@ public sealed class EnvironmentControl
 
     public void SetInteriorBrightness(float v)
     {
-        if (!float.IsFinite(v) || _environment.InteriorBrightness is null)
+        if (_environment.InteriorBrightness is null)
             return;
         ulong binding = _environment.HousingInteriorBinding;
         float value = Math.Clamp(v, 0f, 1f);
@@ -120,28 +140,16 @@ public sealed class EnvironmentControl
         if (!_environment.ReleaseInteriorBrightness(binding) ||
             _environment.InteriorBrightness is not { } restored)
             return;
-        // Ownership changes even when the slider already equals its baseline.
+        // Recorded even when the value did not change: Poser stops holding it.
         _journal.Record(_environment, "Release interior brightness",
             (Owned: true, Value: before), (Owned: false, Value: restored),
             next => RestoreInteriorBrightness(binding, next),
             () => _environment.HousingInteriorBinding == binding);
     }
 
-    public void SetSky(EnvSkyValues v) => Set("Sky", "Set sky", () => _environment.Sky, x => _environment.Sky = x, v);
-    public void SetClouds(EnvCloudsValues v) => Set("Clouds", "Set clouds", () => _environment.Clouds, x => _environment.Clouds = x, v);
-    public void SetLighting(EnvLightingValues v) => Set("Lighting", "Set lighting", () => _environment.Lighting, x => _environment.Lighting = x, v);
-    public void SetFog(EnvFogValues v) => Set("Fog", "Set fog", () => _environment.Fog, x => _environment.Fog = x, v);
-    public void SetRain(EnvRainValues v) => Set("Rain", "Set rain", () => _environment.Rain, x => _environment.Rain = x, v);
-    public void SetParticles(EnvParticlesValues v) => Set("Particles", "Set particles", () => _environment.Particles, x => _environment.Particles = x, v);
-    public void SetStars(EnvStarsValues v) => Set("Stars", "Set stars", () => _environment.Stars, x => _environment.Stars = x, v);
-    public void SetWind(EnvWindValues v) => Set("Wind", "Set wind", () => _environment.Wind, x => _environment.Wind = x, v);
-
     // ── water ───────────────────────────────────────────────────────────
-    public void SetWaterFrozen(bool v) =>
-        _journal.Set((_rendering, "IsWaterFrozen"), v ? "Freeze water" : "Release water", () => _rendering.IsWaterFrozen, ValueWrites.Unchecked<bool>(x => _rendering.IsWaterFrozen = x), v);
-
-    public void SetResetWaterOnGPoseExit(bool v) =>
-        _journal.Set((_rendering, "ResetWaterOnGPoseExit"), "Set water restore", () => _rendering.ResetWaterOnGPoseExit, ValueWrites.Unchecked<bool>(x => _rendering.ResetWaterOnGPoseExit = x), v);
+    public void SetWaterFrozen(bool v) => Set("IsWaterFrozen", v ? "Freeze water" : "Release water", () => _rendering.IsWaterFrozen, x => _rendering.IsWaterFrozen = x, v);
+    public void SetResetWaterOnGPoseExit(bool v) => Set("ResetWaterOnGPoseExit", "Set water restore", () => _rendering.ResetWaterOnGPoseExit, x => _rendering.ResetWaterOnGPoseExit = x, v);
 
     // ── festivals ───────────────────────────────────────────────────────
     public bool AddFestival(uint id, ushort phase = 1)
@@ -171,18 +179,21 @@ public sealed class EnvironmentControl
         return true;
     }
 
-    /// <summary>Resets festivals to their pre-override state as one history step.</summary>
+    /// <summary>Puts back the area's own festivals as one undo step.</summary>
     public void ResetFestivals()
     {
         var before = _festivals.ActiveFestivals.ToArray();
         _festivals.Reset();
+        // Redo is Reset again; undo puts all eight slots back as they were.
         _journal.Record(_festivals, "Reset festivals", before, Array.Empty<ActiveFestival>(), ValueWrites.Unchecked<ActiveFestival[]>(slots =>
         {
-            _festivals.Reset();
-            foreach (var slot in slots)
-                _festivals.Add(slot.Id, slot.Phase);
+            if (slots.Length == 0)
+                _festivals.Reset();
+            else
+                _festivals.SetSlots(slots);
         }));
     }
+
     public EnvironmentReading Read() => new()
     {
         MinuteOfDay = _environment.MinuteOfDay,
@@ -224,8 +235,9 @@ public sealed class EnvironmentControl
 
     public WeatherInfo? GetWeatherInfo(uint id) => _environment.GetWeatherInfo(id);
 
-    /// <summary>Scene transactions own their composite history entry; direct callers use the same
-    /// ordered application with one environment inverse.</summary>
+    /// <summary>Applies a saved environment from the Library or a scene. Scene
+    /// loading passes <paramref name="recordHistory"/> false because the scene
+    /// load is already one undo step of its own.</summary>
     public void Apply(SceneEnvironment target, bool recordHistory = true)
     {
         Seal();
@@ -235,21 +247,21 @@ public sealed class EnvironmentControl
             _journal.Record(_environment, "Apply environment", before, Capture(), ValueWrites.Unchecked<SceneEnvironment>(ApplyCore));
     }
 
+    /// <summary>The environment as a scene file saves it: the clock, the
+    /// weather, and the values of the held sections only.</summary>
     public SceneEnvironment Capture()
     {
         var environment = new SceneEnvironment
         {
-            MinuteOfDay = Math.Clamp(_environment.MinuteOfDay, 0, 1439),
-            DayOfMonth = Math.Clamp(_environment.DayOfMonth, 1, 31),
+            MinuteOfDay = _environment.MinuteOfDay,
+            // The game's month has 32 days, but only 31 can be set.
+            DayOfMonth = Math.Min(_environment.DayOfMonth, 31),
             IsTimeFrozen = _environment.IsTimeFrozen,
             WeatherId = _environment.CurrentWeatherId,
             WeatherName = _environment.GetWeatherInfo(
                 _environment.CurrentWeatherId)?.Name ?? string.Empty,
             IsWeatherOverrideEnabled = _environment.IsWeatherOverrideEnabled,
-            TransitionTime = float.IsFinite(_environment.TransitionTime) &&
-                _environment.TransitionTime >= 0
-                    ? _environment.TransitionTime
-                    : 0.5f,
+            TransitionTime = _environment.TransitionTime,
         };
 
         foreach (var section in Enum.GetValues<EnvSection>())
@@ -291,8 +303,8 @@ public sealed class EnvironmentControl
 
     private void ApplyCore(SceneEnvironment target)
     {
-        // Writing the clock forces the freeze on; releasing it afterwards is
-        // the deliberate order for a scene saved with a running clock.
+        // Setting the clock freezes it. The saved freeze is written last, so a
+        // scene saved with a running clock starts running again.
         _environment.MinuteOfDay = target.MinuteOfDay;
         _environment.DayOfMonth = target.DayOfMonth;
         _environment.IsTimeFrozen = target.IsTimeFrozen;
@@ -303,8 +315,8 @@ public sealed class EnvironmentControl
         else
             _environment.IsWeatherOverrideEnabled = false;
 
-        // Stamp all eight sections: a held section takes its saved values
-        // (the setters imply the hold), an unheld one releases to the game.
+        // Every section is written: a held section gets its saved values
+        // (setting a value holds the section), an unheld one goes back to the game.
         foreach (var section in Enum.GetValues<EnvSection>())
         {
             bool held = target.HeldSections.Contains(section);
@@ -342,5 +354,4 @@ public sealed class EnvironmentControl
             }
         }
     }
-
 }

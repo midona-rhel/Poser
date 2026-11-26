@@ -45,7 +45,7 @@ public sealed class SceneCaptureService
     private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly EnvironmentControl _environment;
+    private readonly Poser.Game.Environment.EnvironmentControl _environment;
     private readonly StableBindingRegistry _bindings;
     private readonly IPoseImportCommands _poses;
     private readonly IPlaceService _place;
@@ -57,7 +57,7 @@ public sealed class SceneCaptureService
     private readonly GazeService _gaze;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.IntegrationSelectors _integration;
-    private readonly IWorldRenderingRuntimePort _rendering;
+    private readonly Poser.Game.Environment.WorldRenderingService _rendering;
     private readonly WorldObjects.WorldService _worldObjects;
     private readonly PlacementAnchorSource _anchors;
     private readonly Poser.Application.Settings.ConfigurationService _configuration;
@@ -72,7 +72,7 @@ public sealed class SceneCaptureService
         Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        EnvironmentControl environment,
+        Poser.Game.Environment.EnvironmentControl environment,
         StableBindingRegistry bindings,
         IPoseImportCommands poses,
         IPlaceService place,
@@ -82,7 +82,7 @@ public sealed class SceneCaptureService
         GazeService gaze,
         PoseExportCapture exports,
         Poser.Application.Integration.IntegrationSelectors integration,
-        IWorldRenderingRuntimePort rendering,
+        Poser.Game.Environment.WorldRenderingService rendering,
         WorldObjects.WorldService worldObjects,
         PlacementAnchorSource anchors,
         Poser.Application.Settings.ConfigurationService configuration,

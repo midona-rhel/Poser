@@ -1,4 +1,3 @@
-using Poser.Application.World;
 using System;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
@@ -9,13 +8,14 @@ using Poser.Application.Events;
 namespace Poser.Game.Environment;
 
 /// <summary>
-/// Water freeze replaces the water renderer's
-/// update with a zero return; the hook's enabled state is the freeze, so
-/// there is nothing to store and nothing to restore — releasing it hands the
-/// surface straight back to the game. The physics freeze is a process-global
-/// code patch owned by <see cref="PhysicsFreezePatcher"/>.
+/// Freezes the water and the physics of hair and clothes. The water freeze is
+/// a hook that skips the game's water update: while the hook is on the water
+/// stands still, and turning it off gives the water back to the game, so there
+/// is nothing to save or restore. The physics freeze is a change to the game's
+/// code that affects every actor at once; <see cref="PhysicsFreezePatcher"/>
+/// makes and undoes it.
 /// </summary>
-public sealed class WorldRenderingService : IWorldRenderingRuntimePort, IDisposable
+public sealed class WorldRenderingService : IDisposable
 {
     private readonly IEventBus _events;
     private readonly Action<GPoseStateChangedEvent> _onGPoseStateChanged;
@@ -23,12 +23,13 @@ public sealed class WorldRenderingService : IWorldRenderingRuntimePort, IDisposa
     private delegate nint UpdateWaterRendererDelegate(nint a1);
     private readonly Hook<UpdateWaterRendererDelegate>? _waterHook;
 
-    // The patcher owns the site, capability state and restore; an unavailable
-    // site degrades SetPhysicsFrozen to an explicit failure with its detail.
+    // When the patcher can't find the game code to change, SetPhysicsFrozen
+    // returns a failure that says so.
     private readonly PhysicsFreezePatcher _physics;
 
     public bool ResetWaterOnGPoseExit { get; set; } = true;
 
+    /// <summary>False when the water hook was not found; the water can't be frozen.</summary>
     public bool IsWaterFreezeAvailable => _waterHook != null;
 
     public WorldRenderingService(
@@ -74,6 +75,8 @@ public sealed class WorldRenderingService : IWorldRenderingRuntimePort, IDisposa
 
     public bool IsPhysicsFrozen => _physics.IsFrozen;
 
+    /// <summary>Only the animation session calls this, and it remembers whether
+    /// the scene asked for the freeze.</summary>
     public Outcome SetPhysicsFrozen(bool frozen) => _physics.SetFrozen(frozen);
 
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)
@@ -86,9 +89,7 @@ public sealed class WorldRenderingService : IWorldRenderingRuntimePort, IDisposa
     {
         _events.Unsubscribe(_onGPoseStateChanged);
         _waterHook?.Dispose();
-        // The animation session releases the scene hold first; the patcher's
-        // dispose restores a still-applied patch or reports the failure.
+        // Undoes the physics freeze if it is still on.
         _physics.Dispose();
-        GC.SuppressFinalize(this);
     }
 }
