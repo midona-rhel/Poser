@@ -23,9 +23,9 @@ namespace Poser.Game.Animation;
 /// </summary>
 public sealed unsafe partial class AnimationNativeState
 {
-    // Kept for the probe harness (AnimationNativeState.Probe.cs), which
-    // arms its own hook lazily.
     private readonly ISigScanner _sigScanner;
+    // Only the Debug research tools in Poser.Game/Debug use this, to hook
+    // game functions while investigating.
     private readonly Dalamud.Plugin.Services.IGameInteropProvider _hooking;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;

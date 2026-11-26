@@ -62,3 +62,5 @@ A change is not finished until it has been tried in the game.
 Debug builds start a small HTTP server on `127.0.0.1:47999` (`Poser/Bridge/DebugBridge.cs`). Release builds do not contain it. `tools/poser_mcp.py` offers its endpoints as MCP tools, and `.mcp.json` registers that script. The bridge can read the scene, undo and redo, load and save scenes, take a screenshot of the game, and send mouse and key input to Poser's own windows. It uses the same commands as the interface.
 
 The bridge helps to investigate a problem and to try a change. It does not show how the interface looks.
+
+The tools that read game memory while investigating, such as finding an animation's clock or recording the camera frame by frame, are also in Debug builds only. They live in `Poser.Game/Debug`, and the bridge calls them.
