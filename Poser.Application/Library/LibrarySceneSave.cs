@@ -15,6 +15,9 @@ public interface ILibrarySceneSave
     Outcome SaveEntryTo(SelectionId target, string path);
     Outcome SaveGroup(IReadOnlyList<SelectionId> members, string name);
     Outcome SaveScene(string name, SceneSaveOptions options);
+    /// <summary>Saves the current environment into the objects folder as an
+    /// environment entry.</summary>
+    Outcome SaveEnvironment(string name);
 }
 
 /// <summary>
@@ -87,6 +90,10 @@ public sealed class LibrarySceneSave(ISceneWorkflow workflow, SceneSession scene
 
     public Outcome SaveScene(string name, SceneSaveOptions options) =>
         Save(config.Config.Library.ResolveSceneRoot(), name, SceneFile.Extension, options);
+
+    public Outcome SaveEnvironment(string name) =>
+        Save(config.Config.Library.ResolveObjectsRoot(), name, SceneFile.EnvironmentEntryExtension,
+            SceneSaveOptions.Only(SceneCategories.Environment));
 
     private Outcome Save(string root, string name, string extension, SceneSaveOptions options)
     {

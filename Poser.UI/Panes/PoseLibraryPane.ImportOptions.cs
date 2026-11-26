@@ -26,9 +26,7 @@ public sealed partial class PoseLibraryPane
     /// Pose component choices come from the inspector; autosaves restore all components.</summary>
     private void SyncImportToggles()
     {
-        // Favorites are the poses library's — an auto-save snapshot is not a
-        // curated entry.
-        _vm.ShowImportMenus = false;
+        // Favorites are for the poses library; an autosave is not one a person picked.
         _vm.CanFavorite = _type == LibraryType.Poses;
         // A scene is not spawned as an actor, and saving one belongs where
         // scenes are found rather than behind a menu.

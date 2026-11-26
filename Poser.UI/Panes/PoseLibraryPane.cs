@@ -357,14 +357,6 @@ public sealed partial class PoseLibraryPane
         _vm.OnTagFilter = TagFilter;
         _vm.OnIconSize = SetIconSize;
         _vm.OnRefresh = Refresh;
-        // The import options menu and the bone filter menu, as in Brio. Their
-        // settings live in the pose file section, so the Library and that
-        // section share one filter. The Library's import menu leaves out the
-        // presets, because rest poses are applied from the actor, not from the
-        // Library. The menu opens under the Options button, like the Apply menu.
-        _vm.OnImportMenu = () => _files.RequestImportMenu(
-            withPresets: false, target: CurrentApplyTarget(), anchor: ButtonSeat);
-        _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {
             if (IsSceneTile(_vm.Selected))

@@ -184,7 +184,7 @@ public sealed class PoseFileInspectorSection : IDisposable
 #endif
     public void OpenIdleExport(ActorId actor) => OpenBrowser(() => _idleExport.Open(actor, _folder));
 
-    public void RequestImportMenu(bool withPresets, ActorId? target, Vector2? anchor = null)
+    public void RequestImportMenu(bool withPresets, ActorId? target)
     {
         if (target is not { } actor || !_imports.HasPosableSkeleton(actor))
         {
@@ -193,7 +193,7 @@ public sealed class PoseFileInspectorSection : IDisposable
         }
         _importMenuActor = actor;
         _importMenuWithPresets = withPresets;
-        _menuAnchor = anchor ?? ImGui.GetMousePos();
+        _menuAnchor = ImGui.GetMousePos();
         _importMenuRequested = true;
     }
 
@@ -880,19 +880,10 @@ public sealed class PoseFileInspectorSection : IDisposable
             dense: dense,
             allowDisclosure: false);
 
-    /// <summary>Draws the library window's preview column with an options
-    /// button and Preview heading.</summary>
-    public void DrawPreviewColumn(
-        Vector2 origin, Vector2 size, bool optionsSeat = false)
+    /// <summary>Draws the library window's preview column: the import
+    /// options button, the Preview heading and the preview.</summary>
+    public void DrawPreviewColumn(Vector2 origin, Vector2 size)
     {
-        if (!optionsSeat)
-        {
-            MenuSection("##library-preview", "Preview",
-                origin, size.X,
-                form => DrawPreviewBody(form, size.X, size.Y),
-                divider: false);
-            return;
-        }
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         float side = theme.Controls.ShellIconAction;
