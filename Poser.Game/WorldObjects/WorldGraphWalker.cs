@@ -1,14 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
-using Dalamud.Game;
-using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
-using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
-using Poser.Application.World;
-using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSVfx = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.VfxObject;
@@ -140,9 +133,8 @@ internal sealed unsafe class WorldGraphWalker
         }
     }
 
-    /// <summary>A world effect's row: the .avfx path read through the
-    /// resource chain (instance → resource object → apricot handle), the
-    /// address as ever when nothing is readable yet.</summary>
+    /// <summary>A world effect's row, named by its .avfx file. An effect
+    /// whose file can't be read yet is named by its address.</summary>
     private WorldObjectRow ReadVfxRow(nint address, CSVfx* vfx)
     {
         string path = address.ToString("X");
@@ -182,9 +174,7 @@ internal sealed unsafe class WorldGraphWalker
         }
         catch (Exception ex)
         {
-            // A half-loaded resource names itself by address; it is still a
-            // legitimate row — but the fallback is stated rather than assumed,
-            // so a listing full of hex names has a reason in the log.
+            // Logged so a list full of addresses has a reason in the log.
             _log.Debug(
                 $"NativeWorldObjectPort: {address:X} has no readable model name: {ex.Message}");
         }

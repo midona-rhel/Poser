@@ -8,11 +8,9 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using Poser.Application.World;
-using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSVfx = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.VfxObject;
-using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 using Poser.Game.Natives;
 
 namespace Poser.Game.WorldObjects;
@@ -27,7 +25,6 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 internal sealed unsafe class VfxObjectNative
 {
-
     private unsafe delegate* unmanaged<nint, float, uint, nint> _vfxPlayStatic;
     private unsafe delegate* unmanaged<nint, void> _vfxPause;
     private unsafe delegate* unmanaged<nint, float, void> _vfxSetSpeed;
@@ -44,7 +41,6 @@ internal sealed unsafe class VfxObjectNative
     private readonly WorldNodeResolver _resolver;
     private readonly object _handledLock;
     private readonly Func<nint, WorldObjectIncarnation?, bool> _destroyNative;
-    private bool _resourceHookDisposed;
     private readonly bool _vfxReady;
 
     /// <param name="handledLock">The world-object port's lock. The file-load
@@ -342,9 +338,7 @@ internal sealed unsafe class VfxObjectNative
 
     /// <summary>Whether the effect is still playing, read with Brio's game
     /// function. When that function wasn't found, the effect resource's own
-    /// flags are read instead. A looping effect that has finished is played
-    /// again where it is, never spawned again, because spawning it again made
-    /// it blink.</summary>
+    /// flags are read instead.</summary>
     public bool IsVfxActive(nint address)
     {
         var node = Resolve(address);
@@ -533,7 +527,7 @@ internal sealed unsafe class VfxObjectNative
             {
                 any = _vfxClaims.HasClaims;
             }
-            if (any && filePath != null && avfxData != null && dataSize > 0)
+            if (any && filePath != null && avfxData != null)
             {
                 var span = MemoryMarshal
                     .CreateReadOnlySpanFromNullTerminated(filePath);
@@ -601,6 +595,7 @@ internal sealed unsafe class VfxObjectNative
         foreach (var effect in Chunks(data, 0, length).FindAll(c => c.Tag == EffectTag))
             foreach (var timeline in Children(data, effect, TimelineTag))
                 foreach (var item in Children(data, timeline, ItemTag))
+                    // Only the first binder number of each item, as in Brio.
                     foreach (var binder in Children(data, item, BinderTag))
                     {
                         if (binder.Length >= 4)
@@ -611,10 +606,7 @@ internal sealed unsafe class VfxObjectNative
 
     public void DisposeHook()
     {
-        if (!_resourceHookDisposed)
-        {
-            _vfxResourceLoad?.Dispose();
-            _resourceHookDisposed = true;
-        }
+        _vfxResourceLoad?.Dispose();
+        _vfxResourceLoad = null;
     }
 }
