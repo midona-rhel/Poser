@@ -516,7 +516,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
         {
             var plan = new PoseImportPlan { ReconcileFace = false };
             plan.Writes.AddRange(copyBones);
-            restored = _imports.Begin(actorId, new PreparedPoseImport(plan), options,
+            restored = _imports.Begin(actorId, plan, options,
                 $"Restore pose for {actor.Name}", OnReceipt);
         }
         else
