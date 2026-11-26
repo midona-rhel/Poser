@@ -68,6 +68,78 @@ public sealed class WorldActorDiscoveryTests
     }
 
     [Fact]
+    public void Release_and_undo_restore_saved_pose_and_placement()
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10);
+        adapter.World.Add(observed);
+        var actor = new ActorBase(ActorManager.ActorIdentity.For(observed.GameObjectId, observed.ObjectIndex),
+            "Edited NPC", observed.Address);
+        var manager = new FakeActorManager { Actors = [actor], Adopted = true };
+        var id = new ActorId(Guid.NewGuid(), 1);
+        var pose = new PoseFile();
+        pose.Bones["j_te_l"] = new PoseFile.BoneData
+        {
+            Position = new Vector3(1, 2, 3),
+            Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f),
+            Scale = Vector3.One,
+        };
+        var authored = new ActorState(new Transform(new Vector3(10, 20, 30), Quaternion.Identity, new Vector3(2)), true, pose);
+        var released = new ActorState(Transform.Identity, true, null);
+        var state = new StatePort { Current = authored };
+        var seam = new CloneSeam
+        {
+            Result = actor,
+            OnInvoke = () => { manager.Adopted = true; id = id with { Generation = id.Generation + 1 }; },
+        };
+        var history = new EditHistory();
+        int appends = 0;
+        history.Appended += _ => appends++;
+        var session = new WorldActorSession(NewDiscovery(adapter, seam, manager: manager), history,
+            _ =>
+            {
+                manager.Adopted = false;
+                state.Current = released;
+                return true;
+            }, state, actorId: _ => manager.Adopted ? id : null);
+
+        Assert.True(session.Release(actor));
+        var step = Assert.IsType<JournalStep>(history.PeekUndo());
+        Assert.True(step.Undo());
+        state.Pump();
+        Assert.Equal(authored, state.Current);
+        Assert.Equal(pose.Bones["j_te_l"].Rotation, state.Current.Pose!.Bones["j_te_l"].Rotation);
+        Assert.True(step.Redo());
+        Assert.Equal(released, state.Current);
+
+        Assert.True(step.Undo());
+        Assert.True(step.Redo()); // Release again before the queued restore runs.
+        state.Pump();
+        Assert.Equal(released, state.Current);
+        Assert.True(step.Undo());
+        state.Pump();
+        Assert.Equal(authored, state.Current); // Never recapture the temporary unposed state.
+        Assert.Equal(1, appends);
+    }
+
+    private sealed class StatePort : IActorRemoveRestore
+    {
+        public ActorState Current;
+        private readonly Queue<Action> _pending = new();
+        public void Pump() { while (_pending.TryDequeue(out var action)) action(); }
+        public ActorState Read(object actor) => Current;
+        public void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null) =>
+            _pending.Enqueue(() => { if (stillCurrent?.Invoke() != false) Current = state; });
+        public void WhenPosable(object actor, Action<object> act) => _pending.Enqueue(() => act(actor));
+        public string GetName(object actor) => ((IActor)actor).Name;
+        public void SetName(object actor, string name) => ((IActor)actor).Name = name;
+        public void NameCreated(object actor, string seed) => throw new NotSupportedException();
+        public bool IsSpawned(object actor) => false;
+        public bool Destroy(object actor) => throw new NotSupportedException();
+        public void Note(string detail) => throw new InvalidOperationException(detail);
+    }
+
+    [Fact]
     public void Release_history_reacquires_exact_actor_and_never_adopts_a_reused_address()
     {
         var adapter = new FakeTableAdapter();
