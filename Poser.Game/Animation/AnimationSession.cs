@@ -22,11 +22,10 @@ public sealed class AnimationSession : IAnimationPlayback
 {
     private readonly AnimationOverrideStore _store;
     private readonly AnimationTimelineRuntimePort _timeline;
-    private readonly AnimationStanceRuntimePort _stancePort;
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly BaseAnimationSession _base;
     private readonly AnimationSpeedRuntimePort _speed;
-    private readonly StanceAnimationSession _stance;
+    private readonly StanceControl _stance;
     private readonly ScrubAnimationSession _scrub;
     private readonly HeldExpressionSession _expression;
     private readonly HashSet<ActorId> _advancedActors = new();
@@ -52,17 +51,17 @@ public sealed class AnimationSession : IAnimationPlayback
         AnimationOverrideStore store,
         AnimationTimelineRuntimePort timeline,
         AnimationSpeedRuntimePort speed,
-        AnimationStanceRuntimePort stance,
+        AnimationNativeState native,
+        PosingService posing,
         AnimationScrubRuntimePort scrub,
         IWorldRenderingRuntimePort rendering)
     {
         _store = store;
         _timeline = timeline;
         _speed = speed;
-        _stancePort = stance;
         _rendering = rendering;
         _base = new BaseAnimationSession(_store, timeline);
-        _stance = new StanceAnimationSession(_store, timeline, stance, _base);
+        _stance = new StanceControl(_store, timeline, _base, native, posing);
         _scrub = new ScrubAnimationSession(scrub, _speed);
         _expression = new HeldExpressionSession(_store, timeline, _base, _speed);
         _timeline.LayerEnded += OnLayerEnded;
@@ -498,7 +497,7 @@ public sealed class AnimationSession : IAnimationPlayback
     public bool SupportsStance => _stance.SupportsStance;
 
     /// <summary>The stance's pose count from the game's pose table.</summary>
-    public int PoseCount(AnimationStance stance, bool weaponDrawn) => _stancePort.PoseCount(stance, weaponDrawn);
+    public int PoseCount(AnimationStance stance, bool weaponDrawn) => _stance.PoseCount(stance, weaponDrawn);
 
     // ── Speed ─────────────────────────────────────────────────────────
 
@@ -971,10 +970,10 @@ public sealed class AnimationSession : IAnimationPlayback
         }
 
         if (owned.StanceCaptureValue is { } stance &&
-            Try(_stancePort.SetStance(actor, stance.Stance, stance.Pose)))
+            Try(_stance.WriteStance(actor, stance.Stance, stance.Pose)))
             remaining = remaining with { StanceCaptureValue = null };
         if (owned.WeaponCapture is { } weapon &&
-            Try(_stancePort.SetWeaponDrawn(actor, weapon)))
+            Try(_stance.WriteWeaponDrawn(actor, weapon)))
             remaining = remaining with { WeaponCapture = null };
         if (owned.LipsCapture is { } lips)
         {
@@ -1000,7 +999,7 @@ public sealed class AnimationSession : IAnimationPlayback
         }
         if (owned.PositionLock)
         {
-            _stancePort.SetPositionLock(actor, false);
+            _stance.WritePositionLock(actor, false);
             remaining = remaining with { PositionLock = false };
         }
 
