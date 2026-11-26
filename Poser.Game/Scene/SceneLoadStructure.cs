@@ -95,7 +95,7 @@ internal sealed class SceneLoadStructure(
         if (scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 })
         {
             TransformTargetId? Target(SceneStructureRef reference) => Resolve(reference) is { } id
-                ? GroupTransformCoordinator.Target(id) : null;
+                ? TransformTargetResolver.Target(id) : null;
             var entries = new List<SceneStructureGroup>();
             foreach (var entry in scene.Groups ?? [])
             {

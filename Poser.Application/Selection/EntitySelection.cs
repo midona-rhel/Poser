@@ -31,8 +31,8 @@ public static class EntitySelection
     public static bool IsMultiEntity(IReadOnlyList<SelectionId> selected) =>
         CountEntities(selected) >= 2;
 
-    /// <summary>Two or more entities spanning more than one kind — the
-    /// selections the uniform transform branches cannot resolve.</summary>
+    /// <summary>Two or more entities of more than one kind, such as an actor
+    /// and a light. The gizmo shows its group handle for these.</summary>
     public static bool IsMixedEntities(IReadOnlyList<SelectionId> selected)
     {
         SceneEntityKind? seen = null;
