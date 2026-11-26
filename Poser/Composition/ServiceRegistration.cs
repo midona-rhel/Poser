@@ -352,7 +352,6 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.AnimationTimelineRuntimePort>();
         services.AddSingleton<Game.Animation.AnimationOverrideStore>();
         services.AddSingleton<Game.Animation.AnimationSpeedRuntimePort>();
-        services.AddSingleton<Game.Animation.AnimationStanceRuntimePort>();
         services.AddSingleton<Game.Animation.TimelineSeekService>();
         services.AddSingleton(sp => new Game.Animation.AnimationScrubRuntimePort(
             sp.GetRequiredService<IPluginLog>(),
@@ -365,7 +364,8 @@ internal static class ServiceRegistration
                 sp.GetRequiredService<Game.Animation.AnimationOverrideStore>(),
                 sp.GetRequiredService<Game.Animation.AnimationTimelineRuntimePort>(),
                 sp.GetRequiredService<Game.Animation.AnimationSpeedRuntimePort>(),
-                sp.GetRequiredService<Game.Animation.AnimationStanceRuntimePort>(),
+                sp.GetRequiredService<Game.Animation.AnimationNativeState>(),
+                sp.GetRequiredService<Game.PosingService>(),
                 sp.GetRequiredService<Game.Animation.AnimationScrubRuntimePort>(),
                 sp.GetRequiredService<IWorldRenderingRuntimePort>())
             {

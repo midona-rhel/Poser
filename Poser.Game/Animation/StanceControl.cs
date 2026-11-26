@@ -1,16 +1,25 @@
-using System.Collections.Generic;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using Poser.Application.Animation;
-using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
+using Poser.Domain;
+using System.Collections.Generic;
+using System.Linq;
+using System;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Native stance, weapon-draw and position-lock writes.</summary>
-public sealed unsafe class AnimationStanceRuntimePort
+/// <summary>
+/// The actor's stance (standing, sitting, sleeping), weapon drawn or sheathed,
+/// and position lock. A change remembers the value from before Poser's first
+/// change, for Reset, then writes the game.
+/// </summary>
+internal sealed unsafe class StanceControl
 {
+    private readonly AnimationOverrideStore _store;
+    private readonly AnimationTimelineRuntimePort _timeline;
+    private readonly BaseAnimationSession _base;
     private readonly AnimationNativeState _native;
     private readonly PosingService _posing;
     private readonly PositionLockOwnership _positionLocks = new();
@@ -21,10 +30,79 @@ public sealed unsafe class AnimationStanceRuntimePort
     private const uint EmoteModeSitChair = 2;
     private const uint EmoteModeSleeping = 3;
 
-    public AnimationStanceRuntimePort(AnimationNativeState native, PosingService posing)
+    public StanceControl(
+        AnimationOverrideStore store, AnimationTimelineRuntimePort timeline,
+        BaseAnimationSession baseSession, AnimationNativeState native, PosingService posing)
     {
+        _store = store;
+        _timeline = timeline;
+        _base = baseSession;
         _native = native;
         _posing = posing;
+    }
+
+    public Outcome SetStance(ActorId actor, AnimationStance stance, int pose)
+    {
+        var capture = _store.For(actor).StanceCaptureValue;
+        if (capture == null && _timeline.Read(actor) is { } reading)
+            capture = new StanceCapture(reading.Stance, reading.Pose);
+
+        // Stop active loops before changing stance, but remember whether the
+        // user wants the next General animation to repeat.
+        var owned = _store.For(actor);
+        bool wantsBaseLoop = owned.LoopWantedSlots.Contains(AnimationSlot.Base);
+        if (owned.LoopedSlots.Count > 0 || owned.LoopWantedSlots.Count > 0)
+        {
+            if (owned.LoopedSlots.ContainsKey(AnimationSlot.Base))
+            {
+                var cleared = _timeline.SetForceLoop(actor, 0);
+                if (!cleared.Success)
+                    return cleared;
+            }
+            _timeline.ClearLoops(actor);
+            _store.Mutate(actor, o => o with
+            {
+                LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
+                LoopWantedSlots = wantsBaseLoop
+                    ? new HashSet<AnimationSlot> { AnimationSlot.Base }
+                    : new HashSet<AnimationSlot>(),
+            });
+            owned = _store.For(actor);
+        }
+        if (owned.BaseCapture != null || owned.BaseTimeline != null)
+        {
+            var released = _base.ResetBaseSelection(actor, preserveLoopIntent: true);
+            if (!released.Success)
+                return released;
+        }
+
+        var result = WriteStance(actor, stance, pose);
+        if (!result.Success)
+            return result;
+        _store.Mutate(actor, o => o with { StanceCaptureValue = o.StanceCaptureValue ?? capture });
+        return Outcome.Ok();
+    }
+
+    public Outcome SetWeaponDrawn(ActorId actor, bool drawn)
+    {
+        var capture = _store.For(actor).WeaponCapture;
+        if (capture == null && _timeline.Read(actor) is { } reading)
+            capture = reading.WeaponDrawn;
+
+        var result = WriteWeaponDrawn(actor, drawn);
+        if (!result.Success)
+            return result;
+        _store.Mutate(actor, o => o with { WeaponCapture = o.WeaponCapture ?? capture });
+        return Outcome.Ok();
+    }
+
+    public Outcome SetPositionLock(ActorId actor, bool locked)
+    {
+        var result = WritePositionLock(actor, locked);
+        if (!result.Success)
+            return result;
+        _store.Mutate(actor, o => o with { PositionLock = locked });
+        return Outcome.Ok();
     }
 
     /// <summary>Whether the game functions stances and the weapon draw need were found
@@ -56,7 +134,8 @@ public sealed unsafe class AnimationStanceRuntimePort
     /// sleeping use their emote modes. Standing poses use EmoteLoop so the game's
     /// normal idle selection does not replace them; pose zero returns to normal idle.
     /// </summary>
-    public Outcome SetStance(ActorId actor, AnimationStance stance, int pose)
+    /// <summary>Writes the stance without remembering anything; Reset uses it to put the original back.</summary>
+    public Outcome WriteStance(ActorId actor, AnimationStance stance, int pose)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
@@ -129,7 +208,8 @@ public sealed unsafe class AnimationStanceRuntimePort
 
     /// <summary>Draws or sheathes the weapon with the game's own call (it plays the
     /// draw or sheathe row and stops a looped emote).</summary>
-    public Outcome SetWeaponDrawn(ActorId actor, bool drawn)
+    /// <summary>Writes the weapon without remembering anything; Reset uses it to put the original back.</summary>
+    public Outcome WriteWeaponDrawn(ActorId actor, bool drawn)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
@@ -151,7 +231,8 @@ public sealed unsafe class AnimationStanceRuntimePort
     /// created and nothing moved since, so a placement made while locked
     /// survives unlocking.
     /// </summary>
-    public Outcome SetPositionLock(ActorId actor, bool locked)
+    /// <summary>Writes the position lock without remembering anything.</summary>
+    public Outcome WritePositionLock(ActorId actor, bool locked)
     {
         if (_native.ResolveActor(actor) is not { } legacy)
             return Outcome.Fail($"Actor {actor} is no longer available.");
