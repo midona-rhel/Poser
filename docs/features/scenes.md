@@ -35,9 +35,36 @@ The load options are on the Scene page and in the load window:
 
 A scene saved in the area you're in starts on **As saved**, and anywhere else it starts on the **Placement** chosen in Settings › General. Characters from the scene that are already in GPose, like your own character, are used as they are instead of being added a second time.
 
-While a scene loads or saves, Poser's controls are greyed out. The **In progress** section on the Scene page shows each step, and its cancel button stops the load and removes what it had added so far. Afterwards, **Last result** lists anything that didn't load, with the reason and what to do about it. If one actor's appearance or one light fails, the rest of the scene still loads.
+While a scene loads or saves, Poser's controls are greyed out. The **In progress** section on the Scene page shows each step, and its cancel button stops the load and removes what it had added so far. Afterwards, **Last result** lists anything that didn't load, with the reason and what to do about it.
 
 Loading a scene is one step in the undo history. Ctrl+Z removes what the load added and puts back what it replaced, such as the camera that was live, and Ctrl+Y loads the file again. Undo can't bring back what **Clear the session first** removed.
+
+## When part of a scene doesn't load
+
+Most problems leave the rest of the scene in place: the part that failed is named in **Last result**, and everything else stays as one undo step. A few problems stop the whole load instead.
+
+The load doesn't start, and nothing changes, when:
+
+- the file is damaged, too large, or from a newer Poser;
+- **Clear the session first** is on and there is no character of yours to make the scene's actors from (Poser checks this before clearing);
+- the scene is placed relative to your character and your character isn't there.
+
+The load stops and removes everything it had added when:
+
+- an actor can't be added at all;
+- you press cancel, or leave GPose, before it finishes;
+- something unexpected goes wrong. If something can't be removed, **Last result** names it so you can remove it yourself.
+
+The load carries on, and **Last result** names what didn't come back, when:
+
+- one entry in the file is broken, for example an object with an impossible position. Only that entry is left out.
+- an actor's body hasn't appeared after 10 seconds. The actor stays, but nothing more is put onto it: no appearance, pose, gaze or companion.
+- an object, overlay, map object, light or camera can't be added, or an actor's appearance, companion, animation, pose or gaze doesn't go back on.
+- a light is attached to an actor that wasn't loaded. That light isn't added, rather than being left floating in the world.
+- a camera follows an actor that wasn't loaded. The camera is added without anyone to follow.
+- housing furniture hasn't finished loading its model after 10 seconds. It stays and appears once the game loads it.
+
+A Penumbra collection the scene names that doesn't exist on this computer isn't a failure: the actor keeps its own collection and **Last result** says so.
 
 ## Animation in scenes
 
