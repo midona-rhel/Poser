@@ -249,7 +249,7 @@ public sealed class UiWindowSet : IDisposable
                 new System.Numerics.Vector2(
                     global::Poser.UI.Views.AppShellView.RailWidth + 2f,
                     Main.LastHeight));
-        _configService.ApplyChange();
+        _configService.Save();
     }
 
     private void ToggleDetached()
@@ -268,7 +268,7 @@ public sealed class UiWindowSet : IDisposable
         {
             Main.ApplyDetachShift(-1);
         }
-        _configService.ApplyChange();
+        _configService.Save();
     }
 
     /// <summary>Closes every reference image and removes it from the session list.</summary>

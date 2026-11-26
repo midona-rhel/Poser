@@ -614,11 +614,13 @@ public sealed class UIManager : IUIManager
         _windows.Main.ShowActorLibrary(actor);
     }
 
+    /// <summary>Applies the theme, the window fill and blur, and when the
+    /// game may hide Poser, every time the settings change.</summary>
     private void ApplyConfiguration()
     {
-        ThemeSelection.Apply(
-            _configService.Config.UI.Theme,
-            _configService.Config.UI.AccentIndex);
+        var ui = _configService.Config.UI;
+        ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
+        FloatingSurface.ConfigureEffects(ui.FillOpacity, ui.BackdropBlur);
         ApplyUiHidePolicy();
     }
 

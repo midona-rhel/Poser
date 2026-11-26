@@ -6,7 +6,8 @@ using Poser.Documents.Config;
 namespace Poser.Application.Settings;
 
 /// <summary>
-/// Loads, migrates, and saves configuration, and notifies readers when it changes.
+/// Loads, upgrades and saves Poser's settings, and tells every reader when
+/// they change. Every setting is saved through <see cref="Save()"/>.
 /// </summary>
 public class ConfigurationService : IDisposable
 {
@@ -14,6 +15,8 @@ public class ConfigurationService : IDisposable
 
     private readonly IConfigurationPersistence _persistence;
 
+    /// <summary>Raised after a change was saved, and while the Settings
+    /// window shows a change it has not saved yet.</summary>
     public event Action? OnConfigurationChanged;
 
     /// <summary>
@@ -28,25 +31,26 @@ public class ConfigurationService : IDisposable
         var loaded = persistence.Load();
         Config = loaded.Configuration;
         LoadFailure = loaded.Failure;
-        MigrateConfig();
+        bool upgraded = MigrateConfig();
 
         // Filled in memory only. It is written to disk with the next save.
         Config.Library.EnsureDefaults();
 
         // Saved at once: an id that changed between sessions would make your own
         // scenes look shared.
-        if (Config.Library.InstallId == Guid.Empty)
-        {
+        bool newInstall = Config.Library.InstallId == Guid.Empty;
+        if (newInstall)
             Config.Library.InstallId = Guid.NewGuid();
-            Save(notify: false);
-        }
 
+        if (upgraded || newInstall)
+            Save(notify: false);
     }
 
     /// <summary>
     /// Brings saved settings from an older Poser up to
     /// <see cref="PoserConfiguration.LatestVersion"/>, one version at a time, so
     /// settings that skipped a release still get every step in order.
+    /// Returns true when anything was upgraded and needs saving.
     ///
     /// <para>Version 2: the bone colors reset once to the current defaults,
     /// which also makes selected and hovered bones follow the accent color.
@@ -55,10 +59,10 @@ public class ConfigurationService : IDisposable
     /// <para>Version 3: each action gets a first and a second key binding. The
     /// saved key binding becomes the first.</para>
     /// </summary>
-    private void MigrateConfig()
+    private bool MigrateConfig()
     {
         if (Config.Version >= PoserConfiguration.LatestVersion)
-            return;
+            return false;
 
         if (Config.Version < 2)
         {
@@ -85,24 +89,25 @@ public class ConfigurationService : IDisposable
         if (Config.Version < 5 && Config.UndoDepth == 200)
             Config.UndoDepth = 500;
         Config.Version = PoserConfiguration.LatestVersion;
-        Save();
+        return true;
     }
 
+    /// <summary>Saves the settings and tells every reader they changed.</summary>
     public void Save() => Save(notify: true);
 
+    /// <summary>Saves the settings. With <paramref name="notify"/> false the
+    /// readers are not told, for values only the interface remembers, such
+    /// as which sections are open or where a window was.</summary>
     public void Save(bool notify)
     {
         _persistence.Save(Config);
         if (notify) OnConfigurationChanged?.Invoke();
     }
 
-    public void ApplyChange(bool save = true)
-    {
-        if (save)
-            Save(notify: false);
-
-        OnConfigurationChanged?.Invoke();
-    }
+    /// <summary>Tells every reader the settings changed, without saving. The
+    /// Settings window uses it to show a change before Save, and to put the
+    /// saved values back on Cancel.</summary>
+    public void NotifyChanged() => OnConfigurationChanged?.Invoke();
 
     public void Reset()
     {
@@ -110,25 +115,25 @@ public class ConfigurationService : IDisposable
         var install = Config.Library.InstallId;
         Config = new PoserConfiguration();
         Config.Library.InstallId = install;
-        ApplyChange();
+        Save();
     }
 
     public void ResetSkeleton()
     {
         Config.Skeleton = new SkeletonConfiguration();
-        ApplyChange();
+        Save();
     }
 
     public void ResetDisplay()
     {
         Config.Display = new DisplayConfiguration();
-        ApplyChange();
+        Save();
     }
 
     public void ResetUI()
     {
         Config.UI = new UIConfiguration();
-        ApplyChange();
+        Save();
     }
 
     public void Dispose()

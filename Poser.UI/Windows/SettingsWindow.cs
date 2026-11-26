@@ -154,11 +154,7 @@ public class SettingsWindow : Window
         {
             _vm = _snapshot;
             ApplyToConfig(preview: true);
-            _configuration.ApplyChange(save: false);
-            var ui = _configuration.Config.UI;
-            ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
-            FloatingSurface.ConfigureEffects(
-                ui.FillOpacity, ui.BackdropBlur);
+            _configuration.NotifyChanged();
         }
         _snapshot = null;
         _saving = false;
@@ -192,7 +188,7 @@ public class SettingsWindow : Window
             {
                 _appliedSignature = _vm.Signature();
                 ApplyToConfig(preview: true);
-                _configuration.ApplyChange(save: false);
+                _configuration.NotifyChanged();
             }
         }
         finally
@@ -414,8 +410,6 @@ public class SettingsWindow : Window
         _snapshot = BuildViewModel();
         _vm.Category = category;
         _vm.ResetStatus = "Reset. These are the shipped defaults.";
-        ThemeSelection.Apply(
-            svc.Config.UI.Theme, svc.Config.UI.AccentIndex);
     }
 
     private void SaveToConfig()
@@ -428,13 +422,8 @@ public class SettingsWindow : Window
             return;
         }
         ApplyToConfig(preview: false);
-        var svc = _configuration;
-        var c = svc.Config;
         _saving = true;
-        ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
-        FloatingSurface.ConfigureEffects(
-            c.UI.FillOpacity, c.UI.BackdropBlur);
-        svc.ApplyChange();
+        _configuration.Save();
         _library.RequestScan();
         IsOpen = false;
     }
