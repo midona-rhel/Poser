@@ -39,7 +39,7 @@ public sealed class EnvironmentHoldReleaseTests
     }
 
     [Fact]
-    public void Territory_and_logout_release_all_successful_holds()
+    public void Territory_and_logout_release_all_holds()
     {
         var factory = new TestFactory();
         var clientState = ClientStateProxy.Create(out var events);

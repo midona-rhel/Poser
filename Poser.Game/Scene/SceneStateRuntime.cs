@@ -150,5 +150,5 @@ internal sealed class SceneStateRuntime : IDisposable
     /// <summary>Sets the saved time, weather and environment. Sections the scene
     /// did not hold go back to what the game shows.</summary>
     public void ApplyEnvironment(SceneEnvironment target) =>
-        _environmentControl.Apply(target, recordHistory: false);
+        _environmentControl.Apply(target);
 }

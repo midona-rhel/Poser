@@ -542,7 +542,6 @@ public sealed unsafe class EnvironmentService : IDisposable
     }
 
     /// <summary>Writes the brightness the house has saved.</summary>
-
     public bool TryResetInteriorBrightness(ulong binding)
     {
         if (binding != _housingBinding ||

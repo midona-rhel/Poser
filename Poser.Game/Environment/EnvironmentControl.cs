@@ -10,8 +10,9 @@ namespace Poser.Game.Environment;
 
 /// <summary>
 /// Changes the time, weather, sky sections, interior brightness, water and
-/// festivals, and records each change as one undo step. The Environment window,
-/// the Library and scene loading all change the environment through here.
+/// festivals, and records each change as one undo step. The Environment window
+/// and scene loading change the environment through here; the Library reads
+/// weather names from it.
 /// </summary>
 public sealed class EnvironmentControl : IEnvironmentControl
 {
@@ -235,16 +236,12 @@ public sealed class EnvironmentControl : IEnvironmentControl
 
     public WeatherInfo? GetWeatherInfo(uint id) => _environment.GetWeatherInfo(id);
 
-    /// <summary>Applies a saved environment from the Library or a scene. Scene
-    /// loading passes <paramref name="recordHistory"/> false because the scene
-    /// load is already one undo step of its own.</summary>
-    public void Apply(SceneEnvironment target, bool recordHistory = true)
+    /// <summary>Applies a saved scene's environment. Records no undo step:
+    /// the scene load is one undo step of its own.</summary>
+    public void Apply(SceneEnvironment target)
     {
         Seal();
-        var before = recordHistory ? Capture() : null;
         ApplyCore(target);
-        if (before is not null)
-            _journal.Record(_environment, "Apply environment", before, Capture(), ValueWrites.Unchecked<SceneEnvironment>(ApplyCore));
     }
 
     /// <summary>The environment as a scene file saves it: the clock, the
@@ -261,7 +258,10 @@ public sealed class EnvironmentControl : IEnvironmentControl
             WeatherName = _environment.GetWeatherInfo(
                 _environment.CurrentWeatherId)?.Name ?? string.Empty,
             IsWeatherOverrideEnabled = _environment.IsWeatherOverrideEnabled,
-            TransitionTime = _environment.TransitionTime,
+            // The game's own value; a scene file needs a usable one.
+            TransitionTime = float.IsFinite(_environment.TransitionTime) && _environment.TransitionTime >= 0
+                ? _environment.TransitionTime
+                : 0.5f,
         };
 
         foreach (var section in Enum.GetValues<EnvSection>())
