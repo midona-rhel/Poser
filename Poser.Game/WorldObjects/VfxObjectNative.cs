@@ -18,20 +18,15 @@ using Poser.Game.Natives;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// The world-VFX natives: Brio's play/pause/speed signatures, the
-/// resource-load hook that unbinds AVFX timeline items for Poser's own
-/// paths, spawn, and exact-incarnation teardown through the allocation
-/// ledger.
+/// The game functions for effects in the world: play, pause and speed, which
+/// come from Brio; spawning an effect; tearing down exactly the effect Poser
+/// owns; and a hook on effect-file loading that makes Poser's own effects
+/// play and loop on their own. Effects share the world-object port with map
+/// models, as in Brio. An effect is told apart by its .avfx file when it is
+/// spawned and by the game object's type after that.
 /// </summary>
 internal sealed unsafe class VfxObjectNative
 {
-    // A world VFX rides the SAME port as a BG object — Brio's own shape
-    // (StaticVfxObject IS a WorldObject there) — dispatched by the path's
-    // .avfx extension at spawn and by the node's object type everywhere
-    // else. The natives come from Brio (Brio/Game/Core/VFXService.cs):
-    // play/pause/speed signatures, plus the resource-load hook that
-    // unbinds AVFX timeline items for OUR paths so a standalone world
-    // effect actually plays and loops.
 
     private unsafe delegate* unmanaged<nint, float, uint, nint> _vfxPlayStatic;
     private unsafe delegate* unmanaged<nint, void> _vfxPause;
@@ -42,7 +37,7 @@ internal sealed unsafe class VfxObjectNative
         void* job, nint unk1, byte* filePath, byte* avfxData, uint dataSize,
         ResourceHandle* resourceHandle, uint unk2);
 
-    private readonly Hook<VfxResourceLoadDelegate>? _vfxResourceLoad;
+    private Hook<VfxResourceLoadDelegate>? _vfxResourceLoad;
     private readonly VfxPathClaimOwner _vfxClaims = new();
     private readonly VfxOwnedAllocationLedger _vfxOwnership = new();
     private readonly IPluginLog _log;
@@ -52,10 +47,11 @@ internal sealed unsafe class VfxObjectNative
     private bool _resourceHookDisposed;
     private readonly bool _vfxReady;
 
-    /// <param name="handledLock">The port's identity lock; the resource
-    /// hook reads the path claims under it.</param>
-    /// <param name="destroyNative">The port's shared BG/VFX destructor
-    /// sequence, which also retires the destroyed incarnation.</param>
+    /// <param name="handledLock">The world-object port's lock. The file-load
+    /// hook can run on a loading thread, so it reads Poser's effect paths
+    /// under this lock.</param>
+    /// <param name="destroyNative">The port's teardown for models and
+    /// effects, which also forgets the torn-down object's identity.</param>
     public VfxObjectNative(
         ISigScanner sigScanner,
         IGameInteropProvider gameInterop,
@@ -68,8 +64,8 @@ internal sealed unsafe class VfxObjectNative
         _resolver = resolver;
         _handledLock = handledLock;
         _destroyNative = destroyNative;
-        // A failure in VFX initialization disables effect spawning.
-        // Background model support initializes separately.
+        // When a function isn't found, effects can't be spawned; map models
+        // are not affected.
         try
         {
             _vfxPlayStatic = (delegate* unmanaged<nint, float, uint, nint>)
@@ -91,6 +87,9 @@ internal sealed unsafe class VfxObjectNative
         }
         catch (Exception ex)
         {
+            // A hook that was made but would not turn on is removed again.
+            _vfxResourceLoad?.Dispose();
+            _vfxResourceLoad = null;
             _vfxReady = false;
             _log.Warning(
                 $"NativeWorldObjectPort: the VFX natives are unavailable, "
@@ -113,8 +112,8 @@ internal sealed unsafe class VfxObjectNative
         if (instance == null)
             return false;
         bool active = IsVfxActive(address);
-        // Active and speed are deliberately considered together: inactive +
-        // zero has no distinguishable native signal and must be refused.
+        // Both are needed: a stopped effect with speed zero can't be told
+        // apart from a paused one, so that case is refused.
         if (active && instance->Speed > 0.0001f)
             playback = VfxPlaybackState.Playing;
         else if (active)
@@ -126,8 +125,8 @@ internal sealed unsafe class VfxObjectNative
         return true;
     }
 
-    /// <summary>A vfx's drawn state is its ALPHA (Brio's rule); the draw
-    /// flag says nothing for an effect.</summary>
+    /// <summary>An effect is shown or hidden through its alpha, as in Brio;
+    /// the draw flag does nothing for an effect.</summary>
     internal const int VfxAlphaOffset = NativeFields.VfxObject_ColorAlpha;
 
     public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
@@ -141,10 +140,9 @@ internal sealed unsafe class VfxObjectNative
             tint.X, tint.Y, tint.Z, current.W);
     }
 
-    /// <summary>The effect's brightness triple at 0x90 on the resource
-    /// instance (Brio's SetIntensity): one uniform value drives all three
-    /// components, then the transform/culling nudge makes it take.
-    /// </summary>
+    /// <summary>The effect's brightness, three values on the effect's
+    /// resource. Poser writes one value to all three, as Brio does, and then
+    /// tells the game the effect moved so the change shows.</summary>
     private const int VfxIntensityOffset = NativeFields.VfxResourceInstance_Scale;
 
     public void SetVfxIntensity(nint address, float intensity)
@@ -163,8 +161,7 @@ internal sealed unsafe class VfxObjectNative
         vfx->UpdateCulling();
     }
 
-    /// <summary>Brio's pause pair: the pause native plus speed zero.
-    /// </summary>
+    /// <summary>Pauses the effect and sets its speed to zero, as Brio does.</summary>
     public void PauseVfx(nint address)
     {
         var node = Resolve(address);
@@ -179,8 +176,7 @@ internal sealed unsafe class VfxObjectNative
             _vfxSetSpeed(instance, 0f);
     }
 
-    /// <summary>Brio's resume pair: play the static effect again and put
-    /// the stated speed back.</summary>
+    /// <summary>Plays the effect again at <paramref name="speed"/>, as Brio does.</summary>
     public void ResumeVfx(nint address, float speed)
     {
         var node = Resolve(address);
@@ -227,10 +223,10 @@ internal sealed unsafe class VfxObjectNative
             && Math.Abs(actual - speed) <= 0.0001f;
     }
 
-    /// <summary>The effect state an adoption may edit — captured at
-    /// adopt so the release can hand the ZONE's effect back exactly as
-    /// found. Tint, intensity, speed and pause otherwise stick on the
-    /// zone's own effect until a zone reload.</summary>
+    /// <summary>The colour, brightness and speed Poser can change on an
+    /// effect. Read when Poser takes over a map's effect, so giving it back
+    /// puts them back; otherwise Poser's values would stay on the map's effect
+    /// until the area reloads.</summary>
     public bool TryReadVfxState(
         nint address,
         out System.Numerics.Vector4 color,
@@ -311,9 +307,9 @@ internal sealed unsafe class VfxObjectNative
                 SetVfxSpeed(address, snapshot.Speed);
                 break;
             case VfxPlaybackState.Inactive:
-                // Stop first, then restore authored speed as data. A retired
-                // effect with positive speed re-observes as inactive without
-                // replay; zero-speed inactive is intentionally ambiguous.
+                // Stop it, then write the saved speed back. A stopped effect
+                // with a speed above zero reads as finished again. One with
+                // speed zero can't be told apart from paused.
                 PauseVfx(address);
                 SetVfxSpeed(address, snapshot.Speed);
                 break;
@@ -344,12 +340,11 @@ internal sealed unsafe class VfxObjectNative
         && Math.Abs(left.Y - right.Y) <= 0.0001f
         && Math.Abs(left.Z - right.Z) <= 0.0001f;
 
-    /// <summary>Whether the effect is still playing — Brio's
-    /// IsActiveStatic native, with the resource instance's own flags
-    /// (Brio's struct: ActiveFlag bit 0, or a live job) as the fallback
-    /// when the signature is gone. A looping effect that reports
-    /// inactive is REPLAYED in place, never respawned — the respawn
-    /// loop visibly blinked the effect off and on.</summary>
+    /// <summary>Whether the effect is still playing, read with Brio's game
+    /// function. When that function wasn't found, the effect resource's own
+    /// flags are read instead. A looping effect that has finished is played
+    /// again where it is, never spawned again, because spawning it again made
+    /// it blink.</summary>
     public bool IsVfxActive(nint address)
     {
         var node = Resolve(address);
@@ -380,16 +375,14 @@ internal sealed unsafe class VfxObjectNative
     {
         if (!_destroyNative(identity.Address, identity))
             return false;
-        // The exact destructor has completed above; release this exact lease
-        // directly. The public stale-release seam intentionally refuses an
-        // ambiguous live native, but this path has already proved teardown.
+        // The effect is gone, so Poser's record of it can go too.
         return _vfxOwnership.Release(identity);
     }
 
-    /// <summary>Brio's create sequence (StaticVfxObject.Create): create,
-    /// clear the auto-play-gate flag, prime one update, place, then play.
-    /// The path is marked HANDLED first so the resource hook unbinds its
-    /// timeline items when the avfx streams in.</summary>
+    /// <summary>Spawns an effect the way Brio does: create it, clear the flag
+    /// that makes it wait before playing, update it once, place it, play it.
+    /// The path is recorded first, so the file-load hook edits the effect
+    /// file when it loads.</summary>
     public nint SpawnVfx(string path, in Transform placement, out WorldObjectIncarnation identity)
     {
         identity = default;
@@ -423,9 +416,8 @@ internal sealed unsafe class VfxObjectNative
             PlayVfx(vfx);
             *(float*)((byte*)vfx + VfxAlphaOffset) = 1f;
 
-            // The resource instance is attached by the create/update/play
-            // sequence. Only this synchronous allocation may promote its
-            // reserved zero-resource identity to a live claim.
+            // The effect's resource exists after the steps above. Its identity
+            // is recorded now, while Poser knows this is the effect it made.
             var resource = ReadVfxResourceIdentity((nint)vfx);
             if (!_vfxOwnership.TryPromote(lease, resource, out identity))
                 throw new InvalidOperationException(
@@ -435,9 +427,8 @@ internal sealed unsafe class VfxObjectNative
         }
         catch
         {
-            // Creation can fail after allocation (update, placement, or
-            // playback). Tear down that exact allocation before dropping the
-            // pending claim; otherwise a failed spawn leaks native state.
+            // A step after creating the effect failed: tear the effect down
+            // before forgetting it, or it would stay in the game.
             try
             {
                 if (vfx != null)
@@ -453,9 +444,8 @@ internal sealed unsafe class VfxObjectNative
             }
             if (!leased)
             {
-                // CSVfx.Create can throw before returning an allocation;
-                // rollback the path token even though no native cleanup is
-                // possible.
+                // Creating the effect itself failed, so there is nothing to
+                // tear down; only the recorded path is dropped.
                 claim.Dispose();
             }
             else if (cleaned && vfx != null)
@@ -529,10 +519,9 @@ internal sealed unsafe class VfxObjectNative
             _vfxPlayStatic((nint)vfx, 0f, 0xFFFFFFFF);
     }
 
-    /// <summary>The resource-load seam: for paths POSER spawned, every
-    /// timeline item's binder id is nulled in the streamed avfx bytes, so
-    /// the effect plays standalone instead of waiting on a caster it will
-    /// never have. Brio's mechanism, ported whole.</summary>
+    /// <summary>Runs when the game loads an effect file. For an effect Poser
+    /// spawned, the file's bytes are edited so the effect plays on its own
+    /// instead of waiting for a character to cast it, as in Brio.</summary>
     private nint VfxResourceLoadDetour(
         void* job, nint unk1, byte* filePath, byte* avfxData, uint dataSize,
         ResourceHandle* resourceHandle, uint unk2)
