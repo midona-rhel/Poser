@@ -180,10 +180,11 @@ public sealed partial class GraphicalBonePane
         var store = _configuration.Config.Skeleton.BoneMapPresets;
         var editor = MatchingEditor(actor.Id, preset);
         bool locked = BoneMapTemplates.IsBuiltIn(preset.Id);
+        var defaults = BuildDefaults(actor, kind, preset.Template);
         var draft = editor ?? (locked
-            ? new BoneMapPresetDraft(kind, BuildDefaults(actor, kind, preset.Template), initial: preset.Points)
-                { Name = BoneMapPresetDraft.UniqueName(store, kind, preset.Name + " copy"), Template = preset.Template, Background = preset.Background }
-            : new BoneMapPresetDraft(kind, BuildDefaults(actor, kind, preset.Template), preset));
+            ? BoneMapPresetDraft.CopyOf(kind, defaults, store,
+                preset.Name, preset.Points, preset.Background, preset.Template)
+            : new BoneMapPresetDraft(kind, defaults, preset));
         var before = draft.Points.ToArray();
         if (operation is 0 or 1) AddPresetBone(draft, key, available);
         if (operation == 1)
@@ -196,10 +197,9 @@ public sealed partial class GraphicalBonePane
         if (operation == 2) draft.Remove(key);
         if (operation == 3) draft.RemoveWithChildren(key, available);
         if (before.SequenceEqual(draft.Points) || editor != null) return;
-        _editError = draft.Save(store, out var saved);
+        _editError = draft.Save(_configuration, out var saved);
         if (_editError != null) return;
         _selectedPresets[(int)kind] = saved;
-        _configuration.Save();
         if (_editActor == actor.Id && _draft?.SourceId == presetId)
             LoadEditorPreset(store.First(item => item.Id == saved));
     }
