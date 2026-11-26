@@ -87,13 +87,6 @@ public sealed class SelectionPlacement(
         if (!begin.Success || begin.GestureId is not { } gesture) return begin;
         var updated = transforms.Update(gesture,
             new TransformDelta(goal - sum / count, Quaternion.Identity, Vector3.One));
-        if (!updated.Success)
-        {
-            // Some refusals end the gesture themselves; cancelling again is
-            // harmless, and its answer would hide the reason that matters.
-            transforms.Cancel(gesture);
-            return updated;
-        }
-        return transforms.Commit(gesture);
+        return updated.Success ? transforms.Commit(gesture) : updated;
     }
 }
