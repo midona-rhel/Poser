@@ -39,7 +39,7 @@ public sealed class ScenePane
     private readonly ILibrarySceneActions _libraryScene;
     private readonly ConfigurationService _config;
     private readonly SceneAutoSaveService _snapshots;
-    private readonly Poser.Application.Library.ILibrarySceneSave _librarySave;
+    private readonly ILibrarySceneSave _librarySave;
 
     private readonly FileDialog _saveBrowser =
         new("Save Scene", new[] { SceneFile.Extension }, isSaveMode: true);
@@ -184,7 +184,7 @@ public sealed class ScenePane
         IPlaceService place,
         SceneLoadPreferences preferences,
         UserNotices notices,
-        Poser.Application.Library.ILibrarySceneSave librarySave)
+        ILibrarySceneSave librarySave)
     {
         _config = config;
         _preferences = preferences;
@@ -1018,7 +1018,7 @@ public sealed class ScenePane
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description,
             SaveOptions);
-        // The save has only started here. The library is scanned again once
+        // The save has only started here. The Library is scanned again once
         // the file is written.
         _notices.Report(started, "Scene ▸ Save");
     });

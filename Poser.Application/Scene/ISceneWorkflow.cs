@@ -3,11 +3,13 @@ using Poser.Domain.Operations;
 
 namespace Poser.Application.Scene;
 
-/// <summary>Saving and loading a whole scene, as the Scene tab, the library and
-/// the issue report start them. One save or load runs at a time.</summary>
+/// <summary>Saving and loading a whole scene. One save or load runs at a
+/// time.</summary>
 public interface ISceneWorkflow
 {
-    /// <summary>How many bytes saving with modded appearance would add right now.</summary>
+    /// <summary>The total size of the MCDFs applied to the actors in the scene
+    /// now, which a save with appearance files packs as they are. Actors whose
+    /// look would be exported are not counted.</summary>
     long EstimatedAppearanceBytes { get; }
 
     /// <summary>The running or last save or load: its step, and once it has

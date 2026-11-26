@@ -329,22 +329,20 @@ internal sealed class SceneAppearanceRuntime : IDisposable
         TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
-        Guid? operationId = null;
+        // BeginExport sets the export's receipt before it returns success.
+        Guid admitted = default;
         var refusal = await BeginMcdfChild(() =>
         {
             var started = _mcdf.BeginExport(
                 id, destination, $"Scene appearance: {name}");
             if (!started.Success)
                 return started.Detail ?? "the appearance could not be packaged.";
-            operationId = _mcdf.Receipt?.OperationId;
+            admitted = _mcdf.Receipt!.OperationId;
             return null;
         }, "another character-file operation held the slot for the whole bound.",
             "the save was cancelled.", bound, cancellation);
         if (refusal != null)
             return (refusal, false);
-
-        if (operationId is not { } admitted)
-            return ("the appearance export did not publish its receipt.", false);
 
         // The export belongs to this save. If the save runs out of time or is
         // cancelled, the export is cancelled too and waited for, never left
@@ -372,8 +370,9 @@ internal sealed class SceneAppearanceRuntime : IDisposable
         }, false);
     }
 
-    /// <summary>The total size of the appearance packages the actors in the scene
-    /// would add to a save.</summary>
+    /// <summary>The total size of the MCDFs applied to the actors in the scene
+    /// now. A save with appearance files packs these as they are. Actors whose
+    /// look would be exported instead are not counted.</summary>
     public long EstimateAppearanceBytes()
     {
         long total = 0;
@@ -645,7 +644,7 @@ internal sealed class SceneAppearanceRuntime : IDisposable
             string source = located.Source!;
             string? changed = located.Changed;
 
-            Guid? operationId = null;
+            Guid admitted = default;
             var refusal = await BeginMcdfChild(() =>
             {
                 var target = _handles.Resolve<IActor>(actor, SceneEntityKind.Actor);
@@ -656,17 +655,13 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                 var started = _mcdf.BeginImport(id, source, preservePose: false, name: saved.FileName);
                 if (!started.Success)
                     return started.Detail ?? "The character file import was refused.";
-                // The import's id can be read as soon as it has started.
-                operationId = _mcdf.Receipt?.OperationId;
+                // BeginImport sets the import's receipt before it returns success.
+                admitted = _mcdf.Receipt!.OperationId;
                 return null;
             }, "Another character-file operation held the slot for the whole bound.",
                 "The load was cancelled.", bound, cancellation);
             if (refusal != null)
                 return SceneMcdfOutcome.Refused(refusal);
-
-            if (operationId is not { } admitted)
-                return SceneMcdfOutcome.Refused(
-                    "The character file import did not publish its receipt.");
 
             // The import belongs to this load. If the load runs out of time or
             // is cancelled, the import is cancelled too and waited for. A
