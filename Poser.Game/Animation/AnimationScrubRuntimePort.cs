@@ -145,8 +145,6 @@ public sealed unsafe class AnimationScrubRuntimePort : IAnimationScrubPort
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        if (!float.IsFinite(time))
-            return Outcome.Fail("Scrub time must be a finite number.");
         if (control.IsTimeline)
         {
             var slot = (AnimationSlot)control.Control;
