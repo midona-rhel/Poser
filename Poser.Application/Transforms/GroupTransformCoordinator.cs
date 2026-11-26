@@ -6,10 +6,15 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
-// A blocked transaction must not fall back to potentially partial live state.
+/// <summary>Which group values the inspector shows while a drag runs: the
+/// stored ones (<c>UseCommitted</c>), or the drag's own <c>Snapshot</c>. Neither
+/// is shown while a failed move is still being put back, because the members
+/// may be only partly restored.</summary>
 internal readonly record struct GroupTransformPresentation(bool UseCommitted, GroupTransformSnapshot? Snapshot);
 
-/// <summary>Read/capability and camera data supplied by Game, never inferred by UI.</summary>
+/// <summary>What the group code reads from the game: a member's transform, why
+/// a member cannot move right now, the camera's frame for a new group, and a
+/// member's current id after a redraw.</summary>
 public interface IGroupTransformSource
 {
     PoseTransform? Read(TransformTargetId target);
@@ -18,6 +23,11 @@ public interface IGroupTransformSource
     TransformTargetId? CurrentTarget(TransformTargetId target);
 }
 
+/// <summary>
+/// Keeps the position, rotation and scale that a named group or a selection of
+/// several things shows in the inspector, and decides whether such a selection
+/// can move together.
+/// </summary>
 public sealed class GroupTransformCoordinator : IDisposable
 {
     private readonly SceneSession _scene;
@@ -42,16 +52,6 @@ public sealed class GroupTransformCoordinator : IDisposable
         if (BeforeSelectionCapture?.Invoke() != false) InitializeSelection();
     }
 
-    public static TransformTargetId? Target(SelectionId id) => id switch
-    {
-        { Kind: SceneEntityKind.Overlay, Overlay: { } overlay } => TransformTargetId.ForCollider(overlay),
-        { Kind: SceneEntityKind.Actor, Actor: { } actor } => TransformTargetId.ForActor(actor),
-        { Kind: SceneEntityKind.Light, Light: { } light } => TransformTargetId.ForLight(light),
-        { Kind: SceneEntityKind.Prop, Prop: { } prop } => TransformTargetId.ForProp(prop),
-        { Kind: SceneEntityKind.WorldObject, WorldObject: { } world } => TransformTargetId.ForWorldObject(world),
-        _ => null,
-    };
-
     public bool Resolve(IReadOnlyList<SelectionId> selected, out TransformTargetId[] targets, out string? error)
     {
         if (!ResolveMembership(selected, out targets, out error)) return false;
@@ -71,7 +71,7 @@ public sealed class GroupTransformCoordinator : IDisposable
         var result = new List<TransformTargetId>();
         foreach (var id in selected)
         {
-            if (Target(id) is not { } target || !_scene.Contains(target)) return false;
+            if (TransformTargetResolver.Target(id) is not { } target || !_scene.Contains(target)) return false;
             result.Add(target);
         }
         if (result.Count < 2 || result.Distinct().Count() != result.Count) return false;
@@ -82,7 +82,7 @@ public sealed class GroupTransformCoordinator : IDisposable
         var key = GroupTransformKey.For(null, targets);
         bool Matches(SceneGroup group)
         {
-            var members = _groups.Descendants(group).Select(Target).ToArray();
+            var members = _groups.Descendants(group).Select(TransformTargetResolver.Target).ToArray();
             return members.All(target => target != null)
                 && GroupTransformKey.For(null, members.Select(target => target!.Value)) == key;
         }

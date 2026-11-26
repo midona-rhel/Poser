@@ -66,11 +66,12 @@ public sealed class EditHistory
     public SelectionId ResolveLifecycleEntity(SelectionId entity) =>
         _lifecycleTargets.TryGetValue(entity, out var current) ? current() ?? entity : entity;
 
+    /// <summary>The thing a recorded edit now applies to: the replacement when
+    /// undo has recreated a deleted thing, otherwise the target itself.</summary>
     public TransformTargetId ResolveLifecycleTarget(TransformTargetId target)
     {
         var entity = ResolveLifecycleEntity(target.ToSelectionId());
-        return entity.Bone is { } bone ? TransformTargetId.ForBone(bone)
-            : GroupTransformCoordinator.Target(entity) ?? target;
+        return TransformTargetResolver.Target(entity) ?? target;
     }
 
     private void RefreshLifecycleTargets(List<HistoryEntry> stack)
@@ -233,9 +234,9 @@ public sealed class EditHistory
     /// Entity creation and deletion keep their own steps for undo and redo.
     /// </summary>
     public void Reconcile(
-        Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent,
-        Func<Poser.Domain.Identity.TransformTargetId, Poser.Domain.Identity.TransformTargetId?>? rekey = null,
-        Func<Poser.Domain.Identity.TransformTargetId, bool>? isPending = null)
+        Func<TransformTargetId, bool> isCurrent,
+        Func<TransformTargetId, TransformTargetId?>? rekey = null,
+        Func<TransformTargetId, bool>? isPending = null)
     {
         RefreshLifecycleTargets(_undo);
         RefreshLifecycleTargets(_redo);

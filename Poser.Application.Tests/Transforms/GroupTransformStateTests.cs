@@ -177,7 +177,7 @@ public sealed class GroupTransformStateTests
         f.Groups.ActiveGroupId = child.Id;
         foreach (var member in child.Members) f.Selection.Add(member);
         var initial = f.State.NamedSnapshot(child.Id)!;
-        var targets = child.Members.Select(GroupTransformCoordinator.Target).Select(target => target!.Value).ToArray();
+        var targets = child.Members.Select(TransformTargetResolver.Target).Select(target => target!.Value).ToArray();
         var begin = f.Service.Begin(new(targets, TransformOperation.Universal, TransformSpace.World,
             PivotMode.Centroid, GroupId: child.Id, IsGroupTransform: true));
         Assert.True(begin.Success, begin.Detail);
