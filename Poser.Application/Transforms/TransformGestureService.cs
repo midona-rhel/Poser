@@ -102,16 +102,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return RecoveryRequired(pending);
         if (_active != null)
             return GestureResult.Fail("A transform gesture is already active.");
-        if (!Enum.IsDefined(command.GroupScale))
-            return GestureResult.Fail("The group scale mode is invalid.");
-        if (command.IsGroupTransform && (command.Space != TransformSpace.World
-            || command.PivotMode != PivotMode.Centroid
-            || command.Targets.Any(target => target.Kind == TransformTargetKind.Bone)))
-            return GestureResult.Fail("Entity group gestures require a world-space centroid.");
-        if (command.Targets.Count == 0)
-            return GestureResult.Fail("A transform gesture requires a target.");
-        if (!IsHomogeneous(command.Targets))
-            return GestureResult.Fail("Transform targets must be homogeneous.");
         if (command.PivotMode == PivotMode.Custom &&
             (command.CustomPivot is not { } supplied ||
              !TransformMath.IsFinite(supplied)))
@@ -127,7 +117,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         var pivot = command.PivotMode switch
         {
             PivotMode.PerTarget => captured[0].Transform.Position,
-            PivotMode.Primary => captured[0].Transform.Position,
             PivotMode.Centroid => Centroid(captured),
             PivotMode.Custom => command.CustomPivot!.Value,
             _ => captured[0].Transform.Position,
@@ -289,11 +278,8 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             var rotatePosition = active.Command.PivotMode switch
             {
                 PivotMode.PerTarget => false,
-                PivotMode.Primary => index != 0,
                 // The centre point belongs to no target, so every target swings
-                // around it, the first one too. Leaving the first one out would
-                // hold it in place and swing the rest around it, which is what
-                // Primary mode does and what the centre point is there to avoid.
+                // around it, the first one too.
                 PivotMode.Centroid => true,
                 PivotMode.Custom => true,
                 _ => false,
@@ -669,20 +655,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         {
             Recovery = recovery,
         };
-
-    private static bool IsHomogeneous(
-        IReadOnlyList<TransformTargetId> targets)
-    {
-        // Bones must all belong to one actor, but may come from different
-        // skeletons of it, such as the body and a weapon. Other kinds of entity
-        // may be mixed, because their transforms are all in world space.
-        var first = targets[0];
-        if (targets.Any(target => target.Kind == TransformTargetKind.Bone))
-            return targets.All(target =>
-                target.Kind == TransformTargetKind.Bone
-                && target.ActorLineage == first.ActorLineage);
-        return true;
-    }
 
     private static TransformDelta Filter(
         TransformDelta delta,

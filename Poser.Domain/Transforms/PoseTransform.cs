@@ -24,10 +24,7 @@ public enum PivotMode
     /// <summary>
     /// Rotate or scale each target around its own origin without moving that origin.
     /// </summary>
-        PerTarget,
-
-    /// <summary>Every target about the first selected one.</summary>
-    Primary,
+    PerTarget,
 
     /// <summary>Every target rotates and scales about the mean of the captured
     /// target positions. With one target this is the same as
@@ -37,7 +34,7 @@ public enum PivotMode
     /// <summary>
     /// Use a point captured when the drag begins, such as a parent bone position.
     /// </summary>
-        Custom,
+    Custom,
 }
 
 /// <summary>

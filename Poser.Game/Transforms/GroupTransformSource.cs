@@ -19,7 +19,6 @@ public sealed class GroupTransformSource(
     public string? Refusal(TransformTargetId target)
     {
         if (!scene.Contains(target)) return "A selected group member is unavailable.";
-        if (target.Kind == TransformTargetKind.Bone) return "Bones cannot join an entity group transform.";
         if (target.Light is { } light)
         {
             var resolved = bindings.Resolve(light);

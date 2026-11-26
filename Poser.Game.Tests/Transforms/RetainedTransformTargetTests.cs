@@ -26,6 +26,5 @@ public sealed class RetainedTransformTargetTests
 
         Assert.Equal(TransformTargetId.ForBone(bone), source.CurrentTarget(TransformTargetId.ForBone(oldBone)));
         Assert.False(scene.Contains(TransformTargetId.ForBone(oldBone)));
-        Assert.Equal("Bones cannot join an entity group transform.", source.Refusal(TransformTargetId.ForBone(bone)));
     }
 }

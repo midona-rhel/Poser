@@ -75,7 +75,7 @@ public sealed class HistoryAdmissionTests
             Journal = new UndoJournal(History, Gestures, _ => true, Notices);
         }
 
-        public GestureResult Begin() => Gestures.Begin(new([Target], TransformOperation.Translate, TransformSpace.World, PivotMode.Primary));
+        public GestureResult Begin() => Gestures.Begin(new([Target], TransformOperation.Translate, TransformSpace.World, PivotMode.PerTarget));
         public void Dispose() => Gestures.Dispose();
     }
 }
