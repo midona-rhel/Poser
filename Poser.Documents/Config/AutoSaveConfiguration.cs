@@ -26,9 +26,9 @@ public class AutoSaveConfiguration
 
     /// <summary>
     /// The folder where older Poser versions saved pose backups. Poser no
-    /// longer writes there; the Library's Auto-saves tab still lists what is in
-    /// it. An empty value means <c>&lt;configDir&gt;/AutoSaves</c>. It is read
-    /// once when Poser starts.
+    /// longer writes backups or changes this value; the Library's Auto-saves
+    /// tab still lists what is in the folder. An empty value means
+    /// <c>&lt;configDir&gt;/AutoSaves</c>. It is read once when Poser starts.
     /// </summary>
     public string RootDirectory { get; set; } = "";
 

@@ -83,17 +83,8 @@ public sealed partial class DebugBridge
         };
     }
 
-    private object AutoSaveStatus()
-    {
-        var service = BridgeAutoSaveLibrary;
-        return new
-        {
-            root = Path.GetFullPath(service.RootDirectory),
-            // Isolation is selected by /sceneautosaveconfig and takes effect
-            // only after reload; this endpoint never swaps the running store.
-            sceneRootIsolationSupported = true,
-        };
-    }
+    private object AutoSaveStatus() =>
+        new { root = Path.GetFullPath(BridgeAutoSaveLibrary.RootDirectory) };
 
     private object AutoSaveLibraryCommand(Dictionary<string, string> query)
     {

@@ -16,7 +16,6 @@ using Poser.Domain;
 using Poser.Domain.Preferences;
 using Poser.Documents.Config;
 using Poser.Documents.Library;
-using Poser.Application.AutoSave;
 using Poser.Application.Library;
 
 namespace Poser.UI;
@@ -573,7 +572,5 @@ public class SettingsWindow : Window
         // Sources are committed once by the draft transaction in SaveToConfig;
         // preview and Cancel never replace them.
         c.Library.EnsureHomeRootsExist();
-        c.AutoSave.RootDirectory = System.IO.Path.Combine(
-            _vm.Library.EffectiveRoot, LibraryConfiguration.AutoSavesLeaf);
     }
 }
