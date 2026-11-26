@@ -50,7 +50,7 @@ internal sealed partial class EntityContextMenus
     private readonly SidebarComposer _sidebar;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly ISceneDuplication _duplication;
-    private readonly Application.Selection.ISelectedEntityActions _entityCommands;
+    private readonly Application.Selection.ISelectedEntityActions _selectedEntities;
     private readonly EntityActions _entityActions;
     private readonly IScenePlaybackControl _playback;
     private readonly Application.Presentation.ICameraTargetControl _cameraTargets;
@@ -111,7 +111,7 @@ internal sealed partial class EntityContextMenus
         SidebarComposer sidebar,
         PoseFileInspectorSection poseFileSection,
         ISceneDuplication duplication,
-        Application.Selection.ISelectedEntityActions entityCommands,
+        Application.Selection.ISelectedEntityActions selectedEntities,
         EntityActions entityActions,
         IScenePlaybackControl playback,
         Application.Presentation.ICameraTargetControl cameraTargets,
@@ -144,7 +144,7 @@ internal sealed partial class EntityContextMenus
         _sidebar = sidebar;
         _poseFileSection = poseFileSection;
         _duplication = duplication;
-        _entityCommands = entityCommands;
+        _selectedEntities = selectedEntities;
         _entityActions = entityActions;
         _playback = playback;
         _cameraTargets = cameraTargets;
@@ -244,7 +244,7 @@ internal sealed partial class EntityContextMenus
 
     private ActorDescriptor? ResolveActorDescriptor(ActorId id) =>
         _actorControl.Read(id) != null ? _scene.Snapshot.FindActor(id) : null;
-    private bool? IsEntityVisible(SelectionId id) => _entityCommands.ReadVisibility(id);
+    private bool? IsEntityVisible(SelectionId id) => _selectedEntities.ReadVisibility(id);
     private int SetEntityVisible(SelectionId id, bool visible) => _entityActions.SetVisibility([id], visible);
     private void SetSelectionVisible(bool visible) => _entityActions.SetVisibility(_selection.Selected.ToArray(), visible);
     private bool? PlayingOf(SelectionId id) => _playback.ReadPlaying(id);

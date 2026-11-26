@@ -34,7 +34,7 @@ public partial class MainWindow
     private void SetNight(SelectionId id, bool night) => _playback.SetNight(id, night);
 
     private bool? IsEntityVisible(SelectionId id)
-        => _entityCommands.ReadVisibility(id);
+        => _selectedEntities.ReadVisibility(id);
 
     private int SetEntityVisible(SelectionId id, bool visible) =>
         _entityActions.SetVisibility([id], visible);

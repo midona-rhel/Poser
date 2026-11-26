@@ -128,9 +128,9 @@ public sealed class SceneSession
     public SceneSnapshot Snapshot => _snapshot;
     public ulong Revision => _snapshot.Revision;
 
-    /// <summary>Reads current verb capabilities for an exact selection id.
-    /// Old generations remain stale here even where ordinary selection
-    /// reconciliation can promote them to a current lineage.</summary>
+    /// <summary>What can be done to a selected thing: whether it can be shown or
+    /// hidden and how it is removed. Null when that exact thing is not in the
+    /// scene; an id from before a redraw is not matched to its new id here.</summary>
     public CurrentSelectionEntity? ReadCurrent(SelectionId id) =>
         SelectionEntityCapabilities.Read(_snapshot, id);
 

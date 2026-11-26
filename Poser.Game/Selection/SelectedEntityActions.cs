@@ -230,7 +230,7 @@ public sealed class SelectedEntityActions : ISelectedEntityActions
 
     private SelectionRemovalItem RemoveOne(CurrentSelectionEntity request)
     {
-        var (id, _, _, removal) = request;
+        var (id, _, removal) = request;
         SelectionRemovalItem Removed() => new(id, SelectionRemovalStatus.Removed);
         SelectionRemovalItem Refused(string detail) => new(id, SelectionRemovalStatus.Refused, detail);
         SelectionRemovalItem Absent() => new(id, SelectionRemovalStatus.AlreadyAbsent);
@@ -250,16 +250,11 @@ public sealed class SelectedEntityActions : ISelectedEntityActions
                 if (!CurrentActor(actorId, out var actor)) return Absent();
                 if (!ActorOwnershipMatches(actorId, actor))
                     return Refused("The actor's ownership changed; select it again.");
-                bool adopted = _scene.Snapshot.FindActor(actorId)?.IsAdopted == true;
+                // A borrowed actor is released; one Poser made is destroyed.
                 if (removal == SelectionRemoval.Release)
-                {
-                    if (!adopted) return Refused("That actor is not borrowed from the world.");
                     return Released();
-                }
-                if (adopted
-                    || (!_actors.IsSpawnedActor(actor)
-                        && _actors.RemovalRefusal(actor) is not null))
-                    return Refused(_actors.RemovalRefusal(actor) ?? "That actor cannot be destroyed.");
+                if (!_actors.IsSpawnedActor(actor) && _actors.RemovalRefusal(actor) is { } refusal)
+                    return Refused(refusal);
                 if (!_lifecycle.DespawnActor(actor, out var note)) return Refused("The actor could not be removed.");
                 _selection.RemoveActorLineage(actorId.LogicalId);
                 return new(id, SelectionRemovalStatus.Removed, note);
@@ -277,24 +272,21 @@ public sealed class SelectedEntityActions : ISelectedEntityActions
                 }
                 return !_lighting.Lights.Contains(light) ? Removed() : Refused("The light could not be removed.");
             case { Prop: { } propId }:
-                if (removal != SelectionRemoval.Destroy
-                    || !CurrentProp(propId, out var prop)) return Absent();
+                if (!CurrentProp(propId, out var prop)) return Absent();
                 _lifecycle.DestroyProp(prop);
                 return !_props.Props.Contains(prop) ? Removed() : Refused("The prop could not be removed.");
             case { Camera: { } cameraId }:
                 if (!CurrentCamera(cameraId, out var camera)) return Absent();
-                if (removal != SelectionRemoval.Destroy || camera.IsDefault)
+                if (camera.IsDefault)
                     return Refused("The main camera cannot be removed.");
                 _lifecycle.DestroyCamera(camera);
                 return !_cameras.Cameras.Contains(camera) ? Removed() : Refused("The camera could not be removed.");
             case { Overlay: { } overlayId }:
-                if (removal != SelectionRemoval.Destroy
-                    || !CurrentOverlay(overlayId, out var overlay)) return Absent();
+                if (!CurrentOverlay(overlayId, out var overlay)) return Absent();
                 _lifecycle.DestroyOverlay(overlay);
                 return !_overlays.Nodes.Contains(overlay) ? Removed() : Refused("The overlay could not be removed.");
             case { WorldObject: { } worldId }:
-                if (removal != SelectionRemoval.Release
-                    || !CurrentWorldObject(worldId, out _)) return Absent();
+                if (!CurrentWorldObject(worldId, out _)) return Absent();
                 return Released();
             default:
                 return Refused("This entity does not support removal.");

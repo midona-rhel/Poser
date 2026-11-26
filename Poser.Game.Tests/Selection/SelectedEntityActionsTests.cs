@@ -75,7 +75,7 @@ public sealed class SelectedEntityActionsTests
         fixture.History.Append(earlier);
         fixture.History.CommitUndo(earlier);
 
-        var result = Assert.Single(fixture.Port.SetVisibility([fixture.Id], visible: false).Items).Result;
+        var result = Assert.Single(fixture.Actions.SetVisibility([fixture.Id], visible: false).Items).Result;
 
         Assert.False(result.Success);
         Assert.Equal("The light refused.", result.Detail);
@@ -92,7 +92,7 @@ public sealed class SelectedEntityActionsTests
         public readonly EditHistory History = new();
         public readonly ReleasePort Release = new();
         public readonly FrameworkProxy Framework;
-        public readonly SelectedEntityActions Port;
+        public readonly SelectedEntityActions Actions;
 
         public Fixture()
         {
@@ -124,12 +124,12 @@ public sealed class SelectedEntityActionsTests
             var framework = DispatchProxy.Create<IFramework, FrameworkProxy>();
             Framework = (FrameworkProxy)(object)framework;
             var lights = new LightControl(bindings, lighting, new ValueJournal(History), null!);
-            Port = new SelectedEntityActions(Scene, bindings, null!, null!, lights, null!, null!, null!,
+            Actions = new SelectedEntityActions(Scene, bindings, null!, null!, lights, null!, null!, null!,
                 null!, lighting, null!, null!, null!, null!, Release, Groups, framework, History);
         }
 
         public Task<SelectionRemovalResult> Remove() =>
-            Port.Remove([Id]);
+            Actions.Remove([Id]);
     }
 
     private sealed class ReleasePort : IWorldReleasePort

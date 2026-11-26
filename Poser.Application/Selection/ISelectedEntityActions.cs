@@ -5,11 +5,10 @@ using Poser.Domain.Scene;
 namespace Poser.Application.Selection;
 
 /// <summary>What can be done to one selected thing right now: whether it can be
-/// shown or hidden, whether it is shown, and how it is removed.</summary>
+/// shown or hidden, and how it is removed.</summary>
 public sealed record CurrentSelectionEntity(
     SelectionId Id,
     bool CanChangeVisibility,
-    bool? IsVisible,
     SelectionRemoval Removal);
 
 public enum SelectionRemoval
@@ -73,31 +72,31 @@ public static class SelectionEntityCapabilities
         {
             SceneEntityKind.Actor when id.Actor is { } actor =>
                 scene.Actors.FirstOrDefault(x => x.Id == actor) is { } value
-                    ? new(id, true, !value.IsHidden,
+                    ? new(id, true,
                         value.IsAdopted ? SelectionRemoval.Release : SelectionRemoval.Destroy)
                     : null,
             SceneEntityKind.Light when id.Light is { } light =>
                 scene.Lights.FirstOrDefault(x => x.Id == light) is { } value
-                    ? new(id, true, value.IsOn,
+                    ? new(id, true,
                         value.Ownership == LightOwnership.Spawned
                             ? SelectionRemoval.Destroy : SelectionRemoval.Release)
                     : null,
             SceneEntityKind.Prop when id.Prop is { } prop =>
                 scene.Props.FirstOrDefault(x => x.Id == prop) is { } value
-                    ? new(id, true, value.Visible, SelectionRemoval.Destroy)
+                    ? new(id, true, SelectionRemoval.Destroy)
                     : null,
             SceneEntityKind.Camera when id.Camera is { } camera =>
                 scene.Cameras.FirstOrDefault(x => x.Id == camera) is { } value
-                    ? new(id, false, null,
+                    ? new(id, false,
                         value.IsDefault ? SelectionRemoval.None : SelectionRemoval.Destroy)
                     : null,
             SceneEntityKind.Overlay when id.Overlay is { } overlay =>
                 scene.Overlays.FirstOrDefault(x => x.Id == overlay) is { } value
-                    ? new(id, true, value.Visible, SelectionRemoval.Destroy)
+                    ? new(id, true, SelectionRemoval.Destroy)
                     : null,
             SceneEntityKind.WorldObject when id.WorldObject is { } world =>
                 scene.WorldObjects.FirstOrDefault(x => x.Id == world) is { } value
-                    ? new(id, true, value.Visible, SelectionRemoval.Release)
+                    ? new(id, true, SelectionRemoval.Release)
                     : null,
             _ => null,
         };

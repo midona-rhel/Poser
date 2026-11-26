@@ -98,7 +98,7 @@ public partial class MainWindow : Window
     /// <summary>Every entity the shell adds or removes goes through this, so
     /// the act lands in the same history the transforms do.</summary>
     private readonly EntityActions _entityActions;
-    private readonly Application.Selection.ISelectedEntityActions _entityCommands;
+    private readonly Application.Selection.ISelectedEntityActions _selectedEntities;
 
     private readonly UserNotices _notices;
 
@@ -362,7 +362,7 @@ public partial class MainWindow : Window
         ISceneWorkflow sceneWorkflow,
         ICameraProjection gameCamera,
         IViewportReads viewportProjection,
-        Application.Selection.ISelectedEntityActions entityCommands,
+        Application.Selection.ISelectedEntityActions selectedEntities,
         IEventBus eventBus,
         Controls.ManipulationState manipulation)
         : base($"{PluginConstants.PluginName}###poser_main_window",
@@ -472,7 +472,7 @@ public partial class MainWindow : Window
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
         _entityActions = entityActions;
-        _entityCommands = entityCommands;
+        _selectedEntities = selectedEntities;
         _notices = notices;
         _log = log;
         _groups = groups;
@@ -488,7 +488,7 @@ public partial class MainWindow : Window
         _sidebar = new SidebarComposer(
             _vm, _configuration, _scene, _groups, _selection, _animation, _gazeService,
             _cameraControl, _overlayControl, _lightControl, _objectControl,
-            _viewportProjection, _entityCommands, _referenceImages, SidebarActorIcon);
+            _viewportProjection, _selectedEntities, _referenceImages, SidebarActorIcon);
         _contextMenus = new EntityContextMenus(
             _actorColliderCapture, _actorControl, _animation, _bonePresets,
             _cameraControl, _cameraPane, _cleanPose, _companions,
@@ -496,7 +496,7 @@ public partial class MainWindow : Window
             _lightPane, _log, _notices, _objectControl,
             _overlayControl, _overlayPresentation, _referenceImages, _scene,
             _scenePane, _selection, _sidebar, _poseFileSection,
-            _duplication, _entityCommands, _entityActions, _playback,
+            _duplication, _selectedEntities, _entityActions, _playback,
             _cameraTargets, _names, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement, _cleanTransforms, graphicalBonePane);
         eventBus.Subscribe<GazeStateChangedEvent>(_ => _sidebar.InvalidateGaze());
         _animationCatalog = animationCatalog;

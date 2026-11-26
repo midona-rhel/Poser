@@ -8,7 +8,7 @@ namespace Poser.UI;
 
 /// <summary>Shows, hides, locks and removes selected things for every window,
 /// and reports what was refused, so the sidebar, menus and sections read alike.</summary>
-public sealed class EntityActions(ISelectedEntityActions commands, EntityLockCommands locks, UserNotices notices)
+public sealed class EntityActions(ISelectedEntityActions actions, EntityLockCommands locks, UserNotices notices)
 {
     public void ToggleLock(SelectionId id) => notices.Report(locks.Toggle(id), "Lock", refusal: true);
     public void ToggleGroupLock(Guid id) => notices.Report(locks.ToggleGroup(id), "Lock", refusal: true);
@@ -19,7 +19,7 @@ public sealed class EntityActions(ISelectedEntityActions commands, EntityLockCom
     /// reported here so sidebar, menu and section toggles read alike.</summary>
     public int SetVisibility(IReadOnlyList<SelectionId> ids, bool visible)
     {
-        var result = commands.SetVisibility(ids, visible);
+        var result = actions.SetVisibility(ids, visible);
         notices.Visibility(result);
         return result.AppliedCount;
     }
@@ -28,7 +28,7 @@ public sealed class EntityActions(ISelectedEntityActions commands, EntityLockCom
     {
         try
         {
-            var result = await commands.Remove(ids);
+            var result = await actions.Remove(ids);
             notices.Removal(result);
             return result.AppliedCount;
         }
