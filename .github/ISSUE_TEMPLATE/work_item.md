@@ -19,20 +19,20 @@ Search for an existing issue first and link it under Related. -->
 commit. Say in a few words what the reader will find there. Say whether you saw
 it in the game, read it in the code, or are guessing. -->
 
-## How to see it
+## Steps to reproduce
 
-### Start from
-
-<!-- The scene, settings or files needed. -->
-
-### Steps
+<!-- The starting state (scene, settings, files), then numbered steps. -->
 
 1.
 
-### What should happen
+## Expected
 
-<!-- What a person sees when it works. For documentation or research, say what
-will be delivered and how to check it. -->
+<!-- What should happen. For documentation or research, say what will be
+delivered and how to check it. -->
+
+## Actual
+
+<!-- What happens now. -->
 
 ## Scope
 
