@@ -6,8 +6,9 @@ using Poser.Domain.Identity;
 
 namespace Poser.UI;
 
-/// <summary>Shared UI reporting for entity commands; ownership and history stay behind the port.</summary>
-public sealed class EntityActions(SelectionEntityCommands commands, EntityLockCommands locks, UserNotices notices)
+/// <summary>Shows, hides, locks and removes selected things for every window,
+/// and reports what was refused, so the sidebar, menus and sections read alike.</summary>
+public sealed class EntityActions(ISelectedEntityActions commands, EntityLockCommands locks, UserNotices notices)
 {
     public void ToggleLock(SelectionId id) => notices.Report(locks.Toggle(id), "Lock", refusal: true);
     public void ToggleGroupLock(Guid id) => notices.Report(locks.ToggleGroup(id), "Lock", refusal: true);

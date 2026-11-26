@@ -85,7 +85,7 @@ public sealed record SceneRefreshResult
 /// Callers must refresh and deliver events on the owning framework thread;
 /// this class rejects reentry but does not enforce thread affinity.
 /// </summary>
-public sealed class SceneSession : ICurrentSelectionEntityReads
+public sealed class SceneSession
 {
     private SceneSnapshot _snapshot = SceneSnapshot.Empty;
     private readonly EntityIndex<ActorId, ActorDescriptor> _actors =

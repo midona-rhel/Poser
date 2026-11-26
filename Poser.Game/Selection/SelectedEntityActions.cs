@@ -17,10 +17,15 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Selection;
 
-/// <summary>Game adapter from pointer-free entity commands to current native
-/// bindings and the existing value/lifecycle history owners.</summary>
-public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
+/// <summary>
+/// Shows, hides and removes selected things. Each one is looked up in the scene
+/// and in the game right before it is changed, and the change goes through the
+/// same value and add-and-remove undo steps that the rest of Poser uses.
+/// </summary>
+public sealed class SelectedEntityActions : ISelectedEntityActions
 {
+    private const string Unavailable = "That entity is no longer available.";
+
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
     private readonly Poser.Application.Presentation.IActorValueControl _actorValues;
@@ -42,7 +47,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
     private readonly SelectionSession _selection;
     private readonly System.Lazy<GroupSteps>? _groupSteps;
 
-    public SelectionEntityCommandPort(
+    public SelectedEntityActions(
         SceneSession scene,
         IEntityBindings bindings,
         Poser.Application.Presentation.IActorValueControl actorValues,
@@ -87,8 +92,7 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
 
     public bool? ReadVisibility(SelectionId id)
     {
-        var current = _scene.ReadCurrent(id);
-        if (current is not { CanChangeVisibility: true } || current.Id != id)
+        if (_scene.ReadCurrent(id) is not { CanChangeVisibility: true } current)
             return null;
 
         switch (id)
@@ -117,13 +121,44 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         }
     }
 
-    public Outcome SetVisibility(SelectionId id, bool visible)
+    public SelectionVisibilityResult SetVisibility(IEnumerable<SelectionId> ids, bool visible)
     {
-        Outcome Gone() => new(false, "That entity is no longer available.");
-        if (_scene.ReadCurrent(id) is not { CanChangeVisibility: true } current
-            || current.Id != id)
-            return Gone();
-        switch (id)
+        var items = new List<SelectionVisibilityItem>();
+        var eligible = new List<CurrentSelectionEntity>();
+        foreach (var id in ids.Distinct())
+        {
+            if (_scene.ReadCurrent(id) is not { } current)
+            {
+                // A thing that left the scene is reported; a bone or a gaze
+                // point was never something to show or hide.
+                if (EntitySelection.IsEntity(id.Kind)) items.Add(new(id, Outcome.Fail(Unavailable)));
+                continue;
+            }
+            if (current.CanChangeVisibility) eligible.Add(current);
+        }
+        void Apply()
+        {
+            foreach (var current in eligible) items.Add(new(current.Id, Write(current, visible)));
+        }
+        // One thing keeps its own value step, so undo for the selected thing
+        // still reaches it; several share one step.
+        if (eligible.Count > 1)
+            _history.RecordLifecycleBatch(visible ? "Show entities" : "Hide entities", Apply);
+        else
+            Apply();
+        return new(items);
+    }
+
+    private Outcome Write(CurrentSelectionEntity current, bool visible)
+    {
+        try { return WriteVisibility(current, visible); }
+        catch (Exception ex) { return Outcome.Fail(ex.Message); }
+    }
+
+    private Outcome WriteVisibility(CurrentSelectionEntity current, bool visible)
+    {
+        Outcome Gone() => Outcome.Fail(Unavailable);
+        switch (current.Id)
         {
             case { Actor: { } actorId }:
                 if (!CurrentActor(actorId, out var actor)) return Gone();
@@ -150,12 +185,18 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         }
     }
 
-    public Task<SelectionRemovalResult> Remove(IReadOnlyList<SelectionRemovalRequest> requests)
+    public Task<SelectionRemovalResult> Remove(IEnumerable<SelectionId> ids)
     {
-        var captured = requests.ToArray();
+        var requested = ids.Distinct().ToArray();
         return _framework.RunOnFrameworkThread(() =>
         {
-            var outcomes = new List<SelectionRemovalItem>(captured.Length);
+            var captured = new List<CurrentSelectionEntity>();
+            foreach (var id in requested)
+                if (_scene.ReadCurrent(id) is { Removal: not SelectionRemoval.None } current)
+                    captured.Add(current);
+            var outcomes = new List<SelectionRemovalItem>(captured.Count);
+            if (captured.Count == 0)
+                return new SelectionRemovalResult(outcomes);
             _history.RecordLifecycleBatch("Remove entities", () =>
             {
                 // Members leave their groups through the scene prune; the
@@ -187,9 +228,9 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
         });
     }
 
-    private SelectionRemovalItem RemoveOne(SelectionRemovalRequest request)
+    private SelectionRemovalItem RemoveOne(CurrentSelectionEntity request)
     {
-        var (id, removal) = request;
+        var (id, _, _, removal) = request;
         SelectionRemovalItem Removed() => new(id, SelectionRemovalStatus.Removed);
         SelectionRemovalItem Refused(string detail) => new(id, SelectionRemovalStatus.Refused, detail);
         SelectionRemovalItem Absent() => new(id, SelectionRemovalStatus.AlreadyAbsent);
@@ -203,11 +244,6 @@ public sealed class SelectionEntityCommandPort : ISelectionEntityCommandPort
                 _ => Refused(result.Detail ?? "That world asset could not be released."),
             };
         }
-        var current = _scene.ReadCurrent(id);
-        if (current is null || current.Id != id) return Absent();
-        if (current.Removal != removal || removal == SelectionRemoval.None)
-            return Refused("That entity cannot be removed by this action.");
-
         switch (id)
         {
             case { Actor: { } actorId }:

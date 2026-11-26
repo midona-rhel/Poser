@@ -98,7 +98,7 @@ public partial class MainWindow : Window
     /// <summary>Every entity the shell adds or removes goes through this, so
     /// the act lands in the same history the transforms do.</summary>
     private readonly EntityActions _entityActions;
-    private readonly Application.Selection.SelectionEntityCommands _entityCommands;
+    private readonly Application.Selection.ISelectedEntityActions _entityCommands;
 
     private readonly UserNotices _notices;
 
@@ -362,7 +362,7 @@ public partial class MainWindow : Window
         ISceneWorkflow sceneWorkflow,
         ICameraProjection gameCamera,
         IViewportReads viewportProjection,
-        Application.Selection.SelectionEntityCommands entityCommands,
+        Application.Selection.ISelectedEntityActions entityCommands,
         IEventBus eventBus,
         Controls.ManipulationState manipulation)
         : base($"{PluginConstants.PluginName}###poser_main_window",

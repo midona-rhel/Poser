@@ -50,7 +50,7 @@ internal sealed partial class EntityContextMenus
     private readonly SidebarComposer _sidebar;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly ISceneDuplication _duplication;
-    private readonly Application.Selection.SelectionEntityCommands _entityCommands;
+    private readonly Application.Selection.ISelectedEntityActions _entityCommands;
     private readonly EntityActions _entityActions;
     private readonly IScenePlaybackControl _playback;
     private readonly Application.Presentation.ICameraTargetControl _cameraTargets;
@@ -111,7 +111,7 @@ internal sealed partial class EntityContextMenus
         SidebarComposer sidebar,
         PoseFileInspectorSection poseFileSection,
         ISceneDuplication duplication,
-        Application.Selection.SelectionEntityCommands entityCommands,
+        Application.Selection.ISelectedEntityActions entityCommands,
         EntityActions entityActions,
         IScenePlaybackControl playback,
         Application.Presentation.ICameraTargetControl cameraTargets,

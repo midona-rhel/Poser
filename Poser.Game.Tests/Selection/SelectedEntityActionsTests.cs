@@ -15,7 +15,7 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Tests.Selection;
 
-public sealed class SelectionEntityCommandPortTests
+public sealed class SelectedEntityActionsTests
 {
     [Fact]
     public async Task Normal_light_removal_keeps_unrelated_actor_history_reachable()
@@ -75,7 +75,7 @@ public sealed class SelectionEntityCommandPortTests
         fixture.History.Append(earlier);
         fixture.History.CommitUndo(earlier);
 
-        var result = fixture.Port.SetVisibility(fixture.Id, visible: false);
+        var result = Assert.Single(fixture.Port.SetVisibility([fixture.Id], visible: false).Items).Result;
 
         Assert.False(result.Success);
         Assert.Equal("The light refused.", result.Detail);
@@ -92,7 +92,7 @@ public sealed class SelectionEntityCommandPortTests
         public readonly EditHistory History = new();
         public readonly ReleasePort Release = new();
         public readonly FrameworkProxy Framework;
-        public readonly SelectionEntityCommandPort Port;
+        public readonly SelectedEntityActions Port;
 
         public Fixture()
         {
@@ -124,12 +124,12 @@ public sealed class SelectionEntityCommandPortTests
             var framework = DispatchProxy.Create<IFramework, FrameworkProxy>();
             Framework = (FrameworkProxy)(object)framework;
             var lights = new LightControl(bindings, lighting, new ValueJournal(History), null!);
-            Port = new SelectionEntityCommandPort(Scene, bindings, null!, null!, lights, null!, null!, null!,
+            Port = new SelectedEntityActions(Scene, bindings, null!, null!, lights, null!, null!, null!,
                 null!, lighting, null!, null!, null!, null!, Release, Groups, framework, History);
         }
 
         public Task<SelectionRemovalResult> Remove() =>
-            Port.Remove([new(Id, SelectionRemoval.Release)]);
+            Port.Remove([Id]);
     }
 
     private sealed class ReleasePort : IWorldReleasePort

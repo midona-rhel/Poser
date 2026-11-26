@@ -35,7 +35,7 @@ internal sealed partial class SidebarComposer
     private readonly Application.Presentation.ILightControl _lightControl;
     private readonly Application.Presentation.ISceneObjectControl _objectControl;
     private readonly Application.Viewport.IViewportReads _viewportProjection;
-    private readonly SelectionEntityCommands _entityCommands;
+    private readonly ISelectedEntityActions _entityCommands;
     private readonly ReferenceImageSession _referenceImages;
     private readonly Func<ActorDescriptor, TablerIcon> _actorIcon;
     private readonly ShellSidebarSection _sceneSection = new() { Title = "" };
@@ -96,7 +96,7 @@ internal sealed partial class SidebarComposer
         Application.Presentation.ILightControl lightControl,
         Application.Presentation.ISceneObjectControl objectControl,
         Application.Viewport.IViewportReads viewportProjection,
-        SelectionEntityCommands entityCommands,
+        ISelectedEntityActions entityCommands,
         ReferenceImageSession referenceImages,
         Func<ActorDescriptor, TablerIcon> actorIcon)
     {
