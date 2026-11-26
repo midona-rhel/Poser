@@ -1,6 +1,11 @@
 namespace Poser.Application.Settings;
 
-public sealed class ReleaseNotesSession
+/// <summary>
+/// Which release notes to show: after an update, the notes of every version
+/// since the one last seen; from Settings, the whole history. Remembers the
+/// last version seen in the settings once the notes were really shown.
+/// </summary>
+public sealed class ReleaseNotesState
 {
     private readonly ConfigurationService _configuration;
     private bool _presented;
@@ -13,7 +18,7 @@ public sealed class ReleaseNotesSession
     public int ViewRevision { get; private set; }
     public IReadOnlyList<ReleaseNotesEntry> Entries { get; private set; }
 
-    public ReleaseNotesSession(ConfigurationService configuration, Version version)
+    public ReleaseNotesState(ConfigurationService configuration, Version version)
     {
         _configuration = configuration;
         Version = version.ToString();

@@ -3,7 +3,7 @@ using Poser.Documents.Config;
 
 namespace Poser.Application.Tests.Settings;
 
-public sealed class ReleaseNotesSessionTests
+public sealed class ReleaseNotesStateTests
 {
     [Theory]
     [InlineData("0.9.9.0", true)]
@@ -12,7 +12,7 @@ public sealed class ReleaseNotesSessionTests
     {
         var store = new MemoryStore();
         store.Config.LastSeenReleaseVersion = seen;
-        var session = new ReleaseNotesSession(new ConfigurationService(store), new(0, 9, 10, 0));
+        var session = new ReleaseNotesState(new ConfigurationService(store), new(0, 9, 10, 0));
         Assert.Equal(expected, session.IsOpen);
         Assert.Equal(0, store.Saves);
     }
@@ -21,7 +21,7 @@ public sealed class ReleaseNotesSessionTests
     public void Failure_does_not_consume_the_version_and_can_retry()
     {
         var store = new MemoryStore { Fail = true };
-        var session = new ReleaseNotesSession(new ConfigurationService(store), new(0, 9, 10, 0));
+        var session = new ReleaseNotesState(new ConfigurationService(store), new(0, 9, 10, 0));
         Assert.Throws<IOException>(session.MarkPresented);
         Assert.Null(store.Config.LastSeenReleaseVersion);
         store.Fail = false;

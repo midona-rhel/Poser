@@ -9,7 +9,7 @@ using static Poser.UI.Widgets.WindowFrameWidgets;
 
 namespace Poser.UI.Views;
 
-public sealed class ReleaseNotesView(ReleaseNotesSession session)
+public sealed class ReleaseNotesView(ReleaseNotesState session)
 {
     private int _shownRevision = -1;
 
