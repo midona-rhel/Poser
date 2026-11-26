@@ -26,6 +26,7 @@ public sealed unsafe class LayerPlayback : IDisposable
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;
     private readonly SceneSession _scene;
+    private readonly TimelineSeekService _seek;
 
     public LayerPlayback(
         IFramework framework,
@@ -118,16 +119,14 @@ public sealed unsafe class LayerPlayback : IDisposable
     private void OnFrameworkUpdate(IFramework framework) => _native.ProbeTick();
 #endif
 
-    // ── Base, blend, loop ─────────────────────────────────────────────
-
-    private readonly TimelineSeekService _seek;
+    // ── Game writes ───────────────────────────────────────────────────
 
     /// <summary>A swap into a paused slot: its cross-fade would never advance at
     /// speed 0 and keep showing the old animation (old control at weight 1, new
     /// at 0). The new animation appears on its frame 0 at full weight instead.</summary>
     private void PrepareSwap(Character* character, ushort timeline)
     {
-        if (_native.TimelineSlot(timeline) is { } slot)
+        if (TimelineSlot(timeline) is { } slot)
             _seek.PrepareInstantSwap(character, (int)slot);
     }
 
@@ -167,7 +166,7 @@ public sealed unsafe class LayerPlayback : IDisposable
     }
 
     /// <summary>Captures the current base state.</summary>
-    public BaseAnimationCapture? CaptureBase(ActorId actor)
+    private BaseAnimationCapture? CaptureBase(ActorId actor)
     {
         var character = _native.Resolve(actor, out _);
         if (character == null)
@@ -198,7 +197,7 @@ public sealed unsafe class LayerPlayback : IDisposable
         return character == null ? null : _native.EmotePostureRow(character, emoteId);
     }
 
-    // ── Loops ───────────────────────────────────────────
+    // ── Loops (the seek service plays a layer again when it ends) ─────
 
     public bool LoopsSuspended
     {
@@ -233,10 +232,7 @@ public sealed unsafe class LayerPlayback : IDisposable
         return Outcome.Ok();
     }
 
-
-    // ── Lips ──────────────────────────────────────────────────────────
-
-    internal Outcome WriteLips(ActorId actor, ushort timeline)
+    public Outcome WriteLips(ActorId actor, ushort timeline)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
@@ -247,7 +243,7 @@ public sealed unsafe class LayerPlayback : IDisposable
         return Outcome.Ok();
     }
 
-    // ── Choosing, playing and resetting layers ───────────────────────
+    // ── Choosing, playing and resetting layers (remembered in the store) ──
 
     public ushort? SelectedFor(ActorId actor, AnimationSlot slot)
     {
@@ -462,10 +458,9 @@ public sealed unsafe class LayerPlayback : IDisposable
     {
         ushort timeline = (ushort)entry.TimelineId;
         bool armRepeat = before.LoopWantedSlots.Contains(AnimationSlot.Base);
-        var character = _native.Resolve(actor, out _);
-        // When the actor is gone, playing the animation directly fails and says so.
+        var character = _native.Resolve(actor, out var detail);
         if (character == null)
-            return PlayBaseCore(actor, timeline, before, armRepeat);
+            return Outcome.Fail(detail!);
         var firstCapture = before.BaseCapture ?? CaptureBase(character);
         // If the emote can't start from its intro, play its animation directly.
         if (!_native.PlayEmoteFromStart(character, entry.EmoteId, timeline))

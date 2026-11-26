@@ -22,7 +22,7 @@ namespace Poser.Game.Animation;
 public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
 {
     private readonly IFramework _framework;
-    private readonly LayerPlayback _timeline;
+    private readonly LayerPlayback _playback;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationNativeState _native;
@@ -53,10 +53,10 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         AnimationNativeState native,
         TimelineSeekService seek,
         AnimationOverrideStore store,
-        LayerPlayback timeline)
+        LayerPlayback playback)
     {
         _seek = seek;
-        _timeline = timeline;
+        _playback = playback;
         _store = store;
         _store.Changed += SyncEnforcementIndex;
         _framework = framework;
@@ -247,7 +247,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
     {
         if (IsPaused(actor))
             return false;
-        if (_timeline.Read(actor) is not { } reading)
+        if (_playback.Read(actor) is not { } reading)
             return false;
         var owned = _store.For(actor);
         foreach (var slotReading in reading.Slots)
@@ -264,7 +264,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
     public Outcome ResumeForLayerPlay(ActorId actor, AnimationSlot playing)
     {
         var current = _store.For(actor);
-        if (_timeline.Read(actor) is { } reading)
+        if (_playback.Read(actor) is { } reading)
         {
             foreach (var slotReading in reading.Slots)
             {
@@ -301,7 +301,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         var current = _store.For(actor);
         float live = current.SlotSpeeds.TryGetValue(slot, out var ownedSpeed)
             ? ownedSpeed
-            : _timeline.Read(actor)?.SpeedFor(slot) ?? 1f;
+            : _playback.Read(actor)?.SpeedFor(slot) ?? 1f;
         // Play returns to the last speed above zero: the new one, or the one being paused.
         float resume = speed > 0f ? speed : live;
         _store.Mutate(actor, o => o with

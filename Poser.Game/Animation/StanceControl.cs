@@ -18,7 +18,7 @@ namespace Poser.Game.Animation;
 internal sealed unsafe class StanceControl
 {
     private readonly AnimationOverrideStore _store;
-    private readonly LayerPlayback _timeline;
+    private readonly LayerPlayback _playback;
     private readonly AnimationNativeState _native;
     private readonly PosingService _posing;
     private readonly PositionLockOwnership _positionLocks = new();
@@ -30,10 +30,10 @@ internal sealed unsafe class StanceControl
     private const uint EmoteModeSleeping = 3;
 
     public StanceControl(
-        AnimationOverrideStore store, LayerPlayback timeline, AnimationNativeState native, PosingService posing)
+        AnimationOverrideStore store, LayerPlayback playback, AnimationNativeState native, PosingService posing)
     {
         _store = store;
-        _timeline = timeline;
+        _playback = playback;
         _native = native;
         _posing = posing;
     }
@@ -41,7 +41,7 @@ internal sealed unsafe class StanceControl
     public Outcome SetStance(ActorId actor, AnimationStance stance, int pose)
     {
         var capture = _store.For(actor).StanceCaptureValue;
-        if (capture == null && _timeline.Read(actor) is { } reading)
+        if (capture == null && _playback.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
 
         // Stop active loops before changing stance, but remember whether the
@@ -52,11 +52,11 @@ internal sealed unsafe class StanceControl
         {
             if (owned.LoopedSlots.ContainsKey(AnimationSlot.Base))
             {
-                var cleared = _timeline.SetForceLoop(actor, 0);
+                var cleared = _playback.SetForceLoop(actor, 0);
                 if (!cleared.Success)
                     return cleared;
             }
-            _timeline.ClearLoops(actor);
+            _playback.ClearLoops(actor);
             _store.Mutate(actor, o => o with
             {
                 LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
@@ -68,7 +68,7 @@ internal sealed unsafe class StanceControl
         }
         if (owned.BaseCapture != null || owned.BaseTimeline != null)
         {
-            var released = _timeline.ResetBaseSelection(actor, preserveLoopIntent: true);
+            var released = _playback.ResetBaseSelection(actor, preserveLoopIntent: true);
             if (!released.Success)
                 return released;
         }
@@ -83,7 +83,7 @@ internal sealed unsafe class StanceControl
     public Outcome SetWeaponDrawn(ActorId actor, bool drawn)
     {
         var capture = _store.For(actor).WeaponCapture;
-        if (capture == null && _timeline.Read(actor) is { } reading)
+        if (capture == null && _playback.Read(actor) is { } reading)
             capture = reading.WeaponDrawn;
 
         var result = WriteWeaponDrawn(actor, drawn);
