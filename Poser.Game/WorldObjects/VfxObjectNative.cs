@@ -567,68 +567,57 @@ internal sealed unsafe class VfxObjectNative
             job, unk1, filePath, avfxData, dataSize, resourceHandle, unk2);
     }
 
-    // The AVFX chunk walk (Brio VFXService.cs): null every BdNo in every
-    // Item of every TmLn, so nothing in the file binds to a timeline.
+    // An .avfx file is a tree of chunks. Each chunk is a 4-byte tag, a 4-byte
+    // length and then that many bytes, padded to a multiple of 4; a chunk's
+    // bytes can hold more chunks. Like Brio, Poser sets the binder number
+    // (BdNo) of every item (Item) in every timeline (TmLn) of the effect
+    // (AVFX) to "none", so the effect doesn't wait for a character to play it.
+
+    private static readonly uint EffectTag = Tag("AVFX");
+    private static readonly uint TimelineTag = Tag("TmLn");
+    private static readonly uint ItemTag = Tag("Item");
+    private static readonly uint BinderTag = Tag("BdNo");
 
     private static uint Tag(string s) =>
         (uint)(((byte)s[0] << 24) | ((byte)s[1] << 16)
             | ((byte)s[2] << 8) | (byte)s[3]);
 
-    private static int FindChunk(byte* data, int start, int len, uint tag)
+    /// <summary>The chunks that lie directly between <paramref name="start"/>
+    /// and <paramref name="end"/>. Stops at the first chunk whose length
+    /// reaches past <paramref name="end"/>, so nothing outside the data the
+    /// game passed in is read or written.</summary>
+    private static List<(uint Tag, int Start, int Length)> Chunks(byte* data, int start, int end)
     {
-        int consumed = 0;
-        while (consumed + 8 <= len)
+        var chunks = new List<(uint, int, int)>();
+        int at = start;
+        while (at + 8 <= end)
         {
-            uint t = *(uint*)(data + start + consumed);
-            uint pl = *(uint*)(data + start + consumed + 4);
-            if (t == tag)
-                return start + consumed + 8;
-            consumed += 8 + (int)((pl + 3u) & ~3u);
+            uint tag = *(uint*)(data + at);
+            long length = *(uint*)(data + at + 4);
+            int payload = at + 8;
+            if (payload + length > end)
+                break;
+            chunks.Add((tag, payload, (int)length));
+            at = payload + (int)((length + 3) & ~3L);
         }
-        return -1;
+        return chunks;
     }
 
-    private static void UnbindAllTimelineItems(byte* data, int len)
-    {
-        int avfx = FindChunk(data, 0, len, Tag("AVFX"));
-        if (avfx < 0)
-            return;
-        int avfxLen = (int)*(uint*)(data + avfx - 4);
-        int consumed = 0;
-        while (consumed + 8 <= avfxLen)
-        {
-            int childStart = avfx + consumed;
-            uint tag = *(uint*)(data + childStart);
-            uint payLen = *(uint*)(data + childStart + 4);
-            int payStart = childStart + 8;
-            if (payStart + (int)payLen > avfx + avfxLen)
-                break;
-            if (tag == Tag("TmLn"))
-                UnbindTimeline(data, payStart, (int)payLen, len);
-            consumed += 8 + (int)((payLen + 3u) & ~3u);
-        }
-    }
+    private static List<(uint Tag, int Start, int Length)> Children(
+        byte* data, (uint Tag, int Start, int Length) chunk, uint tag) =>
+        Chunks(data, chunk.Start, chunk.Start + chunk.Length).FindAll(c => c.Tag == tag);
 
-    private static void UnbindTimeline(
-        byte* data, int tmlnStart, int tmlnLen, int totalLen)
+    private static void UnbindAllTimelineItems(byte* data, int length)
     {
-        int consumed = 0;
-        while (consumed + 8 <= tmlnLen)
-        {
-            int childStart = tmlnStart + consumed;
-            uint tag = *(uint*)(data + childStart);
-            uint payLen = *(uint*)(data + childStart + 4);
-            int payStart = childStart + 8;
-            if (payStart + (int)payLen > tmlnStart + tmlnLen)
-                break;
-            if (tag == Tag("Item"))
-            {
-                int bd = FindChunk(data, payStart, (int)payLen, Tag("BdNo"));
-                if (bd >= 0 && bd + 4 <= totalLen)
-                    *(uint*)(data + bd) = 0xFFFFFFFF;
-            }
-            consumed += 8 + (int)((payLen + 3u) & ~3u);
-        }
+        foreach (var effect in Chunks(data, 0, length).FindAll(c => c.Tag == EffectTag))
+            foreach (var timeline in Children(data, effect, TimelineTag))
+                foreach (var item in Children(data, timeline, ItemTag))
+                    foreach (var binder in Children(data, item, BinderTag))
+                    {
+                        if (binder.Length >= 4)
+                            *(uint*)(data + binder.Start) = 0xFFFFFFFF;
+                        break;
+                    }
     }
 
     public void DisposeHook()

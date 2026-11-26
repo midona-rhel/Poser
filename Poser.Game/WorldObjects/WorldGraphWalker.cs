@@ -17,14 +17,15 @@ using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// Walks the game's world-object graph. The graph uses child and sibling
-/// links, including circular sibling rings, so traversal tracks visited
-/// addresses and limits processing to <see cref="MaxNodes"/>.
+/// Walks the game's tree of world objects. Each object links to its first
+/// child and to its next sibling, and the siblings form a ring, so the walk
+/// remembers every address it has seen. It stops after <see cref="MaxNodes"/>
+/// objects, so a broken link in game memory can't keep it reading forever.
 /// </summary>
 internal sealed unsafe class WorldGraphWalker
 {
-    /// <summary>Visited-node threshold checked between pending nodes. Sibling
-    /// ring collection can exceed this threshold before that check runs.</summary>
+    /// <summary>The most objects one walk reads. Checked for every object
+    /// found, including while a sibling ring is being collected.</summary>
     private const int MaxNodes = 100_000;
 
     private readonly IPluginLog _log;
@@ -35,9 +36,9 @@ internal sealed unsafe class WorldGraphWalker
     private readonly HashSet<nint> _visited = new();
     private readonly Stack<nint> _pending = new();
 
-    /// <param name="retainPresent">Run after every complete walk with the
-    /// set of addresses it reached, so identity maps stay bounded by the
-    /// live world.</param>
+    /// <param name="retainPresent">Called after every walk that wasn't cut
+    /// off, with every address it reached, so Poser can forget objects that
+    /// are gone.</param>
     public WorldGraphWalker(
         IPluginLog log,
         FurnitureLayoutDriver furniture,
@@ -64,8 +65,8 @@ internal sealed unsafe class WorldGraphWalker
             : _lights.ToArray();
     }
 
-    /// <summary>Shared traversal for background/effect rows and light addresses.
-    /// Each caller performs its own walk.</summary>
+    /// <summary>One walk, collecting either the map objects and effects or
+    /// the lights.</summary>
     private void Walk(bool wantLights)
     {
         _furniture.RefreshGraphics();
@@ -85,15 +86,13 @@ internal sealed unsafe class WorldGraphWalker
             PushRing(root->ChildObject);
             PushRing(root->NextSiblingObject);
 
-            while (_pending.Count > 0 && _visited.Count < MaxNodes)
+            while (_pending.Count > 0)
             {
                 var address = _pending.Pop();
                 var node = (CSObject*)address;
-                if (node == null)
-                    continue;
                 PushRing(node->ChildObject);
-                // These graphics belong to a furniture layout, not to the map.
-                // Borrowing one would leave a dangling claim when its owner dies.
+                // These belong to a piece of furniture, not to the map. Taking
+                // one over would leave Poser holding it after the furniture is gone.
                 if (_furniture.OwnsGraphics(address)) continue;
                 var type = node->GetObjectType();
                 if (wantLights)
@@ -105,14 +104,13 @@ internal sealed unsafe class WorldGraphWalker
                 if (type == ObjectType.BgObject)
                     _rows.Add(ReadRow(address, (BgObject*)node));
                 else if (type == ObjectType.VfxObject)
-                    // World EFFECTS list beside the map's objects: a zone
-                    // bonfire's flame or a fountain's splash adopts by
-                    // reference exactly like a BG object (ruled
-                    // 2026-09-01), and every handle verb already
-                    // dispatches on the node type.
+                    // Effects in the world, such as a bonfire's flame, are
+                    // listed and taken over the same way as map objects.
                     _rows.Add(ReadVfxRow(address, (CSVfx*)node));
             }
 
+            // A cut-off walk didn't see every object, so it can't tell which
+            // remembered objects are gone.
             if (_visited.Count >= MaxNodes)
                 _log.Warning(
                     "NativeWorldObjectPort: the world walk hit its node cap; "
@@ -122,21 +120,20 @@ internal sealed unsafe class WorldGraphWalker
         }
         catch (Exception ex)
         {
-            // A graph that cannot be walked is an empty listing, never a
-            // throw into the overlay's draw.
+            // A walk that fails lists nothing instead of throwing into the
+            // window that asked for the list.
             _log.Error($"NativeWorldObjectPort: walking the world failed: {ex.Message}");
             _rows.Clear();
             _lights.Clear();
         }
     }
 
-    /// <summary>Pushes one sibling ring, stopping at the first node already
-    /// seen. The ring is circular, so "already seen" is its terminator.
-    /// </summary>
+    /// <summary>Adds one ring of siblings to the walk. The ring ends where it
+    /// reaches an object already seen, or at the object limit.</summary>
     private void PushRing(CSObject* first)
     {
         var cursor = first;
-        while (cursor != null && _visited.Add((nint)cursor))
+        while (cursor != null && _visited.Count < MaxNodes && _visited.Add((nint)cursor))
         {
             _pending.Push((nint)cursor);
             cursor = cursor->NextSiblingObject;
