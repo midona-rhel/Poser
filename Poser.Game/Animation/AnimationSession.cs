@@ -379,14 +379,16 @@ public sealed class AnimationSession : IAnimationPlayback
         Action<Outcome, string> note, bool keepPosture)
     {
         string name = AnimationSlots.DisplayName(slot);
-        if (target.Applied is not { } timeline)
+        ushort timeline = target.Applied ?? 0;
+        bool sameAnimation = now.Applied == target.Applied;
+        if (target.Applied is null)
         {
-            if (now.Applied is not null || now.Speed is not null || now.Weight != 1f)
+            // Back to the game's own animation. Its speed and weight are put
+            // back below, like for an animation Poser chose.
+            if (now.Applied is not null)
                 note(ResetSlot(actor, slot), $"reset {name}");
-            return;
         }
-        bool sameAnimation = now.Applied == timeline;
-        if (target.EndedSeconds is { } length)
+        else if (target.EndedSeconds is { } length)
         {
             // Ended: its row names it, nothing plays.
             note(_base.ChooseSlot(actor, slot, timeline), name);
