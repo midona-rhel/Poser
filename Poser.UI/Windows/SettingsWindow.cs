@@ -177,7 +177,6 @@ public class SettingsWindow : Window
         try
         {
             _vm.SourceSnapshot = _library.Snapshot;
-            _vm.SavedLibrary = _configuration.Config.Library;
             _vm.SourceScanBusy = _library.IsScanning;
             SettingsView.Draw(_vm, _search, min);
             _folderDialog.Draw();
@@ -301,7 +300,6 @@ public class SettingsWindow : Window
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
             LibraryShowExtensions = c.Library.ShowFileExtensions,
             Library = new LibrarySettingsDraft(c.Library),
-            SavedLibrary = c.Library,
 
             ConfigLoadFailure = _configuration.LoadFailure,
 
@@ -326,13 +324,10 @@ public class SettingsWindow : Window
         vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
         vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
+        // The open button is only enabled for a saved row whose folder the
+        // last scan found, but the folder can be removed after that scan.
         vm.OnOpenSource = source =>
         {
-            if (vm.Library.IsPending(source) || !vm.Library.StillSaved(source, _configuration.Config.Library))
-            {
-                _notices.Report(Outcome.Fail("The source changed. Save or cancel pending edits and retry."), "Source folders ▸ Open folder", refusal: true);
-                return;
-            }
             var path = source.Path;
             try
             {
@@ -355,7 +350,7 @@ public class SettingsWindow : Window
         };
         vm.OnRepairSource = issue =>
         {
-            if (vm.Library.TryRepair(issue, _configuration.Config.Library, out var detail))
+            if (LibrarySettingsDraft.TryRepair(issue, out var detail))
                 _notices.Done("Folder created. Retrying saved sources.");
             else
                 _notices.Report(Outcome.Fail(detail), "Create folder");

@@ -34,8 +34,11 @@ public sealed class LibrarySourceDraft
 public sealed record LibrarySourceIssue(LibrarySourceDraft Source, PoseLibrarySourceSnapshot Health, bool PendingSave);
 
 /// <summary>
-/// Unsaved Library source edits. Health checks still refer to saved sources;
-/// editing this draft does not change the active configuration.
+/// The Library page of the Settings window: the Poser folder and the source
+/// folders as edited, before Save. Only the Settings window changes the
+/// saved source list, so nothing else can change it while this draft is
+/// open. The health shown for a row comes from the last library scan of the
+/// saved folders, never from the draft.
 /// </summary>
 public sealed class LibrarySettingsDraft
 {
@@ -72,65 +75,51 @@ public sealed class LibrarySettingsDraft
         || !_sources.Contains(source) || saved.Name != source.Name || saved.Path != PathFor(source)
         || saved.Enabled != source.Enabled;
 
-    private static bool Matches(LibrarySourceConfig a, LibrarySourceConfig b) =>
-        a.Name == b.Name && a.Path == b.Path && a.Enabled == b.Enabled && a.Kind == b.Kind;
-
-    public bool StillSaved(LibrarySourceDraft source, LibraryConfiguration live) =>
-        source.Saved is { } saved && source.SavedIndex >= 0 && source.SavedIndex < live.Sources.Count
-        && Matches(saved, live.Sources[source.SavedIndex])
-        && live.Classify(live.Sources[source.SavedIndex]) == source.Kind;
-
-    private PoseLibrarySourceSnapshot? SavedHealth(LibrarySourceDraft source,
-        PoseLibrarySnapshot snapshot, LibraryConfiguration live)
+    /// <summary>The scan's health of the saved folder this row started from.
+    /// Null for a new row, and while the last scan still describes the source
+    /// list from before the last Save: the window can open again before that
+    /// Save's scan has finished.</summary>
+    private static PoseLibrarySourceSnapshot? SavedHealth(LibrarySourceDraft source,
+        PoseLibrarySnapshot snapshot)
     {
-        if (!StillSaved(source, live) || source.SavedIndex >= snapshot.Sources.Count)
+        if (source.Saved is not { } saved || source.SavedIndex >= snapshot.Sources.Count)
             return null;
         var health = snapshot.Sources[source.SavedIndex];
-        var saved = source.Saved!;
         return health.Index == source.SavedIndex && health.Name == saved.Name
             && health.Path == saved.Path && health.Enabled == saved.Enabled ? health : null;
     }
 
     public PoseLibrarySourceSnapshot? RowHealth(LibrarySourceDraft source,
-        PoseLibrarySnapshot snapshot, LibraryConfiguration live) =>
-        IsPending(source) ? null : SavedHealth(source, snapshot, live);
+        PoseLibrarySnapshot snapshot) =>
+        IsPending(source) ? null : SavedHealth(source, snapshot);
 
     public static bool IsFailure(PoseLibrarySourceSnapshot? health) => health is { Enabled: true }
         && health.Health is PoseLibrarySourceHealth.Missing or PoseLibrarySourceHealth.Denied
             or PoseLibrarySourceHealth.Failed or PoseLibrarySourceHealth.Invalid;
 
-    public IReadOnlyList<LibrarySourceIssue> Issues(PoseLibrarySnapshot snapshot, LibraryConfiguration live) =>
-        _original.Select(source => (source, health: SavedHealth(source, snapshot, live)))
+    public IReadOnlyList<LibrarySourceIssue> Issues(PoseLibrarySnapshot snapshot) =>
+        _original.Select(source => (source, health: SavedHealth(source, snapshot)))
             .Where(item => IsFailure(item.health))
             .Select(item => new LibrarySourceIssue(item.source, item.health!, IsPending(item.source))).ToArray();
 
-    public bool CanRepair(LibrarySourceIssue issue, LibraryConfiguration live) =>
-        IsFailure(issue.Health) && !IsPending(issue.Source) && StillSaved(issue.Source, live)
+    /// <summary>Whether Create folder is offered for a missing saved folder:
+    /// a custom source, or one of Poser's own folders where it belongs under
+    /// the saved Poser folder. A row with unsaved edits, and another tool's
+    /// folder, are left alone.</summary>
+    public bool CanRepair(LibrarySourceIssue issue) =>
+        !IsPending(issue.Source)
         && issue.Health.Health == PoseLibrarySourceHealth.Missing
-        && issue.Health.Index == issue.Source.SavedIndex && issue.Health.Path == issue.Source.Saved!.Path
-        && issue.Health.Name == issue.Source.Saved.Name && issue.Health.Enabled == issue.Source.Saved.Enabled
         && (issue.Source.IsCustom || (LibraryConfiguration.IsManaged(issue.Source.Kind)
             && LibraryConfiguration.SamePath(issue.Health.Path,
-                Path.Combine(live.ResolveRoot(), LibraryConfiguration.HomeLeaf(issue.Source.Kind)))));
+                Path.Combine(_savedRoot, LibraryConfiguration.HomeLeaf(issue.Source.Kind)))));
 
-    public bool TryRepair(LibrarySourceIssue issue, LibraryConfiguration live, out string detail)
-    {
-        if (!CanRepair(issue, live))
-        {
-            detail = "This source changed or is system-provided. Save or cancel pending edits and retry.";
-            return false;
-        }
-        return LibraryConfiguration.TryEnsureDirectory(issue.Health.Path, out detail);
-    }
+    /// <summary>Creates the missing saved folder. Create folder is only shown
+    /// when <see cref="CanRepair"/> allows it.</summary>
+    public static bool TryRepair(LibrarySourceIssue issue, out string detail) =>
+        LibraryConfiguration.TryEnsureDirectory(issue.Health.Path, out detail);
 
     public bool TryApply(LibraryConfiguration live, out string detail)
     {
-        // A concurrent source change must not be overwritten by a stale draft.
-        if (_original.Length != live.Sources.Count || _original.Any(source => !StillSaved(source, live)))
-        {
-            detail = "Library sources changed while Settings was open. Cancel and reopen Settings before saving.";
-            return false;
-        }
         try
         {
             if (!Path.IsPathFullyQualified(EffectiveRoot))
