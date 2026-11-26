@@ -25,15 +25,16 @@ using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 namespace Poser.Game;
 
 /// <summary>
-/// Service for manipulating bone transforms using game hooks.
-/// Simple delta-based system like Brio - bones rotate around themselves.
+/// Where every bone edit and IK setting goes in. An edit is kept as a change on
+/// top of the animation, and the game's bone update applies it every frame.
 ///
-/// <para>The facade over the posing engine's owners: <see cref="PoseStackStore"/>
-/// (authored stacks and apply space), <see cref="IkChainRegistry"/> (session
-/// IK), <see cref="TransitiveActionScheduler"/> (in-pass batches), and the two
-/// native passes, <see cref="BoneApplyPass"/> and <see cref="BoneSnapshotPass"/>.
-/// It keeps the authored-edit entry point, linked bones, and the actor and
-/// GPose lifecycle that purges them all together.</para>
+/// <para>The parts it hands work to: <see cref="PoseStackStore"/> keeps the
+/// edits, <see cref="IkChainRegistry"/> the IK chains,
+/// <see cref="TransitiveActionScheduler"/> the batches of changes that run inside
+/// the next bone update, <see cref="BoneApplyPass"/> applies everything during
+/// that update and <see cref="BoneSnapshotPass"/> reads the finished bones
+/// afterwards. This class also moves linked bones together, and forgets an
+/// actor's pose when the actor leaves or GPose ends.</para>
 /// </summary>
 public unsafe class BonePosingService : IBonePosingService
 {
@@ -77,7 +78,7 @@ public unsafe class BonePosingService : IBonePosingService
             && bindings.GetActorId(actor) is { } id && bodyProfiles.CaptureBodyProfile(id) is { Success: true } read
                 ? read.Value : null);
         _ik = new IkChainRegistry(
-            _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings, _customizePlus));
+            _stacks, ikService, bindings, skeletonService, new IkHeldTargets(_stacks, bindings, _customizePlus, actorManager, skeletonService));
 
         _apply = new BoneApplyPass(
             log, gPoseService, skeletonService, actorManager, ikService, gazeFrames,
@@ -159,8 +160,7 @@ public unsafe class BonePosingService : IBonePosingService
     /// current transform IS its baseline.</summary>
     public Transform GetAnimatedBaseline(IBone bone) => _stacks.GetAnimatedBaseline(bone);
 
-    /// <summary>Actor teardown: purge every runtime pose store belonging to
-    /// an address that no longer hosts a live actor.</summary>
+    /// <summary>Forgets the pose and IK chains of every actor that has left the scene.</summary>
     private void OnActorListChanged(ActorListChangedEvent e)
     {
         var live = new HashSet<string>(StringComparer.Ordinal);
@@ -170,19 +170,16 @@ public unsafe class BonePosingService : IBonePosingService
             PurgeSkeletonState(key);
     }
 
-    /// <summary>Removes one exact skeleton instance's pose state, update
-    /// registrations, observations, and IK chain state (a replacement never
-    /// inherits configuration or fixed targets).</summary>
+    /// <summary>Forgets everything kept for one actor and slot: the pose, the IK chains
+    /// and the slot's place in the bone update.</summary>
     private void PurgeSkeletonState(SkeletonKey key)
     {
-        _stacks.RemovePartialFrames(key);
-        _stacks.RemovePoseInfo(key);
+        _stacks.Remove(key);
         _apply.Unschedule(key);
         _snapshot.Unregister(key);
         // A batch registered against a skeleton that is going away can never
         // execute; report it so its owner can roll back instead of waiting.
         _transitive.Orphan(key);
-        _stacks.RemoveAnimatedBaselines(key);
         _ik.Purge(key);
     }
 
@@ -231,9 +228,9 @@ public unsafe class BonePosingService : IBonePosingService
         if (!_ik.IsImportSuppressed(SkeletonKey.Of(bone.Skeleton).Actor)
             && GetIkConfiguration(bone) is { Enabled: true, Solver: IkSolver.TwoJoint or IkSolver.Ccd,
                 TargetMode: IkTargetMode.Actor, ActorAnchor: { } anchor }
-            && _ik.TryGetChain((SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex), out var chain))
+            && _ik.TryGetChain(bone, out var chain))
             applied.Position = original.Position
-                + anchor.ToReferenceDelta(applied.Position - original.Position, chain.SolveParentFrame);
+                + anchor.ToReferenceDelta(applied.Position - original.Position, chain.Build.SolveParentFrame);
         bonePoseInfo.Apply(applied, original);
 
         // Linked bones (Anamnesis parity): transfer the SAME delta to the rest
@@ -350,7 +347,7 @@ public unsafe class BonePosingService : IBonePosingService
         _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
         _transitive.EndTransitiveActions();
-        _stacks.ClearStoresAndBaselines();
+        _stacks.Clear();
         GC.SuppressFinalize(this);
     }
 }

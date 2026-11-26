@@ -15,6 +15,7 @@ using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 using Poser.Domain.Identity;
 using Poser.Game.Entities;
+using Poser.Game.Services;
 
 using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 
@@ -35,17 +36,29 @@ internal sealed unsafe class IkHeldTargets
 {
     private readonly PoseStackStore _stacks;
     private readonly Poser.Game.Bindings.StableBindingRegistry _bindings;
+    private readonly IActorManager _actors;
+    private readonly ISkeletonService _skeletons;
 
     public IkHeldTargets(PoseStackStore stacks, Poser.Game.Bindings.StableBindingRegistry bindings,
-        CustomizePlusPose customizePlus)
+        CustomizePlusPose customizePlus, IActorManager actors, ISkeletonService skeletons)
     {
         _stacks = stacks;
         _bindings = bindings;
+        _actors = actors;
+        _skeletons = skeletons;
         CustomizePlus = customizePlus;
     }
 
     /// <summary>Where Customize+ shows a bone, and the way back.</summary>
     public CustomizePlusPose CustomizePlus { get; }
+
+    /// <summary>The bone <paramref name="key"/> names, in the skeleton its actor has now.
+    /// Null when the actor, the slot or the bone is gone.</summary>
+    public Bone? FindBone(BoneKey key) =>
+        BoneApplyPass.FindActor(_actors, key.Skeleton.Actor) is { } actor
+        && _skeletons.GetSkeleton(actor, key.Skeleton.Slot) is Skeleton { IsValid: true } skeleton
+            ? skeleton.GetBoneByName(key.Name, key.Partial)
+            : null;
 
     public HeldTarget? CaptureEntityOffset(IBone endpoint, SelectionId target, IkChainState? previous = null)
     {
@@ -112,7 +125,7 @@ internal sealed unsafe class IkHeldTargets
         IkChainState ik, IBone endpoint, Vector3 authoredPosition, Quaternion authoredRotation, hkaPose* pose = null,
         bool lastSolved = false)
     {
-        if (lastSolved && ik.SolveTarget is { } lastTarget)
+        if (lastSolved && ik.Build.SolveTarget is { } lastTarget)
             return lastTarget;
         if (pose != null)
             RecordSolveParent(ik, endpoint, pose);
@@ -127,8 +140,8 @@ internal sealed unsafe class IkHeldTargets
                     * Quaternion.Inverse(capture.RotationDelta) * authoredRotation));
         if (ik.Config is { TargetMode: IkTargetMode.Actor, ActorAnchor: { } actorAnchor })
         {
-            var actorTarget = actorAnchor.Resolve(authoredPosition, authoredRotation, ik.SolveParentFrame);
-            if (pose != null) ik.SolveTarget = actorTarget;
+            var actorTarget = actorAnchor.Resolve(authoredPosition, authoredRotation, ik.Build.SolveParentFrame);
+            if (pose != null) ik.Build.SolveTarget = actorTarget;
             return actorTarget;
         }
         Vector3 worldPosition;
@@ -140,11 +153,9 @@ internal sealed unsafe class IkHeldTargets
                 worldRotation = capture.Rotation;
                 break;
             case Poser.Domain.Posing.IkTargetMode.Bone:
-                if (ik.TargetBone is not { } targetBone
-                    || targetBone.Skeleton is not global::Poser.Game.Entities.Skeleton targetSkeleton
-                    || !targetSkeleton.IsValid)
+                if (ik.TargetBone is not { } targetKey || FindBone(targetKey) is not { } targetBone)
                     return null;
-                targetSkeleton.UpdateBoneTransforms(global::Poser.Game.Entities.BoneCacheTypes.LastTransform);
+                RefreshCache(targetBone);
                 if (global::Poser.Game.Entities.BoneWorld.Of(targetBone) is not { } anchor)
                     return null;
                 (worldPosition, worldRotation) = FromRelative(anchor, capture.Target, capture.Rotation);
@@ -173,7 +184,7 @@ internal sealed unsafe class IkHeldTargets
             * Quaternion.Inverse(capture.RotationDelta) * authoredRotation);
         if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(position) || !global::Poser.Domain.Transforms.TransformMath.IsFinite(rotation))
             return null;
-        if (pose != null) ik.SolveTarget = (position, rotation);
+        if (pose != null) ik.Build.SolveTarget = (position, rotation);
         return (position, rotation);
     }
 
@@ -199,14 +210,14 @@ internal sealed unsafe class IkHeldTargets
             var seated = anchor.ParentUnseated
                 ? anchor with
                 {
-                    ParentTransform = anchor.ParentName == null ? null : ik.SolveParentFrame,
+                    ParentTransform = anchor.ParentName == null ? null : ik.Build.SolveParentFrame,
                     ParentUnseated = false,
                 }
                 : anchor with
                 {
                     Position = target, Rotation = end.Rotation,
                     AuthoredPosition = authoredPosition, AuthoredRotation = authoredRotation,
-                    ParentTransform = anchor.ParentName == null ? null : ik.SolveParentFrame,
+                    ParentTransform = anchor.ParentName == null ? null : ik.Build.SolveParentFrame,
                     Unseated = false,
                 };
             if (!seated.IsValid)
@@ -252,15 +263,15 @@ internal sealed unsafe class IkHeldTargets
 
     private static void RecordSolveParent(IkChainState ik, IBone endpoint, hkaPose* pose)
     {
-        if (ik.SolveParent == null)
+        if (ik.Build.SolveParent == null)
         {
             var parent = NativeIkMembers(endpoint, ik.Config).FirstOrDefault()?.ParentBone;
-            ik.SolveParent = parent?.PartialId == endpoint.PartialId ? parent : null;
+            ik.Build.SolveParent = parent?.PartialId == endpoint.PartialId ? parent : null;
         }
-        if (ik.SolveParent is not { } solveParent)
+        if (ik.Build.SolveParent is not { } solveParent)
             return;
         var native = Poser.Game.Entities.NativePoseRead.Model(pose, solveParent.BoneIndex);
-        ik.SolveParentFrame = native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
+        ik.Build.SolveParentFrame = native == null ? null : AnchorPose(BoneApplyPass.ReadTransform(native));
     }
 
     public IkActorAnchor CaptureActorAnchor(IBone endpoint, IkChainConfig config)
@@ -286,7 +297,7 @@ internal sealed unsafe class IkHeldTargets
         var authored = _stacks.GetIkModification(endpoint) ?? Transform.Identity;
         // Convert the solver's held target, rather than recapturing the pose before IK bends the limb.
         return ResolveHeld(previous, endpoint, authored.Position, authored.Rotation, lastSolved: true) is { } target
-            ? AnchorAt(endpoint, config, target, previous.SolveParentFrame) : config;
+            ? AnchorAt(endpoint, config, target, previous.Build.SolveParentFrame) : config;
     }
 
     /// <summary>Puts a Two Joint or CCD target on the end bone where the last solve left it.
