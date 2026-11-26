@@ -283,7 +283,9 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         SceneSaveOptions options,
         CancellationToken cancellation)
     {
-        IReadOnlyList<string> sealTemporaries = Array.Empty<string>();
+        // Every temporary appearance package this save makes. They are all
+        // deleted when the save ends, however it ends.
+        var temporaries = new List<string>();
         void Finish(
             bool success,
             string detail,
@@ -397,11 +399,9 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 PublishStep(operation, new SceneProgress(
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.ApplyingAppearance, 0, 0, false, null));
-                var sealed_ = await _appearance.SealAppearance(
-                    scene, actorIdentities, AppearanceSealTimeout,
-                    cancellation);
-                notes.AddRange(sealed_.Notes);
-                sealTemporaries = sealed_.TemporaryFiles;
+                notes.AddRange(await _appearance.SealAppearance(
+                    scene, actorIdentities, temporaries, AppearanceSealTimeout,
+                    cancellation));
                 PublishStep(operation, new SceneProgress(
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.Writing, 0, 0, false, null));
@@ -485,8 +485,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         }
         finally
         {
-            // Delete the temporary package files when the save ends, even when it ends early.
-            foreach (var temporary in sealTemporaries)
+            foreach (var temporary in temporaries)
                 _appearance.DeleteTemporary(temporary);
         }
     }
