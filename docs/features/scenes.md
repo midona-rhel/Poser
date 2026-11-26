@@ -43,11 +43,7 @@ Loading a scene is one step in the undo history. Ctrl+Z removes what the load ad
 
 Most problems leave the rest of the scene in place: the part that failed is named in **Last result**, and everything else stays as one undo step. A few problems stop the whole load instead.
 
-The load doesn't start, and nothing changes, when:
-
-- the file is damaged, too large, or from a newer Poser;
-- **Clear the session first** is on and there is no character of yours to make the scene's actors from (Poser checks this before clearing);
-- the scene is placed relative to your character and your character isn't there.
+The load doesn't start, and nothing changes, when the file is damaged, too large, or from a newer Poser.
 
 The load stops and removes everything it had added when:
 
