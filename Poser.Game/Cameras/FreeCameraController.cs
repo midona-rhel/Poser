@@ -15,7 +15,7 @@ namespace Poser.Game.Cameras;
 internal sealed unsafe class FreeCameraController
 {
     private readonly VirtualCameraService _owner;
-    private readonly IKeyState? _keyState;
+    private readonly IKeyState _keyState;
 
     // Input collected by the input hook and consumed by the scene-update hook.
     private Vector3 _freeForward;
@@ -41,7 +41,7 @@ internal sealed unsafe class FreeCameraController
     public FreeCameraController(
         VirtualCameraService owner,
         Application.Input.CameraInputState input,
-        IKeyState? keyState)
+        IKeyState keyState)
     {
         _owner = owner;
         _input = input;
@@ -97,11 +97,11 @@ internal sealed unsafe class FreeCameraController
         }
 
         // Leave keyboard input untouched while the UI suppresses flight.
-        if (keyboard == null || !live.MovementEnabled || SuppressFlightKeys)
+        if (!live.MovementEnabled || SuppressFlightKeys)
             return;
 
         // Read held keys from IKeyState; clear consumed keys in KeyboardFrame.
-        bool Held(VirtualKey key) => _keyState?[key] == true;
+        bool Held(VirtualKey key) => _keyState[key];
         int forwardBack = 0;
         if (Held(VirtualKey.W)) forwardBack -= 1;
         if (Held(VirtualKey.S)) forwardBack += 1;
