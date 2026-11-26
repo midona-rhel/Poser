@@ -1,5 +1,7 @@
 ## Issue
 
+<!-- What goes wrong or is missing, as a person using Poser sees it. -->
+
 
 ## What this changes
 
