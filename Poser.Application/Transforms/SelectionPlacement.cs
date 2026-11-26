@@ -27,13 +27,8 @@ public sealed class SelectionPlacement(
 {
     public bool CanPlace(SelectionId target) => ResolveOne(target) is { } id && Read(id) != null;
 
-    private TransformTargetId? ResolveOne(SelectionId target)
-    {
-        if (target.Bone != null)
-            return null;
-        var resolved = TransformSelectionPolicy.Placement([target], scene.Snapshot, groups, viewport);
-        return resolved?.Targets.Count == 1 ? resolved.Primary : null;
-    }
+    private TransformTargetId? ResolveOne(SelectionId target) =>
+        TransformSelectionPolicy.Placement([target], scene.Snapshot, groups, viewport)?.Primary;
 
     private PoseTransform? Read(TransformTargetId target) => target.Actor is { } actor
         ? viewport.GetActorTransform(actor) : viewport.GetModelTransform(target);
@@ -71,10 +66,10 @@ public sealed class SelectionPlacement(
 
         // The move starts like a drag, so it reads every target the same way
         // and refuses the whole move when one cannot be read. Its pivot is the
-        // targets' shared centre, or the one target's own position.
+        // targets' shared centre, which for one target is its own position.
         var goal = eye + Vector3.Normalize(look) * 2.5f;
         var begin = transforms.Begin(targets.Targets, TransformOperation.Translate,
-            TransformSpace.World, description: "Move to camera", selection: targetsToMove);
+            TransformSpace.World, PivotMode.Centroid, description: "Move to camera", selection: targetsToMove);
         if (!begin.Success || begin.GestureId is not { } gesture) return begin;
         var updated = transforms.Update(gesture,
             new TransformDelta(goal - transforms.ActivePivot!.Value, Quaternion.Identity, Vector3.One));
