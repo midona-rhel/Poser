@@ -646,8 +646,7 @@ public class GizmoOverlayWindow : Window
             return;
         var targets = selection.Targets;
         // The selection's first item decides both the gizmo kind and this
-        // primary target, so they are the same kind of thing. A mixed selection
-        // is moved as a group even when its first item is a bone.
+        // primary target, so they are the same kind of thing.
         var primary = selection.Primary;
         BoneId? primaryBone = targetType == GizmoTargetType.Bone ? primary.Bone : null;
         ActorId? primaryActor = primary.Actor;

@@ -116,13 +116,15 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         // each frame's result into the next frame, which no gesture here may do.
         var pivot = command.PivotMode switch
         {
-            PivotMode.PerTarget => captured[0].Transform.Position,
             PivotMode.Centroid => Centroid(captured),
             PivotMode.Custom => command.CustomPivot!.Value,
             _ => captured[0].Transform.Position,
         };
 
         var id = TransformGestureId.New();
+        // A group drag was admitted by GroupTransformCoordinator.Admit in the
+        // same call, which checked the group's stored frame, its members and
+        // their locks; the drag only keeps that frame.
         GroupTransformSnapshot? groupBefore = null;
         if (command.IsGroupTransform)
         {
@@ -131,13 +133,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             if (groupBefore == null)
                 return GestureResult.Fail(
                     "The group transform frame is not initialized.");
-            var capturedMap = captured.ToDictionary(state => state.Target, state => state.Transform);
-            if (!GroupTransformReadModel.TryRead(groupBefore, capturedMap,
-                    command.GroupScale, out _, out var refusal))
-                return GestureResult.Fail(refusal!);
-            foreach (var target in command.Targets)
-                if (_groupSource?.Refusal(target) is { } capability)
-                    return GestureResult.Fail(capability);
         }
         _active = new ActiveGestureState(
             id,
@@ -275,15 +270,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                     active.Before[0].Transform.Rotation,
                     baseline.Transform.Rotation);
             }
-            var rotatePosition = active.Command.PivotMode switch
-            {
-                PivotMode.PerTarget => false,
-                // The centre point belongs to no target, so every target swings
-                // around it, the first one too.
-                PivotMode.Centroid => true,
-                PivotMode.Custom => true,
-                _ => false,
-            };
+            // Around the centre point or a custom point, every target swings,
+            // the first one too; around its own position a target only turns.
+            var rotatePosition = active.Command.PivotMode != PivotMode.PerTarget;
             var pivot = active.Command.PivotMode == PivotMode.PerTarget
                 ? baseline.Transform.Position
                 : active.Pivot;
