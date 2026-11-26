@@ -141,7 +141,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         Func<nint> nativeCameraOverride,
         bool isAvailable,
         Dalamud.Plugin.Services.IObjectTable objectTable,
-        IKeyState? keyState = null)
+        IKeyState keyState)
     {
         _log = log;
         _framework = framework;

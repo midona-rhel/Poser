@@ -275,12 +275,8 @@ internal sealed unsafe partial class NativeCameraHooks
             if (!_gPose.IsGPosing || Live is not { } live)
                 return;
 
-            // Check the native singleton before dereferencing it; the managed catch
-            // is not a recovery mechanism for invalid native memory.
-            var atk = RaptureAtkModule.Instance();
-            if (atk == null || atk->AtkModule.IsTextInputActive())
+            if (RaptureAtkModule.Instance()->AtkModule.IsTextInputActive())
                 return;
-
 
             _owner.FreeCamera.FlightActive = false;
             if (live.Kind == CameraKind.Free)
@@ -296,16 +292,13 @@ internal sealed unsafe partial class NativeCameraHooks
                     mouse->HandleDelta();
                     mouse->ScrollValue = 0;
                 }
-                if (keyboard != null)
-                {
-                    keyboard->HandleKey(VirtualKey.W);
-                    keyboard->HandleKey(VirtualKey.A);
-                    keyboard->HandleKey(VirtualKey.S);
-                    keyboard->HandleKey(VirtualKey.D);
-                    keyboard->HandleKey(VirtualKey.Q);
-                    keyboard->HandleKey(VirtualKey.E);
-                    keyboard->HandleKey(VirtualKey.SPACE);
-                }
+                keyboard->HandleKey(VirtualKey.W);
+                keyboard->HandleKey(VirtualKey.A);
+                keyboard->HandleKey(VirtualKey.S);
+                keyboard->HandleKey(VirtualKey.D);
+                keyboard->HandleKey(VirtualKey.Q);
+                keyboard->HandleKey(VirtualKey.E);
+                keyboard->HandleKey(VirtualKey.SPACE);
             }
         }
         catch (Exception ex)
@@ -332,12 +325,12 @@ internal sealed unsafe partial class NativeCameraHooks
                 live.Kind != CameraKind.Free &&
                 TrackedPivot is { } pivot &&
                 live.TrackedBones.Count > 0 &&
-                live.TrackedBones[0].Skeleton?.Actor is { } actor &&
+                live.TrackedBones[0].Skeleton.Actor is { } actor &&
                 actor.Address != nint.Zero &&
                 // Deref-time revalidation between the per-tick validity
                 // scans: the tracked bone's stored actor address is only a
                 // claim; unresolved is refusal for this frame.
-                _objectTable?.CreateObjectReference(actor.Address) is { } resolved &&
+                _objectTable.CreateObjectReference(actor.Address) is { } resolved &&
                 resolved.IsValid())
             {
                 var gameObject = (GameObject*)resolved.Address;

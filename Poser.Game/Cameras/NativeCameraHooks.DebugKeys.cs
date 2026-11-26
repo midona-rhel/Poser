@@ -68,7 +68,7 @@ internal sealed unsafe partial class NativeCameraHooks
     private void RecordRolling(KeyboardFrame* keyboard)
     {
         var camera = _owner.Native;
-        if (!DebugRollingOn || keyboard == null)
+        if (!DebugRollingOn)
             return;
         var scene = &camera->Camera.CameraBase.SceneCamera;
         Vector3 position = scene->Position;
@@ -93,7 +93,7 @@ internal sealed unsafe partial class NativeCameraHooks
         RecordRolling(keyboard);
         lock (_debugKeyLock)
         {
-            if (_debugKeyFramesLeft <= 0 || keyboard == null)
+            if (_debugKeyFramesLeft <= 0)
                 return;
             int held = (_debugKeyFramesLeft + _debugKeyFrame) / 2;
             if (_debugKeyFrame < held)

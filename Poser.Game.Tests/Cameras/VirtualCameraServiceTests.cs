@@ -27,7 +27,8 @@ public sealed unsafe class VirtualCameraServiceTests : IDisposable
         };
         var before = camera.Rotation;
         MouseFrame mouse = new() { ButtonsPressed = buttons, DeltaX = 12, DeltaY = 8 };
-        service.FreeCamera.HandleInput(camera, &mouse, null);
+        KeyboardFrame keyboard = default;
+        service.FreeCamera.HandleInput(camera, &mouse, &keyboard);
         service.FreeCamera.UpdateMatrix(camera);
         Assert.Equal(new Vector3(1, 2, 3), camera.Position);
         Assert.Equal(looks, camera.Rotation != before);
@@ -143,7 +144,8 @@ public sealed unsafe class VirtualCameraServiceTests : IDisposable
             bus,
             gate.Read,
             isAvailable,
-            NewProxy<Dalamud.Plugin.Services.IObjectTable>());
+            NewProxy<Dalamud.Plugin.Services.IObjectTable>(),
+            NewProxy<Dalamud.Plugin.Services.IKeyState>());
         return new Setup(service, framework, gPose, bus);
     }
 
