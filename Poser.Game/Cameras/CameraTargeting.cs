@@ -77,7 +77,7 @@ internal sealed unsafe class CameraTargeting(
 
     /// <summary>Why the camera can't be centred on this actor now, or null.
     /// Everything is checked before the camera changes.</summary>
-    private string? Refusal(IActor actor, out GameObject* gameObject, out VirtualCamera camera, out Vector3 lookAt)
+    public string? Refusal(IActor actor, out GameObject* gameObject, out VirtualCamera camera, out Vector3 lookAt)
     {
         gameObject = null;
         camera = null!;

@@ -12,14 +12,14 @@ namespace Poser.Game.Cameras;
 public sealed class CameraTargetControl(
     IEntityBindings bindings, IVirtualCameraService cameras,
     IActorManager actors, IActorSpawnService spawns, ValueJournal journal, ICameraControl values,
-    IEntityHistoryResolver<IVirtualCamera>? history = null) : ICameraTargetControl
+    IEntityHistoryResolver<IVirtualCamera> history) : ICameraTargetControl
 {
     private const string Unavailable = "The camera is no longer available.";
     private static Outcome Refused(string detail) => new(false, detail);
 
     private IVirtualCamera? Current(IVirtualCamera original)
     {
-        var current = history is null ? original : history.Resolve(original);
+        var current = history.Resolve(original);
         return current is { IsValid: true } ? current : null;
     }
     private IVirtualCamera? Resolve(CameraId id) =>
@@ -42,9 +42,8 @@ public sealed class CameraTargetControl(
     }
 
     private bool CanCenter(IVirtualCamera camera, ActorId? actor) =>
-        cameras.IsAvailable && !camera.IsLocked && camera.IsLive &&
-        camera.Kind != CameraKind.Free && camera.FixedPosition is null &&
-        actor is { } id && Resolve(id) is { } current && spawns.IsVisible(current);
+        camera.IsLive && actor is { } id && Resolve(id) is { } current && spawns.IsVisible(current)
+        && cameras.CenterRefusal(current) is null;
 
     public CameraTargetReading? Read(CameraId id)
     {
@@ -172,8 +171,9 @@ public sealed class CameraTargetControl(
 
     public Outcome CenterTrackedActor(CameraId id)
     {
-        if (Resolve(id) is not { } camera || TrackingActor(camera) is not { } actor ||
-            !CanCenter(camera, actor)) return Refused("Center: the tracked actor cannot be framed.");
+        if (Resolve(id) is not { } camera || TrackingActor(camera) is not { } actor)
+            return Refused("Center: the camera follows no actor.");
+        if (!camera.IsLive) return Refused("Center: look through this camera first.");
         return CenterOnActor(actor);
     }
 

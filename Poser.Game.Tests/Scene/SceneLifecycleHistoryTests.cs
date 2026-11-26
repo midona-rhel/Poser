@@ -586,6 +586,7 @@ public sealed class SceneLifecycleHistoryTests
         // Camera framing is outside lifecycle-history coverage.
         public Outcome CenterOnActor(IActor actor) =>
             Outcome.Fail("not available in lifecycle fake");
+        public string? CenterRefusal(IActor actor) => "not available in lifecycle fake";
         public Outcome CenterOnBone(IBone bone) =>
             Outcome.Fail("not available in lifecycle fake");
     }
