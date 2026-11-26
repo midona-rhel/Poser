@@ -188,14 +188,11 @@ internal sealed class SceneEntityRuntime
         return _handles.Track(SceneEntityKind.Prop, handle);
     }
 
-    /// <summary>Adds one overlay from its saved settings.</summary>
+    /// <summary>Adds one overlay from its saved settings. The file check has
+    /// already left out entries without settings.</summary>
     public SceneEntityHandle? SpawnOverlay(SceneOverlay data, out string? detail)
     {
-        if (data.Node is not { } document)
-        {
-            detail = "The overlay entry carries no node document.";
-            return null;
-        }
+        var document = data.Node!;
         detail = null;
         var display = _viewport.DisplaySize;
         if (document.Collider == null && data.CenterRelative && display.X > 0f && display.Y > 0f)
@@ -385,10 +382,6 @@ internal sealed class SceneEntityRuntime
     private IVirtualCamera? DefaultCamera =>
         _cameras.Cameras.FirstOrDefault(camera => camera.IsDefault);
 
-    /// <summary>The Main Camera, so a saved group that held it gets it back on load.</summary>
-    public SceneEntityHandle? DefaultCameraToken() => DefaultCamera is { } camera
-        ? _handles.Track(SceneEntityKind.Camera, camera) : null;
-
     /// <summary>The default camera's settings, plus what a load can change
     /// besides them: the actor it follows and which camera is live. Without
     /// these, undoing a load could leave the default camera following an
@@ -406,16 +399,6 @@ internal sealed class SceneEntityRuntime
             camera?.IsTargetLocked ?? false, live);
     }
 
-    /// <summary>Gives the Main Camera the saved camera settings. Returns why it
-    /// failed, or null.</summary>
-    public string? ApplyDefaultCamera(SceneCamera data)
-    {
-        if (DefaultCamera is not { } camera)
-            return "The session has no default camera.";
-        Cameras.CameraDocument.Apply(data.Camera!, camera);
-        return null;
-    }
-
     /// <summary>Creates one more camera from its saved settings.</summary>
     public SceneEntityHandle? CreateCamera(SceneCamera data, out string? detail)
     {
@@ -431,16 +414,13 @@ internal sealed class SceneEntityRuntime
         return _handles.Track(SceneEntityKind.Camera, camera);
     }
 
-    /// <summary>Sets the actor a camera follows, and whether it stays locked to that
-    /// actor. A null camera means the Main Camera. Returns why it failed, or
-    /// null.</summary>
+    /// <summary>Sets the actor a camera the load created follows, and whether it
+    /// stays locked to that actor. Returns why it failed, or null.</summary>
     public string? SetCameraTarget(
-        SceneEntityHandle? camera, SceneEntityHandle targetActor, string displayName,
+        SceneEntityHandle camera, SceneEntityHandle targetActor, string displayName,
         bool targetLocked)
     {
-        var target = camera == null ? DefaultCamera : _handles.Resolve<IVirtualCamera>(camera, SceneEntityKind.Camera);
-        if (target is null)
-            return "The session has no default camera.";
+        var target = _handles.Require<IVirtualCamera>(camera, SceneEntityKind.Camera);
         var exactActor = _handles.Require<IActor>(targetActor, SceneEntityKind.Actor);
         // Check it is still the same actor before changing the camera's
         // target. If another actor has taken its place, the camera does not

@@ -327,27 +327,23 @@ internal sealed class SceneActorRuntime
     }
 
     /// <summary>
-    /// Restores saved animation controls for the actor or its companion.
-    /// Entries without animation data are left unchanged here; pose-only loads
-    /// use FreezeActor separately.
+    /// Plays the saved animation again on the actor, or on its companion. Only
+    /// called for an entry saved with that animation; an entry saved without
+    /// one is frozen with <see cref="FreezeActor"/> instead.
     /// </summary>
     public string? RestoreAnimation(SceneEntityHandle actor, SceneActor data, bool companion)
     {
         var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
         if (!companion)
         {
-            if (data.Animation is not { } state)
-                return null;
             if (_bindings.GetActorId(target) is not { } id)
                 return "The actor has no stable identity to animate.";
-            var restored = _animation.Restore(id, Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(state));
+            var restored = _animation.Restore(id, Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(data.Animation!));
             return restored.Success ? null : restored.Detail ?? "Its animation could not be restored.";
         }
-        if (data.CompanionAnimation is not { } companionState)
-            return null;
         if (_spawns.GetCompanionActor(target) is not { } body || _bindings.GetActorId(body) is not { } companionId)
             return "The companion's body could not be resolved, so its animation was not restored.";
-        var refused = _animation.Restore(companionId, Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(companionState));
+        var refused = _animation.Restore(companionId, Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(data.CompanionAnimation!));
         return refused.Success ? null : $"Companion: {refused.Detail ?? "its animation could not be restored"}";
     }
 

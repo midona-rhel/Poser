@@ -350,7 +350,7 @@ internal sealed class SceneLoadTransaction(
             // Remember the current state only for what this load will change.
             // Putting back an environment the load never touched would undo
             // changes made before the load.
-            if (_environment is not null || options.IncludeEnvironment)
+            if (options.IncludeEnvironment)
             {
                 operation.EnvironmentBaseline = sceneState.CaptureEnvironmentState();
                 operation.WorldBaseline = sceneState.CaptureWorldState();
@@ -396,7 +396,7 @@ internal sealed class SceneLoadTransaction(
             // without it.
             foreach (var overlay in _overlays)
             {
-                string name = overlay.Node?.Name ?? "Overlay";
+                string name = overlay.Node!.Name;
                 var token = sceneEntities.SpawnOverlay(overlay, out var detail);
                 if (token is null)
                 {
@@ -793,20 +793,15 @@ internal sealed class SceneLoadTransaction(
             {
                 // A saved Main camera loads as a new camera; it does not
                 // overwrite the Main camera already in the session.
-                var token = sceneEntities.CreateCamera(camera, out var detail);
-                if (token != null)
-                {
-                    operation.CreatedCameras.Add(token);
-                    _cameraTokens[camera.Key] = token;
-                }
-
-                if (detail != null)
+                if (sceneEntities.CreateCamera(camera, out var detail) is not { } token)
                 {
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Camera, camera.Camera!.Name, false, detail));
                     _done++;
                     continue;
                 }
+                operation.CreatedCameras.Add(token);
+                _cameraTokens[camera.Key] = token;
 
                 if (camera.IsLive)
                     liveCamera = token;
