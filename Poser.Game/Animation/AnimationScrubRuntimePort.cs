@@ -11,12 +11,17 @@ using Poser.Game.Natives;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Havok control enumeration and the scrub's clock writes.</summary>
+/// <summary>
+/// Scrubbing: dragging an animation to a point in time. Remembers the drag in
+/// progress (which control, which actor, whether it was already paused) and
+/// moves the game's animation clock.
+/// </summary>
 public sealed unsafe class AnimationScrubRuntimePort
 {
     private readonly IPluginLog _log;
     private readonly AnimationNativeState _native;
     private readonly TimelineSeekService _seek;
+    private readonly AnimationSpeedRuntimePort _speed;
 #if DEBUG
     /// <summary>Debug bridge: scrub Base and Upper Body through the clock-writing
     /// fallback even where the native seek could move them.</summary>
@@ -26,11 +31,13 @@ public sealed unsafe class AnimationScrubRuntimePort
     private const bool SeekAllowed = true;
 #endif
 
-    public AnimationScrubRuntimePort(IPluginLog log, AnimationNativeState native, TimelineSeekService seek)
+    public AnimationScrubRuntimePort(
+        IPluginLog log, AnimationNativeState native, TimelineSeekService seek, AnimationSpeedRuntimePort speed)
     {
         _log = log;
         _native = native;
         _seek = seek;
+        _speed = speed;
     }
 
     public IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token)
@@ -211,4 +218,99 @@ public sealed unsafe class AnimationScrubRuntimePort
         return Outcome.Ok();
     }
 
+    // ── The drag in progress ──────────────────────────────────────────
+
+    /// <summary>
+    /// Values captured when the drag starts. The selected layer is paused;
+    /// without a layer selection, the whole actor is paused. The skeleton
+    /// token lets the game port reject writes after the skeleton changes.
+    /// </summary>
+    private sealed record ScrubGesture(
+        Guid Owner,
+        ActorId Actor,
+        ScrubControlId Control,
+        float Duration,
+        ulong Token,
+        bool WasPaused);
+
+    private ScrubGesture? _scrub;
+
+    /// <summary>Seeks a layer by its own timeline clock, in seconds from its begin
+    /// (a timeline still loading takes it once loaded).</summary>
+    public Outcome SeekLayer(ActorId actor, AnimationSlot slot, float seconds) =>
+        SetControlTime(actor, ScrubControlId.Timeline(slot), Math.Max(seconds, 0f), 0);
+
+    /// <summary>Gets the control for a slot.</summary>
+    public ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot) =>
+        FindSlotControl(actor, slot, out _);
+
+    /// <summary>
+    /// Finds the animation control, pauses it, and remembers its duration
+    /// and skeleton token. Returns an error if the control cannot be found.
+    /// </summary>
+    public Outcome BeginScrub(ActorId actor, ScrubControlId control, Guid owner, AnimationSlot? slot = null)
+    {
+        var controls = EnumerateControls(actor, out var token);
+        ScrubControlReading? target = null;
+        foreach (var reading in controls)
+            if (reading.Id == control)
+                target = reading;
+        if (target == null)
+            return Outcome.Fail("That animation control is no longer present.");
+
+        // A layer's scrub holds that layer only; the others keep playing. Without a
+        // known layer the whole actor is held.
+        bool wasPaused = _speed.IsPaused(actor) ||
+            (slot is { } held && _speed.IsSlotHeld(actor, held));
+        if (!wasPaused)
+        {
+            var freeze = slot is { } layer
+                ? _speed.PauseSlot(actor, layer)
+                : _speed.SetSpeed(actor, 0f);
+            if (!freeze.Success)
+                return freeze;
+        }
+
+        _scrub = new ScrubGesture(owner, actor, control, target.Duration, token, wasPaused);
+        return Outcome.Ok();
+    }
+
+    /// <summary>
+    /// Seeks within the duration captured at Begin. A different actor or owner
+    /// is rejected without changing the drag. A failed game write ends it.
+    /// </summary>
+    public Outcome UpdateScrub(ActorId actor, float time, Guid owner)
+    {
+        if (_scrub is not { } gesture)
+            return Outcome.Fail("No scrub is active.");
+        if (gesture.Owner != owner)
+            return Outcome.Fail("The scrub in flight belongs to another control.");
+        if (!gesture.Actor.Equals(actor))
+            return Outcome.Fail(
+                "The scrub in flight belongs to a different actor.");
+
+        float clamped = Math.Clamp(time, 0f, gesture.Duration);
+        var result = SetControlTime(
+            gesture.Actor, gesture.Control, clamped, gesture.Token);
+        if (result.Success)
+            return Outcome.Ok();
+
+        _scrub = null;
+        return result;
+    }
+
+    /// <summary>Forgets this owner's drag. The pause remains until a separate
+    /// playback action releases it.</summary>
+    public void EndScrub(Guid owner)
+    {
+        if (_scrub?.Owner != owner)
+            return;
+        _scrub = null;
+    }
+
+    /// <summary>Ends a drag whose actor the scene no longer contains.</summary>
+    public void Forget(IReadOnlySet<ActorId> present)
+    {
+        if (_scrub is { } scrub && !present.Contains(scrub.Actor)) _scrub = null;
+    }
 }

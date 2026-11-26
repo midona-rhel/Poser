@@ -26,7 +26,7 @@ public sealed class AnimationSession : IAnimationPlayback
     private readonly BaseAnimationSession _base;
     private readonly AnimationSpeedRuntimePort _speed;
     private readonly StanceControl _stance;
-    private readonly ScrubAnimationSession _scrub;
+    private readonly AnimationScrubRuntimePort _scrub;
     private readonly HeldExpressionSession _expression;
     private readonly HashSet<ActorId> _advancedActors = new();
     public bool IsAdvanced(ActorId actor) => _advancedActors.Contains(actor);
@@ -62,7 +62,7 @@ public sealed class AnimationSession : IAnimationPlayback
         _rendering = rendering;
         _base = new BaseAnimationSession(_store, timeline);
         _stance = new StanceControl(_store, timeline, _base, native, posing);
-        _scrub = new ScrubAnimationSession(scrub, _speed);
+        _scrub = scrub;
         _expression = new HeldExpressionSession(_store, timeline, _base, _speed);
         _timeline.LayerEnded += OnLayerEnded;
     }
