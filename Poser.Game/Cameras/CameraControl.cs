@@ -1,5 +1,4 @@
 using System.Numerics;
-using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain;
@@ -14,27 +13,22 @@ namespace Poser.Game.Cameras;
 public sealed class CameraControl : ICameraControl
 {
     private const string Unavailable = "The camera is no longer available.";
-    private const string ControlsUnavailable = "Camera controls are unavailable.";
     private readonly IEntityBindings _bindings;
-    private readonly IFramework _framework;
     private readonly IVirtualCameraService _cameras;
     private readonly ValueJournal _journal;
-    private readonly IEntityHistoryResolver<IVirtualCamera>? _history;
+    private readonly IEntityHistoryResolver<IVirtualCamera> _history;
     private readonly EntityValues<CameraId> _values;
 
-    public CameraControl(IEntityBindings bindings, IFramework framework, IVirtualCameraService cameras,
-        ValueJournal journal, IEntityHistoryResolver<IVirtualCamera>? history = null)
+    public CameraControl(IEntityBindings bindings, IVirtualCameraService cameras,
+        ValueJournal journal, IEntityHistoryResolver<IVirtualCamera> history)
     {
         _bindings = bindings;
-        _framework = framework;
         _cameras = cameras;
         _journal = journal;
         _history = history;
-        // Allow changing the lock even when native camera controls are unavailable.
         _values = new(journal, new HandleValuePort<CameraId, IVirtualCamera>(Resolve, SelectionId.ForCamera,
             camera => camera.IsValid, history, CameraAccessors.Create(), Unavailable), Unavailable,
-            (camera, property) => property != CameraProperties.IsLocked && !cameras.IsAvailable
-                ? ControlsUnavailable : CameraProperties.RefuseWhileLocked(camera, property));
+            CameraProperties.RefuseWhileLocked);
     }
 
     private IVirtualCamera? Resolve(CameraId id) =>
@@ -42,12 +36,12 @@ public sealed class CameraControl : ICameraControl
 
     private IVirtualCamera? Current(IVirtualCamera original)
     {
-        var current = _history is null ? original : _history.Resolve(original);
+        var current = _history.Resolve(original);
         return current is { IsValid: true } ? current : null;
     }
 
     public CameraReading? Read(CameraId id) => Resolve(id) is { } c
-        ? new(id, _cameras.IsAvailable,
+        ? new(id,
             c.Name, c.Kind, c.IsLive, c.IsDefault, c.IsLocked,
             c.Angle, c.Pan, c.Roll, c.Zoom, c.ZoomLimits, c.FoV,
             c.PositionOffset, c.WorldPosition, c.FixedPosition,
@@ -68,8 +62,6 @@ public sealed class CameraControl : ICameraControl
 
     public Outcome Cycle(int delta)
     {
-        if (!_framework.IsInFrameworkUpdateThread || !_cameras.IsAvailable)
-            return new(false, ControlsUnavailable);
         var list = _cameras.Cameras;
         int current = -1;
         for (int i = 0; i < list.Count; i++)
@@ -97,7 +89,6 @@ public sealed class CameraControl : ICameraControl
     public Outcome ResetProperties(CameraId id)
     {
         if (Resolve(id) is not { } camera) return new(false, Unavailable);
-        if (!_cameras.IsAvailable) return new(false, ControlsUnavailable);
         if (camera.IsLocked) return new(false, "Unlock the camera first.");
         _journal.Seal();
         var before = ResetState.Read(camera);
@@ -156,12 +147,9 @@ public sealed class CameraControl : ICameraControl
     public Outcome SetLive(CameraId id, bool value)
     {
         if (Resolve(id) is not { } camera) return new(false, Unavailable);
-        if (!_cameras.IsAvailable) return new(false, ControlsUnavailable);
-        // Lock protects framing, not switching views. Turning off a non-default
-        // camera returns to the existing game camera, never creates another.
-        var next = value ? camera : camera.IsDefault ? camera :
-            _cameras.Cameras.FirstOrDefault(c => c.IsDefault && c.IsValid);
-        if (next is null) return new(false, "The main camera is unavailable.");
+        // Lock protects framing, not switching views. Turning off a camera
+        // goes back to the Main Camera, which GPose always has.
+        var next = value || camera.IsDefault ? camera : _cameras.Cameras.First(c => c.IsDefault);
         var before = _cameras.LiveCamera;
         if (ReferenceEquals(before, next)) return Outcome.Ok();
         _cameras.SetLive(next);

@@ -217,7 +217,7 @@ public sealed class CameraPane
                     _ => _values.Seal(),
                     _ => perPixel,
                     _ => "0.00",
-                    _ => locked || !camera.Available));
+                    _ => locked));
             return;
         }
 
@@ -247,7 +247,7 @@ public sealed class CameraPane
                 _ => perPixel,
                 _ => "0.00",
                 r => locked ||
-                    (r == 1 && (!pinned || !camera.Available)),
+                    (r == 1 && !pinned),
                 r => r == 1 && !pinned
                     ? "Pin the position to edit it"
                     : locked ? "The camera is locked" : null,
@@ -255,13 +255,8 @@ public sealed class CameraPane
 
         form.Switch(
             "Pin position", camera.FixedPosition is not null,
-            value =>
-            {
-                if (locked || !camera.Available)
-                    return;
-                _values.Set(camera.Id, CameraProperties.FixedPosition, value ? camera.WorldPosition : null);
-            },
-            disabled: locked || !camera.Available,
+            value => _values.Set(camera.Id, CameraProperties.FixedPosition, value ? camera.WorldPosition : null),
+            disabled: locked,
             help: "Hold this world position");
     }
 
@@ -300,9 +295,6 @@ public sealed class CameraPane
 
     private void GeneralRows(FormScope form, CameraReading camera)
     {
-        if (!camera.Available)
-            form.Status("Cameras are unavailable: game signatures not found.");
-
         bool locked = camera.IsLocked;
         form.Cells(cells =>
         {

@@ -112,7 +112,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _events = events;
         _framePhases = framePhases;
         FreeCamera = new FreeCameraController(this, input, keyState);
-        _targeting = new CameraTargeting(this, gPose, objectTable);
+        _targeting = new CameraTargeting(this, objectTable);
 
         using var startup = new global::Poser.Application.Lifecycle.StartupCleanup(
             error => log.Error(error, "Camera activation cleanup failed"));
@@ -150,7 +150,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _nativeCameraOverride = nativeCameraOverride;
         IsAvailable = isAvailable;
         FreeCamera = new FreeCameraController(this, new Application.Input.CameraInputState(), keyState);
-        _targeting = new CameraTargeting(this, gPose, objectTable);
+        _targeting = new CameraTargeting(this, objectTable);
 
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update += OnFrameworkUpdate;

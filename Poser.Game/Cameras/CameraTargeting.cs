@@ -15,7 +15,7 @@ namespace Poser.Game.Cameras;
 /// game's object table before anything is read from it.
 /// </summary>
 internal sealed unsafe class CameraTargeting(
-    VirtualCameraService owner, IGPoseService gPose, Dalamud.Plugin.Services.IObjectTable objectTable)
+    VirtualCameraService owner, Dalamud.Plugin.Services.IObjectTable objectTable)
 {
     public bool SetTargetActor(IVirtualCamera camera, IActor actor, ActorId actorId, string displayName)
     {
@@ -88,7 +88,7 @@ internal sealed unsafe class CameraTargeting(
         if (!gameObject->IsReadyToDraw() || gameObject->DrawObject == null || !gameObject->DrawObject->IsVisible)
             return "Center: that actor is not drawn yet.";
         var native = owner.Native;
-        if (!owner.IsAvailable || !gPose.IsGPosing || owner.Live is not { IsLive: true } live)
+        if (owner.Live is not { IsLive: true } live)
             return "Center: the game camera is not ready.";
         camera = live;
         if (camera.Kind == CameraKind.Free)
