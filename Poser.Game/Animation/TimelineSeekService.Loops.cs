@@ -21,31 +21,61 @@ public sealed unsafe partial class TimelineSeekService
     /// restart, effects respawn). Unsupported or missed wraps can still need replay.</summary>
     internal void SetLoop(ActorId actor, AnimationSlot slot, ushort timeline)
     {
-        lock (_targetLock)
-            _loops[(actor, (int)slot)] = timeline;
+        _loops[(actor, (int)slot)] = timeline;
+        _replayWait[(actor, (int)slot)] = ReplayWaitTicks;
     }
 
     internal void ClearLoop(ActorId actor, AnimationSlot slot)
     {
-        lock (_targetLock)
-            if (_loops.Remove((actor, (int)slot)))
-                _leadRestores.Add((actor, (int)slot));
+        _replayWait.Remove((actor, (int)slot));
+        if (_loops.Remove((actor, (int)slot)))
+            _leadRestores.Add((actor, (int)slot));
     }
 
     internal void ClearLoops(ActorId actor)
     {
-        lock (_targetLock)
+        List<(ActorId, int)>? gone = null;
+        foreach (var key in _loops.Keys)
+            if (key.Actor.Equals(actor))
+                (gone ??= new()).Add(key);
+        if (gone != null)
+            foreach (var key in gone)
+            {
+                _loops.Remove(key);
+                _replayWait.Remove(key);
+                _leadRestores.Add(key);
+            }
+    }
+
+    // Wait this many ticks after arming or replaying a loop, so the frame or two
+    // the game takes to switch animations does not replay it again.
+    private const int ReplayWaitTicks = 15;
+
+    /// <summary>
+    /// A looped layer the seek could not wrap (an integer-frame timeline, say)
+    /// runs out and the game drops it; this plays it again. Full body loops are
+    /// left to the game's own repeat.
+    /// </summary>
+    private void ReplayDroppedLoops()
+    {
+        if (LoopsSuspended || _loops.Count == 0)
+            return;
+        foreach (var (key, timeline) in _loops)
         {
-            List<(ActorId, int)>? gone = null;
-            foreach (var key in _loops.Keys)
-                if (key.Actor.Equals(actor))
-                    (gone ??= new()).Add(key);
-            if (gone != null)
-                foreach (var key in gone)
-                {
-                    _loops.Remove(key);
-                    _leadRestores.Add(key);
-                }
+            if (key.Slot == (int)AnimationSlot.Base)
+                continue;
+            if (_replayWait.TryGetValue(key, out var wait) && wait > 0)
+            {
+                _replayWait[key] = wait - 1;
+                continue;
+            }
+            var character = _native.Resolve(key.Actor, out _);
+            if (character == null || character->Timeline.TimelineSequencer.TimelineIds[key.Slot] == timeline)
+                continue;
+            var replayed = _native.PlayTimeline(character, timeline);
+            if (!replayed.Success)
+                _log.Warning($"Animation: loop replay failed actor={key.Actor} slot={key.Slot} timeline={timeline}: {replayed.Detail}");
+            _replayWait[key] = ReplayWaitTicks;
         }
     }
 
@@ -70,15 +100,12 @@ public sealed unsafe partial class TimelineSeekService
     internal void SetOwned(ActorId actor, AnimationSlot slot, bool owned)
     {
         var character = _native.Resolve(actor, out _);
-        lock (_targetLock)
-        {
-            if (owned)
-                _owned[(actor, (int)slot)] = 0;
-            else if (_owned.Remove((actor, (int)slot)))
-                _leadRestores.Add((actor, (int)slot));
-            if (character != null)
-                _endedSlots.Remove(((nint)character, (int)slot));
-        }
+        if (owned)
+            _owned[(actor, (int)slot)] = 0;
+        else if (_owned.Remove((actor, (int)slot)))
+            _leadRestores.Add((actor, (int)slot));
+        if (character != null)
+            _endedSlots.Remove(((nint)character, (int)slot));
     }
 
     /// <summary>An owned layer's animation is gone from its slot: the game ended
@@ -88,8 +115,7 @@ public sealed unsafe partial class TimelineSeekService
 
     private bool SlotEnded(Character* character, int slot)
     {
-        lock (_targetLock)
-            return _endedSlots.Count != 0 && _endedSlots.Contains(((nint)character, slot));
+        return _endedSlots.Count != 0 && _endedSlots.Contains(((nint)character, slot));
     }
 
     /// <summary>
@@ -102,16 +128,14 @@ public sealed unsafe partial class TimelineSeekService
         FFXIVClientStructs.FFXIV.Client.Game.Control.ActionTimelineSequencer* sequencer, ushort live)
     {
         ushort id;
-        lock (_targetLock)
-            if (!_owned.TryGetValue(key, out id))
-                return false;
+        if (!_owned.TryGetValue(key, out id))
+            return false;
         if (id == 0)
         {
             if (live == 0 || (key.Slot == 0 && IntroQueued(sequencer, live)))
                 return false;
-            lock (_targetLock)
-                if (_owned.ContainsKey(key))
-                    _owned[key] = live;
+            if (_owned.ContainsKey(key))
+                _owned[key] = live;
             id = live;
         }
         if (live == id)
@@ -122,11 +146,8 @@ public sealed unsafe partial class TimelineSeekService
                 _ownedLengths[key] = reading.Duration;
             return true;
         }
-        lock (_targetLock)
-        {
-            _owned.Remove(key);
-            _endedSlots.Add(((nint)character, key.Slot));
-        }
+        _owned.Remove(key);
+        _endedSlots.Add(((nint)character, key.Slot));
         _leads.Remove(key);
         _remaining.Remove(key);
         float seconds = _ownedLengths.Remove(key, out var last) ? last : 0f;
@@ -168,17 +189,14 @@ public sealed unsafe partial class TimelineSeekService
         if (LoopsSuspended)
             return;
         List<((ActorId Actor, int Slot) Key, ushort Loop)> layers;
-        lock (_targetLock)
-        {
-            if (_loops.Count == 0 && _owned.Count == 0)
-                return;
-            layers = new List<((ActorId, int), ushort)>(_loops.Count + _owned.Count);
-            foreach (var (key, timeline) in _loops)
-                layers.Add((key, timeline));
-            foreach (var key in _owned.Keys)
-                if (!_loops.ContainsKey(key))
-                    layers.Add((key, (ushort)0));
-        }
+        if (_loops.Count == 0 && _owned.Count == 0)
+            return;
+        layers = new List<((ActorId, int), ushort)>(_loops.Count + _owned.Count);
+        foreach (var (key, timeline) in _loops)
+            layers.Add((key, timeline));
+        foreach (var key in _owned.Keys)
+            if (!_loops.ContainsKey(key))
+                layers.Add((key, (ushort)0));
         nint schedule = _engine.ScheduleManagement;
         float frames = schedule != 0 ? *(float*)(schedule + NativeFields.ScheduleManagement_FrameDelta) : 1f;
         if (!(frames > 0f))
@@ -192,9 +210,7 @@ public sealed unsafe partial class TimelineSeekService
                 continue;
             var sequencer = &character->Timeline.TimelineSequencer;
             ushort live = AnimationNativeState.RequestedId(sequencer, key.Slot);
-            bool owned;
-            lock (_targetLock)
-                owned = _owned.ContainsKey(key);
+            bool owned = _owned.ContainsKey(key);
             if (owned && !TrackOwned(key, character, sequencer, live))
                 continue;
             if (live == 0 || (loop != 0 && live != loop) || !Supports(character, key.Slot))
@@ -287,18 +303,14 @@ public sealed unsafe partial class TimelineSeekService
     private void RestoreLeads()
     {
         (ActorId Actor, int Slot)[] keys;
-        lock (_targetLock)
-        {
-            if (_leadRestores.Count == 0)
-                return;
-            keys = _leadRestores.ToArray();
-            _leadRestores.Clear();
-        }
+        if (_leadRestores.Count == 0)
+            return;
+        keys = _leadRestores.ToArray();
+        _leadRestores.Clear();
         foreach (var key in keys)
         {
-            lock (_targetLock)
-                if (_loops.ContainsKey(key) || _owned.ContainsKey(key))
-                    continue;
+            if (_loops.ContainsKey(key) || _owned.ContainsKey(key))
+                continue;
             if (!_leads.Remove(key, out var held))
                 continue;
             var character = _native.Resolve(key.Actor, out _);

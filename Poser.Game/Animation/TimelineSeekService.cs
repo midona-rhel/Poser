@@ -25,8 +25,8 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     private readonly AnimationNativeState _native;
     private readonly TimelineSeekEngine _engine;
     private readonly Poser.Game.Services.IActorManager _actors;
-    // Written by the UI (draw callback), drained by the framework tick.
-    private readonly object _targetLock = new();
+    // Everything here runs on the game's main thread: the interface, the frame
+    // tick and every hook below. Nothing needs a lock.
     private readonly Dictionary<(ActorId Actor, int Slot), float> _targets = new();
     // Deferred work per (character address, slot); an address is only touched
     // while it is still one of Poser's actors this tick.
@@ -38,23 +38,24 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     private readonly Dictionary<(nint Character, int Weapon), nint> _propTimelines = new();
     private readonly HashSet<nint> _managed = new();
     private readonly Dictionary<nint, Restore> _restores = new();
-    // Armed loops: (actor, slot) → the timeline id the loop belongs to. Written by
-    // the UI, read by the tick (under _targetLock).
+    // Armed loops: (actor, slot) → the timeline id the loop belongs to.
     private readonly Dictionary<(ActorId Actor, int Slot), ushort> _loops = new();
-    // Layers Poser applied (under _targetLock) → the timeline id they play (0 until
+    // Ticks before a dropped loop may be played again (see ReplayDroppedLoops).
+    private readonly Dictionary<(ActorId Actor, int Slot), int> _replayWait = new();
+    // Layers Poser applied → the timeline id they play (0 until
     // the tick sees it live). The game ends them only at their end, never paused.
     private readonly Dictionary<(ActorId Actor, int Slot), ushort> _owned = new();
-    // Slots whose owned layer the game ended (under _targetLock): the layer's held
+    // Slots whose owned layer the game ended: the layer's held
     // speed and weight don't act on what plays there next.
     private readonly HashSet<(nint Character, int Slot)> _endedSlots = new();
     // An owned layer's length in seconds, as last read while it played.
     private readonly Dictionary<(ActorId Actor, int Slot), float> _ownedLengths = new();
     // The slot timeline whose pre-end notify lead (+0x26E) is switched off, and its value.
     private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, (nint Node, uint Id) Identity, short Original)> _leads = new();
-    // Layers let go of whose lead still needs its value back (under _targetLock).
+    // Layers let go of whose lead still needs its value back.
     private readonly List<(ActorId Actor, int Slot)> _leadRestores = new();
     // Scrub targets for a slot timeline still loading (a replayed layer), in seconds
-    // from its begin, with the tick they were asked on (under _targetLock).
+    // from its begin, with the tick they were asked on.
     private readonly Dictionary<(ActorId Actor, int Slot), (float Seconds, int Tick)> _pendingTargets = new();
     // Last remaining-frames reading per armed loop (its decrease is the loop's margin).
     private readonly Dictionary<(ActorId Actor, int Slot), (nint Root, float Value, float Clock)> _remaining = new();
@@ -241,15 +242,11 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
         if (TimelineState.Of(root).ClampedAtEnd)
         {
-            lock (_targetLock)
-                _controlTargets[(actor, (int)slot)] = seconds;
+            _controlTargets[(actor, (int)slot)] = seconds;
             return;
         }
-        lock (_targetLock)
-        {
-            _pendingTargets.Remove((actor, (int)slot));
-            _targets[(actor, (int)slot)] = TimelineState.Of(root).Begin + seconds * 30f;
-        }
+        _pendingTargets.Remove((actor, (int)slot));
+        _targets[(actor, (int)slot)] = TimelineState.Of(root).Begin + seconds * 30f;
     }
 
     // Scrub targets for clamped one-shots (mount idles), in control seconds.
@@ -257,13 +254,10 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     private void RunControlTargets()
     {
         KeyValuePair<(ActorId Actor, int Slot), float>[] targets;
-        lock (_targetLock)
-        {
-            if (_controlTargets.Count == 0)
-                return;
-            targets = _controlTargets.ToArray();
-            _controlTargets.Clear();
-        }
+        if (_controlTargets.Count == 0)
+            return;
+        targets = _controlTargets.ToArray();
+        _controlTargets.Clear();
         foreach (var (key, seconds) in targets)
         {
             var character = _native.Resolve(key.Actor, out _);
@@ -283,36 +277,29 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
         nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, (int)slot);
         if (!Available || root == 0 || TimelineState.Of(root).Loaded)
             return false;
-        lock (_targetLock)
-            _pendingTargets[(actor, (int)slot)] = (seconds, _tick);
+        _pendingTargets[(actor, (int)slot)] = (seconds, _tick);
         return true;
     }
 
     private void PromotePendingTargets()
     {
         KeyValuePair<(ActorId Actor, int Slot), (float Seconds, int Tick)>[] pending;
-        lock (_targetLock)
-        {
-            if (_pendingTargets.Count == 0)
-                return;
-            pending = _pendingTargets.ToArray();
-        }
+        if (_pendingTargets.Count == 0)
+            return;
+        pending = _pendingTargets.ToArray();
         foreach (var (key, target) in pending)
         {
             var character = _native.Resolve(key.Actor, out _);
             bool ready = character != null && Supports(character, key.Slot);
             if (!ready && character != null && _tick - target.Tick < 300)
                 continue;
-            lock (_targetLock)
+            if (!_pendingTargets.TryGetValue(key, out var current) || current != target)
+                continue;
+            _pendingTargets.Remove(key);
+            if (ready)
             {
-                if (!_pendingTargets.TryGetValue(key, out var current) || current != target)
-                    continue;
-                _pendingTargets.Remove(key);
-                if (ready)
-                {
-                    nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot);
-                    _targets[key] = TimelineState.Of(root).Begin + target.Seconds * 30f;
-                }
+                nint root = AnimationNativeState.SlotTimeline(&character->Timeline.TimelineSequencer, key.Slot);
+                _targets[key] = TimelineState.Of(root).Begin + target.Seconds * 30f;
             }
         }
     }
@@ -327,8 +314,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
         // Clamped at its end: the control's own seconds are the target.
         if (TimelineState.Of(root).ClampedAtEnd)
         {
-            lock (_targetLock)
-                _controlTargets[key] = seconds;
+            _controlTargets[key] = seconds;
             return;
         }
         // Measured once per slot timeline, before this service has synced it: the
@@ -338,8 +324,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
             || mapping.Identity != TimelineState.Of(root).Identity)
             mapping = (root, TimelineState.Of(root).Identity, TimelineState.Of(root).Clock - controlLocalTime * 30f);
         _offsets[key] = mapping;
-        lock (_targetLock)
-            _targets[key] = seconds * 30f + mapping.Offset;
+        _targets[key] = seconds * 30f + mapping.Offset;
     }
 
     private void OnUpdate(IFramework framework)
@@ -361,15 +346,13 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
             ReleaseActorSpeeds();
 
             KeyValuePair<(ActorId, int), float>[] targets;
-            lock (_targetLock)
-            {
-                targets = new KeyValuePair<(ActorId, int), float>[_targets.Count];
-                ((ICollection<KeyValuePair<(ActorId, int), float>>)_targets).CopyTo(targets, 0);
-                _targets.Clear();
-            }
+            targets = new KeyValuePair<(ActorId, int), float>[_targets.Count];
+            ((ICollection<KeyValuePair<(ActorId, int), float>>)_targets).CopyTo(targets, 0);
+            _targets.Clear();
             foreach (var (key, target) in targets)
                 RunSeek(key, target);
             PumpLoops(targets);
+            ReplayDroppedLoops();
 
             List<(nint, int)>? done = null;
             foreach (var (key, work) in _work)
@@ -390,8 +373,7 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
         catch (Exception ex)
         {
             _log.Error($"[TimelineSeek] tick faulted: {ex}");
-            lock (_targetLock)
-                _targets.Clear();
+            _targets.Clear();
             _work.Clear();
             _restores.Clear();
         }
@@ -445,17 +427,14 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
         _weaponSpeedHook?.Dispose();
         _applyRequestsHook?.Dispose();
         _fadeMaskHook?.Dispose();
-        lock (_targetLock)
-        {
-            _targets.Clear();
-            foreach (var key in _loops.Keys)
-                _leadRestores.Add(key);
-            foreach (var key in _owned.Keys)
-                _leadRestores.Add(key);
-            _loops.Clear();
-            _owned.Clear();
-            _endedSlots.Clear();
-        }
+        _targets.Clear();
+        foreach (var key in _loops.Keys)
+            _leadRestores.Add(key);
+        foreach (var key in _owned.Keys)
+            _leadRestores.Add(key);
+        _loops.Clear();
+        _owned.Clear();
+        _endedSlots.Clear();
         // Best effort: unload may not run on the framework thread.
         try { RestoreLeads(); } catch { }
         _work.Clear();
