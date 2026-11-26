@@ -197,9 +197,6 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        if (!float.IsFinite(speed))
-            return Outcome.Fail("Speed must be a finite number.");
-
         var enforcement = EnforcementFor(actor);
         enforcement.OverallSpeed = speed;
         SyncEnforcementIndex();
@@ -333,9 +330,6 @@ public sealed unsafe class AnimationSpeedRuntimePort : IAnimationSpeedPort, IDis
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        if (!float.IsFinite(speed))
-            return Outcome.Fail("Speed must be a finite number.");
-
         var enforcement = EnforcementFor(actor);
         enforcement.SlotSpeeds[(int)slot] = speed;
         SyncEnforcementIndex();

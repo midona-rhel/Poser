@@ -78,7 +78,6 @@ internal sealed class PhysicsFreezePatcher : IDisposable
     private readonly nint _address;
     private byte[] _original1 = [];
     private byte[] _original2 = [];
-    private bool _disposed;
 
     public bool IsAvailable { get; }
 
@@ -138,8 +137,6 @@ internal sealed class PhysicsFreezePatcher : IDisposable
 
     public Outcome SetFrozen(bool frozen)
     {
-        if (_disposed)
-            return Outcome.Fail("Physics freeze patcher is disposed.");
         if (!IsAvailable)
             return Outcome.Fail(
                 $"Physics freeze is unavailable: {UnavailableDetail}");
@@ -209,8 +206,6 @@ internal sealed class PhysicsFreezePatcher : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
         if (IsFrozen)
         {
             // The global code patch is this class's own and must come back
@@ -221,6 +216,5 @@ internal sealed class PhysicsFreezePatcher : IDisposable
                 _log.Error(
                     $"PhysicsFreezePatcher: failed to restore the physics patch on dispose: {result.Detail}");
         }
-        _disposed = true;
     }
 }
