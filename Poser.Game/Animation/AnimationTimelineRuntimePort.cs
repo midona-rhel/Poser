@@ -33,7 +33,9 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
         _log = log;
         _native = native;
         _scene = scene;
+#if DEBUG
         _framework.Update += OnFrameworkUpdate;
+#endif
     }
 
     /// <summary>False for every actor while animation control is off (a game
@@ -103,13 +105,9 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
             token);
     }
 
-    private void OnFrameworkUpdate(IFramework framework)
-    {
-        EnforceLoops(framework);
 #if DEBUG
-        _native.ProbeTick();
+    private void OnFrameworkUpdate(IFramework framework) => _native.ProbeTick();
 #endif
-    }
 
     // ── Base, blend, loop ─────────────────────────────────────────────
 
@@ -231,93 +229,32 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
 
     // ── Loops ───────────────────────────────────────────
 
-    /// <summary>One armed loop. The cooldown keeps the frame or two of
-    /// play transition from re-firing the play every tick.</summary>
-    private sealed class LoopArm
-    {
-        public ushort Timeline;
-        public int Cooldown;
-    }
-
-    private const int LoopCooldownTicks = 15;
-    private readonly Dictionary<ActorId, Dictionary<int, LoopArm>> _loops = new();
-
     public bool LoopsSuspended
     {
-        get => _loopsSuspended;
-        set
-        {
-            _loopsSuspended = value;
-            _seek.LoopsSuspended = value;
-        }
+        get => _seek.LoopsSuspended;
+        set => _seek.LoopsSuspended = value;
     }
-    private bool _loopsSuspended;
 
     public Outcome SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
             return Outcome.Fail(detail!);
-        if (!_loops.TryGetValue(actor, out var slots))
-            _loops[actor] = slots = new Dictionary<int, LoopArm>();
-        slots[(int)slot] = new LoopArm { Timeline = timeline, Cooldown = LoopCooldownTicks };
-        // The seek service wraps the layer before it ends. EnforceLoops restarts it
-        // if wrapping misses the end or the layer cannot be seeked.
+        // The seek service wraps the layer before it ends, and plays it again if
+        // wrapping misses the end or the layer cannot be seeked.
         _seek.SetLoop(actor, slot, timeline);
         return Outcome.Ok();
     }
 
-    public void ClearSlotLoop(ActorId actor, AnimationSlot slot)
-    {
+    public void ClearSlotLoop(ActorId actor, AnimationSlot slot) =>
         _seek.ClearLoop(actor, slot);
-        if (_loops.TryGetValue(actor, out var slots))
-        {
-            slots.Remove((int)slot);
-            if (slots.Count == 0)
-                _loops.Remove(actor);
-        }
-    }
 
     public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned) =>
         _seek.SetOwned(actor, slot, owned);
 
     public event Action<ActorId, AnimationSlot, float>? LayerEnded;
 
-    public void ClearLoops(ActorId actor)
-    {
-        _loops.Remove(actor);
-        _seek.ClearLoops(actor);
-    }
-
-    /// <summary>Restarts a loop when the slot no longer contains the requested timeline.</summary>
-    private void EnforceLoops(IFramework framework)
-    {
-        if (LoopsSuspended || _loops.Count == 0)
-            return;
-        foreach (var (actor, slots) in _loops)
-        {
-            var character = _native.Resolve(actor, out _);
-            if (character == null)
-                continue;
-            foreach (var (slot, arm) in slots)
-            {
-                if (arm.Cooldown > 0)
-                {
-                    arm.Cooldown--;
-                    continue;
-                }
-                if (character->Timeline.TimelineSequencer.TimelineIds[slot] != arm.Timeline)
-                {
-                    var replayed = _native.PlayTimeline(character, arm.Timeline);
-                    if (!replayed.Success)
-                        _log.Warning(
-                            $"Animation: slot loop replay failed actor={actor} slot={slot} " +
-                            $"timeline={arm.Timeline}: {replayed.Detail}");
-                    arm.Cooldown = LoopCooldownTicks;
-                }
-            }
-        }
-    }
+    public void ClearLoops(ActorId actor) => _seek.ClearLoops(actor);
 
     /// <summary>
     /// Full body repeat is the game's own: BaseOverride names the row, so the base-idle
@@ -355,9 +292,8 @@ public sealed unsafe class AnimationTimelineRuntimePort : IAnimationTimelinePort
 
     public void Dispose()
     {
-        _framework.Update -= OnFrameworkUpdate;
-        _loops.Clear();
 #if DEBUG
+        _framework.Update -= OnFrameworkUpdate;
         _native.DisposeProbeHooks();
 #endif
         GC.SuppressFinalize(this);
