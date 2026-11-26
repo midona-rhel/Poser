@@ -30,7 +30,7 @@ public sealed class WorldObjectService : IDisposable
     private readonly VfxLifecycleOwner _vfx;
     private readonly VfxPlaybackControl _vfxPlayback;
     private readonly SceneryAnimationHold _animation;
-    private readonly WorldObjectRespawner _respawner;
+    private readonly WorldObjectSpawner _respawner;
     private readonly FurnitureLoadTracker _loadingFurniture;
     private readonly WorldObjectRestorer _restorer;
     private readonly List<AdoptedWorldObject> _adopted = new();
@@ -52,7 +52,7 @@ public sealed class WorldObjectService : IDisposable
         _vfx = new VfxLifecycleOwner(port);
         _vfxPlayback = new VfxPlaybackControl(port, log);
         _animation = new SceneryAnimationHold(port);
-        _respawner = new WorldObjectRespawner(port, events, log,
+        _respawner = new WorldObjectSpawner(port, events, log,
             IsHandleCurrent, handle => _pendingStains.Remove(handle));
         _loadingFurniture = new FurnitureLoadTracker(port, log,
             _adopted.Contains, Release);
