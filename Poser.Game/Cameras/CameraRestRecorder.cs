@@ -18,14 +18,14 @@ namespace Poser.Game.Cameras;
 /// camera edits (a slider being dragged, a gesture), undo and redo re-base the
 /// resting framing instead, so nothing is recorded twice. So does anything the
 /// camera does in the half second after a step, because the game camera follows
-/// an actor and turns when that actor sits down.
+/// an actor and rotates when that actor sits down.
 /// </summary>
 public sealed class CameraRestRecorder : IDisposable
 {
     public const long RestMilliseconds = 5000;
 
     /// <summary>How long after a step the camera's changes belong to that step.
-    /// The game camera follows an actor, so an actor sitting down turns it a
+    /// The game camera follows an actor, so an actor sitting down rotates it a
     /// little in the frame after the emote starts.</summary>
     private const long SettleMilliseconds = 500;
 
@@ -153,7 +153,7 @@ public sealed class CameraRestRecorder : IDisposable
     }
 
     /// <summary>What the camera's own controls change: a free camera's place and
-    /// turn, the game camera's orbit, and for both roll and field of view.</summary>
+    /// rotation, the game camera's orbit, and for both roll and field of view.</summary>
     private readonly record struct Framing(
         CameraKind Kind, Vector3 Position, Vector3 Rotation, Vector3 PositionOffset,
         Vector2 Angle, Vector2 Pan, float Zoom, float Roll, float FoV)
