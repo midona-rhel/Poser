@@ -11,6 +11,7 @@ using Poser.Game.Posing;
 
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
+using Poser.Domain.Operations;
 using Poser.Domain.Posing;
 using Poser.Domain.Actors;
 using Poser.Documents.Files;
@@ -66,12 +67,12 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
     /// framework thread resolves this to a native appearance source.</summary>
     private ActorId? _requestedSourceId;
 
-    /// <summary>Why the standing request could not be shown, or null. A refused
-    /// import leaves the body exactly where the last successful stage left it,
-    /// so without this the surface shows a perfectly good render and says
-    /// nothing about the pose the user actually picked. Superseded by the next
-    /// statement. NOT a readiness channel — see <see cref="_skeletonWaitTicks"/>
-    /// — only a verdict about the file.</summary>
+    /// <summary>Why the picked pose file could not be shown, or null. A failed
+    /// import leaves the body where the last applied stage left it, so without
+    /// this text the preview would show a body and say nothing about the file.
+    /// It is set from the file import's final result and cleared when a new
+    /// pose is requested. It is not used to say the preview body is still
+    /// loading; see <see cref="_skeletonWaitTicks"/>.</summary>
     private volatile string? _refusalText;
 
     /// <summary>The standing request, in the order it must land: the first
@@ -624,22 +625,53 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
             ? sourceActor : null;
         _posing.CopyPreviewIk(_appliedStage == 0 && second != null ? null : ikSource, actor);
 
+        // Only the file stage's result is shown over the preview. The starting
+        // pose stage is the preview's own step: if it fails, the file is still
+        // shown, so its failure is only logged.
+        bool fileStage = request.Path is not null;
         var result = request.Pose is { } pose
-            ? _poses.ImportPose(previewId, pose, request.Options, "Preview pose")
+            ? _poses.ImportPose(previewId, pose, request.Options, "Preview pose",
+                fileStage ? ShowResultOf(serial, previewId) : null)
             : PoseEditResult.Fail(request.ReadFailure ?? "The pose file could not be read.");
         if (!result.Success)
+        {
             _log.Debug(
                 $"Pose preview could not show '{request.Key}': {result.Detail}");
-        // Only a FILE stage's verdict is the user's to read. The rebase
-        // baseline is this service's own machinery — the doc above already
-        // says a baseline that cannot be stood in still lets the file show —
-        // so its refusal stays a log line and never dresses the render in a
-        // reason about a pose the user never picked.
-        if (request.Path is not null)
-            _refusalText = result.Success
-                ? null
-                : result.Detail ?? "This pose could not be shown.";
+            if (fileStage)
+                _refusalText = result.Detail ?? "This pose could not be shown.";
+        }
         _appliedStage++;
+    }
+
+    /// <summary>
+    /// Shows the final result of the file stage's import: nothing over the
+    /// preview once it was applied, the reason when it was not. A receipt for
+    /// another actor, another import, or a request that has since been
+    /// replaced is ignored, so a late result never speaks for a newer pose.
+    /// </summary>
+    private Action<OperationReceipt> ShowResultOf(long serial, ActorId previewId)
+    {
+        Guid? operation = null;
+        return receipt =>
+        {
+            if (receipt.TargetActorId != previewId)
+                return;
+            if (receipt.State == OperationReceiptState.Pending)
+            {
+                operation = receipt.OperationId;
+                return;
+            }
+            if (operation != receipt.OperationId)
+                return;
+            lock (_gate)
+            {
+                if (serial != _requestSerial)
+                    return;
+                _refusalText = receipt.State == OperationReceiptState.Applied
+                    ? null
+                    : receipt.Detail ?? "This pose could not be shown.";
+            }
+        };
     }
 
     /// <summary>Writes the captured base position plus pan, avoiding accumulated
