@@ -26,16 +26,14 @@ public sealed class GPoseDepthOfFieldGuard : IDisposable
         _configuration = configuration;
         try
         {
-            if (!scanner.TryScanText(Poser.Game.Natives.NativeSignatures.EventIdleCamController_IsActive, out var idle)
-                || idle == 0)
+            if (!scanner.TryScanText(Poser.Game.Natives.NativeSignatures.EventIdleCamController_IsActive, out var idle))
             {
                 // Without this check, a forced idle-camera call cannot be distinguished from GPose entry.
                 log.Warning("GPose depth of field: the idle camera check was not found; GPose keeps turning it on at entry.");
                 return;
             }
             _idleCameraActive = System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<IdleCameraActiveDelegate>(idle);
-            if (scanner.TryScanText(Poser.Game.Natives.NativeSignatures.GPoseEnv_SetDepthOfField, out var address)
-                && address != 0)
+            if (scanner.TryScanText(Poser.Game.Natives.NativeSignatures.GPoseEnv_SetDepthOfField, out var address))
             {
                 _hook = hooking.HookFromAddress<SetDepthOfFieldDelegate>(address, SetDepthOfFieldDetour);
                 _hook.Enable();

@@ -56,11 +56,7 @@ public sealed partial class PropertiesContent
             {
                 actions.Button(
                     "Select bones",
-                    () =>
-                    {
-                        if (actor != null)
-                            OpenCameraBonePicker(cameraId, actor.Id);
-                    },
+                    () => OpenCameraBonePicker(cameraId, camera, actor!),
                     style: ControlStyle.Workspace with { Width = UiWidth.Fill },
                     disabled: locked || actor == null,
                     help: actor == null
@@ -113,13 +109,12 @@ public sealed partial class PropertiesContent
         _cameraTrackingBonePicker.Draw();
     }
 
+    /// <summary>Opens the bone list for the actor the camera follows. The
+    /// button is greyed out while the camera is locked or follows no one.</summary>
     private void OpenCameraBonePicker(
-        CameraId cameraId, ActorId actorId)
+        CameraId cameraId, CameraTargetReading camera, ActorDescriptor actor)
     {
-        if (_cameraTargets.Read(cameraId) is not { IsLocked: false } camera ||
-            camera.TrackingActor != actorId ||
-            _scene.Snapshot.FindActor(actorId) is not { } actor)
-            return;
+        var actorId = actor.Id;
         _cameraBonePickerCamera = cameraId;
         _cameraBonePickerActor = actorId;
         _cameraBoneChoices = BuildBoneChoices(actor);
@@ -135,26 +130,10 @@ public sealed partial class PropertiesContent
             choice => choice.Label,
             choice => choice.Key,
             TrackedBoneKeys(camera, actorId),
-            (choice, _) => ToggleCameraTrackedBone(
-                cameraId, actorId, choice),
+            (choice, _) => _cameraPane.ToggleTrackedBone(cameraId, choice.BoneId),
             options: in options);
     }
 
-    private void ToggleCameraTrackedBone(
-        CameraId cameraId,
-        ActorId actorId,
-        global::Poser.UI.BoneChoice choice)
-    {
-        var boneId = choice.BoneId;
-        if (boneId.Skeleton.Actor != actorId ||
-            _selection.Primary is not
-                { Kind: SceneEntityKind.Camera, Camera: { } selectedCamera }
-            || selectedCamera != cameraId ||
-            _cameraTargets.Read(cameraId) is not { IsLocked: false } current ||
-            current.TrackingActor != actorId)
-            return;
-        _cameraPane.ToggleTrackedBone(cameraId, boneId);
-    }
 
 
     private HashSet<string> TrackedBoneKeys(
