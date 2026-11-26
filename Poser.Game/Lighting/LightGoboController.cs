@@ -60,8 +60,6 @@ internal sealed unsafe class LightGoboController
 
     public bool ApplyGobo(Light typed, GoboEntry gobo)
     {
-        if (!AreGobosAvailable)
-            return false;
         if (!_framework.IsInFrameworkUpdateThread)
         {
             _log.Warning("LightingService: gobos must be applied on the framework thread");
@@ -82,7 +80,7 @@ internal sealed unsafe class LightGoboController
     /// refuses it, the light's previous gobo is put back and false is returned.</summary>
     public bool ApplyGoboPath(Light light, string path)
     {
-        if (!AreGobosAvailable || light.NativePtr == null)
+        if (!AreGobosAvailable)
             return false;
         var previous = light.GoboPath;
         if (SetTexture(light, path))

@@ -11,9 +11,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Lighting;
 
 /// <summary>
-/// The list of world lights Poser can take over: every light the game has made
-/// and not yet freed, apart from Poser's own lights and the GPose camera
-/// lights. Each light gets a generation number when it is listed, so a new
+/// The list of world lights: every light the game has made and not yet freed.
+/// Poser's own lights and the GPose camera lights can be on it too; the light
+/// service leaves those out when it offers lights to take over. Each light gets a generation number when it is listed, so a new
 /// light the game makes at the address of a freed one is never mistaken for
 /// the light that was taken over. A hook on the light constructor adds lights,
 /// a hook on the light destructor removes them, and a walk of the scene finds
@@ -35,7 +35,6 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     private readonly IGameInteropProvider _hooks;
     private readonly IWorldGraphPort _worldGraph;
     private readonly Func<bool> _disposed;
-    private readonly Action<nint, long> _nativeLightDied;
 
     private readonly Hook<LightCtorDelegate>? _lightCtorHook;
     private Hook<LightDtorDelegate>? _lightDtorHook;
@@ -52,8 +51,6 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     /// session, so an empty list doesn't cause a walk every frame.</summary>
     private bool _worldLightsSeeded;
 
-    /// <param name="nativeLightDied">Called on the next frame when the game
-    /// frees a listed light, with its address and generation.</param>
     public WorldLightCapture(
         ISigScanner sigScanner,
         IFramework framework,
@@ -62,8 +59,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
         IObjectTable objects,
         IGameInteropProvider hooks,
         IWorldGraphPort worldGraph,
-        Func<bool> disposed,
-        Action<nint, long> nativeLightDied)
+        Func<bool> disposed)
     {
         _framework = framework;
         _log = log;
@@ -72,11 +68,24 @@ internal sealed unsafe class WorldLightCapture : IDisposable
         _hooks = hooks;
         _worldGraph = worldGraph;
         _disposed = disposed;
-        _nativeLightDied = nativeLightDied;
 
-        _lightCtorHook = LightingService.TryHook<LightCtorDelegate>(_hooks, log,
-            LightingService.TryScan(sigScanner, log, "Light.ctor", LightCtorSignature),
-            LightCtorDetour, "could not hook Light.ctor, world lights can't be taken over");
+        var ctorAddress = LightingService.TryScan(sigScanner, log, "Light.ctor", LightCtorSignature);
+        if (ctorAddress is not { } ctor)
+            return;
+        // The field is set before the hook is turned on, because the detour
+        // reads it and the game can make a light at any moment. A hook that
+        // won't turn on is removed again.
+        try
+        {
+            _lightCtorHook = _hooks.HookFromAddress<LightCtorDelegate>(ctor, LightCtorDetour);
+            _lightCtorHook.Enable();
+        }
+        catch (Exception ex)
+        {
+            _lightCtorHook?.Dispose();
+            _lightCtorHook = null;
+            _log.Warning($"LightingService: could not hook Light.ctor, world lights can't be taken over: {ex.Message}");
+        }
     }
 
     public bool HasConstructorHook => _lightCtorHook != null;
@@ -145,31 +154,35 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     {
         if (_disposed() || _lightDtorHook != null)
             return;
-        _lightDtorHook = LightingService.TryHook<LightDtorDelegate>(_hooks, _log, address,
-            LightDtorDetour, "could not hook the light destructor, world lights can't be taken over");
+        // Set before it is turned on, as with the constructor hook above.
+        try
+        {
+            _lightDtorHook = _hooks.HookFromAddress<LightDtorDelegate>(address, LightDtorDetour);
+            _lightDtorHook.Enable();
+        }
+        catch (Exception ex)
+        {
+            _lightDtorHook?.Dispose();
+            _lightDtorHook = null;
+            _log.Warning($"LightingService: could not hook the light destructor, world lights can't be taken over: {ex.Message}");
+            return;
+        }
         // Lights made before this point were never listed; the next listing
         // walks the scene for them.
-        if (_lightDtorHook != null)
-            _worldLightsSeeded = false;
+        _worldLightsSeeded = false;
     }
 
     private nint LightDtorDetour(GameLight* light, bool free)
     {
-        var handle = (nint)light;
-        bool known;
-        long generation;
+        // A light Poser took over is given back on the next frame, when the
+        // light service sees that it is no longer on this list.
         lock (_worldGate)
-        {
-            generation = _worldLightGenerations.GetValueOrDefault(handle);
-            known = ForgetWorldLight(handle);
-        }
-        if (known && !_disposed())
-            _framework.RunOnTick(() => _nativeLightDied(handle, generation));
+            ForgetWorldLight((nint)light);
         return _lightDtorHook!.Original(light, free);
     }
 
     /// <summary>
-    /// Lists the lights in the scene that were made before the constructor
+    /// Lists the lights in the scene that were made before the destructor
     /// hook existed.
     /// </summary>
     public void SeedWorldLights()
@@ -181,16 +194,8 @@ internal sealed unsafe class WorldLightCapture : IDisposable
 
         _worldLightsSeeded = true;
 
-        IReadOnlyList<nint> found;
-        try
-        {
-            found = _worldGraph.EnumerateLights();
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: seeding the world lights failed: {ex}");
-            return;
-        }
+        // The walk catches its own failures and then returns nothing.
+        var found = _worldGraph.EnumerateLights();
 
         // A light may only be listed while the destructor hook runs. When no
         // light has been made since Poser loaded, the hook doesn't exist yet,
@@ -218,7 +223,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
         {
             foreach (var handle in found)
             {
-                if (handle != nint.Zero && _worldLights.Add(handle))
+                if (_worldLights.Add(handle))
                 {
                     _worldLightGenerations[handle] = ++_nextWorldLightGeneration;
                     added++;
@@ -234,7 +239,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     /// <summary>The listed lights that aren't taken over yet, nearest the
     /// player first. The caller has checked that lights work and that this
     /// runs on the frame update.</summary>
-    public IReadOnlyList<WorldLightCandidate> Candidates(Func<nint, bool> isCaptured)
+    public IReadOnlyList<WorldLightCandidate> Candidates(Func<nint, bool> isListed)
     {
         // Walks the scene when Poser was loaded while already in GPose, which
         // sends no "GPose started" event, and after the destructor hook was made.
@@ -256,7 +261,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
         var candidates = new List<WorldLightCandidate>(handles.Length);
         foreach (var handle in handles)
         {
-            if (isCaptured(handle))
+            if (isListed(handle))
                 continue;
             var native = (GameLight*)handle;
             if (native->LightRenderObject == null)

@@ -2,12 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Domain.Transforms;
-using System.Runtime.CompilerServices;
-using System.Text;
 using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
-using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using Poser.Domain.Scene;
 using Poser.Game.WorldObjects;
 using PoserTransform = Poser.Domain.Transforms.Transform;
@@ -81,7 +78,7 @@ public sealed unsafe class LightingService : ILightingService
         _goboControl = new LightGoboController(sigScanner, framework, log);
         _world = new WorldLightCapture(
             sigScanner, framework, log, camera, objects, hooks, worldGraph,
-            () => _disposed, OnNativeLightDied);
+            () => _disposed);
         _cameraLights = new GPoseCameraLights(
             sigScanner, hooks, log, gPose, events, _lights, _world, () => _disposed);
 
@@ -91,8 +88,8 @@ public sealed unsafe class LightingService : ILightingService
 
     public bool IsAvailable { get; }
 
-    /// <summary>False when the game's texture functions were not found;
-    /// lights still work.</summary>
+    /// <summary>False when the game's texture functions were not found or
+    /// Poser's gobo list is empty; lights still work.</summary>
     public bool AreGobosAvailable => _goboControl.AreGobosAvailable;
 
     public IReadOnlyList<ILight> Lights => _lights;
@@ -116,31 +113,6 @@ public sealed unsafe class LightingService : ILightingService
         log.Warning(
             $"LightingService: signature '{name}' not found ({patterns.Length} pattern(s) tried); the feature it backs is disabled.");
         return null;
-    }
-
-    /// <summary>Hooks a game function and turns the hook on. Returns null when
-    /// the function was not found or the hook would not turn on; a hook that
-    /// was made but would not turn on is removed again, so a hook that exists
-    /// is always one that runs.</summary>
-    internal static Hook<T>? TryHook<T>(
-        IGameInteropProvider hooks, IPluginLog log, nint? address, T detour, string unavailable)
-        where T : Delegate
-    {
-        if (address is not { } at)
-            return null;
-        Hook<T>? hook = null;
-        try
-        {
-            hook = hooks.HookFromAddress(at, detour);
-            hook.Enable();
-            return hook;
-        }
-        catch (Exception ex)
-        {
-            hook?.Dispose();
-            log.Warning($"LightingService: {unavailable}: {ex.Message}");
-            return null;
-        }
     }
 
     public ILight? SpawnLight(LightKind kind)
@@ -444,37 +416,13 @@ public sealed unsafe class LightingService : ILightingService
 
     #region Overworld capture
 
-    /// <summary>The game freed a world light Poser took over. Poser's
-    /// replacement is freed too; the game's light is not touched, because its
-    /// generation no longer matches. Camera lights and Poser's own lights are
-    /// never on the world list, so they never come here.</summary>
-    private void OnNativeLightDied(nint handle, long generation)
-    {
-        if (_disposed)
-            return;
-
-        var changed = false;
-        foreach (var light in _lights.ToArray())
-        {
-            if (light.Ownership != LightOwnership.World ||
-                light.WorldAddress != handle || light.WorldGeneration != generation)
-                continue;
-            _lights.Remove(light);
-            ReleaseInternal(light);
-            changed = true;
-        }
-
-        if (changed)
-            _events.Publish(new LightListChangedEvent());
-    }
-
     public IReadOnlyList<WorldLightCandidate> GetWorldLightCandidates()
     {
         if (!IsAvailable || !_world.HasConstructorHook || !_gPose.IsGPosing)
             return Array.Empty<WorldLightCandidate>();
         if (!_framework.IsInFrameworkUpdateThread)
             return Array.Empty<WorldLightCandidate>();
-        return _world.Candidates(IsCaptured);
+        return _world.Candidates(IsListed);
     }
 
     public WorldLightCandidate? GetWorldSource(ILight light) =>
@@ -493,14 +441,14 @@ public sealed unsafe class LightingService : ILightingService
             _log.Warning("LightingService: that world light no longer exists");
             return null;
         }
-        if (IsCaptured(candidate.Handle))
+        if (IsListed(candidate.Handle))
         {
-            _log.Warning("LightingService: that world light is already captured");
+            _log.Warning("LightingService: that light is already in the light list");
             return null;
         }
 
         var original = (GameLight*)candidate.Handle;
-        if (original == null || original->LightRenderObject == null)
+        if (original->LightRenderObject == null)
             return null;
 
         BorrowedLightState? state = null;
@@ -546,12 +494,17 @@ public sealed unsafe class LightingService : ILightingService
         }
     }
 
-    private bool IsCaptured(nint handle)
+    /// <summary>Whether a game light is already in Poser's light list: taken
+    /// over, made by Poser or a GPose camera light. The world-light list can
+    /// hold all three after a second scene walk, so these are left out when
+    /// lights are offered to take over.</summary>
+    private bool IsListed(nint handle)
     {
         foreach (var light in _lights)
         {
-            if (light.Ownership == LightOwnership.World &&
-                light.WorldAddress == handle && light.IsValid)
+            if (!light.IsValid)
+                continue;
+            if (light.Ownership == LightOwnership.World ? light.WorldAddress == handle : (nint)light.NativePtr == handle)
                 return true;
         }
         return false;

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
-using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using Poser.Domain.Scene;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
@@ -31,6 +30,7 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
     private readonly WorldLightCapture _world;
     private readonly Func<bool> _disposed;
     private readonly Hook<ToggleGPoseLightDelegate>? _toggleGPoseLightHook;
+    private readonly IPluginLog _log;
     private DateTime _nextGPosePollUtc = DateTime.MinValue;
 
     /// <param name="lights">The light service's own list; camera lights are
@@ -50,12 +50,24 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
         _lights = lights;
         _world = world;
         _disposed = disposed;
+        _log = log;
 
         // Without the hook, the poll below still finds a toggled light within
-        // a second.
-        _toggleGPoseLightHook = LightingService.TryHook<ToggleGPoseLightDelegate>(hooks, log,
-            LightingService.TryScan(sigScanner, log, "GPose light toggle", ToggleGPoseLightSignature),
-            ToggleGPoseLightDetour, "could not hook the GPose light toggle");
+        // a second. The field is set before the hook is turned on, because
+        // the detour reads it; a hook that won't turn on is removed again.
+        if (LightingService.TryScan(sigScanner, log, "GPose light toggle", ToggleGPoseLightSignature) is not { } toggle)
+            return;
+        try
+        {
+            _toggleGPoseLightHook = hooks.HookFromAddress<ToggleGPoseLightDelegate>(toggle, ToggleGPoseLightDetour);
+            _toggleGPoseLightHook.Enable();
+        }
+        catch (Exception ex)
+        {
+            _toggleGPoseLightHook?.Dispose();
+            _toggleGPoseLightHook = null;
+            _log.Warning($"LightingService: could not hook the GPose light toggle: {ex.Message}");
+        }
     }
 
     private static GPoseLightController* GetGPoseController() =>
@@ -106,8 +118,14 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
             // can't be taken over.
             _world.Forget((nint)native);
 
+            // The light counts as valid only while its slot still holds it, so
+            // a light the game freed is never used, even before the next poll.
+            var address = (nint)native;
+            var index = slot;
             _lights.Add(new Light(
-                native, $"Camera Light {slot + 1}", LightOwnership.GPose)
+                native, $"Camera Light {slot + 1}", LightOwnership.GPose,
+                () => GetGPoseController() is var current && current != null
+                    && (nint)current->GetLight(index) == address)
             {
                 GPoseSlot = (int)slot,
             });
