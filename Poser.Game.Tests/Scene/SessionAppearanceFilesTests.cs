@@ -64,7 +64,7 @@ public sealed class SessionAppearanceFilesTests
         try
         {
             var child = new TaskCompletionSource();
-            SceneAppearanceFiles.DeleteWhenSettled(path, child.Task);
+            SceneAppearance.DeleteWhenSettled(path, child.Task);
             await Task.Delay(50);
             Assert.True(File.Exists(path));
 

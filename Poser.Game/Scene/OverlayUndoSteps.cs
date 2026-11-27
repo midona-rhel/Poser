@@ -64,8 +64,8 @@ internal sealed class OverlayLifecycleSlot
     public bool HasDocument;
 }
 
-/// <summary>Owns overlay-node lifecycle entries, including the one-entry
-/// collider group a body-collider capture creates.</summary>
+/// <summary>Records adding and removing overlays as undo steps, including
+/// the group a body-collider capture makes as one step.</summary>
 internal sealed class OverlayUndoSteps
 {
     private readonly EditHistory _history;
@@ -186,8 +186,8 @@ internal sealed class OverlayUndoSteps
             () =>
             {
                 if (!RestoreOverlays(slots)) return false;
-                // Lifecycle owners publish replacement identities before the shared
-                // group restore remaps both membership and the retained creation frame.
+                // The overlays come back under new ids first, so the group
+                // restore can point its members and creation frame at them.
                 groupSteps.Restore(after);
                 return true;
             }));

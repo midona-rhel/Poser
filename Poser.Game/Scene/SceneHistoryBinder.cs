@@ -13,7 +13,7 @@ namespace Poser.Game.Scene;
 /// replacement entity, later history operations resolve the replacement
 /// through the same binding.
 /// </summary>
-internal sealed class LoadedEntityAliases(
+internal sealed class SceneHistoryBinder(
     SceneRuntimeHandles handles,
     StableBindingRegistry bindings,
     IEntityHistoryBinding<IActor> actors,

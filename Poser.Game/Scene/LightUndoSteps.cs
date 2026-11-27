@@ -20,9 +20,9 @@ internal sealed class LightLifecycleSlot
     public SelectionId? LastIdentity;
 }
 
-/// <summary>Owns light lifecycle capture, removal, restoration, and identity
-/// rebinding. Historical wrappers alias the slot so property edits continue
-/// to target its current light after undo restores a new wrapper.</summary>
+/// <summary>Records adding and removing lights as undo steps. When undo
+/// brings a light back as a new object, older undo steps for its settings are
+/// pointed at the new one.</summary>
 internal sealed class LightUndoSteps
 {
     private readonly EditHistory _history;

@@ -12,8 +12,8 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
-/// <summary>What a world-object lifecycle entry has to put back. Captured at
-/// removal time so redo restores the last authored state.</summary>
+/// <summary>What an undo step for a world object has to put back. Read when
+/// the object is released, so redo puts back its last edited state.</summary>
 internal readonly record struct WorldObjectState(
     nint Address,
     string Path,
@@ -36,7 +36,7 @@ internal readonly record struct WorldObjectState(
 }
 
 /// <summary>The operations required to release and restore world objects.</summary>
-internal interface IWorldObjectRemoveRestore
+internal interface IWorldObjectReleaseRestore
 {
     IReadOnlyList<object> WorldObjects { get; }
     object? Adopt(nint address);
@@ -49,7 +49,7 @@ internal interface IWorldObjectRemoveRestore
     void Apply(object worldObject, WorldObjectState state);
 }
 
-internal sealed class WorldObjectRemoveRestore(WorldObjectService worldObjects) : IWorldObjectRemoveRestore
+internal sealed class WorldObjectReleaseRestore(WorldObjectService worldObjects) : IWorldObjectReleaseRestore
 {
     public IReadOnlyList<object> WorldObjects => worldObjects.Adopted;
 
@@ -115,8 +115,9 @@ internal sealed class WorldObjectRemoveRestore(WorldObjectService worldObjects) 
     }
 }
 
-/// <summary>Owns world-object identity slots, authored state, and the exact
-/// lifecycle entries built from confirmed native release results.</summary>
+/// <summary>Records taking and releasing world objects as undo steps, with
+/// each object's edited state. A step is recorded only once the game has
+/// confirmed the release.</summary>
 internal sealed class WorldObjectUndoSteps
 {
     private sealed class Slot
@@ -153,13 +154,13 @@ internal sealed class WorldObjectUndoSteps
     }
 
     private readonly EditHistory _history;
-    private readonly IWorldObjectRemoveRestore _worldObjects;
+    private readonly IWorldObjectReleaseRestore _worldObjects;
     private readonly Func<object, TransformTargetId?>? _target;
     private readonly LifecycleSlotOwner<object, Slot> _slots;
 
     public WorldObjectUndoSteps(
         EditHistory history,
-        IWorldObjectRemoveRestore worldObjects,
+        IWorldObjectReleaseRestore worldObjects,
         Func<object, TransformTargetId?>? target = null)
     {
         _history = history;

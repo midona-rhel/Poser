@@ -30,7 +30,7 @@ internal enum StartStage
     CameraWorkspace,
     ParentingFrames,
     SceneAutoSave,
-    SceneLifecycle,
+    SceneRefreshAndCleanup,
     TargetSync,
     MouseTarget,
     CharacterFiles,

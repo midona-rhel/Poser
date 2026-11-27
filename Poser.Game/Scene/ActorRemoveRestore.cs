@@ -12,8 +12,9 @@ namespace Poser.Game.Scene;
 
 /// <summary>
 /// Creates and removes actors through the spawn service, and waits for their
-/// bodies and skeletons before restoring pose and placement. Internal pose
-/// imports suppress history because the lifecycle operation owns the entry.
+/// bodies and skeletons before restoring pose and placement. Its pose
+/// imports add no undo step, because the add or remove they belong to is the
+/// undo step.
 /// </summary>
 internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
 {
@@ -134,7 +135,7 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
             // Naming needs a scene identity, not a drawn or posable skeleton.
             _framework.RunOnTick(() => WhenNameBound(actor, apply, attempts - 1), delayTicks: 1);
         else
-            _log.Warning($"SceneLifecycleHistory: '{actor.Name}' never bound, so its display name was not applied.");
+            _log.Warning($"Actor undo: '{actor.Name}' never bound, so its display name was not applied.");
     }
 
     public bool IsSpawned(object actor) => _spawns.IsSpawnedActor((IActor)actor);
@@ -376,7 +377,7 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
         if (attempts <= 0)
         {
             _log.Warning(
-                $"SceneLifecycleHistory: '{actor.Name}' never became posable, so a follow-up on it did not run.");
+                $"Actor undo: '{actor.Name}' never became posable, so a follow-up on it did not run.");
             return;
         }
         try
@@ -397,14 +398,14 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
                 catch (Exception ex)
                 {
                     _log.Warning(
-                        $"SceneLifecycleHistory: a follow-up on '{actor.Name}' failed: {ex.Message}");
+                        $"Actor undo: a follow-up on '{actor.Name}' failed: {ex.Message}");
                 }
             }, delayTicks: 1);
         }
         catch (Exception ex)
         {
             _log.Warning(
-                $"SceneLifecycleHistory: '{actor.Name}' follow-up could not be scheduled: {ex.Message}");
+                $"Actor undo: '{actor.Name}' follow-up could not be scheduled: {ex.Message}");
         }
     }
 
@@ -413,7 +414,7 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
         if (attempts <= 0)
         {
             _log.Warning(
-                $"SceneLifecycleHistory: '{actor.Name}' came back but never became posable, so its pose and placement were not restored.");
+                $"Actor undo: '{actor.Name}' came back but never became posable, so its pose and placement were not restored.");
             return;
         }
         try
@@ -429,14 +430,14 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
                 catch (Exception ex)
                 {
                     _log.Warning(
-                        $"SceneLifecycleHistory: '{actor.Name}' came back but its restore failed: {ex.Message}");
+                        $"Actor undo: '{actor.Name}' came back but its restore failed: {ex.Message}");
                 }
             }, delayTicks: delayTicks);
         }
         catch (Exception ex)
         {
             _log.Warning(
-                $"SceneLifecycleHistory: '{actor.Name}' restore could not be scheduled: {ex.Message}");
+                $"Actor undo: '{actor.Name}' restore could not be scheduled: {ex.Message}");
         }
     }
 
@@ -462,7 +463,7 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
 
         if (!_posing.SetTransformOverride(actor, state.Placement))
             _log.Warning(
-                $"SceneLifecycleHistory: '{actor.Name}' came back but its placement was refused by the transform owner.");
+                $"Actor undo: '{actor.Name}' came back but its placement was refused by the transform owner.");
 
         if (state.Runtime is { } runtime)
         {
@@ -524,6 +525,6 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
                 $"Restore pose for {actor.Name}", onReceipt: OnReceipt);
         if (!restored.Success)
             _log.Warning(
-                $"SceneLifecycleHistory: '{actor.Name}' came back but its pose was refused: {restored.Detail}");
+                $"Actor undo: '{actor.Name}' came back but its pose was refused: {restored.Detail}");
     }
 }

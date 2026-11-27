@@ -33,7 +33,7 @@ internal sealed class SceneEntityLoader
     private static readonly TimeSpan WorldObjectPollInterval = TimeSpan.FromMilliseconds(50);
 
     private readonly SceneRuntimeHandles _handles;
-    private readonly LoadedEntityAliases _history;
+    private readonly SceneHistoryBinder _history;
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly IActorSpawnService _spawns;
@@ -61,7 +61,7 @@ internal sealed class SceneEntityLoader
 
     public SceneEntityLoader(
         SceneRuntimeHandles handles,
-        LoadedEntityAliases history,
+        SceneHistoryBinder history,
         IFramework framework,
         StableBindingRegistry bindings,
         IActorSpawnService spawns,

@@ -110,7 +110,7 @@ internal sealed partial class ActorRemoveRestore
         Func<bool>? current)
     {
         if (actor.Address == 0 || current?.Invoke() == false) return;
-        if (attempts <= 0) { Note($"'{actor.Name}': lifecycle restore never became ready."); return; }
+        if (attempts <= 0) { Note($"'{actor.Name}': its undo never became ready."); return; }
         var runtime = state.Runtime!;
         void Next() => _framework.RunOnTick(
             () => PrepareRuntime(actor, state, attempts - 1, current), delayTicks: 1);
@@ -155,7 +155,7 @@ internal sealed partial class ActorRemoveRestore
                         delayTicks: state.RestoresPaused ? 4 : 1);
                 });
             }
-            catch (Exception ex) { Note($"Lifecycle appearance restore failed: {ex.Message}"); }
+            catch (Exception ex) { Note($"Putting the appearance back failed: {ex.Message}"); }
         }
     }
 

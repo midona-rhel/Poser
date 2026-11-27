@@ -21,7 +21,7 @@ internal sealed class SceneLoadReplay(SceneOperation current)
 /// recorded and cannot be undone by this step.
 /// </summary>
 internal sealed class SceneLoadHistory(
-    EditHistory history, SceneLoadState sceneState, LoadedEntityAliases historyBinder,
+    EditHistory history, GPoseSceneState sceneState, SceneHistoryBinder historyBinder,
     SceneLoadRollback rollback,
     SceneWorkflow workflow)
 {

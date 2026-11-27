@@ -59,7 +59,7 @@ internal sealed class SceneOperation : SingleFlightOperation
     /// <summary>Checked at the top of every framework-thread action before
     /// its mutations. A replaced session generation is an invalidation: the
     /// token that admitted this operation no longer exists.</summary>
-    public string? Guard(SceneLoadState sceneState, CancellationToken cancellation)
+    public string? Guard(GPoseSceneState sceneState, CancellationToken cancellation)
     {
         if (Invalidated || cancellation.IsCancellationRequested)
             return Kind == SceneOperationKind.Save

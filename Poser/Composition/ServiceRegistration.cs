@@ -519,7 +519,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<SceneRefreshAndCleanup>();
-        services.AddStartable<SceneRefreshAndCleanup>(StartStage.SceneLifecycle);
+        services.AddStartable<SceneRefreshAndCleanup>(StartStage.SceneRefreshAndCleanup);
         services.AddSingleton<Game.Scene.PlacementAnchorSource>();
         services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
         services.AddSingleton<TargetSyncService>();

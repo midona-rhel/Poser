@@ -152,7 +152,7 @@ public sealed class SceneRefreshAndCleanup : IDisposable
             {
                 // Dalamud disposes plugins on the framework thread; run
                 // inline — no waiting, no queue.
-                ResetOwnedState("Scene lifecycle disposed.");
+                ResetOwnedState("Poser is shutting down.");
             }
             else
             {
@@ -169,7 +169,7 @@ public sealed class SceneRefreshAndCleanup : IDisposable
                     {
                         if (_disposeRestoreAbandoned)
                             return;
-                        ResetOwnedState("Scene lifecycle disposed.");
+                        ResetOwnedState("Poser is shutting down.");
                     }
                 });
                 if (!task.Wait(TimeSpan.FromSeconds(2)))

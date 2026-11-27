@@ -645,7 +645,7 @@ public sealed class SceneLifecycleHistoryTests
 
     /// <summary>Keeps map objects separate from adopted handles so release can
     /// restore their original placement and later adoption can find them again.</summary>
-    private sealed class FakeWorldObjects : IWorldObjectRemoveRestore
+    private sealed class FakeWorldObjects : IWorldObjectReleaseRestore
     {
         private readonly Dictionary<nint, Transform> _map = new();
         private readonly Dictionary<nint, WorldObjectIncarnation> _identities = new();
