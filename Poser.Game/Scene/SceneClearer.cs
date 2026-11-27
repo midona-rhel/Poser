@@ -37,7 +37,7 @@ internal sealed class SceneClearer(
     ILightingService lighting,
     IVirtualCameraService cameras,
     WorldObjects.WorldBorrowing worldObjects,
-    Poser.Application.Selection.SelectionSession selection)
+    Poser.Application.Selection.CurrentSelection selection)
 {
     /// <summary>
     /// Removes session entities and reports refused actor removals or cleanup.

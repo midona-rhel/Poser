@@ -20,7 +20,7 @@ public sealed class GroupTransformRoutingTests
     public void Moving_several_things_moves_them_as_a_group_and_records_the_group_values()
     {
         const TransformOperation operation = TransformOperation.Translate;
-        var selection = new SelectionSession();
+        var selection = new CurrentSelection();
         var scene = new SceneSession(selection);
         var actor = ActorId.New();
         var other = ActorId.New();

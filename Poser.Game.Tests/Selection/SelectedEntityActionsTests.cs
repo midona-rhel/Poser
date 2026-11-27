@@ -87,7 +87,7 @@ public sealed class SelectedEntityActionsTests
     {
         public readonly LightId Light = LightId.New();
         public SelectionId Id => SelectionId.ForLight(Light);
-        public readonly SceneSession Scene = new(new SelectionSession());
+        public readonly SceneSession Scene = new(new CurrentSelection());
         public readonly SceneGroups Groups = new();
         public readonly EditHistory History = new();
         public readonly FakeBorrowRelease Release = new();

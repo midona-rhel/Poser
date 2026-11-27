@@ -33,12 +33,12 @@ public enum ShellWorkspace
 /// </summary>
 public sealed class ShellWorkspaceSelection : IDisposable
 {
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly Action<IReadOnlyList<SelectionId>> _selectionChanged;
     private ShellWorkspace _workspace = ShellWorkspace.Entity;
     private bool _disposed;
 
-    public ShellWorkspaceSelection(SelectionSession selection)
+    public ShellWorkspaceSelection(CurrentSelection selection)
     {
         ArgumentNullException.ThrowIfNull(selection);
         _selection = selection;

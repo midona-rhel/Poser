@@ -46,7 +46,7 @@ internal enum GizmoTargetType
 /// bones, lights, props and world objects, and turns drags on it into edits.</summary>
 public class GizmoOverlayWindow : Window
 {
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly SceneSession _scene;
     private readonly IViewportReads _viewport;
     private readonly EditorState _editorState;

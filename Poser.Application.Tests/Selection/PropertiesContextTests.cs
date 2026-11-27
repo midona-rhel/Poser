@@ -29,7 +29,7 @@ public sealed class PropertiesContextTests
     {
         var first = new ActorId(Guid.NewGuid(), 1);
         var second = new ActorId(Guid.NewGuid(), 1);
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         scene.Refresh(new SceneSnapshot(1, [Actor(first, "First"), Actor(second, "Second")], [], [], []));
         return (scene, first, second);
     }

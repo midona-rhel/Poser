@@ -676,9 +676,8 @@ public sealed class StableBindingRegistry : IEntityBindings
     }
 
     /// <summary>Clears follow leftovers on a camera that follows no actor. A
-    /// camera whose actor is gone keeps following it by its lasting ID, and
-    /// the camera's target control points it at that actor again when it is
-    /// back.</summary>
+    /// camera whose actor is gone keeps that actor, and the camera's target
+    /// control points it at the actor undo restored in its place.</summary>
     private void ReconcileCameraTargets()
     {
         foreach (var camera in _cameraBindings.Values)
@@ -898,14 +897,6 @@ public sealed class StableBindingRegistry : IEntityBindings
         static (r, _, actor) => r._actors.IsAvailable(actor) ? null
             : Missing<IActor>("The actor's native body is no longer available."),
         static (r, actor) => r.GetActorId(actor), static (r, id) => r.AbsentActor(id));
-
-    public (ActorId Id, IActor Actor)? CurrentActor(ActorId id)
-    {
-        foreach (var current in _actorBindings.Keys)
-            if (current.LogicalId == id.LogicalId)
-                return Resolve(current) is { Success: true, Value: { } actor } ? (current, actor) : null;
-        return null;
-    }
 
     public BindingResult<IBone> Resolve(BoneId id) => Resolve("Bone", id, _boneBindings,
         static (r, id, bone) => r.RefuseBone(id, bone),

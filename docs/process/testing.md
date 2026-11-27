@@ -88,7 +88,7 @@ python tools/checks/speed.py
 
 The scripts need only Python 3.10 or newer, with nothing installed. They use the first actor in the actor list, start with Reset → All on it, and remove every other actor. They add and remove cameras, lights and copies of the actor as they go, so do not run them in a scene you want to keep. They use only the game's own emotes and expressions, chosen by name, and no mods or saved files. Only one script should run at a time, and only while nobody else is trying a build in the game.
 
-Each script expects actor 1 to stand after Reset → All. If the step "Reset → All puts the actor back" fails because the actor still sits, leave GPose and enter it again: while #839 is open, Reset → All can seat the actor again after Sit was played from the Animation tab and the stance was then changed.
+Each script expects actor 1 to stand after Reset → All, so enter GPose with the actor standing.
 
 Two steps fail on every build until their bugs are fixed: "redo removes it again" in `actors.py` (#840) and "undo lets the time run again" in `environment.py` (#841).
 
