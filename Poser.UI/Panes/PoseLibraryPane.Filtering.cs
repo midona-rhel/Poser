@@ -215,7 +215,7 @@ public sealed partial class PoseLibraryPane
         // so the two structures coexist rather than replace each other.
         bool sectioned = _type == LibraryType.Scenes;
         // Only a rail that HAS a favourites head can be standing on it; the
-        // auto-save rail's row 1 is a day and a place.
+        // auto-save rail's row 1 is a day.
         int heads = _vm.RailHeads;
 
         for (int i = 0; i < tiles.Count; i++)

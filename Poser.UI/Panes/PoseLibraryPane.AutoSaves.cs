@@ -97,16 +97,15 @@ public sealed partial class PoseLibraryPane
     }
 
     /// <summary>
-    /// Shows the scan results in the folder list: a top row, then one row per
-    /// day and place, such as "2026-08-14 – Limsa Lominsa". A day folder covers
-    /// a whole session, and a session can visit more than one zone. The grid
-    /// holds only tiles; choosing a folder row filters them.
+    /// Shows the scan results in the folder list: a top row for scene
+    /// autosaves and one for old pose backups, each with one row per day. The
+    /// grid holds only tiles; choosing a folder row filters them.
     ///
     /// <para>Rows appear in the order they are first met, which is the scan's
-    /// newest-first order, so the newest day comes first, and the newest place
-    /// within a day. Tiles stay in scan order, so the full view is newest
-    /// first. A row's tiles need not sit together, because filtering checks
-    /// each tile's row number, not its position.</para>
+    /// newest-first order, so the newest day comes first. Tiles stay in scan
+    /// order, so the full view is newest first. A row's tiles need not sit
+    /// together, because filtering checks each tile's row number, not its
+    /// position.</para>
     ///
     /// <para>This only fills lists and looks up favourites. Every text a row
     /// shows was built by the scan.</para>

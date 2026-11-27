@@ -30,10 +30,10 @@ public sealed class AutoSaveLibraryReaderTests : IDisposable
     {
         var scenes = Path.Combine(_root, "scenes");
         var store = new Poser.Documents.AutoSave.SceneAutoSaveStore(scenes, _ => { });
-        var scene = new SceneFile { SceneId = Guid.NewGuid(), TerritoryId = 10, PlaceName = "Test map" };
+        var scene = new SceneFile { SceneId = Guid.NewGuid() };
         var (path, result) = store.Write(scene, DateTime.Now);
         Assert.True(result.Succeeded);
-        var entry = Assert.Single(Assert.Single(new AutoSaveLibraryReader().Read(
+        var entry = Assert.Single(Assert.Single(AutoSaveLibraryReader.Read(
             Path.Combine(_root, "missing-legacy"), scenes)).Entries);
         Assert.Equal(path, entry.FilePath);
     }

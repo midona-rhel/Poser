@@ -14,7 +14,8 @@ public sealed class AutoSaveFolder
     /// <summary>Display date used to group this snapshot.</summary>
     public required string Day { get; init; }
 
-    /// <summary>Pose files in display order. Empty folders are omitted.</summary>
+    /// <summary>The folder's scene autosaves and old pose backups, newest
+    /// first. A folder with neither is left out.</summary>
     public required List<AutoSaveEntry> Entries { get; init; }
 }
 
@@ -37,9 +38,9 @@ public sealed class AutoSaveEntry
 /// <summary>
 /// Lists the scene autosave folders and the old pose backup folders: folder
 /// and file names and their dates, without opening any file, as the library
-/// lists its sources. The caller runs one scan at a time.
+/// lists its sources.
 /// </summary>
-public sealed class AutoSaveLibraryReader
+public static class AutoSaveLibraryReader
 {
     private const string SnapshotFolderFormat = "yyyy-MM-dd HH-mm-ss'Z'";
     private const string SnapshotDayFolderFormat = "yyyy-MM-dd";
@@ -47,7 +48,7 @@ public sealed class AutoSaveLibraryReader
     private const string StampFormat = LibraryStamp.DateTimeFormat;
     private const string PoseExtension = ".pose";
 
-    public List<AutoSaveFolder> Read(string root, string? sceneRoot = null)
+    public static List<AutoSaveFolder> Read(string root, string? sceneRoot = null)
     {
         var snapshots = new List<(DirectoryInfo Directory, DateTime At)>();
         try
