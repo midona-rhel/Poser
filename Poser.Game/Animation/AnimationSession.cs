@@ -67,12 +67,15 @@ public sealed class AnimationSession : IAnimationPlayback
 
     /// <summary>
     /// A layer Poser played ran out (not looped) and the game ended it. Its row
-    /// stays (selection, speed, weight); its play or scrub plays it again. Its held
-    /// speed and weight stop acting on the slot, also when nothing is chosen on it
-    /// any more (a stance change lets go of the Full body choice).
+    /// stays (selection, speed, weight); its play or scrub plays it again, and its
+    /// held speed and weight stop acting on the slot until then.
     /// </summary>
-    private void OnLayerEnded(ActorId actor, AnimationSlot slot, float seconds) =>
+    private void OnLayerEnded(ActorId actor, AnimationSlot slot, float seconds)
+    {
+        if (SelectedFor(actor, slot) == null)
+            return;
         _store.Mutate(actor, o => o with { EndedSlots = o.EndedSlots.With(slot, seconds) });
+    }
 
     /// <summary>The length in seconds of a layer the game ended, or null while it
     /// plays (or was never applied).</summary>
@@ -145,7 +148,28 @@ public sealed class AnimationSession : IAnimationPlayback
         Tracked(actor, "Lips", () => _playback.SetLips(actor, timeline));
 
     public Outcome SetStance(ActorId actor, AnimationStance stance, int pose) =>
-        Tracked(actor, "Stance", () => _stance.SetStance(actor, stance, pose));
+        Tracked(actor, "Stance", () => SetStanceUntracked(actor, stance, pose));
+
+    /// <summary>
+    /// A stance plays the game's own Full body animation. When Poser was playing
+    /// one there, it lets go of that layer entirely: the choice (in StanceControl),
+    /// the watch for its end, and its held speed and weight, which belonged to
+    /// Poser's animation and not to the stance.
+    /// </summary>
+    private Outcome SetStanceUntracked(ActorId actor, AnimationStance stance, int pose)
+    {
+        bool playedFullBody = OverridesFor(actor).BaseTimeline != null;
+        var result = _stance.SetStance(actor, stance, pose);
+        if (!result.Success || !playedFullBody)
+            return result;
+        _playback.SetLayerOwned(actor, AnimationSlot.Base, false);
+        var held = OverridesFor(actor);
+        if (held.SlotWeights.ContainsKey(AnimationSlot.Base))
+            SetSlotWeightUntracked(actor, AnimationSlot.Base, 1f);
+        if (held.SlotSpeeds.ContainsKey(AnimationSlot.Base))
+            _speed.ClearSlotSpeed(actor, AnimationSlot.Base);
+        return result;
+    }
 
     public Outcome SetWeaponDrawn(ActorId actor, bool drawn) =>
         Tracked(actor, "Weapon", () => _stance.SetWeaponDrawn(actor, drawn));
