@@ -1,6 +1,7 @@
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
+using Poser.Application.Viewport;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
@@ -12,17 +13,6 @@ namespace Poser.Application.Transforms;
 /// may be only partly restored.</summary>
 internal readonly record struct GroupTransformPresentation(bool UseCommitted, GroupTransformSnapshot? Snapshot);
 
-/// <summary>What the group code reads from the game: a member's transform, why
-/// a member cannot move right now, the camera's frame for a new group, and a
-/// member's current id after a redraw.</summary>
-public interface IGroupTransformSource
-{
-    PoseTransform? Read(TransformTargetId target);
-    string? Refusal(TransformTargetId target);
-    bool TryFrame(Vector3 origin, out GroupTransformFrame frame);
-    TransformTargetId? CurrentTarget(TransformTargetId target);
-}
-
 /// <summary>
 /// Keeps the position, rotation and scale that a named group or a selection of
 /// several things shows in the inspector, and decides whether such a selection
@@ -33,14 +23,16 @@ public sealed class GroupTransformCoordinator : IDisposable
     private readonly SceneSession _scene;
     private readonly SceneGroups _groups;
     private readonly GroupTransformState _state;
-    private readonly IGroupTransformSource _source;
-    private readonly Viewport.IViewportReads _viewport;
+    private readonly IViewportReads _viewport;
+    private readonly ICameraProjection _camera;
+    private readonly EditHistory _history;
     private readonly HashSet<Guid> _invalidImports = new();
 
     public GroupTransformCoordinator(SceneSession scene, SceneGroups groups,
-        GroupTransformState state, IGroupTransformSource source, Viewport.IViewportReads viewport)
+        GroupTransformState state, IViewportReads viewport, ICameraProjection camera, EditHistory history)
     {
-        _scene = scene; _groups = groups; _state = state; _source = source; _viewport = viewport;
+        _scene = scene; _groups = groups; _state = state; _viewport = viewport;
+        _camera = camera; _history = history;
         _scene.Selection.SelectionChanged += SelectionChanged;
     }
     public void Dispose() => _scene.Selection.SelectionChanged -= SelectionChanged;
@@ -59,9 +51,25 @@ public sealed class GroupTransformCoordinator : IDisposable
             if (TransformSelectionPolicy.IsLocked(id, selected, _groups, _viewport))
             { error = "Something selected is locked."; return false; }
         foreach (var target in targets)
-            if (_source.Refusal(target) is { } refusal) { error = refusal; return false; }
+            if (Refusal(target) is { } refusal) { error = refusal; return false; }
         return true;
     }
+
+    /// <summary>Why <paramref name="target"/> cannot move with a group: a
+    /// light attached to a bone moves with that bone instead.</summary>
+    private string? Refusal(TransformTargetId target) =>
+        target.Light is { } light && _viewport.IsLightAttached(light)
+            ? "Attached lights cannot join a world group transform." : null;
+
+    /// <summary>The thing <paramref name="target"/> stands for now: itself, the
+    /// same thing after a redraw, or the thing undo brought back in place of a
+    /// deleted one. Group members are looked up through this before members
+    /// that are gone leave their group, so undoing a removal puts the members
+    /// back into their groups.</summary>
+    public TransformTargetId? CurrentTarget(TransformTargetId target) =>
+        _scene.CurrentTransformTarget(target)
+        ?? (_history.ResolveLifecycleTarget(target) is var successor && successor != target
+            ? _scene.CurrentTransformTarget(successor) : null);
 
     private bool ResolveMembership(IReadOnlyList<SelectionId> selected,
         out TransformTargetId[] targets, out string? error)
@@ -106,7 +114,7 @@ public sealed class GroupTransformCoordinator : IDisposable
         var members = new Dictionary<TransformTargetId, PoseTransform>();
         foreach (var target in targets)
         {
-            if (_source.Refusal(target) != null || _source.Read(target) is not { IsValid: true } pose) return;
+            if (Refusal(target) != null || _viewport.GetModelTransform(target) is not { IsValid: true } pose) return;
             members.Add(target, pose);
         }
         if (previous != null)
@@ -118,7 +126,7 @@ public sealed class GroupTransformCoordinator : IDisposable
         var origin = GroupTransformBaseline.Centroid(members.Values);
         GroupTransformFrame frame;
         if (previousFrame is { } suppliedFrame) frame = suppliedFrame;
-        else if (!_source.TryFrame(origin, out frame)) return;
+        else if (!GroupTransformFrame.TryFromView(_camera.GetViewMatrix(), origin, out frame)) return;
         _state.Initialize(named, members, frame, out _);
     }
 
@@ -146,8 +154,8 @@ public sealed class GroupTransformCoordinator : IDisposable
     }
     public void BindingsPublished()
     {
-        _state.Rekey(_source.CurrentTarget);
-        _groups.RemapTransformMembers(_source.CurrentTarget);
+        _state.Rekey(CurrentTarget);
+        _groups.RemapTransformMembers(CurrentTarget);
         _groups.Reconcile(_scene);
         SynchronizeNamed();
         InitializeSelection();
@@ -171,8 +179,8 @@ public sealed class GroupTransformCoordinator : IDisposable
     public void RestoreNamed(IReadOnlyDictionary<GroupTransformKey, GroupTransformSnapshot> records)
     {
         _state.RestoreNamed(records);
-        _state.Rekey(_source.CurrentTarget);
-        _groups.RemapTransformMembers(_source.CurrentTarget);
+        _state.Rekey(CurrentTarget);
+        _groups.RemapTransformMembers(CurrentTarget);
     }
 
     public bool CompleteRestoredMembership()
@@ -218,7 +226,7 @@ public sealed class GroupTransformCoordinator : IDisposable
         var current = new Dictionary<TransformTargetId, PoseTransform>();
         foreach (var target in targets)
         {
-            if (_source.CurrentTarget(target) != target || _source.Read(target) is not { } pose)
+            if (CurrentTarget(target) != target || _viewport.GetModelTransform(target) is not { } pose)
             { error = "A group member is unavailable or stale."; return false; }
             current[target] = pose;
         }
@@ -253,6 +261,6 @@ public sealed class GroupTransformCoordinator : IDisposable
         if (!targets.ToHashSet().SetEquals(requested))
         { error = "The gesture does not contain the complete selection."; return false; }
         named = NamedSelection(targets);
-        return _state.TryRead(named, targets, _source.Read, mode, out _, out error);
+        return _state.TryRead(named, targets, _viewport.GetModelTransform, mode, out _, out error);
     }
 }

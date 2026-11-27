@@ -33,7 +33,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
     private ActiveGestureState? _active;
 
     private readonly GroupTransformState? _groupTransforms;
-    private readonly IGroupTransformSource? _groupSource;
     private readonly GroupTransformCoordinator? _groupCoordinator;
     private Action? _recoveryCompleted;
     private bool _recoveryRemap;
@@ -43,14 +42,12 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         ITransformRuntimePort runtime,
         EditHistory history,
         GroupTransformState? groupTransforms = null,
-        IGroupTransformSource? groupSource = null,
         GroupTransformCoordinator? groupCoordinator = null)
     {
         _scene = scene;
         _runtime = runtime;
         History = history;
         _groupTransforms = groupTransforms;
-        _groupSource = groupSource;
         _groupCoordinator = groupCoordinator;
         if (groupCoordinator != null)
         {
@@ -536,7 +533,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         {
             if (patch.GroupState is { } change)
             {
-                var current = _groupSource == null ? change : change.Remap(_groupSource.CurrentTarget);
+                var current = _groupCoordinator == null ? change : change.Remap(_groupCoordinator.CurrentTarget);
                 if (current != null)
                     _groupTransforms?.Restore(current, before);
             }
@@ -611,7 +608,7 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         {
             if (active.GroupBefore is not { } frozen || _groupTransforms == null)
                 return;
-            var restored = _groupSource == null ? frozen : frozen.Remap(_groupSource.CurrentTarget);
+            var restored = _groupCoordinator == null ? frozen : frozen.Remap(_groupCoordinator.CurrentTarget);
             if (restored != null)
                 _groupTransforms.Put(GroupTransformKey.For(active.Command.GroupId,
                     restored.Expected.Keys), restored);

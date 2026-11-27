@@ -1,7 +1,9 @@
 using System.Numerics;
+using NSubstitute;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Application.Viewport;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
@@ -225,7 +227,7 @@ public sealed class GroupTransformStateTests
     private static PoseTransform Pose(Vector3 position) =>
         PoseTransform.CreateChecked(position, Quaternion.Identity, Vector3.One);
 
-    private sealed class Fixture : IGroupTransformSource, ITransformRuntimePort, IDisposable
+    private sealed class Fixture : ITransformRuntimePort, IDisposable
     {
         public readonly SelectionSession Selection = new();
         public readonly SceneSession Scene;
@@ -241,7 +243,6 @@ public sealed class GroupTransformStateTests
         public Quaternion Camera = Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f);
         public int FrameReads, Writes;
         public bool FailApply, FailRestore;
-        public TransformTargetId? Refused;
         public GroupTransformSnapshot Snapshot => State.Snapshot(null, Targets)!;
         private ulong _revision;
         public Fixture(int count = 2, bool noncollinear = false)
@@ -251,9 +252,18 @@ public sealed class GroupTransformStateTests
             for (int i = 0; i < count; i++) Live[Targets[i]] = Pose(new(i * 2, 0, 0));
             if (noncollinear) Live[Targets[2]] = Pose(new(1, 3, 2));
             Publish();
-            Coordinator = new(Scene, Groups, State, this, NSubstitute.Substitute.For<Poser.Application.Viewport.IViewportReads>());
-            Service = new(Scene, this, History, groupTransforms: State, groupSource: this,
-                groupCoordinator: Coordinator);
+            var viewport = Substitute.For<IViewportReads>();
+            viewport.GetModelTransform(Arg.Any<TransformTargetId>())
+                .Returns(call => Read((TransformTargetId)call[0]));
+            var camera = Substitute.For<ICameraProjection>();
+            camera.GetViewMatrix().Returns(_ =>
+            {
+                FrameReads++;
+                Matrix4x4.Invert(Matrix4x4.CreateFromQuaternion(Camera), out var view);
+                return view;
+            });
+            Coordinator = new(Scene, Groups, State, viewport, camera, History);
+            Service = new(Scene, this, History, groupTransforms: State, groupCoordinator: Coordinator);
             Journal = new(History, Service, _ => true, new Fixtures.NoticeLog());
             foreach (var member in Selected) Selection.Add(member);
         }
@@ -288,12 +298,6 @@ public sealed class GroupTransformStateTests
         }
         public PoseTransform? Read(TransformTargetId target) =>
             Live.TryGetValue(target, out var pose) ? pose : null;
-        public string? Refusal(TransformTargetId target) => target == Refused ? "Attached light" : null;
-        public bool TryFrame(Vector3 origin, out GroupTransformFrame frame)
-        {
-            FrameReads++;
-            frame = new(origin, Camera); return true;
-        }
         public TransformTargetId? CurrentTarget(TransformTargetId target) =>
             Live.Keys.Cast<TransformTargetId?>().FirstOrDefault(current =>
                 current!.Value.Kind == target.Kind
