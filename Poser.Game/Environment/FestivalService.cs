@@ -167,10 +167,11 @@ public sealed unsafe class FestivalService : IDisposable
     }
 
     /// <summary>
-    /// The game takes the eight slots as four pairs, (0,4), (1,5), (2,6) and
-    /// (3,7); the slots themselves keep their order. Setting them shows them
-    /// at once. Queueing them lets the game apply them when it can, which is
-    /// the only way left when Poser is unloading.
+    /// Writes the eight slots in their order: argument i becomes slot i.
+    /// (Brio passes them as (0,4), (1,5), (2,6), (3,7), which moves the
+    /// area's festivals to other slots on every write.) Setting them shows
+    /// them at once. Queueing them lets the game apply them when it can,
+    /// which is the only way left when Poser is unloading.
     /// </summary>
     private static void Apply(GameMain.Festival[] festivals, bool queueOnly)
     {
@@ -178,18 +179,14 @@ public sealed unsafe class FestivalService : IDisposable
         if (queueOnly)
         {
             main->QueueActiveFestivals(
-                festivals[0], festivals[4],
-                festivals[1], festivals[5],
-                festivals[2], festivals[6],
-                festivals[3], festivals[7]);
+                festivals[0], festivals[1], festivals[2], festivals[3],
+                festivals[4], festivals[5], festivals[6], festivals[7]);
         }
         else
         {
             main->SetActiveFestivals(
-                festivals[0], festivals[4],
-                festivals[1], festivals[5],
-                festivals[2], festivals[6],
-                festivals[3], festivals[7]);
+                festivals[0], festivals[1], festivals[2], festivals[3],
+                festivals[4], festivals[5], festivals[6], festivals[7]);
         }
     }
 
