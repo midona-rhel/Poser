@@ -521,7 +521,7 @@ public sealed class CameraPane
                 help: "Flight speed; the wheel adjusts it", onBegin: _values.Seal),
             "Sensitivity",
             cell => cell.Slider("##camera-sensitivity",
-                camera.MouseSensitivity, 0.001f, 0.2f,
+                camera.MouseSensitivity, FreeCameraSensitivity.Minimum, FreeCameraSensitivity.Maximum,
                 value => _values.Set(camera.Id, CameraProperties.MouseSensitivity, value),
                 format: "0.000",
                 help: "How far a right-drag turns the view", onBegin: _values.Seal));
