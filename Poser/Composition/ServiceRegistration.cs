@@ -616,8 +616,8 @@ internal static class ServiceRegistration
         // and removes them. Disposing them when the plugin unloads removes
         // every overlay.
         services.AddSingleton<
-            Game.Overlays.IOverlayNodePort,
-            Game.Overlays.KamiToolKitOverlayPort>();
+            Game.Overlays.IOverlayNodeDrawer,
+            Game.Overlays.KamiToolKitOverlayNodeDrawer>();
         services.AddSingleton<Game.Overlays.OverlayNodeService>();
         services.AddSingleton<IOverlayNodeService>(sp => sp.GetRequiredService<Game.Overlays.OverlayNodeService>());
         services.AddStartable<Game.Overlays.OverlayNodeService>(StartStage.OverlayNodes);
