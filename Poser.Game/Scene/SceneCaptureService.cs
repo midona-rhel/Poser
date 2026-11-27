@@ -185,8 +185,6 @@ public sealed class SceneCaptureService
         if (_poses.IsImportBusy)
             return SceneCaptureOutcome.Fail(
                 "A pose import is applying; capturing now would snapshot a half-transitioned pose.");
-        if (sceneId == Guid.Empty)
-            return SceneCaptureOutcome.Fail("A scene capture needs a scene identity.");
 
         try
         {
@@ -219,6 +217,10 @@ public sealed class SceneCaptureService
             if (includeStructure)
                 SceneStructureCodec.Write(scene, _structure.Capture(), identities);
             SceneParentingCodec.Write(scene, _parenting.Capture(), identities, _parenting.CompanionOwner);
+            // A link to an actor or object this capture skipped (no skeleton,
+            // no longer there) is dropped with a note, so it never fails the
+            // check below.
+            SceneParenting.Prune(scene, notes);
 
             var validation = SceneFileValidation.Validate(scene);
             if (!validation.Succeeded)
