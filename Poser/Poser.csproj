@@ -13,7 +13,7 @@
 		<!-- Dalamud requires a four-part numeric AssemblyVersion, so prerelease
 		     labels belong in the changelog instead. Keep this in sync with Poser.json's
 		     AssemblyVersion. -->
-		<Version>0.9.28.0</Version>
+		<Version>0.9.29.0</Version>
 	</PropertyGroup>
 
 
