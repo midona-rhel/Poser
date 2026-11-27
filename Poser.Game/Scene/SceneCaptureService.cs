@@ -54,7 +54,7 @@ public sealed class SceneCaptureService
     private readonly Poser.Game.Animation.AnimationSession _animation;
     private readonly IBonePosingService _bonePosing;
     private readonly Poser.Application.Appearance.IInvisibleSkinService _invisibleSkin;
-    private readonly GazeService _gaze;
+    private readonly GazeSession _gaze;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.IntegrationSelectors _integration;
     private readonly Poser.Game.Environment.WorldRenderingService _rendering;
@@ -79,7 +79,7 @@ public sealed class SceneCaptureService
         IObjectTable objects,
         IPosingService posing,
         Poser.Game.Animation.AnimationSession animation,
-        GazeService gaze,
+        GazeSession gaze,
         PoseExportCapture exports,
         Poser.Application.Integration.IntegrationSelectors integration,
         Poser.Game.Environment.WorldRenderingService rendering,
@@ -448,16 +448,19 @@ public sealed class SceneCaptureService
 
         foreach (var (actor, entry) in captured)
         {
-            var state = _gaze.GetGazeState(actor);
-            if (state.Mode == GazeTargetMode.None)
+            // The gaze controls' own reading, the one undo saves.
+            if (_bindings.GetActorId(actor) is not { } id
+                || _gaze.Read(id) is not { } reading
+                || reading.Settings.Mode == GazeTargetMode.None)
                 continue;
+            var state = reading.Settings;
 
             Guid? target = null;
             if (state.Mode == GazeTargetMode.Entity)
             {
                 // Match by Poser's own actor id: a GPose copy has the same game
                 // id as the actor it copies, so only Poser's id tells them apart.
-                if (state.TargetActor is { } followed)
+                if (reading.Target is { } followed)
                     foreach (var (candidate, _) in captured)
                     {
                         if (_bindings.GetActorId(candidate) == followed)
@@ -478,7 +481,7 @@ public sealed class SceneCaptureService
                          GazeTargetType.Eyes,
                      })
             {
-                if (_gaze.IsPartLocked(actor, part))
+                if (state.IsPartLocked(part))
                     locked |= part;
             }
 
