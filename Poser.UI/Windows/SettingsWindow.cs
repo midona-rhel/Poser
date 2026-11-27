@@ -87,9 +87,10 @@ public class SettingsWindow : Window
         _vm.DebugLog = message => _log.Debug(message);
     }
 
-    /// <summary>What the config held when the window opened: Cancel, or
-    /// closing without Save, puts previewed settings back. Library sources
-    /// remain a separate draft until Save and are never restored on Cancel.</summary>
+    /// <summary>The saved settings: what the config held when the window
+    /// opened, or after the last Reset. Cancel, or closing without Save, puts
+    /// them back. Library sources remain a separate draft until Save and are
+    /// never restored on Cancel.</summary>
     private SettingsViewModel? _snapshot;
     private int _appliedSignature;
     private readonly Dalamud.Interface.ImGuiFileDialog.FileDialogManager _folderDialog = new();
@@ -377,14 +378,15 @@ public class SettingsWindow : Window
             _customizePlus.CustomizePlus.Detail));
     }
     /// <summary>
-    /// Puts one page's settings back to their defaults and saves them, and
+    /// Puts one part of the settings back to its defaults and saves it, and
     /// saves nothing else. The window shows unsaved changes by writing them
     /// into the settings every frame (see <see cref="Draw"/>), and
     /// <see cref="_snapshot"/> holds the saved values that Cancel puts back.
-    /// So the saved values go back before the reset saves, and the other
-    /// pages' unsaved changes go back on top after it: Save still keeps them
-    /// and Cancel still takes them back. Reset everything discards every
-    /// unsaved change.
+    /// So the saved values go back before the reset saves, and the unsaved
+    /// changes to every other setting go back on top after it: Save still
+    /// keeps them and Cancel still takes them back. A part is what its Reset
+    /// text names, which isn't always everything its page shows. Reset
+    /// everything discards every unsaved change.
     /// </summary>
     private void ResetConfig(ConfigResetScope scope)
     {
@@ -399,12 +401,15 @@ public class SettingsWindow : Window
         {
             _vm = _snapshot!;
             ApplyToConfig(preview: true);
-            ResetPage(scope, save: true);
+            ResetPart(scope);
+            // Not announced: the settings hold no unsaved change at this
+            // moment, and the windows would follow that for one frame.
+            _configuration.Save(notify: false);
             _snapshot = BuildViewModel();
 
             _vm = unsaved;
             ApplyToConfig(preview: true);
-            ResetPage(scope, save: false);
+            ResetPart(scope);
             var shown = BuildViewModel();
             // What the preview doesn't write stays as it was edited: key
             // bindings (unless this page reset them) and the Library page.
@@ -416,6 +421,7 @@ public class SettingsWindow : Window
             shown.Library = unsaved.Library;
             shown.UseLibraryWhenImporting = unsaved.UseLibraryWhenImporting;
             shown.LibraryShowExtensions = unsaved.LibraryShowExtensions;
+            shown.Search = unsaved.Search;
             _vm = shown;
             _configuration.NotifyChanged();
         }
@@ -426,18 +432,18 @@ public class SettingsWindow : Window
         WireRuntime();
     }
 
-    private void ResetPage(ConfigResetScope scope, bool save)
+    private void ResetPart(ConfigResetScope scope)
     {
         switch (scope)
         {
             case ConfigResetScope.Display:
-                _configuration.ResetDisplay(save);
+                _configuration.ResetDisplay();
                 break;
             case ConfigResetScope.Skeleton:
-                _configuration.ResetSkeleton(save);
+                _configuration.ResetSkeleton();
                 break;
             case ConfigResetScope.UI:
-                _configuration.ResetUI(save);
+                _configuration.ResetUI();
                 break;
         }
     }
@@ -458,9 +464,9 @@ public class SettingsWindow : Window
         IsOpen = false;
     }
 
-    /// <summary>The view model onto the config. A preview skips what
-    /// touches disk or the keybind registry: library folders, the
-    /// auto-save root, the bindings.</summary>
+    /// <summary>The view model onto the config. A preview skips what only
+    /// Save may change: the key bindings, the two Library switches and the
+    /// library folders.</summary>
     private void ApplyToConfig(bool preview)
     {
         var svc = _configuration;

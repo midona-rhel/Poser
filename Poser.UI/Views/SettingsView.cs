@@ -689,9 +689,11 @@ public static partial class SettingsView
                 if (!armed)
                 {
                     vm.ResetArmed = scope;
-                    vm.ResetStatus =
-                        $"{label} goes back to defaults, discarding anything "
-                        + "unsaved on this page. Press Confirm reset to apply.";
+                    vm.ResetStatus = scope == ConfigResetScope.All
+                        ? "Every setting goes back to its default, discarding every "
+                            + "unsaved change. Press Confirm reset to apply."
+                        : $"{label} go back to defaults, discarding unsaved changes "
+                            + "to them; other unsaved changes stay. Press Confirm reset to apply.";
                     return;
                 }
                 vm.ResetArmed = null;
