@@ -6,10 +6,15 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
-// A blocked transaction must not fall back to potentially partial live state.
+/// <summary>Which group values the inspector shows while a drag runs: the
+/// stored ones (<c>UseCommitted</c>), or the drag's own <c>Snapshot</c>. Neither
+/// is shown while a failed move is still being put back, because the members
+/// may be only partly restored.</summary>
 internal readonly record struct GroupTransformPresentation(bool UseCommitted, GroupTransformSnapshot? Snapshot);
 
-/// <summary>Read/capability and camera data supplied by Game, never inferred by UI.</summary>
+/// <summary>What the group code reads from the game: a member's transform, why
+/// a member cannot move right now, the camera's frame for a new group, and a
+/// member's current id after a redraw.</summary>
 public interface IGroupTransformSource
 {
     PoseTransform? Read(TransformTargetId target);
@@ -18,6 +23,11 @@ public interface IGroupTransformSource
     TransformTargetId? CurrentTarget(TransformTargetId target);
 }
 
+/// <summary>
+/// Keeps the position, rotation and scale that a named group or a selection of
+/// several things shows in the inspector, and decides whether such a selection
+/// can move together.
+/// </summary>
 public sealed class GroupTransformCoordinator : IDisposable
 {
     private readonly SceneSession _scene;
@@ -42,16 +52,6 @@ public sealed class GroupTransformCoordinator : IDisposable
         if (BeforeSelectionCapture?.Invoke() != false) InitializeSelection();
     }
 
-    public static TransformTargetId? Target(SelectionId id) => id switch
-    {
-        { Kind: SceneEntityKind.Overlay, Overlay: { } overlay } => TransformTargetId.ForCollider(overlay),
-        { Kind: SceneEntityKind.Actor, Actor: { } actor } => TransformTargetId.ForActor(actor),
-        { Kind: SceneEntityKind.Light, Light: { } light } => TransformTargetId.ForLight(light),
-        { Kind: SceneEntityKind.Prop, Prop: { } prop } => TransformTargetId.ForProp(prop),
-        { Kind: SceneEntityKind.WorldObject, WorldObject: { } world } => TransformTargetId.ForWorldObject(world),
-        _ => null,
-    };
-
     public bool Resolve(IReadOnlyList<SelectionId> selected, out TransformTargetId[] targets, out string? error)
     {
         if (!ResolveMembership(selected, out targets, out error)) return false;
@@ -71,7 +71,7 @@ public sealed class GroupTransformCoordinator : IDisposable
         var result = new List<TransformTargetId>();
         foreach (var id in selected)
         {
-            if (Target(id) is not { } target || !_scene.Contains(target)) return false;
+            if (TransformTargetResolver.Target(id) is not { } target || !_scene.Contains(target)) return false;
             result.Add(target);
         }
         if (result.Count < 2 || result.Distinct().Count() != result.Count) return false;
@@ -82,7 +82,7 @@ public sealed class GroupTransformCoordinator : IDisposable
         var key = GroupTransformKey.For(null, targets);
         bool Matches(SceneGroup group)
         {
-            var members = _groups.Descendants(group).Select(Target).ToArray();
+            var members = _groups.Descendants(group).Select(TransformTargetResolver.Target).ToArray();
             return members.All(target => target != null)
                 && GroupTransformKey.For(null, members.Select(target => target!.Value)) == key;
         }
@@ -95,8 +95,8 @@ public sealed class GroupTransformCoordinator : IDisposable
         if (CaptureAllowed?.Invoke() == false) return;
         if (!EntitySelection.IsMultiEntity(_scene.Selection.Selected)
             || !Resolve(_scene.Selection.Selected, out var targets, out _)) return;
-        // Named creation/import has its own boundary. Selection only creates
-        // the anonymous record, once per retained logical membership.
+        // A named group stores its frame when it is made or loaded. Selecting
+        // several things only stores a frame for that set of things, once.
         if (NamedSelection(targets) != null || _state.Snapshot(null, targets) != null) return;
         Capture(null, targets, null);
     }
@@ -122,9 +122,9 @@ public sealed class GroupTransformCoordinator : IDisposable
         _state.Initialize(named, members, frame, out _);
     }
 
-    /// <summary>Seal the final effective membership of a structure command.
-    /// Changed membership refreshes snapshots and centroid only; authored
-    /// orientation, scale factors and creation frame remain group-owned.</summary>
+    /// <summary>Brings each named group's stored frame up to date after its
+    /// members changed. Only the members' positions and the centre are read
+    /// again; the group's own rotation, scale and frame stay as they were.</summary>
     public void SynchronizeNamed()
     {
         if (CaptureAllowed?.Invoke() == false) return;
@@ -135,8 +135,8 @@ public sealed class GroupTransformCoordinator : IDisposable
             if (_invalidImports.Contains(group.Id)) continue;
             var members = _groups.Descendants(group).ToArray();
             var old = _state.NamedSnapshot(group.Id);
-            // Locks and temporary capability refusals prevent editing, not
-            // retention of the baseline and authored state of unchanged members.
+            // A locked member, or one that cannot move right now, still keeps
+            // its stored values; locks only stop moving.
             if (!ResolveMembership(members, out var targets, out _))
             { _state.Forget(group.Id); continue; }
             var key = GroupTransformKey.For(group.Id, targets);
@@ -183,9 +183,9 @@ public sealed class GroupTransformCoordinator : IDisposable
             if (!ResolveMembership(_groups.Descendants(group).ToArray(), out var targets, out _))
                 return false;
             if (retained.HasSameMembership(targets)) continue;
-            // A retained record with older membership is a deferred capture,
-            // not a complete history state. Only this explicit restore boundary
-            // may resolve it; ordinary reads must remain pure.
+            // A stored frame made for older members is brought up to date
+            // here, when undo restores the groups, and nowhere a frame is only
+            // read.
             if (CaptureAllowed?.Invoke() == false) return false;
             Capture(group.Id, targets, retained.Baseline.Frame, retained);
             if (_state.Snapshot(group.Id, targets) is not { } completed
@@ -247,8 +247,8 @@ public sealed class GroupTransformCoordinator : IDisposable
         GroupScaleMode mode, out Guid? named, out string? error)
     {
         named = null;
-        // No surface may silently omit a camera, overlay, locked or stale
-        // member when it enters a multi-entity gesture.
+        // A group drag moves every selected thing or nothing: a camera, a
+        // locked member or one that left the scene refuses the whole drag.
         if (!Resolve(selected, out var targets, out error)) return false;
         if (!targets.ToHashSet().SetEquals(requested))
         { error = "The gesture does not contain the complete selection."; return false; }

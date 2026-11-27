@@ -78,7 +78,6 @@ public class GizmoOverlayWindow : Window
         public required TransformTool Tool { get; init; }
         public required TransformOrientation Orientation { get; init; }
         public required DomainSpace Space { get; init; }
-        public global::Poser.Domain.Transforms.GroupScaleMode GroupScale { get; init; }
         public bool IsGroup { get; init; }
         public bool CapsuleScale { get; init; }
         public required LegacyTransform Start { get; init; }
@@ -147,17 +146,17 @@ public class GizmoOverlayWindow : Window
     private static readonly Vector2 UniformScaleDirection =
         Vector2.Normalize(new Vector2(1f, -1f));
 
-    /// <summary>Drops the drag when the transform service already ended it
-    /// (a selection change or a despawned target cancels it there), or when
-    /// the selected kind of thing changed under it. The transform service
-    /// ignores a cancel for a drag it no longer runs.</summary>
+    /// <summary>Drops the drag when the transform service already ended it (a
+    /// failed update, Escape, a selection change or a removed target), or
+    /// cancels it when the selected kind of thing changed under it.</summary>
     private void ReconcileInteractionLifecycle(GizmoTargetType currentTarget)
     {
         if (_gesture is { } gesture
             && (_cleanTransforms.ActiveGesture != gesture.Id
                 || _gestureTargetType != currentTarget))
         {
-            _cleanTransforms.Cancel(gesture.Id);
+            if (_cleanTransforms.ActiveGesture == gesture.Id)
+                _cleanTransforms.Cancel(gesture.Id);
             ClearGesture(suppress: true);
         }
 
@@ -605,9 +604,10 @@ public class GizmoOverlayWindow : Window
     private EffectiveTransformSelection? EffectiveSelection() =>
         TransformSelectionPolicy.Editing(_selection.Selected, _scene.Snapshot, _groups, _viewport);
 
-    /// <summary>Returns the running drag, or cancels it when Escape is pressed
-    /// or the tool, orientation, rotation pivot or group scale setting changed
-    /// since it began.</summary>
+    /// <summary>Returns the running drag, or cancels it when the tool,
+    /// orientation or rotation pivot changed since it began, since the handle
+    /// being dragged depends on them. Escape is handled for every window in
+    /// UIManager.</summary>
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
         TransformOrientation currentOrientation,
@@ -615,14 +615,7 @@ public class GizmoOverlayWindow : Window
     {
         if (_gesture is not { } gesture)
             return null;
-        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-        {
-            _cleanTransforms.Cancel(gesture.Id);
-            ClearGesture(suppress: true);
-            return null;
-        }
-        if (gesture.GroupScale != _configuration.Config.Gizmo.GroupScale ||
-            gesture.Tool != currentTool ||
+        if (gesture.Tool != currentTool ||
             gesture.Orientation != currentOrientation ||
             gesture.PivotChoice != currentPivot)
         {
@@ -653,14 +646,10 @@ public class GizmoOverlayWindow : Window
             return;
         var targets = selection.Targets;
         // The selection's first item decides both the gizmo kind and this
-        // primary target, so they are the same kind of thing. A mixed selection
-        // is moved as a group even when its first item is a bone.
+        // primary target, so they are the same kind of thing.
         var primary = selection.Primary;
         BoneId? primaryBone = targetType == GizmoTargetType.Bone ? primary.Bone : null;
         ActorId? primaryActor = primary.Actor;
-        LightId? primaryLight = primary.Light;
-        PropId? primaryProp = primary.Prop;
-        WorldObjectId? primaryWorldObject = primary.WorldObject;
         bool isBone = primaryBone != null;
         var modelMatrix = Matrix4x4.Identity;
 
@@ -722,29 +711,11 @@ public class GizmoOverlayWindow : Window
         {
             currentTransform = Transform.FromPose(actorRest);
         }
-        else if (primaryLight is { } lightTarget &&
-            _viewport.GetModelTransform(TransformTargetId.ForLight(lightTarget))
-                is { } lightRest)
+        else if (primaryBone == null && primaryActor == null &&
+            _viewport.GetModelTransform(primary) is { } rest)
         {
-            currentTransform = Transform.FromPose(lightRest);
-        }
-        else if (primaryProp is { } propTarget &&
-            _viewport.GetModelTransform(TransformTargetId.ForProp(propTarget))
-                is { } propRest)
-        {
-            currentTransform = Transform.FromPose(propRest);
-        }
-        else if (targetType == GizmoTargetType.Collider &&
-            _viewport.GetModelTransform(primary) is { } colliderTransform)
-        {
-            currentTransform = Transform.FromPose(colliderTransform);
-        }
-        else if (primaryWorldObject is { } worldObjectTarget &&
-            _viewport.GetModelTransform(
-                TransformTargetId.ForWorldObject(worldObjectTarget))
-                is { } worldObjectRest)
-        {
-            currentTransform = Transform.FromPose(worldObjectRest);
+            // A light, object, world object or IK collider.
+            currentTransform = Transform.FromPose(rest);
         }
         else
         {
@@ -1167,7 +1138,6 @@ public class GizmoOverlayWindow : Window
             Tool = tool,
             Orientation = orientation,
             Space = space,
-            GroupScale = _configuration.Config.Gizmo.GroupScale,
             IsGroup = !isBone && targets.Count > 1,
             CapsuleScale = layout.CapsuleScale,
             Start = currentTransform,
@@ -1390,7 +1360,8 @@ public class GizmoOverlayWindow : Window
             gesture.Current = newTransform;
     }
 
-    /// <summary>Sends the total change since the drag started, and cancels the drag if that fails.</summary>
+    /// <summary>Sends the total change since the drag started. When that fails,
+    /// the transform service has already ended the drag.</summary>
     private bool DispatchUpdate(GizmoGesture gesture, Transform newTransform)
     {
         var update = _cleanTransforms.Update(
@@ -1400,7 +1371,6 @@ public class GizmoOverlayWindow : Window
             return true;
         _log.Verbose(
             $"Gizmo: {_gestureTargetType} gesture ended at Update — {update.Detail}");
-        _cleanTransforms.Cancel(gesture.Id);
         ClearGesture(suppress: true);
         return false;
     }

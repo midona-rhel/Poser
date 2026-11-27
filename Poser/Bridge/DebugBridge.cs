@@ -665,8 +665,8 @@ public sealed partial class DebugBridge : IDisposable
                 if (query.GetValueOrDefault("start") == "1"
                     && _selectionRemovalProbe is not { IsCompleted: false })
                 {
-                    var commands = (SelectionEntityCommands)_services.GetService(typeof(SelectionEntityCommands))!;
-                    _selectionRemovalProbe = commands.Remove(_sceneSession.Selection.Selected.ToArray());
+                    var actions = (ISelectedEntityActions)_services.GetService(typeof(ISelectedEntityActions))!;
+                    _selectionRemovalProbe = actions.Remove(_sceneSession.Selection.Selected.ToArray());
                 }
                 if (_selectionRemovalProbe is null) return Json(new { started = false });
                 if (!_selectionRemovalProbe.IsCompleted) return Json(new { running = true });

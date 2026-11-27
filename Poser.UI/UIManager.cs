@@ -167,6 +167,10 @@ public sealed class UIManager : IUIManager
         bool hidden = WindowsHidden;
         _capturingShortcutThisFrame = _windows.Settings.IsRebindingShortcut;
         _cameraInput.PointerDragHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+        // Escape cancels a running drag, whichever window started it. The
+        // window then sees that its drag ended and forgets it.
+        if (_cleanTransforms.ActiveGesture is { } drag && ImGui.IsKeyPressed(ImGuiKey.Escape))
+            _cleanTransforms.Cancel(drag);
         _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !hidden);
         if (!AdvanceTheme())
             return;

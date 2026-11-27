@@ -61,7 +61,7 @@ public sealed class SceneStructure(SceneGroups groups, GroupTransformCoordinator
             foreach (var entry in entries)
             {
                 if (!ids.TryGetValue(entry.Key, out var id) || groups.Find(id) is not { } group) continue;
-                var targets = groups.Descendants(group).Select(GroupTransformCoordinator.Target).ToArray();
+                var targets = groups.Descendants(group).Select(TransformTargetResolver.Target).ToArray();
                 var snapshot = entry.Transform;
                 if (targets.Any(target => target == null)
                     || snapshot?.HasSameMembership(targets.Select(target => target!.Value).ToArray()) != true)

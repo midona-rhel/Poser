@@ -61,7 +61,7 @@ public sealed class TransformParentingTests
         Assert.Equal(At(0), r.Values[parent]); Assert.Equal(At(2), r.Values[child]);
         Assert.True(journal.Redo().Success); parents.Evaluate();
         Assert.Equal(At(5), r.Values[parent]); Assert.Equal(At(7), r.Values[child]);
-        var commands = new TransformCommandService(scene, port, history, gestures);
+        var commands = new TransformCommandService(port, history, gestures);
         Assert.True(commands.SetAbsolute(TransformTargetId.ForLight(b), At(9), "Offset").Success);
         r.Values[parent] = At(20); parents.Evaluate();
         Assert.True(journal.Undo().Success); Assert.Equal(At(22), r.Values[child]);

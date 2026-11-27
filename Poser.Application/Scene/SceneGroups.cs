@@ -472,7 +472,7 @@ public sealed class SceneGroups
     {
         bool changed = false;
         SelectionId Remap(SelectionId id) =>
-            Transforms.GroupTransformCoordinator.Target(id) is { } target
+            Transforms.TransformTargetResolver.Target(id) is { } target
                 && resolve(target) is { } current ? current.ToSelectionId() : id;
         foreach (var group in _groups)
         {

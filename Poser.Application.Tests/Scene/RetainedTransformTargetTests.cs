@@ -49,7 +49,7 @@ public sealed class RetainedTransformTargetTests
         });
         using var service = new TransformGestureService(scene, runtime, new EditHistory());
         Assert.True(service.Begin(new([baseline.Target], TransformOperation.Rotate,
-            TransformSpace.World, PivotMode.Primary)).Success);
+            TransformSpace.World, PivotMode.PerTarget)).Success);
         if (publicationGap)
         {
             Assert.True(scene.TryRefresh(new SceneSnapshot(2,
