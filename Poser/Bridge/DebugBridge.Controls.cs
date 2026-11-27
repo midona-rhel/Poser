@@ -12,6 +12,7 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Game.Presentation;
+using Poser.Documents.Files;
 
 namespace Poser.Bridge;
 
@@ -159,7 +160,7 @@ public sealed partial class DebugBridge
         {
             ok = result?.Success, result?.Detail, id = SelectionId.ForLight(light.Id).ToString(),
             light = control.Read(light.Id), history = History(),
-        }, new JsonSerializerOptions { IncludeFields = true });
+        }, BridgeJsonFields);
     }
 }
 #endif

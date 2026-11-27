@@ -11,6 +11,7 @@ using Poser.Domain.Identity;
 using Poser.Application.Events;
 using Poser.Game.Entities;
 using Poser.Game.Services;
+using Poser.Documents.Files;
 
 namespace Poser.Game;
 
@@ -123,7 +124,7 @@ public class ExpressionService : IExpressionService, IDisposable
     {
         // Read embedded catalogs from the Game assembly.
         var assembly = typeof(Poser.Game.Files.PoseFileService).Assembly;
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, IncludeFields = true };
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true, IncludeFields = true, TypeInfoResolver = PoserJsonContracts.TypeInfo };
         foreach (var name in assembly.GetManifestResourceNames())
         {
             if (!name.StartsWith("Poser.Data.Expressions.") || !name.EndsWith(".json"))

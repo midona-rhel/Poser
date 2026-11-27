@@ -25,6 +25,7 @@ using Poser.Game.Entities;
 using Poser.Game.Services;
 using Poser.UI;
 using static Poser.UI.Widgets.Themes;
+using Poser.Documents.Files;
 
 namespace Poser.Bridge;
 
@@ -352,8 +353,15 @@ public sealed partial class DebugBridge : IDisposable
             : Json(new { error = $"Unknown parameter: {string.Join(", ", unknown)}. Nothing was changed." });
     }
 
+    /// <summary>Bridge output that includes fields, with Poser's own type resolver.</summary>
+    private static readonly JsonSerializerOptions BridgeJsonFields = new()
+    {
+        IncludeFields = true,
+        TypeInfoResolver = PoserJsonContracts.TypeInfo,
+    };
+
     private static string Json(object value) =>
-        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = false });
+        JsonSerializer.Serialize(value, PoserJsonContracts.Default);
 
     // ── Routing ─────────────────────────────────────────────────────────
 
@@ -400,6 +408,8 @@ public sealed partial class DebugBridge : IDisposable
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/gpose?action=leave|enter (leaves or enters GPose like the game's /gpose)",
+                        "/loads[?collect=0] (load contexts that still hold Poser, after three full collections unless collect=0; more than one after collecting is a leaked reload)",
+                        "/cpose (runs the game's /cpose on your character; use it outside GPose)",
                         "/gamekeys?keys=SHIFT,A&frames=60&mode=messages (holds game keys for that many frames, then records as many without; mode=messages sends real key messages; omit keys to read the recorded camera values)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER&yaw=DEGREES&scale=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
@@ -601,6 +611,43 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 return Json(new { ok = true, action });
             }
+            case "/loads":
+            {
+                // Every load context that still holds Poser after a full collection.
+                // More than one means an earlier load of the plugin was never freed.
+                // collect=0 reads what is alive now, without forcing collections.
+                if (query.GetValueOrDefault("collect") != "0")
+                    for (int i = 0; i < 3; i++)
+                    {
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                    }
+                var contexts = System.Runtime.Loader.AssemblyLoadContext.All
+                    .Where(c => c.Assemblies.Any(a => a.GetName().Name == "Poser"))
+                    .Select(c => new
+                    {
+                        name = c.Name,
+                        collectible = c.IsCollectible,
+                        current = c == System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(DebugBridge).Assembly),
+                    })
+                    .ToArray();
+                // Assemblies of every context still in memory, unloading ones included.
+                int assemblies = AppDomain.CurrentDomain.GetAssemblies().Count(a => a.GetName().Name == "Poser");
+                return Json(new { count = contexts.Length, assemblies, heapMb = GC.GetTotalMemory(false) / 1048576, contexts });
+            }
+            case "/cpose":
+            {
+                // Runs the game's own /cpose on your character, outside GPose, so the
+                // GPose copy starts in a standing pose Poser did not set. Only this
+                // command: the bridge never sends chat text.
+                unsafe
+                {
+                    var command = FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.FromString("/cpose");
+                    FFXIVClientStructs.FFXIV.Client.UI.UIModule.Instance()->ProcessChatBoxEntry(command);
+                    command->Dtor(true);
+                }
+                return Json(new { ok = true });
+            }
             case "/gamekeys":
             {
                 // Holds real game keys, which /shortcut and /uiinput cannot do, and
@@ -647,7 +694,7 @@ public sealed partial class DebugBridge : IDisposable
                 }
                 return Json(global::Poser.Documents.Config.KeybindRegistry.Resolve(_configuration.Config.UI.Bindings));
             }
-            case "/placement": return JsonSerializer.Serialize(PlacementCommand(query), new JsonSerializerOptions { IncludeFields = true });
+            case "/placement": return JsonSerializer.Serialize(PlacementCommand(query), BridgeJsonFields);
             case "/selection":
             {
                 if (query.TryGetValue("entities", out var entityKeys))
@@ -937,7 +984,7 @@ public sealed partial class DebugBridge : IDisposable
                         camera.FixedPosition, camera.Position, camera.Rotation,
                         camera.TargetActorName, camera.IsTargetLocked,
                     }).ToArray(),
-                }, new JsonSerializerOptions { IncludeFields = true });
+                }, BridgeJsonFields);
             case "/camera":
             {
                 if (query.TryGetValue("create", out var kind))
@@ -1790,7 +1837,7 @@ public sealed partial class DebugBridge : IDisposable
                                 return Json(new { error = "action must be read, set, defaults, bone or entity." });
                             if (ikAction == "read")
                                 return JsonSerializer.Serialize(new { actorId = id.ToString(), config = current },
-                                    new JsonSerializerOptions { IncludeFields = true });
+                                    BridgeJsonFields);
                             if (ikAction == "defaults")
                             {
                                 var reset = _ikConfiguration.ResetDefaults(target);
@@ -1832,7 +1879,7 @@ public sealed partial class DebugBridge : IDisposable
                             var result = _ikConfiguration.Set(target, next);
                             return JsonSerializer.Serialize(new { ok = result.Success, result.Detail,
                                 actorId = id.ToString(), config = _ikConfiguration.Get(target), history = History() },
-                                new JsonSerializerOptions { IncludeFields = true });
+                                BridgeJsonFields);
                         }
                 return Json(new { error = "no such bone" });
             }
@@ -1982,7 +2029,7 @@ public sealed partial class DebugBridge : IDisposable
                     && _skeletons.GetSkeleton(actor) is Skeleton liveSkeleton)
                     Game.Diagnostics.GazeEvaluationProbe.Start(liveSkeleton);
                 return JsonSerializer.Serialize(Game.Diagnostics.GazeEvaluationProbe.Read(),
-                    new JsonSerializerOptions { IncludeFields = true });
+                    BridgeJsonFields);
             }
             case "/gazeparts":
             {
@@ -2261,6 +2308,7 @@ public sealed partial class DebugBridge : IDisposable
             emoteId = snapshot?.EmoteId,
             mode = snapshot?.Mode,
             stance = reading?.Stance.ToString(),
+            pose = reading?.Pose,
             renderFlags = snapshot?.RenderFlags,
             hasDrawObject = snapshot?.HasDrawObject,
             physicsFrozen = _animation.IsPhysicsFrozen,

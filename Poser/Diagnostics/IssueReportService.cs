@@ -243,6 +243,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         {
             NullValueHandling = NullValueHandling.Ignore,
             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+            ContractResolver = PoserJsonContracts.Resolver,
         }));
     }
 
@@ -293,7 +294,8 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     private void RefreshRedaction()
     {
         RememberActors();
-        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(_config.Config));
+        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(_config.Config,
+            new JsonSerializerSettings { ContractResolver = PoserJsonContracts.Resolver }));
     }
 
     private void RememberActors()

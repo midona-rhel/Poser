@@ -145,6 +145,7 @@ public class PoseFile
     // trailing commas/unknown members, and both supported tag shapes.
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
+        TypeInfoResolver = PoserJsonContracts.TypeInfo,
         WriteIndented = true,
         AllowTrailingCommas = true,
         MaxDepth = PoseFileLimits.MaxJsonDepth,

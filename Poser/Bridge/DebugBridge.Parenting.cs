@@ -11,6 +11,7 @@ using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Game.Transforms;
+using Poser.Documents.Files;
 
 namespace Poser.Bridge;
 
@@ -105,7 +106,7 @@ public sealed partial class DebugBridge
                 parent = link?.Target.ToString(), offset = link?.Offset,
                 parentWorld = link == null ? null : _parenting.ReadWorld(link.Target),
                 collider = e.Id.Overlay is { } overlay ? _viewport.GetCollider(overlay) : null };
-        }).ToArray(), new JsonSerializerOptions { IncludeFields = true });
+        }).ToArray(), BridgeJsonFields);
     }
 }
 #endif

@@ -34,6 +34,7 @@ public static class PoseClipboard
     /// fields included, no converters, default naming.</summary>
     private static readonly JsonSerializerOptions BrioOptions = new()
     {
+        TypeInfoResolver = PoserJsonContracts.TypeInfo,
         IncludeFields = true,
     };
 

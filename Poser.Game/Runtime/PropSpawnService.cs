@@ -13,6 +13,7 @@ using Poser.Game.Services;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
 using CSWeapon = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Weapon;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
+using Poser.Documents.Files;
 
 namespace Poser.Game;
 
@@ -224,7 +225,7 @@ public sealed unsafe class PropSpawnService : IDisposable, IPropCatalog
                 _log.Warning("PropSpawnService: props.json resource missing.");
                 return Array.Empty<PropModel>();
             }
-            var rows = System.Text.Json.JsonSerializer.Deserialize<List<PropRow>>(stream);
+            var rows = System.Text.Json.JsonSerializer.Deserialize<List<PropRow>>(stream, PoserJsonContracts.Default);
             if (rows == null)
                 return Array.Empty<PropModel>();
             var catalog = new List<PropModel>(rows.Count);
