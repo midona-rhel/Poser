@@ -676,9 +676,8 @@ public sealed class StableBindingRegistry : IEntityBindings
     }
 
     /// <summary>Clears follow leftovers on a camera that follows no actor. A
-    /// camera whose actor is gone keeps following it by its lasting ID, and
-    /// the camera's target control points it at that actor again when it is
-    /// back.</summary>
+    /// camera whose actor is gone keeps that actor, and the camera's target
+    /// control points it at the actor undo restored in its place.</summary>
     private void ReconcileCameraTargets()
     {
         foreach (var camera in _cameraBindings.Values)
