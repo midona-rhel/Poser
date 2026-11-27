@@ -10,8 +10,9 @@ namespace Poser.Game;
 /// What an actor's body shows: its model id (with the redraw that follows a
 /// change), whether it is hidden, its opacity, and the drawn-appearance copies
 /// between two actors. Hiding and opacity both use the game's character alpha,
-/// so this class is the only place that writes it. Callers have already proven
-/// the framework thread.
+/// so for spawned and GPose actors this class is the only place that writes it;
+/// ActorManager does the same for borrowed world actors. Callers have already
+/// proven the framework thread.
 /// </summary>
 internal sealed class ActorModelControl
 {
@@ -22,14 +23,19 @@ internal sealed class ActorModelControl
     private readonly SpawnFramePoller _poller;
     private readonly IPluginLog? _log;
 
-    // The actors Poser hid, with the alpha each had when it was hidden. Hiding
-    // and opacity both use the game's character alpha, so showing puts this
-    // value back instead of 1, and an opacity change while hidden only changes
-    // this value. Keyed by the exact descriptor (address, EntityId and lifetime
-    // stamp), so an entry never carries over to the next actor in the same
-    // slot. Cleared when GPose ends. Borrowed world actors keep the same value
-    // in their adoption record instead.
-    private readonly Dictionary<SpawnNativeDescriptor, float> _hiddenAlpha = new();
+    // The actors Poser hid or showed. A hidden actor's value is the alpha it
+    // had when it was hidden; null means Poser showed it. Hiding and opacity
+    // both use the game's character alpha, so showing puts the saved value back
+    // instead of 1, and an opacity change while hidden only changes the saved
+    // value. An actor Poser showed stays reported as shown while the game
+    // rebuilds its body. Keyed by the exact descriptor (address, EntityId and
+    // lifetime stamp), so an entry never carries over to the next actor in the
+    // same slot. Cleared when GPose ends. Borrowed world actors keep the same
+    // value in their adoption record instead.
+    private readonly Dictionary<SpawnNativeDescriptor, float?> _toggled = new();
+
+    private bool IsHidden(SpawnNativeDescriptor descriptor) =>
+        _toggled.TryGetValue(descriptor, out var hidden) && hidden is not null;
 
     public ActorModelControl(
         IActorManager actorManager,
@@ -47,8 +53,8 @@ internal sealed class ActorModelControl
         _log = log;
     }
 
-    /// <summary>Forgets which actors Poser hid, when GPose ends.</summary>
-    public void ClearSessionVisibility() => _hiddenAlpha.Clear();
+    /// <summary>Forgets which actors Poser hid or showed, when GPose ends.</summary>
+    public void ClearSessionVisibility() => _toggled.Clear();
 
     public bool CopyDrawnAppearance(IActor source, IActor target)
     {
@@ -104,19 +110,17 @@ internal sealed class ActorModelControl
                 return;
             else if (visible)
             {
-                if (_hiddenAlpha.TryGetValue(descriptor, out var alpha))
-                {
-                    if (!_native.SetAlpha(descriptor, alpha))
-                        return;
-                    _hiddenAlpha.Remove(descriptor);
-                }
+                if (_toggled.TryGetValue(descriptor, out var saved) && saved is { } alpha
+                    && !_native.SetAlpha(descriptor, alpha))
+                    return;
+                _toggled[descriptor] = null;
             }
-            else if (!_hiddenAlpha.ContainsKey(descriptor))
+            else if (!IsHidden(descriptor))
             {
                 if (_native.ReadAlpha(descriptor) is not { } alpha
                     || !_native.SetAlpha(descriptor, 0f))
                     return;
-                _hiddenAlpha[descriptor] = alpha;
+                _toggled[descriptor] = alpha;
             }
         }
         catch (Exception ex)
@@ -138,8 +142,8 @@ internal sealed class ActorModelControl
             return _actorManager.AdoptedOpacity(actor);
         if (!_resolver.TryResolveForOperation(actor, out var descriptor, out _))
             return null;
-        return _hiddenAlpha.TryGetValue(descriptor, out var hidden)
-            ? hidden
+        return _toggled.TryGetValue(descriptor, out var hidden) && hidden is { } saved
+            ? saved
             : _native.ReadAlpha(descriptor);
     }
 
@@ -151,9 +155,9 @@ internal sealed class ActorModelControl
             return _actorManager.SetAdoptedOpacity(actor, alpha);
         if (!_resolver.TryResolveForOperation(actor, out var descriptor, out _))
             return false;
-        if (!_hiddenAlpha.ContainsKey(descriptor))
+        if (!IsHidden(descriptor))
             return _native.SetAlpha(descriptor, alpha);
-        _hiddenAlpha[descriptor] = alpha;
+        _toggled[descriptor] = alpha;
         return true;
     }
 
@@ -185,8 +189,8 @@ internal sealed class ActorModelControl
                 return adopted;
             if (!_resolver.TryResolveForOperation(actor, out var descriptor, out var ownership))
                 return false;
-            if (_hiddenAlpha.ContainsKey(descriptor))
-                return false;
+            if (_toggled.TryGetValue(descriptor, out var hidden))
+                return hidden is null;
             return ownership is not null || (_native.IsReadyToDraw(descriptor) ?? false);
         }
         catch

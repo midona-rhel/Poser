@@ -334,8 +334,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         var deleted = _cleanup.DeleteAll();
 
-        // Both callers (GPose exit, dispose) end the session the legacy
-        // visibility overrides belong to.
+        // Both callers (GPose exit, dispose) end the session in which Poser
+        // hid or showed actors.
         _model.ClearSessionVisibility();
 
         if (deleted)
