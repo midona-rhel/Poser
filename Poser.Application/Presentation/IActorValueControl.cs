@@ -10,8 +10,7 @@ namespace Poser.Application.Presentation;
 public interface IActorValueControl
 {
     void Seal();
-    /// <summary>The actor's values as the game shows them now; null when the actor is gone.
-    /// Opacity, tint and wetness can be set exactly when this is not null.</summary>
+    /// <summary>The actor's values as the game shows them now; null when the actor is gone.</summary>
     PresentationReading? Read(ActorId actor);
     /// <summary>The values Poser set on the actor and the actor's own values saved for reset.</summary>
     PresentationOverrides OverridesFor(ActorId actor);
@@ -21,5 +20,6 @@ public interface IActorValueControl
     Outcome SetTint(ActorId actor, PresentationModel model, Vector4 value);
     Outcome SetWetnessEnabled(ActorId actor, bool value);
     Outcome SetWetness(ActorId actor, WetnessState value);
+    /// <summary>Puts back the actor's own opacity, tints, wetness and custom colours.</summary>
     Outcome ResetPresentation(ActorId actor);
 }

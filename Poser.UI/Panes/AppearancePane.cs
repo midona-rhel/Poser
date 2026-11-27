@@ -313,88 +313,79 @@ public sealed partial class AppearancePane
 
     private void DrawActorView(PageScope page, ActorId actor)
     {
-        {
-            _modelLoader.EnsureLoaded();
-            // Model controls remain available for creature models.
-            bool supported = _values.Read(actor) is not null;
-            page.Section("General", _openGeneral,
-                next => _openGeneral = next,
-                form =>
-                {
-                    ModelRows(form, actor);
-                    if (supported && _values.Read(actor) is { } r)
-                        GeneralRows(form, actor,
-                            _values.OverridesFor(actor), r);
-                    _poseFiles.Draw(form, actor);
-                },
-                divider: false);
-            DrawAttachmentSection(page, actor);
-            bool first = false;
-
-            if (supported && _values.Read(actor) is { } reading)
+        _modelLoader.EnsureLoaded();
+        // Model controls remain available for creature models.
+        var reading = _values.Read(actor);
+        var owned = _values.OverridesFor(actor);
+        page.Section("General", _openGeneral,
+            next => _openGeneral = next,
+            form =>
             {
-                var owned = _values.OverridesFor(actor);
-                page.Section("Tint", _openModel,
-                    next => _openModel = next,
-                    form => TintRow(form, actor, owned, reading),
-                    divider: !first);
-                first = false;
-                page.Section("Wet surface", _openWetSurface,
-                    next => _openWetSurface = next,
-                    form => WetSurfaceRows(form, actor, owned, reading));
-            }
+                ModelRows(form, actor);
+                if (reading is not null)
+                    GeneralRows(form, actor, owned, reading);
+                _poseFiles.Draw(form, actor);
+            },
+            divider: false);
+        DrawAttachmentSection(page, actor);
 
-            // Companions, mounts and catalog creatures take the external
-            // integrations like any actor: Brio attaches its appearance
-            // capability to every actor entity (ActorEntity.cs:122) and
-            // gates only on the integration being installed.
-            RefreshReadouts(actor);
-            var external = _integration.OverridesFor(actor);
-
-            page.Section("External appearance", _openExternalAppearance,
-                next => _openExternalAppearance = next,
-                form => ExternalAppearanceRows(form, actor, external),
-                divider: !first);
-            first = false;
-            page.Section("Character file (MCDF)",
-                form => CharacterFileRows(form, actor, external), allowDisclosure: false);
-            // A body taken from the world is handed back from its own page,
-            // as a borrowed light is from its page.
-            if (_scene.Snapshot.FindActor(actor) is { IsAdopted: true })
-                page.Section("Scene", _openScene,
-                    next => _openScene = next,
-                    form => form.Actions(string.Empty, actions =>
-                        actions.Button(
-                            "Release",
-                            () => ReleaseAdopted(actor),
-                            help: "Hand this actor back to the world")));
+        if (reading is not null)
+        {
+            page.Section("Tint", _openModel,
+                next => _openModel = next,
+                form => TintRow(form, actor, owned, reading));
+            page.Section("Wet surface", _openWetSurface,
+                next => _openWetSurface = next,
+                form => WetSurfaceRows(form, actor, owned, reading));
         }
+
+        // Companions, mounts and catalog creatures take the external
+        // integrations like any actor: Brio attaches its appearance
+        // capability to every actor entity (ActorEntity.cs:122) and
+        // gates only on the integration being installed.
+        RefreshReadouts(actor);
+        var external = _integration.OverridesFor(actor);
+
+        page.Section("External appearance", _openExternalAppearance,
+            next => _openExternalAppearance = next,
+            form => ExternalAppearanceRows(form, actor, external));
+        page.Section("Character file (MCDF)",
+            form => CharacterFileRows(form, actor, external), allowDisclosure: false);
+        // A body taken from the world is handed back from its own page,
+        // as a borrowed light is from its page.
+        if (_scene.Snapshot.FindActor(actor) is { IsAdopted: true })
+            page.Section("Scene", _openScene,
+                next => _openScene = next,
+                form => form.Actions(string.Empty, actions =>
+                    actions.Button(
+                        "Release",
+                        () => ReleaseAdopted(actor),
+                        help: "Hand this actor back to the world")));
     }
 
     private void DrawAttachedActorView(
         PageScope page,
         ActorId actor)
     {
-        bool supported = _values.Read(actor) is not null;
+        var reading = _values.Read(actor);
+        var owned = _values.OverridesFor(actor);
         page.Section("General", _openGeneral,
             next => _openGeneral = next,
             form =>
             {
-                if (supported && _values.Read(actor) is { } reading)
-                    BasicPresentationRows(
-                        form, actor, _values.OverridesFor(actor), reading);
+                if (reading is not null)
+                    BasicPresentationRows(form, actor, owned, reading);
                 _poseFiles.Draw(form, actor);
             }, divider: false);
 
-        if (supported && _values.Read(actor) is { } present)
+        if (reading is not null)
         {
-            var owned = _values.OverridesFor(actor);
             page.Section("Tint", _openModel,
                 next => _openModel = next,
-                form => CharacterTintRow(form, actor, owned, present));
+                form => CharacterTintRow(form, actor, owned, reading));
             page.Section("Wet surface", _openWetSurface,
                 next => _openWetSurface = next,
-                form => WetSurfaceRows(form, actor, owned, present));
+                form => WetSurfaceRows(form, actor, owned, reading));
         }
         DrawAttachmentSection(page, actor);
     }
