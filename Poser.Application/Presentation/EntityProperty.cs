@@ -41,9 +41,12 @@ public interface IEntityValueTarget<TId> where TId : struct
     Outcome Write<T>(EntityProperty<TId, T> property, T value);
 }
 
-/// <summary>The one write path for an entity kind's declared properties:
-/// bind the exact ID, apply the kind's refusal policy, then journal the
-/// result-aware write under (entity, property) so continuous edits stage.</summary>
+/// <summary>The one way to change an entity kind's declared properties with
+/// undo. <see cref="Set{T}"/> and <see cref="Update{T}"/> find the entity by
+/// its id, refuse when the kind's rule says so (a locked camera, for example),
+/// write the value and record one undo step per entity and property, so a
+/// slider drag becomes one step. <see cref="Record{T}"/> only records a change
+/// the game already made.</summary>
 public sealed class EntityValues<TId>(ValueJournal journal, IEntityValuePort<TId> port, string unavailable,
     Func<IEntityValueTarget<TId>, EntityProperty, string?>? refuse = null) where TId : struct
 {
