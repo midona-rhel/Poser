@@ -559,7 +559,6 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Scene.SceneCreationTick>();
         services.AddStartable<Game.Scene.SceneCreationTick>(StartStage.SceneCreation);
         services.AddSingleton<global::Poser.Game.Journal.WorldActorSession>();
-        services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
         return services;
     }
 
