@@ -41,7 +41,9 @@ public static class SceneParentingCodec
         {
             if (Reference(child, actors, companionOwner) is not { } childRef) continue;
             var targetRef = Reference(link.Target, actors, companionOwner);
-            // Keep an excluded actor reference until policy pruning can report the static fallback.
+            // A link to an actor this save leaves out is kept for now, so the
+            // save can report it when it drops the link and the child keeps its
+            // saved placement.
             if (targetRef == null && (link.Target.Actor ?? link.Target.Bone?.Skeleton.Actor) is { } excluded)
                 targetRef = new() { Kind = SceneStructureKind.Actor, Key = excluded.LogicalId };
             if (targetRef == null) continue;

@@ -6,8 +6,8 @@ namespace Poser.Application.Scene;
 /// The entities of one kind (actors, lights, ...) in the current picture of the
 /// scene, found by their full id or by their logical id. An id has a logical
 /// id, which stays the same while the entity is in the scene, and a generation,
-/// which goes up each time the entity is made again, for example after a
-/// redraw. A new picture that names an older generation of an entity than this
+/// which goes up each time the entity is made again, for example when undo
+/// brings back a removed actor. A new picture that names an older generation of an entity than this
 /// GPose session has already seen is refused.
 ///
 /// <para>A new picture is built in a <see cref="Staged"/> set that nothing reads

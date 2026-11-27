@@ -13,9 +13,9 @@ internal sealed class SceneLoadRollback(
     TransformParenting parenting)
 {
     /// <summary>
-    /// Takes the load back. Main thread only. Running it twice does nothing
-    /// the second time, because each entity is taken off the operation's lists
-    /// as it is removed. Returns what could not be undone, or null.
+    /// Takes the load back. Main thread only. Each entity and saved state is
+    /// taken off the operation's lists once it is undone, so running it again
+    /// only retries what failed. Returns what could not be undone, or null.
     /// </summary>
     public string? Run(SceneOperation operation)
     {

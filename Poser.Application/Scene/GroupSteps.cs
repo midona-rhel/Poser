@@ -8,8 +8,8 @@ namespace Poser.Application.Scene;
 /// The group commands as undo steps. Each command records all groups before
 /// and after and undo puts them back in one go. Commands that also change the
 /// members, such as a gate or ungrouping, make those member changes with the
-/// value journal paused, so they belong to the same undo step instead of
-/// adding their own.
+/// recording of single-value undo steps paused, so they belong to the same
+/// undo step instead of adding their own.
 /// </summary>
 public sealed class GroupSteps
 {
@@ -76,8 +76,9 @@ public sealed class GroupSteps
             _groupTransforms?.CaptureNamed()
                 ?? new Dictionary<GroupTransformKey, GroupTransformSnapshot>());
 
-    /// <summary>Seal a structure command after its final members and bindings exist.
-    /// Lifecycle commands use the same boundary without adding a second history entry.</summary>
+    /// <summary>Reads the groups at the end of a group command, once its members
+    /// exist in Poser's lists. Adding and removing entities use the same point
+    /// without adding a second undo step.</summary>
     public GroupsSnapshot CaptureFinalMembership()
     {
         _groupCoordinator?.SynchronizeNamed();
@@ -86,13 +87,13 @@ public sealed class GroupSteps
     }
 
     /// <summary>
-    /// The group model's half of a lifecycle removal batch (#494). Removed
-    /// members leave their groups through the scene prune, which dissolves a
-    /// group left with fewer than two items; the removal's undo must put that
-    /// structure back along with the entities. Added as the batch prologue,
-    /// so undo restores <paramref name="before"/> once the entities are back
-    /// (members rebind through the history's lifecycle successors). Redo has
-    /// nothing to do: removing the members again prunes the same way.
+    /// The groups' part of removing entities. A removed entity leaves its
+    /// groups, and a group left with fewer than two members is ungrouped, so
+    /// undoing the removal must put the groups back as well as the entities.
+    /// This step goes first in the removal's undo step, so undo puts
+    /// <paramref name="before"/> back once the entities have returned; their
+    /// group memberships follow them to their new objects. Redo does nothing
+    /// here: removing the entities again leaves the groups the same way.
     /// </summary>
     public JournalStep RemovalStructure(GroupsSnapshot before)
     {

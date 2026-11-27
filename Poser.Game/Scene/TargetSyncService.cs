@@ -11,8 +11,9 @@ namespace Poser.Game.Scene;
 /// <summary>
 /// Keeps the GPose target and the selected actor in step, each frame, as
 /// Settings asks: "Selection follows the game target" and "Game target follows
-/// selection" are separate switches. The selection is applied first and the
-/// game target read after, so an unchanged value never bounces back and forth.
+/// selection" are separate switches. The selected actor is made the game target
+/// first, then the game target is read back, so an unchanged value never
+/// bounces back and forth.
 /// A target Poser doesn't know yet is tried again on the next frame.
 /// </summary>
 public sealed class TargetSyncService : IDisposable
@@ -41,8 +42,8 @@ public sealed class TargetSyncService : IDisposable
         _gpose = gpose;
         _config = config;
         _framework = framework;
-        // Both sides are native reads/writes (target manager, binding
-        // resolution), so the sync only ever runs on the framework tick.
+        // Both sides read and write the game (its target, and Poser's ids for
+        // actors), so the sync only runs in the main thread's frame update.
         _framework.Update += OnFrameworkUpdate;
     }
 
@@ -94,10 +95,9 @@ public sealed class TargetSyncService : IDisposable
             _selection.Promote(SelectionId.ForActor(id.Value));
         }
 
-        // Re-read both sides AFTER acting. A tick that pushed one side into
-        // the other records the resulting state as already-seen, so the
-        // mirrored change is not detected as a fresh edge next tick and the
-        // two directions converge instead of ping-ponging.
+        // Read both sides again after changing one. The value just copied
+        // across is remembered as already seen, so the next frame does not
+        // take it for a new change and copy it back the other way.
         _lastPrimaryActor = CurrentPrimaryActor();
         _lastTargetAddress = address;
     }

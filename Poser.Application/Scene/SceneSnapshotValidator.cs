@@ -9,8 +9,9 @@ namespace Poser.Application.Scene;
 
 /// <summary>
 /// Checks a new picture of the scene before it is taken: that every entry is
-/// complete, and that every skeleton, bone and companion belongs to something
-/// that is in the picture. It fills the lists it is given and returns the first
+/// complete and its values are in range, that no id appears twice, that there
+/// is one Main Camera and one live camera, and that everything an entry points
+/// at (an owner, a gaze, camera or light target) is in the picture. It fills the lists it is given and returns the first
 /// problem. It reads nothing of the current picture, so a refused one changes
 /// nothing. The check against older generations is done by
 /// <see cref="SceneSession"/>.

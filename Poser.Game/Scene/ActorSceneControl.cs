@@ -7,9 +7,9 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
-/// <summary>What the actor panel asks about an actor's place in the scene:
-/// whether Poser spawned it, whether it has room for a companion and whether it
-/// can be removed. Also makes an actor the GPose target.</summary>
+/// <summary>What the main window's actor tab and the actor's context menu ask
+/// about an actor: see <see cref="ActorSceneReading"/>. Also makes an actor the
+/// GPose target.</summary>
 public sealed class ActorSceneControl(IEntityBindings bindings,
     IActorManager actors, IActorSpawnService spawns) : IActorSceneControl
 {

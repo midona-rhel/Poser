@@ -16,9 +16,9 @@ public sealed record ActorCreationRequest(
 /// not be added.</summary>
 public sealed record SceneCreationResult(SceneEntityHandle? Handle, string? Detail = null);
 
-/// <summary>Adds actors, lights, cameras, objects and overlays to the scene. The
-/// new game object is held by the game side, never by a window waiting to
-/// finish the job.</summary>
+/// <summary>Adds actors, lights, cameras, props, overlays and IK colliders to the
+/// scene, spawns world objects, and makes copies. The new game object is
+/// held by the game side, never by a window waiting to finish the job.</summary>
 public interface ISceneCreation
 {
     bool IsAvailable(SceneEntityKind kind);
