@@ -151,22 +151,23 @@ public sealed class AnimationSession : IAnimationPlayback
         Tracked(actor, "Stance", () => SetStanceUntracked(actor, stance, pose));
 
     /// <summary>
-    /// A stance plays the game's own Full body animation. When Poser was playing
-    /// one there, it lets go of that layer entirely: the choice (in StanceControl),
-    /// the watch for its end, and its held speed and weight, which belonged to
-    /// Poser's animation and not to the stance.
+    /// A stance plays the game's own Full body animation, so StanceControl drops
+    /// the Full body animation Poser chose or played. Whenever it did, also when
+    /// writing the stance then fails, Poser lets go of that layer entirely: the
+    /// watch for its end, and its held speed and weight, which belonged to that
+    /// animation and not to the stance.
     /// </summary>
     private Outcome SetStanceUntracked(ActorId actor, AnimationStance stance, int pose)
     {
-        bool playedFullBody = OverridesFor(actor).BaseTimeline != null;
+        static bool HasFullBody(AnimationOverrides o) =>
+            o.BaseTimeline != null || o.SelectedSlots.ContainsKey(AnimationSlot.Base);
+        bool hadFullBody = HasFullBody(OverridesFor(actor));
         var result = _stance.SetStance(actor, stance, pose);
-        if (!result.Success || !playedFullBody)
+        if (!hadFullBody || HasFullBody(OverridesFor(actor)))
             return result;
         _playback.SetLayerOwned(actor, AnimationSlot.Base, false);
-        var held = OverridesFor(actor);
-        if (held.SlotWeights.ContainsKey(AnimationSlot.Base))
-            SetSlotWeightUntracked(actor, AnimationSlot.Base, 1f);
-        if (held.SlotSpeeds.ContainsKey(AnimationSlot.Base))
+        SetSlotWeightUntracked(actor, AnimationSlot.Base, 1f);
+        if (OverridesFor(actor).SlotSpeeds.ContainsKey(AnimationSlot.Base))
             _speed.ClearSlotSpeed(actor, AnimationSlot.Base);
         return result;
     }
