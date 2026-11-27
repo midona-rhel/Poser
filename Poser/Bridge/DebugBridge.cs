@@ -409,6 +409,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/gpose?action=leave|enter (leaves or enters GPose like the game's /gpose)",
+                        "/cpose (runs the game's /cpose on your character; use it outside GPose)",
                         "/issuereport?scene=1|0 (saves an issue report the way the report dialog does; answers with the saved path or the failure)",
                         "/loads[?collect=0] (how many loads of Poser are in memory, after three full collections unless collect=0; growing by one per reload is a leak)",
                         "/gamekeys?keys=SHIFT,A&frames=60&mode=messages (holds game keys for that many frames, then records as many without; mode=messages sends real key messages; omit keys to read the recorded camera values)",
@@ -612,6 +613,19 @@ public sealed partial class DebugBridge : IDisposable
                     else ui->EnterGPose();
                 }
                 return Json(new { ok = true, action });
+            }
+            case "/cpose":
+            {
+                // Runs the game's own /cpose on your character, outside GPose, so the
+                // GPose copy starts in a standing pose Poser did not set. It sends
+                // only this one command and never other chat text.
+                unsafe
+                {
+                    var command = FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.FromString("/cpose");
+                    FFXIVClientStructs.FFXIV.Client.UI.UIModule.Instance()->ProcessChatBoxEntry(command);
+                    command->Dtor(true);
+                }
+                return Json(new { ok = true });
             }
             case "/issuereport":
             {
@@ -2301,6 +2315,7 @@ public sealed partial class DebugBridge : IDisposable
             emoteId = snapshot?.EmoteId,
             mode = snapshot?.Mode,
             stance = reading?.Stance.ToString(),
+            pose = reading?.Pose,
             renderFlags = snapshot?.RenderFlags,
             hasDrawObject = snapshot?.HasDrawObject,
             physicsFrozen = _animation.IsPhysicsFrozen,
