@@ -1,7 +1,8 @@
 namespace Poser.Documents.Config;
 
 /// <summary>
-/// Configuration for display/visibility settings.
+/// Anonymous mode and whether NSFW bones are shown: what the Display page's
+/// Reset puts back.
 /// </summary>
 public class DisplayConfiguration
 {

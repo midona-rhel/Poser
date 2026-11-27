@@ -5,12 +5,28 @@ namespace Poser.Documents.Config;
 /// </summary>
 public class GizmoConfiguration
 {
+    /// <summary>The smallest gizmo size the Gizmo size slider offers. The
+    /// setter keeps a size from an edited settings file at least this big,
+    /// because a size of 0 or less draws no handles or turns them inside
+    /// out, and the gizmo can then not be grabbed.</summary>
+    public const float MinimumScale = 0.5f;
+
+    /// <summary>The largest gizmo size the Gizmo size slider offers. A larger
+    /// size from an edited file still works, so the setter doesn't limit it.</summary>
+    public const float MaximumScale = 2f;
+
+    private float _gizmoScale = 1.0f;
+
     /// <summary>
-    /// Multiplies the gizmo's constant perceived size (Ktisis'
-    /// <c>Gizmo.ScaleFactor</c>). 1.0 is the 80px handle span Poser has always
-    /// drawn.
+    /// Multiplies the gizmo's size on screen, which stays the same at any
+    /// distance (Ktisis' <c>Gizmo.ScaleFactor</c>). 1.0 is an 80 pixel handle
+    /// span.
     /// </summary>
-    public float GizmoScale { get; set; } = 1.0f;
+    public float GizmoScale
+    {
+        get => _gizmoScale;
+        set => _gizmoScale = Math.Max(value, MinimumScale);
+    }
 
     /// <summary>Enables snapping while Ctrl is held. Rotation and linear changes
     /// use the configured increments; holding Shift divides them by ten.</summary>

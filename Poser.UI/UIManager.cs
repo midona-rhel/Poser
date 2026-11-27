@@ -1,3 +1,4 @@
+using Poser.Application.Integration;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Plugin;
@@ -28,6 +29,7 @@ public sealed class UIManager : IUIManager
     private readonly IEventBus _eventBus;
     private readonly ITransformEditing _transformEditing;
     private readonly UserNotices _notices;
+    private readonly CharacterFileNotices _characterFileNotices;
     private readonly IKeyState _keyState;
     private readonly global::Poser.Application.Input.IKeyEvents _keyEvents;
     private readonly global::Poser.Application.Transforms.ValueJournal _values;
@@ -78,8 +80,10 @@ public sealed class UIManager : IUIManager
         IAnimationPlayback animation,
         Dalamud.Plugin.Services.IPluginLog log,
         Dalamud.Plugin.Services.IGameGui gameGui,
-        ActionGate gate)
+        ActionGate gate,
+        ICharacterFiles characterFiles)
     {
+        _characterFileNotices = new CharacterFileNotices(characterFiles, notices);
         _gate = gate;
         _gameGui = gameGui;
         _ui = ui;
@@ -172,6 +176,7 @@ public sealed class UIManager : IUIManager
         if (_transformEditing.ActiveGesture is { } drag && ImGui.IsKeyPressed(ImGuiKey.Escape))
             _transformEditing.Cancel(drag);
         _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !hidden);
+        _characterFileNotices.Pump();
         if (!AdvanceTheme())
             return;
 

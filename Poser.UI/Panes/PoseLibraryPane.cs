@@ -58,15 +58,13 @@ public sealed partial class PoseLibraryPane
     /// never read with it.</summary>
     private const string DayFormat = LibraryStamp.DateFormat;
 
-    /// <summary>Joins a date to the place a scene was saved in. A scene group
-    /// heading reads "place – date" and an auto-save row in the folder list
-    /// reads "date – place".</summary>
+    /// <summary>Joins a date to the place a file was saved in. A scene group
+    /// heading reads "place – date"; a selected pose that records a place
+    /// reads "date – place" under its name.</summary>
     private const string PlaceSeparator = " – ";
 
-    /// <summary>Separates the date and the place in the hidden key of an
-    /// auto-save row. This character never appears in a date or a place name,
-    /// so the key stays unique even when a place name contains " – ".
-    /// </summary>
+    /// <summary>Separates the parts of the hidden key of an Auto-saves folder
+    /// row: the section and the day. It never appears in either.</summary>
     private const char KeySeparator = '\u001f';
 
     private const string PoseExtension = ".pose";

@@ -64,8 +64,10 @@ public sealed class AppearanceUndoTests
         Assert.True(result?.Success, result?.Detail);
     }
 
-    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
+    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots, IActorReplacements
     {
+        // Nothing in these tests removes an actor.
+        public Func<ActorId?> Track(ActorId actor) => () => actor;
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
         public ActorId Actor { get; } = ActorId.New();
         public EditHistory History { get; } = new();
@@ -77,7 +79,7 @@ public sealed class AppearanceUndoTests
             var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
             Integration = new IntegrationGraph(port, null!, this).Selectors;
-            _steps = new(History, this, new ValueJournal(History));
+            _steps = new(History, this, new ValueJournal(History), this);
         }
         /// <summary>Runs a change as one undo step, the way the Appearance tab's commands do.</summary>
         public IntegrationResult Run(string description, Func<IntegrationResult> change) =>

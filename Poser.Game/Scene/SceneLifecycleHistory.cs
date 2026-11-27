@@ -45,6 +45,10 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     internal IActorRemoveRestore ActorStatePort => _actorOwner.Port;
 
+    /// <summary>True while an actor brought back by undo or redo is still
+    /// getting its saved state back. The action gate reads it.</summary>
+    public bool IsRestoringActor => _actorOwner.Port.IsRestoring;
+
     /// <summary>The helpers are internal to the game code, so the plugin
     /// cannot create them. This constructor takes what they need and builds
     /// them.</summary>

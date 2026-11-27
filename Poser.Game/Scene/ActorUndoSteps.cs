@@ -54,12 +54,13 @@ internal interface IActorRemoveRestore
     /// it to <paramref name="done"/>, or null when it could not be read. In the
     /// game it answers a frame or two later, once the source actor's bone
     /// positions have been read fresh for the copy's pose import.</summary>
-    void CapturePoseForCopy(object actor, Action<ActorState?> done) =>
-        done(Read(actor) with { Runtime = null });
+    void CapturePoseForCopy(object actor, Action<ActorState?> done);
 
-    Action<IActor, Action>? CaptureBodyProfile(IActor source) => null;
+    /// <summary>Reads <paramref name="source"/>'s Customize+ profile so it can be
+    /// put on a copy, or null when the source has none.</summary>
+    BodyProfileCopy? CaptureBodyProfile(IActor source);
 
-    IActor? Recreate(ActorState state) => null;
+    IActor? Recreate(ActorState state);
 
     /// <summary>Runs <paramref name="act"/> once the actor's body can be
     /// posed, with the same wait a restore gets, or reports that it never
@@ -69,8 +70,23 @@ internal interface IActorRemoveRestore
     /// <summary>Puts the saved state back onto a newly spawned actor once it is
     /// ready. If the pose or placement fails later, that is reported through
     /// <see cref="Note"/>; the undo step that brought the body back still counts
-    /// as done.</summary>
+    /// as done. Until the state is back, <see cref="IsRestoring"/> is true.</summary>
     void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null);
+
+    /// <summary>True while a restore started by <see cref="Restore"/>, or held
+    /// with <see cref="HoldRestore"/>, has not finished. The action gate reads
+    /// it, so another undo cannot run while the restore would still write over
+    /// it.</summary>
+    bool IsRestoring { get; }
+
+    /// <summary>Counts as a restore in progress until the returned action is
+    /// called; calling it again does nothing. For the wait before
+    /// <see cref="Restore"/> starts, such as a copied body profile.</summary>
+    Action HoldRestore();
+
+    /// <summary>Forgets every restore in progress. Called when the undo history
+    /// is cleared, such as on leaving GPose.</summary>
+    void ForgetRestores();
 
     /// <summary>Where problems are reported. An action that cannot be undone
     /// says so here, instead of passing for one that can.</summary>
@@ -90,8 +106,15 @@ internal sealed class ActorLifecycleSlot
     public ActorState Document;
     public bool HasDocument;
     public bool PosedDuplicate;
-    public Action<IActor, Action>? ApplyBodyProfile;
+    public BodyProfileCopy? ApplyBodyProfile;
 }
+
+/// <summary>Puts a copied Customize+ profile on <paramref name="target"/> once
+/// its body can be posed. <paramref name="applied"/> runs when the profile is
+/// on, and also when putting it on failed, which is reported as a note.
+/// <paramref name="gaveUp"/> runs instead when the actor is gone or never
+/// becomes posable.</summary>
+internal delegate void BodyProfileCopy(IActor target, Action applied, Action gaveUp);
 
 /// <summary>Records actor spawns and removals as undo steps. Bringing an actor
 /// back builds the body from the snapshot taken at removal, or runs the first
@@ -119,7 +142,11 @@ internal sealed class ActorUndoSteps
 
     public IActorRemoveRestore Port => _actors;
 
-    public void Clear() => _slots.Clear();
+    public void Clear()
+    {
+        _slots.Clear();
+        _actors.ForgetRestores();
+    }
 
     public IActor? Resolve(IActor actor) => _slots.Resolve(actor);
 
@@ -141,7 +168,7 @@ internal sealed class ActorUndoSteps
         slot.Respawn = spawn;
         slot.HasRespawn = true;
         slot.ApplyBodyProfile = bodyProfile;
-        bodyProfile?.Invoke(actor, static () => { });
+        bodyProfile?.Invoke(actor, static () => { }, static () => { });
         _history.Append(new SceneLifecyclePatch(
             description,
             () => _slots.CaptureAndRemove(slot),
@@ -191,7 +218,7 @@ internal sealed class ActorUndoSteps
                 _actors.Restore(actor, captured, () => ReferenceEquals(_slots.CurrentInstance(slot), actor));
         }
         // Apply the pose after the Customize+ profile has changed the skeleton.
-        bodyProfile?.Invoke(actor, () => { profileReady = true; RestoreWhenReady(); });
+        bodyProfile?.Invoke(actor, () => { profileReady = true; RestoreWhenReady(); }, static () => { });
         _actors.CapturePoseForCopy(source, captured =>
         {
             if (captured is null)
@@ -276,11 +303,23 @@ internal sealed class ActorUndoSteps
                 _actors.Restore(actor, slot.Document, () => ReferenceEquals(_slots.CurrentInstance(slot), actor));
         }
         if (slot.ApplyBodyProfile is { } applyBodyProfile)
-            applyBodyProfile(actor, RestoreState);
+        {
+            // The copied body profile goes on first. Hold the gate across that
+            // wait too, so no undo runs before the restore has even started.
+            // If the body never becomes posable, nothing is restored.
+            var release = _actors.HoldRestore();
+            applyBodyProfile(actor, () =>
+            {
+                try { RestoreState(); }
+                finally { release(); }
+            }, release);
+        }
         else
             RestoreState();
         // The undo step counts as done once the body is back. Pose and placement
         // may finish on later frames; their failures are reported through Note.
+        // Until they have, IsRestoring holds the action gate, so a second undo
+        // waits instead of being written over.
         return true;
     }
 }

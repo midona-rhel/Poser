@@ -385,13 +385,16 @@ internal sealed class SceneActorRestore
 
     /// <summary>Pauses the actor so its pose is applied on a still frame. A scene
     /// saved without its animation has none to play, because an animation id can
-    /// mean something different on another computer. Returns why it failed, or
-    /// null.</summary>
+    /// mean something different on another computer. The pause is part of
+    /// the scene load's undo step, not a step of its own. Returns why it
+    /// failed, or null.</summary>
     public string? FreezeActor(SceneEntityHandle actor)
     {
         if (_bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is not { } id)
             return "The actor has no stable identity to freeze.";
-        var paused = _animation.Pause(id);
+        Outcome paused;
+        using (_animation.Untracked())
+            paused = _animation.Pause(id);
         return paused.Success
             ? null
             : paused.Detail ?? "The actor could not be frozen for its pose.";
