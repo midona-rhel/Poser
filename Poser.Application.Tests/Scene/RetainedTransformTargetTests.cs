@@ -15,6 +15,25 @@ namespace Poser.Application.Tests.Scene;
 public sealed class RetainedTransformTargetTests
 {
     [Theory]
+    [InlineData(PoseSlot.Character)]
+    [InlineData(PoseSlot.MainHand)]
+    [InlineData(PoseSlot.OffHand)]
+    public void A_bone_is_found_again_on_the_redrawn_actor(PoseSlot slot)
+    {
+        var oldActor = ActorId.New();
+        var actor = oldActor.NextGeneration();
+        var oldBone = new BoneId(new SkeletonId(oldActor, slot, 1), 0, 0, "n_root");
+        var bone = oldBone with { Skeleton = new SkeletonId(actor, slot, 2) };
+        var scene = new SceneSession(new SelectionSession());
+        Assert.True(scene.TryRefresh(new SceneSnapshot(1,
+            [new ActorDescriptor(actor, "Actor", [new SkeletonDescriptor(bone.Skeleton,
+                [new BoneDescriptor(bone, "Root", null)])])], [], [], [])).Accepted);
+
+        Assert.Equal(TransformTargetId.ForBone(bone), scene.CurrentTransformTarget(TransformTargetId.ForBone(oldBone)));
+        Assert.False(scene.Contains(TransformTargetId.ForBone(oldBone)));
+    }
+
+    [Theory]
     [InlineData(false, null)]
     [InlineData(true, null)]
     [InlineData(true, "actor")]

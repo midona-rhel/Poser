@@ -263,7 +263,6 @@ internal static class ServiceRegistration
         services.AddSingleton<DisruptiveSteps>();
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<GroupTransformState>();
-        services.AddSingleton<IGroupTransformSource, GroupTransformSource>();
         services.AddSingleton<GroupTransformCoordinator>();
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseStash>();

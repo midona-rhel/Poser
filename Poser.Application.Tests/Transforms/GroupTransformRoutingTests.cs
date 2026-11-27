@@ -6,6 +6,7 @@ using NSubstitute;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Application.Transforms;
+using Poser.Application.Viewport;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
@@ -27,20 +28,17 @@ public sealed class GroupTransformRoutingTests
         var targets = new[] { TransformTargetId.ForActor(actor), TransformTargetId.ForWorldObject(world), TransformTargetId.ForActor(other) };
         scene.Refresh(new SceneSnapshot(1, [new(actor, "Actor", []), new(other, "Other", [])], [], [], [],
             WorldObjects: [new(world, "World", "path")]));
-        var source = Substitute.For<IGroupTransformSource>();
-        source.Refusal(Arg.Any<TransformTargetId>()).Returns((string?)null);
         var runtime = Substitute.For<ITransformRuntimePort>();
         var live = new Dictionary<TransformTargetId, PoseTransform> {
             [targets[0]] = PoseTransform.Identity,
             [targets[1]] = new(new(2, 0, 0), Quaternion.Identity, Vector3.One),
             [targets[2]] = new(new(1, 3, 2), Quaternion.Identity, Vector3.One)
         };
-        source.Read(Arg.Any<TransformTargetId>()).Returns(call => live[(TransformTargetId)call[0]]);
-        source.CurrentTarget(Arg.Any<TransformTargetId>()).Returns(call => (TransformTargetId)call[0]);
-        source.TryFrame(Arg.Any<Vector3>(), out Arg.Any<GroupTransformFrame>()).Returns(call => {
-            call[1] = new GroupTransformFrame((Vector3)call[0], Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f));
-            return true;
-        });
+        var viewport = Substitute.For<IViewportReads>();
+        viewport.GetModelTransform(Arg.Any<TransformTargetId>()).Returns(call => live[(TransformTargetId)call[0]]);
+        var camera = Substitute.For<ICameraProjection>();
+        Matrix4x4.Invert(Matrix4x4.CreateFromQuaternion(Quaternion.CreateFromAxisAngle(Vector3.UnitY, .7f)), out var view);
+        camera.GetViewMatrix().Returns(view);
         runtime.Capture(Arg.Any<TransformTargetId>()).Returns(call => {
             var target = (TransformTargetId)call[0];
             return TransformPortResult.Ok(new(target, live[target], new BonePose(), false));
@@ -57,9 +55,9 @@ public sealed class GroupTransformRoutingTests
         });
         var state = new GroupTransformState();
         var history = new EditHistory();
-        using var coordinator = new GroupTransformCoordinator(scene, new SceneGroups(), state, source, NSubstitute.Substitute.For<Poser.Application.Viewport.IViewportReads>());
+        using var coordinator = new GroupTransformCoordinator(scene, new SceneGroups(), state, viewport, camera, history);
         using var gestures = new TransformGestureService(scene, runtime, history,
-            groupTransforms: state, groupSource: source, groupCoordinator: coordinator);
+            groupCoordinator: coordinator);
         var facade = new TransformFacade(scene, gestures,
             new TransformCommandService(runtime, history, gestures), null!, coordinator, new ValueJournal(history), null!, null!, null!, null!);
         selection.Add(SelectionId.ForActor(actor));
