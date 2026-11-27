@@ -5,6 +5,7 @@ using Poser.Domain;
 using Poser.Domain.Scene;
 using Poser.Game.Bindings;
 using Poser.Application.Events;
+using Poser.Game.Appearance;
 using Poser.Game.Core;
 
 namespace Poser.Game.Scene;
@@ -28,7 +29,7 @@ public sealed class SceneRefreshAndCleanup : IDisposable
     private readonly GroupTransformCoordinator? _groupCoordinator;
     private readonly Poser.Game.Animation.AnimationSession _animation;
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
-    private readonly Poser.Application.Appearance.ActorModelIdSession _modelId;
+    private readonly ActorModelIdSession _modelId;
     private readonly Poser.Application.Integration.IntegrationReset _integration;
     private readonly Poser.Game.Animation.AnimationSpeedRuntimePort _animationPort;
     private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
@@ -71,7 +72,7 @@ public sealed class SceneRefreshAndCleanup : IDisposable
         EditHistory history,
         Poser.Game.Animation.AnimationSession animation,
         Poser.Application.Presentation.ActorPresentationSession presentation,
-        Poser.Application.Appearance.ActorModelIdSession modelId,
+        ActorModelIdSession modelId,
         Poser.Application.Integration.IntegrationReset integration,
         Poser.Game.Animation.AnimationSpeedRuntimePort animationPort,
         Poser.Game.Animation.FacialPoseCapture facialCapture,

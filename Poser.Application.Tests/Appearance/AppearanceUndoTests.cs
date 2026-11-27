@@ -3,7 +3,6 @@ using Poser.Application.Posing;
 using Poser.Domain;
 using Poser.Domain.Presentation;
 using Poser.Domain.Transforms;
-using Poser.Application.Appearance;
 using Poser.Application.Integration;
 using Poser.Application.Tests.Integration;
 using Poser.Application.Lifecycle;
@@ -15,15 +14,17 @@ using Poser.Domain.Operations;
 
 namespace Poser.Application.Tests.Appearance;
 
-public sealed class ActorAppearanceControlTests
+/// <summary>Undo of the Appearance tab's collection and body-profile changes,
+/// through the undo steps and integration code the tab's commands use.</summary>
+public sealed class AppearanceUndoTests
 {
     [Fact]
     public void Body_profile_reset_undo_restores_contents_after_temporary_id_is_deleted()
     {
         var f = new Fixture();
-        Assert.True(f.Control.SetBodyProfile(f.Actor, f.Runtime.SavedProfile, "Body").Success);
+        Assert.True(f.Run("Set body profile", () => f.Integration.SetBodyProfile(f.Actor, f.Runtime.SavedProfile, "Body")).Success);
         var oldId = f.Runtime.ActiveProfile;
-        Assert.True(f.Control.ResetBodyProfile(f.Actor).Success);
+        Assert.True(f.Run("Reset body profile", () => f.Integration.ResetBodyProfile(f.Actor)).Success);
         Assert.Null(f.Runtime.ActiveProfile);
         var step = Assert.IsType<JournalStep>(f.History.PeekUndo());
         Replay(step, true);
@@ -40,13 +41,13 @@ public sealed class ActorAppearanceControlTests
     {
         var f = new Fixture();
         var chosen = Guid.NewGuid();
-        Assert.True(f.Control.SetCollection(f.Actor, chosen, "Chosen").Success);
+        Assert.True(f.Run("Set collection", () => f.Integration.SetCollection(f.Actor, chosen, "Chosen")).Success);
         var apply = Assert.IsType<JournalStep>(f.History.PeekUndo());
         Replay(apply, true);
         Assert.False(f.Runtime.Collection.HasIndividualAssignment);
         Replay(apply, false);
         Assert.Equal(chosen, f.Runtime.Collection.EffectiveId);
-        Assert.True(f.Control.ResetCollection(f.Actor).Success);
+        Assert.True(f.Run("Reset collection", () => f.Integration.ResetCollection(f.Actor)).Success);
         var reset = Assert.IsType<JournalStep>(f.History.PeekUndo());
         Assert.False(f.Runtime.Collection.HasIndividualAssignment);
         Replay(reset, true);
@@ -63,51 +64,41 @@ public sealed class ActorAppearanceControlTests
         Assert.True(result?.Success, result?.Detail);
     }
 
-    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots, IModelIdRuntimePort
+    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
     {
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
         public ActorId Actor { get; } = ActorId.New();
         public EditHistory History { get; } = new();
         public RuntimeProxy Runtime { get; }
-        public IActorAppearanceControl Control { get; }
-        private readonly IntegrationSelectors _integration;
-        private readonly ActorModelIdSession _models;
-        public int Model;
-        public bool RefuseModel;
+        public IntegrationSelectors Integration { get; }
+        private readonly DisruptiveSteps _steps;
         public Fixture()
         {
             var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
-            _integration = new IntegrationGraph(port, null!, this).Selectors;
-            _models = new(this);
-            Control = new ActorAppearanceControl(_integration, _models,
-                new(History, this, new ValueJournal(History)));
+            Integration = new IntegrationGraph(port, null!, this).Selectors;
+            _steps = new(History, this, new ValueJournal(History));
         }
+        /// <summary>Runs a change as one undo step, the way the Appearance tab's commands do.</summary>
+        public IntegrationResult Run(string description, Func<IntegrationResult> change) =>
+            _steps.Run(Actor, description, change);
         public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor)
         {
-            var look = _integration.TryCaptureHistory(actor);
+            var look = Integration.TryCaptureHistory(actor);
             return look.Success && look.Value is { } captured
                 ? IntegrationValue<ActorStateSnapshot>.Ok(new(actor, ActiveSessionGeneration!.Value,
                     new(actor.LogicalId, new object(), []),
-                    new(Model, captured, PresentationOverrides.None, null, null)))
+                    new(0, captured, PresentationOverrides.None, null, null)))
                 : IntegrationValue<ActorStateSnapshot>.Fail(look.Detail!);
         }
         public void Restore(ActorStateSnapshot snapshot, Func<bool> current, CancellationToken cancellation,
             Action<GestureResult> completed)
         {
-            var result = _integration.RestoreHistoryAndWait(snapshot.Actor, snapshot.Properties.Appearance, current, cancellation).GetAwaiter().GetResult();
-            if (result.Success) _models.Apply(snapshot.Actor, snapshot.Properties.ModelId);
+            var result = Integration.RestoreHistoryAndWait(snapshot.Actor, snapshot.Properties.Appearance, current, cancellation).GetAwaiter().GetResult();
             completed(result.Success ? GestureResult.Ok() : GestureResult.Fail(result.Detail!));
         }
         public void WaitForReset(ActorId actor, Func<bool> current, CancellationToken cancellation,
             Action<GestureResult> completed) => throw new NotSupportedException();
-        public int? Read(ActorId actor) => actor == Actor ? Model : null;
-        public Outcome Write(ActorId actor, int value)
-        {
-            if (RefuseModel || actor != Actor) return Outcome.Fail("Refused");
-            Model = value;
-            return Outcome.Ok();
-        }
     }
 
     public class RuntimeProxy : DispatchProxy

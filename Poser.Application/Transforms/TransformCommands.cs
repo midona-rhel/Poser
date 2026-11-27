@@ -60,7 +60,7 @@ public sealed class TransformCommands
     /// made during a drag goes through: a bone the drag holds is set back to
     /// the drag's value on its next update, and every other bone keeps the edit.
     /// </summary>
-    internal GestureResult? Refusal() => _gestures.RecoveryBarrier();
+    public GestureResult? Refusal() => _gestures.RecoveryBarrier();
 
     /// <summary>Reads every target the same way a drag does.</summary>
     internal GestureResult Read(
