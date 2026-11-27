@@ -42,7 +42,7 @@ internal sealed class SceneActorRestore
     private readonly Poser.Application.Settings.ConfigurationService _configuration;
     private readonly Poser.Game.Animation.AnimationSession _animation;
     private readonly IBonePosingService _bonePosing;
-    private readonly GazeService _gaze;
+    private readonly GazeSession _gaze;
     private readonly IFramework _framework;
     private readonly Poser.Application.Appearance.IInvisibleSkinService _invisibleSkin;
 
@@ -60,7 +60,7 @@ internal sealed class SceneActorRestore
         IPosingService posing,
         Poser.Application.Settings.ConfigurationService configuration,
         Poser.Game.Animation.AnimationSession animation,
-        GazeService gaze,
+        GazeSession gaze,
         IPluginLog log,
         IBonePosingService bonePosing,
         IFramework framework,
@@ -398,61 +398,37 @@ internal sealed class SceneActorRestore
     }
 
     /// <summary>
-    /// Restores the saved gaze in the order the gaze settings need. First the
-    /// mode: entering a mode with no parts turns on all three. Then which parts
-    /// take part, then the target point and each part's own point, then the
-    /// locks. A lock holds a part at its current target, so it must come after
-    /// that target is set.
+    /// Puts the saved gaze back through the gaze controls' own restore, the one
+    /// undo uses, without adding an undo step: the actor looked at, then the
+    /// mode, parts, points and locks. <paramref name="target"/> is the loaded
+    /// actor the gaze followed. A saved gaze that followed an actor the scene
+    /// does not hold is not put back, rather than looking at whatever the mode
+    /// would pick on its own.
     /// </summary>
     public string? ApplyActorGaze(SceneEntityHandle actor, SceneActor data, SceneEntityHandle? target)
     {
         if (data.Gaze is not { } saved || saved.Mode == GazeTargetMode.None)
             return null;
-        if (!_gaze.IsAvailable)
-            return _gaze.UnavailableDetail ?? "Gaze control is unavailable.";
+        if (_bindings.GetActorId(_handles.Require<IActor>(actor, SceneEntityKind.Actor)) is not { } id)
+            return "The actor is no longer bound.";
 
-        var source = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
-
-        // Following an actor is set by choosing that actor: SetGazeTarget picks
-        // the actor and switches the mode. If the scene file does not name the
-        // followed actor, there is nothing to follow, so this step fails with a
-        // message instead of looking at whatever the mode would pick on its own.
+        ActorId? followed = null;
         if (saved.Mode == GazeTargetMode.Entity)
         {
-            if (_handles.Resolve<IActor>(target, SceneEntityKind.Actor) is not { } followed)
+            if (_handles.Resolve<IActor>(target, SceneEntityKind.Actor) is not { } looked
+                || _bindings.GetActorId(looked) is not { } lookedId)
                 return "The saved gaze followed an actor the scene does not carry.";
-            var chosen = _gaze.SetGazeTarget(source, followed);
-            if (!chosen.Success)
-                return chosen.Detail ?? "The gaze target was refused.";
-        }
-        else
-        {
-            var mode = _gaze.SetGazeMode(source, saved.Mode);
-            if (!mode.Success)
-                return mode.Detail ?? "The gaze mode was refused.";
+            followed = lookedId;
         }
 
-        var parts = _gaze.SetGazeParts(source, saved.Parts);
-        if (!parts.Success)
-            return parts.Detail ?? "The gaze parts were refused.";
-
-        if (saved.Mode == GazeTargetMode.Position)
-        {
-            _gaze.SetGazePosition(source, saved.Position);
-            _gaze.SetPartPosition(source, GazeTargetType.Eyes, saved.EyesPosition);
-            _gaze.SetPartPosition(source, GazeTargetType.Head, saved.HeadPosition);
-            _gaze.SetPartPosition(source, GazeTargetType.Body, saved.BodyPosition);
-        }
-
-        foreach (var part in new[]
-                 {
-                     GazeTargetType.Body, GazeTargetType.Head, GazeTargetType.Eyes,
-                 })
-        {
-            if (saved.LockedParts.HasFlag(part))
-                _gaze.SetPartLock(source, part, true);
-        }
-        return null;
+        var settings = new Poser.Application.Gaze.GazeSettings(
+            saved.Mode, saved.Parts, saved.Position,
+            saved.EyesPosition, saved.HeadPosition, saved.BodyPosition,
+            saved.LockedParts.HasFlag(GazeTargetType.Eyes),
+            saved.LockedParts.HasFlag(GazeTargetType.Head),
+            saved.LockedParts.HasFlag(GazeTargetType.Body));
+        var restored = _gaze.RestoreState(id, new(settings, followed, Active: true, TargetStale: false));
+        return restored.Success ? null : restored.Detail ?? "The gaze could not be restored.";
     }
 
     /// <summary>Shows or hides the actor as the scene saved it.</summary>
