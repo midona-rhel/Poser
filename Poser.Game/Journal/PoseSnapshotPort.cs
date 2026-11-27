@@ -241,7 +241,7 @@ public sealed class PoseSnapshotPort : IPoseSnapshotPort, IDisposable
             if (config.Fabrik is { } control)
             {
                 FabrikTarget Rebind(FabrikTarget point) => point.Bone is { } bone
-                    && bone.Skeleton.Actor.LogicalId == snapshot.Lineage
+                    && bone.Skeleton.Actor.LogicalId == (snapshot.TakenFrom ?? snapshot.Lineage)
                     ? point with { Bone = LocalBone(bone) is { } live ? _bindings.GetBoneId(live) : null }
                     : point;
                 config = config with { Fabrik = control with
