@@ -81,7 +81,6 @@ public sealed class GameDataBuild(string listName, Action build, IPluginLog log)
 
     private void Start()
     {
-        _failure = null;
         _state = Building;
         Task.Run(Run);
     }

@@ -521,7 +521,10 @@ public sealed partial class AppearancePane
     {
         _wardrobePickerActor = actor;
         _pickerSlot = slot;
-        _wardrobe.Retry();
+        // Read the items again after a failure before asking for the reason,
+        // so the picker never shows a failure the new read has cleared.
+        _wardrobe.Retry(global::Poser.Application.Catalog.WardrobeList.Items);
+        _ = _wardrobe.ItemsFor(slot);
         _itemMemoQuery = null;
         var worn = ReadWardrobe(actor)?.Slot(slot);
         string? selected = worn is { } w && WardrobeIds.IsSheetItem(w.ItemId)
@@ -533,7 +536,7 @@ public sealed partial class AppearancePane
             WardrobeItemName,
             WardrobeItemKey,
             selected,
-            _wardrobe.LoadFailure,
+            _wardrobe.LoadFailure(global::Poser.Application.Catalog.WardrobeList.Items),
             new PickerOptions<WardrobeItem>
             {
                 Query = ItemSearch,
@@ -585,7 +588,7 @@ public sealed partial class AppearancePane
     {
         _wardrobePickerActor = actor;
         ulong worn = ReadWardrobe(actor)?.Facewear ?? 0;
-        _wardrobe.Retry();
+        _wardrobe.Retry(global::Poser.Application.Catalog.WardrobeList.Facewear);
         // Rebuilt on every open, so a list read again after a failure shows.
         _facewearRows.Clear();
         _facewearRows.Add(NoFacewear);
@@ -598,7 +601,7 @@ public sealed partial class AppearancePane
             FacewearById(worn) is { } known
                 ? known.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 : "0",
-            _wardrobe.LoadFailure,
+            _wardrobe.LoadFailure(global::Poser.Application.Catalog.WardrobeList.Facewear),
             new PickerOptions<FacewearEntry> { Texture = _facewearTexture });
     }
 

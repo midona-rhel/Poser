@@ -11,7 +11,7 @@ namespace Poser.Game.Wardrobe;
 /// their category allows, the dyes in the game's own order, the facewear.
 /// Each list is read once, on first use or by the startup warm-up, with
 /// <see cref="GameDataBuild"/>. A sheet that fails keeps the rows read before
-/// it and its reason, which the pickers show.
+/// it and its reason; the list's picker shows the reason.
 /// </summary>
 public sealed class WardrobeCatalog : IWardrobeCatalog
 {
@@ -44,14 +44,16 @@ public sealed class WardrobeCatalog : IWardrobeCatalog
         _facewearList.BuildNow();
     }
 
-    public string? LoadFailure => _items.Failure ?? _dyeList.Failure ?? _facewearList.Failure;
+    public string? LoadFailure(WardrobeList list) => Build(list).Failure;
 
-    public void Retry()
+    public void Retry(WardrobeList list) => Build(list).ForgetFailure();
+
+    private GameDataBuild Build(WardrobeList list) => list switch
     {
-        _items.ForgetFailure();
-        _dyeList.ForgetFailure();
-        _facewearList.ForgetFailure();
-    }
+        WardrobeList.Items => _items,
+        WardrobeList.Dyes => _dyeList,
+        _ => _facewearList,
+    };
 
     public IReadOnlyList<WardrobeItem> ItemsFor(EquipSlot slot)
     {

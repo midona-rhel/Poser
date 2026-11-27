@@ -23,13 +23,13 @@ internal sealed class DyePicker(string id)
     /// the picker.</summary>
     public void Open(string title, IWardrobeCatalog catalog, byte current)
     {
-        catalog.Retry();
+        catalog.Retry(WardrobeList.Dyes);
         _rows.Clear();
         _rows.Add(new DyeEntry(0, "None", 0));
         _rows.AddRange(catalog.Dyes);
         _picker.Open(title, _rows, static dye => dye.Name,
             static dye => dye.Id.ToString(CultureInfo.InvariantCulture),
-            current.ToString(CultureInfo.InvariantCulture), catalog.LoadFailure,
+            current.ToString(CultureInfo.InvariantCulture), catalog.LoadFailure(WardrobeList.Dyes),
             new PickerOptions<DyeEntry> { RowFill = static dye => dye.Id == 0 ? null : Color(dye.Color) });
     }
 
