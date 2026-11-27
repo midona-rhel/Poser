@@ -355,29 +355,69 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
     {
         if (stillCurrent?.Invoke() == false)
             return;
-        // Visibility is a plain field write and needs no body, so it lands
-        // now: a restored-hidden actor must never flash into view first.
-        var target = (IActor)actor;
-        _spawns.SetVisibility(target, state.Visible);
-        if (state.Runtime is not null)
-            // Spawn assigns its default collection on tick one. History must follow
-            // that assignment, including when a reused slot still has cached bones.
-            _framework.RunOnTick(() => PrepareRuntime(target, state, 3600, stillCurrent), delayTicks: 2);
-        else
-            Schedule(target, state, ReadyAttempts, stillCurrent);
+        // Every way this restore ends calls done exactly once in effect; it is
+        // safe to call more than once.
+        var done = HoldRestore();
+        try
+        {
+            // Visibility is a plain field write and needs no body, so it lands
+            // now: a restored-hidden actor must never flash into view first.
+            var target = (IActor)actor;
+            _spawns.SetVisibility(target, state.Visible);
+            if (state.Runtime is not null)
+                // Spawn assigns its default collection on tick one. History must follow
+                // that assignment, including when a reused slot still has cached bones.
+                _framework.RunOnTick(() =>
+                {
+                    try { PrepareRuntime(target, state, 3600, stillCurrent, done); }
+                    catch { done(); throw; }
+                }, delayTicks: 2);
+            else
+                Schedule(target, state, ReadyAttempts, stillCurrent, done);
+        }
+        catch
+        {
+            done();
+            throw;
+        }
+    }
+
+    /// <summary>The restores still in progress, each a token its done action
+    /// removes. Written from the main thread and from appearance tasks, so it
+    /// is locked.</summary>
+    private readonly HashSet<object> _restoring = new(ReferenceEqualityComparer.Instance);
+
+    public bool IsRestoring
+    {
+        get { lock (_restoring) return _restoring.Count > 0; }
+    }
+
+    public Action HoldRestore()
+    {
+        var token = new object();
+        lock (_restoring) _restoring.Add(token);
+        return () => { lock (_restoring) _restoring.Remove(token); };
+    }
+
+    public void ForgetRestores()
+    {
+        lock (_restoring) _restoring.Clear();
     }
 
     public void Note(string detail) => _log.Warning(detail);
 
     public void WhenPosable(object actor, Action<object> act) =>
-        ScheduleReady((IActor)actor, act, ReadyAttempts);
+        ScheduleReady((IActor)actor, act, ReadyAttempts, gaveUp: null);
 
-    private void ScheduleReady(IActor actor, Action<object> act, int attempts)
+    /// <summary><paramref name="gaveUp"/> runs instead of <paramref name="act"/>
+    /// when the actor is gone or never becomes posable.</summary>
+    private void ScheduleReady(IActor actor, Action<object> act, int attempts, Action? gaveUp)
     {
         if (attempts <= 0)
         {
             _log.Warning(
                 $"Actor undo: '{actor.Name}' never became posable, so a follow-up on it did not run.");
+            gaveUp?.Invoke();
             return;
         }
         try
@@ -385,10 +425,13 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
             _framework.RunOnTick(() =>
             {
                 if (actor.Address == nint.Zero)
+                {
+                    gaveUp?.Invoke();
                     return;
+                }
                 if (_bindings.GetActorId(actor) is not { } id || !_poses.HasPosableSkeleton(id) || _poses.IsImportBusy)
                 {
-                    ScheduleReady(actor, act, attempts - 1);
+                    ScheduleReady(actor, act, attempts - 1, gaveUp);
                     return;
                 }
                 try
@@ -399,6 +442,7 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
                 {
                     _log.Warning(
                         $"Actor undo: a follow-up on '{actor.Name}' failed: {ex.Message}");
+                    gaveUp?.Invoke();
                 }
             }, delayTicks: 1);
         }
@@ -406,15 +450,20 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
         {
             _log.Warning(
                 $"Actor undo: '{actor.Name}' follow-up could not be scheduled: {ex.Message}");
+            gaveUp?.Invoke();
         }
     }
 
-    private void Schedule(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent, int delayTicks = 1)
+    /// <summary>Tries <see cref="Attempt"/> on a later tick. <paramref name="done"/>
+    /// is called when the restore ends, however it ends.</summary>
+    private void Schedule(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent, Action done,
+        int delayTicks = 1)
     {
         if (attempts <= 0)
         {
             _log.Warning(
                 $"Actor undo: '{actor.Name}' came back but never became posable, so its pose and placement were not restored.");
+            done();
             return;
         }
         try
@@ -425,12 +474,13 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
                 // an unobserved-task error a minute later, not a report.
                 try
                 {
-                    Attempt(actor, state, attempts, stillCurrent);
+                    Attempt(actor, state, attempts, stillCurrent, done);
                 }
                 catch (Exception ex)
                 {
                     _log.Warning(
                         $"Actor undo: '{actor.Name}' came back but its restore failed: {ex.Message}");
+                    done();
                 }
             }, delayTicks: delayTicks);
         }
@@ -438,26 +488,30 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
         {
             _log.Warning(
                 $"Actor undo: '{actor.Name}' restore could not be scheduled: {ex.Message}");
+            done();
         }
     }
 
-    private void Attempt(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent)
+    private void Attempt(IActor actor, ActorState state, int attempts, Func<bool>? stillCurrent, Action done)
     {
         // Gone again — a second despawn, a scene load, GPose ending. There is
         // nothing to restore onto and nothing to report.
         if (actor.Address == nint.Zero || stillCurrent?.Invoke() == false)
+        {
+            done();
             return;
+        }
         if ((state.Pose is not null || state.Runtime is not null) &&
             (_bindings.GetActorId(actor) is not { } readyId || !_poses.HasPosableSkeleton(readyId) || _poses.IsImportBusy))
         {
-            Schedule(actor, state, attempts - 1, stillCurrent);
+            Schedule(actor, state, attempts - 1, stillCurrent, done);
             return;
         }
 
         if (state.CopyBones is { } required &&
             !ActorPoseReadiness.IsReady(_skeletons.GetSkeletons(actor), _bindings, required))
         {
-            Schedule(actor, state, attempts - 1, stillCurrent);
+            Schedule(actor, state, attempts - 1, stillCurrent, done);
             return;
         }
 
@@ -470,15 +524,17 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
             if (state.FreezePoseOnRestore && _bindings.GetActorId(actor) is { } frozenId)
             {
                 var rewound = _animation.RewindPausedControls(frozenId);
-                if (!rewound.Success) { Note($"'{actor.Name}': {rewound.Detail}"); return; }
+                if (!rewound.Success) { Note($"'{actor.Name}': {rewound.Detail}"); done(); return; }
             }
             runtime.Pose.Restore(_skeletons.GetSkeletons(actor), _bonePosing);
             RestoreRuntime(actor, runtime, stillCurrent);
+            done();
             return;
         }
         if (state.Pose is not { } pose)
         {
             RestoreRuntime(actor, state.Runtime, stillCurrent);
+            done();
             return;
         }
         // The next apply pass reads these root scales when converting
@@ -490,24 +546,37 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
         // WhenPosable pause can otherwise be undone by that restoration.
         options.FreezeOnImport = state.FreezePoseOnRestore;
         if (_bindings.GetActorId(actor) is not { } actorId)
+        {
+            done();
             return;
+        }
         if (state.CopyBones is not null)
         {
             // Spawn has no published actor identity yet. Detach only after
             // binding, but before the importer settles and samples its basis.
             var detached = _gaze.SetGazeMode(actor, GazeTargetMode.Detached);
-            if (!detached.Success) { Note($"Duplicate: {detached.Detail}"); return; }
+            if (!detached.Success) { Note($"Duplicate: {detached.Detail}"); done(); return; }
         }
         void OnReceipt(Poser.Domain.Operations.OperationReceipt receipt)
             {
-                if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)
+                // The first receipt only says the import was queued.
+                if (receipt.State == Poser.Domain.Operations.OperationReceiptState.Pending)
+                    return;
+                try
                 {
-                    RestoreRuntime(actor, state.Runtime, stillCurrent);
-                    // The main import owns the pose until completion. Apply
-                    // local physics offsets once, in parent-first native order,
-                    // instead of racing four framework-tick writes against it.
-                    if (state.PhysicsDeltas is { } physicsDeltas)
-                        ApplyPhysicsDeltas(actor, physicsDeltas, stillCurrent);
+                    if (stillCurrent?.Invoke() != false && receipt.State == Poser.Domain.Operations.OperationReceiptState.Applied)
+                    {
+                        RestoreRuntime(actor, state.Runtime, stillCurrent);
+                        // The main import owns the pose until completion. Apply
+                        // local physics offsets once, in parent-first native order,
+                        // instead of racing four framework-tick writes against it.
+                        if (state.PhysicsDeltas is { } physicsDeltas)
+                            ApplyPhysicsDeltas(actor, physicsDeltas, stillCurrent);
+                    }
+                }
+                finally
+                {
+                    done();
                 }
             }
         // A file is keyed by name; live partials can contain different jaw
@@ -524,7 +593,10 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
             restored = _poses.ImportPose(actorId, pose, options,
                 $"Restore pose for {actor.Name}", onReceipt: OnReceipt);
         if (!restored.Success)
+        {
             _log.Warning(
                 $"Actor undo: '{actor.Name}' came back but its pose was refused: {restored.Detail}");
+            done();
+        }
     }
 }

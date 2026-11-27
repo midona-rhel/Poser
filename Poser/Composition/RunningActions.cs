@@ -42,6 +42,8 @@ internal static class RunningActions
 
         var undo = services.GetRequiredService<UndoJournal>();
         Add(ActionKind.Quick, () => undo.IsRestoring ? "Undo" : null);
+        var lifecycle = services.GetRequiredService<Game.Scene.SceneLifecycleHistory>();
+        Add(ActionKind.Quick, () => lifecycle.IsRestoringActor ? "Restore actor" : null);
 
         var gestures = services.GetRequiredService<TransformGestureService>();
         Add(ActionKind.Drag, () => gestures.ActiveGesture != null ? "Drag" : null);

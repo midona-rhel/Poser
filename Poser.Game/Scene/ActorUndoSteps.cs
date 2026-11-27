@@ -68,8 +68,23 @@ internal interface IActorRemoveRestore
     /// <summary>Puts the saved state back onto a newly spawned actor once it is
     /// ready. If the pose or placement fails later, that is reported through
     /// <see cref="Note"/>; the undo step that brought the body back still counts
-    /// as done.</summary>
+    /// as done. Until the state is back, <see cref="IsRestoring"/> is true.</summary>
     void Restore(object actor, ActorState state, Func<bool>? stillCurrent = null);
+
+    /// <summary>True while a restore started by <see cref="Restore"/>, or held
+    /// with <see cref="HoldRestore"/>, has not finished. The action gate reads
+    /// it, so another undo cannot run while the restore would still write over
+    /// it.</summary>
+    bool IsRestoring => false;
+
+    /// <summary>Counts as a restore in progress until the returned action is
+    /// called; calling it again does nothing. For the wait before
+    /// <see cref="Restore"/> starts, such as a copied body profile.</summary>
+    Action HoldRestore() => static () => { };
+
+    /// <summary>Forgets every restore in progress. Called when the undo history
+    /// is cleared, such as on leaving GPose.</summary>
+    void ForgetRestores() { }
 
     /// <summary>Where problems are reported. An action that cannot be undone
     /// says so here, instead of passing for one that can.</summary>
@@ -113,7 +128,11 @@ internal sealed class ActorUndoSteps
 
     public IActorRemoveRestore Port => _actors;
 
-    public void Clear() => _slots.Clear();
+    public void Clear()
+    {
+        _slots.Clear();
+        _actors.ForgetRestores();
+    }
 
     public IActor? Resolve(IActor actor) => _slots.Resolve(actor);
 
@@ -270,11 +289,22 @@ internal sealed class ActorUndoSteps
                 _actors.Restore(actor, slot.Document, () => ReferenceEquals(_slots.CurrentInstance(slot), actor));
         }
         if (slot.ApplyBodyProfile is { } applyBodyProfile)
-            applyBodyProfile(actor, RestoreState);
+        {
+            // The copied body profile goes on first. Hold the gate across that
+            // wait too, so no undo runs before the restore has even started.
+            var release = _actors.HoldRestore();
+            applyBodyProfile(actor, () =>
+            {
+                try { RestoreState(); }
+                finally { release(); }
+            });
+        }
         else
             RestoreState();
         // The undo step counts as done once the body is back. Pose and placement
         // may finish on later frames; their failures are reported through Note.
+        // Until they have, IsRestoring holds the action gate, so a second undo
+        // waits instead of being written over.
         return true;
     }
 }
