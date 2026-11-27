@@ -50,11 +50,6 @@ public struct Transform
         Scale = scale;
     }
 
-    public Transform(Vector3 position) : this()
-    {
-        Position = position;
-    }
-
     /// <summary>
     /// Creates a model matrix from this transform.
     /// </summary>
@@ -111,37 +106,11 @@ public struct Transform
         };
     }
 
-    private const float Epsilon = 0.0001f;
+    /// <summary>Exact equality: every component is the same. A check for
+    /// "close enough" needs its own name, such as
+    /// <see cref="TransformMath.IsApproximatelyIdentityDelta"/>.</summary>
+    public override bool Equals(object? obj) => obj is Transform other
+        && Position.Equals(other.Position) && Rotation.Equals(other.Rotation) && Scale.Equals(other.Scale);
 
-    /// <summary>
-    /// Compares position and scale within a tolerance. The rotation comparison assumes
-    /// unit quaternions, treating q and -q as the same orientation. Exact component
-    /// equality also lets a default, zero quaternion compare equal to itself.
-    /// </summary>
-    public override bool Equals(object? obj)
-    {
-        if (obj is Transform other)
-        {
-            return Vector3.DistanceSquared(Position, other.Position) < Epsilon &&
-                   (MathF.Abs(Quaternion.Dot(Rotation, other.Rotation)) > 1f - Epsilon || Rotation == other.Rotation) &&
-                   Vector3.DistanceSquared(Scale, other.Scale) < Epsilon;
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// Hashes quantized components. This does not guarantee equal hashes for values
-    /// that Equals accepts within its tolerance; avoid using Transform as a hash key.
-    /// </summary>
-    public override int GetHashCode()
-    {
-        static int RoundComponent(float v) => (int)(v * 1000);
-        return HashCode.Combine(
-            RoundComponent(Position.X), RoundComponent(Position.Y), RoundComponent(Position.Z),
-            RoundComponent(Rotation.W),
-            RoundComponent(Scale.X), RoundComponent(Scale.Y), RoundComponent(Scale.Z));
-    }
-
-    public static bool operator ==(Transform left, Transform right) => left.Equals(right);
-    public static bool operator !=(Transform left, Transform right) => !left.Equals(right);
+    public override int GetHashCode() => HashCode.Combine(Position, Rotation, Scale);
 }
