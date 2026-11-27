@@ -427,7 +427,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
         {
             if (_actors.AddressPair(actor, actor) is { } refusal)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail(refusal.Detail!);
-            if (!_ledger.TryGetOwned(actor, out var owned) || !_ledger.TryGetContents(actor, out var contents))
+            if (!_ledger.TryGetOwned(actor, out var owned, out var contents))
                 return IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
             var index = GPoseObjectTable.IndexOf(actor);
             var (valid, _, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
