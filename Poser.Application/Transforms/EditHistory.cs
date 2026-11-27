@@ -240,6 +240,13 @@ public sealed class EditHistory
     {
         RefreshLifecycleTargets(_undo);
         RefreshLifecycleTargets(_redo);
+        // A target still in the scene, or one kept for an entity that was removed,
+        // stays as it is. A kept target is moved to the restored entity through
+        // its slot (RefreshLifecycleTargets), not by its id: an actor's id
+        // follows its place in the game's object table, so another actor
+        // restored into that place would take the same id.
+        bool Kept(TransformTargetId target) =>
+            isCurrent(target) || _lifecycleTargets.ContainsKey(target.ToSelectionId());
         // Find the same bones on the replacement body before deciding which edits to drop.
         void Rekey(List<HistoryEntry> stack)
         {
@@ -258,7 +265,7 @@ public sealed class EditHistory
                 var before = Remap(patch.Before);
                 var after = before is null ? null : Remap(patch.After);
                 var group = patch.GroupState?.Remap(target =>
-                    isCurrent(target) ? target : rekey(target));
+                    Kept(target) ? target : rekey(target));
                 if (before is not null && after is not null
                     && (patch.GroupState == null || group != null))
                     stack[i] = patch with { Before = before, After = after, GroupState = group, AwaitingTargets = false };
@@ -271,7 +278,7 @@ public sealed class EditHistory
                 var mapped = new List<TransformTargetState>(states.Count);
                 foreach (var state in states)
                 {
-                    if (isCurrent(state.Target))
+                    if (Kept(state.Target))
                     {
                         mapped.Add(state);
                         continue;
