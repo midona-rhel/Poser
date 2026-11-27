@@ -80,26 +80,21 @@ public sealed class PendingSceneCreation(
             if (pending.Pose is null)
                 continue;
 
-            Guid? operation = null;
             bool reported = false;
-            var result = imports.ImportPose(actor, pending.Pose, pending.Options!, pending.Description, onReceipt: receipt =>
+            var final = OperationReceipt.WhenFinal(actor, receipt =>
             {
-                if (sessions.ActiveSessionGeneration != pending.Handle.Session ||
-                    receipt.TargetActorId != actor || receipt.SessionGeneration != pending.Handle.Session)
-                    return;
-                if (receipt.State == OperationReceiptState.Pending)
-                {
-                    operation = receipt.OperationId;
-                    return;
-                }
-                if (operation != receipt.OperationId)
-                    return;
-                operation = null;
                 if (receipt.State != OperationReceiptState.Applied)
                 {
                     reported = true;
                     notices.Failed("Apply: " + (receipt.Detail ?? receipt.State.ToString()));
                 }
+            });
+            var result = imports.ImportPose(actor, pending.Pose, pending.Options!, pending.Description, onReceipt: receipt =>
+            {
+                // A receipt from a GPose session that has ended is not reported.
+                if (sessions.ActiveSessionGeneration == pending.Handle.Session
+                    && receipt.SessionGeneration == pending.Handle.Session)
+                    final(receipt);
             });
             if (!result.Success && !reported)
                 notices.Failed("Apply: " + (result.Detail ?? "The pose could not be applied."));
