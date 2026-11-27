@@ -1,30 +1,249 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using Poser.Application.Animation;
+using Poser.Application.Scene;
 using Poser.Domain;
 using Poser.Domain.Animation;
 using Poser.Domain.Collections;
 using Poser.Domain.Identity;
-
-using Poser.Application.Animation;
+using Poser.Game.Entities;
 
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Chooses, plays, loops and resets the animation on each of an actor's layers.
-/// It records what a layer played before Poser's first change, so Reset can put
-/// that back. Choosing an animation never plays it.
+/// Chooses, plays, loops and resets the animation on each of an actor's layers,
+/// and reads what the game plays. It records what a layer played before Poser's
+/// first change, so Reset can put that back. Choosing an animation never plays it.
 /// </summary>
-internal sealed class BaseAnimationSession
+public sealed unsafe class LayerPlayback : IDisposable
 {
     private readonly AnimationOverrideStore _store;
-    private readonly AnimationTimelineRuntimePort _timeline;
+    private readonly IFramework _framework;
+    private readonly IPluginLog _log;
+    private readonly AnimationNativeState _native;
+    private readonly SceneSession _scene;
+    private readonly TimelineSeekService _seek;
 
-    public BaseAnimationSession(AnimationOverrideStore store, AnimationTimelineRuntimePort timeline)
+    public LayerPlayback(
+        IFramework framework,
+        IPluginLog log,
+        AnimationNativeState native,
+        SceneSession scene,
+        TimelineSeekService seek,
+        AnimationOverrideStore store)
     {
         _store = store;
-        _timeline = timeline;
+        _seek = seek;
+        _seek.LayerEnded += (actor, slot, duration) => LayerEnded?.Invoke(actor, slot, duration);
+        _framework = framework;
+        _log = log;
+        _native = native;
+        _scene = scene;
+#if DEBUG
+        _framework.Update += OnFrameworkUpdate;
+#endif
     }
+
+    /// <summary>False for every actor while animation control is off (a game
+    /// function it needs was not found at start-up).</summary>
+    public bool IsSupported(ActorId actor)
+    {
+        if (_native.ResolveActor(actor) is not { } live)
+            return false;
+        return IsSupportedActor(live, _scene.Snapshot.FindActor(actor));
+    }
+
+    internal static bool IsSupportedActor(
+        IActor live,
+        Poser.Domain.Scene.ActorDescriptor? descriptor) =>
+        live.CanControlAnimation
+        || descriptor is
+        {
+            IsCompanion: true,
+            OwnerActor: not null,
+            AttachmentKind: not null,
+        };
+
+    // ── Reads ─────────────────────────────────────────────────────────
+
+    public ActorAnimationReading? Read(ActorId actor)
+    {
+        var character = _native.Resolve(actor, out _);
+        if (character == null)
+            return null;
+
+        var slots = new List<AnimationSlotReading>(AnimationSlots.All.Count);
+        foreach (var slot in AnimationSlots.All)
+        {
+            int index = (int)slot;
+            slots.Add(new AnimationSlotReading(
+                slot,
+                character->Timeline.TimelineSequencer.TimelineIds[index],
+                character->Timeline.TimelineSequencer.TimelineSpeeds[index]));
+        }
+
+        var controls = AnimationNativeState.CollectControls(character, out var token);
+        // Sitting and sleeping are the game's posture (from the mode); the pose kind
+        // (+0x20) is cleared with the pose, so it only tells the standing families apart.
+        var stance = _native.Posture(character) switch
+        {
+            1 => AnimationStance.SitGround,
+            2 => AnimationStance.SitChair,
+            4 => AnimationStance.Sleeping,
+            _ => character->EmoteController.CurrentPoseType switch
+            {
+                EmoteController.PoseType.WeaponDrawn => AnimationStance.WeaponDrawn,
+                EmoteController.PoseType.Umbrella => AnimationStance.Umbrella,
+                EmoteController.PoseType.Accessory => AnimationStance.Accessory,
+                _ => AnimationStance.Idle,
+            },
+        };
+
+        return new ActorAnimationReading(
+            character->Timeline.BaseOverride,
+            character->Timeline.OverallSpeed,
+            character->Timeline.LipsOverride,
+            character->Timeline.IsWeaponDrawn,
+            stance,
+            character->EmoteController.CPoseState,
+            slots,
+            controls,
+            token);
+    }
+
+#if DEBUG
+    private void OnFrameworkUpdate(IFramework framework) => _native.ProbeTick();
+#endif
+
+    // ── Game writes ───────────────────────────────────────────────────
+
+    /// <summary>A swap into a paused slot: its cross-fade would never advance at
+    /// speed 0 and keep showing the old animation (old control at weight 1, new
+    /// at 0). The new animation appears on its frame 0 at full weight instead.</summary>
+    private void PrepareSwap(Character* character, ushort timeline)
+    {
+        if (TimelineSlot(timeline) is { } slot)
+            _seek.PrepareInstantSwap(character, (int)slot);
+    }
+
+    /// <summary>Plays a timeline through the native route.</summary>
+    public Outcome Blend(ActorId actor, ushort timeline,
+        BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
+    {
+        captured = null;
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+
+        if (existing == null)
+            captured = CaptureBase(character);
+
+        PrepareSwap(character, timeline);
+        return _native.PlayTimeline(character, timeline);
+    }
+
+    /// <summary>The slot the sheet's Stance column routes a timeline
+    /// onto, or null when the row is missing or unmapped.</summary>
+    public AnimationSlot? TimelineSlot(ushort timeline) => _native.TimelineSlot(timeline);
+
+    /// <summary>Cancels one animation layer, including its scheduler and animation control.</summary>
+    public Outcome ClearSlotTimeline(ActorId actor, AnimationSlot slot)
+    {
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        int index = (int)slot;
+        if (index is < 0 or >= 14)
+            return Outcome.Fail("Slot out of range.");
+        // CancelTimeline takes a slot index, not a timeline row id, as argument two.
+        // Keep argument three zero to avoid resetting the base animation.
+        _native.CancelTimeline(&character->Timeline, (nint)index, nint.Zero);
+        return Outcome.Ok();
+    }
+
+    /// <summary>Captures the current base state.</summary>
+    private BaseAnimationCapture? CaptureBase(ActorId actor)
+    {
+        var character = _native.Resolve(actor, out _);
+        if (character == null)
+            return null;
+        return CaptureBase(character);
+    }
+
+    private static BaseAnimationCapture CaptureBase(Character* character) => new(
+        (byte)character->Mode,
+        character->ModeParam,
+        character->Timeline.BaseOverride,
+        character->Timeline.TimelineSequencer.TimelineIds[0]);
+
+    /// <summary>The Full body back to what the game played before Poser's first write:
+    /// its mode and BaseOverride, the slot cleared for the game's own pick.</summary>
+    public Outcome RestoreBase(ActorId actor, BaseAnimationCapture capture)
+    {
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        return _native.RestoreFullBody(character, (CharacterModes)capture.Mode, capture.ModeParam,
+            capture.BaseTimeline, capture.BaseSlotTimeline);
+    }
+
+    public ushort? EmotePostureRow(ActorId actor, uint emoteId)
+    {
+        var character = _native.Resolve(actor, out _);
+        return character == null ? null : _native.EmotePostureRow(character, emoteId);
+    }
+
+    // ── Loops (the seek service plays a layer again when it ends) ─────
+
+    public bool LoopsSuspended
+    {
+        get => _seek.LoopsSuspended;
+        set => _seek.LoopsSuspended = value;
+    }
+
+    public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned) =>
+        _seek.SetOwned(actor, slot, owned);
+
+    public event Action<ActorId, AnimationSlot, float>? LayerEnded;
+
+    public void ClearLoops(ActorId actor) => _seek.ClearLoops(actor);
+
+    /// <summary>
+    /// Full body repeat is the game's own: BaseOverride names the row, so the base-idle
+    /// pick plays it again when it ends, plays it after a redraw and leaves it alone
+    /// while it is held. 0 lets the slot go back to the game's base.
+    /// </summary>
+    public Outcome SetForceLoop(ActorId actor, ushort timeline)
+    {
+        if (timeline != 0 && TimelineSlot(timeline) != AnimationSlot.Base)
+            return Outcome.Fail("Only full-body timelines can use repeat.");
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        character->Timeline.BaseOverride = timeline;
+        if (timeline == 0)
+            _seek.ClearLoop(actor, AnimationSlot.Base);
+        else
+            _seek.SetLoop(actor, AnimationSlot.Base, timeline);
+        return Outcome.Ok();
+    }
+
+    public Outcome WriteLips(ActorId actor, ushort timeline)
+    {
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        // Must go through the native setter: it does sequencer bookkeeping
+        // that a direct field write skips.
+        character->Timeline.SetLipsOverrideTimeline(timeline);
+        return Outcome.Ok();
+    }
+
+    // ── Choosing, playing and resetting layers (remembered in the store) ──
 
     public ushort? SelectedFor(ActorId actor, AnimationSlot slot)
     {
@@ -44,7 +263,7 @@ internal sealed class BaseAnimationSession
             return Outcome.Fail("Choose an animation first.");
         // The game decides which layer an animation plays on. One whose layer it
         // doesn't name plays on the Full body. Lips takes any animation.
-        var layer = _timeline.TimelineSlot(timeline) ?? AnimationSlot.Base;
+        var layer = TimelineSlot(timeline) ?? AnimationSlot.Base;
         if (slot != AnimationSlot.Lips && layer != slot)
             return Outcome.Fail(
                 $"Animation {timeline} does not play on the {AnimationSlots.DisplayName(slot)} layer.");
@@ -66,12 +285,13 @@ internal sealed class BaseAnimationSession
         AnimationOverrides before,
         bool loopWanted)
     {
-        var result = _timeline.PlayBase(actor, timeline, before.BaseCapture, out var captured);
+        var result = Blend(actor, timeline, before.BaseCapture, out var captured);
         if (!result.Success)
             return result;
+        _seek.ClearLoop(actor, AnimationSlot.Base);
         // The game only repeats animations that belong to the Full body. One
         // that it will not repeat keeps playing, and the refusal is returned.
-        var repeat = loopWanted ? _timeline.SetForceLoop(actor, timeline) : Outcome.Ok();
+        var repeat = loopWanted ? SetForceLoop(actor, timeline) : Outcome.Ok();
         _store.Mutate(actor, o => o with
         {
             BaseCapture = o.BaseCapture ?? captured,
@@ -85,10 +305,14 @@ internal sealed class BaseAnimationSession
     /// or lying down, for undo after it has put that stance back.</summary>
     public Outcome ReplayBaseInPosture(ActorId actor, ushort timeline)
     {
-        var played = _timeline.ReplayBase(actor, timeline);
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        PrepareSwap(character, timeline);
+        var played = _native.ReplayTimeline(character, timeline);
         if (!played.Success)
             return played;
-        _timeline.SetLayerOwned(actor, AnimationSlot.Base, true);
+        SetLayerOwned(actor, AnimationSlot.Base, true);
         _store.Mutate(actor, o => o with { BaseTimeline = timeline });
         return Outcome.Ok();
     }
@@ -109,23 +333,23 @@ internal sealed class BaseAnimationSession
             !current.SlotCaptures.ContainsKey(slot);
         // Read only returns nothing when the actor is gone, and then the writes below fail too.
         ushort incoming = captureSlot
-            ? _timeline.Read(actor)?.TimelineFor(landing!.Value) ?? 0
+            ? Read(actor)?.TimelineFor(landing!.Value) ?? 0
             : (ushort)0;
 
         // Playing a layer makes the game drop the Full body repeat. Turn the
         // repeat off first and back on afterwards.
         if (suspendBaseRepeat)
         {
-            var cleared = _timeline.SetForceLoop(actor, 0);
+            var cleared = SetForceLoop(actor, 0);
             if (!cleared.Success)
                 return cleared;
         }
 
         // Turning the repeat back on cannot be refused: the actor was just found,
         // and the game accepted this same animation as a repeat before.
-        var result = _timeline.Blend(actor, timeline, current.BaseCapture, out var captured);
+        var result = Blend(actor, timeline, current.BaseCapture, out var captured);
         if (suspendBaseRepeat)
-            _timeline.SetForceLoop(actor, suspendedTimeline);
+            SetForceLoop(actor, suspendedTimeline);
         if (!result.Success)
             return result;
         if (captured is { } taken)
@@ -148,8 +372,8 @@ internal sealed class BaseAnimationSession
         if (!on && current.LoopedSlots.ContainsKey(slot))
         {
             if (slot != AnimationSlot.Base)
-                _timeline.ClearSlotLoop(actor, slot);
-            else if (_timeline.SetForceLoop(actor, 0) is { Success: false } actorGone)
+                _seek.ClearLoop(actor, slot);
+            else if (SetForceLoop(actor, 0) is { Success: false } actorGone)
                 return actorGone;
         }
         _store.Mutate(actor, o => on
@@ -167,12 +391,12 @@ internal sealed class BaseAnimationSession
             // Loop only takes effect on the animation Apply played last, and
             // only while it is still playing. The switch never starts one.
             ushort layerTarget = current.AppliedSlots.GetValueOrDefault(slot);
-            ushort layerLive = _timeline.Read(actor)?.TimelineFor(slot) ?? 0;
+            ushort layerLive = Read(actor)?.TimelineFor(slot) ?? 0;
             if (layerTarget == 0 || layerLive != layerTarget)
                 return Outcome.Ok();
-            var layerArmed = _timeline.SetSlotLoop(actor, slot, layerTarget);
-            if (!layerArmed.Success)
-                return layerArmed;
+            // The seek service wraps the layer before it ends, and plays it again if
+            // wrapping misses the end or the layer cannot be seeked.
+            _seek.SetLoop(actor, slot, layerTarget);
             _store.Mutate(actor, o => o with { LoopedSlots = o.LoopedSlots.With(slot, layerTarget) });
             return Outcome.Ok();
         }
@@ -183,8 +407,8 @@ internal sealed class BaseAnimationSession
         if (target == 0)
             return Outcome.Ok();
         // CaptureBase only returns nothing when the actor is gone, and then turning repeat on fails too.
-        var captured = current.BaseCapture == null ? _timeline.CaptureBase(actor) : null;
-        var armed = _timeline.SetForceLoop(actor, target);
+        var captured = current.BaseCapture == null ? CaptureBase(actor) : null;
+        var armed = SetForceLoop(actor, target);
         if (!armed.Success)
             return armed;
         _store.Mutate(actor, o => o with
@@ -224,9 +448,7 @@ internal sealed class BaseAnimationSession
         if (!_store.For(actor).LoopWantedSlots.Contains(slot))
             return Outcome.Ok();
 
-        var armed = _timeline.SetSlotLoop(actor, slot, selected);
-        if (!armed.Success)
-            return armed;
+        _seek.SetLoop(actor, slot, selected);
         _store.Mutate(actor, o => o with { LoopedSlots = o.LoopedSlots.With(slot, selected) });
         return Outcome.Ok();
     }
@@ -236,13 +458,17 @@ internal sealed class BaseAnimationSession
     {
         ushort timeline = (ushort)entry.TimelineId;
         bool armRepeat = before.LoopWantedSlots.Contains(AnimationSlot.Base);
-        // CaptureBase only returns nothing when the actor is gone, and then both play routes below fail too.
-        var firstCapture = before.BaseCapture ?? _timeline.CaptureBase(actor);
-        var played = _timeline.PlayEmote(actor, entry.EmoteId, timeline);
+        var character = _native.Resolve(actor, out var detail);
+        if (character == null)
+            return Outcome.Fail(detail!);
+        var firstCapture = before.BaseCapture ?? CaptureBase(character);
         // If the emote can't start from its intro, play its animation directly.
-        if (!played.Success)
+        if (!_native.PlayEmoteFromStart(character, entry.EmoteId, timeline))
+        {
+            _log.Information($"Animation: emote {entry.EmoteId} did not start from its intro for actor={actor}.");
             return PlayBaseCore(actor, timeline, before, armRepeat);
-        var repeat = armRepeat ? _timeline.SetForceLoop(actor, timeline) : Outcome.Ok();
+        }
+        var repeat = armRepeat ? SetForceLoop(actor, timeline) : Outcome.Ok();
         _store.Mutate(actor, o => o with
         {
             BaseTimeline = timeline,
@@ -261,13 +487,13 @@ internal sealed class BaseAnimationSession
             return Outcome.Ok();
         if (current.LoopedSlots.ContainsKey(AnimationSlot.Base))
         {
-            var cleared = _timeline.SetForceLoop(actor, 0);
+            var cleared = SetForceLoop(actor, 0);
             if (!cleared.Success)
                 return cleared;
         }
         if (current.BaseCapture is { } capture)
         {
-            var restored = _timeline.RestoreBase(actor, capture);
+            var restored = RestoreBase(actor, capture);
             if (!restored.Success)
                 return restored;
         }
@@ -308,19 +534,19 @@ internal sealed class BaseAnimationSession
         }
 
         if (current.LoopedSlots.ContainsKey(slot))
-            _timeline.ClearSlotLoop(actor, slot);
+            _seek.ClearLoop(actor, slot);
 
         bool preserveRepeat = current.LoopedSlots.TryGetValue(
             AnimationSlot.Base, out var repeated);
         if (preserveRepeat)
         {
-            var cleared = _timeline.SetForceLoop(actor, 0);
+            var cleared = SetForceLoop(actor, 0);
             if (!cleared.Success)
                 return cleared;
         }
 
         var restored = incoming != 0
-            ? _timeline.Blend(actor, incoming, current.BaseCapture, out _)
+            ? Blend(actor, incoming, current.BaseCapture, out _)
             : RestoreEmptySlot(actor, slot, current);
 
         // Putting a layer back can disturb the Full body. Restore the Full body
@@ -329,12 +555,12 @@ internal sealed class BaseAnimationSession
         if (restored.Success && current.BaseTimeline == null &&
             current.BaseCapture is { } capture)
         {
-            baseRestored = _timeline.RestoreBase(actor, capture);
+            baseRestored = RestoreBase(actor, capture);
         }
 
         // As in BlendCore: the actor was just found and the game accepted this repeat before.
         if (preserveRepeat)
-            _timeline.SetForceLoop(actor, repeated);
+            SetForceLoop(actor, repeated);
         if (!restored.Success)
             return restored;
         if (baseRestored is { Success: false } baseFailure)
@@ -365,18 +591,18 @@ internal sealed class BaseAnimationSession
     private Outcome RestoreEmptySlot(
         ActorId actor, AnimationSlot slot, AnimationOverrides current)
     {
-        var reading = _timeline.Read(actor);
-        var immediateBase = _timeline.CaptureBase(actor);
+        var reading = Read(actor);
+        var immediateBase = CaptureBase(actor);
         // Stop the layer and clear its animation ID. Without that, restoring the
         // Full body below would start the layer again. This only fails when the
         // actor is gone, which is also the only time there is no reading.
-        var cancelled = _timeline.ClearSlotTimeline(actor, slot);
+        var cancelled = ClearSlotTimeline(actor, slot);
         if (!cancelled.Success)
             return cancelled;
 
         // Stopping one layer can stop others. Start again only the layers that
         // stopped: replaying one that still plays would restart it.
-        var after = _timeline.Read(actor)!;
+        var after = Read(actor)!;
         var failures = new List<string>();
         var retrySlots = new Dictionary<AnimationSlot, ushort>();
         foreach (var survivor in reading!.Slots)
@@ -387,8 +613,8 @@ internal sealed class BaseAnimationSession
             if (after.TimelineFor(survivor.Slot) == survivor.TimelineId)
                 continue;
             var replayed = survivor.Slot == AnimationSlot.Lips && reading.LipsOverride != 0
-                ? _timeline.SetLips(actor, reading.LipsOverride)
-                : _timeline.Blend(actor, survivor.TimelineId, current.BaseCapture, out _);
+                ? WriteLips(actor, reading.LipsOverride)
+                : Blend(actor, survivor.TimelineId, current.BaseCapture, out _);
             if (!replayed.Success)
             {
                 failures.Add(replayed.Detail ?? $"{survivor.Slot} replay failed.");
@@ -398,7 +624,7 @@ internal sealed class BaseAnimationSession
         if (immediateBase is { } baseline &&
             after.TimelineFor(AnimationSlot.Base) != reading.TimelineFor(AnimationSlot.Base))
         {
-            var baseRestored = _timeline.RestoreBase(actor, baseline);
+            var baseRestored = RestoreBase(actor, baseline);
             if (!baseRestored.Success)
                 failures.Add(baseRestored.Detail ?? "Base rollback failed.");
         }
@@ -437,9 +663,9 @@ internal sealed class BaseAnimationSession
         var current = _store.For(actor);
         // Read only returns nothing when the actor is gone, and then the write below fails too.
         ushort? captured = current.LipsCapture == null
-            ? _timeline.Read(actor)?.LipsOverride
+            ? Read(actor)?.LipsOverride
             : null;
-        var result = _timeline.SetLips(actor, timeline);
+        var result = WriteLips(actor, timeline);
         if (!result.Success)
             return result;
 
@@ -460,7 +686,7 @@ internal sealed class BaseAnimationSession
             return Outcome.Ok();
         }
         ushort target = current.LipsCapture ?? 0;
-        var result = _timeline.SetLips(actor, target);
+        var result = WriteLips(actor, target);
         if (!result.Success)
             return result;
         _store.Mutate(actor, o => o with
@@ -470,5 +696,14 @@ internal sealed class BaseAnimationSession
             LipsCapture = null,
         });
         return Outcome.Ok();
+    }
+
+    public void Dispose()
+    {
+#if DEBUG
+        _framework.Update -= OnFrameworkUpdate;
+        _native.DisposeProbeHooks();
+#endif
+        GC.SuppressFinalize(this);
     }
 }
