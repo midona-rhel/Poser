@@ -397,8 +397,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Appearance.IActorAppearanceControl, Application.Appearance.ActorAppearanceControl>();
         services.AddSingleton<Application.Presentation.IActorValueRuntime, Game.Presentation.ActorValueRuntime>();
         services.AddSingleton<Application.Presentation.IActorValueControl, Application.Presentation.ActorValueSession>();
-        services.AddSingleton<Application.Companions.ICompanionRuntime, Game.Companions.CompanionRuntime>();
-        services.AddSingleton<Application.Companions.ICompanionControl, Application.Companions.CompanionSession>();
+        services.AddSingleton<Application.Companions.ICompanionControl, Game.Companions.CompanionEditor>();
         services.AddSingleton<IWardrobeControl, WardrobeSession>();
         services.AddSingleton<ICustomizeControl, CustomizeSession>();
         services.AddSingleton<Application.Presentation.IAppearanceColorControl, Game.Journal.AppearanceColorSession>();
