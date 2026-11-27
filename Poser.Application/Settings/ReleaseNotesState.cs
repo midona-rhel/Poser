@@ -1,6 +1,11 @@
 namespace Poser.Application.Settings;
 
-public sealed class ReleaseNotesSession
+/// <summary>
+/// Which release notes to show: after an update, the notes of every version
+/// since the one last seen; from Settings, the whole history. Remembers the
+/// last version seen in the settings once the notes were really shown.
+/// </summary>
+public sealed class ReleaseNotesState
 {
     private readonly ConfigurationService _configuration;
     private bool _presented;
@@ -13,7 +18,7 @@ public sealed class ReleaseNotesSession
     public int ViewRevision { get; private set; }
     public IReadOnlyList<ReleaseNotesEntry> Entries { get; private set; }
 
-    public ReleaseNotesSession(ConfigurationService configuration, Version version)
+    public ReleaseNotesState(ConfigurationService configuration, Version version)
     {
         _configuration = configuration;
         Version = version.ToString();
@@ -22,13 +27,14 @@ public sealed class ReleaseNotesSession
         var previous = hasSeen ? Normalize(seen!) : null;
         _history = ReleaseNotesHistory.Entries.Where(entry => Normalize(entry.Version) <= current)
             .OrderByDescending(entry => Normalize(entry.Version)).ToArray();
-        // Freeze the upgrade range before MarkPresented advances persistent state.
+        // Chosen now, because MarkPresented changes the last version seen.
         Entries = _history.Where(entry => previous is null || Normalize(entry.Version) > previous).ToArray();
         IsOpen = previous is null || current > previous;
         _presented = !IsOpen;
     }
 
-    // A load alone is not presentation: hidden UI must not consume the notice.
+    // Called when the notes were drawn. Creating this class is not enough:
+    // if Poser's windows are hidden, the notes must still show next time.
     public void MarkPresented()
     {
         if (_presented || !IsOpen) return;
