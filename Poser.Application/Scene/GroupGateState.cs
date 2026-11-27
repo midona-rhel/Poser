@@ -16,10 +16,10 @@ public interface IGroupGateState
 
 /// <summary>Member-state overrides and restoration; GroupSteps owns their history transaction.</summary>
 public sealed class GroupGateState(
-    SceneGroups groups, SelectionEntityCommands entities, IScenePlaybackControl playback) : IGroupGateState
+    SceneGroups groups, ISelectedEntityActions entities, IScenePlaybackControl playback) : IGroupGateState
 {
     private readonly SceneGroups _groups = groups;
-    private readonly SelectionEntityCommands _entities = entities;
+    private readonly ISelectedEntityActions _entities = entities;
     private readonly IScenePlaybackControl _playback = playback;
     /// <summary>Makes the world match every group's gates, after the model
     /// was put back: the journal's way to undo a gate or a dissolve.</summary>

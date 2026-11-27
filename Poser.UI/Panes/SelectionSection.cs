@@ -165,8 +165,8 @@ public sealed class SelectionSection
         _ = _entityActions.Remove(ids);
     }
 
-    /// <summary>Current pointer-free facts for the selected entities. Commands
-    /// recheck these capabilities after drawing, against the captured ids.</summary>
+    /// <summary>What can be done to the selected things, read once per frame
+    /// for the section's buttons.</summary>
     private readonly record struct ResolvedGroup(
         IReadOnlyList<CurrentSelectionEntity> Entities)
     {
@@ -197,7 +197,7 @@ public sealed class SelectionSection
 
         foreach (var id in selected)
         {
-            if (_scene.ReadCurrent(id) is { } entity && entity.Id == id)
+            if (_scene.ReadCurrent(id) is { } entity)
                 entities.Add(entity);
         }
 

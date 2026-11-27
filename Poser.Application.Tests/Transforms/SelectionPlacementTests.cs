@@ -36,7 +36,7 @@ public sealed class SelectionPlacementTests
     }
 
     [Fact]
-    public void Locked_or_stale_targets_and_unsupported_components_refuse_before_write()
+    public void Locked_or_stale_targets_refuse_before_write()
     {
         var f = new Fixture();
         f.Groups.Create("Locked", [f.A.ToSelectionId(), f.B.ToSelectionId()])!.Locked = true;
@@ -44,9 +44,6 @@ public sealed class SelectionPlacementTests
         Assert.False(f.Control.ResetComponent(f.B.ToSelectionId(), TransformOperation.Rotate).Success);
         Assert.False(f.Control.ResetComponent(SelectionId.ForProp(PropId.New()), TransformOperation.Scale).Success);
         Assert.Equal(0, f.Writes);
-        var unlocked = new Fixture();
-        Assert.False(unlocked.Control.ResetComponent(unlocked.B.ToSelectionId(), TransformOperation.Translate).Success);
-        Assert.Equal(0, unlocked.Writes);
     }
 
     private sealed class Fixture
@@ -80,6 +77,7 @@ public sealed class SelectionPlacementTests
                 {
                     case "SetAbsolute": Values[(TransformTargetId)args[0]!] = (PoseTransform)args[1]!; Writes++; return GestureResult.Ok();
                     case "Begin": GestureTargets = (IReadOnlyList<TransformTargetId>)args[0]!; return GestureResult.Ok(TransformGestureId.New());
+                    case "get_ActivePivot": return (Vector3?)Values[GestureTargets[0]].Position;
                     case "Update": Delta = (TransformDelta)args[1]!; return GestureResult.Ok();
                     case "Commit": Commits++; return GestureResult.Ok();
                     default: throw new NotSupportedException(name);

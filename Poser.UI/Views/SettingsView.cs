@@ -70,11 +70,8 @@ public sealed class SettingsViewModel
 
     public bool AutoSaveEnabled = true;
     public float AutoSaveIntervalSeconds = 180f;
-    public string AutoSaveMaxKept = "10";
     public bool AutoSaveCleanOnExit;
-    public bool SceneSnapshotsEnabled = true;
     public string SceneSnapshotsMaxKept = "5";
-    public string AutoSaveFolder = "";
     public int SkeletonShape;
 
     public bool SelectedBonesOnly;

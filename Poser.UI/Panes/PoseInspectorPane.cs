@@ -54,7 +54,6 @@ public partial class PoseInspectorPane : IDisposable
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly GroupTransformCoordinator _groupCoordinator;
     private GroupTransformFrame? _cleanGroupFrame;
-    private GroupScaleMode _cleanGroupScale;
     private readonly IViewportReads _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly ParentingSection _parentingSection;
@@ -112,16 +111,11 @@ public partial class PoseInspectorPane : IDisposable
         if (_cleanGesture is not { } gesture)
             return;
 
+        // The move code ended the drag: it failed, Escape was pressed, or the
+        // selection changed. Do not start another one until the mouse is released.
         if (_cleanTransforms.ActiveGesture != gesture)
         {
             ClearTransformSession();
-            _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-        }
-        else if (ImGui.IsKeyPressed(ImGuiKey.Escape)
-            || (_cleanGroupFrame != null
-                && _cleanGroupScale != _configuration.Config.Gizmo.GroupScale))
-        {
-            ClearTransformSession(cancel: true);
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
     }
@@ -361,12 +355,6 @@ public partial class PoseInspectorPane : IDisposable
             _railHeaderPrimed = false;
             if (ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows))
                 AppShellView.CancelAxisEdit();
-            bool hadGesture = _cleanGesture != null;
-            ClearTransformSession(cancel:
-                _cleanGesture is { } liveGesture &&
-                _cleanTransforms.ActiveGesture == liveGesture);
-            if (hadGesture)
-                _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
         _primary = primary;
         _selectionSnapshot = selected.ToArray();
@@ -2765,7 +2753,6 @@ public partial class PoseInspectorPane : IDisposable
         _cleanDisplayedCurrent = displayedStart;
         _cleanGesture = gesture;
         _cleanGroupFrame = IsMultiEntitySelection ? _groupCoordinator.SelectionFrame(_selection.Selected) : null;
-        _cleanGroupScale = _configuration.Config.Gizmo.GroupScale;
     }
 
     private void ApplyTransformSession(Transform displayedAfter)
@@ -2791,9 +2778,9 @@ public partial class PoseInspectorPane : IDisposable
         var update = _cleanTransforms.Update(gesture, delta);
         if (!update.Success)
         {
-            // Do not restart a failed drag until release.
-            ClearTransformSession(cancel:
-                _cleanTransforms.ActiveGesture == gesture);
+            // The transform service ended the drag. Do not start another one
+            // until the mouse is released.
+            ClearTransformSession();
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
             return;
         }
@@ -2807,8 +2794,7 @@ public partial class PoseInspectorPane : IDisposable
             _cleanTransforms.Commit(gesture);
     }
 
-    public void CancelInteraction() => ClearTransformSession(cancel:
-        _cleanGesture is { } gesture && _cleanTransforms.ActiveGesture == gesture);
+    public void CancelInteraction() => ClearTransformSession(cancel: true);
 
     public void Dispose()
     {
