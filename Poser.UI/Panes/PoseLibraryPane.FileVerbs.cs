@@ -36,8 +36,6 @@ public sealed partial class PoseLibraryPane
         // Show a separate notice only if the file is still invalid.
         if (result.ProbeStatus != PoseLibraryMetadataStatus.Valid)
             _notices.Report(Outcome.Fail(StatusText(result.ProbeStatus!.Value, result.Detail)), "Retry read");
-        // Refresh the tile's status after either result.
-        _library.RequestScan();
     }
 
     private void QuarantineFile(string path)
@@ -50,7 +48,6 @@ public sealed partial class PoseLibraryPane
         }
         _notices.Done("Moved into "
             + PoseLibraryFileActions.QuarantineFolderName + ".");
-        _library.RequestScan();
     }
 
     private ContextMenuItem[] BuildMoveSubmenu(string path)
@@ -103,11 +100,7 @@ public sealed partial class PoseLibraryPane
         }
         _moveMore.Clear();
         var result = _fileOperations.Move(path, destination);
-        if (result.Succeeded)
-        {
-            _library.RequestScan();
-        }
-        else
+        if (!result.Succeeded)
             _notices.Report(new Outcome(false, result.Detail), "Move to folder");
     }
 
@@ -152,11 +145,7 @@ public sealed partial class PoseLibraryPane
             name =>
             {
                 var result = _fileOperations.Rename(path, name);
-                if (result.Succeeded)
-                {
-                    _library.RequestScan();
-                }
-                else
+                if (!result.Succeeded)
                     _notices.Report(new Outcome(false, result.Detail), "Rename");
             },
             confirm: "Rename",

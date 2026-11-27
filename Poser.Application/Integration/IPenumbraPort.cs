@@ -17,6 +17,11 @@ public interface IPenumbraPort
     /// </summary>
     IntegrationValue<Guid> GetPlayerCollection();
 
+    /// <summary>Whether the actor shows a temporary collection Poser made for
+    /// another duplicate. A minion shows its owner's collection this way: it
+    /// has no collection of its own to save or protect.</summary>
+    bool FollowsAnotherDuplicate(ActorId actor, Guid collection);
+
     /// <summary>Captures only a currently effective collection owned by the duplicate lifecycle.</summary>
     IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(ActorId actor);
     IntegrationResult RestoreInheritedCollection(ActorId actor, SpawnCollectionSnapshot snapshot);

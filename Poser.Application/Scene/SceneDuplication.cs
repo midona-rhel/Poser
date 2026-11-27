@@ -17,14 +17,14 @@ public interface ISceneDuplication
 
 public sealed class SceneDuplication(
     ISceneCreation creation, IPendingSceneCreation pending,
-    SceneGroups groups, GroupSteps groupSteps, SelectionSession selection,
+    SceneGroups groups, GroupSteps groupSteps, CurrentSelection selection,
     ISessionGenerationSource sessions, Presentation.IUserNotices notices) : ISceneDuplication
 {
     private readonly ISceneCreation _creation = creation;
     private readonly IPendingSceneCreation _pending = pending;
     private readonly SceneGroups _groups = groups;
     private readonly GroupSteps _groupSteps = groupSteps;
-    private readonly SelectionSession _selection = selection;
+    private readonly CurrentSelection _selection = selection;
     private readonly ISessionGenerationSource _sessions = sessions;
     private readonly Presentation.IUserNotices _notices = notices;
 

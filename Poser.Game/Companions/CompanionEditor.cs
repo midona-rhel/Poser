@@ -1,4 +1,5 @@
 using Poser.Application.Companions;
+using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain;
@@ -17,7 +18,8 @@ namespace Poser.Game.Companions;
 /// owner's slot.
 /// </summary>
 public sealed class CompanionEditor(
-    SceneSession scene, IEntityBindings bindings, IActorSpawnService spawns, ValueJournal journal)
+    SceneSession scene, IEntityBindings bindings, IActorSpawnService spawns, ValueJournal journal,
+    IActorReplacements replacements)
     : ICompanionControl
 {
     /// <summary>The companion slot of <paramref name="subjectId"/>, or of its
@@ -46,22 +48,28 @@ public sealed class CompanionEditor(
     }
 
     /// <summary>Puts <paramref name="attachment"/> in the owner's slot, or
-    /// empties it when null. Refused when the subject's owner is no longer
-    /// <paramref name="expectedOwner"/>. Undo and redo do nothing once the
-    /// owner's binding no longer resolves, which includes an owner that was
-    /// removed and brought back by undo as a new version.</summary>
+    /// empties it when null. Refused when the subject or its companion slot is
+    /// gone, or its owner is no longer <paramref name="expectedOwner"/>. When
+    /// the owner is removed and undo brings it back, undo and redo of this
+    /// change act on the owner that came back; while the owner is gone they do
+    /// nothing.</summary>
     public Outcome Set(ActorId subject, ActorId expectedOwner, CompanionAttachment? attachment)
     {
         if (Read(subject) is not { } current || current.Owner != expectedOwner)
             return new(false, "The attachment relationship changed.");
+        var owner = replacements.Track(expectedOwner);
         return journal.Set((expectedOwner, "Companion"),
             attachment is null ? "Remove companion" : "Set companion",
-            () => current.Attachment, next => Write(expectedOwner, next), attachment,
-            () => bindings.Resolve(expectedOwner).Success);
+            () => current.Attachment,
+            next => owner() is { } id ? Write(id, next) : new(false, Gone),
+            attachment,
+            () => owner() is not null);
     }
 
-    // The owner resolves here: Set has just read it, and the journal checks
-    // it again before undo and redo.
+    private const string Gone = "The actor is no longer available.";
+
+    // Write is only called with the id the lookup returned, and the lookup
+    // returns an id only while that actor's game object can be found.
     private Outcome Write(ActorId owner, CompanionAttachment? attachment) =>
         spawns.SetCompanion(bindings.Resolve(owner).Value!, attachment)
             ? Outcome.Ok()

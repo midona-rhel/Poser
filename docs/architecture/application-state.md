@@ -16,7 +16,7 @@ A command that carries an old generation is refused. It never moves on to whatev
 
 `SceneSession` holds one picture of the scene at a time, with a revision number. `Poser.Game` finds actors, skeletons and objects on the game's main thread and hands `SceneSession` a new picture when something changes. However many changes arrive in one frame, it builds at most one new picture per frame. While nothing happens it checks once a second whether actors, their equipment slots or what is attached to them changed.
 
-`SelectionSession` holds what is selected, in the order it was selected. The interface keeps only how things are shown: search filters, which rows are expanded, hover, and open pickers.
+`CurrentSelection` holds what is selected, in the order it was selected. The interface keeps only how things are shown: search filters, which rows are expanded, hover, and open pickers.
 
 ## Undo and redo
 

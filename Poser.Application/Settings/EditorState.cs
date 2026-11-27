@@ -7,7 +7,7 @@ namespace Poser.Application.Settings;
 /// Editor tool settings shared by UI controls and shortcuts. The selected tool,
 /// skeleton view mode, and selected-bones filter persist through configuration.
 /// Orientation, symmetry, and rotation pivot are held in memory. Selection itself
-/// belongs to SelectionSession.
+/// belongs to CurrentSelection.
 /// </summary>
 public class EditorState
 {

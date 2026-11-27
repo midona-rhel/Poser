@@ -18,9 +18,6 @@ public interface IEntityBindings
 
     BindingResult<IActor> Resolve(ActorId id);
 
-    /// <summary>The actor that has this actor's lasting ID now, in whatever
-    /// version: undo brings a removed actor back as a new version.</summary>
-    (ActorId Id, IActor Actor)? CurrentActor(ActorId id);
     BindingResult<IBone> Resolve(BoneId id);
     BindingResult<ILight> Resolve(LightId id);
     BindingResult<IVirtualCamera> Resolve(CameraId id);

@@ -91,8 +91,6 @@ public sealed class CameraTargetControlTests
                 "GetCameraId" => Id,
                 "GetActorId" => CurrentActorId,
                 "GetBoneId" => BoneId,
-                "CurrentActor" => ((ActorId)args![0]!).LogicalId == CurrentActorId.LogicalId
-                    ? (CurrentActorId, actor) : null,
                 "Resolve" => args![0] switch
                 {
                     CameraId id when id == Id => new BindingResult<IVirtualCamera>(BindingStatus.Success, Camera),
@@ -117,9 +115,10 @@ public sealed class CameraTargetControlTests
                 throw new InvalidOperationException(method);
             });
             var history = Stub<IEntityHistoryResolver<IVirtualCamera>>((_, args) => args![0]);
+            var actorHistory = Stub<IEntityHistoryResolver<IActor>>((_, args) => args![0]);
             Control = new(bindings, cameras,
                 Stub<IActorManager>((method, _) => method == "GetGPoseTarget" ? actor : throw new InvalidOperationException(method)),
-                null!, Journal, new CameraControl(bindings, cameras, Journal, history), history);
+                null!, Journal, new CameraControl(bindings, cameras, Journal, history, actorHistory), history, actorHistory);
         }
     }
 

@@ -12,7 +12,7 @@ public class CoalescedRefreshTests
     public void FollowUpSeesReplacementAndIdenticalCandidatesDoNotChurnRevision()
     {
         var queue = new CoalescedRefresh();
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         Guid lineage = Guid.NewGuid();
         uint generation = 1, bound = 0;
         int passes = 0;

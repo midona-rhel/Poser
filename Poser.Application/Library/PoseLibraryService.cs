@@ -189,7 +189,11 @@ public sealed class PoseLibraryService : IPoseLibraryService
                     return;
                 }
 
-                if (_scanQueued)
+                // A request made after this pass's token was created, but
+                // before this pass read it, cancelled the token, and its
+                // queued flag was cleared at the top of the pass. Scan again
+                // for it.
+                if (_scanQueued || token.IsCancellationRequested)
                 {
                     _scanCancellation?.Dispose();
                     _scanCancellation = new CancellationTokenSource();

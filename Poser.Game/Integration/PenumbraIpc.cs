@@ -150,7 +150,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
         var (valid, individual, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
         if (!valid) return IntegrationResult.Fail("Penumbra cannot identify this actor.");
         bool hasOwned = _ledger.TryGetOwned(address, out var owned);
-        if (!individual && effective != Guid.Empty && (!hasOwned || effective != owned)
+        if (!individual && effective != Guid.Empty && !_ledger.IsDuplicateCollection(effective)
             && !_getCollections.InvokeFunc().ContainsKey(effective))
             return IntegrationResult.Fail("Another plugin now owns the actor's temporary collection.");
         var (ec, _) = next.HadIndividualAssignment
@@ -391,6 +391,10 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
     public void Dispose() => _redraw.Dispose();
 
     // ── Penumbra: spawn collection inheritance ───────────────────────────
+
+    public bool FollowsAnotherDuplicate(ActorId actor, Guid collection) =>
+        _ledger.IsDuplicateCollection(collection)
+        && !(_ledger.TryGetOwned(_actors.AddressOf(actor), out var own) && own == collection);
 
     public IntegrationValue<SpawnCollectionSnapshot?> CaptureInheritedCollection(ActorId actor) =>
         Guarded(Penumbra, "Capture inherited collection", () =>

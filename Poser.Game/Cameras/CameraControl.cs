@@ -18,10 +18,13 @@ public sealed class CameraControl : ICameraControl
     private readonly ValueJournal _journal;
     private readonly IEntityHistoryResolver<IVirtualCamera> _history;
     private readonly EntityValues<CameraId> _values;
+    private readonly IEntityHistoryResolver<IActor> _actorHistory;
 
     public CameraControl(IEntityBindings bindings, IVirtualCameraService cameras,
-        ValueJournal journal, IEntityHistoryResolver<IVirtualCamera> history)
+        ValueJournal journal, IEntityHistoryResolver<IVirtualCamera> history,
+        IEntityHistoryResolver<IActor> actorHistory)
     {
+        _actorHistory = actorHistory;
         _bindings = bindings;
         _cameras = cameras;
         _journal = journal;
@@ -98,7 +101,7 @@ public sealed class CameraControl : ICameraControl
         _journal.Record((_cameras, camera), "Reset camera properties", before, after, state =>
         {
             if (Current(camera) is not { } live) return new(false, Unavailable);
-            CameraTargetControl.PutTarget(_bindings, _cameras, live, state.Target);
+            CameraTargetControl.PutTarget(_bindings, _cameras, _actorHistory, live, state.Target);
             state.Apply(live);
             return Outcome.Ok();
         }, () => Current(camera) is not null);
@@ -109,13 +112,13 @@ public sealed class CameraControl : ICameraControl
     // file import here: it changes the owned reset baseline and other settings.
     private sealed record ResetState(
         Vector3 PositionOffset, Vector3? FixedPosition, Vector3 TargetOffset,
-        ActorId? Target, string TargetName, bool TargetLocked,
+        IActor? Target, string TargetName, bool TargetLocked,
         bool Collision, bool Delimit, bool Portrait, float Roll, float Zoom,
         float FoV, Vector2 Angle, Vector2 Pan, bool Orthographic,
         float OrthoZoom, float Speed, float Sensitivity)
     {
         public static ResetState Read(IVirtualCamera c) => new(
-            c.PositionOffset, c.FixedPosition, c.TargetOffset, c.TargetActorId,
+            c.PositionOffset, c.FixedPosition, c.TargetOffset, c.TargetActor,
             c.TargetActorName, c.IsTargetLocked, c.DisableCollision, c.DelimitCamera,
             c.IsPortraitMode, c.Roll, c.Zoom, c.FoV, c.Angle, c.Pan, c.Orthographic,
             c.OrthographicZoom, c.MovementSpeed, c.MouseSensitivity);

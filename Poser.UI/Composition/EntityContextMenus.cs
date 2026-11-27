@@ -46,7 +46,7 @@ internal sealed partial class EntityContextMenus
     private readonly ReferenceImageSession _referenceImages;
     private readonly SceneSession _scene;
     private readonly ScenePane _scenePane;
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly SidebarComposer _sidebar;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly ISceneDuplication _duplication;
@@ -107,7 +107,7 @@ internal sealed partial class EntityContextMenus
         ReferenceImageSession referenceImages,
         SceneSession scene,
         ScenePane scenePane,
-        SelectionSession selection,
+        CurrentSelection selection,
         SidebarComposer sidebar,
         PoseFileInspectorSection poseFileSection,
         ISceneDuplication duplication,
