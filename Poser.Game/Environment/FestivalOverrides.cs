@@ -27,7 +27,7 @@ namespace Poser.Game.Environment;
 /// The first change remembers the area's own festivals. Reset, and leaving
 /// GPose, make those the set waiting to be written.
 /// </summary>
-public sealed unsafe class FestivalService : IDisposable
+public sealed unsafe class FestivalOverrides : IDisposable
 {
     /// <summary>The game has eight festival slots.</summary>
     public const int MaxFestivals = 8;
@@ -62,7 +62,7 @@ public sealed unsafe class FestivalService : IDisposable
     /// <summary>Festivals can only be changed in GPose.</summary>
     public bool CanModify => _gpose.IsGPosing;
 
-    public FestivalService(
+    public FestivalOverrides(
         IClientState clientState,
         IObjectTable objects,
         IFramework framework,

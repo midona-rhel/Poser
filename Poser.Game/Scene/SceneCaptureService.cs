@@ -58,7 +58,7 @@ public sealed class SceneCaptureService
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.IntegrationSelectors _integration;
     private readonly Poser.Game.Environment.WorldRenderingService _rendering;
-    private readonly WorldObjects.WorldService _worldObjects;
+    private readonly WorldObjects.WorldBorrowing _worldObjects;
     private readonly PlacementAnchorSource _anchors;
     private readonly Poser.Application.Settings.ConfigurationService _configuration;
 
@@ -83,7 +83,7 @@ public sealed class SceneCaptureService
         PoseExportCapture exports,
         Poser.Application.Integration.IntegrationSelectors integration,
         Poser.Game.Environment.WorldRenderingService rendering,
-        WorldObjects.WorldService worldObjects,
+        WorldObjects.WorldBorrowing worldObjects,
         PlacementAnchorSource anchors,
         Poser.Application.Settings.ConfigurationService configuration,
         IBonePosingService bonePosing,

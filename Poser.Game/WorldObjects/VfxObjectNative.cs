@@ -35,7 +35,7 @@ internal sealed unsafe class VfxObjectNative
         ResourceHandle* resourceHandle, uint unk2);
 
     private Hook<VfxResourceLoadDelegate>? _vfxResourceLoad;
-    private readonly VfxPathClaimOwner _vfxClaims = new();
+    private readonly VfxPathClaims _vfxClaims = new();
     private readonly VfxOwnedAllocationLedger _vfxOwnership = new();
     private readonly IPluginLog _log;
     private readonly WorldNodeResolver _resolver;

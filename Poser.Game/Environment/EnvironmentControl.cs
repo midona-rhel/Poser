@@ -19,13 +19,13 @@ public sealed class EnvironmentControl : IEnvironmentControl
     private readonly ValueJournal _journal;
     private readonly EnvironmentService _environment;
     private readonly WorldRenderingService _rendering;
-    private readonly FestivalService _festivals;
+    private readonly FestivalOverrides _festivals;
 
     public EnvironmentControl(
         ValueJournal journal,
         EnvironmentService environment,
         WorldRenderingService rendering,
-        FestivalService festivals)
+        FestivalOverrides festivals)
     {
         _journal = journal;
         _environment = environment;

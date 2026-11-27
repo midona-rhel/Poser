@@ -40,7 +40,7 @@ public sealed class SelectedEntityActions : ISelectedEntityActions
     private readonly PropSpawnService _props;
     private readonly OverlayNodeService _overlays;
     private readonly WorldObjectService _worldObjects;
-    private readonly IWorldReleasePort _worldRelease;
+    private readonly IWorldBorrowRelease _worldRelease;
     private readonly IFramework _framework;
     private readonly EditHistory _history;
     private readonly SceneGroups _groups;
@@ -62,7 +62,7 @@ public sealed class SelectedEntityActions : ISelectedEntityActions
         PropSpawnService props,
         OverlayNodeService overlays,
         WorldObjectService worldObjects,
-        IWorldReleasePort worldRelease,
+        IWorldBorrowRelease worldRelease,
         SceneGroups groups,
         IFramework framework,
         EditHistory history,

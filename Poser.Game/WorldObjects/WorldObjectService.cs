@@ -23,11 +23,11 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 public sealed class WorldObjectService : IDisposable
 {
-    private readonly IWorldObjectPort _port;
+    private readonly IWorldObjectAccess _world;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
     private readonly Dalamud.Plugin.Services.IFramework? _framework;
-    private readonly VfxLifecycleOwner _vfx;
+    private readonly VfxCaptureRestore _vfx;
     private readonly VfxPlaybackControl _vfxPlayback;
     private readonly SceneryAnimationHold _animation;
     private readonly WorldObjectSpawner _respawner;
@@ -40,23 +40,23 @@ public sealed class WorldObjectService : IDisposable
     private bool _teardownOnly;
 
     public WorldObjectService(
-        IWorldObjectPort port,
+        IWorldObjectAccess world,
         IEventBus events,
         IPluginLog log,
         Dalamud.Plugin.Services.IFramework? framework = null)
     {
-        _port = port;
+        _world = world;
         _events = events;
         _log = log;
         _framework = framework;
-        _vfx = new VfxLifecycleOwner(port);
-        _vfxPlayback = new VfxPlaybackControl(port, log);
-        _animation = new SceneryAnimationHold(port);
-        _respawner = new WorldObjectSpawner(port, events, log,
+        _vfx = new VfxCaptureRestore(world);
+        _vfxPlayback = new VfxPlaybackControl(world, log);
+        _animation = new SceneryAnimationHold(world);
+        _respawner = new WorldObjectSpawner(world, events, log,
             IsHandleCurrent, handle => _pendingStains.Remove(handle));
-        _loadingFurniture = new FurnitureLoadTracker(port, log,
+        _loadingFurniture = new FurnitureLoadTracker(world, log,
             _adopted.Contains, Release);
-        _restorer = new WorldObjectRestorer(port, _vfx, _respawner, log, IsHandleCurrent);
+        _restorer = new WorldObjectRestorer(world, _vfx, _respawner, log, IsHandleCurrent);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         if (_framework != null)
             _framework.Update += OnFrameworkUpdate;
@@ -69,7 +69,7 @@ public sealed class WorldObjectService : IDisposable
         if (_disposed)
             return;
         _respawner.RetryPendingTeardowns();
-        _port.Pump();
+        _world.Pump();
         _loadingFurniture.Pump(DateTime.UtcNow);
         PumpRespawns(DateTime.UtcNow);
         if (_teardownOnly)
@@ -90,26 +90,26 @@ public sealed class WorldObjectService : IDisposable
                 || !IsHandleCurrent(pending)
                 // A model that cannot be dyed stops retrying: it never gets
                 // dye data.
-                || _port.CanDyeBg(pending.Address) == false
-                || _port.WriteBgTint(pending.Address, pending.Tint));
+                || _world.CanDyeBg(pending.Address) == false
+                || _world.WriteBgTint(pending.Address, pending.Tint));
         var now = DateTime.UtcNow;
         foreach (var handle in _adopted)
         {
             if (!IsHandleCurrent(handle))
                 continue;
-            if (handle.NightStatePending && _port.IsBgReady(handle.Address))
+            if (handle.NightStatePending && _world.IsBgReady(handle.Address))
             {
                 handle.NightStatePending = false;
-                _port.WriteBgNightState(handle.Address, handle.NightState);
+                _world.WriteBgNightState(handle.Address, handle.NightState);
             }
             _animation.RetryPendingSpeed(handle);
             // A borrowed object's day or night state: the map keeps setting
             // its own objects back, so the chosen state is written again
             // whenever the game changes it.
             if (handle.NightStateHeld
-                && _port.ReadBgNightState(handle.Address) is { } current
+                && _world.ReadBgNightState(handle.Address) is { } current
                 && current != handle.NightState)
-                _port.WriteBgNightState(handle.Address, handle.NightState);
+                _world.WriteBgNightState(handle.Address, handle.NightState);
             if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx
                 || handle.VfxPlayback != VfxPlaybackState.Playing)
                 continue;
@@ -172,7 +172,7 @@ public sealed class WorldObjectService : IDisposable
             ? false
             : handle.IsVfx
                 ? true
-                : _port.CanDyeBg(handle.Address);
+                : _world.CanDyeBg(handle.Address);
 
     internal void WriteAnimationPaused(AdoptedWorldObject handle)
     {
@@ -200,8 +200,8 @@ public sealed class WorldObjectService : IDisposable
     {
         if (_disposed || !IsHandleCurrent(handle) || handle.IsVfx)
             return;
-        if (_port.IsBgReady(handle.Address))
-            _port.WriteBgNightState(handle.Address, handle.NightState);
+        if (_world.IsBgReady(handle.Address))
+            _world.WriteBgNightState(handle.Address, handle.NightState);
         else
             handle.NightStatePending = true;
         if (!handle.Spawned)
@@ -216,15 +216,15 @@ public sealed class WorldObjectService : IDisposable
         if (handle.IsVfx)
         {
             if (handle.Tint is { } tint)
-                _port.WriteVfxTint(handle.Address, tint);
+                _world.WriteVfxTint(handle.Address, tint);
             return;
         }
         if (handle.IsFurniture)
         {
-            _port.WriteFurnitureColor(handle.Address, handle.Stain, handle.Tint);
+            _world.WriteFurnitureColor(handle.Address, handle.Stain, handle.Tint);
             return;
         }
-        if (!_port.WriteBgTint(handle.Address, handle.Tint))
+        if (!_world.WriteBgTint(handle.Address, handle.Tint))
             _pendingStains.Add(handle);
     }
 
@@ -235,7 +235,7 @@ public sealed class WorldObjectService : IDisposable
         if (_disposed || (_teardownOnly && handle.IsVfx)
             || !IsHandleCurrent(handle))
             return;
-        _port.WriteOpacity(
+        _world.WriteOpacity(
             handle.Address, handle.IsFurniture || handle.Visible ? handle.Opacity : 0f);
     }
 
@@ -244,19 +244,19 @@ public sealed class WorldObjectService : IDisposable
     public IReadOnlyList<AdoptedWorldObject> Adopted => _adopted;
 
     internal bool TryObserve(nint address, out WorldObjectIncarnation identity) =>
-        _port.TryReadIncarnation(address, out identity);
+        _world.TryReadIncarnation(address, out identity);
 
 #if DEBUG
     /// <summary>Debug: whether the object's model reports loaded.</summary>
     public bool IsReadyProbe(AdoptedWorldObject handle) =>
-        !_disposed && IsHandleCurrent(handle) && _port.IsBgReady(handle.Address);
+        !_disposed && IsHandleCurrent(handle) && _world.IsBgReady(handle.Address);
 #endif
 
     public int Count => _adopted.Count;
 
     /// <summary>Whether the game's list of map objects can be read at all right
     /// now.</summary>
-    public bool IsAvailable => !_disposed && _port.IsAvailable;
+    public bool IsAvailable => !_disposed && _world.IsAvailable;
 
     /// <summary>Map objects Poser does not hold yet, in the order the game lists
     /// them. The overlay filters them by distance and sorts them.</summary>
@@ -272,7 +272,7 @@ public sealed class WorldObjectService : IDisposable
     {
         if (_disposed)
             return Array.Empty<WorldObjectCandidate>();
-        var rows = _port.Enumerate();
+        var rows = _world.Enumerate();
         if (rows.Count == 0)
             return Array.Empty<WorldObjectCandidate>();
 
@@ -299,7 +299,7 @@ public sealed class WorldObjectService : IDisposable
             outline = WorldObjectOutline.None;
             return false;
         }
-        return _port.TryReadOutline(address, out outline);
+        return _world.TryReadOutline(address, out outline);
     }
 
     /// <summary>Writes an object's hover outline while it is hovered. The caller
@@ -308,7 +308,7 @@ public sealed class WorldObjectService : IDisposable
     {
         if (_disposed)
             return;
-        _port.WriteOutline(address, outline);
+        _world.WriteOutline(address, outline);
     }
 
     /// <summary>Whether Poser already holds the object at this address.</summary>
@@ -338,7 +338,7 @@ public sealed class WorldObjectService : IDisposable
         string path, Transform placement, bool visible, out string? detail)
     {
         detail = null;
-        if (_disposed || _teardownOnly || !_port.IsAvailable)
+        if (_disposed || _teardownOnly || !_world.IsAvailable)
         {
             detail = "The world cannot be reached right now.";
             return null;
@@ -379,12 +379,12 @@ public sealed class WorldObjectService : IDisposable
     }
 
     internal IReadOnlyList<FurnitureLightState> ReadFurnitureLights(AdoptedWorldObject handle) =>
-        !_disposed && handle.IsFurniture && IsHandleCurrent(handle) ? _port.ReadFurnitureLights(handle.Address) : [];
+        !_disposed && handle.IsFurniture && IsHandleCurrent(handle) ? _world.ReadFurnitureLights(handle.Address) : [];
 
     internal void WriteFurnitureLights(AdoptedWorldObject handle, IReadOnlyList<FurnitureLightState> lights)
     {
         if (!_disposed && handle.IsFurniture && IsHandleCurrent(handle))
-            _port.WriteFurnitureLights(handle.Address, lights);
+            _world.WriteFurnitureLights(handle.Address, lights);
     }
 
     /// <summary>Whether a spawned furniture piece is still loading its
@@ -435,7 +435,7 @@ public sealed class WorldObjectService : IDisposable
         var borrowed = Nearest(_adopted.Where(item => !item.Spawned && item.IsValid),
             item => item.Path, item => item.InitialPlacement.Position, path, mapPosition);
         var onMap = borrowed.Item != null && borrowed.Distance <= ExactPlace ? default
-            : Nearest(_port.Enumerate().Where(row => !IsAdopted(row.Address)).Select(row => (WorldObjectRow?)row),
+            : Nearest(_world.Enumerate().Where(row => !IsAdopted(row.Address)).Select(row => (WorldObjectRow?)row),
                 row => row!.Value.Path, row => row!.Value.Placement.Position, path, mapPosition);
         var handle = onMap.Item is { } unborrowed ? Adopt(unborrowed.Address) : borrowed.Item;
         detail = handle == null ? "The original map object could not be found near its saved position." : null;
@@ -471,16 +471,16 @@ public sealed class WorldObjectService : IDisposable
             }
             return existing;
         }
-        if (!_port.TryRead(address, out var placement))
+        if (!_world.TryRead(address, out var placement))
         {
             _log.Warning(
                 "WorldObjectService: that world object no longer exists.");
             detail = "Unable to undo: the current world object could not be read.";
             return null;
         }
-        if (!_port.TryReadFlags(address, out var flags))
+        if (!_world.TryReadFlags(address, out var flags))
             flags = 0;
-        if (!_port.TryReadVisible(address, out bool visible))
+        if (!_world.TryReadVisible(address, out bool visible))
             visible = true;
 
         var observed = RowOf(address);
@@ -488,7 +488,7 @@ public sealed class WorldObjectService : IDisposable
             ?? address.ToString("X", CultureInfo.InvariantCulture);
         WorldObjectIncarnation identity;
         VfxStateSnapshot snapshot = default;
-        if (!_port.TryReadIncarnation(address, out identity))
+        if (!_world.TryReadIncarnation(address, out identity))
         {
             detail = "Unable to undo: the current world object identity could not be read.";
             return null;
@@ -512,7 +512,7 @@ public sealed class WorldObjectService : IDisposable
             return null;
         }
         float opacity = snapshot.Color.W;
-        if (!isVfx && !_port.TryReadOpacity(address, out opacity))
+        if (!isVfx && !_world.TryReadOpacity(address, out opacity))
         {
             detail = "Unable to undo: the current world object opacity could not be read.";
             return null;
@@ -531,7 +531,7 @@ public sealed class WorldObjectService : IDisposable
             initialOpacity: opacity);
         // The object's own day or night state, put back on release. The entry
         // starts from the same value, so the buttons show the real state.
-        handle.InitialNightState = _port.ReadBgNightState(address);
+        handle.InitialNightState = _world.ReadBgNightState(address);
         if (isVfx)
         {
             handle.InitialVfxSnapshot = snapshot;
@@ -554,10 +554,10 @@ public sealed class WorldObjectService : IDisposable
         nint address, WorldObjectIncarnation expected, out string detail)
     {
         detail = "Unable to undo: the world is unavailable.";
-        if (_disposed || _teardownOnly || !_port.IsAvailable)
+        if (_disposed || _teardownOnly || !_world.IsAvailable)
             return false;
 
-        bool listed = _port.Enumerate().Any(row => row.Address == address);
+        bool listed = _world.Enumerate().Any(row => row.Address == address);
         if (!listed)
         {
             detail = "Unable to undo: the original world object is no longer in the current world graph.";
@@ -567,7 +567,7 @@ public sealed class WorldObjectService : IDisposable
         // Reading the address is only safe because the game lists it. The
         // check is best effort: a map model the game rebuilt at the same
         // address from the same file cannot be told apart here.
-        if (!_port.TryReadIncarnation(address, out var current))
+        if (!_world.TryReadIncarnation(address, out var current))
         {
             detail = "Unable to undo: the current world object identity could not be read.";
             return false;
@@ -640,12 +640,12 @@ public sealed class WorldObjectService : IDisposable
     private bool IsHandleCurrent(AdoptedWorldObject handle) =>
         handle.IsVfx
             ? _vfx.IsCurrent(handle.Identity)
-            : _port.TryReadIncarnation(handle.Address, out var current)
+            : _world.TryReadIncarnation(handle.Address, out var current)
                 && current.SameAllocation(handle.Identity);
 
     internal Transform ReadPlacement(AdoptedWorldObject handle, Transform fallback) =>
         IsHandleCurrent(handle)
-            && _port.TryRead(handle.Address, out var placement)
+            && _world.TryRead(handle.Address, out var placement)
                 ? placement
                 : fallback;
 
@@ -679,13 +679,13 @@ public sealed class WorldObjectService : IDisposable
             handle.VfxPlayback = actualPlayback;
             return true;
         }
-        _port.Write(handle.Address, placement);
+        _world.Write(handle.Address, placement);
         return true;
     }
 
     internal bool ReadVisible(AdoptedWorldObject handle, bool fallback) =>
         IsHandleCurrent(handle)
-            && _port.TryReadVisible(handle.Address, out bool visible)
+            && _world.TryReadVisible(handle.Address, out bool visible)
                 ? visible
                 : fallback;
 
@@ -694,16 +694,16 @@ public sealed class WorldObjectService : IDisposable
         if (_disposed || (_teardownOnly && handle.IsVfx)
             || !IsHandleCurrent(handle))
             return;
-        _port.WriteVisible(handle.Address, visible);
+        _world.WriteVisible(handle.Address, visible);
         // A dimmed object shows again at its own opacity, not at full. This
         // is the one place that knows both values, so they are combined here.
         if (visible && handle.Opacity < 1f)
-            _port.WriteOpacity(handle.Address, handle.Opacity);
+            _world.WriteOpacity(handle.Address, handle.Opacity);
     }
 
     private WorldObjectRow? RowOf(nint address)
     {
-        foreach (var row in _port.Enumerate())
+        foreach (var row in _world.Enumerate())
             if (row.Address == address)
                 return row;
         return null;

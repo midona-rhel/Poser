@@ -48,7 +48,7 @@ public readonly record struct VfxStateSnapshot(
 
 /// <summary>The walk of the world's scene graph: every BG object and effect
 /// it holds as pointer-free rows, and its light nodes as bare addresses.</summary>
-public interface IWorldGraphPort
+public interface IWorldGraphReader
 {
     void Pump() { }
 
@@ -75,16 +75,16 @@ public interface IWorldGraphPort
 /// <summary>Per-address reads and writes every world node supports — BG
 /// model, furniture layout or effect — plus spawn and teardown. Every member
 /// is a no-op or a refusal for an address <see cref="IsAlive"/> rejects.</summary>
-public interface IWorldNodePort
+public interface IWorldNodeAccess
 {
-    /// <summary>Whether this address is still a BG object this port can
+    /// <summary>Whether this address is still a world object Poser can
     /// address. An adopted object whose address has gone is inert, never
     /// written and never restored onto.</summary>
     bool IsAlive(nint address);
 
     /// <summary>Reads the current native incarnation. Implementations that
     /// cannot expose a resource identity may return a stable address token;
-    /// native VFX/BG ports should provide their generation/resource pair.</summary>
+    /// the game-memory implementation gives its generation and resource.</summary>
     bool TryReadIncarnation(
         nint address, out WorldObjectIncarnation incarnation)
     {
@@ -111,7 +111,7 @@ public interface IWorldNodePort
 
     /// <summary>Whether one object is drawn. Stated in its own right rather
     /// than read out of a bit of <see cref="TryReadFlags"/>: which bit of the
-    /// flags byte carries it is the game's business, and this seam's callers
+    /// flags byte carries it is the game's business, and callers
     /// must not have to know it.</summary>
     bool TryReadVisible(nint address, out bool visible);
 
@@ -150,7 +150,7 @@ public interface IWorldNodePort
     void Destroy(nint address);
 
     /// <summary>Reports whether teardown actually completed. The default
-    /// preserves the old void seam for test/fallback ports.</summary>
+    /// keeps the older version without a result for the test stand-in.</summary>
     bool TryDestroy(nint address)
     {
         Destroy(address);
@@ -160,7 +160,7 @@ public interface IWorldNodePort
 
 /// <summary>BG-model and furniture-only state: dye, day/night dressing,
 /// animation speed and the instance tail the pause hold freezes.</summary>
-public interface IBgObjectPort : IWorldNodePort
+public interface IWorldModelAccess : IWorldNodeAccess
 {
     bool WriteFurnitureColor(nint address, byte stain, Vector3? tint) => true;
     IReadOnlyList<FurnitureLightState> ReadFurnitureLights(nint address) => [];
@@ -194,7 +194,7 @@ public interface IBgObjectPort : IWorldNodePort
 
 /// <summary>World-effect-only state: playback, speed, colour, intensity, and
 /// the exact-incarnation teardown and claim release an effect needs.</summary>
-public interface IVfxObjectPort : IWorldNodePort
+public interface IWorldEffectAccess : IWorldNodeAccess
 {
     /// <summary>Writes and refreshes a VFX transform without an implicit
     /// replay. Playback commands are separate so a drag cannot restart a
@@ -219,7 +219,7 @@ public interface IVfxObjectPort : IWorldNodePort
     }
 
     /// <summary>Writes effect RGB while preserving alpha. Does nothing for models;
-    /// their dye operations are exposed separately by IBgObjectPort.</summary>
+    /// their dye operations are exposed separately by IWorldModelAccess.</summary>
     void WriteVfxTint(nint address, System.Numerics.Vector3 tint);
 
     /// <summary>One uniform brightness on the effect's intensity triple.
@@ -287,7 +287,7 @@ public interface IVfxObjectPort : IWorldNodePort
         bool resume);
 
     /// <summary>Exact rollback including inactive/paused state. The legacy
-    /// method remains for ports that only support the earlier bool contract.
+    /// method remains for implementations that only report true or false.
     /// </summary>
     bool TryRestoreVfxState(
         nint address, VfxStateSnapshot snapshot)
@@ -318,6 +318,6 @@ public interface IVfxObjectPort : IWorldNodePort
 /// objects are restored on release; spawned objects are destroyed. Hover
 /// feedback may write an outline before adoption.
 /// </summary>
-public interface IWorldObjectPort : IWorldGraphPort, IBgObjectPort, IVfxObjectPort
+public interface IWorldObjectAccess : IWorldGraphReader, IWorldModelAccess, IWorldEffectAccess
 {
 }

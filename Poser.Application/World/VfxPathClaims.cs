@@ -8,7 +8,7 @@ namespace Poser.Application.World;
 /// are per spawned instance, not per session: an unsuccessful create rolls
 /// back its pending token and a path remains handled while any live instance
 /// still owns it.</summary>
-public sealed class VfxPathClaimOwner
+public sealed class VfxPathClaims
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, int> _counts =
@@ -61,10 +61,10 @@ public sealed class VfxPathClaimOwner
 
     private sealed class Claim : IDisposable
     {
-        private VfxPathClaimOwner? _owner;
+        private VfxPathClaims? _owner;
         private readonly string _path;
 
-        public Claim(VfxPathClaimOwner owner, string path)
+        public Claim(VfxPathClaims owner, string path)
         {
             _owner = owner;
             _path = path;

@@ -90,7 +90,7 @@ public sealed class SelectedEntityActionsTests
         public readonly SceneSession Scene = new(new SelectionSession());
         public readonly SceneGroups Groups = new();
         public readonly EditHistory History = new();
-        public readonly ReleasePort Release = new();
+        public readonly FakeBorrowRelease Release = new();
         public readonly FrameworkProxy Framework;
         public readonly SelectedEntityActions Actions;
 
@@ -132,7 +132,7 @@ public sealed class SelectedEntityActionsTests
             Actions.Remove([Id]);
     }
 
-    private sealed class ReleasePort : IWorldReleasePort
+    private sealed class FakeBorrowRelease : IWorldBorrowRelease
     {
         public int Calls;
         public SelectionId? Requested;
