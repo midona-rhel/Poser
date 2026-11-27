@@ -39,8 +39,7 @@ public sealed class ScenePane
     private readonly ILibrarySceneActions _libraryScene;
     private readonly ConfigurationService _config;
     private readonly SceneAutoSaveService _snapshots;
-    private readonly IPoseLibraryService _library;
-    private readonly Poser.Application.Library.ILibrarySceneSave _librarySave;
+    private readonly ILibrarySceneSave _librarySave;
 
     private readonly FileDialog _saveBrowser =
         new("Save Scene", new[] { SceneFile.Extension }, isSaveMode: true);
@@ -181,19 +180,17 @@ public sealed class ScenePane
         ISceneWorkflow workflow,
         ILibrarySceneActions libraryScene,
         SceneAutoSaveService snapshots,
-        IPoseLibraryService library,
         ConfigurationService config,
         IPlaceService place,
         SceneLoadPreferences preferences,
         UserNotices notices,
-        Poser.Application.Library.ILibrarySceneSave librarySave)
+        ILibrarySceneSave librarySave)
     {
         _config = config;
         _preferences = preferences;
         _workflow = workflow;
         _libraryScene = libraryScene;
         _snapshots = snapshots;
-        _library = library;
         _place = place;
         _notices = notices;
         _librarySave = librarySave;
@@ -1021,8 +1018,9 @@ public sealed class ScenePane
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description,
             SaveOptions);
-        if (_notices.Report(started, "Scene ▸ Save"))
-            _library.RequestScan();
+        // The save has only started here. The Library is scanned again once
+        // the file is written.
+        _notices.Report(started, "Scene ▸ Save");
     });
 
     private void OpenLoad() => _folder.Open(_loadBrowser, path => BeginLoad(path, "Scene ▸ Load"));
