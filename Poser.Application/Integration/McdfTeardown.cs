@@ -22,7 +22,7 @@ internal sealed class McdfTeardown(
     ISessionGenerationSource sessions,
     IntegrationOwnership ownership)
 {
-    /// <summary>Maximum wait for import and cleanup redraws.</summary>
+    /// <summary>Maximum wait for cleanup redraws. Applying an MCDF waits without a limit.</summary>
     internal static readonly TimeSpan RedrawBarrierTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
@@ -334,7 +334,7 @@ internal sealed class McdfTeardown(
     /// remain on disk. Returns cleanup errors without discarding the pending state.
     /// </summary>
     internal async Task<string?> ReleaseRetainedDirectory(
-        ActorId actor, CancellationToken cancellation)
+        ActorId actor, CancellationToken cancellation, TimeSpan? limit = null)
     {
         try
         {
@@ -343,7 +343,7 @@ internal sealed class McdfTeardown(
                     is { RedrawPending: true, OperationDirectory: not null });
             if (!pending)
                 return null;
-            var wait = await penumbra.RedrawAndWait(actor, RedrawBarrierTimeout, cancellation);
+            var wait = await penumbra.RedrawAndWait(actor, limit ?? RedrawBarrierTimeout, cancellation);
             return await actors.OnFrameworkThread(() =>
             {
                 var current = ownership.OverridesFor(actor);

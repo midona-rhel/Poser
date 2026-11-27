@@ -247,7 +247,10 @@ internal sealed class McdfImport(
             if (priorRetained)
             {
                 Step(McdfPhase.Preparing, filesTotal, bytesTotal);
-                var release = await teardown.ReleaseRetainedDirectory(actor, cancellation);
+                // Removing the previous MCDF redraws the actor in its own look.
+                // Like the apply below, that wait has no limit; Cancel ends it.
+                var release = await teardown.ReleaseRetainedDirectory(
+                    actor, cancellation, Timeout.InfiniteTimeSpan);
                 if (release != null)
                 {
                     await FailAsync(
@@ -313,8 +316,11 @@ internal sealed class McdfImport(
             if (failure == null && package.HasResources)
             {
                 Step(McdfPhase.AwaitingRedraw, filesTotal, bytesTotal);
+                // No time limit: the temporary collection has to stay until the
+                // model has loaded every file, however long a large MCDF takes.
+                // Cancel stops the wait and undoes the import.
                 var redraw = await penumbra.RedrawAndWait(
-                    actor, McdfTeardown.RedrawBarrierTimeout, cancellation);
+                    actor, Timeout.InfiniteTimeSpan, cancellation);
                 if (!redraw.Success)
                     failure = redraw.Detail;
             }

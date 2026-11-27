@@ -8,7 +8,8 @@ public static class FrameworkPoll
     /// <summary>
     /// Runs <paramref name="probe"/> until it answers true or
     /// <paramref name="bound"/> has elapsed, pausing <paramref name="interval"/>
-    /// between probes. The probe always runs at least once, and the bound is
+    /// between probes; <see cref="Timeout.InfiniteTimeSpan"/> means no bound.
+    /// The probe always runs at least once, and the bound is
     /// checked only after a probe, so a slow probe can exceed the bound. True
     /// when the probe was satisfied, false at the bound. A cancelled
     /// <paramref name="token"/> throws from the pause; probe exceptions
@@ -22,7 +23,7 @@ public static class FrameworkPoll
         {
             if (await probe())
                 return true;
-            if (elapsed.Elapsed >= bound)
+            if (bound != Timeout.InfiniteTimeSpan && elapsed.Elapsed >= bound)
                 return false;
             await Task.Delay(interval, token);
         }
