@@ -84,17 +84,19 @@ public sealed class GroupTransformCoordinator : IDisposable
             : _scene.Contains(target) ? target : null;
     }
 
-    /// <summary><see cref="CurrentTarget"/> for a group's stored position,
-    /// rotation and scale. A member the undo history keeps, whose entity undo
-    /// has not brought back yet, stays as it is, so the stored values wait for
-    /// that entity instead of being dropped: undo puts the groups back before a
-    /// restored actor is bound.</summary>
+    /// <summary><see cref="CurrentTarget"/> for the stored records that undo puts
+    /// back with the groups (<see cref="RestoreNamed"/>). Undo puts the groups
+    /// back before a restored actor is bound, so a member that is
+    /// <see cref="RetainedButGone"/> keeps its id instead of dropping the record.
+    /// The next <see cref="BindingsPublished"/> moves the record to the restored
+    /// actor, or drops it if that actor is still not there.</summary>
     private TransformTargetId? StoredTarget(TransformTargetId target) =>
         CurrentTarget(target) ?? (_history.IsRetainedLifecycleTarget(target) ? target : null);
 
-    /// <summary>True when the undo history keeps <paramref name="target"/> for a
-    /// removed entity and undo has not brought that entity back yet.</summary>
-    private bool AwaitsRestore(TransformTargetId target) =>
+    /// <summary>True when the undo history keeps <paramref name="target"/> for an
+    /// entity that is not in the scene: one that was removed, whether or not undo
+    /// brings it back later.</summary>
+    private bool RetainedButGone(TransformTargetId target) =>
         CurrentTarget(target) is null && _history.IsRetainedLifecycleTarget(target);
 
     private bool ResolveMembership(IReadOnlyList<SelectionId> selected,
@@ -169,14 +171,11 @@ public sealed class GroupTransformCoordinator : IDisposable
             if (_invalidImports.Contains(group.Id)) continue;
             var members = _groups.Descendants(group).ToArray();
             var old = _state.NamedSnapshot(group.Id);
-            // A locked member, or one that cannot move right now, still keeps
-            // its stored values; locks only stop moving. So does a group whose
-            // restored member is not bound yet, until it is.
+            // Membership is checked without the lock check, so a locked member
+            // keeps the group's stored values; locks only stop moving. A group
+            // with a member that is not in the scene keeps no stored values.
             if (!ResolveMembership(members, out var targets, out _))
-            {
-                if (old == null || !old.Expected.Keys.Any(AwaitsRestore)) _state.Forget(group.Id);
-                continue;
-            }
+            { _state.Forget(group.Id); continue; }
             var key = GroupTransformKey.For(group.Id, targets);
             if (old != null && key == GroupTransformKey.For(group.Id, old.Expected.Keys)) continue;
             Capture(group.Id, targets, old?.Baseline.Frame, old);
@@ -184,7 +183,7 @@ public sealed class GroupTransformCoordinator : IDisposable
     }
     public void BindingsPublished()
     {
-        _state.Rekey(StoredTarget);
+        _state.Rekey(CurrentTarget);
         _groups.RemapTransformMembers(CurrentTarget);
         _groups.Reconcile(_scene);
         SynchronizeNamed();
@@ -221,8 +220,8 @@ public sealed class GroupTransformCoordinator : IDisposable
             if (!ResolveMembership(_groups.Descendants(group).ToArray(), out var targets, out _))
             {
                 // Undo puts the groups back before a restored actor is bound.
-                // Its group is completed when the scene next publishes its ids.
-                if (retained.Expected.Keys.Any(AwaitsRestore)) continue;
+                // The next BindingsPublished moves the record to that actor.
+                if (retained.Expected.Keys.Any(RetainedButGone)) continue;
                 return false;
             }
             if (retained.HasSameMembership(targets)) continue;

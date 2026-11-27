@@ -123,10 +123,10 @@ public sealed partial class DebugBridge
 
     /// <summary>
     /// /grouptransform?group=ID reads a group's position, rotation and scale as the
-    /// Inspector shows them. With dx, dy or dz (a move), yaw (degrees about the
-    /// group's up axis) or scale (a factor on all three axes), it changes them the
-    /// way the Inspector's fields do: one drag for each kind of change, each its own
-    /// undo step.
+    /// Inspector shows them. With dx, dy or dz (a move), yaw (a turn in degrees
+    /// about the group's own up axis, as the rotation ring turns it) or scale (a
+    /// factor on all three axes), it changes them through the same drag the
+    /// Inspector uses: one drag for each kind of change, each its own undo step.
     /// </summary>
     private object GroupTransformCommand(Dictionary<string, string> query)
     {
