@@ -1,19 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Threading.Tasks;
 using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Application.Companions;
 using Poser.Domain.Companions;
 using Poser.Application.Catalog;
+using Poser.Game.Core;
 
 namespace Poser.Game.Companions;
 
 /// <summary>
-/// Builds the companion catalog from game data, once per session, off the
-/// framework thread. Reads three sheets:
+/// Builds the companion catalog from game data, once, off the framework
+/// thread (see <see cref="GameDataBuild"/>). Reads three sheets:
 /// Companion (minions, keyed by Model), Mount (keyed by ModelChara) and
 /// Ornament (keyed by a plain Model value, not a row reference).
 ///
@@ -28,9 +28,8 @@ public sealed class CompanionCatalogLoader : ICompanionCatalogLoader
 {
     private readonly IDataManager _data;
     private readonly CompanionCatalog _catalog;
-    private readonly IPluginLog _log;
     private readonly Func<uint, string> _ornamentName;
-    private bool _started;
+    private readonly GameDataBuild _build;
 
     public CompanionCatalogLoader(
         IDataManager data, CompanionCatalog catalog, IPluginLog log,
@@ -38,29 +37,13 @@ public sealed class CompanionCatalogLoader : ICompanionCatalogLoader
     {
         _data = data;
         _catalog = catalog;
-        _log = log;
         _ornamentName = id => seStringEvaluator.EvaluateActStr(ActionKind.Ornament, id);
+        _build = new("minion and mount", () => _catalog.Publish(Build()), log);
     }
 
-    /// <summary>Starts the one-time build. Safe to call repeatedly.</summary>
-    public void EnsureLoaded()
-    {
-        if (_started)
-            return;
-        _started = true;
-        Task.Run(() =>
-        {
-            try
-            {
-                _catalog.Publish(Build());
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"Companion catalog failed to build: {ex}");
-                _catalog.Publish(Array.Empty<CompanionEntry>());
-            }
-        });
-    }
+    public string? LastError => _build.Failure;
+    public void EnsureLoaded() => _build.EnsureLoaded();
+    public void Retry() => _build.Retry();
 
     private List<CompanionEntry> Build()
     {

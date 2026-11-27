@@ -1408,10 +1408,12 @@ public sealed partial class DebugBridge : IDisposable
                 // The General section's Apply, with the emote its list offers under that name.
                 if (!query.TryGetValue("name", out var wanted))
                     return Json(new { error = "name is required" });
-                ((IAnimationCatalogLoader)_services.GetService(typeof(IAnimationCatalogLoader))!).EnsureLoaded();
+                var animationLoader = (IAnimationCatalogLoader)_services.GetService(typeof(IAnimationCatalogLoader))!;
+                animationLoader.EnsureLoaded();
+                animationLoader.Retry();
                 var catalog = (AnimationCatalog)_services.GetService(typeof(AnimationCatalog))!;
                 if (!catalog.IsLoaded)
-                    return Json(new { error = "The animation list is still loading. Ask again." });
+                    return Json(new { error = animationLoader.LastError ?? "The animation list is still loading. Ask again." });
                 var found = catalog.Search(wanted, AnimationKind.Emote);
                 var named = found.Where(entry => string.Equals(entry.Name, wanted, StringComparison.OrdinalIgnoreCase)).ToArray();
                 // Several emotes can share a name; ?pick=N chooses one of them, counting from 0.
