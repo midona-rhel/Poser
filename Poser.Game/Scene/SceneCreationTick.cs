@@ -4,8 +4,9 @@ using Poser.Application.World;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Advances pending scene creation on every framework update,
-/// independently of UI windows.</summary>
+/// <summary>Each frame, moves on whatever is waiting for the game: adding an
+/// entity, copying one, and taking over a world object. It runs whether or not
+/// any Poser window is open.</summary>
 public sealed class SceneCreationTick : IDisposable
 {
     private readonly IFramework _framework;

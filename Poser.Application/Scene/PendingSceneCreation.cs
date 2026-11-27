@@ -15,7 +15,10 @@ public interface IPendingSceneCreation
     void ApplyPoseWhenReady(SceneEntityHandle handle, PoseFile pose, PoseImportOptions options, string description);
 }
 
-/// <summary>Completes creation receipts on framework updates, independently of their initiating surface.</summary>
+/// <summary>Finishes adding an actor, object or other entity on a later frame,
+/// once the game has made it: selects it, freezes it or applies a pose, as the
+/// control that asked for it wanted. Works the same whichever control started
+/// it.</summary>
 public sealed class PendingSceneCreation(
     ISceneCreation creation,
     ISessionGenerationSource sessions,

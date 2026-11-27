@@ -9,10 +9,11 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// Synchronizes changed GPose targets and primary actor selections on framework
-/// ticks. Each direction has a separate setting. Selection is applied first,
-/// then the resulting game target is read, preventing repeated feedback between
-/// unchanged values. Unbound targets are retried on the next tick.
+/// Keeps the GPose target and the selected actor in step, each frame, as
+/// Settings asks: "Selection follows the game target" and "Game target follows
+/// selection" are separate switches. The selection is applied first and the
+/// game target read after, so an unchanged value never bounces back and forth.
+/// A target Poser doesn't know yet is tried again on the next frame.
 /// </summary>
 public sealed class TargetSyncService : IDisposable
 {
@@ -81,10 +82,10 @@ public sealed class TargetSyncService : IDisposable
             var id = _bindings.GetActorId(target!);
             if (id is null)
             {
-                // The registry has not bound this actor yet (a fresh spawn
-                // targeted before the next discovery refresh). Leave BOTH
-                // last-seen fields untouched so this stays an unconsumed edge
-                // and the same target is retried on the following tick.
+                // Poser has no id for this actor yet, for example one just
+                // spawned and targeted before the next refresh. Both remembered
+                // values stay as they are, so the same target is tried again on
+                // the next frame.
                 return;
             }
 

@@ -12,9 +12,13 @@ public sealed record ActorCreationRequest(
     int ModelCharaId = 0,
     SpawnCatalogEntry? Catalog = null);
 
+/// <summary>The handle of the new entity, or null with the reason it could
+/// not be added.</summary>
 public sealed record SceneCreationResult(SceneEntityHandle? Handle, string? Detail = null);
 
-/// <summary>Creation retains native bodies in the runtime, never in deferred UI callbacks.</summary>
+/// <summary>Adds actors, lights, cameras, objects and overlays to the scene. The
+/// new game object is held by the game side, never by a window waiting to
+/// finish the job.</summary>
 public interface ISceneCreation
 {
     bool IsAvailable(SceneEntityKind kind);

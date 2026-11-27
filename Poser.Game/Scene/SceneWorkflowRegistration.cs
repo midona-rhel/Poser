@@ -6,6 +6,7 @@ using Poser.Documents.Scene;
 
 namespace Poser.Game.Scene;
 
+/// <summary>Registers scene saving and loading and the classes it uses.</summary>
 public static class SceneWorkflowRegistration
 {
     public static IServiceCollection AddSceneWorkflow(this IServiceCollection services)

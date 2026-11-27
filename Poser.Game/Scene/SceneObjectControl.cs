@@ -8,6 +8,9 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
+/// <summary>Reads and changes the values of objects (props) and world objects,
+/// such as position, visibility and tint, as the object panels ask, with each
+/// change an undo step.</summary>
 public sealed class SceneObjectControl : ISceneObjectControl
 {
     private const string PropUnavailable = "The prop is no longer available.";

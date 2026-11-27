@@ -6,7 +6,7 @@ using Poser.Domain.Scene;
 
 namespace Poser.Application.Scene;
 
-/// <summary>Which whole-scene operation a progress/receipt pair describes.</summary>
+/// <summary>Whether a progress report and result belong to a save or a load.</summary>
 public enum SceneOperationKind
 {
     Save,
@@ -51,22 +51,19 @@ public enum ScenePhase
     Cancelled,
 }
 
-/// <summary>One entity's typed restore outcome. A missing parent or
-/// resource is a named, explained refusal here — never a silent detach or a
-/// silently skipped row.
+/// <summary>One row of Last result: whether one entity came back. Something
+/// that did not come back, such as a missing parent or file, gets its own row
+/// with the reason; it is never left out without a word.
 ///
-/// <para><see cref="Detail"/> is what happened; <see cref="Remedy"/> is what
-/// the user can do about it. A refused entity carries BOTH — a row that only
-/// restates the entity's own name is the defect issue #41 reported — and the
-/// workflow fills the remedy in from <see cref="SceneOutcomeKinds.Remedy"/>
-/// at the terminal publication, so the result list and the operation log say
-/// the same thing.
-/// </para>
+/// <para><see cref="Detail"/> says what happened and <see cref="Remedy"/> what
+/// to do about it. A row that did not come back always has both: the workflow
+/// fills the remedy in from <see cref="SceneOutcomeKinds.Remedy"/> when it
+/// publishes the result, so Last result and the log say the same.</para>
 ///
-/// <para>Restored WITH a detail is a degraded restore — kept, with a caveat
-/// (a gobo the client no longer ships, a changed character file, a model
-/// still streaming). It is shown and logged like a refusal's reason, never
-/// hidden among the plain successes.</para></summary>
+/// <para>A row that came back with a detail came back with a caveat, such as a
+/// gobo the game no longer has, a changed MCDF or a model still loading. It is
+/// shown and logged like a failure's reason, not hidden among the
+/// successes.</para></summary>
 public sealed record SceneEntityOutcome(
     SceneOutcomeKind Kind,
     string Name,
@@ -78,13 +75,13 @@ public sealed record SceneEntityOutcome(
 }
 
 /// <summary>
-/// Immutable terminal outcome of one scene operation. The state is the SAME
-/// <see cref="OperationReceiptState"/> the published <see cref="OperationReceipt"/>
-/// carries — there is one terminal vocabulary, not a parallel scene one:
-/// <c>Applied</c> everything restored, <c>RolledBack</c> a structural refusal
-/// whose rollback fully undid this operation, <c>Cancelled</c> the user or a
-/// session replacement stopped it, <c>Failed</c> entities were restored but
-/// named refusals remain (typed partial recovery) or a rollback left leftovers.
+/// The final result of one scene save or load. Its state is the same
+/// <see cref="OperationReceiptState"/> the operation's
+/// <see cref="OperationReceipt"/> has: <c>Applied</c> when everything came back,
+/// <c>RolledBack</c> when the load stopped and took back everything it had done,
+/// <c>Cancelled</c> when Cancel was pressed or GPose ended, and <c>Failed</c>
+/// when some parts did not come back but the rest was kept, or when taking a
+/// load back left something behind.
 /// </summary>
 public sealed record SceneOutcome(
     OperationReceiptState State,
@@ -189,9 +186,7 @@ public readonly record struct SceneClearOutcome(
                 $"{(WorldObjects == 1 ? "object was" : "objects were")} put back.";
         if (parts.Count == 0)
             return $"Cleared the session first:{borrowed}{Left()}".TrimEnd();
-        // The verb agrees with what was actually destroyed, the way the
-        // borrowed-object line below already does. "1 actor were destroyed" is
-        // the only place the two disagreed.
+        // "was" for one removed entity, "were" for more.
         int destroyed = Actors + Props + Overlays + Lights + Cameras;
         return $"Cleared the session first: {string.Join(", ", parts)} " +
             (destroyed == 1 ? "was" : "were") +

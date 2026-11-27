@@ -8,15 +8,17 @@ using TransformMath = Poser.Domain.Transforms.TransformMath;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// Schema and topology validation for one candidate scene snapshot. It fills
-/// the staged indexes it is given and reports the first violation; it reads
-/// no committed state, so a rejected candidate leaves the session untouched.
-/// Generation floors are committed state and stay with <see cref="SceneSession"/>.
+/// Checks a new picture of the scene before it is taken: that every entry is
+/// complete, and that every skeleton, bone and companion belongs to something
+/// that is in the picture. It fills the lists it is given and returns the first
+/// problem. It reads nothing of the current picture, so a refused one changes
+/// nothing. The check against older generations is done by
+/// <see cref="SceneSession"/>.
 /// </summary>
 internal static class SceneSnapshotValidator
 {
-    /// <summary>One admission's candidate indexes; nothing reads them until
-    /// the commit swaps them in.</summary>
+    /// <summary>The new picture's lists, by id. Nothing reads them until the
+    /// picture is taken.</summary>
     internal sealed record Candidate(
         EntityIndex<ActorId, ActorDescriptor>.Staged Actors,
         Dictionary<BoneId, BoneDescriptor> Bones,
@@ -27,8 +29,8 @@ internal static class SceneSnapshotValidator
         EntityIndex<OverlayId, OverlayDescriptor>.Staged Overlays,
         Dictionary<ActorId, GazeDescriptor> Gazes);
 
-    /// <summary>Validates <paramref name="snapshot"/> and fills the staged
-    /// indexes of <paramref name="candidate"/>.</summary>
+    /// <summary>Checks <paramref name="snapshot"/> and fills the lists of
+    /// <paramref name="candidate"/>, the new picture being built.</summary>
     public static bool TryBuildIndexes(
         SceneSnapshot snapshot,
         Candidate candidate,
@@ -412,8 +414,8 @@ internal static class SceneSnapshotValidator
         return true;
     }
 
-    /// <summary>Validates world-object IDs and rejects duplicate logical IDs
-    /// before the candidate index can become the current scene.</summary>
+    /// <summary>Checks the world-object ids and refuses two entries with the
+    /// same logical id, before the new picture can be taken.</summary>
     private static bool TryBuildWorldObjectIndexes(
         SceneSnapshot snapshot,
         EntityIndex<WorldObjectId, WorldObjectDescriptor>.Staged worldObjects,

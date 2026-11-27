@@ -5,17 +5,23 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Scene;
 
+/// <summary>One saved sidebar group: its members, the group it is in, and
+/// the transform the group had.</summary>
 public sealed record SceneStructureGroup(Guid Key, string Name, Guid? Parent,
     IReadOnlyList<SelectionId> Members, GroupTransformSnapshot? Transform,
     bool HasTransform, Quaternion? LegacyFrame)
 {
-    // Only history reuses a runtime group ID; separate imports of the same file do not.
+    // Undo and redo bring a group back under its old id; loading the same file
+    // twice makes new groups each time.
     public Guid? RestoredId { get; init; }
 }
 
+/// <summary>All sidebar groups and the order of the sidebar's top level.</summary>
 public sealed record SceneStructureSnapshot(IReadOnlyList<SceneStructureGroup> Groups,
     IReadOnlyList<RootSlot> RootOrder);
 
+/// <summary>Reads the sidebar groups for a save, and adds and removes them for
+/// a load and its undo.</summary>
 public interface ISceneStructure
 {
     SceneStructureSnapshot Capture();
@@ -23,7 +29,8 @@ public interface ISceneStructure
     void Remove(IReadOnlyList<Guid> groups);
 }
 
-/// <summary>Captures and restores scene structure without file formats, native handles or a UI.</summary>
+/// <summary>Reads and puts back the sidebar groups and the top-level order.
+/// Knows nothing of scene files or the game.</summary>
 public sealed class SceneStructure(SceneGroups groups, GroupTransformCoordinator transforms,
     GroupTransformState state) : ISceneStructure
 {

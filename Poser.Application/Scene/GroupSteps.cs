@@ -5,11 +5,11 @@ using Poser.Domain.Transforms;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// The group verbs as journal steps. Every verb records the whole group
-/// model before and after and puts it back as one; the composite verbs
-/// (a gate, a dissolve) restore application-owned member state under a
-/// suspended value journal, so the member changes they cause are part of
-/// the one step and not steps of their own.
+/// The group commands as undo steps. Each command records all groups before
+/// and after and undo puts them back in one go. Commands that also change the
+/// members, such as a gate or ungrouping, make those member changes with the
+/// value journal paused, so they belong to the same undo step instead of
+/// adding their own.
 /// </summary>
 public sealed class GroupSteps
 {

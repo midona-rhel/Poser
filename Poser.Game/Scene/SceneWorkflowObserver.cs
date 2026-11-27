@@ -6,6 +6,9 @@ using Poser.Application.Library;
 
 namespace Poser.Game.Scene;
 
+/// <summary>What happens around a scene save or load: the Library is scanned
+/// again after a save, and every result is written to the log, one line per
+/// entity.</summary>
 internal sealed class SceneWorkflowObserver(IPluginLog log, IPoseLibraryService library)
 {
     public void Saved() => library.RequestScan();

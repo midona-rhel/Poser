@@ -8,25 +8,28 @@ using Poser.Domain.Scene;
 
 namespace Poser.Application.Scene;
 
-/// <summary>The outcome of one candidate scene admission.</summary>
+/// <summary>What happened to one new picture of the scene.</summary>
 public enum SceneRefreshOutcome
 {
-    /// <summary>The candidate became the committed scene.</summary>
+    /// <summary>The new picture became the current one.</summary>
     Applied,
 
-    /// <summary>The candidate committed, but a post-commit observer failed.</summary>
+    /// <summary>The new picture became the current one, but code listening for
+    /// the change failed.</summary>
     AppliedWithNotificationFailures,
 
-    /// <summary>The candidate was an exact structural replay.</summary>
+    /// <summary>The new picture has the same entities as the current one.</summary>
     NoChange,
 
-    /// <summary>The producer revision was older than the committed revision.</summary>
+    /// <summary>The new picture's revision is older than the current one's.</summary>
     RejectedOlderRevision,
 
-    /// <summary>The candidate failed scene schema or topology validation.</summary>
+    /// <summary>The new picture failed <see cref="SceneSnapshotValidator"/>:
+    /// an entry is incomplete or names something that is not in it.</summary>
     RejectedInvalidCandidate,
 
-    /// <summary>An admission was attempted from a reentrant observer call.</summary>
+    /// <summary>A new picture was offered from inside the code listening for the
+    /// last change.</summary>
     RejectedReentrant,
 
     // Short alias for callers that prefer the concise outcome name.
@@ -34,10 +37,10 @@ public enum SceneRefreshOutcome
 }
 
 /// <summary>
-/// Feature-specific result for scene admission. A rejected result means that
-/// the committed snapshot, indexes, generation floors, selection, and scene
-/// event were left unchanged. Notification failures are reported after the
-/// scene has already committed.
+/// The result of offering a new picture of the scene. When it was refused,
+/// nothing changed: not the picture, the ids, the remembered generations, the
+/// selection, and no event was sent. Failures in code listening for the change
+/// are reported after the new picture is already current.
 /// </summary>
 public sealed record SceneRefreshResult
 {
@@ -56,18 +59,18 @@ public sealed record SceneRefreshResult
     public string? Detail { get; }
     public IReadOnlyList<string> NotificationFailures { get; }
 
-    /// <summary>Whether the candidate was accepted or was an exact replay.</summary>
+    /// <summary>Whether the new picture was taken, or matched the current one.</summary>
     public bool Accepted => Outcome is
         SceneRefreshOutcome.Applied or
         SceneRefreshOutcome.AppliedWithNotificationFailures or
         SceneRefreshOutcome.NoChange;
 
-    /// <summary>Whether the committed scene state changed.</summary>
+    /// <summary>Whether the current picture changed.</summary>
     public bool StateChanged => Outcome is
         SceneRefreshOutcome.Applied or
         SceneRefreshOutcome.AppliedWithNotificationFailures;
 
-    /// <summary>Whether the candidate was rejected without scene mutation.</summary>
+    /// <summary>Whether the new picture was refused, which changes nothing.</summary>
     public bool Rejected => !Accepted;
 
     /// <summary>
@@ -80,10 +83,11 @@ public sealed record SceneRefreshResult
 }
 
 /// <summary>
-/// Validates incoming scene snapshots, stores the accepted snapshot and ID
-/// indexes, and updates selection to match. Native handles remain in Game.
-/// Callers must refresh and deliver events on the owning framework thread;
-/// this class rejects reentry but does not enforce thread affinity.
+/// Holds Poser's current picture of the scene: which actors, skeletons,
+/// objects, lights and cameras there are, by id. It checks each new picture
+/// before taking it and keeps the selection to what is still there. It holds
+/// ids, never game memory. Call it on the game's main thread; it refuses a call
+/// made from inside its own events, but does not check the thread.
 /// </summary>
 public sealed class SceneSession
 {
@@ -103,10 +107,9 @@ public sealed class SceneSession
     private Dictionary<BoneId, BoneDescriptor> _bones = new();
     private Dictionary<ActorId, GazeDescriptor> _gazes = new();
 
-    // Skeleton floors are keyed by their owning actor generation and slot, so
-    // they stay beside the actor index rather than in it. Like the index
-    // floors they live for one GPose session and are dropped only when the
-    // admitted snapshot belongs to a different session generation.
+    // The newest skeleton generation seen for each actor generation and slot.
+    // Like the generations in each EntityIndex, they are kept for the whole
+    // GPose session and cleared for a new one.
     private readonly Dictionary<(Guid Actor, uint ActorGeneration, PoseSlot Slot), uint>
         _skeletonGenerationFloors = new();
     private readonly ISessionGenerationSource? _sessions;
@@ -135,18 +138,16 @@ public sealed class SceneSession
         SelectionEntityCapabilities.Read(_snapshot, id);
 
     /// <summary>
-    /// Compatibility entry point for existing producers. It intentionally
-    /// keeps the historical void signature and discards the typed result;
-    /// callers that need to know whether admission succeeded must use
-    /// <see cref="TryRefresh"/>. It never claims that a candidate committed.
+    /// Offers a new picture and ignores the result. Callers that need to know
+    /// whether it was taken use <see cref="TryRefresh"/>.
     /// </summary>
     public void Refresh(SceneSnapshot? snapshot) => _ = TryRefresh(snapshot);
 
     /// <summary>
-    /// Validates and transactionally admits one producer snapshot. Revisions
-    /// are producer-supplied and non-decreasing. An equal-revision structural
-    /// replay is <see cref="SceneRefreshOutcome.NoChange"/>; equal revision
-    /// content changes are admitted for independent slot/object updates.
+    /// Checks a new picture of the scene and takes it whole, or not at all. Its
+    /// revision number never goes down. The same revision with the same
+    /// entities is <see cref="SceneRefreshOutcome.NoChange"/>; the same revision
+    /// with changed details, such as one equipment slot, is taken.
     /// </summary>
     public SceneRefreshResult TryRefresh(SceneSnapshot? snapshot)
     {
@@ -180,8 +181,9 @@ public sealed class SceneSession
             if (snapshot.ContentEquals(_snapshot))
                 return new(SceneRefreshOutcome.NoChange);
 
-            // Everything above is candidate-local. The following swap is the
-            // single commit point for snapshot, indexes, and generation floors.
+            // Nothing above changed the current picture. From here on the new
+            // picture, its lists and the remembered generations are taken
+            // together.
             _actors.Commit(candidate.Actors, newSession);
             _lights.Commit(candidate.Lights, newSession);
             _cameras.Commit(candidate.Cameras, newSession);

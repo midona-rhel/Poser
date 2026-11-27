@@ -20,10 +20,10 @@ using Poser.Documents.Files;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The session a scene operation runs in, as a whole: its generation and
-/// framework thread, the scene receipts it issues, the destroy-first clear,
-/// and the environment and world toggles a load stamps and its rollback
-/// restores.
+/// What a scene save or load needs from the GPose session as a whole: which
+/// session is running, running code on the game's main thread, clearing the
+/// scene before a load, and reading and setting the environment and the
+/// frozen water and physics that a load sets and undo puts back.
 /// </summary>
 internal sealed class GPoseSceneState : IDisposable
 {

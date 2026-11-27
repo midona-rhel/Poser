@@ -4,6 +4,8 @@ using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
+/// <summary>Writes parent links into a scene file, naming each entity by its key
+/// in the file. A companion is named through the actor it belongs to.</summary>
 public static class SceneParentingCodec
 {
     internal static SceneStructureRef? Reference(SelectionId id, IReadOnlyDictionary<Guid, ActorId> actors,

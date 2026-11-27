@@ -5,9 +5,11 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// Owns one entity family's identity slots. Every history direction uses the
-/// same slot, captures through the family's removal path, restores through its
-/// family port, and rebinds the slot to the current instance.
+/// Undo slots for one kind of entity. Undo and redo of removing an entity make
+/// a new game object each time, so all undo steps for one entity share a slot
+/// that points at its current object. Removing goes through the kind's own
+/// remove code, putting back through its own restore code, and the slot is
+/// then pointed at the new object.
 /// </summary>
 public sealed class LifecycleSlotOwner<TInstance, TSlot>
     where TInstance : class

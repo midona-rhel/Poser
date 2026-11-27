@@ -22,8 +22,8 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The destroy-first clear a clear-first load runs before it restores
-/// anything.
+/// Removes everything from the scene before a load with Clear the session
+/// first, before the load adds anything.
 /// </summary>
 internal sealed class SceneClearer(
     IActorManager actors,
@@ -68,8 +68,9 @@ internal sealed class SceneClearer(
             var lineage = bindings.GetActorId(actor)?.LogicalId;
             ActorRemovalCleanup.Prepare(actor, gaze, integration, bindings, refusedCleanup.Add);
 
-            // One verb for both provenances: the service routes an owned
-            // actor to its ledger and an adopted one to the scene table.
+            // One call for both kinds of actor: the spawn service removes one
+            // Poser spawned through its own list, and one taken over from the
+            // world through the scene table.
             if (spawns.RemoveActorFromScene(actor))
             {
                 actorCount++;

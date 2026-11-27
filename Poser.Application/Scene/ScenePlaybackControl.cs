@@ -4,6 +4,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Scene;
 
+/// <summary>Playing, pausing and night mode for one actor or world object, as
+/// the group gates use them.</summary>
 public interface IScenePlaybackControl
 {
     bool? ReadPlaying(SelectionId id);
