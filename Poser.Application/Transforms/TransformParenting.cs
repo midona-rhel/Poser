@@ -4,6 +4,8 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
+/// <summary>What parenting reads and writes in the game: where a thing is in
+/// the world, whether it can have a parent, and whether a lock holds it.</summary>
 public interface IParentingRuntime
 {
     void BeginRead() { }
