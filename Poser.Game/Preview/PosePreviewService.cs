@@ -556,7 +556,8 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
 
     /// <summary>Dispatches each stage once after actor, binding and skeleton
     /// readiness. Waits while the import engine is busy. A synchronous refusal
-    /// consumes the stage; terminal import receipts are not observed here.</summary>
+    /// consumes the stage; the file stage's final receipt is handled by
+    /// <see cref="ShowResultOf"/>.</summary>
     private void TryApplyPendingPose(nint previewAddress)
     {
         PosePreviewRequest? first;
@@ -645,23 +646,16 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
 
     /// <summary>
     /// Shows the final result of the file stage's import: nothing over the
-    /// preview once it was applied, the reason when it was not. A receipt for
-    /// another actor, another import, or a request that has since been
-    /// replaced is ignored, so a late result never speaks for a newer pose.
+    /// preview once it was applied, the reason when it was not. A result that
+    /// arrives after the request was replaced is ignored, so a late result
+    /// never speaks for a newer pose. A cancelled import is not shown either:
+    /// that happens when the person's own import starts while the preview's
+    /// is still running, and says nothing about the file.
     /// </summary>
-    private Action<OperationReceipt> ShowResultOf(long serial, ActorId previewId)
-    {
-        Guid? operation = null;
-        return receipt =>
+    private Action<OperationReceipt> ShowResultOf(long serial, ActorId previewId) =>
+        OperationReceipt.WhenFinal(previewId, receipt =>
         {
-            if (receipt.TargetActorId != previewId)
-                return;
-            if (receipt.State == OperationReceiptState.Pending)
-            {
-                operation = receipt.OperationId;
-                return;
-            }
-            if (operation != receipt.OperationId)
+            if (receipt.State == OperationReceiptState.Cancelled)
                 return;
             lock (_gate)
             {
@@ -671,8 +665,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
                     ? null
                     : receipt.Detail ?? "This pose could not be shown.";
             }
-        };
-    }
+        });
 
     /// <summary>Writes the captured base position plus pan, avoiding accumulated
     /// drift. A new draw-object address causes the base to be captured again.</summary>

@@ -394,25 +394,13 @@ public sealed partial class PoseLibraryPane
         _vm.CanSpawn = true;
     }
 
-    private Action<OperationReceipt> TrackImport(ActorId expectedActor)
-    {
-        Guid? operation = null;
-        return receipt =>
+    /// <summary>Reports the import's final result when it was not applied.</summary>
+    private Action<OperationReceipt> TrackImport(ActorId expectedActor) =>
+        OperationReceipt.WhenFinal(expectedActor, receipt =>
         {
-            if (receipt.TargetActorId != expectedActor)
-                return;
-            if (receipt.State == OperationReceiptState.Pending)
-            {
-                operation = receipt.OperationId;
-                return;
-            }
-            if (operation != receipt.OperationId)
-                return;
-            operation = null;
             if (receipt.State is not OperationReceiptState.Applied)
                 _notices.Report(new Poser.Domain.Outcome(false, receipt.Detail), "Apply");
-        };
-    }
+        });
 
     /// <summary>Lets the thumbnail cache carry on decoding pictures.</summary>
     public void Tick()
