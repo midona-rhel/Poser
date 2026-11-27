@@ -64,15 +64,26 @@ public sealed class GroupTransformCoordinator : IDisposable
         target.Light is { } light && _viewport.IsLightAttached(light)
             ? "Attached lights cannot join a world group transform." : null;
 
-    /// <summary>The thing <paramref name="target"/> stands for now: itself, the
-    /// same thing after a redraw, or the thing undo brought back in place of a
-    /// deleted one. Group members are looked up through this before members
+    /// <summary>The thing <paramref name="target"/> stands for now, or null while
+    /// there is none. Group members are looked up through this before members
     /// that are gone leave their group, so undoing a removal puts the members
-    /// back into their groups.</summary>
-    public TransformTargetId? CurrentTarget(TransformTargetId target) =>
-        _scene.CurrentTransformTarget(target)
-        ?? (_history.ResolveLifecycleTarget(target) is var successor && successor != target
-            ? _scene.CurrentTransformTarget(successor) : null);
+    /// back into their groups.
+    /// An id the undo history keeps (<see cref="EditHistory.IsRetainedLifecycleTarget"/>)
+    /// is followed only through the history, to the entity that took its place,
+    /// and otherwise counts only while that exact id is in the scene: the scene's
+    /// lookup by lasting id could find another copy that took the same place in
+    /// the object table. Every other id is found by the scene's lookup, which
+    /// follows a redraw.
+    /// A null answer leaves a group member's id as it is
+    /// (<see cref="SceneGroups.RemapTransformMembers"/>), but drops the group's
+    /// stored position, rotation and scale (<see cref="GroupTransformState.Rekey"/>).</summary>
+    public TransformTargetId? CurrentTarget(TransformTargetId target)
+    {
+        if (!_history.IsRetainedLifecycleTarget(target)) return _scene.CurrentTransformTarget(target);
+        var successor = _history.ResolveLifecycleTarget(target);
+        return successor != target ? _scene.CurrentTransformTarget(successor)
+            : _scene.Contains(target) ? target : null;
+    }
 
     private bool ResolveMembership(IReadOnlyList<SelectionId> selected,
         out TransformTargetId[] targets, out string? error)
