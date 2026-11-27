@@ -132,13 +132,9 @@ public sealed partial class PoseLibraryPane
         _tileAuthors.Clear();
         _tileStatus.Clear();
 
-        // Finds the folder row for each run, for this pass only. This runs when
-        // the tab opens and on a rescan, never every frame. A run is the saves
-        // of one day at one place, in time order. Leaving for another place and
-        // coming back makes two rows, so the folder list reads in time order.
-        int run = 0;
-        string? runDay = null;
-        string? runPlace = null;
+        // One folder row per day, found for this pass only. This runs when the
+        // tab opens and on a rescan, never every frame. The listing opens no
+        // file, so the place a save was taken at shows once it is selected.
         var rows = new Dictionary<string, int>(StringComparer.Ordinal);
 
         // Two top rows. The tab opens on scene auto-saves; old pose auto-saves
@@ -157,8 +153,6 @@ public sealed partial class PoseLibraryPane
             LabelLower = legacy ? "legacy poses" : "scene autosaves",
             Depth = 0,
         });
-        runDay = null;
-        runPlace = null;
         for (int s = 0; s < scan.Count; s++)
         {
             var snapshot = scan[s];
@@ -169,15 +163,7 @@ public sealed partial class PoseLibraryPane
                 bool isScene = entry.FilePath.EndsWith(Poser.Documents.Files.SceneFile.Extension, StringComparison.OrdinalIgnoreCase);
                 if (isScene == legacy) continue;
                 folders[root].Count++;
-                if (!string.Equals(runDay, snapshot.Day, StringComparison.Ordinal)
-                    || !string.Equals(runPlace, entry.Place, StringComparison.Ordinal))
-                {
-                    run++;
-                    runDay = snapshot.Day;
-                    runPlace = entry.Place;
-                }
-                string key = rootKey + KeySeparator + snapshot.Day + KeySeparator + entry.Place
-                    + KeySeparator + run.ToString(CultureInfo.InvariantCulture);
+                string key = rootKey + KeySeparator + snapshot.Day;
                 if (!rows.TryGetValue(key, out int group))
                 {
                     group = folders.Count;
@@ -185,11 +171,7 @@ public sealed partial class PoseLibraryPane
                     folders.Add(new PoseLibraryFolderRow
                     {
                         Key = key,
-                        // A file that records no place says nothing about
-                        // where it was taken, so its row shows only the day.
-                        Label = entry.Place.Length > 0
-                            ? snapshot.Day + PlaceSeparator + entry.Place
-                            : snapshot.Day,
+                        Label = snapshot.Day,
                         LabelLower = string.Empty,
                         Depth = 1,
                     });
@@ -210,10 +192,9 @@ public sealed partial class PoseLibraryPane
                     Sub = entry.Stamp,
                     Modified = entry.Stamp,
                     ThumbKey = entry.FilePath,
-                    // Only a file that says it holds an image asks the
-                    // thumbnail cache. Auto-saves are written without one, and
-                    // asking for every file would open every visible file.
-                    HasThumbnail = entry.HasThumbnail,
+                    // Autosaves are written without a picture, and asking the
+                    // thumbnail cache would open every file on screen.
+                    HasThumbnail = false,
                     Favorite = favorites.Contains(entry.FilePath),
                     Folder = group,
                 });
