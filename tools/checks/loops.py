@@ -3,7 +3,7 @@ cancels is played again, a layer with its loop off stays stopped, scrubbing a lo
 layer while paused, and Full body repeat."""
 import time
 
-from bridge import Checks, FULL_BODY, UPPER_BODY, get, layer, layers, play_emote, ready, wait_until
+from bridge import Checks, FULL_BODY, UPPER_BODY, get, layer, layers, play_emote, ready, reset_all, wait_until
 
 checks = Checks("loops")
 ready(checks)
@@ -62,9 +62,9 @@ checks.step("resume keeps the loop", live("UpperBody") == upper and layer(layers
             f"Upper body {live('UpperBody')}")
 get("/loop", actor=0, slot=UPPER_BODY, on=0)
 
-get("/stance", actor=0, stance="Idle")
-ok, state = wait_until(lambda: get("/state", actor=0), lambda s: s.get("stance") == "Idle", timeout=8)
-checks.step("stand up", ok, f"stance {state.get('stance')}")
+# Reset → All stands the actor up. The stance control would save the seat that Sit
+# made as the game's stance, and later resets would seat the actor again (#839).
+reset_all(checks)
 photo = play_emote("Photograph")
 full = photo.get("played")
 ok, _ = wait_until(lambda: live("Base"), lambda t: t == full, timeout=5)

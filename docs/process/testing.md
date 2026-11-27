@@ -88,6 +88,8 @@ python tools/checks/speed.py
 
 The scripts need only Python 3.10 or newer, with nothing installed. They use the first actor in the actor list, start with Reset → All on it, and remove every other actor. They add and remove cameras, lights and copies of the actor as they go, so do not run them in a scene you want to keep. They use only the game's own emotes and expressions, chosen by name, and no mods or saved files. Only one script should run at a time, and only while nobody else is trying a build in the game.
 
+Each script expects actor 1 to stand after Reset → All. If the first step fails because the actor still sits, leave GPose and enter it again: while #839 is open, Reset → All can seat the actor again after Sit was played from the Animation tab and the stance was then changed.
+
 `tools/checks/bridge.py` holds what the scripts share: calling the bridge, waiting until the game shows a change, and counting steps. A script waits for the state it expects instead of sleeping for a fixed time, reads the animation clocks from `/layers` and reads undo history from `/history`.
 
 ## The debug bridge
@@ -95,6 +97,8 @@ The scripts need only Python 3.10 or newer, with nothing installed. They use the
 Debug builds start a small HTTP server on `127.0.0.1:47999` (`Poser/Bridge/DebugBridge.cs`). Release builds do not contain it. `tools/poser_mcp.py` offers its endpoints as MCP tools, and `.mcp.json` registers that script. The bridge can read the scene, undo and redo, load and save scenes, take a screenshot of the game, and send mouse and key input to Poser's own windows. It uses the same commands as the interface. `/help` lists every command.
 
 A command changes something only when it is given a value to change. Without one it only reads: `/loop` without `on`, `/ik` and `/posefile` without an `action` that writes, `/physicsfreeze` and `/scrubfallback` without `on`. `/undo` and `/redo` refuse any parameter except `selected`. When `slot` is left out, the animation commands mean Upper body, not Full body.
+
+While an action such as Import pose or a scene load runs, commands that would change something answer with a message to wait, as the interface does. `/busy` names the action that is running, or answers `null` when none is.
 
 The bridge helps to investigate a problem and to try a change. It does not show how the interface looks.
 

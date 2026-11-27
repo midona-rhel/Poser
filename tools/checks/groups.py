@@ -4,19 +4,14 @@ but not its scale, nested parents move together, a link that would make a loop i
 refused, and undoing the removal of a parent makes the child follow it again."""
 import math
 
-from bridge import Checks, get, ready, remove, short, wait_until
+from bridge import Checks, add_light, get, parenting_list, ready, remove, short, wait_until
 
 checks = Checks("groups and parenting")
 ready(checks)
 
 
-def listing(bones=False):
-    listed = get("/parenting", bones=1) if bones else get("/parenting")
-    return listed if isinstance(listed, list) else []
-
-
 def entity(selection_id):
-    return next((e for e in listing() if e["id"] == selection_id), None)
+    return next((e for e in parenting_list() if e["id"] == selection_id), None)
 
 
 def world(selection_id):
@@ -49,10 +44,6 @@ def near(a, b, tolerance=0.01):
 
 def xyz(p):
     return p and [round(p[k], 3) for k in "XYZ"]
-
-
-def add_light():
-    return get("/parenting", create="light").get("id")
 
 
 a, b, c = add_light(), add_light(), add_light()
@@ -112,7 +103,7 @@ link(b, a)
 link(c, b)
 before_b, before_c = position(b), position(c)
 move(a, dx=10)
-reading = listing()  # One reading, so B and C are read from the same frame.
+reading = parenting_list()  # One reading, so B and C are read from the same frame.
 now_b = next((e["world"]["Position"] for e in reading if e["id"] == b), None)
 now_c = next((e["world"]["Position"] for e in reading if e["id"] == c), None)
 shift_b = now_b and offset(before_b, now_b)
@@ -132,7 +123,7 @@ checks.step("attaching A to C, which follows A, is refused",
             loop.get("Success") is False and loop.get("Detail") == "Parenting would create a cycle."
             and parent(a) is None and [xyz(position(x)) for x in (a, b, c)] == positions,
             f"answer {short(loop, 120)}, parent of A {parent(a)}")
-everything = listing(bones=True)
+everything = parenting_list(bones=True)
 actor = next((e["id"] for e in everything if e["id"].startswith("actor:")), None)
 bone = next((e["id"] for e in everything if e["id"].startswith("bone:")), None)
 own_bone = link(actor, bone) if actor and bone else {}

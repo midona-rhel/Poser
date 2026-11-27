@@ -22,11 +22,11 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 FULL_BODY, UPPER_BODY, FACIAL = 0, 1, 2
 
 
-def get(path, **params):
+def get(route, **params):
     """Calls one bridge command and returns its answer as a dictionary or list.
     A request that fails comes back as {"error": ...} so a step can report it."""
     query = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-    url = BASE + path + ("?" + query if query else "")
+    url = BASE + route + ("?" + query if query else "")
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
             return json.loads(response.read())
@@ -124,29 +124,61 @@ def ready(checks, actor=0):
     """Waits for the bridge and the animation list, then puts the actor back to the
     game's state with Reset → All, so each script starts from the same place."""
     ok, reading = wait_until(lambda: get("/actors"), lambda r: "actors" in r, timeout=30, interval=1)
-    if not checks.step("bridge answers", ok and len(reading.get("actors", [])) > 0, short(reading)):
+    if not checks.step("bridge answers", ok and len(reading.get("actors", [])) > 0,
+                       f"{len(reading.get('actors', []))} actors"):
         checks.finish()
     ok, reading = wait_until(lambda: get("/emote", actor=actor, name="Sit", list=1),
                              lambda r: "matches" in r, timeout=60, interval=1)
-    if not checks.step("animation list loaded", ok, short(reading)):
+    if not checks.step("animation list loaded", ok, f"{len(reading.get('matches', []))} emotes named like Sit"):
         checks.finish()
     remove_copies(checks)
     reset_all(checks, actor)
 
 
+def idle(timeout=15):
+    """Waits until no action such as Import pose is running, since other actions wait for it.
+    Returns (no action running, the last /busy answer)."""
+    return wait_until(lambda: get("/busy"), lambda b: "running" in b and b["running"] is None, timeout=timeout)
+
+
+def parenting_list(bones=False):
+    """What /parenting lists: actors, lights, props and the like with their world transform
+    and parent. With bones, every bone of every actor too."""
+    listed = get("/parenting", bones=1) if bones else get("/parenting")
+    return listed if isinstance(listed, list) else []
+
+
+def add_light():
+    """Adds a light and returns its id. The answer can come before the light has an id,
+    so the new light is the one that was not in the listing before."""
+    before = {e["id"] for e in parenting_list()}
+    answer = get("/parenting", create="light")
+    ok, after = wait_until(parenting_list, lambda l: len({e["id"] for e in l} - before) == 1, timeout=10)
+    if not ok:
+        print(f"  no new light in the list; /parenting answered {short(answer, 160)}")
+    return next(iter({e["id"] for e in after} - before)) if ok else None
+
+
 def reset_all(checks, actor=0):
-    """Reset → All, then waits until the actor plays the game's own animation again."""
+    """Reset → All, then waits until the actor stands with the weapon sheathed and is not
+    paused. The stance can still read WeaponDrawn after the weapon was drawn and put away:
+    that is the game's pose kind, and the actor stands normally with it."""
     result = get("/resetall", actor=actor)
     settled, reading = wait_until(lambda: get("/state", actor=actor),
-                                  lambda s: s.get("stance") == "Idle" and not s.get("paused"), timeout=10)
-    return checks.step("Reset → All puts the actor back", result.get("ok") is True and settled,
-                       f"reset {short(result, 160)} stance {reading.get('stance')} paused {reading.get('paused')}")
+                                  lambda s: s.get("stance") in ("Idle", "WeaponDrawn") and s.get("weaponDrawn") is False
+                                  and not s.get("paused"), timeout=10)
+    # Reset → All can redraw the actor, and its bones cannot be read until that is done.
+    bones, _ = wait_until(lambda: get("/bone", actor=actor, name="j_kosi", partial=0), lambda b: "error" not in b, timeout=10)
+    return checks.step("Reset → All puts the actor back", result.get("ok") is True and settled and bones,
+                       f"reset {short(result, 160)} stance {reading.get('stance')}, weapon drawn {reading.get('weaponDrawn')}, "
+                       f"paused {reading.get('paused')}, bones readable {bones}")
 
 
 def remove(selection_ids):
     """Selects exactly these entities and removes them the way the Remove button does.
     Returns (removed, what was seen). Nothing is removed when the selection did not take,
     so an earlier selection is never removed by mistake."""
+    idle()
     selected = get("/selection", entities=",".join(selection_ids))
     if not isinstance(selected, list) or sorted(selected) != sorted(selection_ids):
         return False, f"selection refused: {short(selected, 160)}"
@@ -156,12 +188,20 @@ def remove(selection_ids):
 
 
 def copy_actor(checks, with_pose=False):
-    """Copies the first actor and returns the copy's id as /actors lists it, or None."""
+    """Copies the first actor and returns the copy's id as /actors lists it, or None.
+    It waits until the copy is drawn, because the camera cannot follow an actor before
+    that, and until copying the pose has finished, because other actions wait for it."""
     answer = get("/dupepose" if with_pose else "/clone", actor=0)
     ok, listed = wait_until(actors, lambda a: len(a) == 2, timeout=10)
-    copy_id = listed[1]["id"] if ok else None
+    drawn, state = wait_until(lambda: get("/state", actor=1),
+                              lambda s: s.get("hasDrawObject") and s.get("drawObjectVisible"), timeout=10)
+    if with_pose:
+        # Copying the pose starts as its own action once the copy is drawn.
+        wait_until(lambda: get("/busy"), lambda b: b.get("running") is not None, timeout=5)
+    finished, busy = idle()
+    copy_id = listed[1]["id"] if ok and drawn and finished else None
     checks.step("copy the actor" + (" with its pose" if with_pose else ""), answer.get("ok") and copy_id is not None,
-                f"answer {short(answer, 160)}, {len(listed)} actors")
+                f"answer {short(answer, 160)}, {len(listed)} actors, copy drawn {state.get('hasDrawObject')}, still running {busy.get('running')}")
     return copy_id
 
 

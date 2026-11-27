@@ -26,8 +26,11 @@ tinted = get("/presentation", actor=0, tint="1,0.2,0.2,1", model="Character")
 ok, reading = wait_until(presentation, lambda p: p.get("tint") and abs(p["tint"][1] - 0.2) < 0.01, timeout=3)
 checks.step("tint the actor red", tinted.get("ok") and ok, f"tint {reading.get('tint')}")
 
-wet = get("/presentation", actor=0, wet=1)
-checks.step("make the actor wet", wet.get("ok") and wet.get("wet") is True, short(wet.get("wetness")))
+# As in the Appearance tab, the wetness is held first and the sliders then set it.
+wet = get("/presentation", actor=0, wet=1, wetness="1,0,0")
+ok, reading = wait_until(presentation, lambda p: (p.get("wetness") or {}).get("Weather", 0) > 0.9, timeout=3)
+checks.step("make the actor wet", wet.get("ok") and wet.get("wet") is True and ok,
+            f"held {wet.get('wet')}, wetness {short(reading.get('wetness'))}")
 
 hidden = get("/presentation", actor=0, visible=0)
 ok, reading = wait_until(presentation, lambda p: p.get("visible") is False, timeout=3)

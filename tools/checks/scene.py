@@ -25,7 +25,8 @@ def scene_idle():
 
 
 posed = get("/setbone", actor=0, name=BONE, partial=0, deg=40, axis="z")
-saved_rotation = rotation()
+# The edit shows up in the bone reading a frame after /setbone answers.
+_, saved_rotation = wait_until(rotation, lambda r: r is not None, timeout=3)
 checks.step("pose the left arm", posed.get("ok") and saved_rotation is not None, short(posed, 160))
 
 path = os.path.join(tempfile.mkdtemp(prefix="poser-check-"), "check.xivs")

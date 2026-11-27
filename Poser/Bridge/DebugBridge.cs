@@ -81,7 +81,7 @@ public sealed partial class DebugBridge : IDisposable
         "/screenshot", "/cameras", "/groups", "/layers", "/glamstate", "/wardrobe", "/customize",
         "/uidrag", "/uiinput", "/uiwindows", "/uiscale", "/uiprobestate", "/shortcut", "/gamekeys",
         "/bakestate", "/importstate", "/profile", "/natives", "/appearanceevidence", "/penumbraidentity",
-        "/catalogmodels", "/fonts", "/meta", "/cancel", "/dump", "/watch",
+        "/catalogmodels", "/fonts", "/meta", "/cancel", "/dump", "/watch", "/busy",
     };
 
     /// <summary>A person cannot start an action while another one runs, and neither can a
@@ -101,7 +101,7 @@ public sealed partial class DebugBridge : IDisposable
             "/environment" => !query.Keys.Any(key => key is "weather" or "hold" or "minute" or "frozen"),
             "/actorspeed" => !query.ContainsKey("value") && !query.ContainsKey("clear"),
             "/face" => !query.ContainsKey("unit") && !query.ContainsKey("reset"),
-            "/presentation" => !query.Keys.Any(key => key is "visible" or "opacity" or "tint" or "wet" or "reset"),
+            "/presentation" => !query.Keys.Any(key => key is "visible" or "opacity" or "tint" or "wet" or "wetness" or "reset"),
             "/light" => !query.ContainsKey("property"),
             "/emote" => query.GetValueOrDefault("list") == "1",
             "/mcdf" => !query.Keys.Any(key => key is "import" or "spawn" or "reset" or "export"),
@@ -395,6 +395,7 @@ public sealed partial class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/busy (the action that is running, such as Import pose, or null; other actions wait for it)",
                         "/selection?actors=INDEX,INDEX or entity=EXACT_ID or entities=EXACT_ID,EXACT_ID (omit to read; empty actors/entities to clear)",
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
@@ -456,7 +457,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/actorspeed?actor&value=SPEED | &clear=1 (the whole actor's speed; read without either)",
                         "/positionlock?actor&on=1|0 (read without on)",
                         "/face?actor&unit=ID&weight=W | &reset=1 (the face sliders; read without either)",
-                        "/presentation?actor&visible=1|0&opacity=0..1&tint=R,G,B,A&model=Character&wet=1|0&reset=1 (read without any)",
+                        "/presentation?actor&visible=1|0&opacity=0..1&tint=R,G,B,A&model=Character&wet=1|0&wetness=W,S,D&reset=1 (read without any)",
                         "/light?light=INDEX|SELECTION_ID&property=NAME&value=VALUE (a LightProperties value; read without property)",
                         "/environment?weather=ID&hold=1|0&minute=0..1439&frozen=1|0 (read without any)",
                         "/physicsfreeze?on=1|0", "/scrubfallback?on=1|0 (both read without on)",
@@ -918,6 +919,8 @@ public sealed partial class DebugBridge : IDisposable
                 });
             case "/actors":
                 return Json(ListActors());
+            case "/busy":
+                return Json(new { running = _gate.Running?.Name });
             case "/cameras":
                 return JsonSerializer.Serialize(new
                 {

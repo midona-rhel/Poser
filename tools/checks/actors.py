@@ -1,6 +1,6 @@
 """Actor copy and removal: copy the actor with its pose, remove the copy the way the
 Remove button does, and undo and redo the removal."""
-from bridge import Checks, actors, copy_actor, get, ready, remove, short, wait_until
+from bridge import Checks, actors, copy_actor, get, idle, ready, remove, short, wait_until
 
 checks = Checks("actor copy and removal")
 ready(checks)
@@ -17,9 +17,10 @@ def same_as(posed):
     return lambda r: r is not None and abs(sum(r[k] * posed[k] for k in "XYZW")) > 0.9999
 
 
-get("/setbone", actor=0, name=BONE, partial=0, deg=40, axis="z")
-posed = rotation(0)
-if not checks.step("pose the left arm", posed is not None, short(posed)):
+turned = get("/setbone", actor=0, name=BONE, partial=0, deg=40, axis="z")
+# The edit shows up in the bone reading a frame after /setbone answers.
+_, posed = wait_until(lambda: rotation(0), lambda r: r is not None, timeout=3)
+if not checks.step("pose the left arm", turned.get("ok") and posed is not None, f"{short(turned, 120)}, left arm {short(posed)}"):
     checks.finish()
 
 copy_id = copy_actor(checks, with_pose=True)
@@ -37,8 +38,10 @@ checks.step("undo brings the copy back", undo.get("ok") and ok, f"{len(listed)} 
 matching, copied = wait_until(lambda: rotation(1), same_as(posed), timeout=10)
 checks.step("with its pose", matching, f"copy's left arm {copied}")
 
+# Bringing the copy back runs as an action, and redo waits for it like any other.
+idle()
 redo = get("/redo")
 ok, listed = wait_until(actors, lambda a: len(a) == 1, timeout=15)
-checks.step("redo removes it again", redo.get("ok") and ok, f"{len(listed)} actors")
+checks.step("redo removes it again", redo.get("ok") and ok, f"{len(listed)} actors, redo {short(redo, 120)}")
 
 checks.finish()
