@@ -18,9 +18,6 @@ internal static class GlassChrome
 
     private static GlassState State => UiContext.Current.Glass;
 
-    // Below this alpha, translucent surfaces no longer read reliably.
-    internal const float MinimumFillOpacity = 0.50f;
-
     internal static bool ShouldPrependBackdropBlur => State.BackdropBlur;
 
     internal static IReadOnlyList<GlassBlurSubmission> BlurSubmissions { get; } =
@@ -29,15 +26,10 @@ internal static class GlassChrome
             new GlassBlurSubmission(1f, Vector4.Zero, Vector4.Zero, 0f),
         });
 
+    /// <summary>Takes the fill and blur from the settings, which already
+    /// keep the fill at or above <see cref="Poser.Documents.Config.UIConfiguration.MinimumFillOpacity"/>.</summary>
     public static void Configure(float fillOpacity, bool backdropBlur) =>
-        (State.FillOpacity, State.BackdropBlur) =
-            (ClampFillOpacity(fillOpacity), backdropBlur);
-
-    // UI callers can pass values that did not come from persisted settings.
-    internal static float ClampFillOpacity(float value) =>
-        float.IsFinite(value)
-            ? Math.Clamp(value, MinimumFillOpacity, 1f)
-            : 1f;
+        (State.FillOpacity, State.BackdropBlur) = (fillOpacity, backdropBlur);
 
     public static Vector4 BackgroundColor
     {

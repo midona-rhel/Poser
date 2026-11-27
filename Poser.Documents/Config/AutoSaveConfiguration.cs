@@ -7,11 +7,21 @@ public class AutoSaveConfiguration
     /// <summary>Whether the timed auto-save runs at all.</summary>
     public bool Enabled { get; set; } = true;
 
+    private int _intervalSeconds = 180;
+    private int _maxSceneSnapshots = 5;
+
     /// <summary>
     /// Seconds between snapshots while in GPose. Entering GPose does not save
     /// immediately; the first snapshot is scheduled after one full interval.
+    /// The Settings slider offers 10 to 600 seconds; this floor of one second
+    /// only stops an edited settings file from making Poser save the scene on
+    /// every frame.
     /// </summary>
-    public int IntervalSeconds { get; set; } = 180;
+    public int IntervalSeconds
+    {
+        get => _intervalSeconds;
+        set => _intervalSeconds = Math.Max(1, value);
+    }
 
     /// <summary>
     /// Delete every snapshot when GPose is left instead of taking a final one
@@ -20,9 +30,14 @@ public class AutoSaveConfiguration
     /// </summary>
     public bool CleanOnExit { get; set; } = false;
 
-    /// <summary>How many whole-scene snapshots are retained on disk. Floored
-    /// at 1 by the service.</summary>
-    public int MaxSceneSnapshots { get; set; } = 5;
+    /// <summary>How many whole-scene snapshots are kept on disk; older ones
+    /// are deleted after each save. At least one, because the newest snapshot
+    /// is the one that recovers the scene after a crash.</summary>
+    public int MaxSceneSnapshots
+    {
+        get => _maxSceneSnapshots;
+        set => _maxSceneSnapshots = Math.Max(1, value);
+    }
 
     /// <summary>
     /// The folder where older Poser versions saved pose backups. Poser no

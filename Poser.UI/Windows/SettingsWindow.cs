@@ -1,7 +1,6 @@
 using Poser.Domain.Scene;
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -220,8 +219,7 @@ public class SettingsWindow : Window
             AutoSaveEnabled = c.AutoSave.Enabled,
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
             AutoSaveCleanOnExit = c.AutoSave.CleanOnExit,
-            SceneSnapshotsMaxKept =
-                c.AutoSave.MaxSceneSnapshots.ToString(CultureInfo.InvariantCulture),
+            SceneSnapshotsMaxKept = c.AutoSave.MaxSceneSnapshots,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
             MapDotRadius = c.Skeleton.MapDotRadius,
@@ -437,19 +435,13 @@ public class SettingsWindow : Window
         c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
         c.BlockGPoseMouseTargeting = _vm.BlockGPoseMouseTargeting;
         c.StartGPoseWithoutDepthOfField = _vm.StartGPoseWithoutDepthOfField;
-        c.UndoDepth = Math.Clamp(_vm.UndoDepth, 0, 500);
+        c.UndoDepth = _vm.UndoDepth;
         c.AutoSave.Enabled = _vm.AutoSaveEnabled;
         c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
         c.AutoSave.CleanOnExit = _vm.AutoSaveCleanOnExit;
-        if (int.TryParse(
-                _vm.SceneSnapshotsMaxKept.Trim(),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out int keptSceneSnapshots)
-            && keptSceneSnapshots >= 1)
-            c.AutoSave.MaxSceneSnapshots = keptSceneSnapshots;
-        _vm.SceneSnapshotsMaxKept =
-            c.AutoSave.MaxSceneSnapshots.ToString(CultureInfo.InvariantCulture);
+        // The settings class keeps at least one backup; the field shows what it kept.
+        c.AutoSave.MaxSceneSnapshots = _vm.SceneSnapshotsMaxKept;
+        _vm.SceneSnapshotsMaxKept = c.AutoSave.MaxSceneSnapshots;
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
         c.Skeleton.MapDotRadius = _vm.MapDotRadius;
@@ -460,11 +452,9 @@ public class SettingsWindow : Window
         c.Skeleton.BoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayInactive);
         c.Skeleton.IkChainColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayIkChain);
         c.Skeleton.MirroredBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayMirrored);
-        c.Skeleton.SkeletonViewMode =
-            (SkeletonViewMode)Math.Clamp(_vm.SkeletonShape, 0, 2);
+        c.Skeleton.SkeletonViewMode = (SkeletonViewMode)_vm.SkeletonShape;
         c.Skeleton.ShowSelectedBonesOnly = _vm.SelectedBonesOnly;
-        c.Skeleton.BonePickBehavior =
-            (BonePickBehavior)Math.Clamp(_vm.BonePickBehavior, 0, 1);
+        c.Skeleton.BonePickBehavior = (BonePickBehavior)_vm.BonePickBehavior;
         c.Skeleton.ShowSkeletonLines = _vm.ShowSkeletonLines;
         c.Skeleton.BoneLineThickness = _vm.BoneLineThickness;
         c.Skeleton.BoneLineOpacity = _vm.BoneLineOpacity;
@@ -478,20 +468,17 @@ public class SettingsWindow : Window
             if (_vm.DefaultBonePresets.TryGetValue(preset.Name, out var show)) preset.ShowByDefault = show;
         c.Skeleton.BoneMapDefaults = _vm.BoneMapDefaults.ToList();
         c.Skeleton.DimInactiveActors = _vm.DimInactiveActors;
-        c.Skeleton.InactiveActorOpacity =
-            Math.Clamp(_vm.InactiveActorOpacity, 0f, 1f);
-        c.Skeleton.ActiveActorSource =
-            (ActiveActorSource)Math.Clamp(_vm.ActiveActorSource, 0, 2);
+        c.Skeleton.InactiveActorOpacity = _vm.InactiveActorOpacity;
+        c.Skeleton.ActiveActorSource = (ActiveActorSource)_vm.ActiveActorSource;
         c.Skeleton.ShowFriendlyBoneNames = _vm.ShowFriendlyBoneNames;
         c.Skeleton.ShowAllVieraEars = _vm.ShowAllVieraEars;
         c.Skeleton.DriversFollowPose = _vm.DriversFollowPose;
 
-        c.Gizmo.GizmoScale = Math.Clamp(_vm.GizmoScale, 0.5f, 2f);
+        c.Gizmo.GizmoScale = _vm.GizmoScale;
         c.Gizmo.AllowHoldSnap = _vm.AllowHoldSnap;
-        c.Gizmo.GroupScale = (global::Poser.Domain.Transforms.GroupScaleMode)Math.Clamp(_vm.GroupScale, 0, 1);
-        c.Gizmo.SnapRotationDegrees =
-            Math.Clamp(_vm.SnapRotationDegrees, 0.5f, 45f);
-        c.Gizmo.SnapLinearStep = Math.Clamp(_vm.SnapLinearStep, 0.01f, 1f);
+        c.Gizmo.GroupScale = (global::Poser.Domain.Transforms.GroupScaleMode)_vm.GroupScale;
+        c.Gizmo.SnapRotationDegrees = _vm.SnapRotationDegrees;
+        c.Gizmo.SnapLinearStep = _vm.SnapLinearStep;
         c.Gizmo.AllowRaySnap = _vm.AllowRaySnap;
         c.Gizmo.KeepGizmoWhenBonesHidden = _vm.KeepGizmoWhenBonesHidden;
         c.Gizmo.UniversalCenterTranslates = _vm.UniversalCenterTranslates;
@@ -500,24 +487,17 @@ public class SettingsWindow : Window
         c.Display.ShowNsfwBones = _vm.NsfwBones;
         c.Display.AnonymousMode = _vm.AnonymousMode;
         c.UI.Theme = _vm.Theme;
-        // Persist a concrete accent position.
-        c.UI.AccentIndex = ThemeSelection.NormalizeAccentIndex(_vm.AccentIndex);
+        c.UI.AccentIndex = _vm.AccentIndex;
         c.UI.FillOpacity = _vm.FillOpacity;
         // Blur is stored separately from surface alpha.
         c.UI.BackdropBlur = _vm.BackdropBlur;
 
-        c.Transform.EntitySpeed =
-            Math.Clamp(_vm.TransformEntitySpeed, 0.0005f, 0.05f);
-        c.Transform.BoneSpeed =
-            Math.Clamp(_vm.TransformBoneSpeed, 0.0005f, 0.05f);
-        c.Camera.DefaultMovementSpeed = Math.Clamp(
-            _vm.CameraDefaultSpeed,
-            FreeCameraSpeed.Minimum,
-            FreeCameraSpeed.Maximum);
-        c.Camera.DefaultMouseSensitivity =
-            Math.Clamp(_vm.CameraDefaultSensitivity, 0.001f, 0.2f);
-        c.Camera.FastMultiplier = Math.Clamp(_vm.CameraFastMultiplier, 1f, 10f);
-        c.Camera.SlowMultiplier = Math.Clamp(_vm.CameraSlowMultiplier, 0.05f, 1f);
+        c.Transform.EntitySpeed = _vm.TransformEntitySpeed;
+        c.Transform.BoneSpeed = _vm.TransformBoneSpeed;
+        c.Camera.DefaultMovementSpeed = _vm.CameraDefaultSpeed;
+        c.Camera.DefaultMouseSensitivity = _vm.CameraDefaultSensitivity;
+        c.Camera.FastMultiplier = _vm.CameraFastMultiplier;
+        c.Camera.SlowMultiplier = _vm.CameraSlowMultiplier;
         c.Camera.ConsumeModifiersWhileFlying = _vm.CameraConsumeModifiers;
         c.Camera.KeepBoundKeysFromGame = _vm.KeepBoundKeysFromGame;
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;

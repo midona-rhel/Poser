@@ -51,7 +51,8 @@ internal static class ThemeSelection
             NormalizeAccentIndex(accentIndex)]);
     }
 
-    // Invalid config values use the first concrete accent.
+    // An accent index from an edited or older settings file can be outside
+    // the list; it then uses the first accent.
     public static int NormalizeAccentIndex(int accentIndex) =>
         accentIndex >= 0 && accentIndex < Theme.AccentOptions.Count
             ? accentIndex
