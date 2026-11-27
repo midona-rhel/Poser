@@ -5,6 +5,7 @@ using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Posing.BoneInfo;
 using Poser.Game.Bindings;
 using Poser.Game.Services;
 
@@ -71,8 +72,8 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     /// the bone is no longer there, and waits while the actor is being redrawn.</summary>
     private Outcome OnCurrent(TransformTargetId target, Func<TransformTargetId, Outcome> write) =>
         _scene.CurrentTransformTarget(target) is { } current ? write(current)
-        : _scene.IsTransformTargetPending(target) ? Outcome.Busy("The actor is still being redrawn.")
-        : Outcome.Fail($"{target.Bone?.CanonicalName ?? "The bone"} is no longer in the scene.");
+        : _scene.IsTransformTargetPending(target) ? Outcome.Busy(UndoJournal.TargetsPending)
+        : Outcome.Fail($"{BoneInfoService.GetDisplayName(target.Bone!.Value.CanonicalName)} is no longer in the scene.");
 
     /// <summary>True when this bone can use IK.</summary>
     public bool IsSupported(TransformTargetId target) => Get(target) != null;

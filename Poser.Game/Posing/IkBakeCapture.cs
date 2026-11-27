@@ -302,7 +302,10 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             after.Add(current);
         }
 
-        // Undo restores both the bone edits and the enabled chain.
+        // Undo restores both the bone edits and the enabled chain. Pressed while the
+        // actor is being redrawn, the step fails and stays for the next press.
+        bool Waiting() => _scene.IsTransformTargetPending(bake.Target)
+            || before.Any(state => _scene.IsTransformTargetPending(state.Target));
         _history.Append(new JournalStep(
             "Disable IK",
             () => RestoreStates(before) && SetChainEnabled(bake, true),
@@ -311,6 +314,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
             AffectedEntities = before.Concat(after)
                 .Select(state => EditHistory.EntityOf(state.Target.ToSelectionId()))
                 .Append(EditHistory.EntityOf(bake.Target.ToSelectionId())).Distinct().ToArray(),
+            OnRefusal = () => Waiting() ? RefusalAction.Keep : RefusalAction.DropOnRepeat,
+            FailureDetail = () => Waiting() ? UndoJournal.TargetsPending : null,
         });
         return null;
     }
@@ -325,7 +330,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         {
             if (_scene.CurrentTransformTarget(state.Target) is not { } current)
             {
-                _log.Warning($"IK bake: {state.Target} is no longer in the scene.");
+                _log.Warning($"IK bake: {state.Target} was not found.");
                 landed = false;
                 continue;
             }
@@ -353,7 +358,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         if (_scene.CurrentTransformTarget(bake.Target) is not { Bone: { } id }
             || _bindings.Resolve(id) is not { Success: true, Value: { } bone })
         {
-            _log.Warning($"IK bake: {bake.Target} is no longer in the scene.");
+            _log.Warning($"IK bake: the chain's end bone {bake.Target} was not found.");
             return false;
         }
         var failure = _posing.SetIkConfiguration(bone, bake.Config with { Enabled = enabled });
