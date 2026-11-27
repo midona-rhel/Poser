@@ -128,7 +128,6 @@ internal sealed unsafe class SpawnTransaction
                 _native.CopyEquipmentVisibility(flagSource, descriptor.Value);
             }
             var seeded = descriptor.Value;
-            var appearanceSource = inheritSource ? _native.ResolveActor(sourceAddress) : null;
             void PrepareDraw()
             {
                 if (!_poller.IsCallbackCurrent(ownership.Token, seeded)) return;
@@ -139,13 +138,11 @@ internal sealed unsafe class SpawnTransaction
                     // Both ModelData and BaseData can outlive this slot's occupant.
                     // A duplicate must replace the former from its source rather
                     // than reverting to a possibly stale BaseData snapshot.
-                    var reset = inheritSource
-                        ? appearanceSource is { } original && _native.ResolveActor(sourceAddress) == original
-                            ? _spawnAppearance.CopySpawnAppearance(sourceAddress, seeded.Address)
-                            : IntegrationResult.Fail("The duplicate's appearance source is no longer available.")
+                    var copied = inheritSource
+                        ? _spawnAppearance.CopySpawnAppearance(sourceAddress, seeded.Address)
                         : _spawnAppearance.ResetSpawnAppearance(seeded.Address);
-                    if (!reset.Success)
-                        _log?.Warning($"ActorSpawnService: spawn appearance could not be initialized: {reset.Detail}");
+                    if (!copied.Success)
+                        _log?.Warning($"ActorSpawnService: spawn appearance could not be initialized: {copied.Detail}");
                 }
             }
             if (_framework is null)
