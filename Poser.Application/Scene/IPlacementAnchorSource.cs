@@ -18,10 +18,5 @@ public interface IPlacementAnchorSource
 {
     PlacementAnchorData? CameraAnchorNow();
     PlacementAnchorData? ActorAnchorNow();
-    /// <param name="onGround">For In front of camera: true puts the point on the
-    /// ground in front of the camera, at the height of the actor being worked on
-    /// (actors, props, objects, loaded scenes); false puts it 3 m along the view
-    /// (lights, cameras, colliders).</param>
-    bool TryCurrentFor(ObjectPlacementMode mode, out Vector3 position, out float yaw, out string? refusal,
-        bool onGround = true);
+    bool TryCurrentFor( ObjectPlacementMode mode, out Vector3 position, out float yaw, out string? refusal);
 }

@@ -116,11 +116,11 @@ public sealed class SceneCreation : ISceneCreation
     {
         if (!CanCreate) return new(null, "Creation requires an active GPose session.");
         Vector3? position = null;
-        if (spatial && !TryPlacement(kind, out position, out var refusal, unsavedDefault)) return new(null, refusal);
+        if (spatial && !TryPlacement(out position, out var refusal, unsavedDefault)) return new(null, refusal);
         return Finish(kind, create(), position);
     }
 
-    private bool TryPlacement(SceneEntityKind kind, out Vector3? position, out string? refusal, ObjectPlacementMode? unsavedDefault = null)
+    private bool TryPlacement(out Vector3? position, out string? refusal, ObjectPlacementMode? unsavedDefault = null)
     {
         position = null;
         refusal = null;
@@ -130,10 +130,7 @@ public sealed class SceneCreation : ISceneCreation
             if (unsavedDefault is not { } fallback) return true;
             mode = fallback;
         }
-        // Lights, cameras and colliders are placed along the view; things that
-        // stand are placed on the ground.
-        bool onGround = kind is not (SceneEntityKind.Light or SceneEntityKind.Camera or SceneEntityKind.Overlay);
-        if (!_anchors.TryCurrentFor(mode, out var anchor, out _, out refusal, onGround)) return false;
+        if (!_anchors.TryCurrentFor(mode, out var anchor, out _, out refusal)) return false;
         // Something new has no saved position, so it goes at the current
         // camera or actor, as a library file with no saved position does.
         position = anchor;
