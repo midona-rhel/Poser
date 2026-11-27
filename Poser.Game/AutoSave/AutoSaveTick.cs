@@ -4,14 +4,15 @@ using Poser.Application.Lifecycle;
 
 namespace Poser.Game.AutoSave;
 
-/// <summary>Owns the framework subscription that drives scene autosaves.</summary>
-public sealed class AutoSaveRuntime : IDisposable
+/// <summary>Calls the scene autosave's Tick every game frame with whether
+/// GPose is open. The autosave decides whether to write a file.</summary>
+public sealed class AutoSaveTick : IDisposable
 {
     private readonly IFramework _framework;
     private readonly IGPoseService _gpose;
     private SceneAutoSaveService? _scenes;
 
-    public AutoSaveRuntime(IFramework framework, IGPoseService gpose)
+    public AutoSaveTick(IFramework framework, IGPoseService gpose)
     {
         _framework = framework;
         _gpose = gpose;

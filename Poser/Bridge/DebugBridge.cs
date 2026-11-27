@@ -54,7 +54,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.Application.Integration.ICustomizePlusPort _customizePlus;
     private readonly global::Poser.Application.Integration.IntegrationSelectors _session;
     private readonly global::Poser.Application.Appearance.IActorAppearanceControl _appearance;
-    private readonly global::Poser.Application.Settings.ReleaseNotesSession _releaseNotes;
+    private readonly global::Poser.Application.Settings.ReleaseNotesState _releaseNotes;
     private readonly global::Poser.Game.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
@@ -141,7 +141,7 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Application.Integration.ICustomizePlusPort customizePlus,
         global::Poser.Application.Integration.IntegrationSelectors session,
         global::Poser.Application.Appearance.IActorAppearanceControl appearance,
-        global::Poser.Application.Settings.ReleaseNotesSession releaseNotes,
+        global::Poser.Application.Settings.ReleaseNotesState releaseNotes,
         global::Poser.Game.Services.ISkeletonService skeletons,
         global::Poser.Application.Gaze.IGazeControl gaze,
         global::Poser.Game.Services.IBonePosingService bonePosing,

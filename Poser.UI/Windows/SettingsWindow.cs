@@ -41,7 +41,7 @@ public class SettingsWindow : Window
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
     private readonly IPoseLibraryService _library;
     private readonly UserNotices _notices;
-    private readonly global::Poser.Application.Settings.ReleaseNotesSession _releaseNotes;
+    private readonly global::Poser.Application.Settings.ReleaseNotesState _releaseNotes;
     private bool _openLibrary;
     private bool _openSkeleton;
 
@@ -57,7 +57,7 @@ public class SettingsWindow : Window
         Controls.IssueReportModal issueReport,
         IPoseLibraryService library,
         UserNotices notices,
-        global::Poser.Application.Settings.ReleaseNotesSession releaseNotes)
+        global::Poser.Application.Settings.ReleaseNotesState releaseNotes)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |

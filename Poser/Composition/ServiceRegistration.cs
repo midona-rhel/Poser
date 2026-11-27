@@ -657,8 +657,8 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<IPoseFileService, PoseFileService>();
         services.AddSingleton<IPlaceService, Game.Environment.PlaceService>();
-        services.AddSingleton<AutoSaveRuntime>();
-        services.AddStartable<AutoSaveRuntime>(StartStage.AutoSave);
+        services.AddSingleton<AutoSaveTick>();
+        services.AddStartable<AutoSaveTick>(StartStage.AutoSave);
 
         // One shared list of MCDF checksums, so they are not worked out again for every scene load.
         services.AddSingleton<IMcdfHashIndex>(sp =>
@@ -692,7 +692,7 @@ internal static class ServiceRegistration
                 message => log.Warning(message));
         });
         services.AddStartable(StartStage.SceneAutoSave, sp =>
-            sp.GetRequiredService<AutoSaveRuntime>().StartSceneSnapshots(
+            sp.GetRequiredService<AutoSaveTick>().StartSceneSnapshots(
                 sp.GetRequiredService<SceneAutoSaveService>()));
         return services;
     }
@@ -773,7 +773,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton(new UiBuildIdentity(BuildMetadata.Branch, BuildMetadata.Commit));
-        services.AddSingleton(sp => new global::Poser.Application.Settings.ReleaseNotesSession(
+        services.AddSingleton(sp => new global::Poser.Application.Settings.ReleaseNotesState(
             sp.GetRequiredService<ConfigurationService>(), typeof(ServiceRegistration).Assembly.GetName().Version!));
         services.AddSingleton<global::Poser.UI.Views.ReleaseNotesView>();
         // The shared state of the interface controls. It is created before
