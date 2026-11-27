@@ -615,8 +615,8 @@ public sealed partial class DebugBridge : IDisposable
             case "/cpose":
             {
                 // Runs the game's own /cpose on your character, outside GPose, so the
-                // GPose copy starts in a standing pose Poser did not set. Only this
-                // command: the bridge never sends chat text.
+                // GPose copy starts in a standing pose Poser did not set. It sends
+                // only this one command and never other chat text.
                 unsafe
                 {
                     var command = FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.FromString("/cpose");
