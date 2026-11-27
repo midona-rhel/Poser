@@ -224,10 +224,8 @@ public sealed class LibraryWindow : Window
                 max.Y - stripBottom - inset * 2f);
             if (preview)
             {
-                // Include the options button for types that support it;
-                // its menu opens leftward over the navigator.
-                _main.PoseFiles.DrawPreviewColumn(
-                    columnOrigin, columnSize, optionsSeat: true);
+                // The options menu opens to the left, over the file list.
+                _main.PoseFiles.DrawPreviewColumn(columnOrigin, columnSize);
             }
             else if (type == PoseLibraryPane.LibraryType.Objects)
             {

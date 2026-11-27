@@ -326,12 +326,6 @@ public sealed class PoseLibraryViewModel
     /// the same way.</summary>
     public bool SceneBusy;
 
-    /// <summary>Whether the action row shows the two menu buttons, import
-    /// options and the bone filter. Only the Poses tab does.</summary>
-    public bool ShowImportMenus;
-    public Action? OnImportMenu;
-    public Action? OnBoneFilterMenu;
-
     /// <summary>Whether this tab can preview at all; set by the pane. On tabs
     /// that can, the preview is always on. MCDF tiles are never imported as a
     /// pose, so they cannot be previewed.</summary>
@@ -416,8 +410,6 @@ public sealed class PoseLibraryViewModel
     internal Action? ApplyClick;
     internal Action? SettingsClick;
     internal Action<float>? IconSizeChange;
-    internal Action? ImportMenuClick;
-    internal Action? BoneFilterClick;
     internal Action? ApplyMenuClick;
     internal Action? SaveSceneClick;
     internal Action? EditMetadataClick;
@@ -563,8 +555,6 @@ public static class PoseLibraryView
         vm.SettingsClick ??= () => vm.OnOpenSettings?.Invoke();
         vm.IconSizeChange ??= next => vm.OnIconSize?.Invoke(
             Math.Clamp(next, MinimumIconSize, MaximumIconSize));
-        vm.ImportMenuClick ??= () => vm.OnImportMenu?.Invoke();
-        vm.BoneFilterClick ??= () => vm.OnBoneFilterMenu?.Invoke();
         vm.ApplyMenuClick ??= () => vm.OnApplyMenu?.Invoke();
         vm.SaveSceneClick ??= () => vm.OnSaveScene?.Invoke();
         vm.EditMetadataClick ??= () => vm.OnEditMetadata?.Invoke(vm.Selected);
@@ -663,12 +653,6 @@ public static class PoseLibraryView
     private static void Actions(
         PoseLibraryViewModel vm, ActionBarScope scope)
     {
-        // The menus come first in the one bottom row. The position, rotation
-        // and scale switches are not here: the inspector decides which of them
-        // a pose applies, and a second set here would make this tab's footer
-        // taller than every other tab's.
-        if (vm.ShowImportMenus)
-            scope.Button("Options", vm.ImportMenuClick!);
         // Applying an MCDF takes a while and starts from this pane,
         // so while it runs, its stop button comes first in the row: nobody has
         // to find another pane to get out of an import. The button stays in

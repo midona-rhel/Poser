@@ -169,7 +169,7 @@ public partial class MainWindow
                 switch (index)
                 {
                     case 0:
-                        _poseFileSection.RequestImportMenu(withPresets: true, target: actorId);
+                        _poseFileSection.RequestImportMenu(actorId);
                         break;
                     case 1:
                         _poseFileSection.ImportFromClipboard(actorId);

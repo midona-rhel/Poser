@@ -34,7 +34,7 @@ internal sealed partial class EntityContextMenus
     {
         var items = new List<ContextMenuItem>
         {
-            new("Import", TablerIcon.Download) { OnInvoke = () => _poseFileSection.RequestImportMenu(withPresets: true, target: actorId) },
+            new("Import", TablerIcon.Download) { OnInvoke = () => _poseFileSection.RequestImportMenu(actorId) },
             new("Import from file", TablerIcon.FileText) { OnInvoke = () => _poseFileSection.OpenImportFromFile(actorId) },
             new("Import from clipboard", TablerIcon.Copy) { OnInvoke = () => _poseFileSection.ImportFromClipboard(actorId) },
             new("Export", TablerIcon.Upload, submenuItems: _poseFileSection.BuildExportSubmenu(actorId)),

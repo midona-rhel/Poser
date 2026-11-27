@@ -317,7 +317,7 @@ public sealed class UIManager : IUIManager
             ["Undo selected entity"] = () => SelectedHistory(before: true),
             ["Redo selected entity"] = () => SelectedHistory(before: false),
             ["Import pose"] = () => PoseShortcut(
-                actor => _poseFileSection.RequestImportMenu(withPresets: true, target: actor), opensWindow: true),
+                actor => _poseFileSection.RequestImportMenu(actor), opensWindow: true),
             ["Import pose from file"] = () => PoseShortcut(_poseFileSection.OpenImportFromFile, opensWindow: true),
             ["Export pose"] = () => PoseShortcut(actor => _poseFileSection.RequestExportMenu(actor), opensWindow: true),
             ["Export pose to file"] = () => PoseShortcut(_poseFileSection.OpenExport, opensWindow: true),

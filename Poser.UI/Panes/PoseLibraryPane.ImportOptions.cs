@@ -19,16 +19,13 @@ using Poser.Documents.Files;
 
 namespace Poser.UI;
 
-/// <summary>The import option toggles.</summary>
+/// <summary>The footer actions each tab shows, and the import options a pose tile is applied with.</summary>
 public sealed partial class PoseLibraryPane
 {
-    /// <summary>Updates the actions shown for the current library tab.
-    /// Pose component choices come from the inspector; autosaves restore all components.</summary>
-    private void SyncImportToggles()
+    /// <summary>Updates the actions shown for the current library tab.</summary>
+    private void SyncTabActions()
     {
-        // Favorites are the poses library's — an auto-save snapshot is not a
-        // curated entry.
-        _vm.ShowImportMenus = false;
+        // Favorites are for the poses library; an autosave is not one a person picked.
         _vm.CanFavorite = _type == LibraryType.Poses;
         // A scene is not spawned as an actor, and saving one belongs where
         // scenes are found rather than behind a menu.
@@ -96,11 +93,10 @@ public sealed partial class PoseLibraryPane
     /// options every frame and reads the file only when they change.</summary>
     private PoseImportOptions BuildImportOptionsCore()
     {
-        // Poses apply with the SHARED menu options (the rail hosts them in
-        // library mode) plus the library's load semantics; an auto-save
-        // restore is full-fidelity — every component, no control to say
-        // otherwise, because a recovery that silently dropped a component
-        // would not be a recovery.
+        // Poses use the options set with the options button beside the
+        // preview, which are the Pose tab's import options. An autosave
+        // puts back every component: there is no control for it, and a
+        // restore that left something out would not restore the pose.
         var options = _type == LibraryType.AutoSaves
             ? new PoseImportOptions
             {
@@ -110,12 +106,11 @@ public sealed partial class PoseLibraryPane
             }
             : _files.BuildImportOptions();
         options.ResetBeforeImport = true;
-        // The bone filter is NOT re-applied here: the files section's own
-        // build already folds it in for the one state Brio lets it govern
-        // (neither type checked), and folding it in again would have shrunk
-        // a Body/Expression import the same way Brio's disabled Custom Import
-        // Options button forbids. An auto-save restore is full-fidelity by
-        // contract and never sees the filter at all.
+        // The bone filter is not applied again here. BuildImportOptions in
+        // the Pose tab already applies it when neither Body nor Expression is
+        // ticked, the only case where Brio uses it, and applying it twice
+        // would narrow a Body or Expression import. An autosave restore
+        // never uses the filter.
         return options;
     }
 
