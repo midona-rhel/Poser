@@ -55,6 +55,20 @@ public sealed class EntityValues<TId>(ValueJournal journal, IEntityValuePort<TId
     public Outcome Update<T>(TId id, EntityProperty<TId, T> property, Func<T, T> change) =>
         port.Bind(id) is { } target ? Write(target, property, change(target.Read(property))) : new(false, unavailable);
 
+    /// <summary>Records a change the game already made, such as an overlay
+    /// the player dragged on screen, as one undo step from
+    /// <paramref name="before"/> to the entity's current value. Undo and redo
+    /// go through the same target as <see cref="Set{T}"/>, so they follow an
+    /// entity that was removed and brought back by undo.</summary>
+    public void Record<T>(TId id, EntityProperty<TId, T> property, T before)
+    {
+        if (port.Bind(id) is not { } target)
+            return;
+        var after = target.Read(property);
+        journal.Record((target.Entity, property.Key), property.Describe(after), before, after,
+            next => target.Write(property, next), () => target.IsAlive);
+    }
+
     public void Seal() => journal.Seal();
 
     private Outcome Write<T>(IEntityValueTarget<TId> target, EntityProperty<TId, T> property, T value)

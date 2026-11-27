@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Numerics;
 using Dalamud.Plugin.Services;
-using Poser.Application.Transforms;
 using Poser.Domain.Presentation;
 using Poser.Application.Events;
 using Poser.Game.Core;
@@ -12,9 +10,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Overlays;
 
 /// <summary>
-/// Holds overlay state and the token for its native UI node (or managed collider).
-/// Setters update the cached state before asking the port to draw it. An invalid
-/// handle retains and can update cached state, but has no native node to write.
+/// One overlay: its stored values and the game UI node that draws it (an IK
+/// collider has no node). Each setter stores the value, then has the node drawn
+/// with it. A removed overlay keeps its values but has no node left to draw.
 /// </summary>
 public sealed class OverlayNodeHandle : IOverlayNode
 {
@@ -39,8 +37,7 @@ public sealed class OverlayNodeHandle : IOverlayNode
 
     internal object? Node => _node;
 
-    /// <summary>Stores normalized state and asks the owner to update the node.
-    /// </summary>
+    /// <summary>Stores the values, kept within their limits, and redraws the node.</summary>
     public OverlayNodeState State
     {
         get => _state;
@@ -157,20 +154,20 @@ public sealed class OverlayNodeHandle : IOverlayNode
 
     public void Destroy() => _owner.Destroy(this);
 
-    /// <summary>The pointer dragged this node and the game has ALREADY moved
-    /// it: the document catches up without writing anything back down. Called
-    /// by the service, which hears it from the port.</summary>
+    /// <summary>The player dragged the node and the game has already moved it,
+    /// so only the stored position is updated.</summary>
     internal void AdoptDraggedPosition(Vector2 position) =>
         _state = (_state with { Position = position }).Normalized();
 
-    /// <summary>Forgets the node token after the service attempts destruction.</summary>
+    /// <summary>Forgets the node once the service has removed it.</summary>
     internal void Invalidate() => _node = null;
 }
 
 /// <summary>
-/// Tracks overlay handles and cleans them up on scene clear, GPose exit, or
-/// disposal. Generated names avoid the current list; removed names can be reused.
-/// Native failures are logged, so handle removal does not prove native cleanup.
+/// The list of overlays: dialog boxes, speech balloons, status lines and IK
+/// colliders. Creates and removes them, and removes all of them when the scene
+/// is cleared, when the player leaves GPose and when Poser unloads. New overlays
+/// are named after their kind with the next free number.
 /// </summary>
 public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
 {
@@ -178,26 +175,28 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     private readonly IOverlayNodePort _port;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
-    private readonly ValueJournal _journal;
     private readonly List<OverlayNodeHandle> _nodes = new();
 
     private int _nextId;
     private bool _disposed;
 
-    public OverlayNodeService(
-        IOverlayNodePort port, IEventBus events, IPluginLog log, ValueJournal journal)
+    public OverlayNodeService(IOverlayNodePort port, IEventBus events, IPluginLog log)
     {
         _port = port;
         _events = events;
         _log = log;
-        _journal = journal;
         _port.Moved = OnNodeMoved;
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
     }
 
-    /// <summary>A drag landed: find whose node it was and let that document
-    /// catch up. Reference identity, like everything else that speaks in
-    /// tokens; a token nobody still holds is simply ignored.</summary>
+    /// <summary>The player dragged an overlay on screen; the game has already
+    /// moved it. Gives the handle and its position before the drag.
+    /// <see cref="OverlayControl"/> records it as an undo step, like every
+    /// other overlay edit.</summary>
+    public event Action<OverlayNodeHandle, Vector2>? Dragged;
+
+    /// <summary>A drag landed: finds whose node it was and updates that
+    /// overlay's stored position. A node no overlay holds any more is ignored.</summary>
     private void OnNodeMoved(object node, Vector2 position)
     {
         for (int i = 0; i < _nodes.Count; i++)
@@ -207,31 +206,30 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
             var handle = _nodes[i];
             var before = handle.Position;
             handle.AdoptDraggedPosition(position);
-            _journal.Record(handle, "Move overlay", before, handle.Position,
-                ValueWrites.Unchecked<Vector2>(next => handle.Position = next), () => handle.IsValid);
+            Dragged?.Invoke(handle, before);
             return;
         }
     }
 
-    /// <summary>The live handle list. It is the service's own list, so a
-    /// caller that destroys while reading must work off a snapshot.</summary>
+    /// <summary>The current overlays. This is the service's own list, so a
+    /// caller that removes overlays while going through it must copy it first.</summary>
     public IReadOnlyList<OverlayNodeHandle> Nodes => _nodes;
 
     public int Count => _nodes.Count;
 
-    /// <summary>Whether creation is permitted by the service and port state. Native
-    /// initialization is deferred, so true does not guarantee creation will succeed.</summary>
+    /// <summary>False after unloading or when the overlay library could not
+    /// start. The library starts on the first create, so true does not promise
+    /// that the next create works.</summary>
     public bool IsAvailable => !_disposed && _port.IsAvailable;
 
-    /// <summary>Creates one node of the stated kind, named for the user, at
-    /// the kind's own default state. Null when the game refused it.</summary>
+    /// <summary>Creates an overlay of <paramref name="kind"/> with that kind's
+    /// starting values. Null when the game refused it.</summary>
     public OverlayNodeHandle? Create(OverlayNodeKind kind) =>
         Create(DefaultState(kind));
 
     /// <summary>
-    /// Creates one node from a complete document — the restore path, used by
-    /// undo and by a scene load. An unnamed document is named as a fresh
-    /// create would be.
+    /// Creates an overlay with the given values; undo and scene loading use
+    /// this. Without a name it is named like a new overlay.
     /// </summary>
     public OverlayNodeHandle? Create(OverlayNodeState state)
     {
@@ -263,8 +261,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         }
     }
 
-    /// <summary>Destroys one node and forgets it. Destroying a handle that has
-    /// already gone is a no-op.</summary>
+    /// <summary>Removes one overlay. Removing one that is already gone does nothing.</summary>
     public void Destroy(OverlayNodeHandle? handle)
     {
         if (handle == null)
@@ -274,8 +271,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         DestroyNative(handle);
     }
 
-    /// <summary>Takes back every node. The scene-clear edge, and the shared
-    /// body of the GPose-exit and unload edges.</summary>
+    /// <summary>Removes every overlay: on scene clear, on leaving GPose and on unload.</summary>
     public void DestroyAll()
     {
         if (_nodes.Count == 0)
@@ -288,10 +284,9 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         _events.Publish(new OverlayNodeListChangedEvent());
     }
 
-    /// <summary>The write-through half of <see cref="OverlayNodeHandle"/>. A
-    /// port that throws must not take the handle's document with it — the
-    /// document is already committed by then — so the failure is logged and
-    /// the node is left as the game last drew it.</summary>
+    /// <summary>Redraws a node with new values. The values are already stored,
+    /// so when the overlay library throws, the failure is logged and the node
+    /// stays as it was last drawn.</summary>
     internal void ApplyToNode(object node, OverlayNodeState state)
     {
         if (_disposed || node is ColliderToken)
@@ -311,21 +306,10 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     {
         if (handle.Node is not { } node)
             return;
-        try
-        {
-            if (node is not ColliderToken) _port.Destroy(node);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning(
-                $"OverlayNodeService: destroying a node failed: {ex.Message}");
-        }
-        finally
-        {
-            // The handle is invalidated even when the port threw: a token the
-            // port may have half-freed must never be handed back to it.
-            handle.Invalidate();
-        }
+        // The port catches and logs its own failures.
+        if (node is not ColliderToken)
+            _port.Destroy(node);
+        handle.Invalidate();
     }
 
     private string NextName(OverlayNodeKind kind)
@@ -341,9 +325,8 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         _ => "Dialog",
     };
 
-    /// <summary>What a freshly created node of each kind says, before the user
-    /// has said anything. Mirrors Ktisis's own defaults so a node lands looking
-    /// like the game's, not like an empty box.</summary>
+    /// <summary>The starting values of a new overlay of each kind, the same as
+    /// Ktisis uses, so a new overlay looks like the game's own.</summary>
     public static OverlayNodeState DefaultState(OverlayNodeKind kind) =>
         kind switch
         {
@@ -382,10 +365,8 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
             },
         };
 
-    /// <summary>The first ordinary status icon, so a fresh status line has a
-    /// picture rather than a blank square (Ktisis
-    /// <c>Scene/Entities/Utility/StatusOverlay.cs:19</c> names the same one by
-    /// its path).</summary>
+    /// <summary>The first ordinary status icon, so a new status line shows a
+    /// picture. Ktisis uses the same icon.</summary>
     public const uint DefaultStatusIconId = 213001;
 
     private void OnGPoseChanged(GPoseStateChangedEvent evt)
@@ -402,8 +383,7 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
         _port.Moved = null;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         DestroyAll();
-        // The port's own dispose is the last line of defence: it frees
-        // anything the list above never knew about.
+        // The port also frees any node the list above did not know about.
         _port.Dispose();
     }
 }
