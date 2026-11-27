@@ -39,8 +39,7 @@ public sealed class SceneObjectControlTests
             return new BindingResult<IPropHandle>(BindingStatus.Success, prop);
         });
         var history = new EditHistory();
-        var journal = new ValueJournal(history);
-        var control = new SceneObjectControl(bindings, journal);
+        var control = Control(bindings, history);
         var reading = control.Read(id)!;
         var edited = model with { AnimationVariant = 3, Stain0 = 12 };
         Assert.True(control.SetModel(id, edited).Success);
@@ -69,7 +68,7 @@ public sealed class SceneObjectControlTests
             ? new BindingResult<IWorldObject>(BindingStatus.Success, effect)
             : new BindingResult<IWorldObject>(BindingStatus.StaleTarget));
         var history = new EditHistory();
-        var control = new SceneObjectControl(bindings, new ValueJournal(history));
+        var control = Control(bindings, history);
 
         Assert.True(control.Set(id, WorldObjectProperties.VfxPaused, true).Success);
         Assert.True(paused);
@@ -105,7 +104,7 @@ public sealed class SceneObjectControlTests
         }
         var bindings = Stub<IEntityBindings>((_, _) => new BindingResult<IWorldObject>(BindingStatus.Success, world));
         var history = new EditHistory();
-        var control = new SceneObjectControl(bindings, new ValueJournal(history), history: history);
+        var control = Control(bindings, history);
 
         Assert.True((await control.Respawn(id, "bgcommon/new.sgb")).Success);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
@@ -152,7 +151,7 @@ public sealed class SceneObjectControlTests
         }
         var bindings = Stub<IEntityBindings>((_, _) => new BindingResult<IWorldObject>(BindingStatus.Success, world));
         var history = new EditHistory();
-        var control = new SceneObjectControl(bindings, new ValueJournal(history), history: history);
+        var control = Control(bindings, history);
         await control.Respawn(WorldObjectId.New(), "new");
         replay = true;
         using var cancellation = new CancellationTokenSource();
@@ -168,6 +167,18 @@ public sealed class SceneObjectControlTests
         var result = await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.False(result.Success);
         Assert.Equal("test failure", result.Detail);
+    }
+
+    /// <summary>The control as the game builds it, on the main thread, with no
+    /// entity replaced by undo yet.</summary>
+    private static SceneObjectControl Control(IEntityBindings bindings, EditHistory history) =>
+        new(bindings, new ValueJournal(history), new SameEntity<IPropHandle>(), new SameEntity<IWorldObject>(),
+            history, Stub<IFramework>((method, _) => method == "get_IsInFrameworkUpdateThread"
+                ? true : throw new InvalidOperationException(method)));
+
+    private sealed class SameEntity<TEntity> : IEntityHistoryResolver<TEntity> where TEntity : class
+    {
+        public TEntity? Resolve(TEntity original) => original;
     }
 
     private static T Stub<T>(Func<string, object?[]?, object?> call) where T : class
