@@ -471,7 +471,7 @@ public sealed class SceneCaptureService
                     }
                 if (target is null)
                     notes.Add(
-                        $"Actor '{actor.Name}' looks at an uncaptured actor; the gaze target was not saved.");
+                        $"Actor '{actor.Name}' looks at an actor that is not in this save or is no longer there; the gaze target was not saved.");
             }
 
             var locked = GazeTargetType.None;
