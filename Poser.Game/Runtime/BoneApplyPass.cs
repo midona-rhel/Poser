@@ -61,6 +61,10 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     /// must also serialize access across threads.</summary>
     private readonly List<SkeletonKey> _updatePassBuffer = new();
 
+    // Reused by PoseFollowedFirst, which runs every frame.
+    private readonly List<(SkeletonKey Follower, SkeletonKey Followed)> _follows = new();
+    private readonly List<SkeletonKey> _unordered = new();
+
     private bool _isUpdating = false;
 
     // One-shot fault flag: the detour runs every frame, so a repeating
@@ -214,6 +218,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         _updatePassBuffer.Clear();
         foreach (var key in _skeletonsToUpdate)
             _updatePassBuffer.Add(key);
+        PoseFollowedFirst();
 
         for (var i = 0; i < _updatePassBuffer.Count; i++)
         {
@@ -245,6 +250,48 @@ internal sealed unsafe class BoneApplyPass : IDisposable
 
             ApplySkeletonTransforms(slotKey, skeleton, poseInfo);
         }
+    }
+
+    /// <summary>
+    /// Puts each skeleton in the pass after the skeletons its IK chains follow a
+    /// bone on, so a chain reads the followed bone with its edits from this frame.
+    /// Skeletons that follow each other keep the order they had.
+    /// </summary>
+    private void PoseFollowedFirst()
+    {
+        _follows.Clear();
+        _ik.FollowedSkeletons(_follows);
+        if (_follows.Count == 0)
+            return;
+        _unordered.Clear();
+        _unordered.AddRange(_updatePassBuffer);
+        _updatePassBuffer.Clear();
+        while (_unordered.Count > 0)
+        {
+            // The first skeleton that follows none of those still to come; when
+            // every one does, they follow each other, and the first goes next.
+            var next = 0;
+            for (var i = 0; i < _unordered.Count; i++)
+            {
+                if (!FollowsUnordered(_unordered[i]))
+                {
+                    next = i;
+                    break;
+                }
+            }
+            _updatePassBuffer.Add(_unordered[next]);
+            _unordered.RemoveAt(next);
+        }
+    }
+
+    private bool FollowsUnordered(SkeletonKey key)
+    {
+        foreach (var (follower, followed) in _follows)
+        {
+            if (follower == key && _unordered.Contains(followed))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>

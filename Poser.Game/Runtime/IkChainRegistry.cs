@@ -494,6 +494,21 @@ internal sealed unsafe partial class IkChainRegistry
         return false;
     }
 
+    /// <summary>Adds a pair to <paramref name="into"/> for each switched-on chain that follows
+    /// a bone on another skeleton: the chain's skeleton and the followed bone's skeleton.
+    /// The followed bone is found by name, so the pair is right after either actor is
+    /// redrawn. A bone that is not drawn adds nothing.</summary>
+    public void FollowedSkeletons(List<(SkeletonKey Follower, SkeletonKey Followed)> into)
+    {
+        foreach (var (chainKey, state) in _ikChains)
+        {
+            if (state is { Config: { Enabled: true, TargetMode: IkTargetMode.Bone }, TargetBone: { } target }
+                && _held.FindBone(target) is { } bone
+                && SkeletonKey.Of(bone.Skeleton) is var followed && followed != chainKey.Skeleton)
+                into.Add((chainKey.Skeleton, followed));
+        }
+    }
+
     /// <summary>Finds the chain's joints as bone numbers in the end bone's skeleton and
     /// partial. A missing twist bone is -1, and a missing joint makes Two Joint
     /// unavailable. A chain with no arm or leg definition only has its end bone,
