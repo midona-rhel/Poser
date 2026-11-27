@@ -107,7 +107,7 @@ public sealed class IntegrationSelectors
                 var read = ReadCollection(actor);
                 if (!read.Success || read.Value == null)
                     return IntegrationValue<ActorAppearanceSnapshot>.Fail(read.Detail ?? "The actor's collection could not be captured.");
-                if (_ownership.ForeignTemporaryCollection(owned, read.Value) is { } foreign)
+                if (_ownership.ForeignTemporaryCollection(actor, owned, read.Value) is { } foreign)
                 {
                     var captured = _penumbra.CaptureInheritedCollection(actor);
                     if (!captured.Success || captured.Value == null)
@@ -293,7 +293,7 @@ public sealed class IntegrationSelectors
         if (!incoming.Success || incoming.Value is not { } assignment)
             return IntegrationResult.Fail(incoming.Detail ?? "The incoming collection could not be captured.");
         SpawnCollectionSnapshot? inherited = null;
-        if (_ownership.ForeignTemporaryCollection(current, assignment) is { } foreign)
+        if (_ownership.ForeignTemporaryCollection(actor, current, assignment) is { } foreign)
         {
             // This is a temporary collection Poser gave the actor when spawning it.
             // Save what it holds before replacing it, so Reset can put it back.
