@@ -62,6 +62,7 @@ CLAUDE.md
 # Local ImGui artifacts
 /imgui.ini
 /tools/__pycache__/
+/tools/checks/__pycache__/
 /tools/uiverify/
 /docs/validation/**/*.png
 
