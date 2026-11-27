@@ -186,7 +186,7 @@ internal static class ServiceRegistration
     private static IServiceCollection AddSceneState(
         this IServiceCollection services)
     {
-        services.AddSingleton<SelectionSession>();
+        services.AddSingleton<CurrentSelection>();
         services.AddSingleton<SceneSession>();
         services.AddSingleton<StableBindingRegistry>();
         services.AddSingleton<IEntityBindings>(sp => sp.GetRequiredService<StableBindingRegistry>());

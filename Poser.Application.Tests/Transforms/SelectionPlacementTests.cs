@@ -48,7 +48,7 @@ public sealed class SelectionPlacementTests
 
     private sealed class Fixture
     {
-        public readonly SelectionSession Selection = new();
+        public readonly CurrentSelection Selection = new();
         public readonly SceneGroups Groups = new();
         public readonly TransformTargetId A = TransformTargetId.ForProp(PropId.New());
         public readonly TransformTargetId B = TransformTargetId.ForProp(PropId.New());

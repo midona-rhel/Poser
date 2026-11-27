@@ -22,7 +22,7 @@ public interface IPendingSceneCreation
 public sealed class PendingSceneCreation(
     ISceneCreation creation,
     ISessionGenerationSource sessions,
-    SelectionSession selection,
+    CurrentSelection selection,
     IPoseImportCommands imports,
     IAnimationPlayback animation,
     Presentation.IUserNotices notices) : IPendingSceneCreation

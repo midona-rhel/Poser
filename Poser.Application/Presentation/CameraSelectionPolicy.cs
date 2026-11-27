@@ -6,7 +6,7 @@ namespace Poser.Application.Presentation;
 
 /// <summary>Look-through-on-selection policy; no panel must be drawn to advance it.</summary>
 public sealed class CameraSelectionPolicy(
-    SelectionSession selection, ConfigurationService configuration, ICameraControl cameras)
+    CurrentSelection selection, ConfigurationService configuration, ICameraControl cameras)
 {
     private SelectionId? _applied;
 

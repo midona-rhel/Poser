@@ -13,7 +13,7 @@ public sealed class SceneSessionFloorTests
     public void Generation_floors_hold_within_a_session_and_reset_with_the_next()
     {
         var sessions = new Sessions { ActiveSessionGeneration = SessionGeneration.New() };
-        var scene = new SceneSession(new SelectionSession(), sessions);
+        var scene = new SceneSession(new CurrentSelection(), sessions);
         var prop = Guid.NewGuid();
 
         Assert.True(scene.TryRefresh(Snapshot(1, prop, 2)).Accepted);
@@ -29,7 +29,7 @@ public sealed class SceneSessionFloorTests
     public void Lineage_lookup_follows_the_committed_generation_and_a_refused_candidate_changes_nothing()
     {
         var sessions = new Sessions { ActiveSessionGeneration = SessionGeneration.New() };
-        var scene = new SceneSession(new SelectionSession(), sessions);
+        var scene = new SceneSession(new CurrentSelection(), sessions);
         var prop = Guid.NewGuid();
         var current = SelectionId.ForProp(new PropId(prop, 3));
 

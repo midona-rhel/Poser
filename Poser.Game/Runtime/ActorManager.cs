@@ -20,7 +20,7 @@ namespace Poser.Game;
 /// <summary>
 /// Manages the lifecycle of actors in GPose.
 ///
-/// NOTE: Selection is handled by the application SelectionSession, not here.
+/// NOTE: Selection is handled by the application CurrentSelection, not here.
 /// This class only tracks actor lifecycle (discovery, refresh).
 /// </summary>
 public class ActorManager : IActorManager

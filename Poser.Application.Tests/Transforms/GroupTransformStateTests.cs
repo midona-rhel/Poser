@@ -229,7 +229,7 @@ public sealed class GroupTransformStateTests
 
     private sealed class Fixture : ITransformRuntimePort, IDisposable
     {
-        public readonly SelectionSession Selection = new();
+        public readonly CurrentSelection Selection = new();
         public readonly SceneSession Scene;
         public readonly SceneGroups Groups = new();
         public readonly GroupTransformState State = new();

@@ -119,7 +119,7 @@ public sealed class SceneSession
     private int _refreshGate;
 
     public SceneSession(
-        SelectionSession selection,
+        CurrentSelection selection,
         ISessionGenerationSource? sessions = null)
     {
         Selection = selection ?? throw new ArgumentNullException(nameof(selection));
@@ -129,7 +129,7 @@ public sealed class SceneSession
 
     public event Action<SceneSnapshot>? SceneChanged;
 
-    public SelectionSession Selection { get; }
+    public CurrentSelection Selection { get; }
     public SceneSnapshot Snapshot => _snapshot;
     public ulong Revision => _snapshot.Revision;
 
