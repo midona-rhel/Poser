@@ -49,6 +49,10 @@ public readonly record struct BoneId(
 {
     public PoseSlot Slot => Skeleton.Slot;
 
+    /// <summary>The same bone on <paramref name="actor"/>: the same slot, partial,
+    /// number and name. For an actor that took the place of this bone's actor.</summary>
+    public BoneId OnActor(ActorId actor) => this with { Skeleton = Skeleton with { Actor = actor } };
+
     public bool IsValid =>
         PartialId >= 0 &&
         BoneIndex >= 0 &&

@@ -30,6 +30,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     private readonly ITransformRuntimePort _runtime;
     private readonly SceneSession _scene;
     private readonly EditHistory _history;
+    private readonly IActorReplacements _replacements;
     private readonly IPluginLog _log;
 
     /// <summary>The saved pose and bone IDs for the selected chain.</summary>
@@ -45,6 +46,8 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     {
         public required long Generation;
         public required TransformTargetId Target;
+        /// <summary>The actor the chain is on now, also after undo removed it and brought it back.</summary>
+        public required Func<ActorId?> Actor;
         public required IkChainConfig Config;
         public required SlotBake Slot;
         /// <summary>The chain's bones, in the order their edits are applied.</summary>
@@ -69,6 +72,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         ITransformRuntimePort runtime,
         SceneSession scene,
         EditHistory history,
+        IActorReplacements replacements,
         IPluginLog log)
     {
         _framework = framework;
@@ -78,6 +82,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         _runtime = runtime;
         _scene = scene;
         _history = history;
+        _replacements = replacements;
         _log = log;
         _posing.TransitiveActionsEnded += OnTransitiveActionsEnded;
     }
@@ -148,6 +153,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         {
             Generation = ++_generation,
             Target = target,
+            Actor = _replacements.Track(target.Bone!.Value.Skeleton.Actor),
             Config = config,
             Slot = new SlotBake
             {
@@ -304,12 +310,12 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
 
         // Undo restores both the bone edits and the enabled chain. Pressed while the
         // actor is being redrawn, the step fails and stays for the next press.
-        bool Waiting() => _scene.IsTransformTargetPending(bake.Target)
-            || before.Any(state => _scene.IsTransformTargetPending(state.Target));
+        bool Waiting() => Pending(bake, bake.Target)
+            || before.Any(state => Pending(bake, state.Target));
         _history.Append(new JournalStep(
             "Disable IK",
-            () => RestoreStates(before) && SetChainEnabled(bake, true),
-            () => RestoreStates(after) && SetChainEnabled(bake, false))
+            () => RestoreStates(bake, before) && SetChainEnabled(bake, true),
+            () => RestoreStates(bake, after) && SetChainEnabled(bake, false))
         {
             AffectedEntities = before.Concat(after)
                 .Select(state => EditHistory.EntityOf(state.Target.ToSelectionId()))
@@ -320,15 +326,25 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
         return null;
     }
 
-    /// <summary>Puts the bones' saved edits back. The edits were saved with the bone ids
-    /// of the skeleton at the time; after a redraw the same bones are found again on
-    /// the actor's current skeleton, as undo does for bone edits.</summary>
-    private bool RestoreStates(IEnumerable<TransformTargetState> states)
+    /// <summary>A bone of the bake as it is now. The bake saved bone ids of the skeleton
+    /// at the time. After a redraw the same bone is found on the actor's new skeleton, as
+    /// undo does for bone edits. After the actor was removed and brought back by undo, it
+    /// is found on the actor that took its place, which can sit in a different game slot.
+    /// Null when the actor or the bone is gone, or the actor is being redrawn.</summary>
+    private TransformTargetId? Current(Bake bake, TransformTargetId target) =>
+        bake.Actor() is { } actor ? _scene.CurrentTransformTarget(TransformTargetId.ForBone(target.Bone!.Value.OnActor(actor))) : null;
+
+    /// <summary>Whether the actor of a bone of the bake is being redrawn.</summary>
+    private bool Pending(Bake bake, TransformTargetId target) =>
+        bake.Actor() is { } actor && _scene.IsTransformTargetPending(TransformTargetId.ForBone(target.Bone!.Value.OnActor(actor)));
+
+    /// <summary>Puts the bones' saved edits back on the bones as they are now.</summary>
+    private bool RestoreStates(Bake bake, IEnumerable<TransformTargetState> states)
     {
         bool landed = true;
         foreach (var state in states)
         {
-            if (_scene.CurrentTransformTarget(state.Target) is not { } current)
+            if (Current(bake, state.Target) is not { } current)
             {
                 _log.Warning($"IK bake: {state.Target} was not found.");
                 landed = false;
@@ -347,7 +363,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     /// <summary>Restores the captured bone edits and enables the selected chain again.</summary>
     private void Rollback(Bake bake)
     {
-        RestoreStates(bake.Order.Select(boneTarget => bake.Before[boneTarget]));
+        RestoreStates(bake, bake.Order.Select(boneTarget => bake.Before[boneTarget]));
         SetChainEnabled(bake, true);
     }
 
@@ -355,7 +371,7 @@ public sealed class IkBakeCapture : IDisposable, IIkBake
     /// the actor's current skeleton.</summary>
     private bool SetChainEnabled(Bake bake, bool enabled)
     {
-        if (_scene.CurrentTransformTarget(bake.Target) is not { Bone: { } id }
+        if (Current(bake, bake.Target) is not { Bone: { } id }
             || _bindings.Resolve(id) is not { Success: true, Value: { } bone })
         {
             _log.Warning($"IK bake: the chain's end bone {bake.Target} was not found.");
