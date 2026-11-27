@@ -227,7 +227,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         for (var i = 0; i < _updatePassBuffer.Count; i++)
         {
             var slotKey = _updatePassBuffer[i];
-            _unposed.Posing(slotKey);
+            _unposed.Taken(slotKey);
             if (!_stacks.TryGet(slotKey, out var poseInfo))
                 continue;
 
@@ -254,6 +254,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 continue;
 
             ApplySkeletonTransforms(slotKey, skeleton, poseInfo);
+            _unposed.Posed(slotKey, skeleton.BuildRevision);
         }
         _unposed.End();
     }

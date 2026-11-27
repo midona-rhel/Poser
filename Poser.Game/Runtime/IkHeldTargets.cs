@@ -192,13 +192,15 @@ internal sealed unsafe class IkHeldTargets
     /// reaches the chain's end bone. During the pass, a bone that has no edits from this frame
     /// yet is read where the last pass left it, which is a frame late while that bone moves.
     /// That is a bone on a skeleton the pass has not posed yet, or a bone on the chain's own
-    /// skeleton that the pass reaches later. A bone that an IK chain moves is always read
-    /// from the pose as it is now, like any other bone: where the last pass left it holds
-    /// that chain's last solve, and when two chains follow each other, each frame would
-    /// start from the last one and the limbs would run away.</summary>
+    /// skeleton that the pass reaches later, as long as the last pass posed that skeleton.
+    /// A bone that an IK chain moves is read from the pose as it is now instead, which is
+    /// without this frame's edits: where the last pass left it holds that chain's last
+    /// solve, and when two chains follow each other, each frame would start from the last
+    /// one and the limbs would run away. Of two chains that follow each other, the one
+    /// solved first therefore misses the other's edits.</summary>
     private Transform? ReadFollowed(IBone endpoint, IBone followed, bool inPass) =>
         inPass && (_unposed.Contains(followed.Skeleton) || ReachedLater(endpoint, followed))
-            && !MovedByChain(followed)
+            && _unposed.PosedLastPass(followed.Skeleton) && !MovedByChain(followed)
             ? BoneWorld.LastPass(followed)
             : BoneWorld.ReadCurrent(followed);
 
@@ -283,9 +285,10 @@ internal sealed unsafe class IkHeldTargets
 
     private static void RecordSolveParent(IkChainState ik, IBone endpoint, hkaPose* pose)
     {
-        if (ik.Build.SolveParent == null)
+        if (ik.Build.FirstMember == null)
         {
-            var parent = NativeIkMembers(endpoint, ik.Config).FirstOrDefault()?.ParentBone;
+            ik.Build.FirstMember = NativeIkMembers(endpoint, ik.Config).FirstOrDefault();
+            var parent = ik.Build.FirstMember?.ParentBone;
             ik.Build.SolveParent = parent?.PartialId == endpoint.PartialId ? parent : null;
         }
         if (ik.Build.SolveParent is not { } solveParent)

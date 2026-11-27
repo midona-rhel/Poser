@@ -63,8 +63,13 @@ internal sealed class IkChainBuild : IDisposable
     /// the pose it starts from.</summary>
     public bool FabrikWaited;
     public (Vector3 Position, Quaternion Rotation)? SolveTarget;
+    /// <summary>The chain's top bone: the first joint of a Two Joint chain, the highest bone
+    /// a CCD chain turns. The chain's solve moves it and every bone below it. Null until a
+    /// solve has run.</summary>
+    public IBone? FirstMember;
     /// <summary>The first bone above the chain and its frame as the last solve saw it.
-    /// An Actor target follows it. The frame is null until a solve has run.</summary>
+    /// An Actor target follows it. Null when that bone is in another partial skeleton;
+    /// the frame is null until a solve has run.</summary>
     public IBone? SolveParent;
     public PoseTransform? SolveParentFrame;
     /// <summary>How Customize+ moved this chain's end, root and tip bones at the end of the
@@ -269,6 +274,7 @@ internal sealed unsafe partial class IkChainRegistry
             Config = config,
             Build = new IkChainBuild { Revision = bone.Skeleton.BuildRevision, Chain = ResolveChain(bone) },
         };
+        state.Build.FirstMember = null;
         state.Build.SolveParent = null;
         state.Build.SolveParentFrame = null;
         if (previous != null && (previous.Config.Enabled != config.Enabled
@@ -534,10 +540,9 @@ internal sealed unsafe partial class IkChainRegistry
         _colliderParents.Clear();
     }
 
-    /// <summary>Whether a switched-on chain moves <paramref name="bone"/>: the bone is below
-    /// the first bone above a Two Joint or CCD chain, or is the first bone of a FABRIK or
-    /// Rope chain or below it. Before a chain has been solved, the first bone above it is
-    /// not known yet, and its end bone stands in for it.</summary>
+    /// <summary>Whether a switched-on chain moves <paramref name="bone"/>: the bone is the
+    /// chain's top bone or below it. Before a Two Joint or CCD chain has been solved, its top
+    /// bone is not known yet, and its end bone stands in for it.</summary>
     public bool MovedByChain(IBone bone)
     {
         var skeleton = SkeletonKey.Of(bone.Skeleton);
@@ -547,8 +552,8 @@ internal sealed unsafe partial class IkChainRegistry
                 continue;
             var moved = state.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope }
                 ? state.Config.Fabrik is { Bones: [var first, ..] } && AtOrBelow(bone, first.Name, first.Partial)
-                : state.Build.SolveParent is { } above
-                    ? AtOrBelow(bone.ParentBone, above.BoneName, above.PartialId)
+                : state.Build.FirstMember is { } top
+                    ? AtOrBelow(bone, top.BoneName, top.PartialId)
                     : AtOrBelow(bone, chainKey.Name, chainKey.Partial);
             if (moved)
                 return true;
