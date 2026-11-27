@@ -17,12 +17,12 @@ namespace Poser.Game.WorldObjects;
 
 /// <summary>Immediate release on the framework thread, preserving claim bookkeeping.
 /// Used when a larger synchronous entity command owns the dispatch boundary.</summary>
-public interface IWorldObjectRelease
+public interface IWorldBorrowRelease
 {
     WorldRelease ReleaseCurrent(SelectionId entity);
 }
 
-public sealed class WorldObjectTakeover : IWorldObjectTakeover, IWorldObjectRelease, IDisposable
+public sealed class WorldBorrowing : IWorldBorrowing, IWorldBorrowRelease, IDisposable
 {
     private readonly IFramework _framework;
     private readonly IGPoseService _gpose;
@@ -63,7 +63,7 @@ public sealed class WorldObjectTakeover : IWorldObjectTakeover, IWorldObjectRele
     internal void KeepUnloaded(AdoptedWorldObject entity) => _objects.KeepUnloaded(entity);
     internal void ReleaseAll() => _objects.ReleaseAll();
 
-    public WorldObjectTakeover(IFramework framework, IGPoseService gpose, WorldActorDiscovery actors,
+    public WorldBorrowing(IFramework framework, IGPoseService gpose, WorldActorDiscovery actors,
         WorldActorSession actorClaims, WorldObjectService objects, LightingService lights,
         SceneLifecycleHistory history, IEntityBindings bindings, Poser.Game.Animation.AnimationSession animation, ConfigurationService config,
         ISessionGenerationSource sessions, IPluginLog log)
@@ -170,9 +170,9 @@ public sealed class WorldObjectTakeover : IWorldObjectTakeover, IWorldObjectRele
     }
 
     public Task<WorldRelease> Release(SelectionId entity) =>
-        _framework.RunOnFrameworkThread(() => ((IWorldObjectRelease)this).ReleaseCurrent(entity));
+        _framework.RunOnFrameworkThread(() => ((IWorldBorrowRelease)this).ReleaseCurrent(entity));
 
-    WorldRelease IWorldObjectRelease.ReleaseCurrent(SelectionId entity)
+    WorldRelease IWorldBorrowRelease.ReleaseCurrent(SelectionId entity)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             throw new InvalidOperationException("World release must run on the framework thread.");

@@ -731,9 +731,9 @@ internal static class ServiceRegistration
         services.AddSingleton<EntityActions>();
         services.AddSingleton<Application.Selection.EntityLockCommands>();
         services.AddSingleton<ISelectedEntityActions, Game.Selection.SelectedEntityActions>();
-        services.AddSingleton<Game.WorldObjects.WorldObjectTakeover>();
-        services.AddSingleton<global::Poser.Application.World.IWorldObjectTakeover>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectTakeover>());
-        services.AddSingleton<Game.WorldObjects.IWorldObjectRelease>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectTakeover>());
+        services.AddSingleton<Game.WorldObjects.WorldBorrowing>();
+        services.AddSingleton<global::Poser.Application.World.IWorldBorrowing>(sp => sp.GetRequiredService<Game.WorldObjects.WorldBorrowing>());
+        services.AddSingleton<Game.WorldObjects.IWorldBorrowRelease>(sp => sp.GetRequiredService<Game.WorldObjects.WorldBorrowing>());
         services.AddSingleton<PoseThumbnailCache>();
         // Holds every reference picture, so disposing it when the plugin
         // unloads frees them all.

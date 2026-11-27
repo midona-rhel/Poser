@@ -16,9 +16,9 @@ internal enum VfxTransformWriteResult
 /// </summary>
 internal sealed class VfxCaptureRestore
 {
-    private readonly IVfxObject _port;
+    private readonly IWorldEffectAccess _world;
 
-    public VfxCaptureRestore(IVfxObject port) => _port = port;
+    public VfxCaptureRestore(IWorldEffectAccess world) => _world = world;
 
     public bool TryCapture(
         nint address,
@@ -27,16 +27,16 @@ internal sealed class VfxCaptureRestore
     {
         identity = default;
         snapshot = default;
-        return _port.TryReadIncarnation(address, out identity)
+        return _world.TryReadIncarnation(address, out identity)
             && (!identity.IsVfx
                 || identity.ResourceIdentity != nint.Zero)
-            && _port.TryReadVfxSnapshot(address, out snapshot)
+            && _world.TryReadVfxSnapshot(address, out snapshot)
             && snapshot.Playback != VfxPlaybackState.Unavailable;
     }
 
     public bool IsCurrent(WorldObjectIncarnation identity)
     {
-        return _port.TryReadIncarnation(identity.Address, out var current)
+        return _world.TryReadIncarnation(identity.Address, out var current)
             && current.IsVfx
             && current == identity;
     }
@@ -49,16 +49,16 @@ internal sealed class VfxCaptureRestore
         actualPlayback = VfxPlaybackState.Unavailable;
         if (!IsCurrent(identity))
             return VfxTransformWriteResult.Stale;
-        if (!_port.TryReadVfxPlayback(identity.Address, out actualPlayback))
+        if (!_world.TryReadVfxPlayback(identity.Address, out actualPlayback))
             return VfxTransformWriteResult.PlaybackUnavailable;
         if (actualPlayback == VfxPlaybackState.Playing)
         {
-            if (!_port.TryWriteVfxTransform(identity.Address, placement))
+            if (!_world.TryWriteVfxTransform(identity.Address, placement))
                 return VfxTransformWriteResult.PlaybackUnavailable;
         }
         else if (actualPlayback is VfxPlaybackState.Paused
             or VfxPlaybackState.Inactive)
-            _port.Write(identity.Address, placement);
+            _world.Write(identity.Address, placement);
         else
             return VfxTransformWriteResult.PlaybackUnavailable;
         return VfxTransformWriteResult.Written;
@@ -70,6 +70,6 @@ internal sealed class VfxCaptureRestore
     {
         if (!IsCurrent(identity))
             return true;
-        return _port.TryRestoreVfxState(identity.Address, snapshot);
+        return _world.TryRestoreVfxState(identity.Address, snapshot);
     }
 }

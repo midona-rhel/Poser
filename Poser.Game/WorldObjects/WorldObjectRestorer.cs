@@ -10,20 +10,20 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 internal sealed class WorldObjectRestorer
 {
-    private readonly IWorldObjectAccess _port;
+    private readonly IWorldObjectAccess _world;
     private readonly VfxCaptureRestore _vfx;
     private readonly WorldObjectSpawner _respawner;
     private readonly IPluginLog _log;
     private readonly Func<AdoptedWorldObject, bool> _isCurrent;
 
     public WorldObjectRestorer(
-        IWorldObjectAccess port,
+        IWorldObjectAccess world,
         VfxCaptureRestore vfx,
         WorldObjectSpawner respawner,
         IPluginLog log,
         Func<AdoptedWorldObject, bool> isCurrent)
     {
-        _port = port;
+        _world = world;
         _vfx = vfx;
         _respawner = respawner;
         _log = log;
@@ -42,7 +42,7 @@ internal sealed class WorldObjectRestorer
             if (!_isCurrent(handle))
             {
                 if (handle.IsVfx
-                    && !_port.TryReleaseVfxClaim(handle.Identity))
+                    && !_world.TryReleaseVfxClaim(handle.Identity))
                 {
                     _log.Warning(
                         $"WorldObjectService: releasing stale VFX {handle.Address:X} claim remains outstanding.");
@@ -69,12 +69,12 @@ internal sealed class WorldObjectRestorer
         }
         try
         {
-            _port.Write(handle.Address, handle.InitialPlacement);
-            _port.WriteFlags(handle.Address, handle.InitialFlags);
+            _world.Write(handle.Address, handle.InitialPlacement);
+            _world.WriteFlags(handle.Address, handle.InitialFlags);
             if (handle.InitialNightState is { } dressing)
-                _port.WriteBgNightState(handle.Address, dressing);
+                _world.WriteBgNightState(handle.Address, dressing);
             if (handle.AnimationPaused)
-                _port.WriteBgAnimationSpeed(handle.Address, 1f);
+                _world.WriteBgAnimationSpeed(handle.Address, 1f);
             if (handle.InitialVfxSnapshot is { } snapshot
                 && !_vfx.Restore(handle.Identity, snapshot))
                 return false;
@@ -85,8 +85,8 @@ internal sealed class WorldObjectRestorer
             // fractional alpha to 0 or 1. BG keeps the legacy flag write.
             if (handle.InitialVfxSnapshot is null)
             {
-                _port.WriteOpacity(handle.Address, handle.InitialOpacity);
-                _port.WriteVisible(handle.Address, handle.InitialVisible);
+                _world.WriteOpacity(handle.Address, handle.InitialOpacity);
+                _world.WriteVisible(handle.Address, handle.InitialVisible);
             }
             handle.MarkReleased(handle.InitialPlacement);
             return true;

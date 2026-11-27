@@ -17,15 +17,15 @@ internal sealed class SceneryAnimationHold
     /// without one lets the countdown lapse.</summary>
     private const int AnimationPauseRetryTicks = 600;
 
-    private readonly IBgObject _port;
+    private readonly IWorldModelAccess _world;
 
-    public SceneryAnimationHold(IBgObject port) => _port = port;
+    public SceneryAnimationHold(IWorldModelAccess world) => _world = world;
 
     public void WritePaused(AdoptedWorldObject handle)
     {
         float speed = handle.AnimationPaused ? 0f : 1f;
         handle.AnimationPauseRetries =
-            _port.WriteBgAnimationSpeed(handle.Address, speed)
+            _world.WriteBgAnimationSpeed(handle.Address, speed)
                 ? 0
                 : AnimationPauseRetryTicks;
         // Skeleton animation uses playback speed; transform-driven animation
@@ -42,13 +42,13 @@ internal sealed class SceneryAnimationHold
                 SceneryAnimationState.ReanchorPending => handle.DesiredPlacement,
                 SceneryAnimationState.Anchored anchored => anchored.LastWritten,
                 SceneryAnimationState.Paused paused => paused.Placement,
-                _ => _port.TryRead(handle.Address, out var raw) ? raw : handle.Transform,
+                _ => _world.TryRead(handle.Address, out var raw) ? raw : handle.Transform,
             };
             // Never freeze an unloaded instance's sentinel tail: writing it
             // back after model readiness can crash the native animator.
             var tail = new byte[0x20];
-            bool captured = _port.IsBgReady(handle.Address)
-                && _port.TryReadBgTail(handle.Address, tail);
+            bool captured = _world.IsBgReady(handle.Address)
+                && _world.TryReadBgTail(handle.Address, tail);
             handle.AnimationAnchor = new SceneryAnimationState.Paused(
                 frozen, captured ? tail : null,
                 previous is SceneryAnimationState.Anchored or SceneryAnimationState.ReanchorPending
@@ -72,7 +72,7 @@ internal sealed class SceneryAnimationHold
         if (handle.AnimationPauseRetries > 0)
         {
             handle.AnimationPauseRetries--;
-            if (_port.WriteBgAnimationSpeed(
+            if (_world.WriteBgAnimationSpeed(
                     handle.Address,
                     handle.AnimationPaused ? 0f : 1f))
                 handle.AnimationPauseRetries = 0;
@@ -86,21 +86,21 @@ internal sealed class SceneryAnimationHold
     {
         if (handle.AnimationAnchor is SceneryAnimationState.Paused paused)
         {
-            _port.Write(handle.Address, paused.Placement);
+            _world.Write(handle.Address, paused.Placement);
             if (paused.TailCapture == SceneryTailCapture.WaitingForModel
-                && _port.IsBgReady(handle.Address))
+                && _world.IsBgReady(handle.Address))
             {
                 var tail = new byte[0x20];
-                bool captured = _port.TryReadBgTail(handle.Address, tail);
+                bool captured = _world.TryReadBgTail(handle.Address, tail);
                 paused.Tail = captured ? tail : null;
                 paused.TailCapture = captured
                     ? SceneryTailCapture.Captured : SceneryTailCapture.Unavailable;
             }
             if (paused.Tail is { } heldTail)
-                _port.WriteBgTailHeld(handle.Address, heldTail);
+                _world.WriteBgTailHeld(handle.Address, heldTail);
             return;
         }
-        if (!_port.TryRead(handle.Address, out var raw))
+        if (!_world.TryRead(handle.Address, out var raw))
             return;
         if (handle.AnimationAnchor is SceneryAnimationState.ReanchorPending)
         {
@@ -113,7 +113,7 @@ internal sealed class SceneryAnimationHold
             // Rebase and write in this same frame: never render the
             // game's original placement during the unpause hand-off.
             var resumed = handle.DesiredPlacement;
-            _port.Write(handle.Address, resumed);
+            _world.Write(handle.Address, resumed);
             handle.AnimationAnchor = new SceneryAnimationState.Anchored(raw, resumed);
             return;
         }
@@ -133,7 +133,7 @@ internal sealed class SceneryAnimationHold
                 user.Position + Vector3.Transform(deltaPosition, user.Rotation),
                 Quaternion.Normalize(user.Rotation * deltaRotation),
                 user.Scale);
-            _port.Write(handle.Address, composed);
+            _world.Write(handle.Address, composed);
             anchored.LastWritten = composed;
             return;
         }
@@ -143,7 +143,7 @@ internal sealed class SceneryAnimationHold
                 || Math.Abs(Quaternion.Dot(raw.Rotation, prior.Rotation)) < 0.999999f))
         {
             var user = handle.DesiredPlacement;
-            _port.Write(handle.Address, user);
+            _world.Write(handle.Address, user);
             handle.AnimationAnchor = new SceneryAnimationState.Anchored(raw, user);
             return;
         }

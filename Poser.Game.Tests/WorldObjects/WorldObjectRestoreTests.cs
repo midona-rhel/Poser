@@ -22,8 +22,8 @@ namespace Poser.Game.Tests.WorldObjects;
 
 /// <summary>
 /// Exercises borrowed-object restoration, replacement identity checks, and owned-object
-/// respawn using a fake native port. These tests check service behavior without
-/// proving the native port or the game's teardown ordering.
+/// respawn using a stand-in for game memory. These tests check service behavior without
+/// proving the game-memory code or the game's teardown ordering.
 /// </summary>
 public sealed class WorldObjectRestoreTests
 {
@@ -52,7 +52,7 @@ public sealed class WorldObjectRestoreTests
             SceneObjectAccessors.WorldObjects(), "Gone"), "Gone");
         world.Events.Subscribe<WorldObjectListChangedEvent>(_ =>
             history.Reconcile(id => ids.Any(pair => pair.Value == id && pair.Key.IsValid)));
-        var original = (AdoptedWorldObject)lifecycle.AdoptWorldObject(world.Port.Add("bg/tree.mdl", Placed))!;
+        var original = (AdoptedWorldObject)lifecycle.AdoptWorldObject(world.Objects.Add("bg/tree.mdl", Placed))!;
         var target = Target(original)!.Value;
         original.Transform = Moved;
         TransformTargetState State(Transform value) =>
@@ -135,7 +135,7 @@ public sealed class WorldObjectRestoreTests
         furniture.Opacity = .4f;
         FurnitureLightState[] lights = [new("/0", false), new("/1/0", true)];
         furniture.FurnitureLights = lights;
-        Assert.Equal(.4f, world.Port.OpacityOf(furniture.Address));
+        Assert.Equal(.4f, world.Objects.OpacityOf(furniture.Address));
         var state = lifecycle.Read(furniture);
         for (int i = 0; i < 2; i++)
         {
@@ -145,10 +145,10 @@ public sealed class WorldObjectRestoreTests
             var read = lifecycle.Read(furniture);
             Assert.Equal(lights, read.FurnitureLights);
             Assert.Equal(state with { Address = furniture.Address, FurnitureLights = read.FurnitureLights }, read);
-            Assert.Equal((byte)42, world.Port.LastFurnitureStain);
+            Assert.Equal((byte)42, world.Objects.LastFurnitureStain);
             Assert.True(furniture.NightState);
-            Assert.True(world.Port.LastNightState);
-            Assert.Equal(state.Tint, world.Port.LastBgTint);
+            Assert.True(world.Objects.LastNightState);
+            Assert.Equal(state.Tint, world.Objects.LastBgTint);
         }
     }
 
@@ -166,7 +166,7 @@ public sealed class WorldObjectRestoreTests
     public void Adoption_captures_without_writing_and_duplicate_adoption_reuses_the_claim()
     {
         var world = new World();
-        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
+        var address = world.Objects.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
         var first = world.Service.Adopt(address);
         var second = world.Service.Adopt(address);
 
@@ -174,24 +174,24 @@ public sealed class WorldObjectRestoreTests
         Assert.Equal(Placed, first!.InitialPlacement);
         Assert.Equal((byte)0x21, first.InitialFlags);
 
-        var dead = world.Port.Add("bg/tree.mdl", Placed);
-        world.Port.Kill(dead);
+        var dead = world.Objects.Add("bg/tree.mdl", Placed);
+        world.Objects.Kill(dead);
         Assert.Null(world.Service.Adopt(dead));
-        Assert.Equal(0, world.Port.Writes);
+        Assert.Equal(0, world.Objects.Writes);
 
-        var elsewhere = world.Port.Add("bg/tree.mdl", Moved);
+        var elsewhere = world.Objects.Add("bg/tree.mdl", Moved);
         for (int load = 0; load < 2; load++)
         {
             var restored = world.Service.RestoreBorrowed("bg/tree.mdl", Placed.Position, Moved, false, out var detail);
             Assert.Null(detail);
             Assert.Equal(address, restored!.Address);
             Assert.False(restored.Spawned);
-            Assert.False(world.Port.VisibleOf(address));
-            Assert.True(world.Port.VisibleOf(elsewhere));
+            Assert.False(world.Objects.VisibleOf(address));
+            Assert.True(world.Objects.VisibleOf(elsewhere));
             Assert.Same(restored, world.Service.RestoreBorrowed("bg/tree.mdl", Placed.Position, Moved, false, out _));
             Assert.True(world.Service.Release(restored));
-            Assert.Equal(Placed, world.Port.PlacementOf(address));
-            Assert.True(world.Port.VisibleOf(address));
+            Assert.Equal(Placed, world.Objects.PlacementOf(address));
+            Assert.True(world.Objects.VisibleOf(address));
         }
         Assert.Null(world.Service.RestoreBorrowed("bg/missing.mdl", Placed.Position, Moved, false, out var missing));
         Assert.NotNull(missing);
@@ -204,8 +204,8 @@ public sealed class WorldObjectRestoreTests
     public void Every_end_path_restores_map_state_once_without_destroying_the_object(bool gposeExit)
     {
         var world = new World();
-        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
-        world.Port.WriteOpacity(address, .65f);
+        var address = world.Objects.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
+        world.Objects.WriteOpacity(address, .65f);
         var adopted = world.Service.Adopt(address)!;
         adopted.Transform = Moved;
         adopted.Visible = false;
@@ -213,12 +213,12 @@ public sealed class WorldObjectRestoreTests
 
         if (gposeExit) world.Events.Publish(new GPoseStateChangedEvent(false));
         else Assert.True(world.Service.Release(adopted));
-        Assert.Equal(Placed, world.Port.PlacementOf(address));
-        Assert.Equal((byte)0x21, world.Port.FlagsOf(address));
-        Assert.True(world.Port.VisibleOf(address));
-        Assert.True(world.Port.TryReadOpacity(address, out var opacity));
+        Assert.Equal(Placed, world.Objects.PlacementOf(address));
+        Assert.Equal((byte)0x21, world.Objects.FlagsOf(address));
+        Assert.True(world.Objects.VisibleOf(address));
+        Assert.True(world.Objects.TryReadOpacity(address, out var opacity));
         Assert.Equal(.65f, opacity);
-        Assert.True(world.Port.IsAlive(address));
+        Assert.True(world.Objects.IsAlive(address));
         Assert.False(adopted.IsValid);
         Assert.False(world.Service.Release(adopted));
         world.Service.Dispose();
@@ -229,35 +229,35 @@ public sealed class WorldObjectRestoreTests
     public void Vfx_release_restores_the_exact_original_playback_state_and_retries_a_failed_restore()
     {
         var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
-        world.Port.SetVfxPlayback(address, VfxPlaybackState.Inactive);
-        world.Port.SetVfxColor(address, new Vector4(1f, 1f, 1f, 0.35f));
+        var address = world.Objects.Add("vfx/fire.avfx", Placed, isVfx: true);
+        world.Objects.SetVfxPlayback(address, VfxPlaybackState.Inactive);
+        world.Objects.SetVfxColor(address, new Vector4(1f, 1f, 1f, 0.35f));
         var effect = world.Service.Adopt(address)!;
         effect.VfxPaused = true;
         effect.Transform = Moved;
 
-        world.Port.NoOpRestore = true;
+        world.Objects.NoOpRestore = true;
         Assert.False(world.Service.Release(effect));
         Assert.True(effect.IsValid);
-        world.Port.NoOpRestore = false;
+        world.Objects.NoOpRestore = false;
         Assert.True(world.Service.Release(effect));
-        Assert.Equal(VfxPlaybackState.Inactive, world.Port.PlaybackOf(address));
-        Assert.Equal(0.35f, world.Port.ColorOf(address).W);
-        Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.Equal(VfxPlaybackState.Inactive, world.Objects.PlaybackOf(address));
+        Assert.Equal(0.35f, world.Objects.ColorOf(address).W);
+        Assert.Equal(Placed, world.Objects.PlacementOf(address));
     }
 
     [Fact]
     public void Reused_address_generation_refuses_stale_write_and_teardown()
     {
         var world = new World();
-        var address = world.Port.Add("vfx/fire.avfx", Placed, isVfx: true);
+        var address = world.Objects.Add("vfx/fire.avfx", Placed, isVfx: true);
         var adopted = world.Service.Adopt(address)!;
-        world.Port.Replace(address, "vfx/new-fire.avfx", Moved, isVfx: true);
+        world.Objects.Replace(address, "vfx/new-fire.avfx", Moved, isVfx: true);
 
         adopted.Transform = Placed;
-        Assert.Equal(Moved, world.Port.PlacementOf(address));
+        Assert.Equal(Moved, world.Objects.PlacementOf(address));
         Assert.True(world.Service.Release(adopted));
-        Assert.Equal(Moved, world.Port.PlacementOf(address));
+        Assert.Equal(Moved, world.Objects.PlacementOf(address));
     }
 
     [Fact]
@@ -266,34 +266,34 @@ public sealed class WorldObjectRestoreTests
         var world = new World();
         var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
         var original = spawned.Address;
-        world.Port.BgReady = false;
+        world.Objects.BgReady = false;
         var operation = spawned.Respawn("bg/new.mdl");
-        var fresh = world.Port.LastSpawned;
+        var fresh = world.Objects.LastSpawned;
         Assert.False(operation.IsCompleted);
         Assert.Equal(original, spawned.Address);
-        Assert.False(world.Port.VisibleOf(fresh));
+        Assert.False(world.Objects.VisibleOf(fresh));
         Assert.False((await spawned.Respawn("bg/third.mdl")).Success);
 
         spawned.Transform = Moved;
         spawned.Tint = new System.Numerics.Vector3(.2f, .4f, .6f);
         spawned.NightState = true;
-        world.Port.BgReady = true;
-        world.Port.FailBgTint = true;
+        world.Objects.BgReady = true;
+        world.Objects.FailBgTint = true;
         world.Service.PumpRespawns(DateTime.UtcNow);
         Assert.False(operation.IsCompleted);
-        Assert.DoesNotContain(original, world.Port.Destroyed);
+        Assert.DoesNotContain(original, world.Objects.Destroyed);
 
-        world.Port.FailBgTint = false;
+        world.Objects.FailBgTint = false;
         world.Service.PumpRespawns(DateTime.UtcNow);
         Assert.True((await operation).Success);
         Assert.Equal(fresh, spawned.Address);
         Assert.Equal(Moved, spawned.Transform);
-        Assert.True(world.Port.VisibleOf(fresh));
-        Assert.Equal(spawned.Tint, world.Port.LastBgTint);
-        Assert.True(world.Port.LastNightState);
-        Assert.Contains(original, world.Port.Destroyed);
+        Assert.True(world.Objects.VisibleOf(fresh));
+        Assert.Equal(spawned.Tint, world.Objects.LastBgTint);
+        Assert.True(world.Objects.LastNightState);
+        Assert.Contains(original, world.Objects.Destroyed);
         world.Service.PumpRespawns(DateTime.UtcNow);
-        Assert.Equal(new[] { fresh }, world.Port.LiveAddresses);
+        Assert.Equal(new[] { fresh }, world.Objects.LiveAddresses);
     }
 
     [Theory]
@@ -306,19 +306,19 @@ public sealed class WorldObjectRestoreTests
         var original = spawned.Address;
         using var cancellation = new System.Threading.CancellationTokenSource();
         bool current = true;
-        world.Port.BgReady = false;
+        world.Objects.BgReady = false;
         var operation = spawned.Respawn("bg/new.mdl", () => current, cancellation.Token);
-        var fresh = world.Port.LastSpawned;
+        var fresh = world.Objects.LastSpawned;
         Assert.False(operation.IsCompleted);
         if (cancelToken) cancellation.Cancel(); else current = false;
-        world.Port.BgReady = true;
+        world.Objects.BgReady = true;
         world.Service.PumpRespawns(DateTime.UtcNow);
         Assert.False((await operation).Success);
         Assert.Equal(original, spawned.Address);
         Assert.Equal("bg/old.mdl", spawned.Path);
-        Assert.DoesNotContain(original, world.Port.Destroyed);
-        Assert.Contains(fresh, world.Port.Destroyed);
-        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
+        Assert.DoesNotContain(original, world.Objects.Destroyed);
+        Assert.Contains(fresh, world.Objects.Destroyed);
+        Assert.Equal(new[] { original }, world.Objects.LiveAddresses);
         Assert.True((await spawned.Respawn("bg/next.mdl")).Success);
     }
 
@@ -335,8 +335,8 @@ public sealed class WorldObjectRestoreTests
         Assert.False(result.Success);
         Assert.Equal(3, checks);
         Assert.Equal(original, spawned.Address);
-        Assert.DoesNotContain(original, world.Port.Destroyed);
-        Assert.Equal(new[] { original }, world.Port.LiveAddresses);
+        Assert.DoesNotContain(original, world.Objects.Destroyed);
+        Assert.Equal(new[] { original }, world.Objects.LiveAddresses);
     }
 
     [Fact]
@@ -345,15 +345,15 @@ public sealed class WorldObjectRestoreTests
         var world = new World();
         var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
         var original = spawned.Address;
-        world.Port.BgReady = false;
+        world.Objects.BgReady = false;
         var operation = spawned.Respawn("bg/new.mdl");
-        world.Port.FailFreshDestroy = true;
+        world.Objects.FailFreshDestroy = true;
         world.Service.PumpRespawns(DateTime.UtcNow.AddSeconds(16));
         Assert.False((await operation).Success);
         Assert.Equal(original, spawned.Address);
-        world.Port.FailFreshDestroy = false;
+        world.Objects.FailFreshDestroy = false;
         world.Service.ReleaseAll();
-        Assert.Empty(world.Port.LiveAddresses);
+        Assert.Empty(world.Objects.LiveAddresses);
     }
 
     [Fact]
@@ -362,63 +362,63 @@ public sealed class WorldObjectRestoreTests
         var world = new World();
         var spawned = world.Service.Spawn("bg/old.mdl", Placed, true, out _)!;
         var original = spawned.Address;
-        world.Port.BgReady = false;
+        world.Objects.BgReady = false;
         var operation = spawned.Respawn("bg/new.mdl");
-        var fresh = world.Port.LastSpawned;
-        world.Port.Replace(fresh, "bg/unrelated.mdl", Moved);
-        world.Port.BgReady = true;
+        var fresh = world.Objects.LastSpawned;
+        world.Objects.Replace(fresh, "bg/unrelated.mdl", Moved);
+        world.Objects.BgReady = true;
         world.Service.PumpRespawns(DateTime.UtcNow);
         Assert.False((await operation).Success);
         Assert.Equal(original, spawned.Address);
-        Assert.Equal(Moved, world.Port.PlacementOf(fresh));
-        Assert.DoesNotContain(fresh, world.Port.Destroyed);
+        Assert.Equal(Moved, world.Objects.PlacementOf(fresh));
+        Assert.DoesNotContain(fresh, world.Objects.Destroyed);
     }
 
     [Fact]
     public void Scenery_does_not_reinterpret_its_own_output_as_native_motion()
     {
         var world = new World();
-        var address = world.Port.Add("bg/animated.mdl", Transform.Identity);
+        var address = world.Objects.Add("bg/animated.mdl", Transform.Identity);
         var obj = world.Service.Adopt(address)!;
         var placement = new Transform(new Vector3(10, 20, 30),
             Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), Vector3.One);
         obj.Transform = placement;
         world.Service.HoldPausedAnimations();
-        world.Port.Write(address, new Transform(Vector3.UnitX, Quaternion.Identity, Vector3.One));
+        world.Objects.Write(address, new Transform(Vector3.UnitX, Quaternion.Identity, Vector3.One));
         world.Service.HoldPausedAnimations();
-        world.Port.Write(address, new Transform(Vector3.UnitX * 2, Quaternion.Identity, Vector3.One));
+        world.Objects.Write(address, new Transform(Vector3.UnitX * 2, Quaternion.Identity, Vector3.One));
         world.Service.HoldPausedAnimations();
-        var solved = world.Port.PlacementOf(address);
+        var solved = world.Objects.PlacementOf(address);
 
         // Multiple camera/render callbacks need not contain a native animation update.
         for (int i = 0; i < 4; i++)
         {
             world.Service.HoldPausedAnimations();
-            Assert.Equal(solved, world.Port.PlacementOf(address));
+            Assert.Equal(solved, world.Objects.PlacementOf(address));
         }
 
         obj.AnimationPaused = true;
         obj.AnimationPaused = false;
         world.Service.HoldPausedAnimations(); // The native fields still contain our held placement.
-        world.Port.Write(address, new Transform(Vector3.UnitX * 5, Quaternion.Identity, Vector3.One));
+        world.Objects.Write(address, new Transform(Vector3.UnitX * 5, Quaternion.Identity, Vector3.One));
         world.Service.HoldPausedAnimations();
-        Assert.Equal(solved, world.Port.PlacementOf(address));
-        world.Port.Write(address, new Transform(Vector3.UnitX * 6, Quaternion.Identity, Vector3.One));
+        Assert.Equal(solved, world.Objects.PlacementOf(address));
+        world.Objects.Write(address, new Transform(Vector3.UnitX * 6, Quaternion.Identity, Vector3.One));
         world.Service.HoldPausedAnimations();
         Assert.True(Vector3.Distance(solved.Position + Vector3.UnitY,
-            world.Port.PlacementOf(address).Position) < 0.0001f);
+            world.Objects.PlacementOf(address).Position) < 0.0001f);
         world.Service.Dispose();
     }
 
     private sealed class World
     {
-        public FakePort Port { get; } = new();
+        public FakeWorldObjects Objects { get; } = new();
         public FakeEventBus Events { get; } = new();
         public WorldObjectService Service { get; }
 
         public World() =>
             Service = new WorldObjectService(
-                Port,
+                Objects,
                 Events,
                 DispatchProxy.Create<IPluginLog, SilentLog>());
     }
@@ -427,7 +427,7 @@ public sealed class WorldObjectRestoreTests
     /// Stores simulated world objects by address and generation. Tests can replace
     /// or remove a row and inject loading, restoration, and destruction failures.
     /// </summary>
-    private sealed class FakePort : IWorldObjectAccess
+    private sealed class FakeWorldObjects : IWorldObjectAccess
     {
         private readonly Dictionary<nint, Node> _nodes = new();
         private readonly Dictionary<nint, long> _generations = new();

@@ -36,7 +36,7 @@ internal sealed class SceneClearer(
     Poser.Game.Overlays.OverlayNodeService overlays,
     ILightingService lighting,
     IVirtualCameraService cameras,
-    WorldObjects.WorldObjectTakeover worldObjects,
+    WorldObjects.WorldBorrowing worldObjects,
     Poser.Application.Selection.SelectionSession selection)
 {
     /// <summary>
