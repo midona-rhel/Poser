@@ -4,6 +4,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.Documents.Config;
+using Poser.Application.Settings;
 
 namespace Poser.Application.Tests.Settings;
 
@@ -35,13 +36,15 @@ public sealed class BoneMapPresetTests
     public void Concurrent_edits_cannot_overwrite_a_changed_or_deleted_preset()
     {
         var preset = new BoneMapPreset { Name = "Body", Points = [Default] };
-        var store = new List<BoneMapPreset> { preset };
+        var settings = new ConfigurationService(new Fixtures.MemoryConfigurationPersistence());
+        var store = settings.Config.Skeleton.BoneMapPresets;
+        store.Add(preset);
         var first = new BoneMapPresetDraft(BoneMapKind.Body, [Default], preset);
         var second = new BoneMapPresetDraft(BoneMapKind.Body, [Default], preset);
         first.Move(Bone, "body", 0.8f, 0.8f);
-        Assert.Null(first.Save(store, out _));
-        Assert.NotNull(second.Save(store, out _));
+        Assert.Null(first.Save(settings, out _));
+        Assert.NotNull(second.Save(settings, out _));
         store.Clear();
-        Assert.NotNull(second.Save(store, out _));
+        Assert.NotNull(second.Save(settings, out _));
     }
 }
