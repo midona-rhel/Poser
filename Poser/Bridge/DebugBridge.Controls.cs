@@ -11,6 +11,7 @@ using Poser.Application.Presentation;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
+using Poser.Game.Presentation;
 
 namespace Poser.Bridge;
 
