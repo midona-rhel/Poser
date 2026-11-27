@@ -110,7 +110,7 @@ public sealed class BoneNameRefreshTests
             Proxy<ILightingService>(_ => Array.Empty<ILight>()),
             Proxy<IVirtualCameraService>(_ => Array.Empty<IVirtualCamera>()),
             new PropSpawnService(null!, events, null!),
-            new OverlayNodeService(Proxy<IOverlayNodePort>(_ => null), events, null!),
+            new OverlayNodeService(Proxy<IOverlayNodeDrawer>(_ => null), events, null!),
             new WorldObjectService(null!, events, null!),
             Proxy<IFramework>(_ => true), config);
     }

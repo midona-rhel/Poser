@@ -112,7 +112,7 @@ public sealed class SettingsViewModel
     public float TransformEntitySpeed = 0.005f;
     public float TransformBoneSpeed = 0.005f;
     public float CameraDefaultSpeed = FreeCameraSpeed.Default;
-    public float CameraDefaultSensitivity = 0.1f;
+    public float CameraDefaultSensitivity = FreeCameraSensitivity.Default;
     public float CameraFastMultiplier = 3f;
     public float CameraSlowMultiplier = 0.3f;
     public bool CameraConsumeModifiers = true;
@@ -689,9 +689,11 @@ public static partial class SettingsView
                 if (!armed)
                 {
                     vm.ResetArmed = scope;
-                    vm.ResetStatus =
-                        $"{label} goes back to defaults, discarding anything "
-                        + "unsaved on this page. Press Confirm reset to apply.";
+                    vm.ResetStatus = scope == ConfigResetScope.All
+                        ? "Every setting goes back to its default, discarding every "
+                            + "unsaved change. Press Confirm reset to apply."
+                        : $"{label} go back to defaults, discarding unsaved changes "
+                            + "to them; other unsaved changes stay. Press Confirm reset to apply.";
                     return;
                 }
                 vm.ResetArmed = null;
@@ -744,7 +746,7 @@ public static partial class SettingsView
             form,
             ConfigResetScope.Display,
             "Display settings",
-            "Put the theme, opacity and privacy settings back to their defaults"));
+            "Turns Anonymous mode off and NSFW bones (Skeleton page) on. The theme and window settings are reset on the UI page"));
     }
 
     private static void DrawSkeleton(
@@ -964,7 +966,7 @@ public static partial class SettingsView
             form,
             ConfigResetScope.Skeleton,
             "Skeleton settings",
-            "Put the bone, line and color settings back to their defaults"));
+            "Puts the bone, line and colour settings back, and deletes your bone visibility and bone map presets"));
     }
 
     private static readonly string[] GroupScaleLabels =
@@ -984,8 +986,8 @@ public static partial class SettingsView
             form.Slider(
                 "Gizmo size",
                 vm.GizmoScale,
-                0.5f,
-                2f,
+                GizmoConfiguration.MinimumScale,
+                GizmoConfiguration.MaximumScale,
                 next => vm.GizmoScale = next,
                 format: "0.00×",
                 help: "How large the handles are on screen; they stay this size at any distance"),
@@ -1131,8 +1133,8 @@ public static partial class SettingsView
             form.Slider(
                 "Mouse sensitivity",
                 vm.CameraDefaultSensitivity,
-                0.001f,
-                0.2f,
+                FreeCameraSensitivity.Minimum,
+                FreeCameraSensitivity.Maximum,
                 next => vm.CameraDefaultSensitivity = next,
                 format: "0.000",
                 help: "How far a right-drag turns a new free camera");
@@ -1242,7 +1244,7 @@ public static partial class SettingsView
             form,
             ConfigResetScope.UI,
             "UI settings",
-            "Put the layout, visibility and keybind settings back to their defaults"));
+            "Puts the layout, visibility, key bindings, theme, accent, window opacity and blur, the gizmo hiding and diagnostics switches, and remembered window positions back"));
     }
 
     private static readonly string[] PresetLabels =

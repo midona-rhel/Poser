@@ -123,23 +123,20 @@ public class ConfigurationService : IDisposable
         Save();
     }
 
-    public void ResetSkeleton()
-    {
-        Config.Skeleton = new SkeletonConfiguration();
-        Save();
-    }
+    // The three part resets below change the settings in memory only. The
+    // Settings window, which calls them, saves and announces the result
+    // itself, because its unsaved previews are in the settings too.
 
-    public void ResetDisplay()
-    {
-        Config.Display = new DisplayConfiguration();
-        Save();
-    }
+    /// <summary>Puts the skeleton settings back to their defaults, deleting
+    /// the saved bone visibility and bone map presets.</summary>
+    public void ResetSkeleton() => Config.Skeleton = new SkeletonConfiguration();
 
-    public void ResetUI()
-    {
-        Config.UI = new UIConfiguration();
-        Save();
-    }
+    /// <summary>Turns Anonymous mode off and NSFW bones on.</summary>
+    public void ResetDisplay() => Config.Display = new DisplayConfiguration();
+
+    /// <summary>Puts the interface settings back to their defaults: layout,
+    /// key bindings, theme and window look.</summary>
+    public void ResetUI() => Config.UI = new UIConfiguration();
 
     public void Dispose()
     {

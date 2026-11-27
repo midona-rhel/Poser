@@ -59,7 +59,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.Application.Gaze.IGazeControl _gaze;
     private readonly global::Poser.Game.WorldObjects.WorldObjectService _worldObjects;
     private readonly global::Poser.Application.Library.IPoseLibraryService _library;
-    private readonly global::Poser.Application.Catalog.ISpawnCatalogService _catalog;
+    private readonly global::Poser.Application.Companions.CompanionCatalog _companions;
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Game.Services.IBonePosingService _bonePosing;
     private readonly Application.Posing.IIkConfigurationPort _ikConfiguration;
@@ -156,7 +156,7 @@ public sealed partial class DebugBridge : IDisposable
         Application.Posing.IIkConfigurationPort ikConfiguration,
         global::Poser.Application.Lifecycle.ActionGate gate,
         global::Poser.Game.WorldObjects.WorldObjectService worldObjects,
-        global::Poser.Application.Catalog.ISpawnCatalogService catalog,
+        global::Poser.Application.Companions.CompanionCatalog companions,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
         global::Poser.Application.Library.IPoseLibraryService library,
         ITransformEditing transforms,
@@ -206,7 +206,7 @@ public sealed partial class DebugBridge : IDisposable
         _viewport = viewport;
         _overlay = overlay;
         _ikBake = ikBake;
-        _catalog = catalog;
+        _companions = companions;
         _worldObjects = worldObjects;
         _library = library;
         _bonePosing = bonePosing;
@@ -2084,10 +2084,17 @@ public sealed partial class DebugBridge : IDisposable
             case "/spawncatalog":
             {
                 string want = query.TryGetValue("name", out var cn) ? cn.ToLowerInvariant() : "wind-up titan";
+                ((global::Poser.Application.Catalog.ICompanionCatalogLoader)_services.GetService(
+                    typeof(global::Poser.Application.Catalog.ICompanionCatalogLoader))!).EnsureLoaded();
+                if (!_companions.IsLoaded)
+                    return Json(new { ok = false, detail = "The minion and mount list is still loading. Ask again." });
                 global::Poser.Domain.Companions.SpawnCatalogEntry? entry = null;
-                foreach (var e in _catalog.Entries)
+                foreach (var companion in _companions.Entries)
+                {
+                    var e = global::Poser.Domain.Companions.SpawnCatalogEntry.From(companion);
                     if (e.NameLower == want || (entry == null && e.NameLower.Contains(want)))
                         entry = e;
+                }
                 if (entry is not { } found)
                     return Json(new { ok = false, detail = "no catalog entry matches" });
                 var spawned = _creation.CreateActor(new(Catalog: found));

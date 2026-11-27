@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Application.Gaze;
+using Poser.Application.Posing;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
@@ -15,9 +16,11 @@ namespace Poser.Game.Posing;
 /// command meant for a removed actor never changes the actor that took its
 /// place. Each change is one undo step, and dragging a gaze point is one step
 /// for the whole drag. Undo puts back the gaze settings and points, not the
-/// actor being looked at.
+/// actor being looked at, also after the actor was removed and brought back
+/// by undo.
 /// </summary>
-public sealed class GazeSession(GazeService gaze, IEntityBindings bindings, ValueJournal journal) : IGazeControl
+public sealed class GazeSession(GazeService gaze, IEntityBindings bindings, ValueJournal journal,
+    IActorReplacements replacements) : IGazeControl
 {
     public bool IsAvailable => gaze.IsAvailable;
     public string? UnavailableDetail => gaze.UnavailableDetail;
@@ -91,10 +94,12 @@ public sealed class GazeSession(GazeService gaze, IEntityBindings bindings, Valu
     private Outcome Step(ActorId actor, string description, Func<Outcome> change)
     {
         if (Read(actor) is not { } before) return Missing();
+        var now = replacements.Track(actor);
         var result = change();
         if (result.Success && Read(actor) is { } after)
             journal.Record(SelectionId.ForActor(actor), description, before.Settings, after.Settings,
-                settings => RestoreSettings(actor, settings), () => Read(actor) is not null);
+                settings => now() is { } id ? RestoreSettings(id, settings) : Missing(),
+                () => now() is not null);
         return result;
     }
 
@@ -102,11 +107,13 @@ public sealed class GazeSession(GazeService gaze, IEntityBindings bindings, Valu
     {
         if (Read(actor) is not { Settings.Mode: GazeTargetMode.Position })
             return Outcome.Fail("A live Point-mode gaze target is required.");
+        var now = replacements.Track(actor);
         return journal.Adjust((actor, part), "Move gaze point",
             () => Read(actor)!.Settings.PartPosition(part),
-            next => part == GazeTargetType.None
-                ? Write(actor, live => gaze.SetGazePosition(live, next))
-                : Write(actor, live => gaze.SetPartPosition(live, part, next)),
-            position, () => Read(actor) is not null);
+            next => now() is not { } id ? Missing()
+                : part == GazeTargetType.None
+                    ? Write(id, live => gaze.SetGazePosition(live, next))
+                    : Write(id, live => gaze.SetPartPosition(live, part, next)),
+            position, () => now() is not null);
     }
 }
