@@ -92,14 +92,26 @@ public sealed class GroupTransformState
         foreach (var key in _records.Keys.Where(key => key.NamedGroup != null).ToArray()) _records.Remove(key);
         foreach (var (key, state) in records) Put(key, state);
     }
+    /// <summary>Moves each record to the things <paramref name="resolve"/> names
+    /// for its members now, and drops a record that has a member with no answer.
+    /// A member named under another lasting id is the thing undo brought back in
+    /// place of a removed one, so the record moves to it under a new key.</summary>
     public void Rekey(Func<TransformTargetId, TransformTargetId?> resolve)
     {
         foreach (var (key, value) in _records.ToArray())
         {
             // Avoid replacing an immutable record during an unrelated refresh.
             if (value.Expected.Keys.All(target => resolve(target) == target)) continue;
-            if (value.Remap(resolve) is { } mapped) _records[key] = mapped;
-            else { _records.Remove(key); _anonymousOrder.Remove(key); }
+            _records.Remove(key);
+            var node = _anonymousOrder.Find(key);
+            if (value.Remap(resolve, allowReplacement: true) is not { } mapped)
+            {
+                if (node != null) _anonymousOrder.Remove(node);
+                continue;
+            }
+            var moved = GroupTransformKey.For(key.NamedGroup, mapped.Expected.Keys);
+            _records[moved] = mapped;
+            if (node != null) node.Value = moved;
         }
     }
     public void Forget(Guid id)
