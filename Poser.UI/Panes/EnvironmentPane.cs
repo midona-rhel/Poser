@@ -1,6 +1,5 @@
 using Poser.Domain;
 using Poser.Application.World;
-using Poser.Application.Scene;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -9,7 +8,6 @@ using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Scene;
 using Poser.UI.Widgets;
-using Poser.Documents.Files;
 using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;

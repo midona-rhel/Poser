@@ -435,7 +435,7 @@ public sealed partial class PoseLibraryPane
             Refilter();
         SyncApplyTargets();
         SyncTarget();
-        SyncImportToggles();
+        SyncTabActions();
         SyncStatus();
         SyncPreview();
 

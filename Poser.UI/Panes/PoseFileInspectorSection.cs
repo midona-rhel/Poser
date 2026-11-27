@@ -82,7 +82,6 @@ public sealed class PoseFileInspectorSection : IDisposable
     private readonly HashSet<string> _disabledCategories =
         new(StringComparer.Ordinal) { "weapon", "ex" };
     private bool _importMenuRequested;
-    private bool _importMenuWithPresets;
     private bool _boneFilterRequested;
 
     // Freeze mirrors the persisted configuration.
@@ -184,7 +183,7 @@ public sealed class PoseFileInspectorSection : IDisposable
 #endif
     public void OpenIdleExport(ActorId actor) => OpenBrowser(() => _idleExport.Open(actor, _folder));
 
-    public void RequestImportMenu(bool withPresets, ActorId? target)
+    public void RequestImportMenu(ActorId? target)
     {
         if (target is not { } actor || !_imports.HasPosableSkeleton(actor))
         {
@@ -192,7 +191,6 @@ public sealed class PoseFileInspectorSection : IDisposable
             return;
         }
         _importMenuActor = actor;
-        _importMenuWithPresets = withPresets;
         _menuAnchor = ImGui.GetMousePos();
         _importMenuRequested = true;
     }
@@ -212,7 +210,7 @@ public sealed class PoseFileInspectorSection : IDisposable
     private float _libraryMenuHeight = 400f;
     private readonly string LibraryOptionsMenuId = $"##library-options-menu-{Guid.NewGuid():N}";
 
-    public void RequestBoneFilterMenu()
+    private void RequestBoneFilterMenu()
     {
         _filterAnchor = ImGui.GetMousePos();
         _boneFilterRequested = true;
@@ -455,7 +453,7 @@ public sealed class PoseFileInspectorSection : IDisposable
             rects.Body.Size.Y / scale, region =>
             {
                 var origin = ImGui.GetCursorScreenPos();
-                float y = DrawOptionsSections(origin, region.ContentWidth * scale, _importMenuWithPresets);
+                float y = DrawOptionsSections(origin, region.ContentWidth * scale, withPresets: true);
                 ImGui.SetCursorScreenPos(new Vector2(origin.X, y));
                 ImGui.Dummy(new Vector2(1f, MenuPadding * scale));
             });
@@ -1767,7 +1765,7 @@ public sealed class PoseFileInspectorSection : IDisposable
 
         form.Actions("Import", actions =>
         {
-            actions.Button("Import", () => RequestImportMenu(withPresets: true, target: actorId));
+            actions.Button("Import", () => RequestImportMenu(actorId));
             actions.Button("Import from file", () => OpenImportFromFile(actorId));
             actions.Button("From clipboard", () => ImportFromClipboard(actorId));
             actions.Button("Library", () => RequestLibrary(actorId));
