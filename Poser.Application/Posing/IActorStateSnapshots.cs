@@ -19,7 +19,13 @@ public sealed record ActorPropertiesSnapshot(int ModelId, ActorAppearanceSnapsho
 
 /// <summary>An actor's whole state except animation, taken in one GPose session.</summary>
 public sealed record ActorStateSnapshot(ActorId Actor, SessionGeneration Session,
-    ActorSnapshot Pose, ActorPropertiesSnapshot Properties);
+    ActorSnapshot Pose, ActorPropertiesSnapshot Properties)
+{
+    /// <summary>The same state, put back on this actor. Undo uses this when it
+    /// brought the actor back as a new game object with a new id.</summary>
+    public ActorStateSnapshot For(ActorId actor) =>
+        this with { Actor = actor, Pose = Pose.For(actor.LogicalId) };
+}
 
 /// <summary>
 /// Saves and puts back an actor's whole state for undo steps that can redraw

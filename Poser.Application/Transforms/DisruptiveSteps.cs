@@ -65,9 +65,7 @@ public sealed class DisruptiveSteps(
                     completed(GestureResult.Fail("The actor is no longer available."));
                     return;
                 }
-                var state = undo ? before : after!;
-                snapshots.Restore(state with { Actor = live, Pose = state.Pose.For(live.LogicalId) },
-                    current, cancellation, completed);
+                snapshots.Restore((undo ? before : after!).For(live), current, cancellation, completed);
             },
         });
         return result;
