@@ -110,8 +110,8 @@ public sealed partial class PoseLibraryPane
 
     /// <summary>
     /// Applies an MCDF through the same character-file session used by the
-    /// appearance pane. A refusal to start is reported here; a failure while it
-    /// runs is reported when it ends (SyncStatus).
+    /// appearance pane. The session reports progress and terminal failures;
+    /// the notification reports only admission failure.
     /// </summary>
     private void ApplyCharacterFile(int index, ActorId? requestedTarget = null)
     {
@@ -122,10 +122,7 @@ public sealed partial class PoseLibraryPane
         }
         string path = _vm.Tiles[index].ThumbKey;
         var begun = _characterFiles.Import(id, path);
-        if (_notices.Report(begun.Outcome, "Apply"))
-            _characterFileImport = _characterFiles.Receipt is { State: OperationReceiptState.Pending } started
-                ? started.OperationId
-                : null;
+        _notices.Report(begun.Outcome, "Apply");
     }
 
     private void Spawn(int index)

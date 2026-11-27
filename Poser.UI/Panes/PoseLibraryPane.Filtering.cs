@@ -378,16 +378,6 @@ public sealed partial class PoseLibraryPane
 
     private void SyncStatus()
     {
-        // A character file applied from here says here why it failed, as a pose
-        // import does; otherwise the reason only shows in the Appearance tab.
-        if (_characterFileImport is { } started && _characterFiles.Receipt is { } ended
-            && (ended.OperationId != started || ended.State != OperationReceiptState.Pending))
-        {
-            _characterFileImport = null;
-            if (ended.OperationId == started && ended.State != OperationReceiptState.Applied)
-                _notices.Report(new Poser.Domain.Outcome(false, ended.Detail), "Apply");
-        }
-
         // Each tab states its OWN enumeration. The auto-save tab browses no
         // scanned source, so the library scan is neither its state nor a
         // reason to refuse its rescan — its own worker is both.
