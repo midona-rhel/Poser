@@ -1,8 +1,10 @@
+using Dalamud.Plugin.Services;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.Domain.Transforms;
 using Poser.Game.Presentation;
 using Poser.Game.Services;
 
@@ -20,7 +22,7 @@ public sealed class SceneObjectControl : ISceneObjectControl
     private readonly IEntityHistoryResolver<IPropHandle> _propHistory;
     private readonly IEntityHistoryResolver<IWorldObject> _objectHistory;
     private readonly EditHistory _history;
-    private readonly Dalamud.Plugin.Services.IFramework _framework;
+    private readonly IFramework _framework;
     private readonly EntityValues<PropId> _props;
     private readonly EntityValues<WorldObjectId> _objects;
 
@@ -28,7 +30,7 @@ public sealed class SceneObjectControl : ISceneObjectControl
         IEntityHistoryResolver<IPropHandle> propHistory,
         IEntityHistoryResolver<IWorldObject> objectHistory,
         EditHistory history,
-        Dalamud.Plugin.Services.IFramework framework)
+        IFramework framework)
     {
         _bindings = bindings;
         _journal = journal;
@@ -47,10 +49,8 @@ public sealed class SceneObjectControl : ISceneObjectControl
     private IWorldObject? Resolve(WorldObjectId id) =>
         _bindings.Resolve(id) is { Success: true, Value: { IsValid: true } entity } ? entity : null;
 
-    private IPropHandle? Current(IPropHandle original)
-    {
-        return _propHistory.Resolve(original) is { IsValid: true } current ? current : null;
-    }
+    private IPropHandle? Current(IPropHandle original) =>
+        _propHistory.Resolve(original) is { IsValid: true } current ? current : null;
 
     public PropReading? Read(PropId id) => Resolve(id) is { } p
         ? new(id, p.Name, p.Visible, p.Model, p.Tint) : null;
@@ -134,25 +134,25 @@ public sealed class SceneObjectControl : ISceneObjectControl
         };
 
     private async Task ReplayModel(IWorldObject original, string path, Func<bool> current,
-        System.Threading.CancellationToken cancellation, Action<Poser.Domain.Transforms.GestureResult> completed)
+        CancellationToken cancellation, Action<GestureResult> completed)
     {
-        Poser.Domain.Transforms.GestureResult result;
+        GestureResult result;
         try
         {
             var live = _objectHistory.Resolve(original);
             if (live is not { IsValid: true })
-                result = Poser.Domain.Transforms.GestureResult.Fail(ObjectUnavailable);
+                result = GestureResult.Fail(ObjectUnavailable);
             else
             {
                 var restored = await live.Respawn(path, current, cancellation);
                 result = restored.Success
-                    ? Poser.Domain.Transforms.GestureResult.Ok()
-                    : Poser.Domain.Transforms.GestureResult.Fail(restored.Detail ?? "The model could not be restored.");
+                    ? GestureResult.Ok()
+                    : GestureResult.Fail(restored.Detail ?? "The model could not be restored.");
             }
         }
         catch (Exception ex)
         {
-            result = Poser.Domain.Transforms.GestureResult.Fail(ex.Message);
+            result = GestureResult.Fail(ex.Message);
         }
         void Finish() => completed(result);
         if (_framework.IsInFrameworkUpdateThread) Finish();

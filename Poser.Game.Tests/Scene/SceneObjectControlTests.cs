@@ -53,7 +53,7 @@ public sealed class SceneObjectControlTests
     }
 
     [Fact]
-    public void Transport_write_lands_without_a_step_and_a_stale_write_fails()
+    public void Pausing_an_effect_adds_no_undo_step_and_fails_once_the_object_is_gone()
     {
         var id = WorldObjectId.New();
         bool paused = false, current = true;
