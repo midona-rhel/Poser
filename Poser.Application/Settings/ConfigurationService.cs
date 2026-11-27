@@ -33,7 +33,7 @@ public class ConfigurationService : IDisposable
         LoadFailure = loaded.Failure;
         bool upgraded = MigrateConfig();
 
-        // Filled in memory only. It is written to disk with the next save.
+        // Saved below on an upgrade or a new install, otherwise with the next save.
         Config.Library.EnsureDefaults();
 
         // Saved at once: an id that changed between sessions would make your own
@@ -116,8 +116,10 @@ public class ConfigurationService : IDisposable
         Config = new PoserConfiguration();
         Config.Library.InstallId = install;
         // The library's own folders and the Brio and Anamnesis folders are
-        // part of the defaults, as on a first start.
+        // part of the defaults, and Poser's own folders are created, as on
+        // a first start.
         Config.Library.EnsureDefaults();
+        Config.Library.EnsureHomeRootsExist();
         Save();
     }
 

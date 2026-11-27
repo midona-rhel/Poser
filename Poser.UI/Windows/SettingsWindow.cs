@@ -310,8 +310,6 @@ public class SettingsWindow : Window
             OnResetConfig = ResetConfig,
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
-            OnThemePreview = ThemeSelection.Apply,
-            OnSurfaceEffectsPreview = FloatingSurface.ConfigureEffects,
         };
         vm.OnRefreshIntegrations = () => ReadIntegrations(vm);
         vm.OnBrowseFolder = (start, chosen) =>
