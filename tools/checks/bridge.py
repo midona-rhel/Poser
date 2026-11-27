@@ -182,7 +182,9 @@ def remove(selection_ids):
     selected = get("/selection", entities=",".join(selection_ids))
     if not isinstance(selected, list) or sorted(selected) != sorted(selection_ids):
         return False, f"selection refused: {short(selected, 160)}"
-    get("/selectionremove", start=1)
+    started = get("/selectionremove", start=1)
+    if started.get("ok") is False or "error" in started:
+        return False, f"removal refused: {short(started, 160)}"
     ok, reading = wait_until(lambda: get("/selectionremove"), lambda r: r.get("running") is False, timeout=20)
     return ok and "error" not in reading, short(reading, 160)
 

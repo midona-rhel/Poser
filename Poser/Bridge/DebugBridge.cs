@@ -401,7 +401,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/gpose?action=leave|enter (leaves or enters GPose like the game's /gpose)",
                         "/gamekeys?keys=SHIFT,A&frames=60&mode=messages (holds game keys for that many frames, then records as many without; mode=messages sends real key messages; omit keys to read the recorded camera values)",
-                        "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
+                        "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER&yaw=DEGREES&scale=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",

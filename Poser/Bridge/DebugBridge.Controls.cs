@@ -78,7 +78,8 @@ public sealed partial class DebugBridge
     /// <summary>The Appearance tab's visibility, opacity, tint and wetness controls:
     /// visible=1|0, opacity=0..1, tint=R,G,B,A with model=Character|MainHand|OffHand,
     /// wet=1|0 (hold the wetness or let the game set it), wetness=WEATHER,SWIMMING,DEPTH
-    /// (the wetness sliders, which hold the wetness too), reset=1.</summary>
+    /// (the wetness sliders; they need the wetness held, by wet=1 in the same request or an
+    /// earlier one), reset=1.</summary>
     private string Presentation(Dictionary<string, string> query, ActorId id)
     {
         var values = (IActorValueControl)_services.GetService(typeof(IActorValueControl))!;
