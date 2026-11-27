@@ -408,8 +408,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/gpose?action=leave|enter (leaves or enters GPose like the game's /gpose)",
-                        "/loads[?collect=0] (load contexts that still hold Poser, after three full collections unless collect=0; more than one after collecting is a leaked reload)",
-                        "/cpose (runs the game's /cpose on your character; use it outside GPose)",
+                        "/loads[?collect=0] (how many loads of Poser are in memory, after three full collections unless collect=0; growing by one per reload is a leak)",
                         "/gamekeys?keys=SHIFT,A&frames=60&mode=messages (holds game keys for that many frames, then records as many without; mode=messages sends real key messages; omit keys to read the recorded camera values)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER&yaw=DEGREES&scale=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
@@ -613,40 +612,18 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/loads":
             {
-                // Every load context that still holds Poser after a full collection.
-                // More than one means an earlier load of the plugin was never freed.
-                // collect=0 reads what is alive now, without forcing collections.
+                // How many loads of Poser are still in memory. Each Debug deploy loads a
+                // new one; after a reload the old one should be freed, so the count stays
+                // the same. A count that grows by one per reload is a leaked reload.
+                // collect=0 reads without forcing collections first.
                 if (query.GetValueOrDefault("collect") != "0")
                     for (int i = 0; i < 3; i++)
                     {
                         GC.Collect();
                         GC.WaitForPendingFinalizers();
                     }
-                var contexts = System.Runtime.Loader.AssemblyLoadContext.All
-                    .Where(c => c.Assemblies.Any(a => a.GetName().Name == "Poser"))
-                    .Select(c => new
-                    {
-                        name = c.Name,
-                        collectible = c.IsCollectible,
-                        current = c == System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(DebugBridge).Assembly),
-                    })
-                    .ToArray();
-                // Assemblies of every context still in memory, unloading ones included.
                 int assemblies = AppDomain.CurrentDomain.GetAssemblies().Count(a => a.GetName().Name == "Poser");
-                return Json(new { count = contexts.Length, assemblies, heapMb = GC.GetTotalMemory(false) / 1048576, contexts });
-            }
-            case "/cpose":
-            {
-                // Runs the game's own /cpose on your character, outside GPose, so the
-                // GPose copy starts in a standing pose Poser did not set. Only this
-                // command: the bridge never sends chat text.
-                unsafe
-                {
-                    var command = FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.FromString("/cpose");
-                    FFXIVClientStructs.FFXIV.Client.UI.UIModule.Instance()->ProcessChatBoxEntry(command);
-                    command->Dtor(true);
-                }
-                return Json(new { ok = true });
+                return Json(new { assemblies, heapMb = GC.GetTotalMemory(false) / 1048576 });
             }
             case "/gamekeys":
             {
@@ -2308,7 +2285,6 @@ public sealed partial class DebugBridge : IDisposable
             emoteId = snapshot?.EmoteId,
             mode = snapshot?.Mode,
             stance = reading?.Stance.ToString(),
-            pose = reading?.Pose,
             renderFlags = snapshot?.RenderFlags,
             hasDrawObject = snapshot?.HasDrawObject,
             physicsFrozen = _animation.IsPhysicsFrozen,

@@ -5,9 +5,11 @@ using System.IO.Compression;
 using System.Text;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using Newtonsoft.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Poser.Application.Diagnostics;
 using Poser.Application.Scene;
+using Poser.Documents.Config;
 using Poser.Documents.Files;
 using Poser.Application.Settings;
 
@@ -25,6 +27,14 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     /// <summary>How much of the end of dalamud.log is scanned for Poser's
     /// lines; the whole log can run to hundreds of megabytes.</summary>
     private const int LogTailBytes = 1024 * 1024;
+
+    /// <summary>The settings file's options, leaving out empty values and
+    /// repeated references.</summary>
+    private static readonly JsonSerializerOptions ReportJson = new(ConfigurationFileStore.JsonOptions)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        ReferenceHandler = ReferenceHandler.IgnoreCycles,
+    };
 
     private readonly IFramework _framework;
     private readonly UI.UserNotices _notices;
@@ -60,7 +70,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         _scenes = scenes;
         _log = log;
         _redactor.RegisterIdentity(Environment.UserName, "[user]");
-        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(
+        _redactor.RegisterPathsJson(JsonSerializer.Serialize(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
         _recorder.ActorToken = TokenFor;
         _recorder.Scrub = Scrub;
@@ -239,12 +249,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
             Settings = _config.Config,
             Log = LogTail(),
         };
-        return _redactor.ScrubJson(JsonConvert.SerializeObject(report, Formatting.Indented, new JsonSerializerSettings
-        {
-            NullValueHandling = NullValueHandling.Ignore,
-            ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-            ContractResolver = PoserJsonContracts.Resolver,
-        }));
+        return _redactor.ScrubJson(JsonSerializer.Serialize(report, ReportJson));
     }
 
     /// <summary>The plugin's own lines from the Dalamud log, newest last.</summary>
@@ -294,8 +299,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     private void RefreshRedaction()
     {
         RememberActors();
-        _redactor.RegisterPathsJson(JsonConvert.SerializeObject(_config.Config,
-            new JsonSerializerSettings { ContractResolver = PoserJsonContracts.Resolver }));
+        _redactor.RegisterPathsJson(JsonSerializer.Serialize(_config.Config, ConfigurationFileStore.JsonOptions));
     }
 
     private void RememberActors()
