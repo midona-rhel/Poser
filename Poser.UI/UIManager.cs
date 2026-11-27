@@ -83,7 +83,7 @@ public sealed class UIManager : IUIManager
         ActionGate gate,
         ICharacterFiles characterFiles)
     {
-        _characterFileNotices = new CharacterFileNotices(characterFiles, notices);
+        _characterFileNotices = new CharacterFileNotices(characterFiles, notices, log);
         _gate = gate;
         _gameGui = gameGui;
         _ui = ui;
