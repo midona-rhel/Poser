@@ -105,7 +105,18 @@ public class SkeletonConfiguration
     // applied to an actor's dots AND its connector lines together.
 
     public bool DimInactiveActors { get; set; } = false;
-    public float InactiveActorOpacity { get; set; } = 0.5f;
+
+    private float _inactiveActorOpacity = 0.5f;
+
+    /// <summary>How much an inactive actor's bones are faded, from 0 to 1.
+    /// It is multiplied into the line and bone opacity before they are drawn,
+    /// so a value above 1 from an edited settings file would draw the bones
+    /// brighter than the line opacity setting allows.</summary>
+    public float InactiveActorOpacity
+    {
+        get => _inactiveActorOpacity;
+        set => _inactiveActorOpacity = Math.Clamp(value, 0f, 1f);
+    }
     public ActiveActorSource ActiveActorSource { get; set; } =
         ActiveActorSource.Target;
 

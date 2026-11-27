@@ -5,13 +5,14 @@ namespace Poser.Documents.Config;
 /// </summary>
 public class GizmoConfiguration
 {
-    /// <summary>The smallest and largest gizmo size the Gizmo size slider
-    /// offers. Kept in the setter too, because a size of 0 or less from an
-    /// edited settings file draws no handles or turns them inside out, and
-    /// the gizmo can then not be grabbed.</summary>
+    /// <summary>The smallest gizmo size the Gizmo size slider offers. The
+    /// setter keeps a size from an edited settings file at least this big,
+    /// because a size of 0 or less draws no handles or turns them inside
+    /// out, and the gizmo can then not be grabbed.</summary>
     public const float MinimumScale = 0.5f;
 
-    /// <inheritdoc cref="MinimumScale"/>
+    /// <summary>The largest gizmo size the Gizmo size slider offers. A larger
+    /// size from an edited file still works, so the setter doesn't limit it.</summary>
     public const float MaximumScale = 2f;
 
     private float _gizmoScale = 1.0f;
@@ -24,7 +25,7 @@ public class GizmoConfiguration
     public float GizmoScale
     {
         get => _gizmoScale;
-        set => _gizmoScale = float.IsFinite(value) ? Math.Clamp(value, MinimumScale, MaximumScale) : 1.0f;
+        set => _gizmoScale = Math.Max(value, MinimumScale);
     }
 
     /// <summary>Enables snapping while Ctrl is held. Rotation and linear changes

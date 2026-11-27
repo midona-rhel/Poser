@@ -33,12 +33,9 @@ namespace Poser.Game.Cameras;
 /// </summary>
 public sealed unsafe class VirtualCameraService : IVirtualCameraService
 {
-    // One home for the fly speed's numbers: the wheel's curve owns them and
-    // the camera's default is that curve's unit. These are the FLOOR the
-    // configured defaults fall back to, not the defaults themselves — see
-    // CameraSettings.
+    // The fly speed the free camera controller starts with before a camera
+    // is chosen; a new camera takes its speed from the settings.
     internal const float DefaultMovementSpeed = FreeCameraSpeed.Default;
-    internal const float DefaultMouseSensitivity = 0.1f;
 
     /// <summary>
     /// The user's camera settings, or shipped defaults when no configuration
