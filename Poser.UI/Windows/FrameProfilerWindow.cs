@@ -100,7 +100,7 @@ public sealed class FrameProfilerWindow : Window
     private void TurnOff()
     {
         _configuration.Config.UI.ShowFrameProfiler = false;
-        _configuration.ApplyChange();
+        _configuration.Save();
     }
 
     private void DrawBody(WindowFrameRect body)

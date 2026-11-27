@@ -104,7 +104,7 @@ public sealed class NativeHealthWindow : Window
     private void TurnOff()
     {
         _configuration.Config.UI.ShowNativeCheck = false;
-        _configuration.ApplyChange();
+        _configuration.Save();
     }
 
     /// <summary>Hooks are read live, so the report is taken again each second, not

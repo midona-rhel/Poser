@@ -32,7 +32,7 @@ public class EditorState
                 return;
             _tool = value;
             _configuration.Config.UI.LastTransformTool = value.ToString();
-            _configuration.ApplyChange();
+            _configuration.Save();
         }
     }
 
@@ -46,7 +46,7 @@ public class EditorState
                 return;
             skeleton.SkeletonViewMode = value;
             // Persist shortcut changes as well as changes from Settings.
-            _configuration.ApplyChange();
+            _configuration.Save();
         }
     }
 
@@ -59,7 +59,7 @@ public class EditorState
             if (skeleton.ShowSelectedBonesOnly == value)
                 return;
             skeleton.ShowSelectedBonesOnly = value;
-            _configuration.ApplyChange();
+            _configuration.Save();
         }
     }
 

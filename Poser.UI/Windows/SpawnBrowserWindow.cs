@@ -208,7 +208,7 @@ public sealed class SpawnBrowserWindow : Window
         {
             _vm.Frozen = !_vm.Frozen;
             _configuration.Config.SpawnFrozen = _vm.Frozen;
-            _configuration.ApplyChange();
+            _configuration.Save();
         };
     }
 
