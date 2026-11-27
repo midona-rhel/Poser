@@ -48,10 +48,11 @@ public sealed class CompanionEditor(
     }
 
     /// <summary>Puts <paramref name="attachment"/> in the owner's slot, or
-    /// empties it when null. Refused when the subject's owner is no longer
-    /// <paramref name="expectedOwner"/>. When the owner is removed and undo
-    /// brings it back, undo and redo change the slot of the owner that came
-    /// back; while the owner is gone they do nothing.</summary>
+    /// empties it when null. Refused when the subject or its companion slot is
+    /// gone, or its owner is no longer <paramref name="expectedOwner"/>. When
+    /// the owner is removed and undo brings it back, undo and redo of this
+    /// change act on the owner that came back; while the owner is gone they do
+    /// nothing.</summary>
     public Outcome Set(ActorId subject, ActorId expectedOwner, CompanionAttachment? attachment)
     {
         if (Read(subject) is not { } current || current.Owner != expectedOwner)
@@ -67,8 +68,8 @@ public sealed class CompanionEditor(
 
     private const string Gone = "The actor is no longer available.";
 
-    // The owner resolves here: the lookup from Track only returns an id whose
-    // actor is in the scene.
+    // Write is only called with the id the lookup returned, and the lookup
+    // returns an id only while that actor's game object can be found.
     private Outcome Write(ActorId owner, CompanionAttachment? attachment) =>
         spawns.SetCompanion(bindings.Resolve(owner).Value!, attachment)
             ? Outcome.Ok()
