@@ -239,8 +239,6 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<GameTransforms>();
-        services.AddSingleton<ParentingRuntime>();
-        services.AddSingleton<IParentingRuntime>(sp => sp.GetRequiredService<ParentingRuntime>());
         services.AddSingleton<TransformParenting>();
         services.AddSingleton<ITransformParenting>(sp => sp.GetRequiredService<TransformParenting>());
         services.AddSingleton<ITransformRuntimePort>(sp => new ParentRelativeTransforms(

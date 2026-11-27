@@ -54,7 +54,7 @@ public sealed partial class DebugBridge
                 id = entry.Id.ToString(), entry.Name, kind = entry.Id.Kind.ToString(),
                 position = entry.Id.Camera is { } camera
                     ? _bindings.Resolve(camera).Value?.WorldPosition
-                    : _parentingRuntime.Read(entry.Id)?.Position,
+                    : _parenting.ReadWorld(entry.Id)?.Position,
             }).ToArray(),
         };
     }

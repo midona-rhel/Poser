@@ -1,5 +1,6 @@
 using Poser.Application.Lifecycle;
 using Poser.Application.Transforms;
+using Poser.Game.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;

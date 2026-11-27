@@ -157,7 +157,7 @@ public sealed partial class DebugBridge
 
     private object WorldObjectState(SelectionId selection, WorldObjectReading value)
     {
-        var transform = _parentingRuntime.Read(selection);
+        var transform = _parenting.ReadWorld(selection);
         return new
         {
             accepted = true,
