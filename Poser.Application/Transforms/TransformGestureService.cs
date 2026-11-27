@@ -102,16 +102,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             return RecoveryRequired(pending);
         if (_active != null)
             return GestureResult.Fail("A transform gesture is already active.");
-        if (!Enum.IsDefined(command.GroupScale))
-            return GestureResult.Fail("The group scale mode is invalid.");
-        if (command.IsGroupTransform && (command.Space != TransformSpace.World
-            || command.PivotMode != PivotMode.Centroid
-            || command.Targets.Any(target => target.Kind == TransformTargetKind.Bone)))
-            return GestureResult.Fail("Entity group gestures require a world-space centroid.");
-        if (command.Targets.Count == 0)
-            return GestureResult.Fail("A transform gesture requires a target.");
-        if (!IsHomogeneous(command.Targets))
-            return GestureResult.Fail("Transform targets must be homogeneous.");
         if (command.PivotMode == PivotMode.Custom &&
             (command.CustomPivot is not { } supplied ||
              !TransformMath.IsFinite(supplied)))
@@ -126,14 +116,15 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         // each frame's result into the next frame, which no gesture here may do.
         var pivot = command.PivotMode switch
         {
-            PivotMode.PerTarget => captured[0].Transform.Position,
-            PivotMode.Primary => captured[0].Transform.Position,
             PivotMode.Centroid => Centroid(captured),
             PivotMode.Custom => command.CustomPivot!.Value,
             _ => captured[0].Transform.Position,
         };
 
         var id = TransformGestureId.New();
+        // A group drag was admitted by GroupTransformCoordinator.Admit in the
+        // same call, which checked the group's stored frame, its members and
+        // their locks; the drag only keeps that frame.
         GroupTransformSnapshot? groupBefore = null;
         if (command.IsGroupTransform)
         {
@@ -142,13 +133,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
             if (groupBefore == null)
                 return GestureResult.Fail(
                     "The group transform frame is not initialized.");
-            var capturedMap = captured.ToDictionary(state => state.Target, state => state.Transform);
-            if (!GroupTransformReadModel.TryRead(groupBefore, capturedMap,
-                    command.GroupScale, out _, out var refusal))
-                return GestureResult.Fail(refusal!);
-            foreach (var target in command.Targets)
-                if (_groupSource?.Refusal(target) is { } capability)
-                    return GestureResult.Fail(capability);
         }
         _active = new ActiveGestureState(
             id,
@@ -286,18 +270,9 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
                     active.Before[0].Transform.Rotation,
                     baseline.Transform.Rotation);
             }
-            var rotatePosition = active.Command.PivotMode switch
-            {
-                PivotMode.PerTarget => false,
-                PivotMode.Primary => index != 0,
-                // The centre point belongs to no target, so every target swings
-                // around it, the first one too. Leaving the first one out would
-                // hold it in place and swing the rest around it, which is what
-                // Primary mode does and what the centre point is there to avoid.
-                PivotMode.Centroid => true,
-                PivotMode.Custom => true,
-                _ => false,
-            };
+            // Around the centre point or a custom point, every target swings,
+            // the first one too; around its own position a target only turns.
+            var rotatePosition = active.Command.PivotMode != PivotMode.PerTarget;
             var pivot = active.Command.PivotMode == PivotMode.PerTarget
                 ? baseline.Transform.Position
                 : active.Pivot;
@@ -669,20 +644,6 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         {
             Recovery = recovery,
         };
-
-    private static bool IsHomogeneous(
-        IReadOnlyList<TransformTargetId> targets)
-    {
-        // Bones must all belong to one actor, but may come from different
-        // skeletons of it, such as the body and a weapon. Other kinds of entity
-        // may be mixed, because their transforms are all in world space.
-        var first = targets[0];
-        if (targets.Any(target => target.Kind == TransformTargetKind.Bone))
-            return targets.All(target =>
-                target.Kind == TransformTargetKind.Bone
-                && target.ActorLineage == first.ActorLineage);
-        return true;
-    }
 
     private static TransformDelta Filter(
         TransformDelta delta,
