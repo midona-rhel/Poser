@@ -23,6 +23,7 @@ public sealed class CharacterFileSession(
 
     public McdfProgress? Progress => mcdf.Progress;
     public OperationReceipt? Receipt => mcdf.Receipt;
+    public Guid? Started { get; private set; }
     public bool Busy => mcdf.Busy;
     public void Cancel() => mcdf.Cancel();
 
@@ -35,7 +36,7 @@ public sealed class CharacterFileSession(
     }
 
     public IntegrationResult Export(ActorId actor, string path, string description) =>
-        mcdf.BeginExport(actor, path, description);
+        Remember(mcdf.BeginExport(actor, path, description));
 
     public IntegrationResult Reset(ActorId actor) =>
         history.Run(actor, "Reset MCDF", () => mcdf.Reset(actor));
@@ -86,8 +87,16 @@ public sealed class CharacterFileSession(
     public void CancelPendingSpawn() => _pending = null;
 
     private IntegrationResult ImportPackage(ActorId actor, string path) =>
-        history.Run(actor, "Import character file",
-            () => mcdf.BeginImport(actor, path));
+        Remember(history.Run(actor, "Import character file",
+            () => mcdf.BeginImport(actor, path)));
+
+    /// <summary>A job that started now holds the pending receipt.</summary>
+    private IntegrationResult Remember(IntegrationResult started)
+    {
+        if (started.Success && mcdf.Receipt is { State: OperationReceiptState.Pending } pending)
+            Started = pending.OperationId;
+        return started;
+    }
 
     private IntegrationResult ApplyAppearance(ActorId actor, string document)
     {
