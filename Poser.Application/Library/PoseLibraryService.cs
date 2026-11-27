@@ -189,9 +189,10 @@ public sealed class PoseLibraryService : IPoseLibraryService
                     return;
                 }
 
-                // A request made before this pass read its token cancelled
-                // that token too, and found nothing running to queue behind:
-                // scan again for it.
+                // A request made after this pass's token was created, but
+                // before this pass read it, cancelled the token, and its
+                // queued flag was cleared at the top of the pass. Scan again
+                // for it.
                 if (_scanQueued || token.IsCancellationRequested)
                 {
                     _scanCancellation?.Dispose();
