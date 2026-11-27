@@ -115,6 +115,8 @@ public sealed partial class PoseLibraryPane
 
     private readonly SelectionSession _selection;
     private readonly ICharacterFiles _characterFiles;
+    /// <summary>The character file import started from the library, until it ends.</summary>
+    private Guid? _characterFileImport;
 
     private readonly SceneSession _scene;
 
