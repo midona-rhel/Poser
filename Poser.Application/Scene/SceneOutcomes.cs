@@ -51,16 +51,6 @@ public enum ScenePhase
     Cancelled,
 }
 
-/// <summary>
-/// What sealing left behind: the per-actor notes, and every TEMPORARY package
-/// it created that the writer still has to stream into the container. The
-/// caller deletes them once the write is done — deleting them here would
-/// delete the bytes the save is about to store.
-/// </summary>
-public sealed record SceneSealOutcome(
-    IReadOnlyList<string> Notes,
-    IReadOnlyList<string> TemporaryFiles);
-
 /// <summary>One entity's typed restore outcome. A missing parent or
 /// resource is a named, explained refusal here — never a silent detach or a
 /// silently skipped row.
