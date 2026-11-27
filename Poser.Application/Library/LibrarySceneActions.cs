@@ -10,7 +10,7 @@ public interface ILibrarySceneActions
 {
     Outcome LoadScene(string path, ObjectPlacementMode placement);
     Outcome SpawnEntry(string path, PoseLibraryEntryKind kind, ObjectPlacementMode placement);
-    Outcome SpawnPose(string path, PoseImportOptions options);
+    Outcome SpawnPose(PoseFile pose, PoseImportOptions options, string description);
 }
 
 /// <summary>
@@ -43,12 +43,14 @@ public sealed class LibrarySceneActions(
         return scenes.BeginLoad(path, options);
     }
 
-    public Outcome SpawnPose(string path, PoseImportOptions options)
+    /// <summary>Spawns a new actor and imports the pose onto it once the
+    /// actor is ready.</summary>
+    public Outcome SpawnPose(PoseFile pose, PoseImportOptions options, string description)
     {
         var result = creation.CreateActor(new());
         if (result.Handle is not { } actor)
             return Outcome.Fail(result.Detail ?? "The actor could not be spawned.");
-        pending.ApplyPoseWhenReady(actor, path, options.Clone());
+        pending.ApplyPoseWhenReady(actor, pose, options, description);
         return Outcome.Ok();
     }
 }

@@ -12,29 +12,24 @@ using Poser.Documents.Files.Converters;
 namespace Poser.Documents.Files;
 
 /// <summary>
-/// Brio-compatible pose file format (.pose).
-/// Matches Brio's JSON structure exactly for full compatibility.
+/// A .pose file. It has the same JSON layout as Brio's .pose files, so a pose
+/// saved by either tool loads in the other.
 /// </summary>
 [Serializable]
 public class PoseFile
 {
     public string TypeName { get; set; } = "Brio Pose";
 
-    /// <summary>Brio's current document version, its default exactly
-    /// (Brio Files/PoseFile.cs:140). Nothing in Poser branches on it — the
-    /// value is emitted so a fresh Poser export carries the same header a
-    /// fresh Brio export does instead of leaning on Brio's read-side default.
-    /// A file authored elsewhere keeps whatever version it arrived with.
+    /// <summary>The file format version. Poser writes Brio's current version
+    /// (Brio Files/PoseFile.cs:140) so its files look like Brio's own, and
+    /// never reads it. A file written elsewhere keeps the version it had.
     /// </summary>
     public int FileVersion { get; set; } = CurrentFileVersion;
 
-    /// <summary>The game build the capture ran on, Brio's wire name and its
-    /// informational semantics (Brio stamps
-    /// <c>Framework.Instance()-&gt;GameVersionString</c>, PoseFile.cs:148).
-    /// Neither Poser nor Brio uses it while importing; it records which
-    /// build it came from. Empty is the honest answer when no build is
-    /// resolvable, which is why the default is not a guess — the export path
-    /// stamps it by the runtime capture service.</summary>
+    /// <summary>The game version the pose was saved on, as Brio writes it
+    /// (<c>Framework.Instance()-&gt;GameVersionString</c>, Brio
+    /// PoseFile.cs:148). Only a record: neither Poser nor Brio reads it when
+    /// importing. Empty when the game version could not be read.</summary>
     public string GameVersion { get; set; } = string.Empty;
 
     /// <summary>Brio's <c>CurrentVersion</c> for a .pose document.</summary>
@@ -72,16 +67,14 @@ public class PoseFile
     public int? FaceID { get; set; }
 
     /// <summary>
-    /// Where the capture ran, when the writer recorded one — the same pair a
-    /// scene document carries, and for the same reason: the NAME is persisted
-    /// beside the id because the listings that read it run with no game data
-    /// to resolve an id with (see <c>docs/features/scenes.md</c>).
+    /// Where the pose was saved, when the writer recorded it, like a scene
+    /// file. The name is saved next to the id because the library lists files
+    /// without the game data that would turn an id into a name (see
+    /// <c>docs/features/scenes.md</c>).
     ///
-    /// <para>Both are OMITTED when unset, so a document with no place is
-    /// byte-identical to one written before these members existed and Poser's
-    /// ordinary exports keep exactly the Brio-compatible member set they had.
-    /// ABSENT is the only way a file says "no place was recorded"; a listing
-    /// then groups it by its day alone and infers nothing.</para>
+    /// <para>Both are left out of the file when not set, so such a file has
+    /// only the members Brio knows. A file without them is listed by its date
+    /// alone.</para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public uint TerritoryId { get; set; }
@@ -105,30 +98,27 @@ public class PoseFile
     public Vector3 Scale { get; set; }
 
     /// <summary>
-    /// Every root member this model does not name, carried verbatim.
-    /// System.Text.Json skips unmapped members by default, so without this any
-    /// read-modify-write of a document Poser did not author would silently
-    /// drop what Brio (or a newer Poser) writes and consumes at that root —
-    /// whatever the format gains next.
-    /// Brio's own metadata edit is careful for the same reason: it edits
-    /// through the full-fidelity document
-    /// (Brio Services/Library/Sources/FileSource.cs:341).
+    /// False for a pose read from an old <c>.cmp</c> file. Those files store
+    /// only rotations and scales, so an import of one never writes positions.
+    /// Not saved in the file.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasPositions { get; set; } = true;
+
+    /// <summary>
+    /// The top-level members of the file that this class has no property for,
+    /// kept as they were read. Without them, editing a file's author or tags
+    /// would drop whatever Brio or a newer Poser wrote there. Brio keeps them
+    /// for the same reason (Brio Services/Library/Sources/FileSource.cs:341).
     ///
-    /// <para>This is a preservation seam, not a data model: nothing in Poser
-    /// reads or writes into it, so it can never shadow a named member, and a
-    /// member that later gains a property here simply stops arriving. Carried
-    /// members are re-emitted after the named ones. It adds no unbounded
-    /// surface — only a read that already passed the codec's file-size and
-    /// JSON-depth bounds (<see cref="PoseFileLimits"/>) can populate it, and
-    /// the write path re-decodes and re-bounds the serialized bytes before
-    /// any file is replaced.</para>
+    /// <para>Nothing in Poser reads or changes these members; they are written
+    /// back after the named ones. They come only from a file that passed the
+    /// size and depth limits in <see cref="PoseFileLimits"/>.</para>
     /// </summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? UnmappedMembers { get; set; }
 
-    /// <summary>
-    /// Bone transform data matching Brio's format.
-    /// </summary>
+    /// <summary>One bone's position, rotation and scale, as Brio writes them.</summary>
     [Serializable]
     public class BoneData
     {
@@ -148,8 +138,6 @@ public class PoseFile
             Rotation = Quaternion.Identity,
             Scale = Vector3.Zero
         };
-
-
     }
 
     // Accepts and emits Brio-compatible wire conventions: invariant comma-space
@@ -173,9 +161,10 @@ public class PoseFile
     };
 
     /// <summary>
-    /// <see cref="JsonOptions"/> for metadata probes: the same contract, but
-    /// <see cref="Base64Image"/> reads as a one-character presence marker so
-    /// indexing a library never materializes every thumbnail string.
+    /// <see cref="JsonOptions"/> for reading a file's details when it is
+    /// selected in the library. The picture in <see cref="Base64Image"/> is
+    /// read as "*" or an empty string, which says whether there is one without
+    /// keeping it in memory.
     /// </summary>
     internal static readonly JsonSerializerOptions MetadataJsonOptions = new(JsonOptions)
     {
@@ -210,28 +199,43 @@ public class PoseFile
     }
 
     /// <summary>
-    /// Lossy compatibility load. Returns null for every typed read, size,
-    /// JSON, or validation failure; new storage workflows use
-    /// <see cref="AtomicPoseFileStore.Read"/>.
+    /// Reads a pose file a person picked to import: a <c>.pose</c> file, or an
+    /// old CMTool <c>.cmp</c> file converted to the same shape. Every pose import
+    /// from a file reads it here once, and the caller passes the result on, so
+    /// a broken file is reported with the reason this read gives.
+    /// Old Anamnesis bone names are changed to the game's names.
     /// </summary>
-    public static PoseFile? Load(string path)
+    public static PoseFileReadOutcome Read(string path)
     {
-        // Intentionally lossy compatibility wrapper. New storage callers use
-        // AtomicPoseFileStore.Read so the typed failure and path survive.
-        return AtomicPoseFileStore.Default.Read(path).Pose;
+        if (!path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase))
+        {
+            var read = AtomicPoseFileStore.Default.Read(path);
+            read.Pose?.SanitizeBoneNames();
+            return read;
+        }
+        try
+        {
+            var pose = CMToolPoseFile.Load(path).Upgrade();
+            pose.HasPositions = false;
+            return PoseFileReadOutcome.Success(pose);
+        }
+        catch (Exception ex)
+        {
+            return PoseFileReadOutcome.Failed(PoseFileStoreFailure.Create(
+                PoseFileStoreFailureKind.Read,
+                $"Reading the .cmp pose file failed: {ex.Message}",
+                path));
+        }
     }
 
     /// <summary>
-    /// Lossy compatibility parse. Returns null for every typed size, JSON, or
-    /// validation failure; new storage workflows use
-    /// <see cref="AtomicPoseFileStore.Parse"/>.
+    /// Reads a pose from JSON text, or returns null when the text is not a
+    /// valid pose. Used for a pose pasted from the clipboard and for the
+    /// built-in A-pose and T-pose; <see cref="AtomicPoseFileStore.Parse"/>
+    /// also says why text was refused.
     /// </summary>
-    public static PoseFile? FromJson(string json)
-    {
-        // Intentionally lossy compatibility wrapper for clipboard/rest-pose
-        // callers that predate the typed ordinary-pose codec outcome.
-        return AtomicPoseFileStore.Default.Parse(json).Pose;
-    }
+    public static PoseFile? FromJson(string json) =>
+        AtomicPoseFileStore.Default.Parse(json).Pose;
 
     /// <summary>
     /// Converts Anamnesis bone names to game bone names.

@@ -11,6 +11,7 @@ using Poser.Game.Posing;
 
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
+using Poser.Domain.Posing;
 using Poser.Domain.Actors;
 using Poser.Documents.Files;
 using Poser.Application.Lifecycle;
@@ -625,7 +626,7 @@ public sealed unsafe class PosePreviewService : IDisposable, IPosePreview, IPose
 
         var result = request.Pose is { } pose
             ? _poses.ImportPose(previewId, pose, request.Options, "Preview pose")
-            : _poses.ImportPose(previewId, request.Path!, request.Options);
+            : PoseEditResult.Fail(request.ReadFailure ?? "The pose file could not be read.");
         if (!result.Success)
             _log.Debug(
                 $"Pose preview could not show '{request.Key}': {result.Detail}");
