@@ -34,16 +34,16 @@ internal sealed class CharacterFileNotices(ICharacterFiles files, UserNotices no
             || receipt.OperationId == _seen)
             return;
         _seen = receipt.OperationId;
-        var job = files.Progress;
-        var reached = _lastRunning is { } last && last.FileName == job?.FileName && last.Target == job?.Target
+        var job = files.Progress!;
+        var reached = _lastRunning is { } last && last.FileName == job.FileName && last.Target == job.Target
             ? last : null;
         _lastRunning = null;
-        string action = $"{(job?.Kind == McdfOperationKind.Export ? "Export" : "Apply")} {job?.FileName}";
+        string action = $"{(job.Kind == McdfOperationKind.Export ? "Export" : "Apply")} {job.FileName}";
         string line = $"[MCDF] {action}: {receipt.State}"
             + (reached is { } step
                 ? $", last step {step.Phase}, {step.FilesDone}/{step.FilesTotal} files, "
-                    + $"{step.BytesDone / 1048576}/{step.BytesTotal / 1048576} MB"
-                : $", {job?.FilesTotal} files, {job?.BytesTotal / 1048576} MB")
+                    + $"{Mb(step.BytesDone)}/{Mb(step.BytesTotal)} MB"
+                : $", {job.FilesTotal} files, {Mb(job.BytesTotal)} MB")
             + (receipt.OperationId == files.Started ? "" : " (started by a scene or undo)")
             + (string.IsNullOrWhiteSpace(receipt.Detail) ? "" : $". {receipt.Detail}");
         if (receipt.State == OperationReceiptState.Failed) log.Warning(line); else log.Information(line);
@@ -52,4 +52,7 @@ internal sealed class CharacterFileNotices(ICharacterFiles files, UserNotices no
             return;
         notices.Report(new Outcome(false, receipt.Detail), action);
     }
+
+    private static string Mb(long bytes) =>
+        (bytes / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
 }
