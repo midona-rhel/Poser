@@ -1,20 +1,23 @@
 using System.Numerics;
 using Poser.Application.Integration;
+using Poser.Application.Posing;
 using Poser.Application.Presentation;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
-using Poser.Game.Services;
 using Poser.Game.Presentation;
 
 namespace Poser.Game.Journal;
 
-/// <summary>Actor-facing custom colour commands; ownership stays in presentation.</summary>
+/// <summary>The custom colour commands in the Appearance tab, each as one undo
+/// step. ActorPresentationSession holds the colours Poser set. Undo also
+/// reaches the actor after it was removed and brought back by undo.</summary>
 public sealed class AppearanceColorSession(
     ActorPresentationSession presentation, IntegrationSelectors integration,
-    ValueJournal journal, TransformGestureService runner, IEntityBindings bindings) : IAppearanceColorControl
+    ValueJournal journal, TransformGestureService runner,
+    IActorReplacements replacements) : IAppearanceColorControl
 {
     public IntegrationValue<IReadOnlyDictionary<AppearanceColorChannel, Vector4>> Read(ActorId actor) => presentation.ReadColors(actor);
     public Vector4? Override(ActorId actor, AppearanceColorChannel channel) =>
@@ -46,10 +49,12 @@ public sealed class AppearanceColorSession(
     private Outcome Change(ActorId actor, AppearanceColorChannel channel, Vector4? value)
     {
         Outcome result = new(false, "The colour change did not run.");
+        var now = replacements.Track(actor);
         var guarded = runner.RunValueTransition(() => result = journal.Set<Vector4?>(
             (actor, channel), value.HasValue ? $"Set custom {channel} colour" : $"Reset custom {channel} colour",
-            () => Override(actor, channel), next => Put(actor, channel, next), value,
-            alive: () => bindings.Resolve(actor).Success));
+            () => Override(actor, channel),
+            next => now() is { } id ? Put(id, channel, next) : Outcome.Fail("The actor is no longer available."),
+            value, alive: () => now() is not null));
         return guarded.Success ? result : guarded.Outcome;
     }
 }
