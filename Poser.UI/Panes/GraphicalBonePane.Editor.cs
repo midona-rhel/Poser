@@ -126,10 +126,9 @@ public sealed partial class GraphicalBonePane
     private bool SaveEditor()
     {
         if (_editDefault || _draft is not { } draft) return false;
-        _editError = draft.Save(_configuration.Config.Skeleton.BoneMapPresets, out var saved);
+        _editError = draft.Save(_configuration, out var saved);
         if (_editError != null) return false;
         _selectedPresets[(int)draft.Kind] = saved;
-        _configuration.Save();
         LoadEditorPreset(_configuration.Config.Skeleton.BoneMapPresets.First(item => item.Id == saved));
         return true;
     }
@@ -138,17 +137,12 @@ public sealed partial class GraphicalBonePane
     {
         if (_draft is not { } current) return;
         var store = _configuration.Config.Skeleton.BoneMapPresets;
-        var created = new BoneMapPresetDraft(current.Kind, _editorDefaults,
-            initial: copy ? current.Points : _editorDefaults)
-        {
-            Name = BoneMapPresetDraft.UniqueName(store, current.Kind,
-                copy ? $"{current.Name} copy" : "New preset"),
-            Background = copy ? current.Background : null,
-            Template = current.Template,
-        };
-        _editError = created.Save(store, out var id);
+        var created = copy
+            ? BoneMapPresetDraft.CopyOf(current.Kind, _editorDefaults, store,
+                current.Name, current.Points, current.Background, current.Template)
+            : BoneMapPresetDraft.New(current.Kind, _editorDefaults, store, current.Template);
+        _editError = created.Save(_configuration, out var id);
         if (_editError != null) return;
-        _configuration.Save();
         LoadEditorPreset(store.First(item => item.Id == id));
     }
 
@@ -299,12 +293,9 @@ public sealed partial class GraphicalBonePane
         if (Button("Delete", style: style with { Width = UiWidth.Fixed(64f) }, disabled: _editDefault,
             id: "delete-map-preset", help: "Delete this custom map preset"))
         {
-            _editError = draft.Delete(_configuration.Config.Skeleton.BoneMapPresets);
+            _editError = draft.Delete(_configuration);
             if (_editError == null)
-            {
-                _configuration.Save();
                 LoadEditorPreset(null);
-            }
         }
     }
 

@@ -2,10 +2,16 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Scene;
 using Poser.Documents.Config;
+using Poser.Application.Settings;
 
 namespace Poser.Application.Presentation;
 
-/// <summary>Detached edit transaction. The caller owns persistence after a successful commit.</summary>
+/// <summary>
+/// One bone map preset being edited: a Body or Face map's points, name,
+/// background and template. Nothing changes in the saved presets until
+/// <see cref="Save"/> or <see cref="Delete"/>, which also save the settings
+/// file. Built-in templates can only be copied.
+/// </summary>
 public sealed class BoneMapPresetDraft
 {
     private readonly List<BoneMapPoint> _initial;
@@ -65,6 +71,29 @@ public sealed class BoneMapPresetDraft
         }
     }
 
+    /// <summary>A new, unsaved preset with the map's default points, named
+    /// "New preset" or the first free name after it.</summary>
+    public static BoneMapPresetDraft New(
+        BoneMapKind kind, IEnumerable<BoneMapPoint> defaults, IEnumerable<BoneMapPreset> store,
+        string? template) =>
+        new(kind, defaults)
+        {
+            Name = UniqueName(store, kind, "New preset"),
+            Template = template,
+        };
+
+    /// <summary>A new, unsaved preset holding a copy of <paramref name="points"/>,
+    /// named "name copy" or the first free name after it.</summary>
+    public static BoneMapPresetDraft CopyOf(
+        BoneMapKind kind, IEnumerable<BoneMapPoint> defaults, IEnumerable<BoneMapPreset> store,
+        string name, IEnumerable<BoneMapPoint> points, string? background, string? template) =>
+        new(kind, defaults, initial: points)
+        {
+            Name = UniqueName(store, kind, name + " copy"),
+            Background = background,
+            Template = template,
+        };
+
     public static string UniqueName(IEnumerable<BoneMapPreset> store, BoneMapKind kind, string preferred)
     {
         var names = store.Where(item => item.Kind == kind).Select(item => item.Name)
@@ -103,7 +132,9 @@ public sealed class BoneMapPresetDraft
                 { center = common.X; break; }
         }
         float x = 2f * center - source.X;
-        // Clamping would silently destroy the requested symmetry. Let the user move the source instead.
+        // A mirror point outside the map is refused rather than moved onto
+        // the edge, which would no longer mirror the source; move the source
+        // point instead.
         return float.IsFinite(x) && x is >= 0f and <= 1f
             ? new(PortableBoneId.From(mirror.Id), section, x, source.Y) : null;
     }
@@ -137,8 +168,11 @@ public sealed class BoneMapPresetDraft
         if (source != null && at >= 0) _points[at] = source;
     }
 
-    public string? Save(IList<BoneMapPreset> store, out Guid savedId)
+    /// <summary>Saves the preset into the settings and writes the settings
+    /// file. Returns why it was refused, or null when it was saved.</summary>
+    public string? Save(ConfigurationService settings, out Guid savedId)
     {
+        var store = settings.Config.Skeleton.BoneMapPresets;
         savedId = Guid.Empty;
         if (_sourceId is { } source && BoneMapTemplates.IsBuiltIn(source)) return "Built-in templates are locked. Create a copy first.";
         string name = Name.Trim();
@@ -165,14 +199,18 @@ public sealed class BoneMapPresetDraft
         if (existing == null) store.Add(saved);
         else store[store.IndexOf(existing)] = saved;
         savedId = saved.Id;
+        settings.Save();
         return null;
     }
 
     public static BoneMapPreset Copy(BoneMapPreset preset) => new()
         { Id = preset.Id, Name = preset.Name, Kind = preset.Kind, Background = preset.Background, Template = preset.Template, Points = preset.Points.ToList() };
 
-    public string? Delete(IList<BoneMapPreset> store)
+    /// <summary>Deletes the saved preset this draft was opened from and
+    /// writes the settings file. Returns why it was refused, or null.</summary>
+    public string? Delete(ConfigurationService settings)
     {
+        var store = settings.Config.Skeleton.BoneMapPresets;
         if (_sourceId is { } source && BoneMapTemplates.IsBuiltIn(source)) return "Built-in templates cannot be deleted.";
         if (_sourceSnapshot is not { } snapshot)
             return "Only saved custom presets can be deleted.";
@@ -181,12 +219,14 @@ public sealed class BoneMapPresetDraft
             || !existing.Points.SequenceEqual(snapshot.Points))
             return "This preset changed in another window. Reopen it before deleting.";
         store.Remove(existing);
+        settings.Save();
         return null;
     }
 
     public static IReadOnlyDictionary<PortableBoneId, BoneDescriptor> Available(ActorDescriptor actor)
     {
-        // Duplicate portable keys are ambiguous, never a license to pick the first native index.
+        // A bone name that appears twice on the actor can't be told apart,
+        // so neither copy is offered.
         return actor.Skeletons.SelectMany(skeleton => skeleton.Bones)
             .GroupBy(bone => PortableBoneId.From(bone.Id))
             .Where(group => group.Count() == 1)
