@@ -7,34 +7,27 @@ using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 
-namespace Poser.Application.Presentation;
+namespace Poser.Game.Presentation;
 
 /// <summary>
-/// The one authority for Poser-owned runtime presentation — opacity,
-/// whole-model tints, and the granular wetness override — keyed by
-/// exact-generation <see cref="ActorId"/>.
+/// Remembers the opacity, model tints, wetness and shader colours Poser set on
+/// each actor, and puts the actor's own values back on reset.
 ///
-/// Ownership is PER FIELD: the first successful edit of a field captures
-/// that field's incoming value, and only captured fields are ever
-/// restored. Restoration is retryable — a field whose native restore
-/// fails stays owned so the next reset tries again; an actor that no
-/// longer resolves is dropped without writes. A draw-object replacement
-/// never re-captures: the capture is the actor's incoming state, not a
-/// replacement's temporary defaults.
+/// Each value is remembered on its own. The first change to a value saves the
+/// actor's value from before, and reset writes only the saved ones back. A
+/// value whose write-back fails stays remembered, so the next reset tries
+/// again. An actor that is gone is forgotten without any write. A redraw
+/// never saves again: the saved value is the actor's own, not the new body's
+/// temporary default.
 ///
-/// Presentation state is session-only: not pose data, not a pose-file
-/// field, not a named layer, not a transform gesture, and never a second
-/// undo journal.
+/// These values last for the GPose session only and are not part of the pose
+/// or a pose file. This class records no undo steps; ActorValueSession and
+/// AppearanceColorSession do.
 /// </summary>
-public sealed partial class ActorPresentationSession
+public sealed partial class ActorPresentationSession(PresentationRuntimePort port)
 {
-    private readonly IPresentationRuntimePort _port;
+    private readonly PresentationRuntimePort _port = port;
     private readonly Dictionary<ActorId, PresentationOverrides> _overrides = new();
-
-    public ActorPresentationSession(IPresentationRuntimePort port)
-    {
-        _port = port;
-    }
 
     public bool IsSupported(ActorId actor) => _port.IsSupported(actor);
 
@@ -107,10 +100,8 @@ public sealed partial class ActorPresentationSession
     // ── Wetness ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Enables the override at the actor's CURRENT wetness — the complete
-    /// three-float state is captured before the first write, exactly as
-    /// the reference captures on enable — or disables it by restoring
-    /// that complete state.
+    /// Turning wetness on holds the actor's current three wetness values and
+    /// saves them first; turning it off writes the saved values back.
     /// </summary>
     public Outcome SetWetnessEnabled(ActorId actor, bool enabled)
     {
@@ -146,7 +137,7 @@ public sealed partial class ActorPresentationSession
         return Outcome.Ok();
     }
 
-    /// <summary>Updates the enabled override's values.</summary>
+    /// <summary>Changes the held wetness values. Wetness must be turned on first.</summary>
     public Outcome SetWetness(ActorId actor, WetnessState state)
     {
         if (OverridesFor(actor).Wetness == null)
@@ -160,15 +151,16 @@ public sealed partial class ActorPresentationSession
 
     // ── Restoration ───────────────────────────────────────────────────
 
-    /// <summary>Replays a reset's saved intent using the original captures.
-    /// Partial failure retains recovery evidence and must not commit history.</summary>
+    /// <summary>Resets the actor, then sets the values in <paramref name="requested"/>
+    /// again while keeping the actor's original saved values. Undo of a reset
+    /// uses this. If any value fails, the result says so and undo stays where it was.</summary>
     public Outcome RestoreOverrides(ActorId actor, PresentationOverrides? requested)
     {
         var reset = ResetActor(actor);
         if (!reset.Success || requested is null || !requested.HasAny) return reset;
         if (!_port.IsSupported(actor)) return Outcome.Fail("The actor is no longer available.");
-        // A failed replay still needs the original baseline, including channels
-        // already individually released before the reset. Never recapture a redraw.
+        // Keep the original saved values, including colours that were already
+        // cleared one by one before the reset; the body after a redraw is not the actor's own.
         _overrides[actor] = requested with
         {
             Opacity = null, Tints = new Dictionary<PresentationModel, Vector4>(),
@@ -192,10 +184,9 @@ public sealed partial class ActorPresentationSession
     }
 
     /// <summary>
-    /// Restores every owned field for one actor and forgets it. Each
-    /// field is released ONLY when its own restore succeeded; failures
-    /// stay owned for the next attempt. An unresolvable actor is dropped
-    /// without writes.
+    /// Writes back every saved value of one actor. A value is forgotten only
+    /// when its write-back worked; the others stay for the next reset. An actor
+    /// that is gone is forgotten without any write.
     /// </summary>
     public Outcome ResetActor(ActorId actor)
     {
@@ -208,7 +199,7 @@ public sealed partial class ActorPresentationSession
 
         var failures = new List<string>();
         var remaining = owned;
-        bool actorGone = !_port.IsSupported(actor) && _port.Read(actor) == null;
+        bool actorGone = !_port.IsSupported(actor);
 
         bool Try(Outcome result)
         {
@@ -268,8 +259,8 @@ public sealed partial class ActorPresentationSession
             : Outcome.Fail(string.Join("; ", failures));
     }
 
-    /// <summary>Restores every owned actor. Used by GPose exit, plugin
-    /// disposal, and Reset All.</summary>
+    /// <summary>Resets every actor with saved values. Leaving GPose and
+    /// unloading Poser use this.</summary>
     public Outcome ResetAll()
     {
         var failures = new List<string>();
@@ -285,10 +276,9 @@ public sealed partial class ActorPresentationSession
     }
 
     /// <summary>
-    /// Drops state for actors the scene no longer contains at that exact
-    /// generation. A replaced actor's old generation is released without
-    /// touching the new one — its capture is never written into the
-    /// replacement. A still-resolvable departed actor is restored first.
+    /// Resets each actor that left the scene. An actor that still exists gets
+    /// its values back; one that is gone is forgotten, and its saved values are
+    /// never written into the actor that took its place.
     /// </summary>
     public void Reconcile(SceneSnapshot snapshot)
     {
