@@ -67,6 +67,8 @@ public sealed partial class AppearancePane
         {
             if (why is not null && _appearanceAccess.CanEdit)
                 form.Status(why);
+            if (_customize.LoadFailure is { } failure)
+                form.Status(failure);
             BodyRow(form, actor, state, live, why);
             form.PairRows();
             form.Slider("Height", state?.Value(CustomizeKey.Height) ?? 0, 0f, 100f,

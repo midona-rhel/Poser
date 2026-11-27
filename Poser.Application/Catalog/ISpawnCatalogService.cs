@@ -10,4 +10,9 @@ namespace Poser.Application.Catalog;
 public interface ISpawnCatalogService
 {
     IReadOnlyList<SpawnCatalogEntry> Entries { get; }
+    /// <summary>Why reading the list from the game data failed, shown in the
+    /// picker; null otherwise.</summary>
+    string? LoadFailure { get; }
+    /// <summary>Reads the list again after a failure; called when the picker opens.</summary>
+    void Retry();
 }
