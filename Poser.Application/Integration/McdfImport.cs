@@ -247,7 +247,10 @@ internal sealed class McdfImport(
             if (priorRetained)
             {
                 Step(McdfPhase.Preparing, filesTotal, bytesTotal);
-                var release = await teardown.ReleaseRetainedDirectory(actor, cancellation);
+                // Removing the previous MCDF redraws the actor in its own look.
+                // Like the apply below, that wait has no limit; Cancel ends it.
+                var release = await teardown.ReleaseRetainedDirectory(
+                    actor, cancellation, Timeout.InfiniteTimeSpan);
                 if (release != null)
                 {
                     await FailAsync(

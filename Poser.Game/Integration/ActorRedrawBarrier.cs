@@ -85,6 +85,7 @@ internal sealed class ActorRedrawBarrier(IActorRedrawRuntime runtime) : IDisposa
         catch (OperationCanceledException)
         {
             return IntegrationResult.Fail(cancellation.IsCancellationRequested || _lifetime.IsCancellationRequested
+                || timeout == Timeout.InfiniteTimeSpan
                 ? "The redraw operation was cancelled."
                 : $"The actor did not finish redrawing within {timeout.TotalSeconds:0} seconds.");
         }
