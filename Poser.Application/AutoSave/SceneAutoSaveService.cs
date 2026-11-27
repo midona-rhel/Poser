@@ -134,10 +134,10 @@ public sealed class SceneAutoSaveService : IDisposable
     }
 
     /// <summary>
-    /// Starts one capture on the framework thread and passes the completed
-    /// document to the writer. If a write, scene operation, or shared pose-cache
-    /// refresh is already running, this autosave is reported as skipped rather
-    /// than queued.
+    /// Starts one capture on the game's main thread and passes the finished
+    /// scene to the writer. If the last snapshot is still being written, a scene
+    /// save or load is running, or a pose import is being applied, this snapshot
+    /// is reported as skipped, not queued; the next comes one interval later.
     /// </summary>
     internal void SnapshotNow()
     {
