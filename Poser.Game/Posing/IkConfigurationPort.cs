@@ -5,7 +5,6 @@ using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
-using Poser.Domain.Posing.BoneInfo;
 using Poser.Game.Bindings;
 using Poser.Game.Services;
 
@@ -64,31 +63,16 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         config = Get(target) ?? config; // Record the stored settings, with the target filled in.
         if (!result.Success || before is null || before == config)
             return result;
-        var onBone = OnBoneLater(target);
+        var endBone = Track(target);
+        var handles = TrackedBone.Handles(_replacements, _scene, before, config);
         _journal.Record(target.ToSelectionId(),
             config.Enabled == before.Enabled ? "Set IK" : config.Enabled ? "Enable IK" : "Disable IK",
-            before, config, next => onBone(current => Write(current, next)));
+            before, config, next => endBone.Run(current => Write(current, handles(next))));
         return result;
     }
 
-    /// <summary>Call this when an undo step is recorded. It returns how the step runs its
-    /// write later, on the bone as it is then. After a redraw the bone is found on the
-    /// actor's new skeleton, as undo does for bone edits. After the actor was removed and
-    /// brought back by undo, it is found on the actor that took its place, which can sit
-    /// in a different game slot. The write fails when the bone is no longer in the scene,
-    /// and waits while the actor is being redrawn.</summary>
-    private Func<Func<TransformTargetId, Outcome>, Outcome> OnBoneLater(TransformTargetId target)
-    {
-        var bone = target.Bone!.Value;
-        var actor = _replacements.Track(bone.Skeleton.Actor);
-        return write =>
-        {
-            var moved = actor() is { } now ? TransformTargetId.ForBone(bone.OnActor(now)) : (TransformTargetId?)null;
-            return moved is { } onActor && _scene.CurrentTransformTarget(onActor) is { } current ? write(current)
-                : moved is { } waiting && _scene.IsTransformTargetPending(waiting) ? Outcome.Busy(UndoJournal.TargetsPending)
-                : Outcome.Fail($"{BoneInfoService.GetDisplayName(bone.CanonicalName)} is no longer in the scene.");
-        };
-    }
+    private TrackedBone Track(TransformTargetId target) =>
+        TrackedBone.Track(target.Bone!.Value, _replacements, _scene);
 
     /// <summary>True when this bone can use IK.</summary>
     public bool IsSupported(TransformTargetId target) => Get(target) != null;
@@ -170,13 +154,13 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         var result = pick();
         if (!result.Success || before is not { } previous || Following(target) is not { } now)
             return result;
-        var onBone = OnBoneLater(target);
+        var endBone = Track(target);
         // The bone followed before and the one followed after can be on other actors.
-        var onPrevious = previous.Bone is { } previousBone ? OnBoneLater(TransformTargetId.ForBone(previousBone)) : null;
-        var onNext = now.Bone is { } nextBone ? OnBoneLater(TransformTargetId.ForBone(nextBone)) : null;
+        var followedBefore = previous.Bone is { } previousBone ? Track(TransformTargetId.ForBone(previousBone)) : null;
+        var followedAfter = now.Bone is { } nextBone ? Track(TransformTargetId.ForBone(nextBone)) : null;
         _journal.Record(target.ToSelectionId(), description, previous, now,
-            next => onBone(current =>
-                next.Bone is { } bone ? (bone == previous.Bone ? onPrevious! : onNext!)(
+            next => endBone.Run(current =>
+                next.Bone is { } bone ? (bone == previous.Bone ? followedBefore! : followedAfter!).Run(
                     followed => WriteBoneTarget(current, followed.Bone!.Value))
                 : next.Entity is { } entity ? WriteEntityTarget(current, entity)
                 : Write(current, next.Config)));
@@ -248,10 +232,11 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         // undo. Redo uses that reading, not a new one from whatever the pose is later.
         if (target.Bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } endpoint })
             config = _bonePosing.PrepareIkConfiguration(endpoint, config);
-        var onBone = OnBoneLater(target);
+        var endBone = Track(target);
+        var handles = TrackedBone.Handles(_replacements, _scene, initial, config);
         var result = _journal.Adjust((target, "IK"), "Set IK",
             () => Get(target) ?? initial,
-            next => onBone(current => Write(current, next)), config);
+            next => endBone.Run(current => Write(current, handles(next))), config);
         return new Outcome(result.Success, result.Detail);
     }
 
