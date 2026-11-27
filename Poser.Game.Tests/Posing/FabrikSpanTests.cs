@@ -22,7 +22,7 @@ public sealed class FabrikSpanTests
         var control = new FabrikControl(source, Target(Vector3.Zero), Target(new(2, 0, 0)), 0, 2, Target(new(2, 0, 0)));
         var stacks = new PoseStackStore();
         var registry = new IkChainRegistry(stacks, null!, null!, null!,
-            new IkHeldTargets(stacks, null!, new CustomizePlusPose(stacks, _ => null)));
+            new IkHeldTargets(stacks, null!, new CustomizePlusPose(stacks, _ => null), null!));
         try
         {
             Assert.Null(registry.SetIkConfiguration(nodes[2].Bone, IkChainConfig.DefaultsForChain() with
@@ -138,6 +138,7 @@ public sealed class FabrikSpanTests
             "get_Bones" => nodes.Select(n => n.Bone).ToArray(),
             "get_Actor" => actor,
             "get_Slot" => PoseSlot.Character,
+            "get_BuildRevision" => 1L,
             _ => null,
         });
         nodes = Enumerable.Range(0, count).Select(_ => new Node(skeleton)).ToArray();

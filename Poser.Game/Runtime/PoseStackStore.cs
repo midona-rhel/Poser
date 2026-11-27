@@ -21,27 +21,31 @@ using GameSkeleton = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Skeleton;
 namespace Poser.Game;
 
 /// <summary>
-/// The authored pose stores, one per (actor, slot), and the per-pass state
-/// that sits beside them: the pre-layer animated baseline of every modified
-/// bone and each attached partial's frame, which together convert between a
-/// displayed transform and the pass's pre-reparent apply space. Also answers
-/// the stack queries and edits that need no native pass.
+/// Keeps the bone edits of each actor and slot, found by bone name, so they
+/// survive a redraw. Beside them it keeps two records the bone update takes
+/// every frame, found by bone number: where each edited bone stood in the
+/// animation before the edits, and where each attached partial skeleton (such
+/// as the face or hair) sat on its parent. Those records are thrown away when
+/// the skeleton is built again. They turn a bone's position as shown into the
+/// position the bone update works with, and back.
 /// </summary>
 internal sealed class PoseStackStore
 {
-    // Pose info per (actor, slot) — never per skeleton instance.
+    // The edits per actor and slot, never per skeleton object.
     private readonly Dictionary<SkeletonKey, SkeletonPoseInfo> _poseInfos = new();
 
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Root),
         Poser.Game.Posing.PartialPoseFrame> _partialFrames = new();
 
-    // Pre-layer animated baseline per modified concrete bone, captured by the
-    // native skeleton update hook (read by GetAnimatedBaseline).
+    // Where each edited bone stood in the animation before the edits, taken by
+    // the bone update (read by GetAnimatedBaseline).
     private readonly Dictionary<(SkeletonKey Skeleton, int Partial, int Bone), Transform>
         _animatedBaselines = new();
 
-    /// <summary>Reused snapshot buffer for <see cref="RemoveAnimatedBaselines"/>,
-    /// which runs every frame for every registered-but-unposed skeleton.</summary>
+    // The skeleton build each actor-slot's records above were taken on.
+    private readonly Dictionary<SkeletonKey, long> _builds = new();
+
+    /// <summary>Reused list for <see cref="RemoveAnimatedBaselines"/>.</summary>
     private readonly List<(SkeletonKey Skeleton, int Partial, int Bone)>
         _baselineRemovalBuffer = new();
 
@@ -49,8 +53,7 @@ internal sealed class PoseStackStore
 
     public Dictionary<SkeletonKey, SkeletonPoseInfo>.KeyCollection Keys => _poseInfos.Keys;
 
-    /// <summary>Struct enumeration for the per-frame rebuild — no boxed
-    /// enumerator.</summary>
+    /// <summary>Lets the bone update list the slots every frame without allocating.</summary>
     public Dictionary<SkeletonKey, SkeletonPoseInfo>.Enumerator GetEnumerator() =>
         _poseInfos.GetEnumerator();
 
@@ -70,27 +73,40 @@ internal sealed class PoseStackStore
         return poseInfo;
     }
 
-    public void RemovePoseInfo(SkeletonKey key) => _poseInfos.Remove(key);
+    /// <summary>Forgets the slot's pose and every record of the pass kept for it.</summary>
+    public void Remove(SkeletonKey key)
+    {
+        _poseInfos.Remove(key);
+        _builds.Remove(key);
+        RemoveAnimatedBaselines(key);
+        RemovePartialFrames(key);
+    }
 
-    public void RemovePartialFrames(SkeletonKey key)
+    /// <summary>Throws away the slot's records kept by bone number when its skeleton has
+    /// been built again since they were taken, because the same number can now be another
+    /// bone. The apply pass calls this before it records new ones.</summary>
+    public void UseBuild(SkeletonKey key, long revision)
+    {
+        if (_builds.TryGetValue(key, out var known) && known == revision)
+            return;
+        _builds[key] = revision;
+        RemoveAnimatedBaselines(key);
+        RemovePartialFrames(key);
+    }
+
+    private void RemovePartialFrames(SkeletonKey key)
     {
         foreach (var frame in _partialFrames.Keys.Where(x => x.Skeleton == key).ToArray())
             _partialFrames.Remove(frame);
     }
 
-    /// <summary>Every store and every per-pass record (GPose exit).</summary>
+    /// <summary>Forgets every pose and every record of the pass, on leaving GPose and on unload.</summary>
     public void Clear()
     {
         _poseInfos.Clear();
         _animatedBaselines.Clear();
         _partialFrames.Clear();
-    }
-
-    /// <summary>The stores and baselines (unload).</summary>
-    public void ClearStoresAndBaselines()
-    {
-        _poseInfos.Clear();
-        _animatedBaselines.Clear();
+        _builds.Clear();
     }
 
     // ── per-pass records ─────────────────────────────────────────────────
@@ -107,9 +123,8 @@ internal sealed class PoseStackStore
         (SkeletonKey Skeleton, int Partial, int Bone) key, Transform baseline) =>
         _animatedBaselines[key] = baseline;
 
-    /// <summary>The frozen animated/reference baseline beneath the authored
-    /// layers; a bone without applied layers has no captured baseline, and its
-    /// current transform IS its baseline.</summary>
+    /// <summary>Where the bone stood in the animation before the edits. A bone with no
+    /// edits has no record, and where it stands now is that place.</summary>
     public Transform GetAnimatedBaseline(IBone bone) =>
         bone is not VirtualBone && _animatedBaselines.TryGetValue(
             (SkeletonKey.Of(bone.Skeleton), bone.PartialId, bone.BoneIndex),
@@ -117,9 +132,8 @@ internal sealed class PoseStackStore
             ? baseline
             : bone.LastTransform;
 
-    /// <summary>Runs every frame for every registered-but-unposed skeleton
-    /// (OnFrameworkUpdate), so it collects into a reused buffer instead of the
-    /// LINQ chain + array it used to allocate per skeleton per frame.</summary>
+    /// <summary>Runs every frame for every skeleton that has nothing to apply, so it
+    /// collects into a reused list.</summary>
     public void RemoveAnimatedBaselines(SkeletonKey slotKey)
     {
         if (_animatedBaselines.Count == 0)

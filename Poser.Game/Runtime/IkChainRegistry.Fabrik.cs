@@ -18,13 +18,13 @@ internal sealed unsafe partial class IkChainRegistry
     /// off.</summary>
     private IkChainConfig PrepareEndAnchor(IBone endpoint, IkChainConfig config, IkChainConfig? previous)
     {
-        if (config.Solver != IkSolver.TwoJoint || IkChains.ForEndpoint(endpoint.BoneName) is not { } definition)
+        if (config.Solver != IkSolver.TwoJoint || IkChains.ForEndpoint(endpoint.BoneName) == null)
             return config.EndAnchor == null ? config : config with { EndAnchor = null };
         bool switched = previous != null && previous.EnforceEndRotation != config.EnforceEndRotation;
         bool reenabled = previous is { Enabled: false } && config.EndAnchor != null;
         if (!config.Enabled || !(switched || reenabled))
             return config;
-        var chain = ResolveChain(endpoint, definition);
+        var chain = ResolveChain(endpoint);
         return chain.TwoJointAvailable && _held.CaptureEndAnchor(endpoint, chain.SecondJoint) is { } anchor
             ? config with { EndAnchor = anchor } : config;
     }
@@ -50,7 +50,7 @@ internal sealed unsafe partial class IkChainRegistry
             if (config.Enabled && fromFabrik)
                 config = _held.AnchorOnSolvedEnd(endpoint, config);
             else if (config.Enabled && previous is { Enabled: true } && previous.TargetMode != config.TargetMode
-                && _ikChains.TryGetValue(ChainKey(endpoint), out var state))
+                && TryGetChain(endpoint, out var state))
                 config = _held.ChangeTargetMode(state, endpoint, config);
             // This also runs before the change is recorded for undo, so undo keeps
             // the result. Changing the CCD depth changes which parent bone the
@@ -193,7 +193,7 @@ internal sealed unsafe partial class IkChainRegistry
         var rotation = Quaternion.Normalize(frame.Rotation * model.Rotation);
         Transform? anchor = mode switch
         {
-            IkTargetMode.Bone when bone is { } id && _bindings.Resolve(id) is { Success: true, Value: { } live }
+            IkTargetMode.Bone when bone is { } id && _held.FindBone(id) is { } live
                 => BoneWorld.Of(live),
             IkTargetMode.Entity when entity is { } id => ResolveIkEntityTransform(_bindings, id),
             _ => null,
@@ -214,7 +214,7 @@ internal sealed unsafe partial class IkChainRegistry
             Transform? anchor = target.Mode switch
             {
                 IkTargetMode.Bone when target.Bone is { } id
-                    && _bindings.Resolve(id) is { Success: true, Value: { } live } => BoneWorld.Of(live),
+                    && _held.FindBone(id) is { } live => BoneWorld.Of(live),
                 IkTargetMode.Entity when target.Entity is { } id => ResolveIkEntityTransform(_bindings, id),
                 _ => null,
             };
@@ -288,16 +288,17 @@ internal sealed unsafe partial class IkChainRegistry
             if (identity.Skeleton != key || state.Config is not
                 { Enabled: true, Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control } config) continue;
             if (control.Bones.Length < 2) continue; // Both depths are zero; keep the target for when one is raised.
-            var tip = skeleton.GetBone(identity.Partial, identity.Bone);
+            var tip = skeleton.GetBoneByName(identity.Name, identity.Partial);
             if (tip == null) continue;
+            UseCurrentBuild(state, tip);
             if (control.Unseated)
             {
                 // On the first frame IK leaves the chain alone, so the bone positions Poser
                 // keeps catch up with the pose FABRIK must start from. The next frame reads
                 // that pose exactly as it stands, so switching FABRIK on moves nothing.
-                if (!state.FabrikWaited)
+                if (!state.Build.FabrikWaited)
                 {
-                    state.FabrikWaited = true;
+                    state.Build.FabrikWaited = true;
                     continue;
                 }
                 if (CaptureFabrikReference(tip, config with { Fabrik = null }) is not { } seated)
@@ -321,8 +322,8 @@ internal sealed unsafe partial class IkChainRegistry
             var rootShift = ShiftFor(state, members[0]);
             var handleShift = ShiftFor(state, tip);
             _ikService.Solve(tip, new IkSolveRequest(handleShift.Posed(handle.Position), handleShift.Posed(handle.Rotation),
-                config, state.Chain, rootShift.Posed(root.Position), rootShift.Posed(root.Rotation),
-                ShiftFor(state, members[^1]).Posed(end.Position), state.CollisionState));
+                config, state.Build.Chain, rootShift.Posed(root.Position), rootShift.Posed(root.Rotation),
+                ShiftFor(state, members[^1]).Posed(end.Position), state.Build.CollisionState));
         }
     }
 
@@ -352,8 +353,8 @@ internal sealed unsafe partial class IkChainRegistry
                 rotation = Quaternion.Normalize(frame.Rotation * rotation);
                 Transform? anchor = target.Mode switch
                 {
-                    IkTargetMode.Bone when target.Bone is { } id && _bindings.Resolve(id)
-                        is { Success: true, Value: { } live } => BoneWorld.Of(live),
+                    IkTargetMode.Bone when target.Bone is { } id
+                        && _held.FindBone(id) is { } live => BoneWorld.Of(live),
                     IkTargetMode.Entity when target.Entity is { } id => ResolveIkEntityTransform(_bindings, id),
                     _ => null,
                 };

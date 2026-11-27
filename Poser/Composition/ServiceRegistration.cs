@@ -536,7 +536,7 @@ internal static class ServiceRegistration
         services.AddStartable<Game.Environment.EnvironmentService>(StartStage.Environment);
         services.AddSingleton<Game.Environment.WorldRenderingService>();
         services.AddStartable<Game.Environment.WorldRenderingService>(StartStage.WorldRendering);
-        services.AddSingleton<Game.Environment.FestivalService>();
+        services.AddSingleton<Game.Environment.FestivalOverrides>();
         services.AddSingleton<Game.Environment.EnvironmentControl>();
         services.AddSingleton<IEnvironmentControl>(sp => sp.GetRequiredService<Game.Environment.EnvironmentControl>());
         return services;
