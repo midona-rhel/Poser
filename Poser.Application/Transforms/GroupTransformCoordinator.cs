@@ -64,15 +64,21 @@ public sealed class GroupTransformCoordinator : IDisposable
         target.Light is { } light && _viewport.IsLightAttached(light)
             ? "Attached lights cannot join a world group transform." : null;
 
-    /// <summary>The thing <paramref name="target"/> stands for now: itself, the
-    /// same thing after a redraw, or the thing undo brought back in place of a
-    /// deleted one. Group members are looked up through this before members
-    /// that are gone leave their group, so undoing a removal puts the members
-    /// back into their groups.</summary>
-    public TransformTargetId? CurrentTarget(TransformTargetId target) =>
-        _scene.CurrentTransformTarget(target)
-        ?? (_history.ResolveLifecycleTarget(target) is var successor && successor != target
-            ? _scene.CurrentTransformTarget(successor) : null);
+    /// <summary>The thing <paramref name="target"/> stands for now, or null while
+    /// there is none. A thing the undo history keeps for a deleted entity is
+    /// followed only through the history, to the entity undo brought back in its
+    /// place: another actor can hold the same lasting id, so the scene's lookup
+    /// by id could find the wrong one. Everything else is found by the scene's
+    /// lookup, which follows a redraw. Group members are looked up through this
+    /// before members that are gone leave their group, so undoing a removal puts
+    /// the members back into their groups.</summary>
+    public TransformTargetId? CurrentTarget(TransformTargetId target)
+    {
+        if (!_history.KeepsLifecycleTarget(target)) return _scene.CurrentTransformTarget(target);
+        var successor = _history.ResolveLifecycleTarget(target);
+        return successor != target ? _scene.CurrentTransformTarget(successor)
+            : _scene.Contains(target) ? target : null;
+    }
 
     private bool ResolveMembership(IReadOnlyList<SelectionId> selected,
         out TransformTargetId[] targets, out string? error)

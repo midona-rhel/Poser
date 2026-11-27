@@ -71,6 +71,15 @@ public sealed class EditHistory
     public SelectionId ResolveLifecycleEntity(SelectionId entity) =>
         _lifecycleTargets.TryGetValue(entity, out var current) ? current() ?? entity : entity;
 
+    /// <summary>True when <paramref name="target"/> is the exact id of a deleted
+    /// thing whose edits are kept (<see cref="RetainLifecycleTarget"/>). Such a
+    /// target is found through <see cref="ResolveLifecycleTarget"/>, never by
+    /// matching its id against the scene: an actor's lasting id comes from its
+    /// game object id and object-table index, which copies share, so another
+    /// copy brought back into that place gets the same lasting id.</summary>
+    public bool KeepsLifecycleTarget(TransformTargetId target) =>
+        _lifecycleTargets.ContainsKey(target.ToSelectionId());
+
     /// <summary>The thing a recorded edit now applies to: the replacement when
     /// undo has recreated a deleted thing, otherwise the target itself.</summary>
     public TransformTargetId ResolveLifecycleTarget(TransformTargetId target)
@@ -250,12 +259,8 @@ public sealed class EditHistory
         RefreshLifecycleTargets(_redo);
         // A target still in the scene, or one kept for an entity that was removed,
         // stays as it is. A kept target is moved to the restored entity by
-        // RefreshLifecycleTargets, not matched by id here: an actor's lasting id
-        // comes from its game object id and object-table index, which copies
-        // share, so another copy brought back into that place gets the same
-        // lasting id.
-        bool Kept(TransformTargetId target) =>
-            isCurrent(target) || _lifecycleTargets.ContainsKey(target.ToSelectionId());
+        // RefreshLifecycleTargets, not matched by id here (see KeepsLifecycleTarget).
+        bool Kept(TransformTargetId target) => isCurrent(target) || KeepsLifecycleTarget(target);
         // Find the same bones on the replacement body before deciding which edits to drop.
         void Rekey(List<HistoryEntry> stack)
         {
