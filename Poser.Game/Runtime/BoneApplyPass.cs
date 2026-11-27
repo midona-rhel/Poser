@@ -61,9 +61,10 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     /// must also serialize access across threads.</summary>
     private readonly List<SkeletonKey> _updatePassBuffer = new();
 
-    // Reused by PoseFollowedFirst, which runs every frame.
+    // Reused by OrderFollowedFirst, which runs every frame.
     private readonly List<(SkeletonKey Follower, SkeletonKey Followed)> _follows = new();
-    private readonly List<SkeletonKey> _unordered = new();
+    private readonly List<SkeletonKey> _unplaced = new();
+    private readonly List<SkeletonKey> _walk = new();
 
     private bool _isUpdating = false;
 
@@ -115,11 +116,11 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             var updateBonePhysicsAddress = scanner.ScanText(Poser.Game.Natives.NativeSignatures.BonePhysicsUpdater_Update);
             _updateBonePhysicsHook = hooking.HookFromAddress<UpdateBonePhysicsDelegate>(updateBonePhysicsAddress, UpdateBonePhysicsDetour);
             _updateBonePhysicsHook.Enable();
-            _log.Debug("BonePosingService: UpdateBonePhysics hook initialized");
+            _log.Debug("Bone apply pass: UpdateBonePhysics hook initialized");
         }
         catch (Exception ex)
         {
-            _log.Warning($"BonePosingService: Failed to hook UpdateBonePhysics: {ex.Message}");
+            _log.Warning($"Bone apply pass: Failed to hook UpdateBonePhysics: {ex.Message}");
         }
     }
 
@@ -197,7 +198,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
             if (!_physicsDetourFaultLogged)
             {
                 _physicsDetourFaultLogged = true;
-                _log.Error($"BonePosingService: apply pass faulted (logged once): {ex}");
+                _log.Error($"Bone apply pass faulted (logged once): {ex}");
             }
         }
         finally
@@ -211,14 +212,13 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     private void ApplyAllBoneTransforms()
     {
         _gazeFrames.BeginPass();
-        // The pass can purge (and therefore mutate _skeletonsToUpdate) while it
-        // runs, so it iterates a snapshot — a REUSED buffer, because this runs
-        // in the physics detour every frame and the old ToArray() charged the
-        // steady state one array per frame.
+        // The pass can remove a skeleton from _skeletonsToUpdate while it runs,
+        // so it goes through a copy. The copy's list is kept between frames so
+        // that this pass, which runs every frame, does not allocate one.
         _updatePassBuffer.Clear();
         foreach (var key in _skeletonsToUpdate)
             _updatePassBuffer.Add(key);
-        PoseFollowedFirst();
+        OrderFollowedFirst();
 
         for (var i = 0; i < _updatePassBuffer.Count; i++)
         {
@@ -254,44 +254,63 @@ internal sealed unsafe class BoneApplyPass : IDisposable
 
     /// <summary>
     /// Puts each skeleton in the pass after the skeletons its IK chains follow a
-    /// bone on, so a chain reads the followed bone with its edits from this frame.
-    /// Skeletons that follow each other keep the order they had.
+    /// bone on, so a chain reads the followed bone with this frame's edits.
+    /// Skeletons that follow each other in a circle cannot all come after the
+    /// others; among them, the one earliest in the pass goes first.
     /// </summary>
-    private void PoseFollowedFirst()
+    private void OrderFollowedFirst()
     {
         _follows.Clear();
         _ik.FollowedSkeletons(_follows);
         if (_follows.Count == 0)
             return;
-        _unordered.Clear();
-        _unordered.AddRange(_updatePassBuffer);
+        _unplaced.Clear();
+        _unplaced.AddRange(_updatePassBuffer);
         _updatePassBuffer.Clear();
-        while (_unordered.Count > 0)
+        while (_unplaced.Count > 0)
         {
-            // The first skeleton that follows none of those still to come; when
-            // every one does, they follow each other, and the first goes next.
-            var next = 0;
-            for (var i = 0; i < _unordered.Count; i++)
+            var next = -1;
+            for (var i = 0; i < _unplaced.Count && next < 0; i++)
             {
-                if (!FollowsUnordered(_unordered[i]))
-                {
+                if (FollowedUnplaced(_unplaced[i]) == null)
                     next = i;
-                    break;
-                }
             }
-            _updatePassBuffer.Add(_unordered[next]);
-            _unordered.RemoveAt(next);
+            if (next < 0)
+                next = FirstOnCircle();
+            _updatePassBuffer.Add(_unplaced[next]);
+            _unplaced.RemoveAt(next);
         }
     }
 
-    private bool FollowsUnordered(SkeletonKey key)
+    /// <summary>A skeleton not yet placed that <paramref name="key"/> follows, or
+    /// null when it follows none.</summary>
+    private SkeletonKey? FollowedUnplaced(SkeletonKey key)
     {
         foreach (var (follower, followed) in _follows)
         {
-            if (follower == key && _unordered.Contains(followed))
-                return true;
+            if (follower == key && _unplaced.Contains(followed))
+                return followed;
         }
-        return false;
+        return null;
+    }
+
+    /// <summary>Called when every skeleton not yet placed follows another one. Going
+    /// from followed to followed from the first one must come back to a skeleton
+    /// already passed; the skeletons from there on form a circle. Returns the
+    /// position of the circle's skeleton that is earliest in the pass.</summary>
+    private int FirstOnCircle()
+    {
+        _walk.Clear();
+        SkeletonKey key = _unplaced[0];
+        while (!_walk.Contains(key))
+        {
+            _walk.Add(key);
+            key = FollowedUnplaced(key)!.Value;
+        }
+        var first = _unplaced.Count;
+        for (var i = _walk.IndexOf(key); i < _walk.Count; i++)
+            first = Math.Min(first, _unplaced.IndexOf(_walk[i]));
+        return first;
     }
 
     /// <summary>

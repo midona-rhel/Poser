@@ -494,19 +494,43 @@ internal sealed unsafe partial class IkChainRegistry
         return false;
     }
 
-    /// <summary>Adds a pair to <paramref name="into"/> for each switched-on chain that follows
-    /// a bone on another skeleton: the chain's skeleton and the followed bone's skeleton.
-    /// The followed bone is found by name, so the pair is right after either actor is
-    /// redrawn. A bone that is not drawn adds nothing.</summary>
+    /// <summary>Adds a pair to <paramref name="into"/> for each bone on another skeleton that
+    /// a switched-on chain follows: the chain's skeleton, then the followed bone's skeleton.
+    /// Two Joint and CCD chains follow the bone picked as their target. FABRIK and Rope chains
+    /// can follow a bone with their handle and with each end. The followed skeleton is found
+    /// by actor and slot, which a redraw keeps.</summary>
     public void FollowedSkeletons(List<(SkeletonKey Follower, SkeletonKey Followed)> into)
     {
         foreach (var (chainKey, state) in _ikChains)
         {
-            if (state is { Config: { Enabled: true, TargetMode: IkTargetMode.Bone }, TargetBone: { } target }
-                && _held.FindBone(target) is { } bone
-                && SkeletonKey.Of(bone.Skeleton) is var followed && followed != chainKey.Skeleton)
-                into.Add((chainKey.Skeleton, followed));
+            if (!state.Config.Enabled)
+                continue;
+            if (state.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope })
+            {
+                if (state.Config.Fabrik is not { } fabrik)
+                    continue;
+                AddFollowed(chainKey.Skeleton, fabrik.Root, into);
+                AddFollowed(chainKey.Skeleton, fabrik.Tip, into);
+                AddFollowed(chainKey.Skeleton, fabrik.Handle, into);
+            }
+            else if (state is { Config.TargetMode: IkTargetMode.Bone, TargetBone: { } target })
+                AddFollowed(chainKey.Skeleton, target, into);
         }
+    }
+
+    private void AddFollowed(SkeletonKey follower, FabrikTarget target,
+        List<(SkeletonKey Follower, SkeletonKey Followed)> into)
+    {
+        if (target is { Mode: IkTargetMode.Bone, Bone: { } bone })
+            AddFollowed(follower, bone, into);
+    }
+
+    private void AddFollowed(SkeletonKey follower, BoneId bone,
+        List<(SkeletonKey Follower, SkeletonKey Followed)> into)
+    {
+        if (_bindings.Resolve(bone.Skeleton.Actor) is { Success: true, Value: { } actor }
+            && new SkeletonKey(actor.Id.Unique, bone.Slot) is var followed && followed != follower)
+            into.Add((follower, followed));
     }
 
     /// <summary>Finds the chain's joints as bone numbers in the end bone's skeleton and
