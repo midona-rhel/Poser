@@ -327,27 +327,24 @@ internal sealed class SceneActorRuntime
     }
 
     /// <summary>
-    /// Restores saved animation controls for the actor or its companion.
-    /// Entries without animation data are left unchanged here; pose-only loads
-    /// use FreezeActor separately.
+    /// Plays <paramref name="animation"/>, as saved, again on the actor, or on
+    /// its companion. An entry saved without an animation is frozen with
+    /// <see cref="FreezeActor"/> instead.
     /// </summary>
-    public string? RestoreAnimation(SceneEntityHandle actor, SceneActor data, bool companion)
+    public string? RestoreAnimation(SceneEntityHandle actor, SceneAnimationState animation, bool companion)
     {
         var target = _handles.Require<IActor>(actor, SceneEntityKind.Actor);
+        var snapshot = Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(animation);
         if (!companion)
         {
-            if (data.Animation is not { } state)
-                return null;
             if (_bindings.GetActorId(target) is not { } id)
                 return "The actor has no stable identity to animate.";
-            var restored = _animation.Restore(id, Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(state));
+            var restored = _animation.Restore(id, snapshot);
             return restored.Success ? null : restored.Detail ?? "Its animation could not be restored.";
         }
-        if (data.CompanionAnimation is not { } companionState)
-            return null;
         if (_spawns.GetCompanionActor(target) is not { } body || _bindings.GetActorId(body) is not { } companionId)
             return "The companion's body could not be resolved, so its animation was not restored.";
-        var refused = _animation.Restore(companionId, Poser.Application.Scene.SceneAnimationCodec.ToSnapshot(companionState));
+        var refused = _animation.Restore(companionId, snapshot);
         return refused.Success ? null : $"Companion: {refused.Detail ?? "its animation could not be restored"}";
     }
 

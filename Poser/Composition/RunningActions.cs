@@ -31,7 +31,7 @@ internal static class RunningActions
         var idleExport = services.GetRequiredService<IdleModExport>();
         Add(ActionKind.Long, () => idleExport.Busy ? "Export idle" : null);
 
-        var poseImport = services.GetRequiredService<PoseImportCoordinator>();
+        var poseImport = services.GetRequiredService<Game.Posing.PoseImportCoordinator>();
         Add(ActionKind.Quick, () => poseImport.IsImportBusy ? "Import pose" : null);
 
         var bake = services.GetRequiredService<IIkBake>();
