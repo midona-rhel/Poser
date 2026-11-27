@@ -4,6 +4,7 @@ using System.IO;
 using System.Numerics;
 using System.Text.Json;
 using Poser.Documents.Data.Config;
+using Poser.Documents.Files;
 
 namespace Poser.Documents.Data;
 
@@ -41,7 +42,8 @@ public static class GraphicalBoneReader
     {
         var options = new JsonSerializerOptions
         {
-            PropertyNameCaseInsensitive = true
+            PropertyNameCaseInsensitive = true,
+            TypeInfoResolver = PoserJsonContracts.TypeInfo,
         };
 
         var config = JsonSerializer.Deserialize<GraphicalBoneConfig>(stream, options)

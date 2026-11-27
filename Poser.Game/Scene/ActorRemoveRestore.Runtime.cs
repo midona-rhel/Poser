@@ -83,9 +83,12 @@ internal sealed partial class ActorRemoveRestore
     {
         var id = _bindings.GetActorId(actor);
         if (id is not { } bound) throw new InvalidOperationException("The actor has no stable identity.");
-        var collection = _integration.OverridesFor(bound).Mcdf == null
-            ? _collections.CaptureInheritedCollection(actor.Address)
-            : Poser.Domain.Integration.IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
+        // A duplicate's own collection is saved even with an MCDF applied: the
+        // MCDF assigns its own collection only while its files load, so the
+        // duplicate's collection is the effective one again afterwards. Undo
+        // spawns a plain actor with the player's collection, and only this
+        // saved collection puts the duplicate's back.
+        var collection = _collections.CaptureInheritedCollection(actor.Address);
         if (!collection.Success) throw new InvalidOperationException(collection.Detail);
         // Removal capture: an actor Glamourer cannot read stays removable, recorded without its look.
         var captured = _actorStates.CaptureProperties(bound, captureCollection: collection.Value == null,

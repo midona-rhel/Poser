@@ -89,9 +89,6 @@ public class UIConfiguration
     /// written to the file.
     /// </summary>
     public System.Collections.Generic.Dictionary<string, string> Keybinds { get; set; } = new();
-
-    /// <summary>Tells Newtonsoft.Json not to write <see cref="Keybinds"/>.</summary>
-    public bool ShouldSerializeKeybinds() => false;
     public System.Collections.Generic.Dictionary<string, KeybindSlots> Bindings { get; set; } = new();
     public void MigrateKeybindsToSlots()
     {

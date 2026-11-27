@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using Newtonsoft.Json;
 using Poser.Domain.Library;
 using Poser.Documents.Library;
 using Poser.Application.Library;
@@ -28,12 +27,12 @@ public sealed class LibrarySettingsDraftTests : IDisposable
     public void Legacy_json_quartet_is_recognized_without_rewriting_paths_or_creating_folders()
     {
         var original = Quartet();
-        var json = JsonConvert.SerializeObject(new
+        var json = System.Text.Json.JsonSerializer.Serialize(new
         {
             Sources = original.Sources.Select(s => new { s.Name, s.Path, s.Enabled }),
-        });
+        }, Poser.Documents.Config.ConfigurationFileStore.JsonOptions);
         Assert.DoesNotContain("Kind", json);
-        var config = JsonConvert.DeserializeObject<LibraryConfiguration>(json)!;
+        var config = System.Text.Json.JsonSerializer.Deserialize<LibraryConfiguration>(json, Poser.Documents.Config.ConfigurationFileStore.JsonOptions)!;
         Assert.All(config.Sources, s => Assert.Equal(LibrarySourceKind.Legacy, s.Kind));
         Assert.All(config.Sources, s => Assert.Equal(LibraryConfiguration.HomeKind(s.Name), config.Classify(s)));
         Assert.Equal(Path.Combine(_root, "Custom Poser Root"), config.ResolveRoot());

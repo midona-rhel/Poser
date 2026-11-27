@@ -1,4 +1,3 @@
-using Newtonsoft.Json;
 using Poser.Application.Presentation;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
@@ -20,7 +19,7 @@ public sealed class BoneMapPresetTests
         {
             BoneMapPresets = [new() { Name = "Body", Points = [Default] }],
         };
-        var loaded = JsonConvert.DeserializeObject<SkeletonConfiguration>(JsonConvert.SerializeObject(settings))!;
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<SkeletonConfiguration>(System.Text.Json.JsonSerializer.Serialize(settings, Poser.Documents.Config.ConfigurationFileStore.JsonOptions), Poser.Documents.Config.ConfigurationFileStore.JsonOptions)!;
         var preset = Assert.Single(loaded.BoneMapPresets);
         Assert.Equal(Default, Assert.Single(preset.Points));
         Assert.Empty(BoneMapPresetDraft.Available(new(ActorId.New(), "Missing", [])));

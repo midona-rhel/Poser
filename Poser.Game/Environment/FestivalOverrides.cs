@@ -11,6 +11,7 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
 using FestivalRow = Lumina.Excel.Sheets.Festival;
+using Poser.Documents.Files;
 
 namespace Poser.Game.Environment;
 
@@ -254,6 +255,7 @@ public sealed unsafe class FestivalOverrides : IDisposable
         {
             PropertyNameCaseInsensitive = true,
             IncludeFields = true,
+            TypeInfoResolver = PoserJsonContracts.TypeInfo,
         };
         return JsonSerializer.Deserialize<List<FestivalFileEntry>>(stream, options)!
             .ToDictionary(entry => entry.Id);
