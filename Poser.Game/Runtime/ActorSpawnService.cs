@@ -120,7 +120,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             actorManager, native, _ownership, _cleanup, wrapperIdentity, addressAt, log);
         _companions = new ActorCompanionControl(actorManager, native, _resolver, _poller, log);
         _model = new ActorModelControl(
-            actorManager, eventBus, native, _ownership, _resolver, _poller, log);
+            actorManager, eventBus, native, _resolver, _poller, log);
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
@@ -292,6 +292,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
     public bool IsVisible(IActor actor) =>
         OnOwnerThread && _model.IsVisible(actor);
 
+    public float? GetOpacity(IActor actor) =>
+        OnOwnerThread ? _model.GetOpacity(actor) : null;
+
+    public bool SetOpacity(IActor actor, float alpha) =>
+        OnOwnerThread && _model.SetOpacity(actor, alpha);
+
     public int GetModelCharaId(IActor actor) =>
         OnOwnerThread ? _model.GetModelCharaId(actor) : 0;
 
@@ -328,8 +334,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         var deleted = _cleanup.DeleteAll();
 
-        // Both callers (GPose exit, dispose) end the session the legacy
-        // visibility overrides belong to.
+        // Both callers (GPose exit, dispose) end the session in which Poser
+        // hid or showed actors.
         _model.ClearSessionVisibility();
 
         if (deleted)

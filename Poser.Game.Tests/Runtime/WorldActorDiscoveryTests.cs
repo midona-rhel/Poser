@@ -277,6 +277,8 @@ public sealed class WorldActorDiscoveryTests
         public bool IsAdopted(IActor actor) => Adopted;
         public bool? AdoptedVisibility(IActor actor) => null;
         public bool SetAdoptedVisibility(IActor actor, bool visible) => false;
+        public float? AdoptedOpacity(IActor actor) => null;
+        public bool SetAdoptedOpacity(IActor actor, float alpha) => false;
         public bool IsLocalPlayer(IActor actor) => false;
         public void AdoptWorldActor(nint address) { }
         public void ReleaseWorldActor(nint address) { }

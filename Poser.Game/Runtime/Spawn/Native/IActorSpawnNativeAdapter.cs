@@ -25,10 +25,13 @@ internal interface IActorSpawnNativeAdapter
 
     bool EnableDraw(SpawnNativeDescriptor descriptor);
 
-    /// <summary>Sets how see-through the actor is. Poser hides an actor this
-    /// way because turning its drawing off would throw away its body and its
-    /// pose.</summary>
+    /// <summary>Sets how see-through the actor is (the game's character alpha).
+    /// Poser hides an actor by setting it to 0, because turning its drawing off
+    /// would throw away its body and its pose.</summary>
     bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha);
+
+    /// <summary>The actor's character alpha; null when the actor is gone.</summary>
+    float? ReadAlpha(SpawnNativeDescriptor descriptor);
 
     bool? IsReadyToDraw(SpawnNativeDescriptor descriptor);
 

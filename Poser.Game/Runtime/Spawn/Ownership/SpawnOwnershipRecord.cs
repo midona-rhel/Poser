@@ -39,7 +39,6 @@ internal sealed class SpawnOwnershipRecord
     /// no object at the created index has been destroyed since our create,
     /// i.e. the current occupant is the object our create call made.</summary>
     public ulong CreateIndexStamp { get; }
-    public bool Visible { get; private set; } = true;
     public SpawnOwnershipState State { get; private set; } = SpawnOwnershipState.PendingCreate;
 
     /// <summary>Whether the spawn assigned this clone a Penumbra collection.
@@ -80,5 +79,4 @@ internal sealed class SpawnOwnershipRecord
 
     public void MarkPending() => State = SpawnOwnershipState.PendingDelete;
     public void MarkNonRecoverable() => State = SpawnOwnershipState.NonRecoverable;
-    public void SetVisibility(bool visible) => Visible = visible;
 }

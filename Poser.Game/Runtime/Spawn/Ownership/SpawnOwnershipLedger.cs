@@ -88,17 +88,6 @@ internal sealed class SpawnOwnershipLedger
             ? record.Kind
             : null;
 
-    public bool TrySetVisibility(
-        IActor actor,
-        SpawnNativeDescriptor descriptor,
-        bool visible)
-    {
-        if (!TryGetExact(actor, descriptor, out var record))
-            return false;
-        record.SetVisibility(visible);
-        return true;
-    }
-
     public bool TryRetire(Guid token, SpawnNativeDescriptor? descriptor)
     {
         if (!_records.TryGetValue(token, out var record)
