@@ -12,7 +12,8 @@ namespace Poser.Game.Cameras;
 public sealed class CameraTargetControl(
     IEntityBindings bindings, IVirtualCameraService cameras,
     IActorManager actors, IActorSpawnService spawns, ValueJournal journal, ICameraControl values,
-    IEntityHistoryResolver<IVirtualCamera> history) : ICameraTargetControl
+    IEntityHistoryResolver<IVirtualCamera> history,
+    IEntityHistoryResolver<IActor> actorHistory) : ICameraTargetControl
 {
     private const string Unavailable = "The camera is no longer available.";
     private static Outcome Refused(string detail) => new(false, detail);
@@ -60,14 +61,14 @@ public sealed class CameraTargetControl(
     public Outcome Reconcile(CameraId id)
     {
         if (Resolve(id) is not { } camera) return Refused("The camera is no longer available.");
-        // A camera follows an actor by its lasting ID, like selection, groups
-        // and parenting. When undo brings the actor back as a new version, the
-        // camera follows that one. While the actor is gone nothing changes, and
-        // no undo step is added: removing the actor is the step.
-        if (camera.TargetActorId is { } target &&
-            (Resolve(target) is not { } exact || !ReferenceEquals(exact, camera.TargetActor)) &&
-            bindings.CurrentActor(target) is { } back)
-            cameras.SetTargetActor(camera, back.Actor, back.Id, camera.TargetActorName);
+        // When undo brings the followed actor back, the camera follows the
+        // actor undo restored in its place, as undo steps do. While the actor
+        // is gone nothing changes, and no undo step is added: removing the
+        // actor is the step.
+        if (camera.TargetActor is { } followed &&
+            actorHistory.Resolve(followed) is { } back && !ReferenceEquals(back, followed) &&
+            bindings.GetActorId(back) is { } backId)
+            cameras.SetTargetActor(camera, back, backId, camera.TargetActorName);
 
         var owner = TrackingActor(camera);
         // A retained native wrapper is never authority for a replacement generation.
@@ -237,32 +238,35 @@ public sealed class CameraTargetControl(
 
     /// <summary>What following an actor changes on a camera: the actor and
     /// whether the target is locked.</summary>
-    private readonly record struct FollowState(ActorId? Target, bool Locked)
+    private readonly record struct FollowState(IActor? Target, bool Locked)
     {
         public static FollowState Read(IVirtualCamera camera) =>
-            new(camera.TargetActorId, camera.TargetActorId is not null && camera.IsTargetLocked);
+            new(camera.TargetActor, camera.TargetActor is not null && camera.IsTargetLocked);
     }
 
     private Outcome PutFollow(IVirtualCamera original, FollowState state)
     {
         if (Current(original) is not { } live) return Refused(Unavailable);
-        var put = PutTarget(bindings, cameras, live, state.Target);
+        var put = PutTarget(bindings, cameras, actorHistory, live, state.Target);
         if (!put.Success) return put;
         live.IsTargetLocked = state.Locked && state.Target is not null;
         return put;
     }
 
+    /// <summary>Puts back the actor an undo step recorded, or the actor undo
+    /// restored in its place.</summary>
     internal static Outcome PutTarget(IEntityBindings bindings, IVirtualCameraService cameras,
-        IVirtualCamera camera, ActorId? target)
+        IEntityHistoryResolver<IActor> actorHistory, IVirtualCamera camera, IActor? target)
     {
-        if (target is not { } id)
+        if (target is null)
         {
             cameras.ClearTargetActor(camera);
             return Outcome.Ok();
         }
-        if (bindings.CurrentActor(id) is not { } current)
+        if (actorHistory.Resolve(target) is not { } current || bindings.GetActorId(current) is not { } id
+            || !ReferenceEquals(bindings.Resolve(id).Value, current))
             return Refused("That actor is no longer in the scene.");
-        return cameras.SetTargetActor(camera, current.Actor, current.Id, current.Actor.Name)
+        return cameras.SetTargetActor(camera, current, id, current.Name)
             ? Outcome.Ok() : Refused("The camera could not follow the actor.");
     }
 }

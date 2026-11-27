@@ -78,7 +78,8 @@ public sealed class CameraControlTests
             });
             Journal = new(History);
             Control = new(bindings, cameras, Journal,
-                Stub<Poser.Application.Transforms.IEntityHistoryResolver<IVirtualCamera>>((_, a) => a![0]));
+                Stub<Poser.Application.Transforms.IEntityHistoryResolver<IVirtualCamera>>((_, a) => a![0]),
+                Stub<Poser.Application.Transforms.IEntityHistoryResolver<IActor>>((_, a) => a![0]));
         }
     }
 
