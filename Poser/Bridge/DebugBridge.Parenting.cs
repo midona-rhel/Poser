@@ -82,7 +82,7 @@ public sealed partial class DebugBridge
                 else return Json(new { error = "Use the actor lifecycle route for actors." });
                 return Json(new { ok = true });
             }
-            if (GroupTransformCoordinator.Target(child) is { } targetId && _parentingRuntime.Read(child) is { } world)
+            if (child.Bone == null && TransformTargetResolver.Target(child) is { } targetId && _parentingRuntime.Read(child) is { } world)
             {
                 float Number(string key) => float.Parse(query.GetValueOrDefault(key, "0"), CultureInfo.InvariantCulture);
                 return Json(_transforms.SetAbsolute(targetId, world with
