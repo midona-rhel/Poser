@@ -69,7 +69,7 @@ public sealed unsafe class VirtualCameraServiceTests : IDisposable
         var history = new Poser.Application.Transforms.EditHistory();
         var id = new Poser.Domain.Identity.CameraId(Guid.NewGuid(), 0);
         var control = new CameraControl(CameraBinding(camera, id), service,
-            new Poser.Application.Transforms.ValueJournal(history), new SameCamera());
+            new Poser.Application.Transforms.ValueJournal(history), new SameCamera(), new SameActor());
         camera.FoV = 0.4f;
         camera.Zoom = 7f;
         camera.FixedPosition = new Vector3(1, 2, 3);
@@ -124,6 +124,11 @@ public sealed unsafe class VirtualCameraServiceTests : IDisposable
     private sealed class SameCamera : Poser.Application.Transforms.IEntityHistoryResolver<Poser.Game.Entities.IVirtualCamera>
     {
         public Poser.Game.Entities.IVirtualCamera? Resolve(Poser.Game.Entities.IVirtualCamera original) => original;
+    }
+
+    private sealed class SameActor : Poser.Application.Transforms.IEntityHistoryResolver<Poser.Game.Entities.IActor>
+    {
+        public Poser.Game.Entities.IActor? Resolve(Poser.Game.Entities.IActor original) => original;
     }
 
     private sealed record Setup(

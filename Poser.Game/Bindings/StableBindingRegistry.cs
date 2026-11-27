@@ -899,14 +899,6 @@ public sealed class StableBindingRegistry : IEntityBindings
             : Missing<IActor>("The actor's native body is no longer available."),
         static (r, actor) => r.GetActorId(actor), static (r, id) => r.AbsentActor(id));
 
-    public (ActorId Id, IActor Actor)? CurrentActor(ActorId id)
-    {
-        foreach (var current in _actorBindings.Keys)
-            if (current.LogicalId == id.LogicalId)
-                return Resolve(current) is { Success: true, Value: { } actor } ? (current, actor) : null;
-        return null;
-    }
-
     public BindingResult<IBone> Resolve(BoneId id) => Resolve("Bone", id, _boneBindings,
         static (r, id, bone) => r.RefuseBone(id, bone),
         static (r, bone) => r.GetBoneId(bone), static (r, id) => r.AbsentBone(id));
