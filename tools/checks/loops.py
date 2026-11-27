@@ -62,8 +62,12 @@ checks.step("resume keeps the loop", live("UpperBody") == upper and layer(layers
             f"Upper body {live('UpperBody')}")
 get("/loop", actor=0, slot=UPPER_BODY, on=0)
 
-# Reset → All stands the actor up. The stance control would save the seat that Sit
-# made as the game's stance, and later resets would seat the actor again (#839).
+# The stance control stands the actor up.
+stand = get("/stance", actor=0, stance="Idle")
+ok, state = wait_until(lambda: get("/state", actor=0), lambda s: s.get("stance") == "Idle", timeout=8)
+checks.step("stand up with the stance control", stand.get("ok") and ok,
+            f"stance {stand.get('ok')} {stand.get('Detail')}, now {state.get('stance')}")
+# Reset → All after Sit and a stance change leaves the actor standing (#839).
 reset_all(checks)
 photo = play_emote("Photograph")
 full = photo.get("played")
