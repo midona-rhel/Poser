@@ -60,9 +60,14 @@ public sealed class EditHistory
     public void RetainLifecycleTarget(TransformTargetId target, Func<TransformTargetId?> current) =>
         RetainLifecycleEntity(target.ToSelectionId(), () => current()?.ToSelectionId());
 
+    /// <summary>Keeps <paramref name="entity"/>'s edits after it is deleted.
+    /// <paramref name="current"/> names the entity undo brought back in its
+    /// place, or null while there is none.</summary>
     public void RetainLifecycleEntity(SelectionId entity, Func<SelectionId?> current) =>
         _lifecycleTargets[entity] = current;
 
+    /// <summary>The entity undo brought back in place of a deleted
+    /// <paramref name="entity"/>, or <paramref name="entity"/> itself.</summary>
     public SelectionId ResolveLifecycleEntity(SelectionId entity) =>
         _lifecycleTargets.TryGetValue(entity, out var current) ? current() ?? entity : entity;
 
@@ -231,6 +236,9 @@ public sealed class EditHistory
     /// Reconnects transform edits to replacement bones after a redraw.
     /// Edits wait while their targets are loading. If a target is gone for good,
     /// the entire affected step is removed so undo keeps grouped edits together.
+    /// A target kept for a deleted entity (<see cref="RetainLifecycleTarget"/>)
+    /// is neither removed nor matched by id: it moves to the entity undo brings
+    /// back through the function it was kept with.
     /// Entity creation and deletion keep their own steps for undo and redo.
     /// </summary>
     public void Reconcile(
@@ -241,10 +249,11 @@ public sealed class EditHistory
         RefreshLifecycleTargets(_undo);
         RefreshLifecycleTargets(_redo);
         // A target still in the scene, or one kept for an entity that was removed,
-        // stays as it is. A kept target is moved to the restored entity through
-        // its slot (RefreshLifecycleTargets), not by its id: an actor's id
-        // follows its place in the game's object table, so another actor
-        // restored into that place would take the same id.
+        // stays as it is. A kept target is moved to the restored entity by
+        // RefreshLifecycleTargets, not matched by id here: an actor's lasting id
+        // comes from its game object id and object-table index, which copies
+        // share, so another copy brought back into that place gets the same
+        // lasting id.
         bool Kept(TransformTargetId target) =>
             isCurrent(target) || _lifecycleTargets.ContainsKey(target.ToSelectionId());
         // Find the same bones on the replacement body before deciding which edits to drop.
@@ -296,8 +305,7 @@ public sealed class EditHistory
                 return false;
             // A grouped edit waits until all replacement bones are ready.
             // Keep already-found replacements while the others finish redrawing.
-            bool Gone(TransformTargetState state) => !isCurrent(state.Target)
-                && !_lifecycleTargets.ContainsKey(state.Target.ToSelectionId())
+            bool Gone(TransformTargetState state) => !Kept(state.Target)
                 && (!patch.AwaitingTargets || rekey?.Invoke(state.Target) is null)
                 && isPending?.Invoke(state.Target) != true;
             return patch.Before.Any(Gone) || patch.After.Any(Gone);

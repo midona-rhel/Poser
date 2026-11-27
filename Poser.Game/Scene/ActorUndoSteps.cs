@@ -103,10 +103,10 @@ internal sealed class ActorUndoSteps
     private readonly LifecycleSlotOwner<IActor, ActorLifecycleSlot> _slots;
 
     /// <param name="actorTarget">The actor's move target, so the undo history
-    /// follows a removed actor to the copy undo brings back, as it does for
-    /// lights, props, overlays and world objects.</param>
+    /// follows a removed actor to the actor undo brings back, as it does for
+    /// lights, props, collider overlays and world objects.</param>
     public ActorUndoSteps(EditHistory history, IActorRemoveRestore actors,
-        Func<IActor, TransformTargetId?>? actorTarget = null)
+        Func<IActor, TransformTargetId?>? actorTarget)
     {
         _history = history;
         _actors = actors;
