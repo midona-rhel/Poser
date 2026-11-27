@@ -21,18 +21,29 @@ internal sealed class CharacterFileNotices(ICharacterFiles files, UserNotices no
     Dalamud.Plugin.Services.IPluginLog log)
 {
     private Guid? _seen;
+    /// <summary>The last step seen while a job ran. The finished job reports every
+    /// file as done whatever happened, so this is how far it really got.</summary>
+    private McdfProgress? _lastRunning;
 
     /// <summary>Checks once per frame whether a job ended since the last check.</summary>
     public void Pump()
     {
+        if (files.Progress is { Running: true } running)
+            _lastRunning = running;
         if (files.Receipt is not { } receipt || receipt.State == OperationReceiptState.Pending
             || receipt.OperationId == _seen)
             return;
         _seen = receipt.OperationId;
         var job = files.Progress;
+        var reached = _lastRunning is { } last && last.FileName == job?.FileName && last.Target == job?.Target
+            ? last : null;
+        _lastRunning = null;
         string action = $"{(job?.Kind == McdfOperationKind.Export ? "Export" : "Apply")} {job?.FileName}";
-        string line = $"[MCDF] {action}: {receipt.State}, at {job?.Phase}, "
-            + $"{job?.FilesDone}/{job?.FilesTotal} files, {job?.BytesDone / 1048576}/{job?.BytesTotal / 1048576} MB"
+        string line = $"[MCDF] {action}: {receipt.State}"
+            + (reached is { } step
+                ? $", last step {step.Phase}, {step.FilesDone}/{step.FilesTotal} files, "
+                    + $"{step.BytesDone / 1048576}/{step.BytesTotal / 1048576} MB"
+                : $", {job?.FilesTotal} files, {job?.BytesTotal / 1048576} MB")
             + (receipt.OperationId == files.Started ? "" : " (started by a scene or undo)")
             + (string.IsNullOrWhiteSpace(receipt.Detail) ? "" : $". {receipt.Detail}");
         if (receipt.State == OperationReceiptState.Failed) log.Warning(line); else log.Information(line);
