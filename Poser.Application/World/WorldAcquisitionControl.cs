@@ -10,7 +10,7 @@ public interface IWorldAcquisitionControl
 }
 
 /// <summary>Borrow completion and selection advance independently of the overlay that initiated them.</summary>
-public sealed class WorldAcquisitionControl(IWorldService world, ISessionGenerationSource sessions,
+public sealed class WorldAcquisitionControl(IWorldObjectTakeover world, ISessionGenerationSource sessions,
     SelectionSession selection, Presentation.IUserNotices notices) : IWorldAcquisitionControl
 {
     private (SessionGeneration Session, Task<WorldAcquisition> Result)? _pending;

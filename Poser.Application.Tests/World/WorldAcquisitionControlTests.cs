@@ -12,7 +12,7 @@ public sealed class WorldAcquisitionControlTests
     [Fact]
     public void Completion_never_enters_a_replacement_session()
     {
-        var service = DispatchProxy.Create<IWorldService, World>();
+        var service = DispatchProxy.Create<IWorldObjectTakeover, World>();
         var world = (World)(object)service;
         var sessions = new Sessions();
         var selection = new SelectionSession();
@@ -35,6 +35,6 @@ public sealed class WorldAcquisitionControlTests
     {
         public TaskCompletionSource<WorldAcquisition> Complete = new();
         protected override object? Invoke(MethodInfo? method, object?[]? args) =>
-            method!.Name == nameof(IWorldService.Acquire) ? Complete.Task : throw new NotSupportedException();
+            method!.Name == nameof(IWorldObjectTakeover.Acquire) ? Complete.Task : throw new NotSupportedException();
     }
 }

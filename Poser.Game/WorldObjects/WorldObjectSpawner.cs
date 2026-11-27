@@ -18,7 +18,7 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 internal sealed class WorldObjectSpawner
 {
-    private readonly IWorldObjectPort _port;
+    private readonly IWorldObjectAccess _port;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
     private readonly Func<AdoptedWorldObject, bool> _isCurrent;
@@ -32,7 +32,7 @@ internal sealed class WorldObjectSpawner
         System.Threading.CancellationToken Cancellation);
 
     public WorldObjectSpawner(
-        IWorldObjectPort port,
+        IWorldObjectAccess port,
         IEventBus events,
         IPluginLog log,
         Func<AdoptedWorldObject, bool> isCurrent,

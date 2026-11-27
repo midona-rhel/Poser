@@ -25,7 +25,7 @@ public sealed record WorldRelease(WorldCommandStatus Status, string? Detail = nu
 }
 
 /// <summary>Application control for borrowing world assets. Native bodies and ordering stay behind this interface.</summary>
-public interface IWorldService
+public interface IWorldObjectTakeover
 {
     WorldSnapshot Snapshot { get; }
     Task<WorldSnapshot> Refresh(WorldKinds kinds, bool force = false);

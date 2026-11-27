@@ -11,7 +11,7 @@ public sealed partial class DebugBridge
 {
     private async Task<string> WorldSources(Dictionary<string, string> query)
     {
-        var world = (IWorldService)_services.GetService(typeof(IWorldService))!;
+        var world = (IWorldObjectTakeover)_services.GetService(typeof(IWorldObjectTakeover))!;
         const WorldKinds supported = WorldKinds.Light | WorldKinds.Object | WorldKinds.Effect;
         var kinds = supported;
         if (query.TryGetValue("kinds", out var kindsText)
@@ -42,7 +42,7 @@ public sealed partial class DebugBridge
             return Json(new { accepted = false,
                 reason = "That candidate is not current in the requested source kinds." });
 
-        // IWorldService owns the candidate incarnation check, acquisition,
+        // IWorldObjectTakeover owns the candidate incarnation check, acquisition,
         // history record, and stable SelectionId publication used by the UI.
         var acquired = await world.Acquire(candidate.Id);
         return Json(new

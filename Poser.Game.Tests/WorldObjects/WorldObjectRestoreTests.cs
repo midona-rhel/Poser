@@ -427,7 +427,7 @@ public sealed class WorldObjectRestoreTests
     /// Stores simulated world objects by address and generation. Tests can replace
     /// or remove a row and inject loading, restoration, and destruction failures.
     /// </summary>
-    private sealed class FakePort : IWorldObjectPort
+    private sealed class FakePort : IWorldObjectAccess
     {
         private readonly Dictionary<nint, Node> _nodes = new();
         private readonly Dictionary<nint, long> _generations = new();

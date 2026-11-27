@@ -599,10 +599,10 @@ internal static class ServiceRegistration
         // service that puts back every object Poser took over. Disposing it
         // when the plugin unloads gives every taken-over object back.
         services.AddSingleton<
-            Game.WorldObjects.IWorldObjectPort,
+            Game.WorldObjects.IWorldObjectAccess,
             Game.WorldObjects.NativeWorldObjectPort>();
-        services.AddSingleton<Game.WorldObjects.IWorldGraphPort>(sp =>
-            sp.GetRequiredService<Game.WorldObjects.IWorldObjectPort>());
+        services.AddSingleton<Game.WorldObjects.IWorldGraphReader>(sp =>
+            sp.GetRequiredService<Game.WorldObjects.IWorldObjectAccess>());
         services.AddSingleton<Game.WorldObjects.WorldObjectService>();
         services.AddStartable<Game.WorldObjects.WorldObjectService>(StartStage.WorldObjects);
         services.AddSingleton<Game.WorldObjects.WorldAssetCatalog>();
@@ -731,9 +731,9 @@ internal static class ServiceRegistration
         services.AddSingleton<EntityActions>();
         services.AddSingleton<Application.Selection.EntityLockCommands>();
         services.AddSingleton<ISelectedEntityActions, Game.Selection.SelectedEntityActions>();
-        services.AddSingleton<Game.WorldObjects.WorldService>();
-        services.AddSingleton<global::Poser.Application.World.IWorldService>(sp => sp.GetRequiredService<Game.WorldObjects.WorldService>());
-        services.AddSingleton<Game.WorldObjects.IWorldReleasePort>(sp => sp.GetRequiredService<Game.WorldObjects.WorldService>());
+        services.AddSingleton<Game.WorldObjects.WorldObjectTakeover>();
+        services.AddSingleton<global::Poser.Application.World.IWorldObjectTakeover>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectTakeover>());
+        services.AddSingleton<Game.WorldObjects.IWorldObjectRelease>(sp => sp.GetRequiredService<Game.WorldObjects.WorldObjectTakeover>());
         services.AddSingleton<PoseThumbnailCache>();
         // Holds every reference picture, so disposing it when the plugin
         // unloads frees them all.

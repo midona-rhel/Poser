@@ -10,15 +10,15 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 internal sealed class WorldObjectRestorer
 {
-    private readonly IWorldObjectPort _port;
-    private readonly VfxLifecycleOwner _vfx;
+    private readonly IWorldObjectAccess _port;
+    private readonly VfxCaptureRestore _vfx;
     private readonly WorldObjectSpawner _respawner;
     private readonly IPluginLog _log;
     private readonly Func<AdoptedWorldObject, bool> _isCurrent;
 
     public WorldObjectRestorer(
-        IWorldObjectPort port,
-        VfxLifecycleOwner vfx,
+        IWorldObjectAccess port,
+        VfxCaptureRestore vfx,
         WorldObjectSpawner respawner,
         IPluginLog log,
         Func<AdoptedWorldObject, bool> isCurrent)

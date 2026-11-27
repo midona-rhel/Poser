@@ -23,11 +23,11 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 public sealed class WorldObjectService : IDisposable
 {
-    private readonly IWorldObjectPort _port;
+    private readonly IWorldObjectAccess _port;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
     private readonly Dalamud.Plugin.Services.IFramework? _framework;
-    private readonly VfxLifecycleOwner _vfx;
+    private readonly VfxCaptureRestore _vfx;
     private readonly VfxPlaybackControl _vfxPlayback;
     private readonly SceneryAnimationHold _animation;
     private readonly WorldObjectSpawner _respawner;
@@ -40,7 +40,7 @@ public sealed class WorldObjectService : IDisposable
     private bool _teardownOnly;
 
     public WorldObjectService(
-        IWorldObjectPort port,
+        IWorldObjectAccess port,
         IEventBus events,
         IPluginLog log,
         Dalamud.Plugin.Services.IFramework? framework = null)
@@ -49,7 +49,7 @@ public sealed class WorldObjectService : IDisposable
         _events = events;
         _log = log;
         _framework = framework;
-        _vfx = new VfxLifecycleOwner(port);
+        _vfx = new VfxCaptureRestore(port);
         _vfxPlayback = new VfxPlaybackControl(port, log);
         _animation = new SceneryAnimationHold(port);
         _respawner = new WorldObjectSpawner(port, events, log,

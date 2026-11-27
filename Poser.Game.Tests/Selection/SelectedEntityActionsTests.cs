@@ -132,7 +132,7 @@ public sealed class SelectedEntityActionsTests
             Actions.Remove([Id]);
     }
 
-    private sealed class ReleasePort : IWorldReleasePort
+    private sealed class ReleasePort : IWorldObjectRelease
     {
         public int Calls;
         public SelectionId? Requested;

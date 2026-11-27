@@ -17,10 +17,10 @@ internal sealed class VfxPlaybackControl
     internal static readonly TimeSpan RefreshInterval =
         TimeSpan.FromSeconds(1);
 
-    private readonly IVfxObjectPort _port;
+    private readonly IVfxObject _port;
     private readonly IPluginLog _log;
 
-    public VfxPlaybackControl(IVfxObjectPort port, IPluginLog log)
+    public VfxPlaybackControl(IVfxObject port, IPluginLog log)
     {
         _port = port;
         _log = log;

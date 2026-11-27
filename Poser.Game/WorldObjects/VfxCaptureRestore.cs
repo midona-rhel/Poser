@@ -14,11 +14,11 @@ internal enum VfxTransformWriteResult
 /// objects. Transform writes preserve playback state, and capture fails when
 /// playback state cannot be read.
 /// </summary>
-internal sealed class VfxLifecycleOwner
+internal sealed class VfxCaptureRestore
 {
-    private readonly IVfxObjectPort _port;
+    private readonly IVfxObject _port;
 
-    public VfxLifecycleOwner(IVfxObjectPort port) => _port = port;
+    public VfxCaptureRestore(IVfxObject port) => _port = port;
 
     public bool TryCapture(
         nint address,
