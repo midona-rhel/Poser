@@ -196,13 +196,15 @@ public sealed class OverlayNodeService : IDisposable, IOverlayNodeService
     public event Action<OverlayNodeHandle, Vector2>? Dragged;
 
 #if DEBUG
-    /// <summary>Debug bridge only: runs the same steps as a drag the player
-    /// makes on screen, ending at <paramref name="position"/>. The game's own
-    /// detection of the mouse drag is not involved.</summary>
+    /// <summary>Debug bridge only: does what a drag the player makes on screen
+    /// does, ending at <paramref name="position"/>. Like the game, it moves the
+    /// node on screen first, then reports the drag. The game's own detection
+    /// of the mouse drag is not involved.</summary>
     public void DebugDrag(OverlayNodeHandle handle, Vector2 position)
     {
-        if (handle.Node is { } node)
-            OnNodeMoved(node, position);
+        var node = handle.Node!;
+        ApplyToNode(node, handle.State with { Position = position });
+        OnNodeMoved(node, position);
     }
 #endif
 
