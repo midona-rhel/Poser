@@ -143,26 +143,6 @@ public sealed class PoseImportCapture : IDisposable
         };
     }
 
-    /// <summary>Reserves the actor and starts the plan, which finds bones by name,
-    /// in one call. A successful return means the work is queued; the final result
-    /// says when it is done.</summary>
-    public GestureResult Begin(
-        IActor actor,
-        PoseImportPlan plan,
-        string description,
-        Action<bool>? onFinished = null,
-        bool expression = false,
-        Action<OperationReceipt>? onReceipt = null)
-    {
-        var reserved = Reserve(actor, description, out var operation, onFinished, onReceipt);
-        if (!reserved.Success || reserved.OperationReceipt is not { } pending)
-            return reserved;
-        return Begin(
-            operation!,
-            plan,
-            expression);
-    }
-
     public GestureResult Reserve(
         IActor actor,
         string description,
