@@ -104,7 +104,9 @@ internal sealed unsafe class FurnitureLayoutDriver
         }
         catch
         {
+            // The layout is gone again, so the identity must not name it.
             Destroy(address);
+            identity = default;
             throw;
         }
         return address;

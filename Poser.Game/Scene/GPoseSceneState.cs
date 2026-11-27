@@ -1,4 +1,3 @@
-using Poser.Application.World;
 using Poser.Application.Posing;
 using Poser.Application.Transforms;
 using Poser.Application.Scene;
@@ -36,8 +35,8 @@ internal sealed class GPoseSceneState : IDisposable
     private readonly Poser.Application.Integration.McdfTransaction _mcdf;
     private readonly IObjectTable _objects;
     private readonly SceneCaptureService _capture;
-    private readonly EnvironmentControl _environmentControl;
-    private readonly IWorldRenderingRuntimePort _rendering;
+    private readonly Poser.Game.Environment.EnvironmentControl _environmentControl;
+    private readonly Poser.Game.Environment.WorldRenderingService _rendering;
     private readonly Poser.Game.Animation.AnimationSession _animation;
 
     public GPoseSceneState(
@@ -49,8 +48,8 @@ internal sealed class GPoseSceneState : IDisposable
         Poser.Application.Integration.McdfTransaction mcdf,
         IObjectTable objects,
         SceneCaptureService capture,
-        EnvironmentControl environmentControl,
-        IWorldRenderingRuntimePort rendering,
+        Poser.Game.Environment.EnvironmentControl environmentControl,
+        Poser.Game.Environment.WorldRenderingService rendering,
         Poser.Game.Animation.AnimationSession animation)
     {
         _handles = handles;
@@ -151,5 +150,5 @@ internal sealed class GPoseSceneState : IDisposable
     /// <summary>Sets the saved time, weather and environment. Sections the scene
     /// did not hold go back to what the game shows.</summary>
     public void ApplyEnvironment(SceneEnvironment target) =>
-        _environmentControl.Apply(target, recordHistory: false);
+        _environmentControl.Apply(target);
 }

@@ -1,4 +1,3 @@
-using Poser.Application.World;
 using Poser.Domain.Scene;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -39,8 +38,8 @@ public sealed partial class DebugBridge : IDisposable
     public const int Port = 47999;
 
     private readonly IFramework _framework;
-    private readonly IEnvironmentRuntimePort _environment;
-    private readonly EnvironmentControl _environmentControl;
+    private readonly Game.Environment.EnvironmentService _environment;
+    private readonly Game.Environment.EnvironmentControl _environmentControl;
     private readonly global::Poser.UI.PoseFileInspectorSection _poseFiles;
     private readonly global::Poser.UI.PoseLibraryPane _poseLibrary;
     private readonly IPluginLog _log;
@@ -125,8 +124,8 @@ public sealed partial class DebugBridge : IDisposable
     public DebugBridge(
         IServiceProvider services,
         global::Poser.Application.Settings.ConfigurationService configuration,
-        IEnvironmentRuntimePort environment,
-        EnvironmentControl environmentControl,
+        Game.Environment.EnvironmentService environment,
+        Game.Environment.EnvironmentControl environmentControl,
         global::Poser.UI.PropertiesContent properties,
         global::Poser.UI.PoseLibraryPane poseLibrary,
         IFramework framework,
@@ -869,7 +868,6 @@ public sealed partial class DebugBridge : IDisposable
                     _environment.SetWeather(weather, _environment.TransitionTime);
                 if (query.TryGetValue("hold", out var hold))
                     _environment.IsWeatherOverrideEnabled = hold == "1";
-                var nativeEnvironment = (Game.Environment.EnvironmentService)_environment;
                 return Json(new
                 {
                     current = _environment.CurrentWeatherId,
@@ -878,10 +876,10 @@ public sealed partial class DebugBridge : IDisposable
                     minuteOfDay = _environment.MinuteOfDay,
                     dayOfMonth = _environment.DayOfMonth,
                     timeFrozen = _environment.IsTimeFrozen,
-                    nativeEnvironment.WeatherRequested,
-                    nativeEnvironment.WeatherBeforeUpdate,
-                    nativeEnvironment.WeatherAfterUpdate,
-                    nativeEnvironment.WeatherUpdateCount,
+                    _environment.WeatherRequested,
+                    _environment.WeatherBeforeUpdate,
+                    _environment.WeatherAfterUpdate,
+                    _environment.WeatherUpdateCount,
                     territory = _environment.TerritoryWeathers,
                     all = _environment.AllWeathers,
                 });
@@ -1012,11 +1010,10 @@ public sealed partial class DebugBridge : IDisposable
             {
                 // Debug: ?section=Fog&on=1|0 holds a section; ?tail=VALUE writes the float at
                 // EnvState Fog +0x60 (beyond the first 0x28 bytes Poser maps); returns that float.
-                var env = (Game.Environment.EnvironmentService)_environment;
                 if (query.TryGetValue("section", out var sectionText)
                     && Enum.TryParse<global::Poser.Domain.Scene.EnvSection>(sectionText, true, out var section)
                     && query.TryGetValue("on", out var onText))
-                    env.SetSectionHeld(section, onText == "1");
+                    _environment.SetSectionHeld(section, onText == "1");
                 float tail;
                 unsafe
                 {
@@ -1027,7 +1024,7 @@ public sealed partial class DebugBridge : IDisposable
                         *at = value;
                     tail = *at;
                 }
-                return Json(new { fogHeld = env.IsSectionHeld(global::Poser.Domain.Scene.EnvSection.Fog), tail, weather = _environment.CurrentWeatherId });
+                return Json(new { fogHeld = _environment.IsSectionHeld(global::Poser.Domain.Scene.EnvSection.Fog), tail, weather = _environment.CurrentWeatherId });
             }
             case "/sigscan":
             {

@@ -39,7 +39,7 @@ public sealed class EnvironmentHoldReleaseTests
     }
 
     [Fact]
-    public void Territory_and_logout_release_all_successful_holds()
+    public void Territory_and_logout_release_all_holds()
     {
         var factory = new TestFactory();
         var clientState = ClientStateProxy.Create(out var events);
@@ -93,7 +93,7 @@ public sealed class EnvironmentHoldReleaseTests
             NewProxy<IPluginLog>(),
             new TestEventBus(),
             factory,
-            housing);
+            housing ?? new TestHousingBrightness());
     }
 
     private static T NewProxy<T>() where T : class =>

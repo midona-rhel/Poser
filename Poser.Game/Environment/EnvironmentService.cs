@@ -1,4 +1,3 @@
-using Poser.Application.World;
 using System;
 using System.Collections.Generic;
 using Dalamud.Hooking;
@@ -19,7 +18,8 @@ internal unsafe delegate nint UpdateEnvironmentDelegate(CSEnvManager* manager, f
 
 internal unsafe delegate nint EnvStateCopyDelegate(EnvStateNative* dest, EnvStateNative* src);
 
-/// <summary>Native hook lifecycle used by the environment controls and their test fakes.</summary>
+/// <summary>A game hook the environment turns on and off. The tests in
+/// Poser.Game.Tests replace the hooks with stand-ins.</summary>
 internal interface IEnvHook : IDisposable
 {
     bool IsEnabled { get; }
@@ -136,17 +136,19 @@ internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactor
 }
 
 /// <summary>
-/// Controls time freeze, weather, environment-section holds, and interior brightness.
-/// Time freeze suppresses the native clock update. Weather is reapplied before
-/// the native environment update. Section holds restore selected destination
-/// fields after native copying; releasing a section lets the next game copy replace it.
-/// Callers are responsible for using the game thread for these native reads/writes.
+/// Reads and writes the time, weather, sky sections and housing interior
+/// brightness. Freezing time stops the game's clock update. A held weather is
+/// written again before every game environment update. A held section keeps
+/// Poser's values: after the game copies its own values in, the held ones are
+/// written back. Releasing a section lets the game's next copy replace it.
+/// Values are read from the game each time and written straight to it, so a
+/// section that is not held is overwritten by the game on its next update.
+/// Call from the game thread.
 /// </summary>
-public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDisposable
+public sealed unsafe class EnvironmentService : IDisposable
 {
     private const float DefaultTransitionTime = 0.5f;
-    // The Eorzean month is 32 days; only 31 are addressable as a day of month,
-    // matching both references.
+    // The Eorzean month has 32 days of 86400 Eorzean seconds.
     private const long MonthSeconds = 2764800;
     private const long DaySeconds = 86400;
     private const int MaxTerritoryWeatherSlots = 32;
@@ -168,10 +170,6 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     private readonly IClientState _clientState;
     private readonly IPluginLog _log;
     private readonly IEventBus _events;
-    // Managed exceptions in Poser's detour logic are logged once.
-    // The original native calls run outside these catch blocks.
-    private bool _weatherFaultLogged;
-    private bool _envStateFaultLogged;
     private readonly IHousingBrightnessNative _housingBrightness;
     private readonly Action<GPoseStateChangedEvent> _onGPoseStateChanged;
 
@@ -185,9 +183,7 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     public int WeatherUpdateCount { get; private set; }
 #endif
     private readonly IEnvStateCopyHook? _envStateHook;
-    private readonly bool _envStateHookEnabled;
 
-    private readonly ExcelSheet<WeatherRow>? _weatherSheet;
     private readonly List<WeatherInfo> _allWeathers = new();
     private readonly Dictionary<uint, WeatherInfo> _weatherById = new();
     private readonly List<WeatherInfo> _territoryWeathers = new();
@@ -201,9 +197,14 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     public bool ResetWeatherOnGPoseExit { get; set; } = true;
     public bool ResetSectionsOnGPoseExit { get; set; } = true;
 
+    /// <summary>False when the clock hook was not found: the clock can be
+    /// read, but not set or frozen.</summary>
     public bool IsTimeFreezeAvailable => _timeHook != null;
     public bool IsWeatherOverrideAvailable => _weatherHook != null;
-    public bool IsSectionHoldAvailable => _envStateHookEnabled;
+
+    /// <summary>False when the section hook was not found or not started:
+    /// sections can be written, but the game takes them back at once.</summary>
+    public bool IsSectionHoldAvailable => _envStateHook?.IsEnabled == true;
 
     public EnvironmentService(
         IClientState clientState,
@@ -225,12 +226,12 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         IPluginLog log,
         IEventBus events,
         IEnvironmentNativeFactory nativeFactory,
-        IHousingBrightnessNative? housingBrightness = null)
+        IHousingBrightnessNative housingBrightness)
     {
         _clientState = clientState;
         _log = log;
         _events = events;
-        _housingBrightness = housingBrightness ?? new HousingBrightnessNative();
+        _housingBrightness = housingBrightness;
 
         _timeHook = TryCreate(
             () => nativeFactory.CreateTimeHook(sigScanner, hooking, UpdateEorzeaTimeDetour),
@@ -244,20 +245,15 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
             () => nativeFactory.CreateEnvStateCopyHook(sigScanner, hooking, EnvStateCopyDetour),
             "environment section hold");
 
-        // Unlike the other two, this hook stays enabled: the detour is what
-        // reads the hold flags, and it is a plain pass-through while none are
-        // set. Enabling it per-section would rebind memory on every toggle.
-        if (_envStateHook != null)
+        // Unlike the other two, this hook stays on the whole time: while no
+        // section is held it only calls the game's own copy.
+        try
         {
-            try
-            {
-                _envStateHook.Enable();
-                _envStateHookEnabled = true;
-            }
-            catch (Exception ex)
-            {
-                _log.Warning($"Environment: section hold hook could not be enabled ({ex.Message}); sections cannot be held.");
-            }
+            _envStateHook?.Enable();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"Environment: section hold hook could not be enabled ({ex.Message}); sections cannot be held.");
         }
 
         var none = new WeatherInfo(0, "None", 0);
@@ -265,8 +261,7 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         _weatherById.Add(0, none);
         try
         {
-            _weatherSheet = data.GetExcelSheet<WeatherRow>();
-            BuildAllWeathers();
+            BuildAllWeathers(data.GetExcelSheet<WeatherRow>());
         }
         catch (Exception ex)
         {
@@ -309,16 +304,13 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         }
     }
 
-    /// <summary>The override value when the game is running one, otherwise the
-    /// live clock — reading the wrong one of the two reports a time the world
-    /// is not actually at.</summary>
+    /// <summary>The game's override clock while it runs one, otherwise its
+    /// normal clock. The world shows the override when there is one.</summary>
     private long EorzeaTime
     {
         get
         {
             var framework = CSFramework.Instance();
-            if (framework == null)
-                return 0;
             return framework->ClientTime.IsEorzeaTimeOverridden
                 ? framework->ClientTime.EorzeaTimeOverride
                 : framework->ClientTime.EorzeaTime;
@@ -326,14 +318,15 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         set
         {
             var framework = CSFramework.Instance();
-            if (framework == null)
-                return;
             framework->ClientTime.EorzeaTime = value;
             if (framework->ClientTime.IsEorzeaTimeOverridden)
                 framework->ClientTime.EorzeaTimeOverride = value;
         }
     }
 
+    /// <summary>Eorzean minute of the day, 0 to 1439. Setting it freezes the
+    /// clock, because a running clock would overwrite the value in the next
+    /// frame.</summary>
     public int MinuteOfDay
     {
         get => (int)(EorzeaTime % MonthSeconds % DaySeconds / 60);
@@ -344,6 +337,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         }
     }
 
+    /// <summary>Eorzean day of the month. The game's month has 32 days; only
+    /// 1 to 31 can be set, as in Brio and Ktisis. Setting it freezes the clock.</summary>
     public int DayOfMonth
     {
         get => (int)(EorzeaTime % MonthSeconds / DaySeconds) + 1;
@@ -356,11 +351,13 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
 
     private void UpdateEorzeaTimeDetour(nint a1, nint a2)
     {
-        // The original is deliberately not called: that is the freeze.
+        // Not calling the game's clock update is what freezes the clock.
     }
 
     // ── Weather ───────────────────────────────────────────────────────
 
+    /// <summary>Holds the weather: the game's own weather change for the area
+    /// is replaced by the held weather on every update.</summary>
     public bool IsWeatherOverrideEnabled
     {
         get => _weatherHook?.IsEnabled == true;
@@ -370,8 +367,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
                 return;
             if (value)
             {
-                // A plain Hold captures the next native update's current ID;
-                // SetWeather supplies its explicit choice immediately below.
+                // Holding without picking a weather keeps the weather the game
+                // shows at its next update. SetWeather picks one right after.
                 _heldWeather = null;
                 _weatherHook.Enable();
             }
@@ -407,12 +404,11 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         }
     }
 
-    public void SetWeather(uint id, float transitionTime = DefaultTransitionTime)
-    {
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(id, byte.MaxValue);
-        var manager = CSEnvManager.Instance();
-        SetWeather(manager, id, transitionTime);
-    }
+    /// <summary>Shows a weather, blending into it over
+    /// <paramref name="transitionTime"/> seconds, and holds it. Without the
+    /// hold the game would change it back at its next weather update.</summary>
+    public void SetWeather(uint id, float transitionTime = DefaultTransitionTime) =>
+        SetWeather(CSEnvManager.Instance(), id, transitionTime);
 
     internal void SetWeather(CSEnvManager* manager, uint id, float transitionTime)
     {
@@ -429,17 +425,20 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         manager->TransitionTime = transitionTime;
     }
 
+    /// <summary>Every named weather in the game data, with None first.</summary>
     public IReadOnlyList<WeatherInfo> AllWeathers => _allWeathers;
 
     public WeatherInfo? GetWeatherInfo(uint id)
         => _weatherById.TryGetValue(id, out var info) ? info : null;
 
+    /// <summary>The weathers this area has on its own, sorted by id, each once.</summary>
     public IReadOnlyList<WeatherInfo> TerritoryWeathers
     {
         get
         {
-            // The env scene is populated some frames after a zone change, so an
-            // empty read is retried rather than cached as the answer.
+            // The game fills in the area's weather table some frames after a
+            // zone change, so an empty list is read again next time instead of
+            // being kept.
             if (_cachedTerritory != _clientState.TerritoryType)
             {
                 UpdateTerritoryWeathers();
@@ -450,14 +449,12 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         }
     }
 
-    private void BuildAllWeathers()
+    private void BuildAllWeathers(ExcelSheet<WeatherRow> sheet)
     {
-        if (_weatherSheet == null)
-            return;
-        foreach (var row in _weatherSheet)
+        foreach (var row in sheet)
         {
-            // ActiveWeather is a byte, not an arbitrary Excel row ID. Zero is
-            // the explicit None entry even when the sheet leaves it unnamed.
+            // The game stores the active weather in one byte, so rows above
+            // 255 can't be shown. Row 0 is the None entry added above.
             if (row.RowId == 0 || row.RowId > byte.MaxValue)
                 continue;
             var name = row.Name.ExtractText();
@@ -480,9 +477,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         if (scene == null)
             return;
 
-        // WeatherIds is the ClientStructs-named accessor for the zone's weather
-        // table; the references' hand-counted offset for it is one revision out
-        // of date (0x2C against the mapped 0x30).
+        // Brio and Ktisis read this table at offset 0x2C; ClientStructs maps
+        // it at 0x30, which matches the current game.
         var ids = scene->WeatherIds;
         var count = Math.Min(ids.Length, MaxTerritoryWeatherSlots);
         var seen = new HashSet<uint>();
@@ -501,60 +497,51 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     private nint UpdateEnvironmentDetour(CSEnvManager* manager, float a2, float a3)
     {
 #if DEBUG
-        if (manager != null)
-            WeatherBeforeUpdate = manager->ActiveWeather;
+        WeatherBeforeUpdate = manager->ActiveWeather;
 #endif
-        // Ktisis Scene/Modules/EnvModule supplies weather before EnvManager's
-        // update. Suppressing territory weather lookup alone leaves a one-shot
-        // value vulnerable to later writes. Do not reset TransitionTime here:
-        // blending must advance normally, and native readback stays observable.
-        try
+        // Like Ktisis, the held weather is written before every update, because
+        // the game can change the weather in other places too. The transition
+        // time is left alone so the blend into the weather keeps going.
+        if (IsWeatherOverrideEnabled)
         {
-            if (manager != null && IsWeatherOverrideEnabled)
-            {
-                _heldWeather ??= manager->ActiveWeather;
-                manager->ActiveWeather = _heldWeather.Value;
-            }
-        }
-        catch (Exception ex)
-        {
-            if (!_weatherFaultLogged)
-            {
-                _weatherFaultLogged = true;
-                _log.Error($"Environment: weather detour faulted (logged once): {ex}");
-            }
+            _heldWeather ??= manager->ActiveWeather;
+            manager->ActiveWeather = _heldWeather.Value;
         }
         var result = _weatherHook!.Original(manager, a2, a3);
 #if DEBUG
-        if (manager != null)
-        {
-            WeatherAfterUpdate = manager->ActiveWeather;
-            WeatherUpdateCount++;
-        }
+        WeatherAfterUpdate = manager->ActiveWeather;
+        WeatherUpdateCount++;
 #endif
         return result;
     }
 
-    // ── Environment sections ──────────────────────────────────────────
+    // ── Housing interior brightness ───────────────────────────────────
+    // The binding is a number that changes every time the player enters or
+    // leaves an interior. A write that names an older binding is refused, so
+    // an undo step made in one house never writes into another.
 
     public bool IsHousingInterior => _housingBrightness.TryRead(out _);
     public float? InteriorBrightness =>
         _housingBrightness.TryRead(out var state) ? state.Target : null;
+
+    /// <summary>True while Poser holds the brightness and remembers the value
+    /// the interior had before.</summary>
     public bool IsInteriorBrightnessOverridden => _housingBaseline.HasValue;
     public ulong HousingInteriorBinding => _housingBinding;
 
+    /// <summary>Writes a brightness from 0 to 1. The first write remembers the
+    /// interior's own value so Release can put it back.</summary>
     public bool TrySetInteriorBrightness(float value, ulong binding)
     {
-        if (binding != _housingBinding || !float.IsFinite(value) ||
-            !_housingBrightness.TryRead(out var state))
+        if (binding != _housingBinding || !_housingBrightness.TryRead(out var state))
             return false;
-        float target = Math.Clamp(value, 0f, 1f);
-        if (!_housingBrightness.TryWrite(target))
+        if (!_housingBrightness.TryWrite(value))
             return false;
         _housingBaseline ??= state.Target;
         return true;
     }
 
+    /// <summary>Writes the brightness the house has saved.</summary>
     public bool TryResetInteriorBrightness(ulong binding)
     {
         if (binding != _housingBinding ||
@@ -565,6 +552,9 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         return true;
     }
 
+    /// <summary>Writes back the brightness the interior had before Poser's
+    /// first write, and stops holding it. The house's saved setting is never
+    /// changed.</summary>
     public bool ReleaseInteriorBrightness(ulong binding)
     {
         if (binding != _housingBinding || _housingBaseline is not { } baseline)
@@ -581,8 +571,13 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         _housingBinding++;
     }
 
+    // ── Environment sections ──────────────────────────────────────────
+    // Setting any section's values below also holds that section.
+
     public bool IsSectionHeld(EnvSection section) => (_held & Flag(section)) != 0;
 
+    /// <summary>Releasing needs no restore: the game's next copy writes its own
+    /// values back.</summary>
     public void SetSectionHeld(EnvSection section, bool held)
     {
         if (held)
@@ -606,8 +601,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         _ => SectionFlags.None,
     };
 
-    /// <summary>The live env state, reached through the ClientStructs-named
-    /// container field. Null when the manager is not up yet.</summary>
+    /// <summary>The environment values the game is showing now. Null while the
+    /// game's environment manager does not exist.</summary>
     private static EnvStateNative* LiveState()
     {
         var manager = CSEnvManager.Instance();
@@ -841,41 +836,18 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
     }
 
     /// <summary>
-    /// The destination's pre-copy values are the held state. Snapshotting them
-    /// before the original runs and stamping the held sections back afterwards
-    /// is what makes a section survive; a released section is simply left as
-    /// the game just wrote it.
+    /// Runs when the game copies new environment values over the shown ones.
+    /// The shown values before the copy are Poser's held values; they are
+    /// saved first and the held sections are written back after the copy.
+    /// Sections that are not held keep what the game just wrote.
     /// </summary>
     private nint EnvStateCopyDetour(EnvStateNative* dest, EnvStateNative* src)
     {
-        EnvStateNative? previous = null;
-        try
-        {
-            previous = _held != SectionFlags.None && dest != null ? *dest : null;
-        }
-        catch (Exception ex)
-        {
-            ReportEnvStateFault(ex);
-        }
+        EnvStateNative? previous = _held != SectionFlags.None ? *dest : null;
         var result = _envStateHook!.Original(dest, src);
-        try
-        {
-            if (previous is { } state)
-                ReStamp(dest, state);
-        }
-        catch (Exception ex)
-        {
-            ReportEnvStateFault(ex);
-        }
+        if (previous is { } state)
+            ReStamp(dest, state);
         return result;
-    }
-
-    private void ReportEnvStateFault(Exception ex)
-    {
-        if (_envStateFaultLogged)
-            return;
-        _envStateFaultLogged = true;
-        _log.Error($"Environment: section hold detour faulted (logged once): {ex}");
     }
 
     private void ReStamp(EnvStateNative* dest, EnvStateNative state)
@@ -894,8 +866,9 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
             dest->Particles = state.Particles;
         if ((_held & SectionFlags.Wind) != 0)
             dest->Wind = state.Wind;
-        // Sky carries the fog member the sky editor drives, exactly as the
-        // reference stamps it; it runs last so a held Fog does not lose it.
+        // The sky section includes the sun visibility, which the game keeps
+        // inside the fog values, as Ktisis does. It is written last so a held
+        // fog section doesn't overwrite it.
         if ((_held & SectionFlags.Sky) != 0)
         {
             dest->SkyTextureId = state.SkyTextureId;
@@ -921,53 +894,32 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
 
     private void OnTerritoryChanged(uint territory)
     {
-        // The zone's weather table is gone; every hold is released so the new
-        // zone starts on its own weather, clock and environment.
         _cachedTerritory = null;
         _territoryWeathers.Clear();
-        // TerritoryChanged is raised after the native territory swap. Do not
-        // write through a freshly resolved pointer using the old baseline.
+        // The event comes after the game has already moved to the new area,
+        // so the old interior's brightness is not written back: it would land
+        // in whatever interior the player is in now.
         InvalidateInteriorBrightness();
-        ReleaseAllHolds("territory change");
+        ReleaseAllHolds();
     }
 
     private void OnLogout(int type, int code)
     {
         ReleaseInteriorBrightness(_housingBinding);
         InvalidateInteriorBrightness();
-        ReleaseAllHolds("logout");
+        ReleaseAllHolds();
     }
 
     /// <summary>
-    /// Territory change and logout end every hold. Brio releases weather on
-    /// territory change (EnvironmentService.OnTerritoryChanged) and time on
-    /// both transitions (TimeService.OnTerritoryChanged/OnLogout); the held
-    /// sections must join them here because the copy detour would otherwise
-    /// keep stamping the previous zone's snapshot into the new zone. Each
-    /// release is fault-visible on its own: a hook that refuses to disable
-    /// stays truthfully held and logged, and never blocks the others.
+    /// A new area or a logout starts on the game's own clock, weather and
+    /// sections, as Brio does for the clock and weather. Held sections must be
+    /// released too, or the old area's values would be written into the new one.
     /// </summary>
-    private void ReleaseAllHolds(string reason)
+    private void ReleaseAllHolds()
     {
-        // Sections first — a flag clear cannot throw, so a hook fault below
-        // can never leave the detour stamping stale sections.
         ReleaseAllSections();
-        try
-        {
-            IsWeatherOverrideEnabled = false;
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"Environment: weather hold release failed on {reason}: {ex.Message}");
-        }
-        try
-        {
-            IsTimeFrozen = false;
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"Environment: time freeze release failed on {reason}: {ex.Message}");
-        }
+        IsWeatherOverrideEnabled = false;
+        IsTimeFrozen = false;
     }
 
     public void Dispose()
@@ -978,15 +930,8 @@ public sealed unsafe class EnvironmentService : IEnvironmentRuntimePort, IDispos
         _clientState.Logout -= OnLogout;
         _events.Unsubscribe(_onGPoseStateChanged);
 
-        _held = SectionFlags.None;
         _timeHook?.Dispose();
         _weatherHook?.Dispose();
         _envStateHook?.Dispose();
-
-        _territoryWeathers.Clear();
-        _allWeathers.Clear();
-        _weatherById.Clear();
-
-        GC.SuppressFinalize(this);
     }
 }

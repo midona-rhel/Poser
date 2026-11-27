@@ -30,7 +30,7 @@ public sealed class WorldObjectService : IDisposable
     private readonly VfxLifecycleOwner _vfx;
     private readonly VfxPlaybackControl _vfxPlayback;
     private readonly SceneryAnimationHold _animation;
-    private readonly WorldObjectRespawner _respawner;
+    private readonly WorldObjectSpawner _respawner;
     private readonly FurnitureLoadTracker _loadingFurniture;
     private readonly WorldObjectRestorer _restorer;
     private readonly List<AdoptedWorldObject> _adopted = new();
@@ -52,7 +52,7 @@ public sealed class WorldObjectService : IDisposable
         _vfx = new VfxLifecycleOwner(port);
         _vfxPlayback = new VfxPlaybackControl(port, log);
         _animation = new SceneryAnimationHold(port);
-        _respawner = new WorldObjectRespawner(port, events, log,
+        _respawner = new WorldObjectSpawner(port, events, log,
             IsHandleCurrent, handle => _pendingStains.Remove(handle));
         _loadingFurniture = new FurnitureLoadTracker(port, log,
             _adopted.Contains, Release);
@@ -81,11 +81,13 @@ public sealed class WorldObjectService : IDisposable
         if (_adopted.Count == 0)
             return;
         // A stain set before the model finished loading is written here, once
-        // the model's dye data exists.
+        // the model's dye data exists. Like every write below, it only goes
+        // to the same object it was set on, never to a new object the game
+        // made at the same address.
         if (_pendingStains.Count > 0)
             _pendingStains.RemoveWhere(pending =>
                 !_adopted.Contains(pending)
-                || !_port.IsAlive(pending.Address)
+                || !IsHandleCurrent(pending)
                 // A model that cannot be dyed stops retrying: it never gets
                 // dye data.
                 || _port.CanDyeBg(pending.Address) == false
@@ -93,6 +95,8 @@ public sealed class WorldObjectService : IDisposable
         var now = DateTime.UtcNow;
         foreach (var handle in _adopted)
         {
+            if (!IsHandleCurrent(handle))
+                continue;
             if (handle.NightStatePending && _port.IsBgReady(handle.Address))
             {
                 handle.NightStatePending = false;
@@ -107,8 +111,7 @@ public sealed class WorldObjectService : IDisposable
                 && current != handle.NightState)
                 _port.WriteBgNightState(handle.Address, handle.NightState);
             if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx
-                || handle.VfxPlayback != VfxPlaybackState.Playing
-                || !IsHandleCurrent(handle))
+                || handle.VfxPlayback != VfxPlaybackState.Playing)
                 continue;
             _vfxPlayback.ReplayIfEnded(handle, now);
         }
@@ -173,7 +176,7 @@ public sealed class WorldObjectService : IDisposable
 
     internal void WriteAnimationPaused(AdoptedWorldObject handle)
     {
-        if (_disposed || !_port.IsAlive(handle.Address) || handle.IsVfx)
+        if (_disposed || handle.IsVfx || !IsHandleCurrent(handle))
             return;
         _animation.WritePaused(handle);
     }
@@ -340,25 +343,10 @@ public sealed class WorldObjectService : IDisposable
             detail = "The world cannot be reached right now.";
             return null;
         }
-        var address = _port.Spawn(path, placement);
-        if (address == nint.Zero)
-        {
-            detail = $"'{DisplayName(path)}' could not be spawned — the "
-                + "game did not take the model.";
-            return null;
-        }
-        if (!_port.TryReadIncarnation(address, out var identity)
-            || (NativeWorldObjectPort.IsVfxPath(path.Trim())
-                && (!identity.IsVfx
-                    || identity.ResourceIdentity == nint.Zero)))
-        {
-            bool cleaned = _respawner.TryCleanupUnidentified(path, address);
-            detail = cleaned
-                ? "The spawned native object could not be identified."
-                : "Spawn cleanup remains outstanding.";
-            return null;
-        }
         path = path.Trim();
+        if (_respawner.SpawnIdentified(path, placement, out detail) is not { } identity)
+            return null;
+        var address = identity.Address;
         bool isVfx = NativeWorldObjectPort.IsVfxPath(path);
         var handle = new AdoptedWorldObject(
             this,
