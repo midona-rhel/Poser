@@ -95,6 +95,18 @@ public sealed class TransformParenting(IEntityBindings bindings, IPosingService 
         Evaluate();
     }
 
+    /// <summary>Adds the bones that switched-on IK colliders are parented to.</summary>
+    internal void AddColliderParents(List<IBone> into)
+    {
+        foreach (var (child, link) in _links)
+        {
+            if (child.Overlay != null && link.Target.Bone != null
+                && Resolve(child) is IOverlayNode { State.Collider: { Enabled: true } }
+                && Resolve(link.Target) is IBone bone)
+                into.Add(bone);
+        }
+    }
+
     private static SelectionId Owner(SelectionId id) => id.Bone is { } bone
         ? SelectionId.ForActor(bone.Skeleton.Actor) : id;
 

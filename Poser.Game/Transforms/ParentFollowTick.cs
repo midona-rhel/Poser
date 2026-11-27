@@ -8,8 +8,10 @@ using Poser.Game.Services;
 namespace Poser.Game.Transforms;
 
 /// <summary>Moves every child to follow its parent each frame, after the game
-/// updates the scene and again before IK collisions run. The parent links
-/// themselves are kept in <see cref="TransformParenting"/>.</summary>
+/// updates the scene and again before IK collisions run. It also tells the IK
+/// solver which bones colliders are parented to, so those bones are posed before
+/// a chain collides with them. The parent links themselves are kept in
+/// <see cref="TransformParenting"/>.</summary>
 public sealed class ParentFollowTick : IDisposable
 {
     private readonly TransformParenting _parents;
@@ -27,6 +29,7 @@ public sealed class ParentFollowTick : IDisposable
         _lights = lights; _bindings = bindings;
         phases.TransformUpdate += Tick;
         ik.BeforeCollisions += Tick;
+        ik.AddColliderParents = parents.AddColliderParents;
         framework.Update += Framework;
     }
 
@@ -50,6 +53,7 @@ public sealed class ParentFollowTick : IDisposable
     public void Dispose()
     {
         _phases.TransformUpdate -= Tick; _ik.BeforeCollisions -= Tick;
+        _ik.AddColliderParents = null;
         _framework.Update -= Framework; _parents.Clear();
     }
 }

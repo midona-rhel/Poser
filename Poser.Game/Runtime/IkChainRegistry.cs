@@ -497,10 +497,12 @@ internal sealed unsafe partial class IkChainRegistry
     /// <summary>Adds a pair to <paramref name="into"/> for each bone on another skeleton that
     /// a switched-on chain follows: the chain's skeleton, then the followed bone's skeleton.
     /// Two Joint and CCD chains follow the bone picked as their target. FABRIK and Rope chains
-    /// can follow a bone with their handle and with each end. The followed skeleton is found
+    /// can follow a bone with their handle and with each end, and with collisions on they
+    /// also follow the bones the IK colliders are parented to. The followed skeleton is found
     /// by actor and slot, which a redraw keeps.</summary>
     public void FollowedSkeletons(List<(SkeletonKey Follower, SkeletonKey Followed)> into)
     {
+        var collidersRead = false;
         foreach (var (chainKey, state) in _ikChains)
         {
             if (!state.Config.Enabled)
@@ -512,11 +514,25 @@ internal sealed unsafe partial class IkChainRegistry
                 AddFollowed(chainKey.Skeleton, fabrik.Root, into);
                 AddFollowed(chainKey.Skeleton, fabrik.Tip, into);
                 AddFollowed(chainKey.Skeleton, fabrik.Handle, into);
+                if (!state.Config.Collisions)
+                    continue;
+                if (!collidersRead)
+                {
+                    _colliderParents.Clear();
+                    _ikService.AddColliderParents?.Invoke(_colliderParents);
+                    collidersRead = true;
+                }
+                foreach (var bone in _colliderParents)
+                    if (SkeletonKey.Of(bone.Skeleton) is var followed && followed != chainKey.Skeleton)
+                        into.Add((chainKey.Skeleton, followed));
             }
             else if (state is { Config.TargetMode: IkTargetMode.Bone, TargetBone: { } target })
                 AddFollowed(chainKey.Skeleton, target, into);
         }
     }
+
+    // Reused by FollowedSkeletons, which the apply pass calls every frame.
+    private readonly List<IBone> _colliderParents = new();
 
     private void AddFollowed(SkeletonKey follower, FabrikTarget target,
         List<(SkeletonKey Follower, SkeletonKey Followed)> into)

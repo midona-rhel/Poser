@@ -153,10 +153,8 @@ internal sealed unsafe class IkHeldTargets
                 worldRotation = capture.Rotation;
                 break;
             case Poser.Domain.Posing.IkTargetMode.Bone:
-                if (ik.TargetBone is not { } targetId || FindBone(targetId) is not { } targetBone)
-                    return null;
-                RefreshCache(targetBone);
-                if (global::Poser.Game.Entities.BoneWorld.Of(targetBone) is not { } anchor)
+                if (ik.TargetBone is not { } targetId || FindBone(targetId) is not { } targetBone
+                    || ReadFollowed(endpoint, targetBone, inPass: pose != null) is not { } anchor)
                     return null;
                 (worldPosition, worldRotation) = FromRelative(anchor, capture.Target, capture.Rotation);
                 break;
@@ -187,6 +185,17 @@ internal sealed unsafe class IkHeldTargets
         if (pose != null) ik.Build.SolveTarget = (position, rotation);
         return (position, rotation);
     }
+
+    /// <summary>Where a followed bone is in the world. The apply pass solves a chain when it
+    /// reaches the chain's end bone. A bone on the same skeleton that the pass reaches later
+    /// has no edits from this frame yet, so during the pass it is read where it was shown at
+    /// the end of the last frame, which is a frame late while that bone moves. Any other
+    /// bone is read from the pose as it is now.</summary>
+    private static Transform? ReadFollowed(IBone endpoint, IBone followed, bool inPass) =>
+        inPass && ReferenceEquals(followed.Skeleton, endpoint.Skeleton)
+            && (followed.PartialId, followed.BoneIndex).CompareTo((endpoint.PartialId, endpoint.BoneIndex)) > 0
+            ? BoneWorld.Of(followed)
+            : BoneWorld.ReadCurrent(followed);
 
     /// <summary>Aligns a newly enabled target with the end bone as it will be shown, before
     /// the first solve. A capture read from the screen can be a frame old.</summary>
