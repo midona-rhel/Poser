@@ -135,6 +135,12 @@ public sealed class WorldActorDiscoveryTests
         public bool IsSpawned(object actor) => false;
         public bool Destroy(object actor) => throw new NotSupportedException();
         public void Note(string detail) => throw new InvalidOperationException(detail);
+        public void CapturePoseForCopy(object actor, Action<ActorState?> done) => throw new NotSupportedException();
+        public BodyProfileCopy? CaptureBodyProfile(IActor source) => throw new NotSupportedException();
+        public IActor? Recreate(ActorState state) => throw new NotSupportedException();
+        public bool IsRestoring => false;
+        public Action HoldRestore() => throw new NotSupportedException();
+        public void ForgetRestores() { }
     }
 
     [Fact]

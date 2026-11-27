@@ -1,4 +1,5 @@
 using System.Reflection;
+using Poser.Application.Posing;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Game.Entities;
@@ -51,7 +52,7 @@ public sealed class ActorVisibilityTests
             Bindings = (BindingProxy)(object)bindings;
             Spawn = (VisibilitySpawnProxy)(object)spawn;
             // Visibility never reaches the presentation session.
-            Values = new(new ValueJournal(History), null!, bindings, spawn);
+            Values = new(new ValueJournal(History), null!, bindings, spawn, new SameActor());
         }
     }
 
@@ -84,6 +85,12 @@ public sealed class ActorVisibilityTests
                 Visible = visible;
             return null;
         }
+    }
+
+    // Nothing in these tests removes an actor.
+    private sealed class SameActor : IActorReplacements
+    {
+        public Func<ActorId?> Track(ActorId actor) => () => actor;
     }
 
     public class UnusedProxy : DispatchProxy

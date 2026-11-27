@@ -224,6 +224,11 @@ internal static class ServiceRegistration
         services.AddSingleton<IEntityHistoryBinding<Game.Entities.ILight>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Game.Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryBinding<Game.Entities.IActor>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
+        // Created on first use to break a loop: the actor undo slots are built
+        // from services whose own undo steps need this resolver.
+        services.AddSingleton(sp => new System.Lazy<IEntityHistoryResolver<Game.Entities.IActor>>(
+            sp.GetRequiredService<IEntityHistoryResolver<Game.Entities.IActor>>));
+        services.AddSingleton<Application.Posing.IActorReplacements, Game.Posing.ActorReplacements>();
         services.AddSingleton<IEntityHistoryResolver<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryBinding<IWorldObject>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<IEntityHistoryResolver<Game.Entities.IVirtualCamera>>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
@@ -616,8 +621,8 @@ internal static class ServiceRegistration
         // and removes them. Disposing them when the plugin unloads removes
         // every overlay.
         services.AddSingleton<
-            Game.Overlays.IOverlayNodePort,
-            Game.Overlays.KamiToolKitOverlayPort>();
+            Game.Overlays.IOverlayNodeDrawer,
+            Game.Overlays.KamiToolKitOverlayNodeDrawer>();
         services.AddSingleton<Game.Overlays.OverlayNodeService>();
         services.AddSingleton<IOverlayNodeService>(sp => sp.GetRequiredService<Game.Overlays.OverlayNodeService>());
         services.AddStartable<Game.Overlays.OverlayNodeService>(StartStage.OverlayNodes);

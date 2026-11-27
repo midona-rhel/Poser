@@ -11,11 +11,13 @@ using Poser.Domain.Presentation;
 namespace Poser.Game.Overlays;
 
 /// <summary>
-/// Dialogue, chat-bubble, and status overlays built from native UI texture atlases.
-/// Atlas coordinates follow Ktisis's TalkNode, BalloonNode, and StatusNode layouts.
-/// These staged elements remain visible when the game HUD is hidden.
-/// The node size is set before move mode creates its drag region. Completed drags
-/// update State and notify the port, so later edits retain the new position.
+/// The game UI node of one overlay: a dialog box, a speech balloon or a status
+/// line, drawn from pieces of the game's own UI textures. Where each piece sits
+/// in those textures is taken from Ktisis's TalkNode, BalloonNode and
+/// StatusNode. Overlays stay visible when the player hides the game's UI. The
+/// node's size is set in the constructor because KamiToolKit sizes the area the
+/// mouse can drag from it. When a drag ends, the node stores its new position
+/// and reports it, so the next edit doesn't put it back.
 /// </summary>
 internal abstract class OverlayShapeNode : OverlayNode
 {
@@ -26,17 +28,16 @@ internal abstract class OverlayShapeNode : OverlayNode
         Size = OverlayNodeGeometry.DesignSize(kind);
         OnMoveComplete = _ =>
         {
-            // The node is already where the pointer left it, so this states the
-            // fact rather than re-applying it: the document catches up, and
-            // nothing is written back down.
+            // KamiToolKit has already moved the node, so only the stored
+            // position is updated; nothing is redrawn.
             _state = _state with { Position = Position };
             Moved?.Invoke(Position);
         };
     }
 
-    /// <summary>The pointer finished dragging this node to the given screen
-    /// position. Set by the port, which is the only thing that knows which
-    /// handle the node belongs to.</summary>
+    /// <summary>Called when a drag of this node ends, with its new screen
+    /// position. <see cref="KamiToolKitOverlayNodeDrawer"/> sets it and passes
+    /// the node and the position on to <see cref="OverlayNodeService"/>.</summary>
     public Action<Vector2>? Moved { get; set; }
 
     public sealed override OverlayLayer OverlayLayer =>
@@ -46,9 +47,9 @@ internal abstract class OverlayShapeNode : OverlayNode
 
     public sealed override bool HideWithUiToggled => false;
 
-    /// <summary>The document this node draws. Assigning it restates the whole
-    /// node — the shared frame properties immediately, the shape's own
-    /// contents on the next update.</summary>
+    /// <summary>The values this node draws. Setting them moves, scales, fades,
+    /// shows or hides the node at once; the text and pictures of the dialog
+    /// box, balloon or status line change on the next update.</summary>
     public OverlayNodeState State
     {
         get => _state;
@@ -64,8 +65,8 @@ internal abstract class OverlayShapeNode : OverlayNode
         }
     }
 
-    /// <summary>The status icon's resolved texture path, supplied by the port
-    /// (the node layer has no texture service of its own).</summary>
+    /// <summary>The game file of a status line's icon. The drawer looks it up,
+    /// because the node can't.</summary>
     public string IconPath { get; set; } = string.Empty;
 
     protected static Vector4 Rgba(byte r, byte g, byte b) =>
@@ -79,8 +80,9 @@ internal abstract class OverlayShapeNode : OverlayNode
 /// text, speaker text, and the advance mark.</summary>
 internal sealed class TalkShapeNode : OverlayShapeNode
 {
-    /// <summary>The two sheets the nine backgrounds come from, and the row
-    /// height one background occupies in either.</summary>
+    /// <summary>The nine dialog backgrounds are split over two textures, this
+    /// one and <see cref="OtherSheet"/>. Each background is one row,
+    /// <see cref="BackgroundRow"/> pixels high.</summary>
     private const string BasicSheet = "ui/uld/Talk_Basic_hr1.tex";
 
     private const string OtherSheet = "ui/uld/Talk_Other_hr1.tex";
@@ -95,8 +97,8 @@ internal sealed class TalkShapeNode : OverlayShapeNode
     private readonly TextNode _body;
     private readonly TextNode _speaker;
 
-    /// <summary>Unsafe for one reason: the speaker plate's nine-grid part is
-    /// added through a pointer-taking overload.</summary>
+    /// <summary>Unsafe because the speaker plate's piece is added through a
+    /// KamiToolKit method that takes a pointer.</summary>
     public unsafe TalkShapeNode() : base(OverlayNodeKind.Talk)
     {
         _background = new SimpleImageNode

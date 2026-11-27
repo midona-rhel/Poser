@@ -952,11 +952,15 @@ public sealed class SceneLifecycleHistoryTests
 
         public void WhenPosable(object actor, Action<object> act) => act(actor);
 
-        public Action<IActor, Action>? CaptureBodyProfile(IActor source)
+        public bool IsRestoring => false;
+        public Action HoldRestore() => static () => { };
+        public void ForgetRestores() { }
+
+        public BodyProfileCopy? CaptureBodyProfile(IActor source)
         {
             if (!_bodyProfiles.TryGetValue(source, out var profile))
                 return null;
-            return (target, applied) =>
+            return (target, applied, _) =>
             {
                 _bodyProfiles[target] = profile;
                 CopyOperations.Add("profile");

@@ -15,7 +15,18 @@ public readonly record struct IkChainSnapshot(BoneId Endpoint, IkChainConfig Con
 public sealed record ActorSnapshot(
     Guid Lineage,
     object Pose,
-    IReadOnlyList<IkChainSnapshot> IkChains);
+    IReadOnlyList<IkChainSnapshot> IkChains)
+{
+    /// <summary>The actor the snapshot was taken from, when it is put back on
+    /// another actor. Saved IK targets on the first actor's own bones are
+    /// matched by this.</summary>
+    public Guid? TakenFrom { get; init; }
+
+    /// <summary>The same snapshot, put back on the actor with this lasting id.
+    /// Undo uses this when it brought the actor back as a new game object.</summary>
+    public ActorSnapshot For(Guid lineage) =>
+        lineage == Lineage ? this : this with { Lineage = lineage, TakenFrom = TakenFrom ?? Lineage };
+}
 
 /// <summary>
 /// An undo step that carries its own undo and redo code, for changes that are

@@ -22,8 +22,8 @@ public readonly record struct RunningAction(string Name, ActionKind Kind);
 /// cannot start another one: the interface ignores clicks and shortcuts, and greys itself
 /// out when the action takes time. Poser's own work each frame, and the steps inside the
 /// running action, never ask.
-/// Each kind of action registers how to tell that it is running. Nothing is switched on and
-/// off by hand, so the interface cannot stay blocked after an action has ended.
+/// Each kind of action registers how to tell that it is running, and the gate asks again every
+/// frame, so the interface is free as soon as no action says it is still running.
 /// </summary>
 public sealed class ActionGate
 {
