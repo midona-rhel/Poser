@@ -194,6 +194,21 @@ public sealed partial class DebugBridge
         if (ResolveSelection(query.GetValueOrDefault("overlay", "")) is not
             { Overlay: { } overlayId } selection || BridgeOverlays.Read(overlayId) is not { } reading)
             return new { accepted = false, outcome = "Refused", reason = "Unknown overlay selection." };
+        if (query.ContainsKey("dragX") || query.ContainsKey("dragY"))
+        {
+            // ?dragX=&dragY= runs the steps of an on-screen drag ending there,
+            // without the game's own mouse handling.
+            if (!TryFloat(query, "dragX", out var dragX) || !TryFloat(query, "dragY", out var dragY))
+                return new { accepted = false, outcome = "Refused", reason = "Both finite dragX and dragY are required." };
+            if (_bindings.Resolve(overlayId) is not { Success: true, Value: Game.Overlays.OverlayNodeHandle handle })
+                return new { accepted = false, outcome = "Refused", reason = "The overlay is not bound." };
+            var before = OverlayNodeState(selection, reading);
+            ((Game.Overlays.OverlayNodeService)_services.GetService(typeof(Game.Overlays.OverlayNodeService))!)
+                .DebugDrag(handle, new Vector2(dragX, dragY));
+            return new { accepted = true, outcome = "Applied", before,
+                after = BridgeOverlays.Read(overlayId) is { } dragged ? OverlayNodeState(selection, dragged) : null,
+                historyLabel = _transforms.UndoDescription };
+        }
         if (query.ContainsKey("x") || query.ContainsKey("y") || query.ContainsKey("scale"))
         {
             var before = OverlayNodeState(selection, reading);
