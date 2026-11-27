@@ -43,7 +43,7 @@ public partial class PoseInspectorPane : IDisposable
     private readonly IPoseInteraction _interaction;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly IIkBake _ikBake;
-    private readonly ITransformEditing _cleanTransforms;
+    private readonly ITransformEditing _transformEditing;
     private readonly IPoseCommands _poseCommands;
     private readonly IActorResetControl _actorReset;
     private readonly IGazeControl _gazeValues;
@@ -113,7 +113,7 @@ public partial class PoseInspectorPane : IDisposable
 
         // The move code ended the drag: it failed, Escape was pressed, or the
         // selection changed. Do not start another one until the mouse is released.
-        if (_cleanTransforms.ActiveGesture != gesture)
+        if (_transformEditing.ActiveGesture != gesture)
         {
             ClearTransformSession();
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
@@ -191,7 +191,7 @@ public partial class PoseInspectorPane : IDisposable
     public PoseInspectorPane(
         global::Poser.Application.Settings.ConfigurationService configuration,
         IPoseInteraction interaction,
-        ITransformEditing cleanTransforms,
+        ITransformEditing transformEditing,
         IActorResetControl actorReset,
         IPoseCommands poseCommands,
         IGazeControl gazeValues,
@@ -235,7 +235,7 @@ public partial class PoseInspectorPane : IDisposable
         _viewport = viewport;
         _expressionSection = expressionSection;
         _interaction = interaction;
-        _cleanTransforms = cleanTransforms;
+        _transformEditing = transformEditing;
         _actorReset = actorReset;
         _poseCommands = poseCommands;
         _gazeValues = gazeValues;
@@ -435,7 +435,7 @@ public partial class PoseInspectorPane : IDisposable
                 : ViewportBoneModel(boneId)!.Value;
 
             Quaternion frameWorld;
-            if (_cleanTransforms.ParentPivotFor(boneId) is { } parent)
+            if (_transformEditing.ParentPivotFor(boneId) is { } parent)
             {
                 frameWorld = Controls.RotationGizmoRings.RadialFrame(
                     Vector3.Transform(parent, actorMatrix),
@@ -1499,7 +1499,7 @@ public partial class PoseInspectorPane : IDisposable
                 () =>
                 {
                     var copied = _transformClipboard.Copied!.Value;
-                    var written = _cleanTransforms.SetAbsolute(
+                    var written = _transformEditing.SetAbsolute(
                         target,
                         new Domain.Transforms.PoseTransform(
                             copied.Position, copied.Rotation, copied.Scale),
@@ -2619,7 +2619,7 @@ public partial class PoseInspectorPane : IDisposable
 
     public void ResetActorTransform()
     {
-        _cleanTransforms.ClearActorOverrides(
+        _transformEditing.ClearActorOverrides(
             SelectedActorIds().Select(TransformTargetId.ForActor).ToList());
     }
 
@@ -2744,7 +2744,7 @@ public partial class PoseInspectorPane : IDisposable
         // Callers start a drag only when ReadTransform allowed editing, and
         // that requires this same effective selection.
         var effective = EffectiveSelection()!;
-        var begin = _cleanTransforms.BeginDrag(
+        var begin = _transformEditing.BeginDrag(
             effective.Targets, operation, DomainSpace.World, _selection.Selected);
         if (!begin.Success || begin.GestureId is not { } gesture)
             return;
@@ -2775,7 +2775,7 @@ public partial class PoseInspectorPane : IDisposable
             DivideComponents(modelAfter.Scale, modelStart.Scale));
         if (_cleanGroupFrame is { } frame)
             delta = delta with { Rotation = frame.ToWorldDelta(delta.Rotation) };
-        var update = _cleanTransforms.Update(gesture, delta);
+        var update = _transformEditing.Update(gesture, delta);
         if (!update.Success)
         {
             // The transform service ended the drag. Do not start another one
@@ -2791,7 +2791,7 @@ public partial class PoseInspectorPane : IDisposable
     private void CommitTransformSession()
     {
         if (_cleanGesture is { } gesture)
-            _cleanTransforms.Commit(gesture);
+            _transformEditing.Commit(gesture);
     }
 
     public void CancelInteraction() => ClearTransformSession(cancel: true);
@@ -2812,7 +2812,7 @@ public partial class PoseInspectorPane : IDisposable
     public void PumpInteraction(bool pointerHeld)
     {
         if (_cleanGesture is not { } gesture) return;
-        if (_cleanTransforms.ActiveGesture != gesture)
+        if (_transformEditing.ActiveGesture != gesture)
             ClearTransformSession();
         else if (!pointerHeld)
         {
@@ -2824,7 +2824,7 @@ public partial class PoseInspectorPane : IDisposable
     private void ClearTransformSession(bool cancel = false)
     {
         if (cancel && _cleanGesture is { } gesture)
-            _cleanTransforms.Cancel(gesture);
+            _transformEditing.Cancel(gesture);
         _dragStart = null;
         _dragEuler = null;
         _cleanGesture = null;

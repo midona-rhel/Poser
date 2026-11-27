@@ -53,7 +53,7 @@ public class GizmoOverlayWindow : Window
     private readonly ICameraProjection _cameraService;
     private readonly IPoseInteraction _poseInteraction;
     private readonly IIkConfigurationPort _ikPort;
-    private readonly ITransformEditing _cleanTransforms;
+    private readonly ITransformEditing _transformEditing;
     private readonly IGazeControl _gazeValues;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
@@ -152,11 +152,11 @@ public class GizmoOverlayWindow : Window
     private void ReconcileInteractionLifecycle(GizmoTargetType currentTarget)
     {
         if (_gesture is { } gesture
-            && (_cleanTransforms.ActiveGesture != gesture.Id
+            && (_transformEditing.ActiveGesture != gesture.Id
                 || _gestureTargetType != currentTarget))
         {
-            if (_cleanTransforms.ActiveGesture == gesture.Id)
-                _cleanTransforms.Cancel(gesture.Id);
+            if (_transformEditing.ActiveGesture == gesture.Id)
+                _transformEditing.Cancel(gesture.Id);
             ClearGesture(suppress: true);
         }
 
@@ -174,7 +174,7 @@ public class GizmoOverlayWindow : Window
         ICameraProjection cameraService,
         IPoseInteraction poseInteraction,
         IIkConfigurationPort ikPort,
-        ITransformEditing cleanTransforms,
+        ITransformEditing transformEditing,
         IGazeControl gazeValues,
         SkeletonOverlayPresentation presentation,
         global::Poser.Application.Scene.SceneGroups groups,
@@ -204,7 +204,7 @@ public class GizmoOverlayWindow : Window
         _cameraService = cameraService;
         _poseInteraction = poseInteraction;
         _ikPort = ikPort;
-        _cleanTransforms = cleanTransforms;
+        _transformEditing = transformEditing;
         _gazeValues = gazeValues;
         _presentation = presentation;
         _groups = groups;
@@ -619,7 +619,7 @@ public class GizmoOverlayWindow : Window
             gesture.Orientation != currentOrientation ||
             gesture.PivotChoice != currentPivot)
         {
-            _cleanTransforms.Cancel(gesture.Id);
+            _transformEditing.Cancel(gesture.Id);
             ClearGesture(suppress: true);
             return null;
         }
@@ -737,7 +737,7 @@ public class GizmoOverlayWindow : Window
         // With Parent chosen, the rings sit on the joint above the bone, where
         // a drag will turn it around.
         Vector3? restPivot = isBone && gesture == null
-            ? _cleanTransforms.ParentPivotFor(primaryBone!.Value)
+            ? _transformEditing.ParentPivotFor(primaryBone!.Value)
             : null;
 
         bool ringDrag = gesture is { Handle.Kind: WorldHandleKind.RotateRing or WorldHandleKind.Roll };
@@ -834,7 +834,7 @@ public class GizmoOverlayWindow : Window
         // Commit once on release.
         if (_gesture is { } completed && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
         {
-            _cleanTransforms.Commit(completed.Id);
+            _transformEditing.Commit(completed.Id);
             ClearGesture(suppress: false);
             _beginSuppressed = false;
         }
@@ -1123,7 +1123,7 @@ public class GizmoOverlayWindow : Window
         if (operation == DomainOperation.Scale && layout.CapsuleScale)
             space = DomainSpace.Local;
 
-        var begin = _cleanTransforms.BeginDrag(targets, operation, space);
+        var begin = _transformEditing.BeginDrag(targets, operation, space);
         if (!begin.Success || begin.GestureId is not { } gestureId)
         {
             _log.Verbose(
@@ -1143,9 +1143,9 @@ public class GizmoOverlayWindow : Window
             Start = currentTransform,
             Current = currentTransform,
             Projection = projection,
-            PivotMode = _cleanTransforms.ActivePivotMode!.Value,
+            PivotMode = _transformEditing.ActivePivotMode!.Value,
             // The pivot the transform service fixed when the drag started.
-            Pivot = _cleanTransforms.ActivePivot!.Value,
+            Pivot = _transformEditing.ActivePivot!.Value,
             PivotChoice = pivotChoice,
         };
         _gestureTargetType = targetType;
@@ -1364,7 +1364,7 @@ public class GizmoOverlayWindow : Window
     /// the transform service has already ended the drag.</summary>
     private bool DispatchUpdate(GizmoGesture gesture, Transform newTransform)
     {
-        var update = _cleanTransforms.Update(
+        var update = _transformEditing.Update(
             gesture.Id,
             ToDomainDelta(gesture.Start, newTransform, gesture.Space, gesture.IsGroup));
         if (update.Success)

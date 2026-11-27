@@ -246,7 +246,7 @@ internal static class ServiceRegistration
         services.AddSingleton<ITransformRuntimePort>(sp => new ParentRelativeTransforms(
             sp.GetRequiredService<GameTransforms>(), sp.GetRequiredService<TransformParenting>()));
         services.AddSingleton<ParentFollowTick>();
-        services.AddStartable<ParentFollowTick>(StartStage.ParentingFrames);
+        services.AddStartable<ParentFollowTick>(StartStage.ParentFollow);
         services.AddSingleton<TransformGestureService>();
         services.AddSingleton<Application.Lifecycle.ActionGate>();
         services.AddStartable(StartStage.RunningActions, RunningActions.Register);

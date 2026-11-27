@@ -17,7 +17,7 @@ namespace Poser.Application.Tests.Transforms;
 public sealed class GroupTransformRoutingTests
 {
     [Fact]
-    public void Every_way_of_starting_a_move_records_the_group_values()
+    public void Moving_several_things_moves_them_as_a_group_and_records_the_group_values()
     {
         const TransformOperation operation = TransformOperation.Translate;
         var selection = new SelectionSession();
@@ -64,8 +64,8 @@ public sealed class GroupTransformRoutingTests
         selection.Add(SelectionId.ForWorldObject(world));
         selection.Add(SelectionId.ForActor(other));
         Assert.False(editing.Begin([targets[0]], operation, TransformSpace.World).Success);
-        // The call move commands and the gizmo make: no group flag or id, and
-        // a move in each target's own space.
+        // Asked for a move in each target's own space, several things still
+        // move as a group: around their shared centre, in world space.
         var begin = editing.Begin(targets, operation, TransformSpace.Local);
         Assert.True(begin.Success, begin.Detail);
         Assert.Equal(new Vector3(1, 1, 2f / 3), editing.ActivePivot);
@@ -78,8 +78,8 @@ public sealed class GroupTransformRoutingTests
         Assert.True(state.TryRead(null, targets, target => live[target],
             GroupScaleMode.SizesAndSpacing, out _, out _));
 
-        // The gizmo and the inspector start a move in different ways; both
-        // must scale through the same stored group frame.
+        // After the group is turned, scaling along X stretches the group along
+        // its own turned X axis, from its centre.
         var rotate = editing.Begin(targets, TransformOperation.Rotate, TransformSpace.World);
         Assert.True(rotate.Success);
         Assert.True(editing.Update(rotate.GestureId!.Value, new(Vector3.Zero,
@@ -90,25 +90,19 @@ public sealed class GroupTransformRoutingTests
             var before = live.ToDictionary();
             Assert.True(coordinator.TryReadWorldSelection(mode, out var display, out _));
             var xAxis = Vector3.Transform(Vector3.UnitX, display.Rotation);
-            Dictionary<TransformTargetId, PoseTransform>? overlayResult = null;
-            foreach (var explicitGroup in new[] { false, true })
+            var scale = editing.Begin(targets, TransformOperation.Scale, TransformSpace.World,
+                PivotMode.Centroid, groupScale: mode);
+            Assert.True(scale.Success, scale.Detail);
+            Assert.True(editing.Update(scale.GestureId!.Value,
+                new(Vector3.Zero, Quaternion.Identity, new(2, 1, 1))).Success);
+            foreach (var target in targets)
             {
-                var scale = editing.Begin(targets, TransformOperation.Scale, TransformSpace.World,
-                    PivotMode.Centroid, groupScale: mode, groupTransform: explicitGroup);
-                Assert.True(scale.Success, scale.Detail);
-                Assert.True(editing.Update(scale.GestureId!.Value,
-                    new(Vector3.Zero, Quaternion.Identity, new(2, 1, 1))).Success);
-                foreach (var target in targets)
-                {
-                    var expected = before[target].Position + xAxis * Vector3.Dot(
-                        before[target].Position - display.Position, xAxis);
-                    Assert.True(Vector3.Distance(expected, live[target].Position) < .00001f);
-                }
-                if (overlayResult == null) overlayResult = live.ToDictionary();
-                else Assert.Equal(overlayResult, live);
-                Assert.True(editing.Cancel(scale.GestureId.Value).Success);
-                Assert.Equal(before, live);
+                var expected = before[target].Position + xAxis * Vector3.Dot(
+                    before[target].Position - display.Position, xAxis);
+                Assert.True(Vector3.Distance(expected, live[target].Position) < .00001f);
             }
+            Assert.True(editing.Cancel(scale.GestureId.Value).Success);
+            Assert.Equal(before, live);
         }
         // A pinned single entity remains editable while the workspace holds
         // a group; a pinned group remains editable with a different selection.

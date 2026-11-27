@@ -161,14 +161,13 @@ public sealed class TransformEditing : ITransformEditing
         Func<string, TransformDeltaMode?>? symmetryFor = null,
         bool relativeSecondaryBones = false,
         GroupScaleMode groupScale = GroupScaleMode.SizesAndSpacing,
-        bool groupTransform = false,
         IReadOnlyList<SelectionId>? selection = null)
     {
         // Several entities, or one entity of a multi-entity selection, move
         // as a group: around their shared centre, in world space, and only
         // when the whole selection can move.
         var selected = selection ?? _scene.Selection.Selected;
-        groupTransform |= (targetIds.Count > 1
+        var groupTransform = (targetIds.Count > 1
             || Poser.Application.Selection.EntitySelection.IsMultiEntity(selected))
             && targetIds.All(target => target.Kind != TransformTargetKind.Bone);
         Guid? groupId = null;
