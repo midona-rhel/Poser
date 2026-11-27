@@ -9,14 +9,14 @@ using static Poser.UI.Widgets.WindowFrameWidgets;
 
 namespace Poser.UI.Views;
 
-public sealed class ReleaseNotesView(ReleaseNotesState session)
+public sealed class ReleaseNotesView(ReleaseNotesState notes)
 {
     private int _shownRevision = -1;
 
     public void Draw()
     {
-        if (!session.IsOpen) return;
-        if (session.ShowingHistory && _shownRevision != session.ViewRevision)
+        if (!notes.IsOpen) return;
+        if (notes.ShowingHistory && _shownRevision != notes.ViewRevision)
             ImGui.SetNextWindowFocus();
         float scale = ImGuiHelpers.GlobalScale;
         ImGui.SetNextWindowSize(new Vector2(560, 380) * scale, ImGuiCond.Appearing);
@@ -24,7 +24,7 @@ public sealed class ReleaseNotesView(ReleaseNotesState session)
         ImGui.SetNextWindowSizeConstraints(new Vector2(360, 220) * scale, new Vector2(float.MaxValue));
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0);
-        bool open = session.IsOpen;
+        bool open = notes.IsOpen;
         try
         {
             bool visible = ImGui.Begin("What's new###poser-release-notes", ref open,
@@ -41,12 +41,12 @@ public sealed class ReleaseNotesView(ReleaseNotesState session)
                 {
                     var frame = WindowFrame("release-notes", min, size, new WindowFrameProps
                     {
-                        Title = session.ShowingHistory ? "Release notes" : "What's new",
-                        OnClose = session.Dismiss,
+                        Title = notes.ShowingHistory ? "Release notes" : "What's new",
+                        OnClose = notes.Dismiss,
                         FooterRight = bar =>
                         {
-                            if (!session.ShowingHistory) bar.Button("All releases", session.Open);
-                            bar.Button("Close", session.Dismiss);
+                            if (!notes.ShowingHistory) bar.Button("All releases", notes.Open);
+                            bar.Button("Close", notes.Dismiss);
                         },
                     });
                     ImGui.SetCursorScreenPos(frame.Body.Min);
@@ -59,13 +59,13 @@ public sealed class ReleaseNotesView(ReleaseNotesState session)
                         {
                             if (bodyVisible)
                             {
-                                if (_shownRevision != session.ViewRevision)
+                                if (_shownRevision != notes.ViewRevision)
                                 {
                                     ImGui.SetScrollY(0);
-                                    _shownRevision = session.ViewRevision;
+                                    _shownRevision = notes.ViewRevision;
                                 }
                                 DrawBody();
-                                session.MarkPresented();
+                                notes.MarkPresented();
                             }
                         }
                         finally { ImGui.EndChild(); }
@@ -76,15 +76,15 @@ public sealed class ReleaseNotesView(ReleaseNotesState session)
             }
             finally { ImGui.End(); }
         }
-        finally { ImGui.PopStyleVar(2); if (!open) session.Dismiss(); }
+        finally { ImGui.PopStyleVar(2); if (!open) notes.Dismiss(); }
     }
 
     private void DrawBody()
     {
         var theme = ActiveTheme;
-        if (session.Entries.Count == 0)
+        if (notes.Entries.Count == 0)
             Text("No release notes are bundled for this version.");
-        foreach (var release in session.Entries)
+        foreach (var release in notes.Entries)
         {
             Text($"Poser {release.Version.ToString(3)} — {release.Title}",
                 new TextStyle

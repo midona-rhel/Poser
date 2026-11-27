@@ -27,13 +27,14 @@ public sealed class ReleaseNotesState
         var previous = hasSeen ? Normalize(seen!) : null;
         _history = ReleaseNotesHistory.Entries.Where(entry => Normalize(entry.Version) <= current)
             .OrderByDescending(entry => Normalize(entry.Version)).ToArray();
-        // Freeze the upgrade range before MarkPresented advances persistent state.
+        // Chosen now, because MarkPresented changes the last version seen.
         Entries = _history.Where(entry => previous is null || Normalize(entry.Version) > previous).ToArray();
         IsOpen = previous is null || current > previous;
         _presented = !IsOpen;
     }
 
-    // A load alone is not presentation: hidden UI must not consume the notice.
+    // Called when the notes were drawn. Creating this class is not enough:
+    // if Poser's windows are hidden, the notes must still show next time.
     public void MarkPresented()
     {
         if (_presented || !IsOpen) return;

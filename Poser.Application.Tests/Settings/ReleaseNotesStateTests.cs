@@ -12,8 +12,8 @@ public sealed class ReleaseNotesStateTests
     {
         var store = new MemoryStore();
         store.Config.LastSeenReleaseVersion = seen;
-        var session = new ReleaseNotesState(new ConfigurationService(store), new(0, 9, 10, 0));
-        Assert.Equal(expected, session.IsOpen);
+        var notes = new ReleaseNotesState(new ConfigurationService(store), new(0, 9, 10, 0));
+        Assert.Equal(expected, notes.IsOpen);
         Assert.Equal(0, store.Saves);
     }
 
@@ -21,11 +21,11 @@ public sealed class ReleaseNotesStateTests
     public void Failure_does_not_consume_the_version_and_can_retry()
     {
         var store = new MemoryStore { Fail = true };
-        var session = new ReleaseNotesState(new ConfigurationService(store), new(0, 9, 10, 0));
-        Assert.Throws<IOException>(session.MarkPresented);
+        var notes = new ReleaseNotesState(new ConfigurationService(store), new(0, 9, 10, 0));
+        Assert.Throws<IOException>(notes.MarkPresented);
         Assert.Null(store.Config.LastSeenReleaseVersion);
         store.Fail = false;
-        session.MarkPresented();
+        notes.MarkPresented();
         Assert.Equal("0.9.10.0", store.Config.LastSeenReleaseVersion);
     }
 

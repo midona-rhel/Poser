@@ -4,8 +4,8 @@ using Poser.Application.Lifecycle;
 
 namespace Poser.Game.AutoSave;
 
-/// <summary>Runs the scene autosave once every game frame, telling it
-/// whether GPose is open.</summary>
+/// <summary>Calls the scene autosave's Tick every game frame with whether
+/// GPose is open. The autosave decides whether to write a file.</summary>
 public sealed class AutoSaveTick : IDisposable
 {
     private readonly IFramework _framework;
