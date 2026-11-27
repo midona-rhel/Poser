@@ -40,10 +40,6 @@ internal sealed unsafe class StanceControl
 
     public Outcome SetStance(ActorId actor, AnimationStance stance, int pose)
     {
-        var capture = _store.For(actor).StanceCaptureValue;
-        if (capture == null && _playback.Read(actor) is { } reading)
-            capture = new StanceCapture(reading.Stance, reading.Pose);
-
         // Stop active loops before changing stance, but remember whether the
         // user wants the next General animation to repeat.
         var owned = _store.For(actor);
@@ -72,6 +68,13 @@ internal sealed unsafe class StanceControl
             if (!released.Success)
                 return released;
         }
+
+        // Save the stance for Reset only after the release above. A Full body
+        // animation Poser played, such as Sit, also sets the stance; releasing
+        // it gave back the game's own stance.
+        var capture = owned.StanceCaptureValue;
+        if (capture == null && _playback.Read(actor) is { } reading)
+            capture = new StanceCapture(reading.Stance, reading.Pose);
 
         var result = WriteStance(actor, stance, pose);
         if (!result.Success)
