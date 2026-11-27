@@ -140,11 +140,7 @@ public sealed partial class GraphicalBonePane
         var created = copy
             ? BoneMapPresetDraft.CopyOf(current.Kind, _editorDefaults, store,
                 current.Name, current.Points, current.Background, current.Template)
-            : new BoneMapPresetDraft(current.Kind, _editorDefaults)
-            {
-                Name = BoneMapPresetDraft.UniqueName(store, current.Kind, "New preset"),
-                Template = current.Template,
-            };
+            : BoneMapPresetDraft.New(current.Kind, _editorDefaults, store, current.Template);
         _editError = created.Save(_configuration, out var id);
         if (_editError != null) return;
         LoadEditorPreset(store.First(item => item.Id == id));

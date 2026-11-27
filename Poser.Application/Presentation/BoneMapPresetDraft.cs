@@ -71,6 +71,17 @@ public sealed class BoneMapPresetDraft
         }
     }
 
+    /// <summary>A new, unsaved preset with the map's default points, named
+    /// "New preset" or the first free name after it.</summary>
+    public static BoneMapPresetDraft New(
+        BoneMapKind kind, IEnumerable<BoneMapPoint> defaults, IEnumerable<BoneMapPreset> store,
+        string? template) =>
+        new(kind, defaults)
+        {
+            Name = UniqueName(store, kind, "New preset"),
+            Template = template,
+        };
+
     /// <summary>A new, unsaved preset holding a copy of <paramref name="points"/>,
     /// named "name copy" or the first free name after it.</summary>
     public static BoneMapPresetDraft CopyOf(
@@ -121,7 +132,9 @@ public sealed class BoneMapPresetDraft
                 { center = common.X; break; }
         }
         float x = 2f * center - source.X;
-        // Clamping would silently destroy the requested symmetry. Let the user move the source instead.
+        // A mirror point outside the map is refused rather than moved onto
+        // the edge, which would no longer mirror the source; move the source
+        // point instead.
         return float.IsFinite(x) && x is >= 0f and <= 1f
             ? new(PortableBoneId.From(mirror.Id), section, x, source.Y) : null;
     }
@@ -212,7 +225,8 @@ public sealed class BoneMapPresetDraft
 
     public static IReadOnlyDictionary<PortableBoneId, BoneDescriptor> Available(ActorDescriptor actor)
     {
-        // Duplicate portable keys are ambiguous, never a license to pick the first native index.
+        // A bone name that appears twice on the actor can't be told apart,
+        // so neither copy is offered.
         return actor.Skeletons.SelectMany(skeleton => skeleton.Bones)
             .GroupBy(bone => PortableBoneId.From(bone.Id))
             .Where(group => group.Count() == 1)
