@@ -66,15 +66,13 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     /// <summary>
-    /// A layer Poser applied ran out (not looped) and the game ended it. Its row
-    /// stays (selection, speed, weight); its play or scrub plays it again.
+    /// A layer Poser played ran out (not looped) and the game ended it. Its row
+    /// stays (selection, speed, weight); its play or scrub plays it again. Its held
+    /// speed and weight stop acting on the slot, also when nothing is chosen on it
+    /// any more (a stance change lets go of the Full body choice).
     /// </summary>
-    private void OnLayerEnded(ActorId actor, AnimationSlot slot, float seconds)
-    {
-        if (SelectedFor(actor, slot) == null)
-            return;
+    private void OnLayerEnded(ActorId actor, AnimationSlot slot, float seconds) =>
         _store.Mutate(actor, o => o with { EndedSlots = o.EndedSlots.With(slot, seconds) });
-    }
 
     /// <summary>The length in seconds of a layer the game ended, or null while it
     /// plays (or was never applied).</summary>
@@ -90,7 +88,6 @@ public sealed class AnimationSession : IAnimationPlayback
         if (!replayed.Success)
             return replayed;
         _playback.SetLayerOwned(actor, slot, true);
-        ForgetEnded(actor, slot);
         return replayed;
     }
 
@@ -103,11 +100,6 @@ public sealed class AnimationSession : IAnimationPlayback
             return replayed;
         return _speed.PauseSlot(actor, slot);
     }
-
-    private void ForgetEnded(ActorId actor, AnimationSlot slot) =>
-        _store.Mutate(actor, o => o.EndedSlots.ContainsKey(slot)
-            ? o with { EndedSlots = o.EndedSlots.Without(slot) }
-            : o);
 
     public AnimationOverrides OverridesFor(ActorId actor) => _store.For(actor);
 
@@ -585,12 +577,9 @@ public sealed class AnimationSession : IAnimationPlayback
         var outcome = PlaySelectedSlotTraced(actor, slot, entry, playFromStart, resume);
         if (outcome.Success)
         {
-            // Track this layer for end notifications. Clear the old end marker
-            // when playback changes to a different timeline.
+            // Watch this layer for its end; a new play is no longer ended.
             if (slot != AnimationSlot.Lips)
                 _playback.SetLayerOwned(actor, slot, true);
-            if (_playback.Read(actor)?.TimelineFor(slot) != before)
-                ForgetEnded(actor, slot);
         }
         Trace?.Invoke(outcome.Success
             ? $"  PlaySelectedSlot {slot} -> ok"
@@ -683,10 +672,7 @@ public sealed class AnimationSession : IAnimationPlayback
     {
         var reset = ResetSlotCore(actor, slot);
         if (reset.Success)
-        {
             _playback.SetLayerOwned(actor, slot, false);
-            ForgetEnded(actor, slot);
-        }
         return reset;
     }
 
@@ -827,7 +813,6 @@ public sealed class AnimationSession : IAnimationPlayback
         {
             foreach (var slot in AnimationSlots.Selectable)
                 _playback.SetLayerOwned(actor, slot, false);
-            _store.Mutate(actor, o => o with { EndedSlots = new Dictionary<AnimationSlot, float>() });
         }
         return reset;
     }

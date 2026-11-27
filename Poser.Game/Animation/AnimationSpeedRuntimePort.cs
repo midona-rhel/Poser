@@ -148,12 +148,12 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
             // whole follow the game's own per-frame push of the overall speed.
             if (held.SlotSpeeds.Count > 0)
             {
-                _seek.HoldSlotSpeeds((Character*)owner, Playing(held, held.SlotSpeeds), held.OverallSpeed ?? 1f);
+                _seek.HoldSlotSpeeds((Character*)owner, held.SlotSpeeds, held.OverallSpeed ?? 1f, held.EndedSlots);
                 result = true;
             }
             // Layer weights: new holders start at 1, so this runs every tick.
             if (held.SlotWeights.Count > 0)
-                _seek.ApplySlotWeights((Character*)owner, Playing(held, held.SlotWeights));
+                _seek.ApplySlotWeights((Character*)owner, held.SlotWeights, held.EndedSlots);
         }
         return result;
     }
@@ -317,20 +317,10 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         // Same tick: the slot timeline, its props and effects now, not on the
         // sequencer's next consume.
         var now = _store.For(actor);
-        _seek.HoldSlotSpeeds(character, Playing(now, new Dictionary<AnimationSlot, float> { [slot] = speed }),
-            now.OverallSpeed ?? 1f);
+        _seek.HoldSlotSpeeds(character, new Dictionary<AnimationSlot, float> { [slot] = speed },
+            now.OverallSpeed ?? 1f, now.EndedSlots);
         return Outcome.Ok();
     }
-
-    /// <summary>The layers that still play. A layer Poser played that ran to its
-    /// end keeps its row, but its held speed and weight must not act on whatever
-    /// the game plays in that slot next.</summary>
-    private static IReadOnlyDictionary<AnimationSlot, float> Playing(
-        AnimationOverrides held, IReadOnlyDictionary<AnimationSlot, float> layers) =>
-        held.EndedSlots.Count == 0
-            ? layers
-            : layers.Where(layer => !held.EndedSlots.ContainsKey(layer.Key))
-                .ToDictionary(layer => layer.Key, layer => layer.Value);
 
     /// <summary>Lets the game drive the layer's speed again, from the speed it
     /// had before Poser's first change.</summary>
@@ -349,7 +339,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restore * overall);
         // Hand its timeline, props and effects back at the restored speed on
         // this tick (the wand lagged at x0.5 when only the field was restored).
-        _seek.HoldSlotSpeeds(character, Playing(held, new Dictionary<AnimationSlot, float> { [slot] = restore }), overall);
+        _seek.HoldSlotSpeeds(character, new Dictionary<AnimationSlot, float> { [slot] = restore }, overall, held.EndedSlots);
         _seek.ApplyVfxSpeed(character, overall);
         return Outcome.Ok();
     }
@@ -388,14 +378,14 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         if (weight >= 1f)
         {
             var released = _store.Mutate(actor, o => o with { SlotWeights = o.SlotWeights.Without(slot) });
-            _seek.ApplySlotWeights(character, Playing(released, new Dictionary<AnimationSlot, float> { [slot] = 1f }));
+            _seek.ApplySlotWeights(character, new Dictionary<AnimationSlot, float> { [slot] = 1f }, released.EndedSlots);
             return Outcome.Ok();
         }
         if (!_seek.Available)
             return Outcome.Fail("Layer weight is unavailable: the native timeline layout is not resolved.");
         float held = Math.Clamp(weight, 0f, 1f);
         var stored = _store.Mutate(actor, o => o with { SlotWeights = o.SlotWeights.With(slot, held) });
-        _seek.ApplySlotWeights(character, Playing(stored, new Dictionary<AnimationSlot, float> { [slot] = held }));
+        _seek.ApplySlotWeights(character, new Dictionary<AnimationSlot, float> { [slot] = held }, stored.EndedSlots);
         return Outcome.Ok();
     }
 
@@ -413,9 +403,9 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
     /// </summary>
     private void ApplySameTickEdges(Character* character, float overall, AnimationOverrides held)
     {
-        var slotSpeeds = held.SlotSpeeds;
         if (!_seek.Available || character->GameObject.DrawObject == null)
             return;
+        var slotSpeeds = held.SlotSpeeds;
         var sequencer = &character->Timeline.TimelineSequencer;
         foreach (int slot in EdgeSlots)
         {
@@ -428,7 +418,7 @@ public sealed unsafe class AnimationSpeedRuntimePort : IDisposable
         // A layer with its own speed keeps it on its props and effects (the two
         // lines above give every prop the plain overall).
         if (slotSpeeds.Count > 0)
-            _seek.HoldSlotSpeeds(character, Playing(held, slotSpeeds), overall);
+            _seek.HoldSlotSpeeds(character, slotSpeeds, overall, held.EndedSlots);
     }
 
     /// <summary>Writes the container speed and every Havok control's
