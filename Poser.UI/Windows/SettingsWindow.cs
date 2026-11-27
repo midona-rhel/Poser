@@ -87,9 +87,10 @@ public class SettingsWindow : Window
         _vm.DebugLog = message => _log.Debug(message);
     }
 
-    /// <summary>What the config held when the window opened: Cancel, or
-    /// closing without Save, puts previewed settings back. Library sources
-    /// remain a separate draft until Save and are never restored on Cancel.</summary>
+    /// <summary>The saved settings: what the config held when the window
+    /// opened, or after the last Reset. Cancel, or closing without Save, puts
+    /// them back. Library sources remain a separate draft until Save and are
+    /// never restored on Cancel.</summary>
     private SettingsViewModel? _snapshot;
     private int _appliedSignature;
     private readonly Dalamud.Interface.ImGuiFileDialog.FileDialogManager _folderDialog = new();
@@ -376,31 +377,75 @@ public class SettingsWindow : Window
             _customizePlus.CustomizePlus.Available,
             _customizePlus.CustomizePlus.Detail));
     }
+    /// <summary>
+    /// Puts one part of the settings back to its defaults and saves it, and
+    /// saves nothing else. The window shows unsaved changes by writing them
+    /// into the settings every frame (see <see cref="Draw"/>), and
+    /// <see cref="_snapshot"/> holds the saved values that Cancel puts back.
+    /// So the saved values go back before the reset saves, and the unsaved
+    /// changes to every other setting go back on top after it: Save still
+    /// keeps them and Cancel still takes them back. A part is what its Reset
+    /// text names, which isn't always everything its page shows. Reset
+    /// everything discards every unsaved change.
+    /// </summary>
     private void ResetConfig(ConfigResetScope scope)
     {
-        var svc = _configuration;
+        var unsaved = _vm;
+        if (scope == ConfigResetScope.All)
+        {
+            _configuration.Reset();
+            _snapshot = BuildViewModel();
+            _vm = BuildViewModel();
+        }
+        else
+        {
+            _vm = _snapshot!;
+            ApplyToConfig(preview: true);
+            ResetPart(scope);
+            // Not announced: the settings hold no unsaved change at this
+            // moment, and the windows would follow that for one frame.
+            _configuration.Save(notify: false);
+            _snapshot = BuildViewModel();
+
+            _vm = unsaved;
+            ApplyToConfig(preview: true);
+            ResetPart(scope);
+            var shown = BuildViewModel();
+            // What the preview doesn't write stays as it was edited: key
+            // bindings (unless this page reset them) and the Library page.
+            if (scope != ConfigResetScope.UI)
+            {
+                shown.Bindings = unsaved.Bindings;
+                shown.PresetIndex = unsaved.PresetIndex;
+            }
+            shown.Library = unsaved.Library;
+            shown.UseLibraryWhenImporting = unsaved.UseLibraryWhenImporting;
+            shown.LibraryShowExtensions = unsaved.LibraryShowExtensions;
+            shown.Search = unsaved.Search;
+            _vm = shown;
+            _configuration.NotifyChanged();
+        }
+
+        _vm.Category = unsaved.Category;
+        _vm.ResetStatus = "Reset. These are the shipped defaults.";
+        _appliedSignature = _vm.Signature();
+        WireRuntime();
+    }
+
+    private void ResetPart(ConfigResetScope scope)
+    {
         switch (scope)
         {
             case ConfigResetScope.Display:
-                svc.ResetDisplay();
+                _configuration.ResetDisplay();
                 break;
             case ConfigResetScope.Skeleton:
-                svc.ResetSkeleton();
+                _configuration.ResetSkeleton();
                 break;
             case ConfigResetScope.UI:
-                svc.ResetUI();
-                break;
-            default:
-                svc.Reset();
+                _configuration.ResetUI();
                 break;
         }
-
-        int category = _vm.Category;
-        LoadFromConfig();
-        // A reset is committed: Cancel afterwards keeps it.
-        _snapshot = BuildViewModel();
-        _vm.Category = category;
-        _vm.ResetStatus = "Reset. These are the shipped defaults.";
     }
 
     private void SaveToConfig()
@@ -419,9 +464,9 @@ public class SettingsWindow : Window
         IsOpen = false;
     }
 
-    /// <summary>The view model onto the config. A preview skips what
-    /// touches disk or the keybind registry: library folders, the
-    /// auto-save root, the bindings.</summary>
+    /// <summary>The view model onto the config. A preview skips what only
+    /// Save may change: the key bindings, the two Library switches and the
+    /// library folders.</summary>
     private void ApplyToConfig(bool preview)
     {
         var svc = _configuration;
