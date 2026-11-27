@@ -77,7 +77,8 @@ public sealed class PlacementAnchorSource : IPlacementAnchorSource
         ObjectPlacementMode mode,
         out Vector3 position,
         out float yaw,
-        out string? refusal)
+        out string? refusal,
+        bool onGround = true)
     {
         position = default;
         yaw = 0f;
@@ -111,8 +112,19 @@ public sealed class PlacementAnchorSource : IPlacementAnchorSource
                         "The camera could not be read for placement.";
                     return false;
                 }
-                position = _camera.GetCameraPosition() + forward * 3f;
                 yaw = ObjectPlacement.YawOf(forward);
+                // Along the view, a camera tilted up or down would put an actor in
+                // the air or under the floor. Things that stand go 3 m ahead along
+                // the ground instead, at the height of the actor being worked on.
+                if (onGround && ActorAnchorNow() is { } ground)
+                {
+                    var level = new Vector3(forward.X, 0f, forward.Z);
+                    var ahead = level.LengthSquared() > 1e-6f ? Vector3.Normalize(level) * 3f : Vector3.Zero;
+                    var eye = _camera.GetCameraPosition();
+                    position = new Vector3(eye.X + ahead.X, ground.Position.Y, eye.Z + ahead.Z);
+                    return true;
+                }
+                position = _camera.GetCameraPosition() + forward * 3f;
                 return true;
             default:
                 return true;
