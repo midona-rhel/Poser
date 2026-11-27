@@ -18,7 +18,7 @@ namespace Poser.Game.WorldObjects;
 /// </summary>
 internal sealed class WorldObjectSpawner
 {
-    private readonly IWorldObjectPort _port;
+    private readonly IWorldObjectAccess _world;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
     private readonly Func<AdoptedWorldObject, bool> _isCurrent;
@@ -32,13 +32,13 @@ internal sealed class WorldObjectSpawner
         System.Threading.CancellationToken Cancellation);
 
     public WorldObjectSpawner(
-        IWorldObjectPort port,
+        IWorldObjectAccess world,
         IEventBus events,
         IPluginLog log,
         Func<AdoptedWorldObject, bool> isCurrent,
         Action<AdoptedWorldObject> dropPendingStain)
     {
-        _port = port;
+        _world = world;
         _events = events;
         _log = log;
         _isCurrent = isCurrent;
@@ -57,14 +57,14 @@ internal sealed class WorldObjectSpawner
     public WorldObjectIncarnation? SpawnIdentified(string path, in Transform placement, out string? detail)
     {
         detail = null;
-        var address = _port.Spawn(path, placement, out var allocated);
+        var address = _world.Spawn(path, placement, out var allocated);
         if (address == nint.Zero)
         {
             if (allocated.Address != nint.Zero) TryCleanupFresh(allocated);
             detail = $"'{WorldObjectService.DisplayName(path)}' could not be spawned — the game did not take it.";
             return null;
         }
-        if (!_port.TryReadIncarnation(address, out var identity)
+        if (!_world.TryReadIncarnation(address, out var identity)
             || !allocated.SameAllocation(identity))
         {
             detail = TryCleanupFresh(allocated)
@@ -100,7 +100,7 @@ internal sealed class WorldObjectSpawner
         {
             // A streaming replacement is not a second scene object. Keep it
             // hidden until the renderer and its authored settings are ready.
-            _port.WriteVisible(fresh, false);
+            _world.WriteVisible(fresh, false);
             Advance(handle, pending, DateTime.UtcNow);
         }
         catch (Exception ex)
@@ -140,9 +140,9 @@ internal sealed class WorldObjectSpawner
         if (CancelIfStale(handle, pending)) return;
         var freshIdentity = pending.Fresh;
         if (!_isCurrent(handle)
-            || !_port.TryReadIncarnation(handle.Address, out var oldIdentity)
+            || !_world.TryReadIncarnation(handle.Address, out var oldIdentity)
             || !oldIdentity.SameAllocation(handle.Identity)
-            || !_port.TryReadIncarnation(freshIdentity.Address, out var currentFresh)
+            || !_world.TryReadIncarnation(freshIdentity.Address, out var currentFresh)
             || !currentFresh.SameAllocation(freshIdentity))
         {
             Finish(handle, pending, false, "The object or its replacement changed in the game while replacing the model.");
@@ -155,22 +155,22 @@ internal sealed class WorldObjectSpawner
         }
         if (!freshIdentity.IsVfx)
         {
-            if (!_port.IsBgReady(freshIdentity.Address)) return;
+            if (!_world.IsBgReady(freshIdentity.Address)) return;
             if (pending.Path.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase))
             {
-                if (!_port.WriteFurnitureColor(freshIdentity.Address, handle.Stain, handle.Tint)) return;
+                if (!_world.WriteFurnitureColor(freshIdentity.Address, handle.Stain, handle.Tint)) return;
                 if (pending.Path == handle.Path)
-                    _port.WriteFurnitureLights(freshIdentity.Address, handle.FurnitureLights);
+                    _world.WriteFurnitureLights(freshIdentity.Address, handle.FurnitureLights);
             }
             // Undyeable models have no stain buffer and must not wait for one.
-            if (handle.Tint is not null && _port.CanDyeBg(freshIdentity.Address) != false
-                && !_port.WriteBgTint(freshIdentity.Address, handle.Tint)) return;
-            _port.WriteBgNightState(freshIdentity.Address, handle.NightState);
+            if (handle.Tint is not null && _world.CanDyeBg(freshIdentity.Address) != false
+                && !_world.WriteBgTint(freshIdentity.Address, handle.Tint)) return;
+            _world.WriteBgNightState(freshIdentity.Address, handle.NightState);
             // Raw spawned scenery deliberately has no animation data (see
             // NativeWorldObjectPort.Spawn); there is no animation load to await.
         }
         bool visible = handle.Visible;
-        _port.Write(freshIdentity.Address, handle.Transform);
+        _world.Write(freshIdentity.Address, handle.Transform);
         if (!Prepare(handle, freshIdentity, visible, out var detail))
         {
             Finish(handle, pending, false, detail);
@@ -238,26 +238,26 @@ internal sealed class WorldObjectSpawner
         try
         {
             // Every setting is written before the old model is torn down.
-            _port.WriteVisible(fresh.Address, visible);
+            _world.WriteVisible(fresh.Address, visible);
             if (fresh.IsVfx)
             {
                 if (Math.Abs(handle.VfxSpeed - 1f) > 0.001f
-                    && !_port.TrySetVfxSpeed(fresh.Address, handle.VfxSpeed))
+                    && !_world.TrySetVfxSpeed(fresh.Address, handle.VfxSpeed))
                 {
                     detail = "The replacement could not take the playback speed.";
                     return false;
                 }
-                if (handle.Tint is { } tint) _port.WriteVfxTint(fresh.Address, tint);
+                if (handle.Tint is { } tint) _world.WriteVfxTint(fresh.Address, tint);
                 if (Math.Abs(handle.VfxIntensity - 1f) > 0.001f)
-                    _port.SetVfxIntensity(fresh.Address, handle.VfxIntensity);
-                if (handle.VfxPaused && !_port.TryPauseVfx(fresh.Address))
+                    _world.SetVfxIntensity(fresh.Address, handle.VfxIntensity);
+                if (handle.VfxPaused && !_world.TryPauseVfx(fresh.Address))
                 {
                     detail = "The replacement could not be paused.";
                     return false;
                 }
             }
             if (handle.Opacity < 1f && visible)
-                _port.WriteOpacity(fresh.Address, handle.Opacity);
+                _world.WriteOpacity(fresh.Address, handle.Opacity);
             return true;
         }
         catch (Exception ex)
@@ -281,12 +281,12 @@ internal sealed class WorldObjectSpawner
     {
         try
         {
-            if (identity.IsVfx) return _port.TryDestroyVfx(identity);
-            if (!_port.IsAlive(identity.Address)) return true;
-            if (!_port.TryReadIncarnation(identity.Address, out var current)) return false;
+            if (identity.IsVfx) return _world.TryDestroyVfx(identity);
+            if (!_world.IsAlive(identity.Address)) return true;
+            if (!_world.TryReadIncarnation(identity.Address, out var current)) return false;
             // A different object at the same address is not Poser's to destroy.
             if (!current.SameAllocation(identity)) return true;
-            return _port.TryDestroy(identity.Address);
+            return _world.TryDestroy(identity.Address);
         }
         catch (Exception ex)
         {

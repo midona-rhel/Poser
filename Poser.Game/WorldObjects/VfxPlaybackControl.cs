@@ -17,12 +17,12 @@ internal sealed class VfxPlaybackControl
     internal static readonly TimeSpan RefreshInterval =
         TimeSpan.FromSeconds(1);
 
-    private readonly IVfxObjectPort _port;
+    private readonly IWorldEffectAccess _world;
     private readonly IPluginLog _log;
 
-    public VfxPlaybackControl(IVfxObjectPort port, IPluginLog log)
+    public VfxPlaybackControl(IWorldEffectAccess world, IPluginLog log)
     {
-        _port = port;
+        _world = world;
         _log = log;
     }
 
@@ -30,7 +30,7 @@ internal sealed class VfxPlaybackControl
     {
         try
         {
-            if (_port.TrySetVfxSpeed(handle.Address, speed))
+            if (_world.TrySetVfxSpeed(handle.Address, speed))
                 return true;
             LogRefusal("speed");
             return false;
@@ -43,13 +43,13 @@ internal sealed class VfxPlaybackControl
     }
 
     public void WriteIntensity(AdoptedWorldObject handle) =>
-        _port.SetVfxIntensity(handle.Address, handle.VfxIntensity);
+        _world.SetVfxIntensity(handle.Address, handle.VfxIntensity);
 
     public bool TrySetPaused(AdoptedWorldObject handle, bool paused)
     {
         try
         {
-            if (!_port.TryReadVfxPlayback(
+            if (!_world.TryReadVfxPlayback(
                     handle.Address, out var currentPlayback)
                 || currentPlayback == VfxPlaybackState.Unavailable)
             {
@@ -58,7 +58,7 @@ internal sealed class VfxPlaybackControl
             }
             if (paused)
             {
-                if (!_port.TryPauseVfx(handle.Address))
+                if (!_world.TryPauseVfx(handle.Address))
                 {
                     LogRefusal("pause");
                     return false;
@@ -68,7 +68,7 @@ internal sealed class VfxPlaybackControl
             }
             else
             {
-                if (!_port.TryResumeVfx(handle.Address, handle.VfxSpeed))
+                if (!_world.TryResumeVfx(handle.Address, handle.VfxSpeed))
                 {
                     LogRefusal("resume");
                     return false;
@@ -94,9 +94,9 @@ internal sealed class VfxPlaybackControl
         handle.NextVfxRefresh = now + RefreshInterval;
         // Replay the SAME instance only once it actually ran out —
         // no recreate, so nothing blinks.
-        if (!_port.IsVfxActive(handle.Address))
+        if (!_world.IsVfxActive(handle.Address))
         {
-            _port.ResumeVfx(handle.Address, handle.VfxSpeed);
+            _world.ResumeVfx(handle.Address, handle.VfxSpeed);
             handle.VfxPlayback = VfxPlaybackState.Playing;
         }
     }

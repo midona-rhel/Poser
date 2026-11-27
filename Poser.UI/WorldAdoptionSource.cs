@@ -19,8 +19,8 @@ public static class WorldAdoptionClasses
 public readonly record struct WorldAdoptionCandidate(
     WorldAdoptionKind Kind, string Name, Vector3 Position, float DistanceFromCamera, WorldCandidateId Id);
 
-/// <summary>Overlay-only filters, projection range and selection; world commands belong to IWorldService.</summary>
-public sealed class WorldAdoptionSource(IWorldService world, ICameraProjection camera, IWorldAcquisitionControl acquisition)
+/// <summary>Overlay-only filters, projection range and selection; world commands belong to IWorldBorrowing.</summary>
+public sealed class WorldAdoptionSource(IWorldBorrowing world, ICameraProjection camera, IWorldAcquisitionControl acquisition)
 {
     public const float RangeYalms = 30f;
     public bool ShowActors { get; set; }

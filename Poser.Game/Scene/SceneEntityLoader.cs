@@ -42,7 +42,7 @@ internal sealed class SceneEntityLoader
     private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly WorldObjects.WorldService _worldObjects;
+    private readonly WorldObjects.WorldBorrowing _worldObjects;
     private readonly ICameraProjection _viewport;
     private readonly GazeService _gaze;
     private readonly Poser.Application.Integration.IntegrationReset _integration;
@@ -70,7 +70,7 @@ internal sealed class SceneEntityLoader
         Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        WorldObjects.WorldService worldObjects,
+        WorldObjects.WorldBorrowing worldObjects,
         ICameraProjection viewport,
         GazeService gaze,
         Poser.Application.Integration.IntegrationReset integration,

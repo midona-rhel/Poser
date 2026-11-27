@@ -58,7 +58,7 @@ public sealed unsafe class LightingService : ILightingService
         IEventBus events,
         IObjectTable objects,
         IGameInteropProvider hooks,
-        IWorldGraphPort worldGraph)
+        IWorldGraphReader worldGraph)
     {
         _framework = framework;
         _log = log;

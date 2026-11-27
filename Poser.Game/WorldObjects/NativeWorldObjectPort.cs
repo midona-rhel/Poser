@@ -27,7 +27,7 @@ namespace Poser.Game.WorldObjects;
 /// owns node identity, the shared per-node reads and writes, spawn and
 /// teardown.
 /// </summary>
-public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
+public sealed unsafe class NativeWorldObjectPort : IWorldObjectAccess, IDisposable
 {
     private readonly IPluginLog _log;
     private readonly FurnitureLayoutDriver _furniture;

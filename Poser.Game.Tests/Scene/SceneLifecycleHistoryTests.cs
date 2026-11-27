@@ -354,7 +354,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Equal(1, world.WorldObjects.AdoptCalls);
     }
 
-    /// <summary>Borrows the fake's world light the way WorldService does:
+    /// <summary>Borrows the fake's world light the way WorldBorrowing does:
     /// the lighting service captures it and the lifecycle records the claim.</summary>
     private static ILight Borrow(World world) =>
         world.Lifecycle.RecordSpawnedLight("Acquire world light",

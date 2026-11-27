@@ -33,7 +33,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
     private readonly ICameraProjection _camera;
     private readonly IObjectTable _objects;
     private readonly IGameInteropProvider _hooks;
-    private readonly IWorldGraphPort _worldGraph;
+    private readonly IWorldGraphReader _worldGraph;
     private readonly Func<bool> _disposed;
 
     private readonly Hook<LightCtorDelegate>? _lightCtorHook;
@@ -58,7 +58,7 @@ internal sealed unsafe class WorldLightCapture : IDisposable
         ICameraProjection camera,
         IObjectTable objects,
         IGameInteropProvider hooks,
-        IWorldGraphPort worldGraph,
+        IWorldGraphReader worldGraph,
         Func<bool> disposed)
     {
         _framework = framework;
