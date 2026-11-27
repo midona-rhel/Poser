@@ -39,6 +39,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     private readonly Poser.Game.Posing.GazePoseFrames _gazeFrames;
     private readonly PoseStackStore _stacks;
     private readonly IkChainRegistry _ik;
+    private readonly UnposedSkeletons _unposed;
     private readonly TransitiveActionScheduler _transitive;
     private readonly Action<SkeletonKey> _purge;
     private readonly KineDriverRerun _kineDrivers;
@@ -87,6 +88,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         Poser.Game.Posing.GazePoseFrames gazeFrames,
         PoseStackStore stacks,
         IkChainRegistry ik,
+        UnposedSkeletons unposed,
         TransitiveActionScheduler transitive,
         Action<SkeletonKey> purge,
         KineDriverRerun kineDrivers,
@@ -100,6 +102,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         _gazeFrames = gazeFrames;
         _stacks = stacks;
         _ik = ik;
+        _unposed = unposed;
         _transitive = transitive;
         _purge = purge;
         _kineDrivers = kineDrivers;
@@ -219,10 +222,12 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         foreach (var key in _skeletonsToUpdate)
             _updatePassBuffer.Add(key);
         OrderFollowedFirst();
+        _unposed.Start(_updatePassBuffer);
 
         for (var i = 0; i < _updatePassBuffer.Count; i++)
         {
             var slotKey = _updatePassBuffer[i];
+            _unposed.Taken(slotKey);
             if (!_stacks.TryGet(slotKey, out var poseInfo))
                 continue;
 
@@ -249,7 +254,9 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 continue;
 
             ApplySkeletonTransforms(slotKey, skeleton, poseInfo);
+            _unposed.Posed(slotKey, skeleton.BuildRevision);
         }
+        _unposed.End();
     }
 
     /// <summary>

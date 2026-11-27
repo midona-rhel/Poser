@@ -25,6 +25,11 @@ namespace Poser.Game;
 public unsafe class IKService : IDisposable
 {
     internal event Action? BeforeCollisions;
+
+    /// <summary>Adds the bones that switched-on IK colliders are parented to. The apply
+    /// pass poses those bones' skeletons before a chain that collides with them.
+    /// Set by <see cref="Poser.Game.Transforms.ParentFollowTick"/>.</summary>
+    internal Action<List<IBone>>? ColliderParentSource;
     private readonly IPluginLog _log;
     private readonly Overlays.OverlayNodeService _overlays;
 
