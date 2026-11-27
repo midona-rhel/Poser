@@ -163,8 +163,8 @@ public sealed class SceneAutoSaveStore
         return (path, _store.Write(scene, path));
     }
 
-    /// <summary>A second snapshot inside the same second suffixes rather than
-    /// overwriting — same convention the pose auto-save uses.</summary>
+    /// <summary>A second snapshot within the same second gets a number added
+    /// to its name instead of replacing the first.</summary>
     private static string UniquePath(string folder, DateTime localNow)
     {
         string stem = localNow.ToString("HH-mm-ss", CultureInfo.InvariantCulture) + " Scene";

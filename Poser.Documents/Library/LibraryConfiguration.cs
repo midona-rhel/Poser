@@ -128,7 +128,6 @@ public partial class LibraryConfiguration
     public const string ScenesLeaf = "Scenes";
     public const string McdfLeaf = "MCDFs";
     public const string ObjectsLeaf = "Objects";
-    public const string AutoSavesLeaf = "Auto-saves";
 
     private static string HomeRoot(string leaf) =>
         System.IO.Path.Combine(DefaultRoot, leaf);
