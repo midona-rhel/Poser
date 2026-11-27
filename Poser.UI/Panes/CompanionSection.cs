@@ -136,7 +136,8 @@ public sealed class CompanionSection
     /// the collapsible section so an open picker continues to draw.</summary>
     public void DrawPicker()
     {
-        // Refresh the status so a picker opened during loading notices completion.
+        // Refreshed every frame, so a picker opened while the list builds
+        // shows the list once it is built, or why the build failed.
         _picker.SetLoadStatus(
             LoadStatus());
         _picker.Update(Options());

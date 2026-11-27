@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Threading.Tasks;
 using Dalamud.Game;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
@@ -42,7 +41,6 @@ public sealed class CompanionCatalogLoader : ICompanionCatalogLoader
         _build = new("minion and mount", () => _catalog.Publish(Build()), log);
     }
 
-    public bool IsBuilding => _build.IsBuilding;
     public string? LastError => _build.Failure;
     public void EnsureLoaded() => _build.EnsureLoaded();
     public void Retry() => _build.Retry();

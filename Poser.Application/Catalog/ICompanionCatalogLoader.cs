@@ -13,7 +13,6 @@ namespace Poser.Application.Catalog;
 /// <summary>Builds the minion and mount list from the game data once.</summary>
 public interface ICompanionCatalogLoader
 {
-    bool IsBuilding { get; }
     /// <summary>Why the last build failed, shown in the picker; null otherwise.</summary>
     string? LastError { get; }
     /// <summary>Starts the build the first time; does nothing after that.</summary>

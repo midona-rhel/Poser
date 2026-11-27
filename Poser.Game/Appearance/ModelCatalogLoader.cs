@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Application.Appearance;

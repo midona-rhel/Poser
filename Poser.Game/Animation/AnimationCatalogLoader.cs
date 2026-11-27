@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Application.Animation;
@@ -28,7 +27,6 @@ public sealed class AnimationCatalogLoader : IAnimationCatalogLoader
         _build = new("animation", () => _catalog.Publish(Build()), log);
     }
 
-    public bool IsBuilding => _build.IsBuilding;
     public string? LastError => _build.Failure;
     public void EnsureLoaded() => _build.EnsureLoaded();
     public void Retry() => _build.Retry();
