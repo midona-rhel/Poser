@@ -5,6 +5,7 @@ using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
 using Poser.Application.Animation;
+using Poser.Application.Posing;
 
 namespace Poser.Game.Animation;
 
@@ -19,14 +20,16 @@ public sealed class AnimationSteps : IAnimationActions
     private readonly ValueJournal _journal;
     private readonly SceneSession _scene;
     private readonly IExpressionPreview _expressions;
+    private readonly IActorReplacements _replacements;
 
     public AnimationSteps(AnimationSession animation, ValueJournal journal, SceneSession scene,
-        IExpressionPreview expressions)
+        IExpressionPreview expressions, IActorReplacements replacements)
     {
         _animation = animation;
         _journal = journal;
         _scene = scene;
         _expressions = expressions;
+        _replacements = replacements;
         _animation.Journal = Record;
         _animation.Group = Group;
     }
@@ -40,8 +43,12 @@ public sealed class AnimationSteps : IAnimationActions
         var before = _animation.Capture(actor);
         var result = action();
         var after = _animation.Capture(actor);
+        var now = _replacements.Track(actor);
         _journal.Record((actor, "Animation", description), description, before, after,
-            snapshot => _animation.Restore(actor, snapshot), () => Alive(actor));
+            snapshot => now() is { } id
+                ? _animation.Restore(id, snapshot)
+                : Outcome.Fail("The actor is no longer available."),
+            () => now() is not null);
         return result;
     }
 
