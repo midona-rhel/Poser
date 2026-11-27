@@ -41,12 +41,6 @@ public sealed class AnimationOverrideStore
         return updated;
     }
 
-    public void Set(ActorId actor, AnimationOverrides owned)
-    {
-        _overrides[actor] = owned;
-        Changed?.Invoke();
-    }
-
     public void Remove(ActorId actor)
     {
         if (_overrides.Remove(actor))

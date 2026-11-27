@@ -150,22 +150,24 @@ internal sealed class SceneAppearanceRuntime : IDisposable
 
     /// <summary>Builds the appearance package each saved actor needs: an MCDF the
     /// actor was loaded from is reused, otherwise the actor's current look is
-    /// exported. Returns a note for each actor whose appearance could not be
-    /// included, and the temporary files to delete once the save ends. Runs on the
-    /// save's background task and reads the game on the main thread.</summary>
-    public async Task<SceneSealOutcome> SealAppearance(
+    /// exported. Every exported file is added to <paramref name="temporaries"/>
+    /// as soon as it is named, and the save deletes them all when it ends, however
+    /// it ends. Returns a note for each actor whose appearance could not be
+    /// included. Runs on the save's background task and reads the game on the
+    /// main thread.</summary>
+    public async Task<IReadOnlyList<string>> SealAppearance(
         SceneFile scene,
         IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> identities,
+        List<string> temporaries,
         TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
         var notes = new List<string>();
-        var temporaries = new List<string>();
         long total = 0;
         foreach (var actor in scene.Actors)
         {
             if (cancellation.IsCancellationRequested)
-                return new SceneSealOutcome(notes, temporaries);
+                return notes;
 
             // Use the MCDF already applied to the actor. Only an actor without one
             // gets a new MCDF exported.
@@ -174,8 +176,6 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                 System.IO.File.Exists(existing.Path)
                 ? existing.Path
                 : null;
-            string? created = null;
-
             if (source is null)
             {
                 if (!identities.TryGetValue(actor.Key, out var id))
@@ -202,14 +202,17 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                         "was not packaged.");
                     continue;
                 }
-                created = SessionAppearanceFiles.NewTempPath();
-                var (exported, delete) = await ExportAppearance(
+                var created = SessionAppearanceFiles.NewTempPath();
+                temporaries.Add(created);
+                var (exported, stillWriting) = await ExportAppearance(
                     id, actor.Name, created, bound, cancellation);
                 if (exported != null)
                 {
                     notes.Add($"Actor '{actor.Name}': {exported}");
-                    if (delete)
-                        DeleteQuietly(created);
+                    // An export that is still writing deletes its own file once
+                    // it stops, so the save must leave that file alone.
+                    if (stillWriting)
+                        temporaries.Remove(created);
                     continue;
                 }
                 source = created;
@@ -223,8 +226,6 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                     notes.Add(
                         $"Actor '{actor.Name}''s appearance package was gone " +
                         "before it could be read into the scene.");
-                    if (created != null)
-                        DeleteQuietly(created);
                     continue;
                 }
                 if (info.Length > SceneFileLimits.MaxEmbeddedAppearanceBytes)
@@ -236,8 +237,6 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                         $"{Megabytes(info.Length)}, over the " +
                         $"{Megabytes(SceneFileLimits.MaxEmbeddedAppearanceBytes)} " +
                         "that Poser can import back; the scene saved without it.");
-                    if (created != null)
-                        DeleteQuietly(created);
                     continue;
                 }
 
@@ -260,16 +259,12 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                     PackageBytes = info.Length,
                     PackageSourcePath = source,
                 };
-                if (created != null)
-                    temporaries.Add(created);
             }
             catch (Exception ex)
             {
                 notes.Add(
                     $"Actor '{actor.Name}''s appearance package could not be " +
                     $"read into the scene: {ex.Message}");
-                if (created != null)
-                    DeleteQuietly(created);
             }
         }
 
@@ -280,7 +275,7 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                 "It saved in full; expect it to take a while to move or share.");
         }
 
-        return new SceneSealOutcome(notes, temporaries);
+        return notes;
     }
 
     private static string Megabytes(long bytes) =>
@@ -323,33 +318,31 @@ internal sealed class SceneAppearanceRuntime : IDisposable
 
     /// <summary>
     /// Exports one actor's appearance as an MCDF. Returns null on success, or
-    /// why it failed. Delete is false while the export may still be writing
-    /// the file: the caller must not delete it, because it is deleted once
-    /// the export stops.
+    /// why it failed. StillWriting is true when the export did not stop in
+    /// time: its file is deleted once it stops, so the caller must not delete
+    /// it.
     /// </summary>
-    private async Task<(string? Refusal, bool Delete)> ExportAppearance(
+    private async Task<(string? Refusal, bool StillWriting)> ExportAppearance(
         Poser.Domain.Identity.ActorId id,
         string name,
         string destination,
         TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
-        Guid? operationId = null;
+        // BeginExport sets the export's receipt before it returns success.
+        Guid admitted = default;
         var refusal = await BeginMcdfChild(() =>
         {
             var started = _mcdf.BeginExport(
                 id, destination, $"Scene appearance: {name}");
             if (!started.Success)
                 return started.Detail ?? "the appearance could not be packaged.";
-            operationId = _mcdf.Receipt?.OperationId;
+            admitted = _mcdf.Receipt!.OperationId;
             return null;
         }, "another character-file operation held the slot for the whole bound.",
             "the save was cancelled.", bound, cancellation);
         if (refusal != null)
-            return (refusal, true);
-
-        if (operationId is not { } admitted)
-            return ("the appearance export did not publish its receipt.", true);
+            return (refusal, false);
 
         // The export belongs to this save. If the save runs out of time or is
         // cancelled, the export is cancelled too and waited for, never left
@@ -366,7 +359,7 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                 $"Scene save: the appearance export for '{name}' did not stop within " +
                 "its drain bound; its partial file is deleted once it stops.");
             return ("the appearance export did not stop in time; its partial file is " +
-                "deleted once it stops.", false);
+                "deleted once it stops.", true);
         }
         return (waited.End switch
         {
@@ -374,11 +367,12 @@ internal sealed class SceneAppearanceRuntime : IDisposable
             Poser.Application.Integration.McdfWaitEnd.DeadlinePassed => "the appearance export did not finish within its bound.",
             _ => waited.Receipt?.Detail
                 ?? $"the appearance export ended {waited.Receipt?.State.ToString() ?? "replaced"}.",
-        }, true);
+        }, false);
     }
 
-    /// <summary>The total size of the appearance packages the actors in the scene
-    /// would add to a save.</summary>
+    /// <summary>The total size of the MCDFs applied to the actors in the scene
+    /// now. A save with appearance files packs these as they are. Actors whose
+    /// look would be exported instead are not counted.</summary>
     public long EstimateAppearanceBytes()
     {
         long total = 0;
@@ -650,7 +644,7 @@ internal sealed class SceneAppearanceRuntime : IDisposable
             string source = located.Source!;
             string? changed = located.Changed;
 
-            Guid? operationId = null;
+            Guid admitted = default;
             var refusal = await BeginMcdfChild(() =>
             {
                 var target = _handles.Resolve<IActor>(actor, SceneEntityKind.Actor);
@@ -661,17 +655,13 @@ internal sealed class SceneAppearanceRuntime : IDisposable
                 var started = _mcdf.BeginImport(id, source, preservePose: false, name: saved.FileName);
                 if (!started.Success)
                     return started.Detail ?? "The character file import was refused.";
-                // The import's id can be read as soon as it has started.
-                operationId = _mcdf.Receipt?.OperationId;
+                // BeginImport sets the import's receipt before it returns success.
+                admitted = _mcdf.Receipt!.OperationId;
                 return null;
             }, "Another character-file operation held the slot for the whole bound.",
                 "The load was cancelled.", bound, cancellation);
             if (refusal != null)
                 return SceneMcdfOutcome.Refused(refusal);
-
-            if (operationId is not { } admitted)
-                return SceneMcdfOutcome.Refused(
-                    "The character file import did not publish its receipt.");
 
             // The import belongs to this load. If the load runs out of time or
             // is cancelled, the import is cancelled too and waited for. A

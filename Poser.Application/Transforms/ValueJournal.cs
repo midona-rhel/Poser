@@ -4,8 +4,8 @@ using System.Runtime.CompilerServices;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>Adapts a write that cannot report a refusal. Only for runtimes
-/// whose setters are still void (environment, animation, IK, parenting).</summary>
+/// <summary>Wraps a write that cannot say it was refused, for the environment,
+/// animation, IK and parenting code whose setters return nothing.</summary>
 public static class ValueWrites
 {
     public static Func<T, Outcome> Unchecked<T>(Action<T> write) =>
@@ -13,12 +13,12 @@ public static class ValueWrites
 }
 
 /// <summary>
-/// Value changes as journal steps. A set reads the old value, writes the
-/// new one and appends one step whose undo writes the old value back.
-/// Continuous controls stage their before/after values until <see cref="Seal"/>.
-/// Discrete writes append immediately, even on the same property. A step whose target
-/// has died undoes as a no-op: there is nothing left to put back, and the
-/// steps under it must stay reachable.
+/// Records value changes as undo steps. Setting a value reads the old one,
+/// writes the new one and records a step whose undo writes the old one back.
+/// While a slider or field is being dragged, the values before and after are
+/// kept until <see cref="Seal"/> records them as one step; other changes are
+/// recorded at once, even on the same property. Undoing a step whose thing is
+/// gone does nothing, so the steps under it can still be undone.
 /// </summary>
 public sealed class ValueJournal
 {
@@ -31,9 +31,9 @@ public sealed class ValueJournal
     private int _suspended;
 
     /// <summary>
-    /// While held, sets and records still write but append nothing: the
-    /// inverse of a composite step re-runs the surface's own routines, and
-    /// those must not journal again inside the undo.
+    /// While held, values are still written but no step is recorded: undoing a
+    /// step made of several changes runs the same code that made them, and that
+    /// code must not record new steps during the undo.
     /// </summary>
     public IDisposable Suspend()
     {
@@ -52,16 +52,16 @@ public sealed class ValueJournal
         }
     }
 
-    /// <summary>A continuous edit is still staged (a slider or field being
-    /// changed): its value moves without a step yet.</summary>
+    /// <summary>A slider or field is being dragged: its value changes, and the
+    /// step is recorded when the drag ends.</summary>
     public bool IsStaging => _pending != null || _staged.Count > 0 || _control != null;
 
     public ValueJournal(EditHistory history, Func<object, SelectionId?>? identify = null)
     {
         _history = history;
         _identify = identify;
-        // A spawn, bake or transform may append through another journal
-        // owner. Commit earlier value edits before that discrete action.
+        // Adding a thing, a bake or a move records its own step. Value changes
+        // made before it are recorded first, so undo keeps their order.
         _history.BeforeAppend += Seal;
         _history.Cleared += () => { _pending = null; _staged.Clear(); _control = null; };
     }
@@ -73,7 +73,8 @@ public sealed class ValueJournal
     /// staged after value unchanged.
     /// </summary>
     /// <param name="key">What is being set: the target and the property.
-    /// Equal keys share a baseline within a continuous edit.</param>
+    /// Changes with the same key during one drag of a control are one undo
+    /// step that starts from the value before the drag.</param>
     /// <param name="alive">Whether the target still exists; a dead target
     /// makes the step's undo and redo no-ops.</param>
     public Outcome Set<T>(object key, string description, Func<T> read,
@@ -94,10 +95,11 @@ public sealed class ValueJournal
     }
 
     /// <summary>
-    /// Journals a change that has already landed, so only a landed change is
-    /// a step. The key's owner scopes the step; a key that names no entity
-    /// leaves it global. Continuous controls stage the original before and
-    /// latest after; other calls append once.
+    /// Records a change that has already been made, so only a change that
+    /// worked becomes a step. A key that names a thing makes the step part of
+    /// that thing's own undo; any other key puts it only in the global undo.
+    /// While a control is dragged, the first before value and the latest after
+    /// value are kept; otherwise one step is recorded.
     /// </summary>
     public void Record<T>(object key, string description, T before, T after,
         Func<T, Outcome> write, Func<bool>? alive = null)
@@ -111,9 +113,10 @@ public sealed class ValueJournal
         else _history.Append(Step(after));
     }
 
-    // Only a transient refusal keeps the step for retry. A permanent refusal
-    // or a throw is reported once and dropped when the same step refuses
-    // again, so one inverse that can never land does not wedge history.
+    // Only a refusal that may pass later keeps the step for another try. A
+    // lasting refusal or an exception is reported, and the step is dropped
+    // when it fails again, so a step that can never be undone does not block
+    // the steps under it.
     private static JournalStep ResultStep<T>(string description, T before, T after,
         Func<T, Outcome> write, Func<bool>? alive)
     {
@@ -153,11 +156,12 @@ public sealed class ValueJournal
         catch (Exception ex) { return new(false, ex.Message); }
     }
 
-    /// <summary>Commits the pending gesture. A later edit starts with a new baseline.</summary>
+    /// <summary>Records the value change in progress as one undo step, so the
+    /// next change starts a step of its own.</summary>
     public void Seal()
     {
-        // Session methods may seal discrete actions themselves. The shared
-        // control owns the boundary while it is applying a live value.
+        // Between BeginEdit and EndEdit a control is applying one change,
+        // which must not be cut in two; its step ends at CommitEdit.
         if (_editing > 0) return;
         CommitPending();
     }

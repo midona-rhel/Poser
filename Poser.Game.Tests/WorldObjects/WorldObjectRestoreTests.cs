@@ -590,7 +590,7 @@ public sealed class WorldObjectRestoreTests
             return node != null;
         }
 
-        public nint Spawn(string path, in Transform placement)
+        private nint SpawnNode(string path, in Transform placement)
         {
             var address = _next++;
             LastSpawned = address;
@@ -612,7 +612,7 @@ public sealed class WorldObjectRestoreTests
 
         public nint Spawn(string path, in Transform placement, out WorldObjectIncarnation identity)
         {
-            var address = Spawn(path, placement);
+            var address = SpawnNode(path, placement);
             identity = address == nint.Zero ? default : new(address, address.ToInt64(),
                 _nodes[address].ResourceIdentity, _nodes[address].IsVfx);
             return address;

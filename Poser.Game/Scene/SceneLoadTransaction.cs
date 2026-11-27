@@ -8,7 +8,7 @@ namespace Poser.Game.Scene;
 
 /// <summary>
 /// Loads one scene step by step and records, for each item, whether it came
-/// back. If the file cannot be read or the actors do not fit, nothing changes.
+/// back. If the file cannot be read, nothing changes.
 /// If the load is cancelled, the session changes, or an actor cannot be
 /// spawned, everything this load created is removed again. Any other item that
 /// fails is named in the result, and everything that did load stays, as one
@@ -350,7 +350,7 @@ internal sealed class SceneLoadTransaction(
             // Remember the current state only for what this load will change.
             // Putting back an environment the load never touched would undo
             // changes made before the load.
-            if (_environment is not null || options.IncludeEnvironment)
+            if (options.IncludeEnvironment)
             {
                 operation.EnvironmentBaseline = sceneState.CaptureEnvironmentState();
                 operation.WorldBaseline = sceneState.CaptureWorldState();
@@ -368,8 +368,7 @@ internal sealed class SceneLoadTransaction(
                     actor.Name = $"Actor {actorNumber}";
                 var token = sceneEntities.SpawnActor(actor, out var detail);
                 if (token is null)
-                    return $"Actor '{actor.Name}' could not be spawned: " +
-                        $"{detail ?? "the spawn failed."}";
+                    return $"Actor '{actor.Name}' could not be spawned: {detail}";
                 operation.SpawnedActors.Add(token);
                 _actorTokens[actor.Key] = token;
                 if (actor.AppearanceNotSaved)
@@ -383,7 +382,7 @@ internal sealed class SceneLoadTransaction(
                 {
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Object, prop.Name, false,
-                        detail ?? "The object could not be spawned."));
+                        detail));
                     continue;
                 }
                 operation.SpawnedProps.Add(token);
@@ -396,13 +395,13 @@ internal sealed class SceneLoadTransaction(
             // without it.
             foreach (var overlay in _overlays)
             {
-                string name = overlay.Node?.Name ?? "Overlay";
+                string name = overlay.Node!.Name;
                 var token = sceneEntities.SpawnOverlay(overlay, out var detail);
                 if (token is null)
                 {
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Overlay, name, false,
-                        detail ?? "The overlay could not be staged."));
+                        detail));
                     continue;
                 }
                 operation.StagedOverlays.Add(token);
@@ -421,7 +420,7 @@ internal sealed class SceneLoadTransaction(
                 {
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.WorldObject, name, false,
-                        detail ?? "The map object could not be borrowed."));
+                        detail));
                     continue;
                 }
                 operation.BorrowedWorldObjects.Add(token);
@@ -619,9 +618,9 @@ internal sealed class SceneLoadTransaction(
                 // animation will not play, the actor is frozen in the saved still pose.
                 var token = _actorTokens[actor.Key];
                 string? detail = null;
-                if (actor.Animation is not null)
+                if (actor.Animation is { } animation)
                 {
-                    detail = actorRestore.RestoreAnimation(token, actor, companion: false);
+                    detail = actorRestore.RestoreAnimation(token, animation, companion: false);
                     if (detail != null && actor.Pose is not null)
                     {
                         _animationRefused.Add(actor.Key);
@@ -635,8 +634,8 @@ internal sealed class SceneLoadTransaction(
                 if (detail != null)
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Animation, actor.Name, false, detail));
-                if (actor.CompanionAnimation is not null
-                    && actorRestore.RestoreAnimation(token, actor, companion: true) is { } companionDetail)
+                if (actor.CompanionAnimation is { } companionAnimation
+                    && actorRestore.RestoreAnimation(token, companionAnimation, companion: true) is { } companionDetail)
                 {
                     if (actor.CompanionPose is not null)
                         _companionAnimationRefused.Add(actor.Key);
@@ -793,20 +792,15 @@ internal sealed class SceneLoadTransaction(
             {
                 // A saved Main camera loads as a new camera; it does not
                 // overwrite the Main camera already in the session.
-                var token = sceneEntities.CreateCamera(camera, out var detail);
-                if (token != null)
-                {
-                    operation.CreatedCameras.Add(token);
-                    _cameraTokens[camera.Key] = token;
-                }
-
-                if (detail != null)
+                if (sceneEntities.CreateCamera(camera, out var detail) is not { } token)
                 {
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Camera, camera.Camera!.Name, false, detail));
                     _done++;
                     continue;
                 }
+                operation.CreatedCameras.Add(token);
+                _cameraTokens[camera.Key] = token;
 
                 if (camera.IsLive)
                     liveCamera = token;
@@ -891,7 +885,7 @@ internal sealed class SceneLoadTransaction(
                 {
                     _entities.Add(new SceneEntityOutcome(
                         SceneOutcomeKind.Light, light.Light!.Name, false,
-                        detail ?? "The light could not be spawned."));
+                        detail));
                 }
                 else
                 {

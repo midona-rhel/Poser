@@ -3,19 +3,20 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Poser.Domain;
+using Poser.Domain.Transforms;
 using Poser.Application.Events;
 using Poser.Game.Core;
 
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// Replaces a spawned world object's native body without changing its scene
-/// identity, and owns every native incarnation such a replacement leaves
-/// behind until it is torn down. The fresh body stays hidden until it is
-/// loaded and carries the handle's settings; only then is the old one
-/// destroyed and the handle re-pointed.
+/// Spawns world objects, and replaces a spawned object's model without
+/// changing the object in the scene. A replacement stays hidden until it has
+/// loaded and carries the object's settings; only then is the old model torn
+/// down and the object pointed at the new one. Any object a failed spawn or
+/// replacement leaves behind is kept here and torn down on a later frame.
 /// </summary>
-internal sealed class WorldObjectRespawner
+internal sealed class WorldObjectSpawner
 {
     private readonly IWorldObjectPort _port;
     private readonly IEventBus _events;
@@ -30,7 +31,7 @@ internal sealed class WorldObjectRespawner
         TaskCompletionSource<Outcome> Completion, Func<bool>? StillCurrent,
         System.Threading.CancellationToken Cancellation);
 
-    public WorldObjectRespawner(
+    public WorldObjectSpawner(
         IWorldObjectPort port,
         IEventBus events,
         IPluginLog log,
@@ -46,6 +47,34 @@ internal sealed class WorldObjectRespawner
 
     public bool HasPendingTeardowns => _pendingTeardowns.Count > 0;
 
+    /// <summary>
+    /// Spawns an object and reads back which object the game made. Spawning
+    /// a new object and replacing a model both start here. The identity comes
+    /// from the spawn itself, so when anything after it fails, the object that
+    /// was made is torn down by that identity, or queued for teardown, and
+    /// never by its address alone.
+    /// </summary>
+    public WorldObjectIncarnation? SpawnIdentified(string path, in Transform placement, out string? detail)
+    {
+        detail = null;
+        var address = _port.Spawn(path, placement, out var allocated);
+        if (address == nint.Zero)
+        {
+            if (allocated.Address != nint.Zero) TryCleanupFresh(allocated);
+            detail = $"'{WorldObjectService.DisplayName(path)}' could not be spawned — the game did not take it.";
+            return null;
+        }
+        if (!_port.TryReadIncarnation(address, out var identity)
+            || !allocated.SameAllocation(identity))
+        {
+            detail = TryCleanupFresh(allocated)
+                ? "The new object could not be identified."
+                : "The new object could not be identified, and its cleanup is still waiting.";
+            return null;
+        }
+        return identity;
+    }
+
     /// <summary>Starts a replacement for an admitted spawned handle. The
     /// caller has already checked that the service and the handle accept it.</summary>
     public Task<Outcome> Respawn(AdoptedWorldObject handle, string path,
@@ -60,26 +89,9 @@ internal sealed class WorldObjectRespawner
         if (string.IsNullOrWhiteSpace(path))
             return Refused("The path names nothing.");
         path = path.Trim();
-        var placement = handle.Transform;
-        var fresh = _port.Spawn(path, placement, out var allocated);
-        if (fresh == nint.Zero)
-        {
-            if (allocated.Address != nint.Zero) TryCleanupFresh(allocated);
-            return Refused($"'{WorldObjectService.DisplayName(path)}' could not be spawned — the game did not take it.");
-        }
-        if (!_port.TryReadIncarnation(fresh, out var freshIdentity)
-            || !allocated.SameAllocation(freshIdentity)
-            || (NativeWorldObjectPort.IsVfxPath(path.Trim())
-                && (!freshIdentity.IsVfx
-                    || freshIdentity.ResourceIdentity == nint.Zero)))
-        {
-            bool cleaned = allocated.Address != nint.Zero
-                ? TryCleanupFresh(allocated)
-                : TryCleanupUnidentified(path, fresh);
-            return Refused(cleaned
-                ? "The new native incarnation could not be identified."
-                : "Respawn cleanup remains outstanding.");
-        }
+        if (SpawnIdentified(path, handle.Transform, out var spawnDetail) is not { } freshIdentity)
+            return Refused(spawnDetail!);
+        var fresh = freshIdentity.Address;
         var pending = new PendingRespawn(freshIdentity, path,
             DateTime.UtcNow.AddSeconds(15),
             new(TaskCreationOptions.RunContinuationsAsynchronously), stillCurrent, cancellation);
@@ -133,7 +145,7 @@ internal sealed class WorldObjectRespawner
             || !_port.TryReadIncarnation(freshIdentity.Address, out var currentFresh)
             || !currentFresh.SameAllocation(freshIdentity))
         {
-            Finish(handle, pending, false, "A native incarnation changed while replacing the object.");
+            Finish(handle, pending, false, "The object or its replacement changed in the game while replacing the model.");
             return;
         }
         if (now >= pending.Deadline)
@@ -164,14 +176,13 @@ internal sealed class WorldObjectRespawner
             Finish(handle, pending, false, detail);
             return;
         }
-        // Cancellation is checked on the framework thread, at the last
-        // reversible point. Cancelling only the journal callback is too late:
-        // the old native body would already be gone.
+        // The last point where the replacement can still be called off. Any
+        // later, the old model would already be gone.
         if (CancelIfStale(handle, pending)) return;
         bool oldDestroyed = TryDestroyIncarnation(handle.Identity);
         if (!oldDestroyed)
         {
-            Finish(handle, pending, false, "The old native incarnation could not be torn down.");
+            Finish(handle, pending, false, "The old model could not be torn down.");
             return;
         }
         handle.Address = freshIdentity.Address;
@@ -211,8 +222,8 @@ internal sealed class WorldObjectRespawner
     private void Finish(AdoptedWorldObject handle, PendingRespawn pending,
         bool succeeded, string? detail)
     {
-        // A post-commit subscriber failure must not roll back an already
-        // published native replacement or destroy the handle's new body.
+        // Only the replacement that is still running is finished, so a late
+        // call can't tear down a model the object already uses.
         if (!_respawns.TryGetValue(handle, out var active) || active != pending) return;
         _respawns.Remove(handle);
         if (!succeeded && !TryCleanupFresh(pending.Fresh))
@@ -226,7 +237,7 @@ internal sealed class WorldObjectRespawner
         detail = null;
         try
         {
-            // Every native property write precedes old-object teardown.
+            // Every setting is written before the old model is torn down.
             _port.WriteVisible(fresh.Address, visible);
             if (fresh.IsVfx)
             {
@@ -264,8 +275,8 @@ internal sealed class WorldObjectRespawner
         return cleaned;
     }
 
-    /// <summary>Destroys one exact incarnation Poser owns. A BG address that
-    /// already holds a different allocation is not ours any more.</summary>
+    /// <summary>Destroys exactly the object Poser owns. A model address that
+    /// now holds a different object is not Poser's any more.</summary>
     public bool TryDestroyIncarnation(WorldObjectIncarnation identity)
     {
         try
@@ -273,7 +284,7 @@ internal sealed class WorldObjectRespawner
             if (identity.IsVfx) return _port.TryDestroyVfx(identity);
             if (!_port.IsAlive(identity.Address)) return true;
             if (!_port.TryReadIncarnation(identity.Address, out var current)) return false;
-            // A queued BG cleanup owns this incarnation, not a reusable slot.
+            // A different object at the same address is not Poser's to destroy.
             if (!current.SameAllocation(identity)) return true;
             return _port.TryDestroy(identity.Address);
         }
@@ -282,17 +293,6 @@ internal sealed class WorldObjectRespawner
             _log.Warning($"WorldObjectService: respawn teardown remains pending: {ex.Message}");
             return false;
         }
-    }
-
-    public bool TryCleanupUnidentified(string path, nint address)
-    {
-        if (NativeWorldObjectPort.IsVfxPath(path.Trim()))
-        {
-            // A failed identity read cannot safely authorize a raw-address
-            // VFX destroy: that address may already hold a replacement.
-            return false;
-        }
-        return _port.TryDestroy(address);
     }
 
     public void RetryPendingTeardowns()

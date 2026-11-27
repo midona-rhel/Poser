@@ -45,9 +45,9 @@ internal sealed class PoseImportTerminal
     /// may call it off the framework thread.</summary>
     public event Action<OperationReceipt>? ReceiptPublished;
 
-    /// <summary>The callback runs application code (the facade's speed
-    /// restore); a throw there must not escape into the framework tick or
-    /// the pass bookkeeping.</summary>
+    /// <summary>The callback runs <see cref="PoseImportCoordinator"/>'s speed
+    /// restore; a throw there must not escape into the framework tick or the
+    /// pass bookkeeping.</summary>
     public void Notify(PendingPoseImport import, OperationReceipt terminal)
     {
         if (import.TerminalPublished)

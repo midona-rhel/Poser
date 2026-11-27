@@ -35,7 +35,7 @@ internal sealed partial class SidebarComposer
     private readonly Application.Presentation.ILightControl _lightControl;
     private readonly Application.Presentation.ISceneObjectControl _objectControl;
     private readonly Application.Viewport.IViewportReads _viewportProjection;
-    private readonly SelectionEntityCommands _entityCommands;
+    private readonly ISelectedEntityActions _selectedEntities;
     private readonly ReferenceImageSession _referenceImages;
     private readonly Func<ActorDescriptor, TablerIcon> _actorIcon;
     private readonly ShellSidebarSection _sceneSection = new() { Title = "" };
@@ -96,7 +96,7 @@ internal sealed partial class SidebarComposer
         Application.Presentation.ILightControl lightControl,
         Application.Presentation.ISceneObjectControl objectControl,
         Application.Viewport.IViewportReads viewportProjection,
-        SelectionEntityCommands entityCommands,
+        ISelectedEntityActions selectedEntities,
         ReferenceImageSession referenceImages,
         Func<ActorDescriptor, TablerIcon> actorIcon)
     {
@@ -112,7 +112,7 @@ internal sealed partial class SidebarComposer
         _lightControl = lightControl;
         _objectControl = objectControl;
         _viewportProjection = viewportProjection;
-        _entityCommands = entityCommands;
+        _selectedEntities = selectedEntities;
         _referenceImages = referenceImages;
         _actorIcon = actorIcon;
     }
@@ -459,7 +459,7 @@ internal sealed partial class SidebarComposer
         {
             var state = _actorRows[a];
             var row = state.Row;
-            row.ActorVisible = _entityCommands.ReadVisibility(SelectionId.ForActor(state.Id)) ?? !state.SnapshotHidden;
+            row.ActorVisible = _selectedEntities.ReadVisibility(SelectionId.ForActor(state.Id)) ?? !state.SnapshotHidden;
             // Show Pause when playback state reports an active layer; otherwise show Play.
             row.ActorPaused = !_animation.AnyPlaying(state.Id);
             row.ActorTargeted = targetLineage == state.Id.LogicalId;

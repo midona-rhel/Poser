@@ -12,17 +12,6 @@ namespace Poser.Application.Tests.AutoSave;
 public sealed class SceneAutoSaveTests
 {
     [Fact]
-    public void Legacy_scene_toggle_cannot_disable_whole_scene_autosave()
-    {
-        using var test = new Harness();
-        test.Configuration.Config.AutoSave.SceneSnapshots = false;
-        test.Tick(0);
-        test.Tick(10);
-        test.Complete();
-        Assert.Equal(SceneAutoSaveStatus.Written, test.Service.LastResult.Status);
-    }
-
-    [Fact]
     public void Clean_exit_clears_scene_files_and_a_queued_writer_cannot_recreate_them()
     {
         using var test = new Harness();

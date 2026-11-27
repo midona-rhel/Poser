@@ -7,7 +7,7 @@
 public readonly record struct CapturePlace(uint TerritoryId, string? PlaceName);
 
 /// <summary>
-/// Resolves the current territory and place name for scene capture and pose autosave.
+/// Resolves the current territory and place name for scene capture.
 /// </summary>
 public interface IPlaceService
 {

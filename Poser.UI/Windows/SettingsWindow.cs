@@ -16,7 +16,6 @@ using Poser.Domain;
 using Poser.Domain.Preferences;
 using Poser.Documents.Config;
 using Poser.Documents.Library;
-using Poser.Application.AutoSave;
 using Poser.Application.Library;
 
 namespace Poser.UI;
@@ -34,7 +33,6 @@ public class SettingsWindow : Window
     private readonly SettingsView.SearchSettle _search = new();
     public bool IsRebindingShortcut => IsOpen && _vm.RebindingAction != null;
     private bool _saving;
-    private readonly Poser.Application.Library.AutoSaveLibrary _autoSave;
     private readonly IPenumbraPort _penumbra;
     private readonly IGlamourerPort _glamourer;
     private readonly ICustomizePlusPort _customizePlus;
@@ -51,7 +49,6 @@ public class SettingsWindow : Window
 
     public SettingsWindow(
         global::Poser.Application.Settings.ConfigurationService configuration,
-        Poser.Application.Library.AutoSaveLibrary autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
         Dalamud.Plugin.Services.IPluginLog log,
         IPenumbraPort penumbra,
@@ -67,7 +64,6 @@ public class SettingsWindow : Window
             ImGuiWindowFlags.NoResize)
     {
         _configuration = configuration;
-        _autoSave = autoSave;
         _penumbra = penumbra;
         _glamourer = glamourer;
         _customizePlus = customizePlus;
@@ -228,12 +224,9 @@ public class SettingsWindow : Window
 
             AutoSaveEnabled = c.AutoSave.Enabled,
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
-            AutoSaveMaxKept = c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture),
             AutoSaveCleanOnExit = c.AutoSave.CleanOnExit,
-            SceneSnapshotsEnabled = c.AutoSave.SceneSnapshots,
             SceneSnapshotsMaxKept =
                 c.AutoSave.MaxSceneSnapshots.ToString(CultureInfo.InvariantCulture),
-            AutoSaveFolder = _autoSave.RootDirectory,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
             MapDotRadius = c.Skeleton.MapDotRadius,
@@ -465,17 +458,7 @@ public class SettingsWindow : Window
         c.UndoDepth = Math.Clamp(_vm.UndoDepth, 0, 500);
         c.AutoSave.Enabled = _vm.AutoSaveEnabled;
         c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
-        if (int.TryParse(
-                _vm.AutoSaveMaxKept.Trim(),
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out int keptAutoSaves)
-            && keptAutoSaves >= 1)
-            c.AutoSave.MaxAutoSaves = keptAutoSaves;
-        _vm.AutoSaveMaxKept =
-            c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture);
         c.AutoSave.CleanOnExit = _vm.AutoSaveCleanOnExit;
-        c.AutoSave.SceneSnapshots = _vm.SceneSnapshotsEnabled;
         if (int.TryParse(
                 _vm.SceneSnapshotsMaxKept.Trim(),
                 NumberStyles.None,
@@ -589,7 +572,5 @@ public class SettingsWindow : Window
         // Sources are committed once by the draft transaction in SaveToConfig;
         // preview and Cancel never replace them.
         c.Library.EnsureHomeRootsExist();
-        c.AutoSave.RootDirectory = System.IO.Path.Combine(
-            _vm.Library.EffectiveRoot, LibraryConfiguration.AutoSavesLeaf);
     }
 }

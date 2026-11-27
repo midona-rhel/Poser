@@ -294,8 +294,6 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort, IDisposable
         ((DrawObject*)node)->OutlineFlags = outline;
     }
 
-    public nint Spawn(string path, in Transform placement) => Spawn(path, placement, out _);
-
     public nint Spawn(string path, in Transform placement, out WorldObjectIncarnation identity)
     {
         identity = default;
