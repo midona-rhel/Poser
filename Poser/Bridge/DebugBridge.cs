@@ -408,6 +408,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/gpose?action=leave|enter (leaves or enters GPose like the game's /gpose)",
+                        "/issuereport?scene=1|0 (saves an issue report the way the report dialog does; answers with the saved path or the failure)",
                         "/loads[?collect=0] (how many loads of Poser are in memory, after three full collections unless collect=0; growing by one per reload is a leak)",
                         "/gamekeys?keys=SHIFT,A&frames=60&mode=messages (holds game keys for that many frames, then records as many without; mode=messages sends real key messages; omit keys to read the recorded camera values)",
                         "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER&yaw=DEGREES&scale=NUMBER, ?child=ID&remove=1",
@@ -609,6 +610,19 @@ public sealed partial class DebugBridge : IDisposable
                     else ui->EnterGPose();
                 }
                 return Json(new { ok = true, action });
+            }
+            case "/issuereport":
+            {
+                // Saves an issue report the way the report dialog's Save does, and
+                // waits for it. scene=1 includes the scene.
+                var reports = (Application.Diagnostics.IIssueReports)_services.GetService(typeof(Application.Diagnostics.IIssueReports))!;
+                string? saved = null, failure = null;
+                using var finished = new System.Threading.ManualResetEventSlim();
+                _framework.RunOnFrameworkThread(() => reports.Save(query.GetValueOrDefault("scene") == "1",
+                    path => { saved = path; finished.Set(); },
+                    error => { failure = error; finished.Set(); })).Wait();
+                finished.Wait(TimeSpan.FromMinutes(3)); // a report with the scene can take a minute
+                return Json(new { ok = saved != null, saved, failure, timedOut = saved == null && failure == null });
             }
             case "/loads":
             {

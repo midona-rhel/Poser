@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -27,6 +28,10 @@ public sealed class ConfigurationFileStore(string path)
             | JsonNumberHandling.AllowNamedFloatingPointLiterals,
         PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate,
         WriteIndented = true,
+        // Writes "Ctrl+Z" and accented folder names as they are, not as
+        // escape codes, as the Newtonsoft writer did. Only Poser reads this
+        // file; it never goes into a web page.
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         TypeInfoResolver = SettingsResolver(),
     };
 
@@ -71,7 +76,7 @@ public sealed class ConfigurationFileStore(string path)
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         AtomicFile.Write(new SystemAtomicFileSystem(), destination, stream =>
         {
-            using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true, Encoder = JsonOptions.Encoder });
             JsonSerializer.Serialize(writer, configuration, JsonOptions);
         }, new AtomicWriteOptions { Subject = "configuration" }).ThrowIfFailed();
     }

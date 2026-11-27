@@ -29,11 +29,13 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     private const int LogTailBytes = 1024 * 1024;
 
     /// <summary>The settings file's options, leaving out empty values and
-    /// repeated references.</summary>
+    /// repeated references. Filling existing objects is for reading settings,
+    /// and System.Text.Json refuses it together with reference handling.</summary>
     private static readonly JsonSerializerOptions ReportJson = new(ConfigurationFileStore.JsonOptions)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
+        PreferredObjectCreationHandling = JsonObjectCreationHandling.Replace,
     };
 
     private readonly IFramework _framework;
