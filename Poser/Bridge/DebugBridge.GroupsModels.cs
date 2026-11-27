@@ -6,7 +6,9 @@ using System.Linq;
 using Poser.Application.Appearance;
 using Poser.Application.Catalog;
 using Poser.Application.Scene;
+using Poser.Application.Transforms;
 using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 
 namespace Poser.Bridge;
 
@@ -117,6 +119,70 @@ public sealed partial class DebugBridge
             return selected;
         var actor = FindActor(value);
         return actor is null ? null : _bindings.GetActorId(actor);
+    }
+
+    /// <summary>
+    /// /grouptransform?group=ID reads a group's position, rotation and scale as the
+    /// Inspector shows them. With dx, dy or dz (a move), yaw (degrees about the
+    /// group's up axis) or scale (a factor on all three axes), it changes them the
+    /// way the Inspector's fields do: one drag for each kind of change, each its own
+    /// undo step.
+    /// </summary>
+    private object GroupTransformCommand(Dictionary<string, string> query)
+    {
+        var groups = BridgeGroups;
+        if (!TryGuid(query.GetValueOrDefault("group"), out var groupId) || groups.Find(groupId) is not { } group)
+            return new { success = false, detail = "Unknown group id." };
+        var members = groups.Descendants(group).ToArray();
+        var coordinator = (GroupTransformCoordinator)_services.GetService(typeof(GroupTransformCoordinator))!;
+        var editing = (TransformEditing)_services.GetService(typeof(TransformEditing))!;
+        float Number(string key, float missing) => query.TryGetValue(key, out var text)
+            ? float.Parse(text, CultureInfo.InvariantCulture) : missing;
+
+        string? Drag(TransformOperation operation, TransformDelta delta)
+        {
+            if (TransformSelectionPolicy.Editing(members, _sceneSession.Snapshot, groups, _viewport) is not { } effective)
+                return "The group cannot be edited.";
+            var begin = editing.BeginDrag(effective.Targets, operation, TransformSpace.World, members);
+            if (!begin.Success || begin.GestureId is not { } gesture)
+                return begin.Detail ?? "The drag did not start.";
+            // The Inspector's rotation fields are in the group's own frame.
+            if (coordinator.SelectionFrame(members) is { } frame)
+                delta = delta with { Rotation = frame.ToWorldDelta(delta.Rotation) };
+            var update = editing.Update(gesture, delta);
+            if (!update.Success)
+                return update.Detail ?? "The drag was refused.";
+            var commit = editing.Commit(gesture);
+            return commit.Success ? null : commit.Detail ?? "The drag was not committed.";
+        }
+
+        var errors = new List<string>();
+        var move = new System.Numerics.Vector3(Number("dx", 0), Number("dy", 0), Number("dz", 0));
+        if (move != System.Numerics.Vector3.Zero
+            && Drag(TransformOperation.Translate, TransformDelta.Identity with { Translation = move }) is { } moveError)
+            errors.Add(moveError);
+        if (query.ContainsKey("yaw") && Drag(TransformOperation.Rotate, TransformDelta.Identity with
+            {
+                Rotation = System.Numerics.Quaternion.CreateFromAxisAngle(
+                    System.Numerics.Vector3.UnitY, Number("yaw", 0) * MathF.PI / 180f),
+            }) is { } turnError)
+            errors.Add(turnError);
+        if (query.ContainsKey("scale") && Drag(TransformOperation.Scale, TransformDelta.Identity with
+            {
+                ScaleFactor = new System.Numerics.Vector3(Number("scale", 1)),
+            }) is { } scaleError)
+            errors.Add(scaleError);
+
+        bool read = coordinator.TryReadSelection(members, _configuration.Config.Gizmo.GroupScale,
+            out var display, out var readError, requireEditable: false);
+        return new
+        {
+            success = errors.Count == 0 && read,
+            detail = errors.Count > 0 ? string.Join(" ", errors) : readError,
+            position = read ? new[] { display.Position.X, display.Position.Y, display.Position.Z } : null,
+            rotation = read ? new[] { display.Rotation.X, display.Rotation.Y, display.Rotation.Z, display.Rotation.W } : null,
+            scale = read ? new[] { display.Scale.X, display.Scale.Y, display.Scale.Z } : null,
+        };
     }
 
     private static bool TryGuid(string? value, out Guid id) =>
