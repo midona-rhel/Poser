@@ -14,8 +14,11 @@ public enum UITheme
 
 public class UIConfiguration
 {
-    // Below this alpha, translucent surfaces no longer read reliably.
-    public const float MinimumFillOpacity = 0.25f;
+    /// <summary>The least fill Poser's windows are drawn with. Below half,
+    /// text on a window no longer reads over a bright scene. The Window
+    /// opacity slider starts here, and a lower value in an edited or older
+    /// settings file is raised to it.</summary>
+    public const float MinimumFillOpacity = 0.5f;
 
     private float _fillOpacity = 1f;
     public UITheme Theme { get; set; } = UITheme.Dark;
@@ -26,8 +29,7 @@ public class UIConfiguration
         set => _fillOpacity = ClampFillOpacity(value);
     }
     public bool BackdropBlur { get; set; } = true;
-    // Config files may be edited outside the slider's range.
-    public static float ClampFillOpacity(float value) =>
+    private static float ClampFillOpacity(float value) =>
         float.IsFinite(value) ? Math.Clamp(value, MinimumFillOpacity, 1f) : 1f;
     public bool DetachedShell { get; set; }
     public bool HideHandlesByDefault { get; set; }
@@ -81,12 +83,15 @@ public class UIConfiguration
     public bool KeepIkGizmoVisibleWhileManipulating { get; set; } = true;
 
     /// <summary>
-    /// The pre-dual-slot single binding per action. Kept so a config written
-    /// before the second slot existed still deserializes; emptied by
-    /// <see cref="MigrateKeybindsToSlots"/> the first time such a config
-    /// loads, and never written again — one live home for a binding.
+    /// One key binding per action, as settings files older than version 3
+    /// stored them. Read from such a file and moved into
+    /// <see cref="Bindings"/> by <see cref="MigrateKeybindsToSlots"/>; never
+    /// written to the file.
     /// </summary>
     public System.Collections.Generic.Dictionary<string, string> Keybinds { get; set; } = new();
+
+    /// <summary>Tells Newtonsoft.Json not to write <see cref="Keybinds"/>.</summary>
+    public bool ShouldSerializeKeybinds() => false;
     public System.Collections.Generic.Dictionary<string, KeybindSlots> Bindings { get; set; } = new();
     public void MigrateKeybindsToSlots()
     {

@@ -120,7 +120,7 @@ public sealed class SceneAutoSaveService : IDisposable
             return;
         }
 
-        var interval = TimeSpan.FromSeconds(Math.Max(1, settings.IntervalSeconds));
+        var interval = TimeSpan.FromSeconds(settings.IntervalSeconds);
         if (_nextDueUtc is null)
         {
             _nextDueUtc = nowUtc + interval;
@@ -203,7 +203,7 @@ public sealed class SceneAutoSaveService : IDisposable
             _writing = true;
 
         var localNow = _clock().ToLocalTime();
-        var keep = Math.Max(1, Settings.MaxSceneSnapshots);
+        var keep = Settings.MaxSceneSnapshots;
         string? dispatchFailure = null;
         try
         {

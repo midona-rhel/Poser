@@ -71,7 +71,7 @@ public sealed class SettingsViewModel
     public bool AutoSaveEnabled = true;
     public float AutoSaveIntervalSeconds = 180f;
     public bool AutoSaveCleanOnExit;
-    public string SceneSnapshotsMaxKept = "5";
+    public int SceneSnapshotsMaxKept = 5;
     public int SkeletonShape;
 
     public bool SelectedBonesOnly;
@@ -634,8 +634,8 @@ public static partial class SettingsView
                 disabled: !saving);
             form.Number(
                 "Backups kept",
-                ParseCount(vm.SceneSnapshotsMaxKept, 5),
-                next => vm.SceneSnapshotsMaxKept = CountText(next),
+                vm.SceneSnapshotsMaxKept,
+                next => vm.SceneSnapshotsMaxKept = (int)MathF.Round(next),
                 perPixel: 0.1f,
                 format: "0",
                 help: "Older backups are deleted once there are more than this",
@@ -674,15 +674,6 @@ public static partial class SettingsView
                 "Put every Poser setting back to its shipped default");
         });
     }
-
-    private static float ParseCount(string text, int fallback) =>
-        int.TryParse(text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int value)
-        && value >= 1
-            ? value
-            : fallback;
-
-    private static string CountText(float value) =>
-        Math.Max(1, (int)MathF.Round(value)).ToString(CultureInfo.InvariantCulture);
 
     private static void ResetRow(
         SettingsViewModel vm,
@@ -734,7 +725,7 @@ public static partial class SettingsView
                 vm.FillOpacity,
                 UIConfiguration.MinimumFillOpacity,
                 1f,
-                next => vm.FillOpacity = UIConfiguration.ClampFillOpacity(next),
+                next => vm.FillOpacity = next,
                 format: "0 %",
                 help: "How see-through Poser's windows are");
             form.Switch(
