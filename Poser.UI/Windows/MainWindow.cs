@@ -169,7 +169,6 @@ public partial class MainWindow : Window
 
     private readonly PoseFileInspectorSection _poseFileSection;
 
-    private readonly IAnimationCatalogLoader _animationCatalog;
 
     private readonly ICompanionCatalogLoader _companionCatalog;
 
@@ -341,7 +340,6 @@ public partial class MainWindow : Window
         Application.Presentation.ICameraTargetControl cameraTargets,
         PoseLibraryPane libraryPane,
         IAnimationPlayback animation,
-        IAnimationCatalogLoader animationCatalog,
         ICompanionCatalogLoader companionCatalog,
         PoseRailPane poseRail,
         IPropCatalog propService,
@@ -499,7 +497,6 @@ public partial class MainWindow : Window
             _duplication, _selectedEntities, _entityActions, _playback,
             _cameraTargets, _names, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement, _cleanTransforms, graphicalBonePane);
         eventBus.Subscribe<GazeStateChangedEvent>(_ => _sidebar.InvalidateGaze());
-        _animationCatalog = animationCatalog;
         _companionCatalog = companionCatalog;
         _poseRail = poseRail;
 

@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Application.Animation;
 using Poser.Domain.Animation;
+using Poser.Game.Core;
 
 namespace Poser.Game.Animation;
 
@@ -17,36 +17,19 @@ public sealed class AnimationCatalogLoader : IAnimationCatalogLoader
 {
     private readonly IDataManager _data;
     private readonly AnimationCatalog _catalog;
-    private readonly IPluginLog _log;
-    private bool _started;
+    private readonly GameDataBuild _build;
 
     public AnimationCatalogLoader(
         IDataManager data, AnimationCatalog catalog, IPluginLog log)
     {
         _data = data;
         _catalog = catalog;
-        _log = log;
+        _build = new("animation", () => _catalog.Publish(Build()), log);
     }
 
-    /// <summary>Starts the one-time build. Safe to call repeatedly.</summary>
-    public void EnsureLoaded()
-    {
-        if (_started)
-            return;
-        _started = true;
-        Task.Run(() =>
-        {
-            try
-            {
-                _catalog.Publish(Build());
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"Animation catalog failed to build: {ex}");
-                _catalog.Publish(Array.Empty<TimelineEntry>());
-            }
-        });
-    }
+    public string? LastError => _build.Failure;
+    public void EnsureLoaded() => _build.EnsureLoaded();
+    public void Retry() => _build.Retry();
 
     private List<TimelineEntry> Build()
     {

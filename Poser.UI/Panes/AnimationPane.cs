@@ -836,6 +836,7 @@ public sealed class AnimationPane : IDisposable
     private void OpenPicker(
         TimelineFeed feed, ActorId actor, TimelineEntry? current)
     {
+        _catalogLoader.Retry();
         _pickActor = actor;
         _openFeed = feed;
         feed.ResetFilter();
@@ -857,6 +858,9 @@ public sealed class AnimationPane : IDisposable
         _pickerFrame = frame;
         if (_openFeed is not { } feed)
             return;
+        // Refreshed every frame, so a picker opened while the list builds
+        // shows the failure if the build fails.
+        _picker.SetLoadStatus(feed.LoadError);
         _picker.Update(PickerOptionsFor(feed));
         if (_picker.Draw() is { } chosen && _pickActor is { } actor)
             Apply(actor, new AnimationPick(
@@ -965,7 +969,7 @@ public sealed class AnimationPane : IDisposable
 
         internal string? LoadError =>
             _entries == null && !_pane._catalog.IsLoaded
-                ? "Building animation catalog"
+                ? _pane._catalogLoader.LastError ?? "Building animation catalog"
                 : null;
 
         internal void ResetFilter() => _kindIndex = 0;

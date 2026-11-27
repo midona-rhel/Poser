@@ -1,80 +1,37 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Threading;
-using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Application.Appearance;
 using Poser.Domain.Appearance;
 using Poser.Application.Catalog;
+using Poser.Game.Core;
 
 namespace Poser.Game.Appearance;
 
 /// <summary>
-/// Builds the model-search catalog off the framework thread. One successful
-/// build is retained for the lifetime of this loader. A failed build stays
-/// failed until an explicit retry.
+/// Builds the model-search catalog from game data, once, off the framework
+/// thread (see <see cref="GameDataBuild"/>).
 /// </summary>
 public sealed class ModelCatalogLoader : IModelCatalogLoader
 {
     private readonly IDataManager _data;
     private readonly ModelCatalog _catalog;
-    private readonly IPluginLog _log;
-    private int _state;
-    private string? _lastError;
-
-    private const int Idle = 0;
-    private const int Building = 1;
-    private const int Loaded = 2;
-    private const int Failed = 3;
+    private readonly GameDataBuild _build;
 
     public ModelCatalogLoader(
         IDataManager data, ModelCatalog catalog, IPluginLog log)
     {
         _data = data;
         _catalog = catalog;
-        _log = log;
+        _build = new("model", () => _catalog.Publish(Build()), log);
     }
 
-    public bool IsBuilding => Volatile.Read(ref _state) == Building;
-    public string? LastError => Volatile.Read(ref _lastError);
-
-    /// <summary>Starts one build for the current game data. Repeated calls
-    /// while building or after success do nothing.</summary>
-    public void EnsureLoaded()
-    {
-        if (Interlocked.CompareExchange(ref _state, Building, Idle) != Idle)
-            return;
-        StartBuild();
-    }
-
-    /// <summary>Retries a failed build after an explicit user action.</summary>
-    public void Retry()
-    {
-        if (Interlocked.CompareExchange(ref _state, Building, Failed) != Failed)
-            return;
-        StartBuild();
-    }
-
-    private void StartBuild()
-    {
-        Task.Run(() =>
-        {
-            try
-            {
-                _catalog.Publish(Build());
-                Volatile.Write(ref _lastError, null);
-                Volatile.Write(ref _state, Loaded);
-            }
-            catch (Exception ex)
-            {
-                _log.Error($"Model catalog failed to build: {ex}");
-                Volatile.Write(ref _lastError, ex.Message);
-                Volatile.Write(ref _state, Failed);
-            }
-        });
-    }
+    public bool IsBuilding => _build.IsBuilding;
+    public string? LastError => _build.Failure;
+    public void EnsureLoaded() => _build.EnsureLoaded();
+    public void Retry() => _build.Retry();
 
     private List<ModelCatalogEntry> Build()
     {
