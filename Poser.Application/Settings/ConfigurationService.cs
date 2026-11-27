@@ -123,22 +123,31 @@ public class ConfigurationService : IDisposable
         Save();
     }
 
-    public void ResetSkeleton()
+    /// <summary>Puts the skeleton settings back to their defaults, deleting
+    /// the saved bone visibility and bone map presets. With
+    /// <paramref name="save"/> false the change stays in memory and readers
+    /// are not told; the Settings window saves and announces it itself.</summary>
+    public void ResetSkeleton(bool save = true)
     {
         Config.Skeleton = new SkeletonConfiguration();
-        Save();
+        if (save) Save();
     }
 
-    public void ResetDisplay()
+    /// <summary>Turns Anonymous mode off and NSFW bones on. See
+    /// <see cref="ResetSkeleton"/> for <paramref name="save"/>.</summary>
+    public void ResetDisplay(bool save = true)
     {
         Config.Display = new DisplayConfiguration();
-        Save();
+        if (save) Save();
     }
 
-    public void ResetUI()
+    /// <summary>Puts the interface settings back to their defaults: layout,
+    /// key bindings, theme and window look. See <see cref="ResetSkeleton"/>
+    /// for <paramref name="save"/>.</summary>
+    public void ResetUI(bool save = true)
     {
         Config.UI = new UIConfiguration();
-        Save();
+        if (save) Save();
     }
 
     public void Dispose()

@@ -376,31 +376,70 @@ public class SettingsWindow : Window
             _customizePlus.CustomizePlus.Available,
             _customizePlus.CustomizePlus.Detail));
     }
+    /// <summary>
+    /// Puts one page's settings back to their defaults and saves them, and
+    /// saves nothing else. The window shows unsaved changes by writing them
+    /// into the settings every frame (see <see cref="Draw"/>), and
+    /// <see cref="_snapshot"/> holds the saved values that Cancel puts back.
+    /// So the saved values go back before the reset saves, and the other
+    /// pages' unsaved changes go back on top after it: Save still keeps them
+    /// and Cancel still takes them back. Reset everything discards every
+    /// unsaved change.
+    /// </summary>
     private void ResetConfig(ConfigResetScope scope)
     {
-        var svc = _configuration;
+        var unsaved = _vm;
+        if (scope == ConfigResetScope.All)
+        {
+            _configuration.Reset();
+            _snapshot = BuildViewModel();
+            _vm = BuildViewModel();
+        }
+        else
+        {
+            _vm = _snapshot!;
+            ApplyToConfig(preview: true);
+            ResetPage(scope, save: true);
+            _snapshot = BuildViewModel();
+
+            _vm = unsaved;
+            ApplyToConfig(preview: true);
+            ResetPage(scope, save: false);
+            var shown = BuildViewModel();
+            // What the preview doesn't write stays as it was edited: key
+            // bindings (unless this page reset them) and the Library page.
+            if (scope != ConfigResetScope.UI)
+            {
+                shown.Bindings = unsaved.Bindings;
+                shown.PresetIndex = unsaved.PresetIndex;
+            }
+            shown.Library = unsaved.Library;
+            shown.UseLibraryWhenImporting = unsaved.UseLibraryWhenImporting;
+            shown.LibraryShowExtensions = unsaved.LibraryShowExtensions;
+            _vm = shown;
+            _configuration.NotifyChanged();
+        }
+
+        _vm.Category = unsaved.Category;
+        _vm.ResetStatus = "Reset. These are the shipped defaults.";
+        _appliedSignature = _vm.Signature();
+        WireRuntime();
+    }
+
+    private void ResetPage(ConfigResetScope scope, bool save)
+    {
         switch (scope)
         {
             case ConfigResetScope.Display:
-                svc.ResetDisplay();
+                _configuration.ResetDisplay(save);
                 break;
             case ConfigResetScope.Skeleton:
-                svc.ResetSkeleton();
+                _configuration.ResetSkeleton(save);
                 break;
             case ConfigResetScope.UI:
-                svc.ResetUI();
-                break;
-            default:
-                svc.Reset();
+                _configuration.ResetUI(save);
                 break;
         }
-
-        int category = _vm.Category;
-        LoadFromConfig();
-        // A reset is committed: Cancel afterwards keeps it.
-        _snapshot = BuildViewModel();
-        _vm.Category = category;
-        _vm.ResetStatus = "Reset. These are the shipped defaults.";
     }
 
     private void SaveToConfig()
