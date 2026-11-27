@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
+using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Documents.Files;
 using Poser.Application.Posing;
@@ -101,14 +102,19 @@ internal sealed class ActorUndoSteps
     private readonly IActorRemoveRestore _actors;
     private readonly LifecycleSlotOwner<IActor, ActorLifecycleSlot> _slots;
 
-    public ActorUndoSteps(EditHistory history, IActorRemoveRestore actors)
+    /// <param name="actorTarget">The actor's move target, so the undo history
+    /// follows a removed actor to the copy undo brings back, as it does for
+    /// lights, props, overlays and world objects.</param>
+    public ActorUndoSteps(EditHistory history, IActorRemoveRestore actors,
+        Func<IActor, TransformTargetId?>? actorTarget = null)
     {
         _history = history;
         _actors = actors;
         _slots = new(
             actor => new ActorLifecycleSlot { Live = actor },
             slot => slot.Live, (slot, live) => slot.Live = live,
-            RemoveActor, RestoreActor, retainAliases: true);
+            RemoveActor, RestoreActor, retainAliases: true,
+            history: history, transformTarget: actorTarget);
     }
 
     public IActorRemoveRestore Port => _actors;

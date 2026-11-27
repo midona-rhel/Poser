@@ -94,7 +94,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
                 ? TransformTargetId.ForProp(id) : null,
             overlay => overlay is OverlayNodeHandle { Kind: OverlayNodeKind.Collider } node
                 && bindings.GetOverlayId(node) is { } id
-                ? TransformTargetId.ForCollider(id) : null)
+                ? TransformTargetId.ForCollider(id) : null,
+            actor => bindings.GetActorId(actor) is { } id
+                ? TransformTargetId.ForActor(id) : null)
     { }
 
     /// <summary>For tests: actors, props, overlays and world objects are
@@ -111,7 +113,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         Func<ILight, TransformTargetId?>? lightTarget = null,
         Func<object, TransformTargetId?>? worldObjectTarget = null,
         Func<object, TransformTargetId?>? propTarget = null,
-        Func<object, TransformTargetId?>? overlayTarget = null)
+        Func<object, TransformTargetId?>? overlayTarget = null,
+        Func<IActor, TransformTargetId?>? actorTarget = null)
     {
         _history = history;
         _lighting = lighting;
@@ -119,7 +122,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         _worldObjectOwner = new(history, worldObjects, worldObjectTarget);
         _lightOwner = new(history, lighting, lightTarget);
         _cameraOwner = new(history, cameras);
-        _actorOwner = new(history, actors);
+        _actorOwner = new(history, actors, actorTarget);
         _propOwner = new(history, props, propTarget);
         _overlayOwner = new(history, overlays, overlayTarget);
         // A slot only exists for undo steps. When the history is cleared,
