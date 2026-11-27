@@ -437,6 +437,7 @@ public class CMToolPoseFile
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
+        TypeInfoResolver = PoserJsonContracts.TypeInfo,
         AllowTrailingCommas = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
     };

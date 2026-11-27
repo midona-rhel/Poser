@@ -1,4 +1,3 @@
-using Newtonsoft.Json;
 using Poser.Application.Presentation;
 using Poser.Domain.Identity;
 using Poser.Documents.Config;
@@ -16,12 +15,12 @@ public sealed class BoneVisibilityDefaultsTests
     [Fact]
     public void Legacy_automatic_option_is_ignored_and_checkbox_choices_survive_serialization()
     {
-        var settings = JsonConvert.DeserializeObject<SkeletonConfiguration>("{\"UseDefaultBonePresetsOnShow\":true,\"BoneVisibilityPresets\":[{\"Name\":\"Head\",\"Bones\":[\"head\"]}]}")!;
+        var settings = System.Text.Json.JsonSerializer.Deserialize<SkeletonConfiguration>("{\"UseDefaultBonePresetsOnShow\":true,\"BoneVisibilityPresets\":[{\"Name\":\"Head\",\"Bones\":[\"head\"]}]}", Poser.Documents.Config.ConfigurationFileStore.JsonOptions)!;
         Assert.True(settings.BoneVisibilityPresets[0].ShowByDefault);
         settings.BoneVisibilityPresets[0].ShowByDefault = false;
-        var json = JsonConvert.SerializeObject(settings);
+        var json = System.Text.Json.JsonSerializer.Serialize(settings, Poser.Documents.Config.ConfigurationFileStore.JsonOptions);
         Assert.DoesNotContain("UseDefaultBonePresetsOnShow", json);
-        var restored = JsonConvert.DeserializeObject<SkeletonConfiguration>(json)!;
+        var restored = System.Text.Json.JsonSerializer.Deserialize<SkeletonConfiguration>(json, Poser.Documents.Config.ConfigurationFileStore.JsonOptions)!;
         Assert.False(restored.BoneVisibilityPresets[0].ShowByDefault);
     }
 }

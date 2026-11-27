@@ -36,7 +36,7 @@ public sealed record IdleModPackage(string Name, string Description, IReadOnlyLi
             }
             Json("meta.json", new { FileVersion = 3, Name, Author = "", Description, Version = "1.0", Website = "", ModTags = new[] { "Animation", "Pose" } });
             Json("default_mod.json", new { Files = map, FileSwaps = new Dictionary<string, string>(), Manipulations = Array.Empty<object>() });
-            void Json(string name, object value) { using var entry = zip.CreateEntry(name).Open(); JsonSerializer.Serialize(entry, value); }
+            void Json(string name, object value) { using var entry = zip.CreateEntry(name).Open(); JsonSerializer.Serialize(entry, value, PoserJsonContracts.Default); }
         }, new AtomicWriteOptions { Subject = "idle mod", Overwrite = false }).ThrowIfFailed();
     }
 }

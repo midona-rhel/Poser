@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Poser.Documents.Files;
 
 namespace Poser.Documents.Mcdf;
 
@@ -17,6 +18,7 @@ internal static class McdfWire
 
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
+        TypeInfoResolver = PoserJsonContracts.TypeInfo,
         AllowTrailingCommas = true,
     };
 }

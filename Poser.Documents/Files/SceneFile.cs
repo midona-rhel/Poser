@@ -214,6 +214,7 @@ public class SceneFile
     // more than needed, and trailing commas and unknown fields allowed.
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
+        TypeInfoResolver = PoserJsonContracts.TypeInfo,
         WriteIndented = true,
         AllowTrailingCommas = true,
         MaxDepth = SceneFileLimits.MaxJsonDepth,
