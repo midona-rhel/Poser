@@ -35,17 +35,10 @@ public interface IPoseFileService : IDisposable
         Func<IBone, Transform>? readTransform = null);
 
     /// <summary>
-    /// Loads a pose file and computes the complete import plan for the
-    /// matching slots WITHOUT mutating anything. Returns null when the file
-    /// cannot be read. The stable pose edit path applies the plan as one
-    /// atomic, undoable edit.
-    /// </summary>
-    PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, string path, PoseImportOptions? options = null);
-
-    /// <summary>
-    /// Computes the import plan for an already-loaded pose file. Every plan
-    /// is built from a pose that passed <see cref="PoseFileValidation"/>;
-    /// returns null when this one does not.
+    /// Works out what an import of <paramref name="poseFile"/> would write to
+    /// the matching skeletons, without changing anything. Returns null when
+    /// the pose fails <see cref="PoseFileValidation"/>. A pose read from an old
+    /// .cmp file writes no positions.
     /// </summary>
     PoseImportPlan? BuildImportPlan(IReadOnlyList<ISkeleton> slots, PoseFile poseFile, PoseImportOptions? options = null);
 }

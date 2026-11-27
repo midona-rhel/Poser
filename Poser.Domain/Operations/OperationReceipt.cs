@@ -395,6 +395,32 @@ public sealed record OperationReceipt
         }
     }
 
+    /// <summary>
+    /// A receipt callback for one operation on <paramref name="target"/> that
+    /// passes only its final receipt to <paramref name="onFinal"/>. It takes
+    /// the operation from the Pending receipt and ignores receipts for other
+    /// actors and other operations.
+    /// </summary>
+    public static Action<OperationReceipt> WhenFinal(
+        ActorId target, Action<OperationReceipt> onFinal)
+    {
+        Guid? operation = null;
+        return receipt =>
+        {
+            if (receipt.TargetActorId != target)
+                return;
+            if (receipt.State == OperationReceiptState.Pending)
+            {
+                operation = receipt.OperationId;
+                return;
+            }
+            if (operation != receipt.OperationId)
+                return;
+            operation = null;
+            onFinal(receipt);
+        };
+    }
+
     private static void RequireDetail(string? detail)
     {
         if (string.IsNullOrWhiteSpace(detail))

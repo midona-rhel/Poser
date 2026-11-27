@@ -357,14 +357,6 @@ public sealed partial class PoseLibraryPane
         _vm.OnTagFilter = TagFilter;
         _vm.OnIconSize = SetIconSize;
         _vm.OnRefresh = Refresh;
-        // The import options menu and the bone filter menu, as in Brio. Their
-        // settings live in the pose file section, so the Library and that
-        // section share one filter. The Library's import menu leaves out the
-        // presets, because rest poses are applied from the actor, not from the
-        // Library. The menu opens under the Options button, like the Apply menu.
-        _vm.OnImportMenu = () => _files.RequestImportMenu(
-            withPresets: false, target: CurrentApplyTarget(), anchor: ButtonSeat);
-        _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {
             if (IsSceneTile(_vm.Selected))
@@ -394,25 +386,13 @@ public sealed partial class PoseLibraryPane
         _vm.CanSpawn = true;
     }
 
-    private Action<OperationReceipt> TrackImport(ActorId expectedActor)
-    {
-        Guid? operation = null;
-        return receipt =>
+    /// <summary>Reports the import's final result when it was not applied.</summary>
+    private Action<OperationReceipt> TrackImport(ActorId expectedActor) =>
+        OperationReceipt.WhenFinal(expectedActor, receipt =>
         {
-            if (receipt.TargetActorId != expectedActor)
-                return;
-            if (receipt.State == OperationReceiptState.Pending)
-            {
-                operation = receipt.OperationId;
-                return;
-            }
-            if (operation != receipt.OperationId)
-                return;
-            operation = null;
             if (receipt.State is not OperationReceiptState.Applied)
                 _notices.Report(new Poser.Domain.Outcome(false, receipt.Detail), "Apply");
-        };
-    }
+        });
 
     /// <summary>Lets the thumbnail cache carry on decoding pictures.</summary>
     public void Tick()
@@ -455,7 +435,7 @@ public sealed partial class PoseLibraryPane
             Refilter();
         SyncApplyTargets();
         SyncTarget();
-        SyncImportToggles();
+        SyncTabActions();
         SyncStatus();
         SyncPreview();
 

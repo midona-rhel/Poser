@@ -13,7 +13,6 @@ public static class ButtonWidgets
     /// <summary>Bottom-left screen corner of the text or icon button currently
     /// invoking its callback. Use it to anchor a popup to that button. Outside
     /// those callbacks it retains the last value; temporary toggles do not set it.</summary>
-    public static Vector2 ButtonSeat => UiContext.Current.ButtonSeat;
 
     public static bool Button(
         string label,
@@ -238,7 +237,6 @@ public static class ButtonWidgets
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
         {
-            UiContext.Current.ButtonSeat = new Vector2(hit.ScreenMin.X, hit.ScreenMax.Y);
             onClick?.Invoke();
         }
         return hit.Activated;
@@ -477,7 +475,6 @@ public static class ButtonWidgets
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
         {
-            UiContext.Current.ButtonSeat = new Vector2(hit.ScreenMin.X, hit.ScreenMax.Y);
             onClick?.Invoke();
         }
         return hit.Activated;

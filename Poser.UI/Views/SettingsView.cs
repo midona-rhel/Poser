@@ -136,7 +136,6 @@ public sealed class SettingsViewModel
     public bool KeepIkGizmoVisibleWhileManipulating;
     public bool ShowWhenGameUiHidden;
     public LibrarySettingsDraft Library = new(new LibraryConfiguration());
-    public LibraryConfiguration SavedLibrary = new();
     public PoseLibrarySnapshot? SourceSnapshot;
     public bool SourceScanBusy;
     public bool ShowSourceIssues;
@@ -239,8 +238,6 @@ public sealed class SettingsViewModel
         }
         return hash.ToHashCode();
     }
-    public Action<UITheme, int>? OnThemePreview;
-    public Action<float, bool>? OnSurfaceEffectsPreview;
     public Action<ConfigResetScope>? OnResetConfig;
     public Action? OnRefreshIntegrations;
 }
@@ -726,42 +723,24 @@ public static partial class SettingsView
                 "Theme",
                 ThemeSelection.VisibleChoices,
                 ThemeSelection.VisibleIndex(vm.Theme),
-                next =>
-                {
-                    vm.Theme = next;
-                    vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
-                });
+                next => vm.Theme = next);
             form.Swatches(
                 "Accent",
                 Theme.AccentOptions,
                 vm.AccentIndex,
-                next =>
-                {
-                    vm.AccentIndex = next;
-                    vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
-                });
+                next => vm.AccentIndex = next);
             form.Slider(
                 "Window opacity",
                 vm.FillOpacity,
                 UIConfiguration.MinimumFillOpacity,
                 1f,
-                next =>
-                {
-                    vm.FillOpacity = UIConfiguration.ClampFillOpacity(next);
-                    vm.OnSurfaceEffectsPreview?.Invoke(
-                        vm.FillOpacity, vm.BackdropBlur);
-                },
+                next => vm.FillOpacity = UIConfiguration.ClampFillOpacity(next),
                 format: "0 %",
                 help: "How see-through Poser's windows are");
             form.Switch(
                 "Blur behind windows",
                 vm.BackdropBlur,
-                next =>
-                {
-                    vm.BackdropBlur = next;
-                    vm.OnSurfaceEffectsPreview?.Invoke(
-                        vm.FillOpacity, vm.BackdropBlur);
-                },
+                next => vm.BackdropBlur = next,
                 "The game behind a window is blurred instead of showing through sharp");
         }, divider: false);
         page.Section("Privacy", form =>

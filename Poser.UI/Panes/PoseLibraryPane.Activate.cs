@@ -19,6 +19,7 @@ using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.UI.Views;
+using Poser.Documents.Files;
 
 namespace Poser.UI;
 
@@ -87,16 +88,22 @@ public sealed partial class PoseLibraryPane
             _notices.Report(Outcome.Fail(cmpNote!), "Apply", refusal: true);
             return;
         }
+        var read = PoseFile.Read(path);
+        if (read.Pose is not { } pose)
+        {
+            _notices.Report(Outcome.Fail(read.Failure!.Detail), "Apply");
+            return;
+        }
         // The target's stance is about to change, so the preview's rebase
         // baseline is stale from this call on — the NEXT tile has to be shown
         // landing on this one, not on what stood before it.
         _previewBinder.InvalidateBaseline();
-        var expectedActor = actor;
         var result = _imports.ImportPose(
-            expectedActor,
-            path,
-            BuildImportOptions(path),
-            onReceipt: TrackImport(expectedActor));
+            actor,
+            pose,
+            BuildImportOptions(path, pose),
+            $"Import {Path.GetFileName(path)}",
+            TrackImport(actor));
         if (_notices.Report(result.Outcome, "Apply") && cmpNote is { Length: > 0 })
             _notices.Report(Outcome.Fail(cmpNote), "Apply", refusal: true);
     }
@@ -133,7 +140,14 @@ public sealed partial class PoseLibraryPane
             return;
         }
 
-        var result = _libraryScene.SpawnPose(path, BuildImportOptions(path));
+        var read = PoseFile.Read(path);
+        if (read.Pose is not { } pose)
+        {
+            _notices.Report(Outcome.Fail(read.Failure!.Detail), "Spawn as new actor");
+            return;
+        }
+        var result = _libraryScene.SpawnPose(
+            pose, BuildImportOptions(path, pose), $"Import {Path.GetFileName(path)}");
         if (_notices.Report(result, "Spawn as new actor") && cmpNote is { Length: > 0 })
             _notices.Report(Outcome.Fail(cmpNote), "Spawn as new actor", refusal: true);
     }

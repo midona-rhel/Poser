@@ -317,7 +317,7 @@ public sealed class UIManager : IUIManager
             ["Undo selected entity"] = () => SelectedHistory(before: true),
             ["Redo selected entity"] = () => SelectedHistory(before: false),
             ["Import pose"] = () => PoseShortcut(
-                actor => _poseFileSection.RequestImportMenu(withPresets: true, target: actor), opensWindow: true),
+                actor => _poseFileSection.RequestImportMenu(actor), opensWindow: true),
             ["Import pose from file"] = () => PoseShortcut(_poseFileSection.OpenImportFromFile, opensWindow: true),
             ["Export pose"] = () => PoseShortcut(actor => _poseFileSection.RequestExportMenu(actor), opensWindow: true),
             ["Export pose to file"] = () => PoseShortcut(_poseFileSection.OpenExport, opensWindow: true),
@@ -614,11 +614,13 @@ public sealed class UIManager : IUIManager
         _windows.Main.ShowActorLibrary(actor);
     }
 
+    /// <summary>Applies the theme, the window fill and blur, and when the
+    /// game may hide Poser, every time the settings change.</summary>
     private void ApplyConfiguration()
     {
-        ThemeSelection.Apply(
-            _configService.Config.UI.Theme,
-            _configService.Config.UI.AccentIndex);
+        var ui = _configService.Config.UI;
+        ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
+        FloatingSurface.ConfigureEffects(ui.FillOpacity, ui.BackdropBlur);
         ApplyUiHidePolicy();
     }
 

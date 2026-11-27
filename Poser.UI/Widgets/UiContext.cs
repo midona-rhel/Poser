@@ -48,8 +48,6 @@ public sealed class UiContext : IDisposable
     internal readonly TextInputWidgets.RefocusState Refocus = new();
     internal readonly WindowMovement.TitleDragState TitleDrag = new();
 
-    /// <summary>Backs <see cref="ButtonWidgets.ButtonSeat"/>.</summary>
-    internal Vector2 ButtonSeat;
 
     /// <summary>
     /// Raised when a slider, well or field commits: the drag released, the

@@ -1,6 +1,5 @@
 using Poser.Domain;
 using Poser.Application.World;
-using Poser.Application.Scene;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -9,7 +8,6 @@ using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Scene;
 using Poser.UI.Widgets;
-using Poser.Documents.Files;
 using static Poser.UI.Widgets.PageForm;
 
 namespace Poser.UI;
@@ -41,7 +39,7 @@ public sealed class EnvironmentPane
     private EnvironmentReading _reading = new();
     private readonly IEnvironmentControl _values;
     private readonly ITextureProvider _textures;
-    private readonly ISceneWorkflow _workflow;
+    private readonly global::Poser.Application.Library.ILibrarySceneSave _librarySave;
 
     private const string TimeUnavailable =
         "Poser could not hook the game clock, so the time cannot be held";
@@ -147,20 +145,16 @@ public sealed class EnvironmentPane
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
-    private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
-
     public EnvironmentPane(
-        global::Poser.Application.Settings.ConfigurationService configuration,
         ITextureProvider textures,
-        ISceneWorkflow workflow,
+        global::Poser.Application.Library.ILibrarySceneSave librarySave,
         UserNotices notices,
         global::Poser.UI.Controls.EntityNameModal names,
         IEnvironmentControl values)
     {
-        _configuration = configuration;
         _values = values;
         _names = names;
-        _workflow = workflow;
+        _librarySave = librarySave;
         _notices = notices;
         _textures = textures;
         _icons = new GameIconResolver(textures);
@@ -1006,25 +1000,10 @@ public sealed class EnvironmentPane
                 help: "Save the environment into the library"));
     }
 
-    /// <summary>The naming prompt precedes this (ruled 2026-08-31); the
-    /// entry lands in the objects home as an .xive — a scene save
-    /// restricted to the environment, restoring through the same load
-    /// every scene uses.</summary>
-    private void SaveToLibrary(string name)
-    {
-        var root = _configuration.Config.Library
-            .ResolveObjectsRoot();
-        if (!global::Poser.Documents.Library.LibraryConfiguration.TryEnsureDirectory(root, out var detail))
-        {
-            _notices.Report(Outcome.Fail(detail), "Save to library", refusal: true);
-            return;
-        }
-        var path = global::Poser.Documents.Library.LibraryConfiguration.NewEntryPath(
-            root, name, SceneFile.EnvironmentEntryExtension);
-        var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.Only(SceneCategories.Environment));
-        _notices.Report(result, "Save to library", refusal: true);
-    }
+    /// <summary>Saves the environment into the library's objects folder
+    /// under the name typed in the naming prompt.</summary>
+    private void SaveToLibrary(string name) =>
+        _notices.Report(_librarySave.SaveEnvironment(name), "Save to library", refusal: true);
 
     // ── festivals ────────────────────────────────────────────────────────
 

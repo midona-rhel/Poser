@@ -10,7 +10,9 @@ namespace Poser.Application.Scene;
 public interface IPendingSceneCreation
 {
     void SelectWhenReady(SceneEntityHandle handle, bool freezeActor = false);
-    void ApplyPoseWhenReady(SceneEntityHandle handle, string path, PoseImportOptions options);
+    /// <summary>Selects the new actor once it is ready, then imports
+    /// <paramref name="pose"/> onto it as an undo step named <paramref name="description"/>.</summary>
+    void ApplyPoseWhenReady(SceneEntityHandle handle, PoseFile pose, PoseImportOptions options, string description);
 }
 
 /// <summary>Completes creation receipts on framework updates, independently of their initiating surface.</summary>
@@ -26,20 +28,23 @@ public sealed class PendingSceneCreation(
     private const int BindingFrames = 120;
     private readonly List<Pending> _pending = [];
 
-    private sealed class Pending(SceneEntityHandle handle, bool freeze, string? path, PoseImportOptions? options)
+    private sealed class Pending(
+        SceneEntityHandle handle, bool freeze, PoseFile? pose = null,
+        PoseImportOptions? options = null, string description = "")
     {
         public readonly SceneEntityHandle Handle = handle;
         public readonly bool Freeze = freeze;
-        public readonly string? Path = path;
+        public readonly PoseFile? Pose = pose;
         public readonly PoseImportOptions? Options = options;
+        public readonly string Description = description;
         public int Frames;
     }
 
     public void SelectWhenReady(SceneEntityHandle handle, bool freezeActor = false) =>
-        _pending.Add(new(handle, freezeActor, null, null));
+        _pending.Add(new(handle, freezeActor));
 
-    public void ApplyPoseWhenReady(SceneEntityHandle handle, string path, PoseImportOptions options) =>
-        _pending.Add(new(handle, false, path, options.Clone()));
+    public void ApplyPoseWhenReady(SceneEntityHandle handle, PoseFile pose, PoseImportOptions options, string description) =>
+        _pending.Add(new(handle, false, pose, options.Clone(), description));
 
     public void Tick()
     {
@@ -51,7 +56,7 @@ public sealed class PendingSceneCreation(
                 _pending.Remove(pending);
                 continue;
             }
-            var selected = creation.Resolve(pending.Handle, requirePose: pending.Path is not null);
+            var selected = creation.Resolve(pending.Handle, requirePose: pending.Pose is not null);
             if (selected is null)
             {
                 if (++pending.Frames >= BindingFrames)
@@ -72,29 +77,24 @@ public sealed class PendingSceneCreation(
                 if (!paused.Success)
                     notices.Failed(paused.Detail ?? "The new actor could not be frozen.");
             }
-            if (pending.Path is null)
+            if (pending.Pose is null)
                 continue;
 
-            Guid? operation = null;
             bool reported = false;
-            var result = imports.ImportPose(actor, pending.Path, pending.Options!, onReceipt: receipt =>
+            var final = OperationReceipt.WhenFinal(actor, receipt =>
             {
-                if (sessions.ActiveSessionGeneration != pending.Handle.Session ||
-                    receipt.TargetActorId != actor || receipt.SessionGeneration != pending.Handle.Session)
-                    return;
-                if (receipt.State == OperationReceiptState.Pending)
-                {
-                    operation = receipt.OperationId;
-                    return;
-                }
-                if (operation != receipt.OperationId)
-                    return;
-                operation = null;
                 if (receipt.State != OperationReceiptState.Applied)
                 {
                     reported = true;
                     notices.Failed("Apply: " + (receipt.Detail ?? receipt.State.ToString()));
                 }
+            });
+            var result = imports.ImportPose(actor, pending.Pose, pending.Options!, pending.Description, onReceipt: receipt =>
+            {
+                // A receipt from a GPose session that has ended is not reported.
+                if (sessions.ActiveSessionGeneration == pending.Handle.Session
+                    && receipt.SessionGeneration == pending.Handle.Session)
+                    final(receipt);
             });
             if (!result.Success && !reported)
                 notices.Failed("Apply: " + (result.Detail ?? "The pose could not be applied."));

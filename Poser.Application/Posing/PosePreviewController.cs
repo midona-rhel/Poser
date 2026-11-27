@@ -105,13 +105,16 @@ public sealed class PosePreviewController
         || shownCandidate is null
         || !SameOptions(candidate, shownCandidate);
 
-    public void Pose(string path, PoseImportOptions options)
+    /// <summary>Shows the file on the preview actor, on top of the actor's
+    /// starting pose. <paramref name="read"/> is the caller's one read of the
+    /// file; a failed read is shown over the preview.</summary>
+    public void Pose(string path, PoseFileReadOutcome read, PoseImportOptions options)
     {
         if (_baseline is not { } baseline || _baselineOptions is not { } rebase)
             return;
         var sequence = (
             PosePreviewRequest.Memory(baseline, BaselineKey, rebase),
-            PosePreviewRequest.File(path, options));
+            PosePreviewRequest.File(path, read, options));
         _sent = sequence;
         _preview.ShowSequence(sequence.Item1, sequence.Item2);
     }
