@@ -65,7 +65,7 @@ public sealed class HistoryAdmissionTests
 
         public Fixture()
         {
-            var selection = new SelectionSession();
+            var selection = new CurrentSelection();
             var scene = new SceneSession(selection);
             scene.Refresh(new SceneSnapshot(1, [new(Actor, "Actor", [])], [], [], []));
             selection.Select(SelectionId.ForActor(Actor));

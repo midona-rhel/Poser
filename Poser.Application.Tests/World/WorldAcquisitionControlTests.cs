@@ -15,7 +15,7 @@ public sealed class WorldAcquisitionControlTests
         var service = DispatchProxy.Create<IWorldBorrowing, World>();
         var world = (World)(object)service;
         var sessions = new Sessions();
-        var selection = new SelectionSession();
+        var selection = new CurrentSelection();
         var failures = new Fixtures.NoticeLog();
         var control = new WorldAcquisitionControl(service, sessions, selection, failures);
         var target = SelectionId.ForActor(ActorId.New());

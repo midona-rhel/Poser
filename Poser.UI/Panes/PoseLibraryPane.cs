@@ -111,7 +111,7 @@ public sealed partial class PoseLibraryPane
 
 
 
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly ICharacterFiles _characterFiles;
 
     private readonly SceneSession _scene;
@@ -299,7 +299,7 @@ public sealed partial class PoseLibraryPane
         IPoseFileCapture capture,
         IPosePreviewRuntime previewRuntime,
         Application.Library.ILibrarySceneActions libraryScene,
-        SelectionSession selection,
+        CurrentSelection selection,
         SceneSession scene,
         McdfTransaction mcdf,
         PropertiesContent properties,

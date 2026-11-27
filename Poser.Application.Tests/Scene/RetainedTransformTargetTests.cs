@@ -24,7 +24,7 @@ public sealed class RetainedTransformTargetTests
         var actor = oldActor.NextGeneration();
         var oldBone = new BoneId(new SkeletonId(oldActor, slot, 1), 0, 0, "n_root");
         var bone = oldBone with { Skeleton = new SkeletonId(actor, slot, 2) };
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         Assert.True(scene.TryRefresh(new SceneSnapshot(1,
             [new ActorDescriptor(actor, "Actor", [new SkeletonDescriptor(bone.Skeleton,
                 [new BoneDescriptor(bone, "Root", null)])])], [], [], [])).Accepted);
@@ -149,7 +149,7 @@ public sealed class RetainedTransformTargetTests
     {
         var actor = ActorId.New();
         var bone = new BoneId(new SkeletonId(actor, PoseSlot.Character, 0), 0, 0, "n_root");
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         Assert.True(scene.TryRefresh(new SceneSnapshot(1,
             [new ActorDescriptor(actor, "Actor", [])], [], [], [])).Accepted);
         var history = new EditHistory();
@@ -175,7 +175,7 @@ public sealed class RetainedTransformTargetTests
         var weapon = new BoneId(new SkeletonId(otherActor, PoseSlot.MainHand, 0), 0, 0, "n_root");
         var bodyNow = body with { Skeleton = body.Skeleton.NextGeneration() };
         var weaponNow = weapon with { Skeleton = weapon.Skeleton.NextGeneration() };
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         Assert.True(scene.TryRefresh(new SceneSnapshot(1,
             [new ActorDescriptor(actor, "Ready actor", [new SkeletonDescriptor(bodyNow.Skeleton,
                 [new BoneDescriptor(bodyNow, "Body", null)])]),
@@ -274,7 +274,7 @@ public sealed class RetainedTransformTargetTests
     public void Every_entity_transform_kind_resolves_only_within_the_committed_scene()
     {
         var id = Guid.NewGuid();
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         var actor = new ActorId(id, 1);
         var light = new LightId(id, 1);
         var prop = new PropId(id, 1);
@@ -311,7 +311,7 @@ public sealed class RetainedTransformTargetTests
     {
         var actor = ActorId.New();
         var bone = new BoneId(new SkeletonId(actor, PoseSlot.Character, 0), 0, 0, "n_root");
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         Assert.True(scene.TryRefresh(new SceneSnapshot(1,
             [new ActorDescriptor(actor.NextGeneration(), "Actor", [])], [], [], [])).Accepted);
         var history = new EditHistory();
@@ -330,7 +330,7 @@ public sealed class RetainedTransformTargetTests
     public void A_non_collider_overlay_is_not_a_transform_replacement()
     {
         var id = OverlayId.New();
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         Assert.True(scene.TryRefresh(new SceneSnapshot(1, [], [], [], [],
             Overlays: [new OverlayDescriptor(id.NextGeneration(), "UI", OverlayNodeKind.Talk)])).Accepted);
         Assert.Null(scene.CurrentTransformTarget(TransformTargetId.ForCollider(id)));
@@ -338,7 +338,7 @@ public sealed class RetainedTransformTargetTests
 
     private static SceneSession Scene(BoneId bone)
     {
-        var scene = new SceneSession(new SelectionSession());
+        var scene = new SceneSession(new CurrentSelection());
         Assert.True(scene.TryRefresh(new SceneSnapshot(1,
             [new ActorDescriptor(bone.Skeleton.Actor, "Actor", [new SkeletonDescriptor(bone.Skeleton,
                 [new BoneDescriptor(bone, "Root", null)])])], [], [], [])).Accepted);

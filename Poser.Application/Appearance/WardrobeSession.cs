@@ -1,4 +1,5 @@
 using Poser.Application.Integration;
+using Poser.Application.Posing;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
@@ -10,24 +11,25 @@ namespace Poser.Application.Appearance;
 /// Applies equipment changes through Glamourer and records successful changes
 /// for undo. Each undo step restores the values read before the write.
 /// If an outfit stops partway through, its successful changes are still recorded.
+/// Undo also reaches the actor after it was removed and brought back by undo.
 /// </summary>
 public sealed class WardrobeSession : IWardrobeControl
 {
     private readonly ValueJournal _journal;
     private readonly IntegrationSelectors _integration;
-    private readonly IIntegrationResolutionPort _runtime;
     private readonly DisruptiveSteps _disruptive;
+    private readonly IActorReplacements _replacements;
 
     public WardrobeSession(
         ValueJournal journal,
         IntegrationSelectors integration,
-        IIntegrationResolutionPort runtime,
-        DisruptiveSteps disruptive)
+        DisruptiveSteps disruptive,
+        IActorReplacements replacements)
     {
         _journal = journal;
         _integration = integration;
-        _runtime = runtime;
         _disruptive = disruptive;
+        _replacements = replacements;
     }
 
     public IntegrationValue<WardrobeState> Read(ActorId actor) => _integration.ReadWardrobe(actor);
@@ -47,9 +49,10 @@ public sealed class WardrobeSession : IWardrobeControl
         var result = _integration.SetItem(actor, slot, itemId, dye1, dye2);
         if (!result.Success)
             return result;
+        var now = _replacements.Track(actor);
         _journal.Record(SelectionId.ForActor(actor), description, before, after,
-            worn => _integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2).Outcome,
-            () => Alive(actor));
+            worn => now() is { } id ? _integration.SetItem(id, slot, worn.ItemId, worn.Dye1, worn.Dye2).Outcome : Gone(),
+            () => now() is not null);
         return result;
     }
 
@@ -81,8 +84,10 @@ public sealed class WardrobeSession : IWardrobeControl
         var result = _integration.SetFacewear(actor, bonusItemId);
         if (!result.Success)
             return result;
+        var now = _replacements.Track(actor);
         _journal.Record(SelectionId.ForActor(actor), description, before, bonusItemId,
-            id => _integration.SetFacewear(actor, id).Outcome, () => Alive(actor));
+            item => now() is { } id ? _integration.SetFacewear(id, item).Outcome : Gone(),
+            () => now() is not null);
         return result;
     }
 
@@ -111,8 +116,10 @@ public sealed class WardrobeSession : IWardrobeControl
             MetaSwitch.WeaponVisible => on ? "Show weapon" : "Hide weapon",
             _ => "Set switch",
         };
+        var now = _replacements.Track(actor);
         _journal.Record(SelectionId.ForActor(actor), description, before, on,
-            value => _integration.SetMetaSwitch(actor, which, value).Outcome, () => Alive(actor));
+            value => now() is { } id ? _integration.SetMetaSwitch(id, which, value).Outcome : Gone(),
+            () => now() is not null);
         return result;
     }
 
@@ -144,16 +151,20 @@ public sealed class WardrobeSession : IWardrobeControl
             before[slot] = worn;
             after[slot] = wanted;
         }
-        if (before.Count > 0)
-            _journal.Record<IReadOnlyDictionary<EquipSlot, WardrobeSlot>>(SelectionId.ForActor(actor), description, before, after,
-                Dress, () => Alive(actor));
+        if (before.Count == 0)
+            return outcome;
+        var now = _replacements.Track(actor);
+        _journal.Record<IReadOnlyDictionary<EquipSlot, WardrobeSlot>>(SelectionId.ForActor(actor), description, before, after,
+            Dress, () => now() is not null);
         return outcome;
 
         Outcome Dress(IReadOnlyDictionary<EquipSlot, WardrobeSlot> slots)
         {
+            if (now() is not { } id)
+                return Gone();
             foreach (var (slot, worn) in slots)
             {
-                var result = _integration.SetItem(actor, slot, worn.ItemId, worn.Dye1, worn.Dye2);
+                var result = _integration.SetItem(id, slot, worn.ItemId, worn.Dye1, worn.Dye2);
                 if (!result.Success)
                     return result.Outcome;
             }
@@ -164,5 +175,5 @@ public sealed class WardrobeSession : IWardrobeControl
     public IntegrationResult Revert(ActorId actor) =>
         _disruptive.Run(actor, "Revert look", () => _integration.RevertState(actor));
 
-    private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);
+    private static Outcome Gone() => Outcome.Fail("The actor is no longer available.");
 }

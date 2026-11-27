@@ -44,7 +44,7 @@ public sealed class SelectedEntityActions : ISelectedEntityActions
     private readonly IFramework _framework;
     private readonly EditHistory _history;
     private readonly SceneGroups _groups;
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly System.Lazy<GroupSteps>? _groupSteps;
 
     public SelectedEntityActions(

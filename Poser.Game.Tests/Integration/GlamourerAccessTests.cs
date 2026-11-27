@@ -7,6 +7,7 @@ using Poser.Application.Lifecycle;
 using Poser.Domain.Identity;
 using Poser.Domain.Operations;
 using Poser.Application.Appearance;
+using Poser.Application.Posing;
 using Poser.Application.Transforms;
 
 namespace Poser.Game.Tests;
@@ -19,7 +20,7 @@ public sealed class GlamourerAccessTests
         var port = DispatchProxy.Create<IIntegrationRuntimeFake, WriteRaceProxy>();
         var integration = new IntegrationGraph(port, null!, new SessionSource()).Selectors;
         var history = new EditHistory();
-        var customize = new CustomizeSession(new ValueJournal(history), integration, port, null!);
+        var customize = new CustomizeSession(new ValueJournal(history), integration, null!, new SameActor());
         var actor = ActorId.New();
         var single = customize.Set(actor, CustomizeKey.SkinColor, 8, "skin");
 #if DEBUG
@@ -56,8 +57,8 @@ public sealed class GlamourerAccessTests
         var session = new IntegrationGraph(port, null!, new SessionSource()).Selectors;
         // A refusal must return before touching journal/bindings or invoking
         // any mutation; the proxy throws for every unexpected integration call.
-        var wardrobe = new WardrobeSession(null!, session, port, null!);
-        var customize = new CustomizeSession(null!, session, port, null!);
+        var wardrobe = new WardrobeSession(null!, session, null!, null!);
+        var customize = new CustomizeSession(null!, session, null!, null!);
         var actor = ActorId.New();
         IntegrationResult[] results =
         [
@@ -101,5 +102,11 @@ public sealed class GlamourerAccessTests
         var result = GlamourerIpc.ClassifyAccess(code, state, keyedCode, keyedState);
         Assert.Equal(expected, result.Kind);
         Assert.Equal(expected == GlamourerAccessKind.Editable, result.CanEdit);
+    }
+
+    // Nothing in these tests removes an actor.
+    private sealed class SameActor : IActorReplacements
+    {
+        public Func<ActorId?> Track(ActorId actor) => () => actor;
     }
 }

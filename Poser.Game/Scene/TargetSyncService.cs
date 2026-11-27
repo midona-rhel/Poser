@@ -20,7 +20,7 @@ public sealed class TargetSyncService : IDisposable
 {
     private readonly IActorManager _actorManager;
     private readonly StableBindingRegistry _bindings;
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly IGPoseService _gpose;
     private readonly ConfigurationService _config;
     private readonly IFramework _framework;
@@ -31,7 +31,7 @@ public sealed class TargetSyncService : IDisposable
     public TargetSyncService(
         IActorManager actorManager,
         StableBindingRegistry bindings,
-        SelectionSession selection,
+        CurrentSelection selection,
         IGPoseService gpose,
         ConfigurationService config,
         IFramework framework)

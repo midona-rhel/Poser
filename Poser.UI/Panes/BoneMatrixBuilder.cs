@@ -224,7 +224,7 @@ public static class BoneMatrixBuilder
         }
     }
 
-    /// <summary>Refreshes only the Selected flags from the selection session
+    /// <summary>Refreshes only the Selected flags from the current selection
     /// (cheap per-frame sync).</summary>
     public static void SyncSelection(BoneMatrixViewModel vm, SelectionScope selection)
     {

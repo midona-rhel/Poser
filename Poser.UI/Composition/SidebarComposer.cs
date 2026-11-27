@@ -27,7 +27,7 @@ internal sealed partial class SidebarComposer
     private readonly Application.Settings.ConfigurationService _configuration;
     private readonly SceneSession _scene;
     private readonly SceneGroups _groups;
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly Application.Animation.IAnimationPlayback _animation;
     private readonly Application.Gaze.IGazeControl _gazeService;
     private readonly Application.Presentation.ICameraControl _cameraControl;
@@ -88,7 +88,7 @@ internal sealed partial class SidebarComposer
         Application.Settings.ConfigurationService configuration,
         SceneSession scene,
         SceneGroups groups,
-        SelectionSession selection,
+        CurrentSelection selection,
         Application.Animation.IAnimationPlayback animation,
         Application.Gaze.IGazeControl gazeService,
         Application.Presentation.ICameraControl cameraControl,

@@ -27,7 +27,7 @@ namespace Poser.UI;
 public partial class SkeletonOverlayWindow : Window, IDisposable
 {
     private readonly ICameraProjection _cameraService;
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly SceneSession _scene;
     private readonly IViewportReads _viewport;
     private readonly EditorState _editorState;

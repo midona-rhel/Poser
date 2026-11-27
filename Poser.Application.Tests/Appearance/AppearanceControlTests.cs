@@ -116,8 +116,8 @@ public sealed class AppearanceControlTests
             var integration = new IntegrationGraph(port, null!, this).Selectors;
             var disruptive = new DisruptiveSteps(History, this, new ValueJournal(History), this);
             var journal = new ValueJournal(History);
-            Wardrobe = new WardrobeSession(journal, integration, port, disruptive);
-            Customize = new CustomizeSession(journal, integration, port, disruptive);
+            Wardrobe = new WardrobeSession(journal, integration, disruptive, this);
+            Customize = new CustomizeSession(journal, integration, disruptive, this);
         }
 
         public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>

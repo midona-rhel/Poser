@@ -33,7 +33,7 @@ public sealed class PendingSceneCreationTests
         public readonly ISceneCreation Creation = Substitute.For<ISceneCreation>();
         public readonly IPoseImportCommands Imports = Substitute.For<IPoseImportCommands>();
         public readonly IAnimationPlayback Animation = Substitute.For<IAnimationPlayback>();
-        public readonly SelectionSession Selection = new();
+        public readonly CurrentSelection Selection = new();
         public readonly Fixtures.NoticeLog Failures = [];
         public readonly ActorId Actor = ActorId.New();
         public readonly SceneEntityHandle Handle = new(SessionGeneration.New(), SceneEntityKind.Actor);
