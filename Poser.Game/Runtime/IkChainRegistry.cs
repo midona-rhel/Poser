@@ -113,6 +113,7 @@ internal sealed unsafe partial class IkChainRegistry
         _bindings = bindings;
         _skeletonService = skeletonService;
         _held = held;
+        _held.MovedByChain = MovedByChain;
     }
 
     /// <summary>Where each held chain's target is: capture and resolution.</summary>
@@ -531,6 +532,38 @@ internal sealed unsafe partial class IkChainRegistry
         }
         // Holds no bone, and so no old skeleton, until the next pass asks again.
         _colliderParents.Clear();
+    }
+
+    /// <summary>Whether a switched-on chain moves <paramref name="bone"/>: the bone is below
+    /// the first bone above a Two Joint or CCD chain, or is the first bone of a FABRIK or
+    /// Rope chain or below it. Before a chain has been solved, the first bone above it is
+    /// not known yet, and its end bone stands in for it.</summary>
+    public bool MovedByChain(IBone bone)
+    {
+        var skeleton = SkeletonKey.Of(bone.Skeleton);
+        foreach (var (chainKey, state) in _ikChains)
+        {
+            if (!state.Config.Enabled || chainKey.Skeleton != skeleton)
+                continue;
+            var moved = state.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope }
+                ? state.Config.Fabrik is { Bones: [var first, ..] } && AtOrBelow(bone, first.Name, first.Partial)
+                : state.Build.SolveParent is { } above
+                    ? AtOrBelow(bone.ParentBone, above.BoneName, above.PartialId)
+                    : AtOrBelow(bone, chainKey.Name, chainKey.Partial);
+            if (moved)
+                return true;
+        }
+        return false;
+    }
+
+    private static bool AtOrBelow(IBone? bone, string name, int partial)
+    {
+        for (; bone != null; bone = bone.ParentBone)
+        {
+            if (bone.BoneName == name && bone.PartialId == partial)
+                return true;
+        }
+        return false;
     }
 
     // Reused by FollowedSkeletons, which the apply pass calls every frame.

@@ -49,6 +49,10 @@ internal sealed unsafe class IkHeldTargets
         CustomizePlus = customizePlus;
     }
 
+    /// <summary>Whether a switched-on IK chain moves a bone. Set by the chain registry,
+    /// which keeps the chains.</summary>
+    internal Func<IBone, bool> MovedByChain = _ => false;
+
     /// <summary>Where Customize+ shows a bone, and the way back.</summary>
     public CustomizePlusPose CustomizePlus { get; }
 
@@ -186,32 +190,23 @@ internal sealed unsafe class IkHeldTargets
 
     /// <summary>Where a followed bone is in the world. The apply pass solves a chain when it
     /// reaches the chain's end bone. During the pass, a bone that has no edits from this frame
-    /// yet is read where it was shown at the end of the last frame, which is a frame late while
-    /// that bone moves. That is a bone on a skeleton the pass has not posed yet, or a bone on
-    /// the chain's own skeleton that the pass reaches later. Any other bone is read from the
-    /// pose as it is now.</summary>
+    /// yet is read where the last pass left it, which is a frame late while that bone moves.
+    /// That is a bone on a skeleton the pass has not posed yet, or a bone on the chain's own
+    /// skeleton that the pass reaches later. A bone that an IK chain moves is always read
+    /// from the pose as it is now, like any other bone: where the last pass left it holds
+    /// that chain's last solve, and when two chains follow each other, each frame would
+    /// start from the last one and the limbs would run away.</summary>
     private Transform? ReadFollowed(IBone endpoint, IBone followed, bool inPass) =>
         inPass && (_unposed.Contains(followed.Skeleton) || ReachedLater(endpoint, followed))
-            ? BoneWorld.Of(followed)
+            && !MovedByChain(followed)
+            ? BoneWorld.LastPass(followed)
             : BoneWorld.ReadCurrent(followed);
 
     /// <summary>Whether the pass reaches <paramref name="followed"/> after the chain's end bone
-    /// on the same skeleton: in a later partial, or with a higher number in the same partial.
-    /// A bone below the end bone, such as a finger, does not count. The chain's own solve moves
-    /// it, so its place from the last frame already holds the last solve, and the chain would
-    /// creep every frame while that bone changes.</summary>
-    private static bool ReachedLater(IBone endpoint, IBone followed)
-    {
-        if (!ReferenceEquals(followed.Skeleton, endpoint.Skeleton)
-            || (followed.PartialId, followed.BoneIndex).CompareTo((endpoint.PartialId, endpoint.BoneIndex)) <= 0)
-            return false;
-        for (var parent = followed.ParentBone; parent != null; parent = parent.ParentBone)
-        {
-            if (ReferenceEquals(parent, endpoint))
-                return false;
-        }
-        return true;
-    }
+    /// on the same skeleton: in a later partial, or with a higher number in the same partial.</summary>
+    private static bool ReachedLater(IBone endpoint, IBone followed) =>
+        ReferenceEquals(followed.Skeleton, endpoint.Skeleton)
+        && (followed.PartialId, followed.BoneIndex).CompareTo((endpoint.PartialId, endpoint.BoneIndex)) > 0;
 
     /// <summary>Aligns a newly enabled target with the end bone as it will be shown, before
     /// the first solve. A capture read from the screen can be a frame old.</summary>
