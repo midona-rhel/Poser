@@ -7,7 +7,9 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Transforms;
 
-/// <summary>Frame ownership only. Relationship policy remains in Application.</summary>
+/// <summary>Moves every child to follow its parent each frame, after the game
+/// updates the scene and again before IK collisions run. The parent links
+/// themselves are kept in <see cref="TransformParenting"/>.</summary>
 public sealed class ParentingFrameRuntime : IDisposable
 {
     private readonly TransformParenting _parents;
@@ -32,7 +34,8 @@ public sealed class ParentingFrameRuntime : IDisposable
     private void Tick()
     {
         if (!_gpose.IsGPosing) return;
-        // Legacy scene attachments have zero offset. Consume once; the graph owns following.
+        // A light attached to a bone by an older scene becomes a parent link
+        // with no offset, once; from then on the link moves it.
         foreach (var light in _lights.Lights)
             if (light.AttachedBone is { } bone && _bindings.GetLightId(light) is { } id
                 && _bindings.GetBoneId(bone) is { } boneId)

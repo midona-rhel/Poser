@@ -17,6 +17,8 @@ People read everything written for this project: code, comments, documentation, 
 
 Read what you wrote before you send or commit it, as someone who was not there. If a sentence can be read two ways, or reads like notes someone wrote for themselves, rewrite it.
 
+Issues, pull requests and commit messages are written for developers. A pull request or commit title starts with a verb and says what changes, for example "Document what a partial scene load keeps and rolls back". A bug issue's title states the defect, for example "Game crashes loading an .atch file after an actor's model id changes". Name the class, file or setting when it is the subject. User documentation and text in the program are written for the person using Poser.
+
 ## Nothing personal
 
 Nothing written for this project may identify a person or show what is on their computer.

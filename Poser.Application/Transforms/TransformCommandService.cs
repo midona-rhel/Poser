@@ -1,4 +1,3 @@
-using Poser.Application.Scene;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 
@@ -12,18 +11,15 @@ namespace Poser.Application.Transforms;
 /// </summary>
 public sealed class TransformCommandService
 {
-    private readonly SceneSession _scene;
     private readonly ITransformRuntimePort _runtime;
     private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
 
     public TransformCommandService(
-        SceneSession scene,
         ITransformRuntimePort runtime,
         EditHistory history,
         TransformGestureService gestures)
     {
-        _scene = scene;
         _runtime = runtime;
         _history = history;
         _gestures = gestures;
@@ -66,26 +62,11 @@ public sealed class TransformCommandService
     /// </summary>
     internal GestureResult? Refusal() => _gestures.RecoveryBarrier();
 
-    /// <summary>
-    /// Reads every target in order. Stops at the first one that has left the
-    /// scene or cannot be read, which happens while its actor is being redrawn.
-    /// </summary>
+    /// <summary>Reads every target the same way a drag does.</summary>
     internal GestureResult Read(
         IReadOnlyList<TransformTargetId> targets,
-        out List<TransformTargetState> states)
-    {
-        states = new List<TransformTargetState>(targets.Count);
-        foreach (var target in targets)
-        {
-            if (!_scene.Contains(target))
-                return GestureResult.Fail($"Target {target} is stale.");
-            var captured = _runtime.Capture(target);
-            if (!captured.Success)
-                return GestureResult.Fail(captured.Detail!);
-            states.Add(captured.State!);
-        }
-        return GestureResult.Ok();
-    }
+        out List<TransformTargetState> states) =>
+        _gestures.Read(targets, out states);
 
     /// <summary>
     /// Writes every target that was read, reads them all again and records the
