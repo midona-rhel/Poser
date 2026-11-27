@@ -71,13 +71,15 @@ public sealed class EditHistory
     public SelectionId ResolveLifecycleEntity(SelectionId entity) =>
         _lifecycleTargets.TryGetValue(entity, out var current) ? current() ?? entity : entity;
 
-    /// <summary>True when <paramref name="target"/> is the exact id of a deleted
-    /// thing whose edits are kept (<see cref="RetainLifecycleTarget"/>). Such a
-    /// target is found through <see cref="ResolveLifecycleTarget"/>, never by
-    /// matching its id against the scene: an actor's lasting id comes from its
-    /// game object id and object-table index, which copies share, so another
-    /// copy brought back into that place gets the same lasting id.</summary>
-    public bool KeepsLifecycleTarget(TransformTargetId target) =>
+    /// <summary>True when the history keeps edits for <paramref name="target"/>'s
+    /// exact id, generation included: an entity being removed
+    /// (<see cref="RetainLifecycleTarget"/>), or one a scene load made or reused
+    /// (<see cref="RetainLifecycleEntity"/>). Such a target is found through
+    /// <see cref="ResolveLifecycleTarget"/>, never by matching its lasting id
+    /// against the scene: an actor's lasting id comes from its game object id and
+    /// object-table index, so a copy that later takes the same place in the
+    /// object table gets the same lasting id.</summary>
+    public bool IsRetainedLifecycleTarget(TransformTargetId target) =>
         _lifecycleTargets.ContainsKey(target.ToSelectionId());
 
     /// <summary>The thing a recorded edit now applies to: the replacement when
@@ -245,9 +247,9 @@ public sealed class EditHistory
     /// Reconnects transform edits to replacement bones after a redraw.
     /// Edits wait while their targets are loading. If a target is gone for good,
     /// the entire affected step is removed so undo keeps grouped edits together.
-    /// A target kept for a deleted entity (<see cref="RetainLifecycleTarget"/>)
-    /// is neither removed nor matched by id: it moves to the entity undo brings
-    /// back through the function it was kept with.
+    /// A target the history keeps (<see cref="IsRetainedLifecycleTarget"/>) is
+    /// neither removed nor matched by id: it moves to the entity that took its
+    /// place through the function it was kept with.
     /// Entity creation and deletion keep their own steps for undo and redo.
     /// </summary>
     public void Reconcile(
@@ -259,8 +261,8 @@ public sealed class EditHistory
         RefreshLifecycleTargets(_redo);
         // A target still in the scene, or one kept for an entity that was removed,
         // stays as it is. A kept target is moved to the restored entity by
-        // RefreshLifecycleTargets, not matched by id here (see KeepsLifecycleTarget).
-        bool Kept(TransformTargetId target) => isCurrent(target) || KeepsLifecycleTarget(target);
+        // RefreshLifecycleTargets, not matched by id here (see IsRetainedLifecycleTarget).
+        bool Kept(TransformTargetId target) => isCurrent(target) || IsRetainedLifecycleTarget(target);
         // Find the same bones on the replacement body before deciding which edits to drop.
         void Rekey(List<HistoryEntry> stack)
         {

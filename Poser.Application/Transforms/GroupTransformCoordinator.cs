@@ -65,16 +65,21 @@ public sealed class GroupTransformCoordinator : IDisposable
             ? "Attached lights cannot join a world group transform." : null;
 
     /// <summary>The thing <paramref name="target"/> stands for now, or null while
-    /// there is none. A thing the undo history keeps for a deleted entity is
-    /// followed only through the history, to the entity undo brought back in its
-    /// place: another actor can hold the same lasting id, so the scene's lookup
-    /// by id could find the wrong one. Everything else is found by the scene's
-    /// lookup, which follows a redraw. Group members are looked up through this
-    /// before members that are gone leave their group, so undoing a removal puts
-    /// the members back into their groups.</summary>
+    /// there is none. Group members are looked up through this before members
+    /// that are gone leave their group, so undoing a removal puts the members
+    /// back into their groups.
+    /// An id the undo history keeps (<see cref="EditHistory.IsRetainedLifecycleTarget"/>)
+    /// is followed only through the history, to the entity that took its place,
+    /// and otherwise counts only while that exact id is in the scene: the scene's
+    /// lookup by lasting id could find another copy that took the same place in
+    /// the object table. Every other id is found by the scene's lookup, which
+    /// follows a redraw.
+    /// A null answer leaves a group member's id as it is
+    /// (<see cref="SceneGroups.RemapTransformMembers"/>), but drops the group's
+    /// stored position, rotation and scale (<see cref="GroupTransformState.Rekey"/>).</summary>
     public TransformTargetId? CurrentTarget(TransformTargetId target)
     {
-        if (!_history.KeepsLifecycleTarget(target)) return _scene.CurrentTransformTarget(target);
+        if (!_history.IsRetainedLifecycleTarget(target)) return _scene.CurrentTransformTarget(target);
         var successor = _history.ResolveLifecycleTarget(target);
         return successor != target ? _scene.CurrentTransformTarget(successor)
             : _scene.Contains(target) ? target : null;
