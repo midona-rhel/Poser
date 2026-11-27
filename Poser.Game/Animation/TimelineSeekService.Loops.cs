@@ -95,28 +95,19 @@ public sealed unsafe partial class TimelineSeekService
 
     /// <summary>Layers Poser applied. A looped one wraps; any other one-shot is
     /// ended by the game at its end as it would be, but never while it is held or
-    /// scrubbed (LayerEnded once it is gone). Owning again (a replay) or letting go
-    /// clears an ended slot.</summary>
+    /// scrubbed (LayerEnded once it is gone).</summary>
     internal void SetOwned(ActorId actor, AnimationSlot slot, bool owned)
     {
-        var character = _native.Resolve(actor, out _);
         if (owned)
             _owned[(actor, (int)slot)] = 0;
         else if (_owned.Remove((actor, (int)slot)))
             _leadRestores.Add((actor, (int)slot));
-        if (character != null)
-            _endedSlots.Remove(((nint)character, (int)slot));
     }
 
     /// <summary>An owned layer's animation is gone from its slot: the game ended
     /// it (or something outside Poser replaced it). Raised once, on the framework
     /// thread, with the animation's length in seconds.</summary>
     internal event Action<ActorId, AnimationSlot, float>? LayerEnded;
-
-    private bool SlotEnded(Character* character, int slot)
-    {
-        return _endedSlots.Count != 0 && _endedSlots.Contains(((nint)character, slot));
-    }
 
     /// <summary>
     /// An owned layer's identity: the first live timeline after the play (an
@@ -147,7 +138,6 @@ public sealed unsafe partial class TimelineSeekService
             return true;
         }
         _owned.Remove(key);
-        _endedSlots.Add(((nint)character, key.Slot));
         _leads.Remove(key);
         _remaining.Remove(key);
         float seconds = _ownedLengths.Remove(key, out var last) ? last : 0f;

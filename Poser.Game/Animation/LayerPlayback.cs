@@ -205,8 +205,16 @@ public sealed unsafe class LayerPlayback : IDisposable
         set => _seek.LoopsSuspended = value;
     }
 
-    public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned) =>
+    /// <summary>Starts or stops watching a layer Poser played for its end. Either
+    /// way the layer is no longer marked as ended: a new play began, or Poser let
+    /// go of it.</summary>
+    public void SetLayerOwned(ActorId actor, AnimationSlot slot, bool owned)
+    {
         _seek.SetOwned(actor, slot, owned);
+        _store.Mutate(actor, o => o.EndedSlots.ContainsKey(slot)
+            ? o with { EndedSlots = o.EndedSlots.Without(slot) }
+            : o);
+    }
 
     public event Action<ActorId, AnimationSlot, float>? LayerEnded;
 

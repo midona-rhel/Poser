@@ -48,7 +48,8 @@ public sealed unsafe partial class TimelineSeekService
     /// effects at 0 when it is paused (the C012 speed handler drops 0). A replayed
     /// timeline is a new one and takes the speed on its first tick.
     /// </summary>
-    internal void HoldSlotSpeeds(Character* character, IReadOnlyDictionary<AnimationSlot, float> speeds, float overall)
+    internal void HoldSlotSpeeds(Character* character, IReadOnlyDictionary<AnimationSlot, float> speeds, float overall,
+        IReadOnlyDictionary<AnimationSlot, float> ended)
     {
         if (!Available || speeds.Count == 0)
             return;
@@ -60,7 +61,7 @@ public sealed unsafe partial class TimelineSeekService
             {
                 int slot = (int)layer;
                 nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
-                if (root == 0 || SlotEnded(character, slot))
+                if (root == 0 || ended.ContainsKey(layer))
                     continue;
                 float effective = speed * overall;
                 _engine.SetSlotTimelineSpeed(sequencer, slot, effective);
@@ -164,7 +165,8 @@ public sealed unsafe partial class TimelineSeekService
     }
 
     /// <summary>Holds layer weights (see TimelineSeekEngine.SetSlotWeight).</summary>
-    internal void ApplySlotWeights(Character* character, IReadOnlyDictionary<AnimationSlot, float> weights)
+    internal void ApplySlotWeights(Character* character, IReadOnlyDictionary<AnimationSlot, float> weights,
+        IReadOnlyDictionary<AnimationSlot, float> ended)
     {
         if (weights.Count == 0)
             return;
@@ -172,7 +174,7 @@ public sealed unsafe partial class TimelineSeekService
         {
             var suppressed = _suppressedProps;
             foreach (var (layer, weight) in weights)
-                if (!SlotEnded(character, (int)layer))
+                if (!ended.ContainsKey(layer))
                     _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, (int)layer, weight, suppressed);
         }
         catch (Exception ex) { LogOnce("weight", $"[TimelineSeek] layer weight faulted: {ex.Message}"); }

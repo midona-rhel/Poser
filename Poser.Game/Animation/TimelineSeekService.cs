@@ -45,9 +45,6 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
     // Layers Poser applied → the timeline id they play (0 until
     // the tick sees it live). The game ends them only at their end, never paused.
     private readonly Dictionary<(ActorId Actor, int Slot), ushort> _owned = new();
-    // Slots whose owned layer the game ended: the layer's held
-    // speed and weight don't act on what plays there next.
-    private readonly HashSet<(nint Character, int Slot)> _endedSlots = new();
     // An owned layer's length in seconds, as last read while it played.
     private readonly Dictionary<(ActorId Actor, int Slot), float> _ownedLengths = new();
     // The slot timeline whose pre-end notify lead (+0x26E) is switched off, and its value.
@@ -434,7 +431,6 @@ public sealed unsafe partial class TimelineSeekService : IDisposable
             _leadRestores.Add(key);
         _loops.Clear();
         _owned.Clear();
-        _endedSlots.Clear();
         // Best effort: unload may not run on the framework thread.
         try { RestoreLeads(); } catch { }
         _work.Clear();

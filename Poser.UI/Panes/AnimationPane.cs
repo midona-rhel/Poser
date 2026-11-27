@@ -330,7 +330,7 @@ public sealed class AnimationPane : IDisposable
                     disabled: !supported,
                     help: supported
                         ? "Put the actor into this stance; this clears the "
-                            + "animation you chose"
+                            + "Full body animation you chose, with its speed and weight"
                         : "Stance control is unavailable; Poser could not "
                             + "find the game function it needs");
             },

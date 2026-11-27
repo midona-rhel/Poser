@@ -66,8 +66,9 @@ public sealed class AnimationSession : IAnimationPlayback
     }
 
     /// <summary>
-    /// A layer Poser applied ran out (not looped) and the game ended it. Its row
-    /// stays (selection, speed, weight); its play or scrub plays it again.
+    /// A layer Poser played ran out (not looped) and the game ended it. Its row
+    /// stays (selection, speed, weight); its play or scrub plays it again, and its
+    /// held speed and weight stop acting on the slot until then.
     /// </summary>
     private void OnLayerEnded(ActorId actor, AnimationSlot slot, float seconds)
     {
@@ -90,7 +91,6 @@ public sealed class AnimationSession : IAnimationPlayback
         if (!replayed.Success)
             return replayed;
         _playback.SetLayerOwned(actor, slot, true);
-        ForgetEnded(actor, slot);
         return replayed;
     }
 
@@ -103,11 +103,6 @@ public sealed class AnimationSession : IAnimationPlayback
             return replayed;
         return _speed.PauseSlot(actor, slot);
     }
-
-    private void ForgetEnded(ActorId actor, AnimationSlot slot) =>
-        _store.Mutate(actor, o => o.EndedSlots.ContainsKey(slot)
-            ? o with { EndedSlots = o.EndedSlots.Without(slot) }
-            : o);
 
     public AnimationOverrides OverridesFor(ActorId actor) => _store.For(actor);
 
@@ -153,7 +148,29 @@ public sealed class AnimationSession : IAnimationPlayback
         Tracked(actor, "Lips", () => _playback.SetLips(actor, timeline));
 
     public Outcome SetStance(ActorId actor, AnimationStance stance, int pose) =>
-        Tracked(actor, "Stance", () => _stance.SetStance(actor, stance, pose));
+        Tracked(actor, "Stance", () => SetStanceUntracked(actor, stance, pose));
+
+    /// <summary>
+    /// A stance plays the game's own Full body animation, so StanceControl drops
+    /// the Full body animation Poser chose or played. Whenever it did, also when
+    /// writing the stance then fails, Poser lets go of that layer entirely: the
+    /// watch for its end, and its held speed and weight, which belonged to that
+    /// animation and not to the stance.
+    /// </summary>
+    private Outcome SetStanceUntracked(ActorId actor, AnimationStance stance, int pose)
+    {
+        static bool HasFullBody(AnimationOverrides o) =>
+            o.BaseTimeline != null || o.SelectedSlots.ContainsKey(AnimationSlot.Base);
+        bool hadFullBody = HasFullBody(OverridesFor(actor));
+        var result = _stance.SetStance(actor, stance, pose);
+        if (!hadFullBody || HasFullBody(OverridesFor(actor)))
+            return result;
+        _playback.SetLayerOwned(actor, AnimationSlot.Base, false);
+        SetSlotWeightUntracked(actor, AnimationSlot.Base, 1f);
+        if (OverridesFor(actor).SlotSpeeds.ContainsKey(AnimationSlot.Base))
+            _speed.ClearSlotSpeed(actor, AnimationSlot.Base);
+        return result;
+    }
 
     public Outcome SetWeaponDrawn(ActorId actor, bool drawn) =>
         Tracked(actor, "Weapon", () => _stance.SetWeaponDrawn(actor, drawn));
@@ -585,12 +602,9 @@ public sealed class AnimationSession : IAnimationPlayback
         var outcome = PlaySelectedSlotTraced(actor, slot, entry, playFromStart, resume);
         if (outcome.Success)
         {
-            // Track this layer for end notifications. Clear the old end marker
-            // when playback changes to a different timeline.
+            // Watch this layer for its end; a new play is no longer ended.
             if (slot != AnimationSlot.Lips)
                 _playback.SetLayerOwned(actor, slot, true);
-            if (_playback.Read(actor)?.TimelineFor(slot) != before)
-                ForgetEnded(actor, slot);
         }
         Trace?.Invoke(outcome.Success
             ? $"  PlaySelectedSlot {slot} -> ok"
@@ -683,10 +697,7 @@ public sealed class AnimationSession : IAnimationPlayback
     {
         var reset = ResetSlotCore(actor, slot);
         if (reset.Success)
-        {
             _playback.SetLayerOwned(actor, slot, false);
-            ForgetEnded(actor, slot);
-        }
         return reset;
     }
 
@@ -827,7 +838,6 @@ public sealed class AnimationSession : IAnimationPlayback
         {
             foreach (var slot in AnimationSlots.Selectable)
                 _playback.SetLayerOwned(actor, slot, false);
-            _store.Mutate(actor, o => o with { EndedSlots = new Dictionary<AnimationSlot, float>() });
         }
         return reset;
     }

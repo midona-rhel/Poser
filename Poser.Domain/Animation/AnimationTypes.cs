@@ -269,7 +269,9 @@ public sealed record AnimationOverrides
     /// <summary>The held facial expression.</summary>
     public ushort? HeldExpression { get; init; }
     /// <summary>
-    /// Finished animations and their durations, kept so Play or scrubbing can restart them.
+    /// Layers Poser played that the game ended, with their lengths in seconds. Play
+    /// or scrubbing restarts them, and their held speed and weight don't act on
+    /// whatever the game plays in that slot next.
     /// </summary>
     public IReadOnlyDictionary<AnimationSlot, float> EndedSlots { get; init; } = new Dictionary<AnimationSlot, float>();
     /// <summary>Lips timeline before the first override. Selecting None
