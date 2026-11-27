@@ -14,8 +14,9 @@ namespace Poser.Game.Animation;
 
 /// <summary>
 /// Handles each actor's animations: which one is chosen for each layer, playing,
-/// resetting, and undo. The helper classes for base, speed, stance, scrubbing and
-/// expression share one store of choices and of values to restore. Scene physics
+/// resetting, and undo. LayerPlayback (choosing and playing each layer) and the
+/// classes for speed, stance, scrubbing and expression share one store of choices
+/// and of values to restore. Scene physics
 /// is kept apart because it affects every actor.
 /// </summary>
 public sealed class AnimationSession : IAnimationPlayback
