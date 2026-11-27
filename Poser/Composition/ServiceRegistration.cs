@@ -364,7 +364,7 @@ internal static class ServiceRegistration
                 sp.GetRequiredService<Game.Animation.AnimationNativeState>(),
                 sp.GetRequiredService<Game.PosingService>(),
                 sp.GetRequiredService<Game.Animation.AnimationScrubRuntimePort>(),
-                sp.GetRequiredService<IWorldRenderingRuntimePort>())
+                sp.GetRequiredService<Game.Environment.WorldRenderingService>())
             {
                 Trace = message => log.Information($"[AnimState] {message}"),
             };
@@ -543,12 +543,13 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Input.KeyEventHook>();
         services.AddSingleton<global::Poser.Application.Input.IKeyEvents>(
             sp => sp.GetRequiredService<Game.Input.KeyEventHook>());
-        services.AddSingleton<IEnvironmentRuntimePort, Game.Environment.EnvironmentService>();
-        services.AddStartable<IEnvironmentRuntimePort>(StartStage.Environment);
-        services.AddSingleton<EnvironmentControl>();
-        services.AddSingleton<IWorldRenderingRuntimePort, Game.Environment.WorldRenderingService>();
-        services.AddStartable<IWorldRenderingRuntimePort>(StartStage.WorldRendering);
-        services.AddSingleton<IFestivalRuntimePort, Game.Environment.FestivalService>();
+        services.AddSingleton<Game.Environment.EnvironmentService>();
+        services.AddStartable<Game.Environment.EnvironmentService>(StartStage.Environment);
+        services.AddSingleton<Game.Environment.WorldRenderingService>();
+        services.AddStartable<Game.Environment.WorldRenderingService>(StartStage.WorldRendering);
+        services.AddSingleton<Game.Environment.FestivalService>();
+        services.AddSingleton<Game.Environment.EnvironmentControl>();
+        services.AddSingleton<IEnvironmentControl>(sp => sp.GetRequiredService<Game.Environment.EnvironmentControl>());
         return services;
     }
 

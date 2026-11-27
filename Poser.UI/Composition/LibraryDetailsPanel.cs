@@ -26,7 +26,7 @@ using static Poser.UI.Widgets.Themes;
 namespace Poser.UI;
 
 /// <summary>The panel beside the library grid that shows the selected file's details.</summary>
-internal sealed class LibraryDetailsPanel(EnvironmentControl _environment,
+internal sealed class LibraryDetailsPanel(IEnvironmentControl _environment,
     Poser.Application.Settings.ConfigurationService _configuration)
 {
     private string? _detailsPath;
