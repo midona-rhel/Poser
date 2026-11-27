@@ -233,6 +233,7 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void OnOpen()
     {
+        _catalog.Retry();
         // No rescan here: the index scans once at startup and every save
         // tells it — the Draw revision check re-lists whenever it moves.
         BuildRows();
@@ -843,7 +844,8 @@ public sealed class SpawnBrowserWindow : Window
             _caption = _captionCount.ToString(CultureInfo.InvariantCulture)
                 + (filtered ? " matches" : " spawnables");
         }
-        _vm.Status = _caption;
+        // A failed minion and mount list says why it is missing, in place of the count.
+        _vm.Status = _catalog.LoadFailure ?? _caption;
     }
 
     // ── activation ───────────────────────────────────────────────────────

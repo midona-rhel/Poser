@@ -30,10 +30,7 @@ internal sealed class AppearanceCatalogWarmup(
             catch (OperationCanceledException)
             {
                 // Unload: the catalogs load on demand if anything still asks.
-            }
-            catch (Exception ex)
-            {
-                log.Debug(ex, "Appearance catalog warm-up failed; catalogs will retry on demand.");
+                // A sheet that fails to read is caught and kept by the catalog itself.
             }
         });
     }

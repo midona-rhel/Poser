@@ -5,15 +5,18 @@ using Dalamud.Plugin.Services;
 namespace Poser.Game.Core;
 
 /// <summary>
-/// Builds one list from the game's data sheets on a worker thread, the first
-/// time a picker needs it: the animation list, the minion and mount list, and
-/// the model list. The game's data does not change while the game runs, so a
-/// list that was built is kept until Poser is unloaded. A build can fail, for
-/// example when a game update changed a sheet; the failure is kept, so the
-/// picker can say why it is empty, until the person opens the picker again.
+/// Builds one list from the game's data sheets: the animation, minion and
+/// mount, and model lists on a worker thread the first time a picker needs
+/// them (<see cref="EnsureLoaded"/>), and short lists such as the dyes or the
+/// status icons on the calling thread the first time they are read
+/// (<see cref="BuildNow"/>). The game's data does not change while the game
+/// runs, so a list that was built is kept until Poser is unloaded. A build can
+/// fail, for example when a game update changed a sheet; the failure is kept,
+/// so the picker can say why the list is empty or short, until the person
+/// opens the picker again.
 /// </summary>
 /// <param name="listName">The list's name in the failure text, such as "animation".</param>
-/// <param name="build">Reads the sheets and publishes the list. Runs on a worker thread.</param>
+/// <param name="build">Reads the sheets and publishes the list.</param>
 public sealed class GameDataBuild(string listName, Action build, IPluginLog log)
 {
     private const int NotStarted = 0;
@@ -39,32 +42,62 @@ public sealed class GameDataBuild(string listName, Action build, IPluginLog log)
             Start();
     }
 
-    /// <summary>Builds again after a failure. The interface calls this when
-    /// a person opens the picker.</summary>
+    /// <summary>Builds again after a failure, on a worker thread. The interface
+    /// calls this when a person opens the picker.</summary>
     public void Retry()
     {
         if (_state == Failed)
             Start();
     }
 
+    /// <summary>Builds the list on the calling thread if it has not been built
+    /// yet. A second thread that asks while the list is being built waits for
+    /// it: the wardrobe is warmed on a worker thread at startup while the
+    /// interface may already read it.</summary>
+    public void BuildNow()
+    {
+        if (_state is Built or Failed)
+            return;
+        lock (_sync)
+        {
+            if (_state != NotStarted)
+                return;
+            _state = Building;
+            Run();
+        }
+    }
+
+    /// <summary>For a list built with <see cref="BuildNow"/>: forgets a failed
+    /// build, so the next read reads the sheets again. The interface calls
+    /// this when a person opens the picker.</summary>
+    public void ForgetFailure()
+    {
+        lock (_sync)
+            if (_state == Failed)
+                _state = NotStarted;
+    }
+
+    private readonly object _sync = new();
+
     private void Start()
     {
-        _failure = null;
         _state = Building;
-        Task.Run(() =>
+        Task.Run(Run);
+    }
+
+    private void Run()
+    {
+        try
         {
-            try
-            {
-                build();
-                _failure = null;
-                _state = Built;
-            }
-            catch (Exception ex)
-            {
-                log.Error($"The {listName} list could not be built from the game data: {ex}");
-                _failure = $"The {listName} list could not be read from the game data: {ex.Message}";
-                _state = Failed;
-            }
-        });
+            _failure = null;
+            build();
+            _state = Built;
+        }
+        catch (Exception ex)
+        {
+            log.Error($"The {listName} list could not be built from the game data: {ex}");
+            _failure = $"The {listName} list could not be read from the game data: {ex.Message}";
+            _state = Failed;
+        }
     }
 }

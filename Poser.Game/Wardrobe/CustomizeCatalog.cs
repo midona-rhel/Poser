@@ -35,6 +35,19 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
     private CustomizePalettes? _palettes;
 
     private readonly object _gate = new();
+    private volatile string? _failure;
+
+    /// <summary>Why a part of the character-making data could not be read,
+    /// shown on the Appearance view; null otherwise. What was read before the
+    /// failure is still used. The data is read once, so this stays until
+    /// Poser is loaded again.</summary>
+    public string? LoadFailure => _failure;
+
+    private void Failed(string reason)
+    {
+        _log.Warning(reason);
+        _failure ??= reason;
+    }
 
     public CustomizeCatalog(IDataManager data, IPluginLog log)
     {
@@ -184,7 +197,7 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
         }
         catch (Exception ex)
         {
-            _log.Warning($"Customize: the race sheets could not be read: {ex.Message}");
+            Failed($"The race and clan names could not be read from the game data: {ex.Message}");
         }
         _clans = clans;
         _races = races;
@@ -307,7 +320,7 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
         }
         catch (Exception ex)
         {
-            _log.Warning($"Customize: the character-making sheet could not be read: {ex.Message}");
+            Failed($"The character-making options could not be read from the game data: {ex.Message}");
         }
 
         var palettes = new CustomizePalettes(
@@ -337,7 +350,7 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
         }
         catch (Exception ex)
         {
-            _log.Warning($"Customize: the colour file could not be read: {ex.Message}");
+            Failed($"The character colours could not be read from the game data: {ex.Message}");
         }
 
         foreach (var (key, menu) in menus.ToArray())
@@ -403,7 +416,7 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
         }
         catch (Exception ex)
         {
-            _log.Warning($"Customize: hair references could not be read for {clan}/{gender}: {ex.Message}");
+            Failed($"The hairstyles of clan {clan}, gender {gender} could not be read from the game data: {ex.Message}");
         }
     }
 }

@@ -71,7 +71,7 @@ public sealed partial class AppearancePane
     private EquipSlot _itemMemoSlot;
     private IReadOnlyList<WardrobeItem> _itemMemo = Array.Empty<WardrobeItem>();
     private List<PropRow>? _propRows;
-    private List<FacewearEntry>? _facewearRows;
+    private readonly List<FacewearEntry> _facewearRows = new();
     private static readonly FacewearEntry NoFacewear = new(0, "None", 0);
 
     private static readonly Func<WardrobeItem, string> WardrobeItemName = static item => item.Name;
@@ -521,6 +521,10 @@ public sealed partial class AppearancePane
     {
         _wardrobePickerActor = actor;
         _pickerSlot = slot;
+        // Read the items again after a failure before asking for the reason,
+        // so the picker never shows a failure the new read has cleared.
+        _wardrobe.Retry(global::Poser.Application.Catalog.WardrobeList.Items);
+        _ = _wardrobe.ItemsFor(slot);
         _itemMemoQuery = null;
         var worn = ReadWardrobe(actor)?.Slot(slot);
         string? selected = worn is { } w && WardrobeIds.IsSheetItem(w.ItemId)
@@ -532,7 +536,7 @@ public sealed partial class AppearancePane
             WardrobeItemName,
             WardrobeItemKey,
             selected,
-            null,
+            _wardrobe.LoadFailure(global::Poser.Application.Catalog.WardrobeList.Items),
             new PickerOptions<WardrobeItem>
             {
                 Query = ItemSearch,
@@ -584,11 +588,11 @@ public sealed partial class AppearancePane
     {
         _wardrobePickerActor = actor;
         ulong worn = ReadWardrobe(actor)?.Facewear ?? 0;
-        if (_facewearRows is null)
-        {
-            _facewearRows = new List<FacewearEntry> { NoFacewear };
-            _facewearRows.AddRange(_wardrobe.Facewear);
-        }
+        _wardrobe.Retry(global::Poser.Application.Catalog.WardrobeList.Facewear);
+        // Rebuilt on every open, so a list read again after a failure shows.
+        _facewearRows.Clear();
+        _facewearRows.Add(NoFacewear);
+        _facewearRows.AddRange(_wardrobe.Facewear);
         _facewearPicker.Open(
             "Facewear",
             _facewearRows,
@@ -597,7 +601,7 @@ public sealed partial class AppearancePane
             FacewearById(worn) is { } known
                 ? known.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 : "0",
-            null,
+            _wardrobe.LoadFailure(global::Poser.Application.Catalog.WardrobeList.Facewear),
             new PickerOptions<FacewearEntry> { Texture = _facewearTexture });
     }
 

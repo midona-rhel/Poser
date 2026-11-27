@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using Poser.Application.Presentation;
+using Poser.Game.Core;
 
 namespace Poser.Game.Overlays;
 
 /// <summary>
 /// Provides the game's status-effect icons for staged status lines. The sheet
-/// is read lazily when the icon picker first requests it.
+/// is read when the icon picker first asks for it (see <see cref="GameDataBuild"/>).
 ///
 /// <para>Deduplicated by icon, not by row: the sheet contains one row per stack
 /// count and per variant, and a picker that listed all of them would show the
@@ -18,46 +19,42 @@ namespace Poser.Game.Overlays;
 public sealed class StatusIconCatalog : IStatusIconCatalog
 {
     private readonly IDataManager _data;
-    private readonly IPluginLog _log;
-    private IReadOnlyList<StatusIconEntry>? _entries;
+    private readonly GameDataBuild _build;
+    private IReadOnlyList<StatusIconEntry> _entries = Array.Empty<StatusIconEntry>();
 
     public StatusIconCatalog(IDataManager data, IPluginLog log)
     {
         _data = data;
-        _log = log;
+        _build = new("status icon", () => _entries = Build(), log);
     }
 
-    public IReadOnlyList<StatusIconEntry> Entries => _entries ??= Build();
-
-    private IReadOnlyList<StatusIconEntry> Build()
+    public IReadOnlyList<StatusIconEntry> Entries
     {
-        try
+        get { _build.BuildNow(); return _entries; }
+    }
+
+    public string? LoadFailure => _build.Failure;
+    public void Retry() => _build.ForgetFailure();
+
+    private List<StatusIconEntry> Build()
+    {
+        var sheet = _data.GetExcelSheet<Status>();
+        var seen = new HashSet<uint>();
+        var entries = new List<StatusIconEntry>(sheet.Count);
+        foreach (var row in sheet)
         {
-            var sheet = _data.GetExcelSheet<Status>();
-            if (sheet == null)
-                return Array.Empty<StatusIconEntry>();
-            var seen = new HashSet<uint>();
-            var entries = new List<StatusIconEntry>(sheet.Count);
-            foreach (var row in sheet)
-            {
-                if (row.Icon == 0 || row.Name.IsEmpty)
-                    continue;
-                if (!seen.Add(row.Icon))
-                    continue;
-                string name = row.Name.ExtractText();
-                if (name.Length == 0)
-                    continue;
-                entries.Add(new StatusIconEntry(row.Icon, name));
-            }
-            entries.Sort(static (a, b) => string.Compare(
-                a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-            return entries;
+            if (row.Icon == 0 || row.Name.IsEmpty)
+                continue;
+            if (!seen.Add(row.Icon))
+                continue;
+            string name = row.Name.ExtractText();
+            if (name.Length == 0)
+                continue;
+            entries.Add(new StatusIconEntry(row.Icon, name));
         }
-        catch (Exception ex)
-        {
-            _log.Error($"StatusIconCatalog: the status sheet failed: {ex.Message}");
-            return Array.Empty<StatusIconEntry>();
-        }
+        entries.Sort(static (a, b) => string.Compare(
+            a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        return entries;
     }
 
     /// <summary>The listed name for one icon id, or an empty string when the
