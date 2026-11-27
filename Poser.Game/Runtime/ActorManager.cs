@@ -399,6 +399,31 @@ public class ActorManager : IActorManager
         return true;
     }
 
+    public unsafe float? AdoptedOpacity(IActor actor)
+    {
+        if (!IsAdopted(actor))
+            return null;
+        var adoption = _adopted[actor.Address];
+        if (CurrentAdopted(actor.Address, adoption) is not ICharacter)
+            return null;
+        return adoption.HiddenAlpha
+            ?? ((FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actor.Address)->Alpha;
+    }
+
+    public unsafe bool SetAdoptedOpacity(IActor actor, float alpha)
+    {
+        if (!IsAdopted(actor))
+            return false;
+        var adoption = _adopted[actor.Address];
+        if (CurrentAdopted(actor.Address, adoption) is not ICharacter)
+            return false;
+        if (adoption.HiddenAlpha != null)
+            _adopted[actor.Address] = adoption with { HiddenAlpha = alpha };
+        else
+            ((FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actor.Address)->Alpha = alpha;
+        return true;
+    }
+
     public void RefreshActors()
     {
         // Reconcile in place. Selection, history, skeleton caches, and inspector

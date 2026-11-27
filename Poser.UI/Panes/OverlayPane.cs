@@ -480,6 +480,7 @@ public sealed class OverlayPane
     private void OpenIconPicker(OverlayReading node)
     {
         _iconTarget = node.Id;
+        _statusIcons.Retry();
         _iconChoices.Clear();
         foreach (var entry in _statusIcons.Entries)
             _iconChoices.Add(new StatusIconChoice(
@@ -495,9 +496,7 @@ public sealed class OverlayPane
             static choice => choice.Key,
             node.State.StatusIconId.ToString(
                 System.Globalization.CultureInfo.InvariantCulture),
-            loadError: _iconChoices.Count == 0
-                ? "The status sheet declared no icons."
-                : null,
+            loadError: _statusIcons.LoadFailure,
             options: new PickerOptions<StatusIconChoice>
             {
                 // A picture picker has to show the pictures: the row's mark is

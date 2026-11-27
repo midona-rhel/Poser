@@ -14,4 +14,7 @@ public interface ICustomizeCatalog
     CustomizePalettes Palettes { get; }
     /// <summary>The game texture that stands for the legacy tattoo.</summary>
     string LegacyTattooTexture { get; }
+    /// <summary>Why a part of the data could not be read from the game, shown
+    /// on the Appearance view; null otherwise.</summary>
+    string? LoadFailure { get; }
 }

@@ -28,7 +28,10 @@ public sealed class OverlayControlTests
                 : new BindingResult<IOverlayNode>(BindingStatus.StaleTarget),
             _ => throw new InvalidOperationException(m.Name),
         });
-        var control = new OverlayControl(bindings, new ValueJournal(history));
+        var overlays = new OverlayNodeService(Stub<IOverlayNodePort>((_, _) => null),
+            Stub<Poser.Application.Events.IEventBus>((_, _) => null), null!);
+        var control = new OverlayControl(bindings, new ValueJournal(history), overlays,
+            Stub<IEntityHistoryResolver<IOverlayNode>>((_, a) => a![0]));
 
         var refused = control.EditCollider(id, c => c with { Enabled = false });
         current = id.NextGeneration();
