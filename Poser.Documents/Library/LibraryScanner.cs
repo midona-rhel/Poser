@@ -11,7 +11,13 @@ namespace Poser.Documents.Library;
 
 public sealed record LibrarySourceSpec(string Name, string Path, bool Enabled);
 
-/// <summary>Bounded filesystem traversal. The caller owns scheduling and publication.</summary>
+/// <summary>
+/// Lists the library's source folders: every pose, scene, character and
+/// object file by name and folder, without reading any of them. Stops a
+/// source that goes past the limits in <see cref="PoseLibraryLimits"/>.
+/// <c>PoseLibraryService</c> in Poser.Application decides when to scan
+/// and publishes the result.
+/// </summary>
 public sealed class LibraryScanner
 {
     private const string PoseExtension = ".pose";
@@ -34,8 +40,9 @@ public sealed class LibraryScanner
 
     private readonly Func<string, bool>? _observeDirectory;
 
-    /// <param name="observeDirectory">Tests use this to see which folders a
-    /// scan opens; the plugin passes nothing.</param>
+    /// <param name="observeDirectory">Replaces the check that a source folder
+    /// exists and can be opened, so a test can make one source fail. The
+    /// plugin passes nothing.</param>
     public LibraryScanner(Func<string, bool>? observeDirectory = null) =>
         _observeDirectory = observeDirectory;
 
