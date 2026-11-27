@@ -9,13 +9,13 @@ namespace Poser.Application.Transforms;
 /// pose) use the same read, write and record steps; only how they work out the
 /// new values differs.
 /// </summary>
-public sealed class TransformCommandService
+public sealed class TransformCommands
 {
     private readonly ITransformRuntimePort _runtime;
     private readonly EditHistory _history;
     private readonly TransformGestureService _gestures;
 
-    public TransformCommandService(
+    public TransformCommands(
         ITransformRuntimePort runtime,
         EditHistory history,
         TransformGestureService gestures)

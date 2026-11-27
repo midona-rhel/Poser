@@ -26,7 +26,7 @@ public sealed class UIManager : IUIManager
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
-    private readonly ITransformFacade _cleanTransforms;
+    private readonly ITransformEditing _transformEditing;
     private readonly UserNotices _notices;
     private readonly IKeyState _keyState;
     private readonly global::Poser.Application.Input.IKeyEvents _keyEvents;
@@ -62,7 +62,7 @@ public sealed class UIManager : IUIManager
         IDalamudPluginInterface pluginInterface,
         IGPoseService gPoseService,
         IEventBus eventBus,
-        ITransformFacade cleanTransforms,
+        ITransformEditing transformEditing,
         UserNotices notices,
         IKeyState keyState,
         global::Poser.Application.Input.IKeyEvents keyEvents,
@@ -92,7 +92,7 @@ public sealed class UIManager : IUIManager
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
-        _cleanTransforms = cleanTransforms;
+        _transformEditing = transformEditing;
         _notices = notices;
         _keyState = keyState;
         _editorState = editorState;
@@ -169,8 +169,8 @@ public sealed class UIManager : IUIManager
         _cameraInput.PointerDragHeld = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         // Escape cancels a running drag, whichever window started it. The
         // window then sees that its drag ended and forgets it.
-        if (_cleanTransforms.ActiveGesture is { } drag && ImGui.IsKeyPressed(ImGuiKey.Escape))
-            _cleanTransforms.Cancel(drag);
+        if (_transformEditing.ActiveGesture is { } drag && ImGui.IsKeyPressed(ImGuiKey.Escape))
+            _transformEditing.Cancel(drag);
         _windows.PumpPropertiesInteractions(_cameraInput.PointerDragHeld && !hidden);
         if (!AdvanceTheme())
             return;
@@ -290,7 +290,7 @@ public sealed class UIManager : IUIManager
         _notices.Posted += Posted;
         try
         {
-            var result = before ? _cleanTransforms.UndoSelected() : _cleanTransforms.RedoSelected();
+            var result = before ? _transformEditing.UndoSelected() : _transformEditing.RedoSelected();
             if (!reported)
                 _notices.Report(result.Outcome, before ? "Undo selected entity" : "Redo selected entity", refusal: true);
         }
@@ -304,14 +304,14 @@ public sealed class UIManager : IUIManager
             ["Undo"] = () =>
             {
                 _values.Seal();
-                if (_cleanTransforms.CanUndo)
-                    _cleanTransforms.Undo();
+                if (_transformEditing.CanUndo)
+                    _transformEditing.Undo();
             },
             ["Redo"] = () =>
             {
                 _values.Seal();
-                if (_cleanTransforms.CanRedo)
-                    _cleanTransforms.Redo();
+                if (_transformEditing.CanRedo)
+                    _transformEditing.Redo();
             },
             ["Deselect"] = () => _scene.Selection.Clear(),
             ["Undo selected entity"] = () => SelectedHistory(before: true),

@@ -14,7 +14,7 @@ namespace Poser.Application.Posing;
 /// <summary>Reset all for one actor: its expression, gaze, pose, IK, animation and
 /// looks go back to the game's, in that order, as one undo step.</summary>
 public sealed class ActorResetControl(
-    SceneSession scene, TransformCommandService transforms, PoseEditService poses,
+    SceneSession scene, TransformCommands transforms, PoseEditService poses,
     IActorPoseResetRuntime runtime, IGazeRuntimePort gaze, IAnimationPlayback animation,
     ActorPresentationSession presentation, ActorModelIdSession models, IntegrationReset integration,
     EditHistory history, ValueJournal values, IActorStateSnapshots snapshots)

@@ -46,8 +46,8 @@ public sealed class TransformParentingTests
         var scene = new SceneSession(new SelectionSession());
         Assert.True(scene.TryRefresh(new SceneSnapshot(1, [],
             [new(a, "Parent", LightKind.Point), new(b, "Child", LightKind.Point)], [], [])).Accepted);
-        var port = new ParentedTransformPort(r, parents);
-        using var gestures = new TransformGestureService(scene, port, history);
+        var parented = new ParentRelativeTransforms(r, parents);
+        using var gestures = new TransformGestureService(scene, parented, history);
         var journal = new UndoJournal(history, gestures, _ => true, new Fixtures.NoticeLog());
         Assert.True(gestures.Begin(new([TransformTargetId.ForLight(b), TransformTargetId.ForLight(a)],
             TransformOperation.Translate, TransformSpace.World, PivotMode.PerTarget)).Success);
@@ -61,7 +61,7 @@ public sealed class TransformParentingTests
         Assert.Equal(At(0), r.Values[parent]); Assert.Equal(At(2), r.Values[child]);
         Assert.True(journal.Redo().Success); parents.Evaluate();
         Assert.Equal(At(5), r.Values[parent]); Assert.Equal(At(7), r.Values[child]);
-        var commands = new TransformCommandService(port, history, gestures);
+        var commands = new TransformCommands(parented, history, gestures);
         Assert.True(commands.SetAbsolute(TransformTargetId.ForLight(b), At(9), "Offset").Success);
         r.Values[parent] = At(20); parents.Evaluate();
         Assert.True(journal.Undo().Success); Assert.Equal(At(22), r.Values[child]);

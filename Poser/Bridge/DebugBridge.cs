@@ -63,7 +63,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Game.Services.IBonePosingService _bonePosing;
     private readonly Application.Posing.IIkConfigurationPort _ikConfiguration;
-    private readonly ITransformFacade _transforms;
+    private readonly ITransformEditing _transforms;
     private readonly global::Poser.UI.SkeletonOverlayWindow _overlay;
     private readonly global::Poser.UI.SkeletonOverlayPresentation _overlayPresentation;
     private readonly global::Poser.Application.Viewport.IViewportReads _viewport;
@@ -151,7 +151,7 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Application.Catalog.ISpawnCatalogService catalog,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
         global::Poser.Application.Library.IPoseLibraryService library,
-        ITransformFacade transforms,
+        ITransformEditing transforms,
         global::Poser.Application.Viewport.IViewportReads viewport,
         global::Poser.UI.SkeletonOverlayWindow overlay,
         global::Poser.UI.SkeletonOverlayPresentation overlayPresentation,

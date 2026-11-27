@@ -71,7 +71,7 @@ public sealed class SelectionPlacementTests
                 "GetCameraPosition" => new Vector3(10, 0, 0), "GetLookDirection" => Vector3.UnitZ,
                 _ => throw new NotSupportedException(name),
             });
-            var transforms = Proxy<ITransformFacade>((name, args) =>
+            var transforms = Proxy<ITransformEditing>((name, args) =>
             {
                 switch (name)
                 {

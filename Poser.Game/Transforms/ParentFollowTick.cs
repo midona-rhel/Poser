@@ -10,7 +10,7 @@ namespace Poser.Game.Transforms;
 /// <summary>Moves every child to follow its parent each frame, after the game
 /// updates the scene and again before IK collisions run. The parent links
 /// themselves are kept in <see cref="TransformParenting"/>.</summary>
-public sealed class ParentingFrameRuntime : IDisposable
+public sealed class ParentFollowTick : IDisposable
 {
     private readonly TransformParenting _parents;
     private readonly Runtime.SceneFramePhaseService _phases;
@@ -20,7 +20,7 @@ public sealed class ParentingFrameRuntime : IDisposable
     private readonly ILightingService _lights;
     private readonly IEntityBindings _bindings;
 
-    public ParentingFrameRuntime(TransformParenting parents, Runtime.SceneFramePhaseService phases,
+    public ParentFollowTick(TransformParenting parents, Runtime.SceneFramePhaseService phases,
         IKService ik, IFramework framework, IGPoseService gpose, ILightingService lights, IEntityBindings bindings)
     {
         _parents = parents; _phases = phases; _ik = ik; _framework = framework; _gpose = gpose;

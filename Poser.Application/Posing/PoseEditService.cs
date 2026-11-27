@@ -9,11 +9,11 @@ namespace Poser.Application.Posing;
 /// Reset, Mirror and Flip. Each command works out the new pose edits for the
 /// bones it changes. Reading the bones, writing them, recording the undo step
 /// and putting things back after a failed write are done by
-/// <see cref="TransformCommandService"/>, exactly as for a typed transform edit.
+/// <see cref="TransformCommands"/>, exactly as for a typed transform edit.
 /// </summary>
 public sealed class PoseEditService(
     ITransformRuntimePort runtime,
-    TransformCommandService transforms)
+    TransformCommands transforms)
 {
     public PoseEditResult Reset(
         IReadOnlyList<TransformTargetId> bones,
