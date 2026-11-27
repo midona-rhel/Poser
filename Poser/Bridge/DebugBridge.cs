@@ -374,8 +374,7 @@ public sealed partial class DebugBridge : IDisposable
                         "ui.scale.read", "camera.lock.set",
                         "ui.reference-images.read", "ui.reference-images.add", "ui.reference-images.remove",
                         "gaze.target.set", "camera.target.follow",
-                        "autosave.config.read", "autosave.config.write", "autosave.status.read",
-                        "autosave.library.refresh", "autosave.library.read", "autosave.library.delete-disposable",
+                        "autosave.status.read", "autosave.library.refresh", "autosave.library.read",
                         "selection.entities",
                     },
                     endpoints = new[]
@@ -423,9 +422,8 @@ public sealed partial class DebugBridge : IDisposable
                         "/integrationcleanupids (pending read), ?prepareCustomizeActor=NAME|INDEX, ?captureActor=NAME|INDEX, ?verifyPenumbra=CAPTURED_GUID, or ?verifyCustomize=CAPTURED_GUID (one-shot exact owned IDs)",
                         "/gazetarget?actor=NAME|INDEX|SELECTION_ID&target=NAME|INDEX|SELECTION_ID",
                         "/cameratarget?camera=CAMERA_SELECTION_ID (read) or &actor=NAME|INDEX|SELECTION_ID (follow)",
-                        "/autosaveconfig (read) or ?mode=isolate|restore&enabled=...&intervalSeconds=...&maxAutoSaves=...&cleanOnExit=...&sceneSnapshots=...&maxSceneSnapshots=...&root=ABSOLUTE_PATH",
-                        "/autosavestatus (legacy pose-backup folder)",
-                        "/autosavelibrary?action=refresh|read|delete&path=DISPOSABLE_POSE_FILE",
+                        "/autosavestatus (the folder older Poser versions kept pose backups in)",
+                        "/autosavelibrary?action=refresh|read",
                         "/gaze?actor", "/gazemode?actor&mode=None|Forward|Camera|Position|Entity",
                         "/gazepoint?actor&x=0&y=0&z=0&part=None|Eyes|Head|Body  (one committed edit)",
                         "/apply?actor&slot=1&timeline=8136",
@@ -461,8 +459,6 @@ public sealed partial class DebugBridge : IDisposable
                 return WorldObjectModel(query);
             case "/worldsources":
                 return WorldSources(query);
-            case "/autosaveconfig":
-                return _framework.RunOnFrameworkThread(() => Json(AutoSaveConfigCommand(query)));
             case "/autosavestatus":
                 return _framework.RunOnFrameworkThread(() => Json(AutoSaveStatus()));
             case "/autosavelibrary":
