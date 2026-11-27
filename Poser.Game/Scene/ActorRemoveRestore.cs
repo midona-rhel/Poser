@@ -410,7 +410,8 @@ internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
         ScheduleReady((IActor)actor, act, ReadyAttempts, gaveUp: null);
 
     /// <summary><paramref name="gaveUp"/> runs instead of <paramref name="act"/>
-    /// when the actor is gone or never becomes posable.</summary>
+    /// when the actor is gone or never becomes posable, and after
+    /// <paramref name="act"/> when it throws.</summary>
     private void ScheduleReady(IActor actor, Action<object> act, int attempts, Action? gaveUp)
     {
         if (attempts <= 0)

@@ -32,7 +32,7 @@ internal sealed partial class ActorRemoveRestore
     private readonly ActorStateSnapshots _actorStates;
     private readonly Integration.ISpawnCollectionPort _collections;
 
-    public Action<IActor, Action>? CaptureBodyProfile(IActor source)
+    public BodyProfileCopy? CaptureBodyProfile(IActor source)
     {
         if (_bindings.GetActorId(source) is not { } sourceId) return null;
         var captured = _integration.CaptureBodyProfile(sourceId);
@@ -42,16 +42,12 @@ internal sealed partial class ActorRemoveRestore
             return null;
         }
         if (captured.Value is not { } profile) return null;
-        // readyToRestore runs on every way out, also when the actor never
-        // becomes posable, so a restore waiting on it is never left holding
-        // the action gate.
-        return (target, readyToRestore) => ScheduleReady(target, ready =>
+        // ScheduleReady runs the body only once the actor has an id and a
+        // posable skeleton, and runs gaveUp on every other way out, so a
+        // restore waiting here is never left holding the action gate.
+        return (target, readyToRestore, gaveUp) => ScheduleReady(target, ready =>
         {
-            if (_bindings.GetActorId((IActor)ready) is not { } targetId)
-            {
-                readyToRestore();
-                return;
-            }
+            if (_bindings.GetActorId((IActor)ready) is not { } targetId) return;
             var result = _integration.ApplyBodyProfileJson(targetId, profile, "Copied profile");
             if (!result.Success)
             {
@@ -75,7 +71,7 @@ internal sealed partial class ActorRemoveRestore
                 Note($"'{target.Name}': {begun.Detail}");
                 readyToRestore();
             }
-        }, ReadyAttempts, gaveUp: readyToRestore);
+        }, ReadyAttempts, gaveUp);
     }
 
     public IActor? Recreate(ActorState state) => state.Runtime?.SpawnedKind is { } kind
