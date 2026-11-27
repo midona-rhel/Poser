@@ -60,7 +60,7 @@ public sealed unsafe partial class TimelineSeekService
             {
                 int slot = (int)layer;
                 nint root = AnimationNativeState.SlotTimeline(sequencer, slot);
-                if (root == 0 || SlotEnded(character, slot))
+                if (root == 0)
                     continue;
                 float effective = speed * overall;
                 _engine.SetSlotTimelineSpeed(sequencer, slot, effective);
@@ -172,8 +172,7 @@ public sealed unsafe partial class TimelineSeekService
         {
             var suppressed = _suppressedProps;
             foreach (var (layer, weight) in weights)
-                if (!SlotEnded(character, (int)layer))
-                    _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, (int)layer, weight, suppressed);
+                _engine.SetSlotWeight(&character->Timeline.TimelineSequencer, (nint)character, (int)layer, weight, suppressed);
         }
         catch (Exception ex) { LogOnce("weight", $"[TimelineSeek] layer weight faulted: {ex.Message}"); }
     }
