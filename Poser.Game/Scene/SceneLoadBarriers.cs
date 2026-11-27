@@ -15,19 +15,18 @@ internal sealed class SceneLoadBarriers(
     SceneOperation operation,
     CancellationToken cancellation)
 {
-    /// <summary>Bound for every attached companion's own body to build. It is
-    /// short because it is best-effort: the pose phase reports what did not
-    /// make it, rather than the scene waiting on a companion that never
-    /// draws.</summary>
+    /// <summary>How long to wait for attached companions' bodies to appear. It
+    /// is short because a companion that doesn't appear only loses its pose,
+    /// which the pose step names, rather than holding up the scene.</summary>
     private static readonly TimeSpan CompanionReadyTimeout = TimeSpan.FromSeconds(5);
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(50);
 
     /// <summary>
     /// Starts one pose import through <paramref name="arm"/> and waits for its
-    /// final receipt. Returns null on Applied, otherwise the failure detail.
-    /// A Pending receipt only supplies the operation ID for cancellation;
-    /// its Detail describes the request and is not a failure message.
+    /// final result. Returns null when it was applied, otherwise why not. The
+    /// first, Pending result only gives the import's id, so it can be
+    /// cancelled; its detail describes the request, not a failure.
     /// </summary>
     public async Task<string?> ImportPose(Func<Action<OperationReceipt>, string?> arm)
     {
@@ -96,8 +95,8 @@ internal sealed class SceneLoadBarriers(
                     // Cancellation could not be dispatched; preserve the timeout result.
                 }
             }
-            // The cancel publishes the import's own Cancelled terminal; only
-            // one that had already applied stands.
+            // Cancelling gives the import a Cancelled result. Only an import
+            // that had already been applied counts.
             if (completion.Task is not { IsCompleted: true, Result.State: OperationReceiptState.Applied })
                 return cancellation.IsCancellationRequested
                     ? "The load was cancelled."
@@ -110,10 +109,11 @@ internal sealed class SceneLoadBarriers(
             : receipt.Detail ?? $"The pose import ended {receipt.State}.";
     }
 
-    /// <summary>Bounded readiness barrier over the given actors. Stop is a
-    /// structural refusal (cancel, shutdown, framework gone); Unready names
-    /// the actors still not posable when the bound ran out — each of them
-    /// one named refusal, never a reason to roll the others back.</summary>
+    /// <summary>Waits, up to <see cref="SceneWorkflow.ActorReadyTimeout"/>, until
+    /// the actors can be posed. Stop is set when the whole load has to stop:
+    /// cancelled, Poser shutting down, or the main thread gone. Unready lists
+    /// the actors still not ready when time ran out; each is named in the
+    /// result, and the rest of the load goes on.</summary>
     public async Task<(string? Stop, IReadOnlyList<SceneEntityHandle> Unready)> WaitForActors(
         IEnumerable<SceneEntityHandle> actors)
     {
@@ -154,11 +154,10 @@ internal sealed class SceneLoadBarriers(
     }
 
     /// <summary>
-    /// Best-effort barrier over every attached companion whose pose the scene
-    /// carries. It answers when they have all built, when the operation is
-    /// invalidated, or when the bound expires — never as a failure, because a
-    /// companion that never draws is the pose phase's named refusal to report,
-    /// not a reason to tear down a restored scene.
+    /// Waits for the bodies of the attached companions whose pose the scene
+    /// holds. It returns when they have all appeared, when the GPose session
+    /// changes, or when time runs out, and never fails the load: a companion
+    /// that never appears is named by the pose step instead.
     /// </summary>
     public async Task WaitForCompanions(
         IReadOnlyList<SceneActor> actors, IReadOnlyDictionary<Guid, SceneEntityHandle> actorTokens)

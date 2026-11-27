@@ -5,7 +5,9 @@ using Poser.Domain.Identity;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Keeps native entities behind session-scoped weak handles.</summary>
+/// <summary>The table behind <see cref="SceneEntityHandle"/>: which game object
+/// each handle stands for. Handles are forgotten when the GPose session
+/// changes, and an entry goes when nothing holds its handle any more.</summary>
 internal sealed class SceneRuntimeHandles(Func<SessionGeneration?> activeSession)
 {
     private sealed class Entry(object entity)

@@ -50,11 +50,10 @@ public sealed record SceneSaveOptions
     /// single-entity entries have no structure to say.</summary>
     public bool IncludeStructure { get; init; } = true;
 
-    /// <summary>Restricts the save to the entities whose keys (logical
-    /// ids; actor capture keys are admitted by translation) are in the
-    /// set — every library entry save. Groups survive only when every
-    /// member is kept; references to anything pruned are detached by
-    /// <see cref="SceneSaveNarrowing"/>.</summary>
+    /// <summary>Saves only the entities whose logical ids are in this set, as
+    /// every save of a library entry does. A group is kept only when all its
+    /// members are. <see cref="SceneSaveNarrowing"/> removes references to
+    /// anything left out.</summary>
     public IReadOnlyCollection<Guid>? OnlyEntityKeys { get; init; }
 
     /// <summary>Name for the saved group or single entity. Group members keep

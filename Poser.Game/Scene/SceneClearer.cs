@@ -22,8 +22,9 @@ using Poser.Game.Services;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The destroy-first clear a clear-first load runs before it restores
-/// anything.
+/// Empties the scene before a load with Clear the session first, before the
+/// load adds anything. The Main Camera stays, and so does your own character
+/// when the scene reuses it.
 /// </summary>
 internal sealed class SceneClearer(
     IActorManager actors,
@@ -68,8 +69,9 @@ internal sealed class SceneClearer(
             var lineage = bindings.GetActorId(actor)?.LogicalId;
             ActorRemovalCleanup.Prepare(actor, gaze, integration, bindings, refusedCleanup.Add);
 
-            // One verb for both provenances: the service routes an owned
-            // actor to its ledger and an adopted one to the scene table.
+            // One call for every kind of actor. An actor Poser spawned is
+            // destroyed, one taken over from the world is handed back, and any
+            // other GPose actor is deleted from the game's object table.
             if (spawns.RemoveActorFromScene(actor))
             {
                 actorCount++;
@@ -82,7 +84,8 @@ internal sealed class SceneClearer(
             }
             else
             {
-                // The row says why, in the gate's own words, not just who.
+                // The row gives the reason the actor can't be removed, not just
+                // its name.
                 refused.Add(spawns.RemovalRefusal(actor) is { } why
                     ? $"{actor.Name}: {why}"
                     : actor.Name);
@@ -101,9 +104,9 @@ internal sealed class SceneClearer(
         int cameraCount = cameras.Cameras.Count(camera => !camera.IsDefault);
         cameras.DestroyAllCameras();
 
-        // Not a destruction: releasing writes each borrowed object's captured
-        // placement and flags back to the map. Clearing the scene is one of the
-        // four exits the restore contract names, and this is where it runs.
+        // Borrowed world objects are not destroyed but given back: each gets
+        // the placement and settings it had before it was borrowed. Clearing
+        // the scene is one of the four ways a borrowed object is given back.
         int worldObjectCount = worldObjects.Count;
         worldObjects.ReleaseAll();
 

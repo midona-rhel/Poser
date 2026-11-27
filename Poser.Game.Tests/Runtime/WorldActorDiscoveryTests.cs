@@ -5,9 +5,7 @@ using Poser.Game;
 using Poser.Application.Transforms;
 using Poser.Game.Journal;
 using Poser.Game.Scene;
-using Poser.Application.Presentation;
 using Poser.Domain.Identity;
-using Poser.Domain.Presentation;
 using System.Numerics;
 using System.Reflection;
 using Poser.Application.Lifecycle;
@@ -23,7 +21,7 @@ namespace Poser.Game.Tests.Runtime;
 public sealed class WorldActorDiscoveryTests
 {
     [Fact]
-    public void Gpose_exit_restores_tint_after_capture_before_binding_removal()
+    public void Gpose_exit_raises_capture_then_exiting_then_state_change()
     {
         var framework = new FakeFramework();
         var inGpose = true;
@@ -31,47 +29,24 @@ public sealed class WorldActorDiscoveryTests
         ((ExitProxy)(object)client).Handle = name => name == "get_IsGPosing" ? inGpose : null;
         var log = DispatchProxy.Create<IPluginLog, ExitProxy>();
         var bus = new EventBus(log);
-        var id = new ActorId(Guid.NewGuid(), 1);
-        var incoming = new Vector4(0.8f, 0.7f, 0.6f, 1f);
-        var authored = new Vector4(1f, 0.2f, 0.3f, 1f);
-        var port = new TintPort { Tint = incoming };
-        var presentation = new ActorPresentationSession(port);
         var order = new List<string>();
-        Vector4? captured = null;
-        Vector4? atRemoval = null;
-        var lifecycle = new SessionLifecycleCoordinator(new ExitCapture(() =>
-        {
-            captured = port.Tint;
-            order.Add("capture");
-        }));
+        var lifecycle = new SessionLifecycleCoordinator(new ExitCapture(() => order.Add("capture")));
         using var gpose = new GPoseService(client, framework, bus, log, lifecycle);
 
-        // Simulate binding removal on the state-change event. Restoration must
-        // happen first through the separate GPoseExitingEvent.
+        // Bindings are removed on the state-change event. Features put the
+        // actors' own values back on GPoseExitingEvent, so it has to come first.
         bus.Subscribe<GPoseStateChangedEvent>(evt =>
         {
-            if (evt.IsGPosing) return;
-            atRemoval = port.Tint;
-            port.Supported = false;
-            order.Add("remove");
+            if (!evt.IsGPosing) order.Add("remove");
         });
-        bus.Subscribe<GPoseExitingEvent>(_ =>
-        {
-            presentation.ResetAll();
-            order.Add("restore");
-        });
+        bus.Subscribe<GPoseExitingEvent>(_ => order.Add("restore"));
         framework.RaiseUpdate();
-        Assert.True(presentation.SetTint(id, PresentationModel.Character, authored).Success);
         inGpose = false;
         framework.RaiseUpdate();
         // Neither repeated observation nor the subsequent unload repeats exit.
         framework.RaiseUpdate();
         gpose.ExitForUnload();
         Assert.Equal(new[] { "capture", "restore", "remove" }, order);
-        Assert.Equal(authored, captured);
-        Assert.Equal(incoming, atRemoval);
-        Assert.Equal(incoming, port.Tint);
-        Assert.False(presentation.OverridesFor(id).HasAny);
     }
 
     private sealed class ExitCapture(Action capture) : IFinalCapturePort
@@ -91,7 +66,7 @@ public sealed class WorldActorDiscoveryTests
     }
 
     [Fact]
-    public void Release_returns_native_tint_and_undo_restores_saved_pose_placement_and_tint()
+    public void Release_and_undo_restore_saved_pose_and_placement()
     {
         var adapter = new FakeTableAdapter();
         var observed = Obs((nint)0x10);
@@ -100,11 +75,6 @@ public sealed class WorldActorDiscoveryTests
             "Edited NPC", observed.Address);
         var manager = new FakeActorManager { Actors = [actor], Adopted = true };
         var id = new ActorId(Guid.NewGuid(), 1);
-        var incomingTint = new Vector4(0.8f, 0.7f, 0.6f, 1f);
-        var authoredTint = new Vector4(1f, 0.2f, 0.3f, 1f);
-        var port = new TintPort { Tint = incomingTint };
-        var presentation = new ActorPresentationSession(port);
-        Assert.True(presentation.SetTint(id, PresentationModel.Character, authoredTint).Success);
         var pose = new PoseFile();
         pose.Bones["j_te_l"] = new PoseFile.BoneData
         {
@@ -126,34 +96,27 @@ public sealed class WorldActorDiscoveryTests
         var session = new WorldActorSession(NewDiscovery(adapter, seam, manager: manager), history,
             _ =>
             {
-                Assert.Equal(incomingTint, port.Tint); // Reset happens before the binding disappears.
                 manager.Adopted = false;
                 state.Current = released;
                 return true;
-            }, state, presentation, _ => manager.Adopted ? id : null);
+            }, state, actorId: _ => manager.Adopted ? id : null);
 
         Assert.True(session.Release(actor));
-        Assert.False(presentation.OverridesFor(id).HasAny);
         var step = Assert.IsType<JournalStep>(history.PeekUndo());
         Assert.True(step.Undo());
         state.Pump();
         Assert.Equal(authored, state.Current);
         Assert.Equal(pose.Bones["j_te_l"].Rotation, state.Current.Pose!.Bones["j_te_l"].Rotation);
-        Assert.Equal(authoredTint, port.Tint);
-        Assert.Equal(incomingTint, presentation.OverridesFor(id).TintCaptures[PresentationModel.Character]);
         Assert.True(step.Redo());
         Assert.Equal(released, state.Current);
-        Assert.Equal(incomingTint, port.Tint);
 
         Assert.True(step.Undo());
         Assert.True(step.Redo()); // Release again before the queued restore runs.
         state.Pump();
         Assert.Equal(released, state.Current);
-        Assert.Equal(incomingTint, port.Tint);
         Assert.True(step.Undo());
         state.Pump();
         Assert.Equal(authored, state.Current); // Never recapture the temporary unposed state.
-        Assert.Equal(authoredTint, port.Tint);
         Assert.Equal(1, appends);
     }
 
@@ -172,27 +135,6 @@ public sealed class WorldActorDiscoveryTests
         public bool IsSpawned(object actor) => false;
         public bool Destroy(object actor) => throw new NotSupportedException();
         public void Note(string detail) => throw new InvalidOperationException(detail);
-    }
-
-    private sealed class TintPort : IPresentationRuntimePort
-    {
-        public Vector4 Tint;
-        public bool Supported = true;
-        public bool IsSupported(ActorId actor) => Supported;
-        public PresentationReading? Read(ActorId actor) => Supported ? new(1, Tint, null, null, default) : null;
-        public Outcome SetTint(ActorId actor, PresentationModel model, Vector4 value)
-        { Tint = value; return Outcome.Ok(); }
-        public Outcome RestoreTint(ActorId actor, PresentationModel model, Vector4 value)
-        {
-            if (!Supported) return Outcome.Fail("Actor binding was removed.");
-            Tint = value;
-            return Outcome.Ok();
-        }
-        public Outcome SetOpacity(ActorId actor, float value) => Outcome.Ok();
-        public Outcome RestoreOpacity(ActorId actor, float value) => Outcome.Ok();
-        public Outcome SetWetness(ActorId actor, WetnessState value) => Outcome.Ok();
-        public Outcome ClearWetness(ActorId actor, WetnessState value) => Outcome.Ok();
-        public void ClearOwned(ActorId actor) { }
     }
 
     [Fact]

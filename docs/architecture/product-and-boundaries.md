@@ -43,9 +43,9 @@ Every namespace starts with the name of its project, so a `using` line shows whi
 `Poser.Application` declares two kinds of interfaces, and their names say which side they face:
 
 - `I…Control`, `I…Commands` and similar are what the interface calls. For example `IGazeControl` is how the Gaze controls change where an actor looks.
-- `I…Port` and `I…RuntimePort` are what Poser's logic needs from the game. `Poser.Game` implements them. For example `IGazeRuntimePort` is implemented by `GazeRuntimeAdapter` in `Poser.Game/Posing`.
+- `I…Port` and `I…RuntimePort` are what Poser's logic needs from the game. `Poser.Game` implements them. For example `IPenumbraPort` is implemented by `PenumbraIpc` in `Poser.Game/Integration`.
 
-When the work is mostly talking to the game, the class that does it lives in `Poser.Game`, next to the game code it calls, and `Poser.UI` calls it through one `Poser.Application` interface. Cameras (`ICameraControl`), animation (`IAnimationPlayback`), importing a pose (`IPoseImportCommands`), saving and loading scenes (`ISceneWorkflow`), `ISceneObjectControl` and `IWorldService` work this way.
+When the work is mostly talking to the game, the class that does it lives in `Poser.Game`, next to the game code it calls, and `Poser.UI` calls it through one `Poser.Application` interface. Cameras (`ICameraControl`), animation (`IAnimationPlayback`), importing a pose (`IPoseImportCommands`), gaze (`IGazeControl`), model id and external appearance (`IActorAppearanceControl`), opacity, tint, wetness and visibility (`IActorValueControl`), Reset → All (`IActorResetControl`), saving and loading scenes (`ISceneWorkflow`), `ISceneObjectControl` and `IWorldService` work this way.
 
 Values crossing these interfaces are ids and plain values, never game addresses. How the game side turns an id back into a game object is in [posing-runtime.md](posing-runtime.md).
 
@@ -59,7 +59,7 @@ Some behaviour lives in `Poser.UI` although it is not about drawing: which bones
 |---|---|
 | A button, label, tab or layout | `Poser.UI/Panes` (the Properties tabs), `Poser.UI/Views` and `Poser.UI/Windows` |
 | A right-click menu or the sidebar rows | `Poser.UI/Composition` |
-| What a command does, or how it undoes | `Poser.Application`, in the folder named after the feature |
+| What a command does, or how it undoes | `Poser.Application`, in the folder named after the feature; for the features listed under [Interfaces between the parts](#interfaces-between-the-parts), `Poser.Game` |
 | How Poser reads or writes the game | `Poser.Game`, in the folder named after the feature; most game function signatures are in `Poser.Game/Natives/NativeSignatures.g.cs` |
 | Penumbra, Glamourer or Customize+ calls | `Poser.Game/Integration` |
 | A file format | `Poser.Documents/Files`, `Poser.Documents/Scene`, `Poser.Documents/Mcdf` |

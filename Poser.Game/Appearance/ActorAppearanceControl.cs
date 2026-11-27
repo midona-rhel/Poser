@@ -1,12 +1,18 @@
+using Poser.Application.Appearance;
 using Poser.Application.Integration;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
-using Poser.Application.Presentation;
 
-namespace Poser.Application.Appearance;
+namespace Poser.Game.Appearance;
 
+/// <summary>
+/// The Appearance tab's commands for one actor: the Penumbra collection, the
+/// Glamourer design, the Customize+ body profile, redraw and the model id.
+/// Each change is one undo step, and undo puts back everything about the actor
+/// from before the change except its animation.
+/// </summary>
 public sealed class ActorAppearanceControl(
     IntegrationSelectors integration,
     ActorModelIdSession model,

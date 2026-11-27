@@ -4,6 +4,8 @@ using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
+/// <summary>Writes parent links into a scene file, naming each entity by its key
+/// in the file. A companion is named through the actor it belongs to.</summary>
 public static class SceneParentingCodec
 {
     internal static SceneStructureRef? Reference(SelectionId id, IReadOnlyDictionary<Guid, ActorId> actors,
@@ -39,7 +41,9 @@ public static class SceneParentingCodec
         {
             if (Reference(child, actors, companionOwner) is not { } childRef) continue;
             var targetRef = Reference(link.Target, actors, companionOwner);
-            // Keep an excluded actor reference until policy pruning can report the static fallback.
+            // A link to an actor this save leaves out is kept for now, so the
+            // save can report it when it drops the link and the child keeps its
+            // saved placement.
             if (targetRef == null && (link.Target.Actor ?? link.Target.Bone?.Skeleton.Actor) is { } excluded)
                 targetRef = new() { Kind = SceneStructureKind.Actor, Key = excluded.LogicalId };
             if (targetRef == null) continue;

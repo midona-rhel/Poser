@@ -261,6 +261,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         var gameSkeleton = skeleton.GetGameSkeletonPointer();
         if (gameSkeleton == null)
             return;
+        _stacks.UseBuild(slotKey, skeleton.BuildRevision);
 
         var gazeFrame = _gazeFrames.Before(skeleton);
 #if DEBUG
@@ -415,8 +416,11 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 // have marshaled (it was resolved BY that name on both paths),
                 // so the pose store is keyed identically without the marshal.
                 var bonePoseInfo = poseInfo.GetPoseInfo(bone.BoneName, partialIdx);
-                _ik.TryGetChain(
-                    (slotKey, partialIdx, boneIdx), out var chainState);
+                // A name used twice in one partial maps both numbers to the first bone. Its
+                // chain is solved only at that bone's own number.
+                IkChainState? chainState = null;
+                if (bone.BoneIndex == boneIdx)
+                    _ik.TryGetChain(bone, out chainState);
                 if (chainState?.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope })
                     chainState = null; // Authored spans solve once around the selected handle, after pose layers.
                 // Import deltas must be measured against the ordinary pose,
@@ -671,7 +675,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
         var heldRotation = holdRotation
             ? shift.Posed(HeldEndRotation(ik, held.Rotation, authored.Rotation)) : currentRotation;
         _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
-            target, heldRotation, ik.Config, ik.Chain));
+            target, heldRotation, ik.Config, ik.Build.Chain));
         if (!ik.Config.EnforceConstraints)
         {
             var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
@@ -712,9 +716,9 @@ internal sealed unsafe class BoneApplyPass : IDisposable
     private static bool TurnEndWithForearm(hkaPose* pose, int boneIdx, IkChainState ik, Quaternion authored)
     {
         if (ik.Config is not { Solver: Poser.Domain.Posing.IkSolver.TwoJoint, EnforceEndRotation: false, EndAnchor: { } anchor }
-            || ik.Chain.SecondJoint < 0)
+            || ik.Build.Chain.SecondJoint < 0)
             return false;
-        var forearm = NativePoseRead.Model(pose, ik.Chain.SecondJoint);
+        var forearm = NativePoseRead.Model(pose, ik.Build.Chain.SecondJoint);
         if (forearm == null)
             return false;
         var turned = anchor.Resolve(authored,
@@ -796,7 +800,7 @@ internal sealed unsafe class BoneApplyPass : IDisposable
                 requestedRotation = HeldEndRotation(ik, requestedRotation, info.Transform.Rotation);
 
             _ikService.Solve(bone, new Poser.Domain.Posing.IkSolveRequest(
-                target, requestedRotation, ik!.Config, ik.Chain));
+                target, requestedRotation, ik!.Config, ik.Build.Chain));
             // When the solver enforces the end rotation, it is not applied a
             // second time below.
             rotationEnforcedByIk =

@@ -6,9 +6,9 @@ using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Posing;
 using Poser.Domain.Presentation;
-
 using Poser.Domain.Scene;
 using Poser.Game.Entities;
+using Poser.Game.Posing;
 
 namespace Poser.Game.Scene;
 

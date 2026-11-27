@@ -1,6 +1,5 @@
 using System;
 using Poser.Application.Transforms;
-using Poser.Application.Presentation;
 using Poser.Domain.Actors;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
@@ -8,6 +7,7 @@ using Poser.Game.Scene;
 using Poser.Game.WorldObjects;
 using Poser.Game.Entities;
 using Poser.Game.Services;
+using Poser.Game.Presentation;
 
 namespace Poser.Game.Journal;
 

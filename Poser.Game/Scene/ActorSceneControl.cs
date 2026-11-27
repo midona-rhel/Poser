@@ -7,6 +7,9 @@ using Poser.Game.Services;
 
 namespace Poser.Game.Scene;
 
+/// <summary>What the main window's actor tab and the actor's context menu ask
+/// about an actor: see <see cref="ActorSceneReading"/>. Also makes an actor the
+/// GPose target.</summary>
 public sealed class ActorSceneControl(IEntityBindings bindings,
     IActorManager actors, IActorSpawnService spawns) : IActorSceneControl
 {

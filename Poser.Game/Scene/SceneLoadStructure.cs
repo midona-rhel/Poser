@@ -10,8 +10,9 @@ using Poser.Application.Scene;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The load's last optional phase: sidebar groups, root order and transform
-/// parent links restored over the entities the load created.
+/// The load's last step: puts back the saved sidebar groups, the order of the
+/// sidebar's top level and the parent links, using the entities the load
+/// made.
 /// </summary>
 internal sealed class SceneLoadStructure(
     GPoseSceneState sceneState, ISceneStructure structure, TransformParenting parenting)
@@ -28,9 +29,11 @@ internal sealed class SceneLoadStructure(
     private static bool HasStructure(SceneFile scene) =>
         scene.Groups is { Count: > 0 } || scene.RootOrder is { Count: > 0 } || scene.Parents is { Count: > 0 };
 
-    /// <summary>Waits, bounded, for every loaded member the structure names
-    /// to bind. Only a stop (cancel, session replaced) is returned: members
-    /// still unbound at the bound are refused by name at commit.</summary>
+    /// <summary>Waits, up to <paramref name="bound"/>, until every loaded
+    /// entity the saved groups and parent links name shows up in Poser's lists.
+    /// Returns a reason only when the load has to stop (cancelled, or the GPose
+    /// session changed). Members still missing when time runs out are named in
+    /// the result when the groups are restored.</summary>
     public async Task<string?> WaitForBindings(SceneOperation operation, SceneFile scene,
         IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> tokens, TimeSpan bound,
         CancellationToken cancellation)
@@ -75,9 +78,9 @@ internal sealed class SceneLoadStructure(
         List<SceneEntityOutcome> outcomes)
     {
         if (!HasStructure(scene)) return;
-        // A reference this load created a token for but that did not bind is
-        // a refusal; one it never created (category left out, entity
-        // refused) is already named or deliberately absent.
+        // An entity this load made that never showed up in Poser's lists is a
+        // failure to name. One the load never made (its kind was left out, or
+        // it failed) is already named, or was left out on purpose.
         bool Loaded(SceneStructureRef reference) => reference.Kind == SceneStructureKind.Companion
             ? tokens.ContainsKey((SceneStructureKind.Actor, reference.Key))
             : tokens.ContainsKey((reference.Kind, reference.Key));
@@ -143,8 +146,8 @@ internal sealed class SceneLoadStructure(
 
         foreach (var link in scene.Parents ?? [])
         {
-            // Category filters and refused spawns leave no token: those keep
-            // their saved placement without a word, as before.
+            // A link to an entity the load never made is skipped without a
+            // row; the child keeps the placement it was saved with.
             if (!Loaded(link.Child) || !Loaded(link.Target))
                 continue;
             if (RestoreLink(operation, link, Resolve) is { } refusal)

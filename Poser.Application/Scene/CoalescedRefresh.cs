@@ -1,11 +1,11 @@
 namespace Poser.Application.Scene;
 
 /// <summary>
-/// Framework-thread refresh queue. A notification only marks work pending; the
-/// owner's frame tick drains it with at most one pass. However many
-/// notifications a frame carries (a clear-first load publishes per spawn and
-/// per delete), it costs one refresh, and none ever runs inside the
-/// publisher's call stack — which may be a native hook.
+/// Collects requests for a refresh and runs at most one per frame. A request
+/// only marks that a refresh is wanted; the owner runs it in its frame update.
+/// However many requests come in one frame (a load that clears first sends one
+/// for each actor it adds and removes), there is one refresh. It never runs
+/// inside the code that asked for it, which may be a game hook.
 /// </summary>
 public sealed class CoalescedRefresh
 {

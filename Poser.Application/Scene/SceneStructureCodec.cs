@@ -4,7 +4,9 @@ using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
-/// <summary>Maps captured application values to legacy scene-file references.</summary>
+/// <summary>Writes the sidebar groups and the top-level order into a scene
+/// file, naming each entity by its key in the file instead of its id in this
+/// session. <see cref="SceneParentingCodec"/> writes the parent links.</summary>
 public static class SceneStructureCodec
 {
     public static void Write(

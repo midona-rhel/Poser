@@ -265,7 +265,6 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseStash>();
         services.AddSingleton<IPoseEditReads, PoseEditReads>();
-        services.AddSingleton<IActorPoseResetRuntime, ActorPoseResetRuntime>();
         services.AddSingleton<IActorResetControl, ActorResetControl>();
         services.AddSingleton<ActorStateSnapshots>();
         services.AddSingleton<IActorStateSnapshots>(sp => sp.GetRequiredService<ActorStateSnapshots>());
@@ -317,9 +316,8 @@ internal static class ServiceRegistration
     private static IServiceCollection AddGazeFeature(
         this IServiceCollection services)
     {
-        services.AddSingleton<Application.Gaze.IGazeRuntimePort, Game.Posing.GazeRuntimeAdapter>();
-        services.AddSingleton<Application.Gaze.GazeSession>();
-        services.AddSingleton<Application.Gaze.IGazeControl>(sp => sp.GetRequiredService<Application.Gaze.GazeSession>());
+        services.AddSingleton<GazeSession>();
+        services.AddSingleton<Application.Gaze.IGazeControl>(sp => sp.GetRequiredService<GazeSession>());
         services.AddSingleton<GazeService>();
         services.AddStartable<GazeService>(StartStage.Gaze);
         return services;
@@ -379,21 +377,15 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Game.Presentation.PresentationRuntimePort>();
-        services.AddSingleton<Application.Presentation.IPresentationRuntimePort>(
-            sp => sp.GetRequiredService<Game.Presentation.PresentationRuntimePort>());
-        services.AddSingleton<Application.Presentation.ActorPresentationSession>();
+        services.AddSingleton<Game.Presentation.ActorPresentationSession>();
         services.AddSingleton<
             Application.Presentation.ICustomizeReadRuntimePort,
             Game.Presentation.CustomizeReadRuntimePort>();
         services.AddSingleton<Application.Presentation.IReferenceSkeletonReadPort,
             Game.Presentation.ReferenceSkeletonReadPort>();
-        services.AddSingleton<
-            Application.Appearance.IModelIdRuntimePort,
-            Game.Appearance.ModelIdRuntimePort>();
-        services.AddSingleton<Application.Appearance.ActorModelIdSession>();
-        services.AddSingleton<Application.Appearance.IActorAppearanceControl, Application.Appearance.ActorAppearanceControl>();
-        services.AddSingleton<Application.Presentation.IActorValueRuntime, Game.Presentation.ActorValueRuntime>();
-        services.AddSingleton<Application.Presentation.IActorValueControl, Application.Presentation.ActorValueSession>();
+        services.AddSingleton<Game.Appearance.ActorModelIdSession>();
+        services.AddSingleton<Application.Appearance.IActorAppearanceControl, Game.Appearance.ActorAppearanceControl>();
+        services.AddSingleton<Application.Presentation.IActorValueControl, Game.Presentation.ActorValueSession>();
         services.AddSingleton<Application.Companions.ICompanionControl, Game.Companions.CompanionEditor>();
         services.AddSingleton<IWardrobeControl, WardrobeSession>();
         services.AddSingleton<ICustomizeControl, CustomizeSession>();
