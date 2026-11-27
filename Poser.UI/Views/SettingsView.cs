@@ -744,7 +744,7 @@ public static partial class SettingsView
             form,
             ConfigResetScope.Display,
             "Display settings",
-            "Put the theme, opacity and privacy settings back to their defaults"));
+            "Turn Anonymous mode off and NSFW bones on, their defaults. The theme and window settings are reset on the UI page"));
     }
 
     private static void DrawSkeleton(
@@ -1242,7 +1242,7 @@ public static partial class SettingsView
             form,
             ConfigResetScope.UI,
             "UI settings",
-            "Put the layout, visibility and keybind settings back to their defaults"));
+            "Put the layout, visibility and key binding settings, and the theme, accent, window opacity and blur, back to their defaults"));
     }
 
     private static readonly string[] PresetLabels =
