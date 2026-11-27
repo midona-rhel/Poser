@@ -76,7 +76,7 @@ Animations are looked up in the game and mods of whoever loads the scene, so the
 
 ## Automatic snapshots
 
-While you're in GPose, Poser saves your whole scene by itself every so often. You can change this under **Auto-save scenes** in Settings › General: **Every** sets how many seconds apart the saves are, and **Backups kept** how many are kept. An empty scene, or one that hasn't changed, isn't saved again. **Delete backups on exit** removes them when you leave GPose normally, but after a crash they're kept so you can get your scene back.
+While you're in GPose, Poser saves your whole scene by itself every so often. You can change this under **Auto-save scenes** in Settings › General: **Every** sets how many seconds apart the saves are, and **Backups kept** how many are kept. An empty scene, or one that hasn't changed, isn't saved again. A snapshot that falls due while a scene is being saved or loaded, or while a pose is being imported, is skipped, so it never catches a scene or pose halfway through a change; the next one comes one interval later. Snapshots keep the sidebar groups and parent links, like a scene you save yourself. **Delete backups on exit** removes them when you leave GPose normally, but after a crash they're kept so you can get your scene back.
 
 To open a snapshot, press **Snapshots…** on the Scene page, or go to the **Auto-saves** tab of the Library.
 
