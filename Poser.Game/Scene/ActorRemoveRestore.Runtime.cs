@@ -1,6 +1,7 @@
 using System.Numerics;
 using Poser.Application.Integration;
 using Poser.Application.Posing;
+using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
@@ -32,7 +33,7 @@ internal sealed partial class ActorRemoveRestore
     private readonly ActorStateSnapshots _actorStates;
     private readonly Integration.ISpawnCollectionPort _collections;
 
-    public Action<IActor, Action>? CaptureBodyProfile(IActor source)
+    public BodyProfileCopy? CaptureBodyProfile(IActor source)
     {
         if (_bindings.GetActorId(source) is not { } sourceId) return null;
         var captured = _integration.CaptureBodyProfile(sourceId);
@@ -42,7 +43,10 @@ internal sealed partial class ActorRemoveRestore
             return null;
         }
         if (captured.Value is not { } profile) return null;
-        return (target, readyToRestore) => WhenPosable(target, ready =>
+        // ScheduleReady runs the body only once the actor has an id and a
+        // posable skeleton, and runs gaveUp on every other way out, so a
+        // restore waiting here is never left holding the action gate.
+        return (target, readyToRestore, gaveUp) => ScheduleReady(target, ready =>
         {
             if (_bindings.GetActorId((IActor)ready) is not { } targetId) return;
             var result = _integration.ApplyBodyProfileJson(targetId, profile, "Copied profile");
@@ -68,7 +72,7 @@ internal sealed partial class ActorRemoveRestore
                 Note($"'{target.Name}': {begun.Detail}");
                 readyToRestore();
             }
-        });
+        }, ReadyAttempts, gaveUp);
     }
 
     public IActor? Recreate(ActorState state) => state.Runtime?.SpawnedKind is { } kind
@@ -107,13 +111,16 @@ internal sealed partial class ActorRemoveRestore
     }
 
     private void PrepareRuntime(IActor actor, ActorState state, int attempts,
-        Func<bool>? current)
+        Func<bool>? current, Action done)
     {
-        if (actor.Address == 0 || current?.Invoke() == false) return;
-        if (attempts <= 0) { Note($"'{actor.Name}': its undo never became ready."); return; }
+        if (actor.Address == 0 || current?.Invoke() == false) { done(); return; }
+        if (attempts <= 0) { Note($"'{actor.Name}': its undo never became ready."); done(); return; }
         var runtime = state.Runtime!;
-        void Next() => _framework.RunOnTick(
-            () => PrepareRuntime(actor, state, attempts - 1, current), delayTicks: 1);
+        void Next() => _framework.RunOnTick(() =>
+        {
+            try { PrepareRuntime(actor, state, attempts - 1, current, done); }
+            catch { done(); throw; }
+        }, delayTicks: 1);
         if (_bindings.GetActorId(actor) is not { } id || !_poses.HasPosableSkeleton(id)
             || _poses.IsImportBusy || _mcdf.Busy)
         { Next(); return; }
@@ -124,7 +131,7 @@ internal sealed partial class ActorRemoveRestore
         if (runtime.InheritedCollection is { } collection)
         {
             var result = _collections.RestoreInheritedCollection(actor.Address, collection);
-            if (!result.Success) { Note($"'{actor.Name}': {result.Detail}"); return; }
+            if (!result.Success) { Note($"'{actor.Name}': {result.Detail}"); done(); return; }
         }
         _ = PrepareAppearance();
 
@@ -136,26 +143,29 @@ internal sealed partial class ActorRemoveRestore
                 var ready = await _actorStates.RestoreAppearance(id, runtime.Properties, Current, CancellationToken.None);
                 await _framework.RunOnFrameworkThread(() =>
                 {
-                    if (!Current()) return;
-                    if (!ready.Success) { Note($"'{actor.Name}': {ready.Detail}"); return; }
+                    if (!Current()) { done(); return; }
+                    if (!ready.Success) { Note($"'{actor.Name}': {ready.Detail}"); done(); return; }
                     if (state.RestoresPaused)
                     {
                         // A posed duplicate's deltas were captured against the
                         // import's neutral frame, and a paused actor was read
                         // holding still: neither may come back running a new
-                        // idle underneath the saved pose.
-                        var paused = _animation.Pause(id);
-                        if (!paused.Success) { Note($"'{actor.Name}': {paused.Detail}"); return; }
+                        // idle underneath the saved pose. The pause is part of
+                        // the undo that brought the actor back, not a step of its own.
+                        Outcome paused;
+                        using (_animation.Untracked())
+                            paused = _animation.Pause(id);
+                        if (!paused.Success) { Note($"'{actor.Name}': {paused.Detail}"); done(); return; }
                     }
                     if (!actor.IsCompanion && _spawns.GetCompanionInfo(actor) != runtime.Companion
                         && !_spawns.SetCompanion(actor, runtime.Companion))
-                    { Note($"'{actor.Name}': companion attachment could not be restored."); return; }
+                    { Note($"'{actor.Name}': companion attachment could not be restored."); done(); return; }
                     // Same pause-settle-rewind ordering as PoseImportCoordinator.
-                    Schedule(actor, state, ReadyAttempts, Current,
+                    Schedule(actor, state, ReadyAttempts, Current, done,
                         delayTicks: state.RestoresPaused ? 4 : 1);
                 });
             }
-            catch (Exception ex) { Note($"Putting the appearance back failed: {ex.Message}"); }
+            catch (Exception ex) { Note($"Putting the appearance back failed: {ex.Message}"); done(); }
         }
     }
 
