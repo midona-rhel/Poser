@@ -13,8 +13,9 @@ public class AutoSaveConfiguration
     /// <summary>
     /// Seconds between snapshots while in GPose. Entering GPose does not save
     /// immediately; the first snapshot is scheduled after one full interval.
-    /// At least one second, so an edited settings file can't make Poser save
-    /// the scene on every frame.
+    /// The Settings slider offers 10 to 600 seconds; this floor of one second
+    /// only stops an edited settings file from making Poser save the scene on
+    /// every frame.
     /// </summary>
     public int IntervalSeconds
     {

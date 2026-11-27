@@ -51,8 +51,8 @@ internal static class ThemeSelection
             NormalizeAccentIndex(accentIndex)]);
     }
 
-    // An accent index from an edited or older settings file can be past the
-    // end of the list; it then uses the first accent.
+    // An accent index from an edited or older settings file can be outside
+    // the list; it then uses the first accent.
     public static int NormalizeAccentIndex(int accentIndex) =>
         accentIndex >= 0 && accentIndex < Theme.AccentOptions.Count
             ? accentIndex

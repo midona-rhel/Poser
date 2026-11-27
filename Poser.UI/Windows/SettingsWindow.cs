@@ -1,7 +1,6 @@
 using Poser.Domain.Scene;
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
