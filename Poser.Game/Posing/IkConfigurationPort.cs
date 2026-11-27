@@ -1,9 +1,11 @@
 using Dalamud.Plugin.Services;
 using Poser.Application.Posing;
+using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Posing.BoneInfo;
 using Poser.Game.Bindings;
 using Poser.Game.Services;
 
@@ -11,27 +13,30 @@ namespace Poser.Game.Posing;
 
 /// <summary>
 /// Reads and changes a bone's IK settings and targets, and records each change
-/// as an undo step. Each call looks the bone up again, so a redrawn actor's new
-/// bones are used. The posing service checks and stores the settings.
+/// as an undo step. A redraw gives the actor's skeleton a new id, so undo and
+/// redo look the bone up on the actor's current skeleton before they write.
+/// The posing service checks and stores the settings.
 /// </summary>
 public sealed class IkConfigurationPort : IIkConfigurationPort
 {
     private readonly StableBindingRegistry _bindings;
     private readonly IBonePosingService _bonePosing;
-    private readonly IPluginLog _log;
-
+    private readonly SceneSession _scene;
     private readonly ValueJournal _journal;
     private readonly IIkBake _bake;
+    private readonly IPluginLog _log;
 
     public IkConfigurationPort(
         StableBindingRegistry bindings,
         IBonePosingService bonePosing,
+        SceneSession scene,
         ValueJournal journal,
         IIkBake bake,
         IPluginLog log)
     {
         _bindings = bindings;
         _bonePosing = bonePosing;
+        _scene = scene;
         _journal = journal;
         _bake = bake;
         _log = log;
@@ -57,10 +62,18 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             return result;
         _journal.Record(target.ToSelectionId(),
             config.Enabled == before.Enabled ? "Set IK" : config.Enabled ? "Enable IK" : "Disable IK",
-            before, config, next => Write(target, next),
-            () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
+            before, config, next => OnCurrent(target, current => Write(current, next)));
         return result;
     }
+
+    /// <summary>Runs an undo or redo write on the bone as it is now. A step recorded
+    /// before a redraw holds the old skeleton's id; the bone is found again on the
+    /// actor's current skeleton, as undo does for bone edits. The step fails when
+    /// the bone is no longer there, and waits while the actor is being redrawn.</summary>
+    private Outcome OnCurrent(TransformTargetId target, Func<TransformTargetId, Outcome> write) =>
+        _scene.CurrentTransformTarget(target) is { } current ? write(current)
+        : _scene.IsTransformTargetPending(target) ? Outcome.Busy(UndoJournal.TargetsPending)
+        : Outcome.Fail($"{BoneInfoService.GetDisplayName(target.Bone!.Value.CanonicalName)} is no longer in the scene.");
 
     /// <summary>True when this bone can use IK.</summary>
     public bool IsSupported(TransformTargetId target) => Get(target) != null;
@@ -117,7 +130,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     }
 
     public Outcome SetBoneTarget(
-        TransformTargetId target, global::Poser.Domain.Identity.BoneId bone)
+        TransformTargetId target, BoneId bone)
     {
         if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: not null })
             return SetFabrikTarget(target, IkTargetMode.Bone, bone);
@@ -142,15 +155,16 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         var result = pick();
         if (result.Success && before is { } previous && Following(target) is { } now)
             _journal.Record(target.ToSelectionId(), description, previous, now,
-                next => next.Bone is { } bone ? WriteBoneTarget(target, bone)
-                    : next.Entity is { } entity ? WriteEntityTarget(target, entity)
-                    : Write(target, next.Config),
-                () => target.Bone is { } endpoint && _bindings.Resolve(endpoint).Success);
+                next => OnCurrent(target, current =>
+                    next.Bone is { } bone ? OnCurrent(TransformTargetId.ForBone(bone),
+                        followed => WriteBoneTarget(current, followed.Bone!.Value))
+                    : next.Entity is { } entity ? WriteEntityTarget(current, entity)
+                    : Write(current, next.Config)));
         return result;
     }
 
     private Outcome WriteBoneTarget(
-        TransformTargetId target, global::Poser.Domain.Identity.BoneId bone)
+        TransformTargetId target, BoneId bone)
     {
         if (target.Bone is not { } endpointId)
             return Outcome.Fail("IK configuration requires a bone target.");
@@ -171,7 +185,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         return Outcome.Ok();
     }
 
-    public global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target)
+    public BoneId? BoneTarget(TransformTargetId target)
     {
         if (Get(target) is { Solver: IkSolver.Fabrik or IkSolver.Rope, Fabrik: { } control })
             return control.Handle.Bone;
@@ -216,8 +230,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
             config = _bonePosing.PrepareIkConfiguration(endpoint, config);
         var result = _journal.Adjust((target, "IK"), "Set IK",
             () => Get(target) ?? initial,
-            next => Write(target, next), config,
-            () => target.Bone is { } bone && _bindings.Resolve(bone).Success);
+            next => OnCurrent(target, current => Write(current, next)), config);
         return new Outcome(result.Success, result.Detail);
     }
 
