@@ -10,6 +10,8 @@ using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Game.Bindings;
+using Poser.Game.Entities;
+using Poser.Game.Services;
 using CSCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 using Poser.Game.Natives;
 
@@ -17,7 +19,8 @@ namespace Poser.Game.Presentation;
 
 /// <summary>
 /// Reads and writes actor opacity, tint, wetness and shader colours in game
-/// memory. Opacity is written once. Tint, wetness and colours that Poser set are
+/// memory. Opacity goes through the spawn service, because hiding an actor uses
+/// the same game value. Tint, wetness and colours that Poser set are
 /// written again every frame, because the game recomputes them. Tint also hooks
 /// the game's own tint update, as Brio does, and skips it only for the models
 /// whose tint Poser set. Models are looked up again every frame, so a new body
@@ -29,6 +32,7 @@ public sealed unsafe partial class PresentationRuntimePort : IDisposable
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly IObjectTable _objects;
+    private readonly IActorSpawnService _spawns;
 
     private sealed class Owned
     {
@@ -61,13 +65,15 @@ public sealed unsafe partial class PresentationRuntimePort : IDisposable
         IPluginLog log,
         StableBindingRegistry bindings,
         IGlamourerPort integration,
-        IObjectTable objects)
+        IObjectTable objects,
+        IActorSpawnService spawns)
     {
         _framework = framework;
         _log = log;
         _bindings = bindings;
         _integration = integration;
         _objects = objects;
+        _spawns = spawns;
 
         try
         {
@@ -110,9 +116,13 @@ public sealed unsafe partial class PresentationRuntimePort : IDisposable
 
     // ── Actor resolution ───────
 
-    private CSCharacter* Resolve(ActorId actor, out string? detail)
+    private CSCharacter* Resolve(ActorId actor, out string? detail) =>
+        Resolve(actor, out _, out detail);
+
+    private CSCharacter* Resolve(ActorId actor, out IActor? live, out string? detail)
     {
         detail = null;
+        live = null;
         var resolved = _bindings.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy)
         {
@@ -129,6 +139,7 @@ public sealed unsafe partial class PresentationRuntimePort : IDisposable
             detail = "The actor is no longer in the object table.";
             return null;
         }
+        live = legacy;
         return (CSCharacter*)legacy.Address;
     }
 
@@ -148,8 +159,8 @@ public sealed unsafe partial class PresentationRuntimePort : IDisposable
 
     public PresentationReading? Read(ActorId actor)
     {
-        var character = Resolve(actor, out _);
-        if (character == null)
+        var character = Resolve(actor, out var live, out _);
+        if (character == null || _spawns.GetOpacity(live!) is not { } opacity)
             return null;
 
         Vector4? TintOf(PresentationModel model)
@@ -167,7 +178,7 @@ public sealed unsafe partial class PresentationRuntimePort : IDisposable
                 mainBase->WetnessDepth);
 
         return new PresentationReading(
-            character->Alpha,
+            opacity,
             TintOf(PresentationModel.Character),
             TintOf(PresentationModel.MainHand),
             TintOf(PresentationModel.OffHand),
@@ -178,22 +189,20 @@ public sealed unsafe partial class PresentationRuntimePort : IDisposable
 
     public Outcome SetOpacity(ActorId actor, float opacity)
     {
-        var character = Resolve(actor, out var detail);
-        if (character == null)
-            return Outcome.Fail(detail!);
         if (!float.IsFinite(opacity))
             return Outcome.Fail("Opacity must be a finite number.");
-        character->Alpha = Math.Clamp(opacity, 0f, 1f);
-        return Outcome.Ok();
+        return WriteOpacity(actor, Math.Clamp(opacity, 0f, 1f));
     }
 
-    public Outcome RestoreOpacity(ActorId actor, float incoming)
+    public Outcome RestoreOpacity(ActorId actor, float incoming) => WriteOpacity(actor, incoming);
+
+    private Outcome WriteOpacity(ActorId actor, float opacity)
     {
-        var character = Resolve(actor, out var detail);
-        if (character == null)
+        if (Resolve(actor, out var live, out var detail) == null)
             return Outcome.Fail(detail!);
-        character->Alpha = incoming;
-        return Outcome.Ok();
+        return _spawns.SetOpacity(live!, opacity)
+            ? Outcome.Ok()
+            : Outcome.Fail("The game refused the opacity change.");
     }
 
     // ── Tint ──────────────────────────────────────────────────────────

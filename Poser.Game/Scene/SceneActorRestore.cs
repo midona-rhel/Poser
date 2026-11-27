@@ -32,7 +32,7 @@ namespace Poser.Game.Scene;
 internal sealed class SceneActorRestore
 {
     private readonly SceneRuntimeHandles _handles;
-    private readonly SceneAppearance _appearance;
+    private readonly SceneCaptureService _capture;
     private readonly StableBindingRegistry _bindings;
     private readonly ISkeletonService _skeletons;
     private readonly IActorSpawnService _spawns;
@@ -51,7 +51,7 @@ internal sealed class SceneActorRestore
 
     public SceneActorRestore(
         SceneRuntimeHandles handles,
-        SceneAppearance appearance,
+        SceneCaptureService capture,
         StableBindingRegistry bindings,
         ISkeletonService skeletons,
         IActorSpawnService spawns,
@@ -70,7 +70,7 @@ internal sealed class SceneActorRestore
         _invisibleSkin = invisibleSkin;
         _bonePosing = bonePosing;
         _handles = handles;
-        _appearance = appearance;
+        _capture = capture;
         _bindings = bindings;
         _skeletons = skeletons;
         _spawns = spawns;
@@ -264,7 +264,7 @@ internal sealed class SceneActorRestore
             return "The actor is no longer bound.";
         // The actor's name in the game stays as it is, because Glamourer and
         // Penumbra find the actor by it. The saved name becomes a nickname.
-        _appearance.RememberActorIdentity(target, data.IdentityHash);
+        _capture.RememberIdentity(target, data.IdentityHash);
         _configuration.SetNickname(id.LogicalId, SceneActorNames.Resolve(data));
         return null;
     }

@@ -21,6 +21,8 @@ public sealed partial class DebugBridge
         (ISceneObjectControl)_services.GetService(typeof(ISceneObjectControl))!;
     private IOverlayControl BridgeOverlays =>
         (IOverlayControl)_services.GetService(typeof(IOverlayControl))!;
+    private Game.Overlays.OverlayNodeService BridgeOverlayNodes =>
+        (Game.Overlays.OverlayNodeService)_services.GetService(typeof(Game.Overlays.OverlayNodeService))!;
     private ILibrarySceneSave BridgeLibrarySave =>
         (ILibrarySceneSave)_services.GetService(typeof(ILibrarySceneSave))!;
     private ILibrarySceneActions BridgeLibraryActions =>
@@ -194,6 +196,22 @@ public sealed partial class DebugBridge
         if (ResolveSelection(query.GetValueOrDefault("overlay", "")) is not
             { Overlay: { } overlayId } selection || BridgeOverlays.Read(overlayId) is not { } reading)
             return new { accepted = false, outcome = "Refused", reason = "Unknown overlay selection." };
+        if (query.ContainsKey("dragX") || query.ContainsKey("dragY"))
+        {
+            // ?dragX=&dragY= does what an on-screen drag ending there does,
+            // without the game's own mouse handling. Only overlays the mouse
+            // could drag are accepted.
+            if (!TryFloat(query, "dragX", out var dragX) || !TryFloat(query, "dragY", out var dragY))
+                return new { accepted = false, outcome = "Refused", reason = "Both finite dragX and dragY are required." };
+            if (reading.State.Kind == OverlayNodeKind.Collider || !reading.State.Visible || !reading.State.Draggable)
+                return new { accepted = false, outcome = "Refused",
+                    reason = "Only a visible, draggable dialog, balloon or status overlay can be dragged." };
+            var before = OverlayNodeState(selection, reading);
+            BridgeOverlayNodes.DebugDrag(_bindings.Resolve(overlayId).Value!, new Vector2(dragX, dragY));
+            return new { accepted = true, outcome = "Applied", before,
+                after = BridgeOverlays.Read(overlayId) is { } dragged ? OverlayNodeState(selection, dragged) : null,
+                historyLabel = _transforms.UndoDescription };
+        }
         if (query.ContainsKey("x") || query.ContainsKey("y") || query.ContainsKey("scale"))
         {
             var before = OverlayNodeState(selection, reading);

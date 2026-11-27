@@ -50,6 +50,16 @@ public interface IActorManager : IDisposable
     /// a current adoption or not a character.</summary>
     bool SetAdoptedVisibility(IActor actor, bool visible);
 
+    /// <summary>An adopted body's opacity: the alpha it shows, or while it is
+    /// hidden the alpha showing it puts back. Null when the actor is not a
+    /// current adoption or not a character.</summary>
+    float? AdoptedOpacity(IActor actor);
+
+    /// <summary>Sets an adopted body's opacity. While it is hidden only the
+    /// alpha that showing it puts back changes. False when the actor is not a
+    /// current adoption or not a character.</summary>
+    bool SetAdoptedOpacity(IActor actor, float alpha);
+
     /// <summary>Lets an adopted body go: it is seated back where it was
     /// taken and leaves the scene, the world keeping it.</summary>
     void ReleaseWorldActor(nint address);

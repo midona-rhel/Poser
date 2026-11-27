@@ -53,13 +53,54 @@ How the interface looks and what the game does with a change can only be checked
 1. Build Debug from the exact commit that passed the Release build and tests.
 2. Deploy it. Dalamud loads Poser as a dev plugin from the main checkout's `Poser/bin/Debug` folder and reloads it when the files there change. A Debug build in another worktree is not loaded: copy its whole `Poser/bin/Debug` output there. Only one change can be deployed at a time.
 3. Check the Dalamud log that Poser reloaded.
-4. Try the change. When someone else is to try it, write down where to start, what to do and what should happen.
+4. Run the check script for each area the change touches (see below), then try the change itself. When someone else is to try it, write down where to start, what to do and what should happen.
 
 A change is not finished until it has been tried in the game.
 
+## The in-game check scripts
+
+`tools/checks/` holds one Python script per area of Poser. Each script drives the deployed Debug build through the debug bridge, the same way the interface would, and prints one line per step: `PASS` or `FAIL`, the step's name, and what it read from the game. At the end it prints how many steps passed and exits with code 1 if any step failed.
+
+Run the script for an area before you open a pull request that changes that area, and again on `main` when a script fails, to see whether the failure is new.
+
+| Area | Script |
+| --- | --- |
+| Speed and pause | `speed.py` |
+| Loops | `loops.py` |
+| Scrubbing | `scrubbing.py` |
+| Expressions, baking and face sliders | `expressions.py` |
+| Stance, weapon and Lock position | `stance.py` |
+| Camera | `camera.py` |
+| Camera follow | `camera_follow.py` |
+| Scene save and load | `scene.py` |
+| Actor copy and removal | `actors.py` |
+| Posing, IK and Reset → All | `posing.py` |
+| Groups and parenting | `groups.py` |
+| Gaze | `gaze.py` |
+| Appearance (opacity, tint, wetness, visibility) | `appearance.py` |
+| Time of day and light properties | `environment.py` |
+
+To run one, deploy the Debug build, enter GPose with your own character, and run:
+
+```powershell
+python tools/checks/speed.py
+```
+
+The scripts need only Python 3.10 or newer, with nothing installed. They use the first actor in the actor list, start with Reset → All on it, and remove every other actor. They add and remove cameras, lights and copies of the actor as they go, so do not run them in a scene you want to keep. They use only the game's own emotes and expressions, chosen by name, and no mods or saved files. Only one script should run at a time, and only while nobody else is trying a build in the game.
+
+Each script expects actor 1 to stand after Reset → All. If the step "Reset → All puts the actor back" fails because the actor still sits, leave GPose and enter it again: while #839 is open, Reset → All can seat the actor again after Sit was played from the Animation tab and the stance was then changed.
+
+Two steps fail on every build until their bugs are fixed: "redo removes it again" in `actors.py` (#840) and "undo lets the time run again" in `environment.py` (#841).
+
+`tools/checks/bridge.py` holds what the scripts share: calling the bridge, waiting until the game shows a change, and counting steps. A script waits for the state it expects instead of sleeping for a fixed time, reads the animation clocks from `/layers` and reads undo history from `/history`.
+
 ## The debug bridge
 
-Debug builds start a small HTTP server on `127.0.0.1:47999` (`Poser/Bridge/DebugBridge.cs`). Release builds do not contain it. `tools/poser_mcp.py` offers its endpoints as MCP tools, and `.mcp.json` registers that script. The bridge can read the scene, undo and redo, load and save scenes, take a screenshot of the game, and send mouse and key input to Poser's own windows. It uses the same commands as the interface.
+Debug builds start a small HTTP server on `127.0.0.1:47999` (`Poser/Bridge/DebugBridge.cs`). Release builds do not contain it. `tools/poser_mcp.py` offers its endpoints as MCP tools, and `.mcp.json` registers that script. The bridge can read the scene, undo and redo, load and save scenes, take a screenshot of the game, and send mouse and key input to Poser's own windows. It uses the same commands as the interface. `/help` lists every command.
+
+A command changes something only when it is given a value to change. Without one it only reads: `/loop` without `on`, `/ik` and `/posefile` without an `action` that writes, `/physicsfreeze` and `/scrubfallback` without `on`. `/undo` and `/redo` refuse any parameter except `selected`. When `slot` is left out, the animation commands mean Upper body, not Full body.
+
+While an action such as Import pose or a scene load runs, commands that would change something answer with a message to wait, as the interface does. `/busy` names the action that is running, or answers `null` when none is.
 
 The bridge helps to investigate a problem and to try a change. It does not show how the interface looks.
 
