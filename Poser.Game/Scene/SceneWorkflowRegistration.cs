@@ -18,12 +18,12 @@ public static class SceneWorkflowRegistration
             var sessions = sp.GetRequiredService<ISessionGenerationSource>();
             return new SceneRuntimeHandles(() => sessions.ActiveSessionGeneration);
         });
-        services.AddSingleton<SceneHistoryBinder>();
-        services.AddSingleton<SceneClearRuntime>();
-        services.AddSingleton<SceneStateRuntime>();
-        services.AddSingleton<SceneAppearanceRuntime>();
-        services.AddSingleton<SceneActorRuntime>();
-        services.AddSingleton<SceneEntityRuntime>();
+        services.AddSingleton<LoadedEntityAliases>();
+        services.AddSingleton<SceneClearer>();
+        services.AddSingleton<SceneLoadState>();
+        services.AddSingleton<SceneAppearanceFiles>();
+        services.AddSingleton<SceneActorRestore>();
+        services.AddSingleton<SceneEntityLoader>();
         services.AddSingleton<ISceneStructure, SceneStructure>();
         services.AddSingleton<SceneWorkflowObserver>();
         // The workflow is created after the services it uses. Services are
@@ -31,11 +31,11 @@ public static class SceneWorkflowRegistration
         // finishes its work first, and only then do those services remove
         // their event listeners and files.
         services.AddSingleton<SceneWorkflow>(sp => new SceneWorkflow(
-            sp.GetRequiredService<SceneStateRuntime>(),
-            sp.GetRequiredService<SceneAppearanceRuntime>(),
-            sp.GetRequiredService<SceneEntityRuntime>(),
-            sp.GetRequiredService<SceneActorRuntime>(),
-            sp.GetRequiredService<SceneHistoryBinder>(),
+            sp.GetRequiredService<SceneLoadState>(),
+            sp.GetRequiredService<SceneAppearanceFiles>(),
+            sp.GetRequiredService<SceneEntityLoader>(),
+            sp.GetRequiredService<SceneActorRestore>(),
+            sp.GetRequiredService<LoadedEntityAliases>(),
             sp.GetRequiredService<ISceneDocumentStore>(),
             sp.GetRequiredService<SceneWorkflowObserver>(),
             sp.GetRequiredService<EditHistory>(),

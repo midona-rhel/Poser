@@ -38,7 +38,7 @@ internal sealed class SceneOperation : SingleFlightOperation
     public readonly List<SceneEntityHandle> CreatedCameras = new();
 
     // Map objects the load borrowed or spawned. Undoing the load gives each
-    // one back through SceneEntityRuntime.ReleaseWorldObject.
+    // one back through SceneEntityLoader.ReleaseWorldObject.
     public readonly List<SceneEntityHandle> BorrowedWorldObjects = new();
     public readonly List<Guid> ImportedGroups = new();
     public IReadOnlyDictionary<Guid, Guid> HistoryGroups = new Dictionary<Guid, Guid>();
@@ -59,7 +59,7 @@ internal sealed class SceneOperation : SingleFlightOperation
     /// <summary>Checked at the top of every framework-thread action before
     /// its mutations. A replaced session generation is an invalidation: the
     /// token that admitted this operation no longer exists.</summary>
-    public string? Guard(SceneStateRuntime sceneState, CancellationToken cancellation)
+    public string? Guard(SceneLoadState sceneState, CancellationToken cancellation)
     {
         if (Invalidated || cancellation.IsCancellationRequested)
             return Kind == SceneOperationKind.Save

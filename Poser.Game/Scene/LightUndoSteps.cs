@@ -23,14 +23,14 @@ internal sealed class LightLifecycleSlot
 /// <summary>Owns light lifecycle capture, removal, restoration, and identity
 /// rebinding. Historical wrappers alias the slot so property edits continue
 /// to target its current light after undo restores a new wrapper.</summary>
-internal sealed class LightLifecycleOwner
+internal sealed class LightUndoSteps
 {
     private readonly EditHistory _history;
     private readonly ILightingService _lighting;
     private readonly Func<ILight, TransformTargetId?>? _lightTarget;
     private readonly LifecycleSlotOwner<ILight, LightLifecycleSlot> _slots;
 
-    public LightLifecycleOwner(
+    public LightUndoSteps(
         EditHistory history,
         ILightingService lighting,
         Func<ILight, TransformTargetId?>? lightTarget = null)

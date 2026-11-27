@@ -518,8 +518,8 @@ internal static class ServiceRegistration
     private static IServiceCollection AddSceneOwnership(
         this IServiceCollection services)
     {
-        services.AddSingleton<CleanSceneLifecycle>();
-        services.AddStartable<CleanSceneLifecycle>(StartStage.SceneLifecycle);
+        services.AddSingleton<SceneRefreshAndCleanup>();
+        services.AddStartable<SceneRefreshAndCleanup>(StartStage.SceneLifecycle);
         services.AddSingleton<Game.Scene.PlacementAnchorSource>();
         services.AddSingleton<IPlacementAnchorSource>(sp => sp.GetRequiredService<Game.Scene.PlacementAnchorSource>());
         services.AddSingleton<TargetSyncService>();
@@ -567,8 +567,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IPendingSceneCreation>(sp => sp.GetRequiredService<PendingSceneCreation>());
         services.AddSingleton<SceneDuplication>();
         services.AddSingleton<ISceneDuplication>(sp => sp.GetRequiredService<SceneDuplication>());
-        services.AddSingleton<Game.Scene.SceneCreationRuntime>();
-        services.AddStartable<Game.Scene.SceneCreationRuntime>(StartStage.SceneCreation);
+        services.AddSingleton<Game.Scene.SceneCreationTick>();
+        services.AddStartable<Game.Scene.SceneCreationTick>(StartStage.SceneCreation);
         services.AddSingleton<global::Poser.Game.Journal.WorldActorSession>();
         services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
         return services;

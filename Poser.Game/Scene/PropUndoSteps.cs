@@ -20,7 +20,7 @@ internal readonly record struct PropState(
 /// What undo and redo need to add and remove props.
 /// A prop is passed around as a plain object, so this code never sees the game's prop type.
 /// </summary>
-internal interface IPropLifecycle
+internal interface IPropRemoveRestore
 {
     IReadOnlyList<object> Props { get; }
 
@@ -35,11 +35,11 @@ internal interface IPropLifecycle
     void Apply(object prop, PropState state);
 }
 
-internal sealed class PropServiceLifecycle : IPropLifecycle
+internal sealed class PropRemoveRestore : IPropRemoveRestore
 {
     private readonly PropSpawnService _props;
 
-    public PropServiceLifecycle(PropSpawnService props) => _props = props;
+    public PropRemoveRestore(PropSpawnService props) => _props = props;
 
     public IReadOnlyList<object> Props
     {
@@ -87,15 +87,15 @@ internal sealed class PropLifecycleSlot
 
 /// <summary>Adds prop creation, cloning and removal to undo history. When undo
 /// brings a prop back as a new object, later undo steps use the new one.</summary>
-internal sealed class PropLifecycleOwner
+internal sealed class PropUndoSteps
 {
     private readonly EditHistory _history;
-    private readonly IPropLifecycle _props;
+    private readonly IPropRemoveRestore _props;
     private readonly LifecycleSlotOwner<object, PropLifecycleSlot> _slots;
 
-    public PropLifecycleOwner(
+    public PropUndoSteps(
         EditHistory history,
-        IPropLifecycle props,
+        IPropRemoveRestore props,
         Func<object, TransformTargetId?>? propTarget = null)
     {
         _history = history;
@@ -106,7 +106,7 @@ internal sealed class PropLifecycleOwner
             RemoveProp, RestoreProp, retainAliases: true, history: history, transformTarget: propTarget);
     }
 
-    public IPropLifecycle Port => _props;
+    public IPropRemoveRestore Port => _props;
 
     public void Clear() => _slots.Clear();
 

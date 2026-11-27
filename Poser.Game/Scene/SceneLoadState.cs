@@ -26,10 +26,10 @@ namespace Poser.Game.Scene;
 /// and the environment and world toggles a load stamps and its rollback
 /// restores.
 /// </summary>
-internal sealed class SceneStateRuntime : IDisposable
+internal sealed class SceneLoadState : IDisposable
 {
     private readonly SceneRuntimeHandles _handles;
-    private readonly SceneClearRuntime _clear;
+    private readonly SceneClearer _clear;
     private readonly IFramework _framework;
     private readonly ISessionGenerationSource _sessions;
     private readonly StableBindingRegistry _bindings;
@@ -40,9 +40,9 @@ internal sealed class SceneStateRuntime : IDisposable
     private readonly IWorldRenderingRuntimePort _rendering;
     private readonly Poser.Game.Animation.AnimationSession _animation;
 
-    public SceneStateRuntime(
+    public SceneLoadState(
         SceneRuntimeHandles handles,
-        SceneClearRuntime clear,
+        SceneClearer clear,
         IFramework framework,
         ISessionGenerationSource sessions,
         StableBindingRegistry bindings,
@@ -90,7 +90,7 @@ internal sealed class SceneStateRuntime : IDisposable
     /// <summary>The id Poser's lists use for an entity the load created, or null
     /// when it is not listed yet.</summary>
     public SelectionId? ResolveSceneEntity(SceneEntityHandle token) =>
-        SceneHistoryBinder.SelectionOf(_bindings, _handles.Resolve(token));
+        LoadedEntityAliases.SelectionOf(_bindings, _handles.Resolve(token));
 
     // ── session-wide load preamble ───────────────────────────────────────
 

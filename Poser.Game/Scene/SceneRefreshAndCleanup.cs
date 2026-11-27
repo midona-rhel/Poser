@@ -15,7 +15,7 @@ namespace Poser.Game.Scene;
 /// than running one inside the publisher. Missing skeletons are retried with
 /// backoff; unchanged scene content does not interrupt transform gestures.
 /// </summary>
-public sealed class CleanSceneLifecycle : IDisposable
+public sealed class SceneRefreshAndCleanup : IDisposable
 {
     private static readonly TimeSpan InitialRetryInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan MaxRetryInterval = TimeSpan.FromSeconds(5);
@@ -63,7 +63,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     /// <summary>Optional timing and binding-publication diagnostics.</summary>
     private readonly IPluginLog? _log;
 
-    public CleanSceneLifecycle(
+    public SceneRefreshAndCleanup(
         StableBindingRegistry bindings,
         SceneSession scene,
         TransformGestureService gestures,

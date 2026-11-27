@@ -17,7 +17,7 @@ public sealed class WorldActorSession
     private readonly WorldActorDiscovery _discovery;
     private readonly EditHistory _history;
     private readonly Func<IActor, bool> _release;
-    private readonly IActorLifecycle? _state;
+    private readonly IActorRemoveRestore? _state;
     private readonly ActorPresentationSession? _presentation;
     private readonly Func<IActor, ActorId?>? _actorId;
     private readonly Func<IActor, bool> _rollback;
@@ -28,7 +28,7 @@ public sealed class WorldActorSession
             actor => !actors.IsAdopted(actor) || spawns.RemoveActorFromScene(actor)) { }
 
     internal WorldActorSession(WorldActorDiscovery discovery, EditHistory history, Func<IActor, bool> release,
-        IActorLifecycle? state = null, ActorPresentationSession? presentation = null, Func<IActor, ActorId?>? actorId = null,
+        IActorRemoveRestore? state = null, ActorPresentationSession? presentation = null, Func<IActor, ActorId?>? actorId = null,
         Func<IActor, bool>? rollback = null)
     {
         _discovery = discovery;

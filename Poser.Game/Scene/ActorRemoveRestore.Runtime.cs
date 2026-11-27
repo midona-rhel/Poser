@@ -27,7 +27,7 @@ internal sealed record ActorRuntimeState(
 internal sealed record LifecycleIk(PoseSlot Slot, int Partial, string Bone,
     IkChainConfig Config, BoneId? TargetBone, SelectionId? TargetEntity);
 
-internal sealed partial class ActorServiceLifecycle
+internal sealed partial class ActorRemoveRestore
 {
     private readonly ActorStateSnapshots _actorStates;
     private readonly Integration.ISpawnCollectionPort _collections;

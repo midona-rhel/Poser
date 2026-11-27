@@ -9,7 +9,7 @@ namespace Poser.Game.Scene;
 /// Used both when a load aborts and when the user undoes a committed load.
 /// </summary>
 internal sealed class SceneLoadRollback(
-    SceneStateRuntime sceneState, SceneEntityRuntime sceneEntities, ISceneStructure structure,
+    SceneLoadState sceneState, SceneEntityLoader sceneEntities, ISceneStructure structure,
     TransformParenting parenting)
 {
     /// <summary>

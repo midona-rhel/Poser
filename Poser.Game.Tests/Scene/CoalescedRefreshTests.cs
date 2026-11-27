@@ -26,7 +26,7 @@ public class CoalescedRefreshTests
                 generation = 2;
                 queue.Request();
             }
-            Assert.True(scene.TryRefresh(CleanSceneLifecycle.CreateAdmissionCandidate(candidate, scene.Snapshot)).Accepted);
+            Assert.True(scene.TryRefresh(SceneRefreshAndCleanup.CreateAdmissionCandidate(candidate, scene.Snapshot)).Accepted);
             bound = enumerated;
         }
         queue.Request();
@@ -53,7 +53,7 @@ public class CoalescedRefreshTests
             return failure;
         };
 
-        var failures = CleanSceneLifecycle.ResetOwnedStateForLifecycle(
+        var failures = SceneRefreshAndCleanup.ResetOwnedStateForLifecycle(
             "GPose exited.",
             reason => { ran.Add("face:" + reason); return null; },
             Step("animation", "scene: physics unpatch refused"),

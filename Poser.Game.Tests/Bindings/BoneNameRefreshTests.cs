@@ -56,7 +56,7 @@ public sealed class BoneNameRefreshTests
         BoneDescriptor Publish()
         {
             var candidate = registry.RefreshCandidate();
-            Assert.True(scene.TryRefresh(CleanSceneLifecycle.CreateAdmissionCandidate(
+            Assert.True(scene.TryRefresh(SceneRefreshAndCleanup.CreateAdmissionCandidate(
                 candidate.Snapshot, scene.Snapshot)).Accepted);
             registry.CommitCandidate(candidate, scene.Snapshot);
             return Assert.Single(Assert.Single(Assert.Single(scene.Snapshot.Actors).Skeletons).Bones);

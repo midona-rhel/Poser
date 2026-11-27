@@ -55,9 +55,9 @@ public sealed class WorldService : IWorldService, IWorldReleasePort, IDisposable
         _objects.RestoreBorrowed(path, mapPosition, placement, visible, out detail);
     internal WorldObjectState? BorrowedState(string path, Vector3 mapPosition) =>
         _objects.FindBorrowed(path, mapPosition) is { } handle
-            ? new WorldObjectServiceLifecycle(_objects).Read(handle) : null;
+            ? new WorldObjectRemoveRestore(_objects).Read(handle) : null;
     internal void RestoreState(AdoptedWorldObject handle, WorldObjectState state) =>
-        new WorldObjectServiceLifecycle(_objects).Apply(handle, state);
+        new WorldObjectRemoveRestore(_objects).Apply(handle, state);
     internal bool Release(AdoptedWorldObject entity) => _objects.Release(entity);
     internal bool IsLoading(AdoptedWorldObject entity) => _objects.IsLoading(entity);
     internal void KeepUnloaded(AdoptedWorldObject entity) => _objects.KeepUnloaded(entity);

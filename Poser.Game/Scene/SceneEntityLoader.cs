@@ -28,12 +28,12 @@ namespace Poser.Game.Scene;
 /// Creates or reuses the entities in a saved scene. Keeps the previous state
 /// of reused map objects so Undo can put back their earlier edits.
 /// </summary>
-internal sealed class SceneEntityRuntime
+internal sealed class SceneEntityLoader
 {
     private static readonly TimeSpan WorldObjectPollInterval = TimeSpan.FromMilliseconds(50);
 
     private readonly SceneRuntimeHandles _handles;
-    private readonly SceneHistoryBinder _history;
+    private readonly LoadedEntityAliases _history;
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly IActorSpawnService _spawns;
@@ -48,7 +48,7 @@ internal sealed class SceneEntityRuntime
     private readonly Poser.Application.Integration.IntegrationReset _integration;
     private readonly IActorManager _actors;
     private readonly IPlaceService _place;
-    private readonly IActorLifecycle _actorState;
+    private readonly IActorRemoveRestore _actorState;
     private readonly Poser.Game.Animation.AnimationSession _animation;
     private sealed record BorrowedBaseline(WorldObjectState State);
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SceneEntityHandle, BorrowedBaseline> _borrowedBaselines = new();
@@ -59,9 +59,9 @@ internal sealed class SceneEntityRuntime
 
     private readonly IPluginLog _log;
 
-    public SceneEntityRuntime(
+    public SceneEntityLoader(
         SceneRuntimeHandles handles,
-        SceneHistoryBinder history,
+        LoadedEntityAliases history,
         IFramework framework,
         StableBindingRegistry bindings,
         IActorSpawnService spawns,

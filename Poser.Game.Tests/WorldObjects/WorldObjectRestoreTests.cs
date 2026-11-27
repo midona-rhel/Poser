@@ -44,7 +44,7 @@ public sealed class WorldObjectRestoreTests
         // Exercise the real service, lifecycle owner and value journal. Scene
         // refresh occurs synchronously during native release/adoption.
         var lifecycle = new SceneLifecycleHistory(history, null!, null!, null!, null!, null!,
-            new WorldObjectServiceLifecycle(world.Service), worldObjectTarget: Target);
+            new WorldObjectRemoveRestore(world.Service), worldObjectTarget: Target);
         var objectId = WorldObjectId.New();
         AdoptedWorldObject? bound = null;
         var values = new EntityValues<WorldObjectId>(new ValueJournal(history), new HandleValuePort<WorldObjectId, IWorldObject>(
@@ -124,7 +124,7 @@ public sealed class WorldObjectRestoreTests
     public void Furniture_lifecycle_restores_stain_tint_lights_placement_and_opacity()
     {
         var world = new World();
-        var lifecycle = new WorldObjectServiceLifecycle(world.Service);
+        var lifecycle = new WorldObjectRemoveRestore(world.Service);
         var furniture = world.Service.Spawn(FurnitureCatalog.PathFor(1, true), Placed, true, out _)!;
         Assert.True(furniture.IsFurniture);
         furniture.Transform = Moved;

@@ -27,12 +27,12 @@ namespace Poser.Game.Scene;
 /// <summary>
 /// Loads a scene's saved state onto an actor and its companion, one step at a time:
 /// waiting until the actor is ready, then pose, animation, placement, gaze, name and
-/// visibility. SceneAppearanceRuntime handles appearance.
+/// visibility. SceneAppearanceFiles handles appearance.
 /// </summary>
-internal sealed class SceneActorRuntime
+internal sealed class SceneActorRestore
 {
     private readonly SceneRuntimeHandles _handles;
-    private readonly SceneAppearanceRuntime _appearance;
+    private readonly SceneAppearanceFiles _appearance;
     private readonly StableBindingRegistry _bindings;
     private readonly ISkeletonService _skeletons;
     private readonly IActorSpawnService _spawns;
@@ -49,9 +49,9 @@ internal sealed class SceneActorRuntime
     /// <summary>Log for the pose step of a scene load.</summary>
     private readonly IPluginLog _log;
 
-    public SceneActorRuntime(
+    public SceneActorRestore(
         SceneRuntimeHandles handles,
-        SceneAppearanceRuntime appearance,
+        SceneAppearanceFiles appearance,
         StableBindingRegistry bindings,
         ISkeletonService skeletons,
         IActorSpawnService spawns,

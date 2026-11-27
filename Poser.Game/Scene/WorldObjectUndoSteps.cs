@@ -36,7 +36,7 @@ internal readonly record struct WorldObjectState(
 }
 
 /// <summary>The operations required to release and restore world objects.</summary>
-internal interface IWorldObjectLifecycle
+internal interface IWorldObjectRemoveRestore
 {
     IReadOnlyList<object> WorldObjects { get; }
     object? Adopt(nint address);
@@ -49,7 +49,7 @@ internal interface IWorldObjectLifecycle
     void Apply(object worldObject, WorldObjectState state);
 }
 
-internal sealed class WorldObjectServiceLifecycle(WorldObjectService worldObjects) : IWorldObjectLifecycle
+internal sealed class WorldObjectRemoveRestore(WorldObjectService worldObjects) : IWorldObjectRemoveRestore
 {
     public IReadOnlyList<object> WorldObjects => worldObjects.Adopted;
 
@@ -117,7 +117,7 @@ internal sealed class WorldObjectServiceLifecycle(WorldObjectService worldObject
 
 /// <summary>Owns world-object identity slots, authored state, and the exact
 /// lifecycle entries built from confirmed native release results.</summary>
-internal sealed class WorldObjectLifecycleOwner
+internal sealed class WorldObjectUndoSteps
 {
     private sealed class Slot
     {
@@ -131,7 +131,7 @@ internal sealed class WorldObjectLifecycleOwner
 
     /// <summary>Tracks the successful members of a group action. Members
     /// already released on a partial redo stay complete when that redo retries.</summary>
-    private sealed class Batch(WorldObjectLifecycleOwner owner, IReadOnlyList<Slot> slots)
+    private sealed class Batch(WorldObjectUndoSteps owner, IReadOnlyList<Slot> slots)
     {
         public bool Release()
         {
@@ -153,13 +153,13 @@ internal sealed class WorldObjectLifecycleOwner
     }
 
     private readonly EditHistory _history;
-    private readonly IWorldObjectLifecycle _worldObjects;
+    private readonly IWorldObjectRemoveRestore _worldObjects;
     private readonly Func<object, TransformTargetId?>? _target;
     private readonly LifecycleSlotOwner<object, Slot> _slots;
 
-    public WorldObjectLifecycleOwner(
+    public WorldObjectUndoSteps(
         EditHistory history,
-        IWorldObjectLifecycle worldObjects,
+        IWorldObjectRemoveRestore worldObjects,
         Func<object, TransformTargetId?>? target = null)
     {
         _history = history;

@@ -25,7 +25,7 @@ namespace Poser.Game.Scene;
 /// The destroy-first clear a clear-first load runs before it restores
 /// anything.
 /// </summary>
-internal sealed class SceneClearRuntime(
+internal sealed class SceneClearer(
     IActorManager actors,
     StableBindingRegistry bindings,
     GazeService gaze,

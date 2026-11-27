@@ -15,7 +15,7 @@ namespace Poser.Game.Scene;
 /// bodies and skeletons before restoring pose and placement. Internal pose
 /// imports suppress history because the lifecycle operation owns the entry.
 /// </summary>
-internal sealed partial class ActorServiceLifecycle : IActorLifecycle
+internal sealed partial class ActorRemoveRestore : IActorRemoveRestore
 {
     /// <summary>Maximum readiness polls for pose restoration after spawning.</summary>
     private const int ReadyAttempts = 240;
@@ -59,7 +59,7 @@ internal sealed partial class ActorServiceLifecycle : IActorLifecycle
 
     private readonly global::Poser.Application.Settings.ConfigurationService _configuration;
 
-    public ActorServiceLifecycle(
+    public ActorRemoveRestore(
         global::Poser.Application.Settings.ConfigurationService configuration,
         IActorSpawnService spawns,
         IPosingService posing,

@@ -13,7 +13,7 @@ namespace Poser.Game.Scene;
 /// Operations needed to undo and redo overlay creation and removal.
 /// OverlayNodeState contains the settings used to recreate a removed node.
 /// </summary>
-internal interface IOverlayLifecycle
+internal interface IOverlayRemoveRestore
 {
     IReadOnlyList<object> Overlays { get; }
 
@@ -26,11 +26,11 @@ internal interface IOverlayLifecycle
     OverlayNodeState Read(object overlay);
 }
 
-internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
+internal sealed class OverlayRemoveRestore : IOverlayRemoveRestore
 {
     private readonly OverlayNodeService _overlays;
 
-    public OverlayServiceLifecycle(OverlayNodeService overlays) =>
+    public OverlayRemoveRestore(OverlayNodeService overlays) =>
         _overlays = overlays;
 
     public IReadOnlyList<object> Overlays
@@ -66,15 +66,15 @@ internal sealed class OverlayLifecycleSlot
 
 /// <summary>Owns overlay-node lifecycle entries, including the one-entry
 /// collider group a body-collider capture creates.</summary>
-internal sealed class OverlayLifecycleOwner
+internal sealed class OverlayUndoSteps
 {
     private readonly EditHistory _history;
-    private readonly IOverlayLifecycle _overlays;
+    private readonly IOverlayRemoveRestore _overlays;
     private readonly LifecycleSlotOwner<object, OverlayLifecycleSlot> _slots;
 
-    public OverlayLifecycleOwner(
+    public OverlayUndoSteps(
         EditHistory history,
-        IOverlayLifecycle overlays,
+        IOverlayRemoveRestore overlays,
         Func<object, TransformTargetId?>? overlayTarget = null)
     {
         _history = history;
@@ -85,7 +85,7 @@ internal sealed class OverlayLifecycleOwner
             RemoveOverlay, RestoreOverlay, retainAliases: true, history: history, transformTarget: overlayTarget);
     }
 
-    public IOverlayLifecycle Port => _overlays;
+    public IOverlayRemoveRestore Port => _overlays;
 
     public void Clear() => _slots.Clear();
 
