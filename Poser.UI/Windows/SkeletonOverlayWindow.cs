@@ -1240,7 +1240,7 @@ public partial class SkeletonOverlayWindow : Window, IDisposable
     private float ActorOpacity(ActorId actor, Guid? activeLineage) =>
         activeLineage is not { } active || actor.LogicalId == active
             ? 1f
-            : Math.Clamp(Config.InactiveActorOpacity, 0f, 1f);
+            : Config.InactiveActorOpacity;
 
     private const int HoverPadding = 6;
 

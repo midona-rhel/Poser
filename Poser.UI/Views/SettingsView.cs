@@ -112,7 +112,7 @@ public sealed class SettingsViewModel
     public float TransformEntitySpeed = 0.005f;
     public float TransformBoneSpeed = 0.005f;
     public float CameraDefaultSpeed = FreeCameraSpeed.Default;
-    public float CameraDefaultSensitivity = 0.1f;
+    public float CameraDefaultSensitivity = FreeCameraSensitivity.Default;
     public float CameraFastMultiplier = 3f;
     public float CameraSlowMultiplier = 0.3f;
     public bool CameraConsumeModifiers = true;
@@ -986,8 +986,8 @@ public static partial class SettingsView
             form.Slider(
                 "Gizmo size",
                 vm.GizmoScale,
-                0.5f,
-                2f,
+                GizmoConfiguration.MinimumScale,
+                GizmoConfiguration.MaximumScale,
                 next => vm.GizmoScale = next,
                 format: "0.00×",
                 help: "How large the handles are on screen; they stay this size at any distance"),
@@ -1133,8 +1133,8 @@ public static partial class SettingsView
             form.Slider(
                 "Mouse sensitivity",
                 vm.CameraDefaultSensitivity,
-                0.001f,
-                0.2f,
+                FreeCameraSensitivity.Minimum,
+                FreeCameraSensitivity.Maximum,
                 next => vm.CameraDefaultSensitivity = next,
                 format: "0.000",
                 help: "How far a right-drag turns a new free camera");

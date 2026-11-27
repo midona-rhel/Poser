@@ -12,21 +12,35 @@ public class CameraConfiguration
     /// This is deferred while the camera is locked or being dragged.</summary>
     public bool UpdateOrbitWithActorPosition { get; set; } = true;
 
-    /// <summary>The fly speed a new free camera is created with — Brio's
-    /// <c>DefaultFreeCameraMovementSpeed</c>. A per-camera Speed row still
-    /// overrides it, and the wheel still steps that row.</summary>
-    public float DefaultMovementSpeed { get; set; } = FreeCameraSpeed.Default;
+    private float _defaultMovementSpeed = FreeCameraSpeed.Default;
+    private float _defaultMouseSensitivity = FreeCameraSensitivity.Default;
 
-    /// <summary>The look sensitivity a new free camera is created with —
-    /// Brio's <c>DefaultFreeCameraMouseSensitivity</c>.</summary>
-    public float DefaultMouseSensitivity { get; set; } = 0.1f;
+    /// <summary>The fly speed a new free camera is created with (Brio's
+    /// <c>DefaultFreeCameraMovementSpeed</c>). The camera's own Speed row and
+    /// the mouse wheel change it afterwards. Kept within the Speed row's
+    /// range, so a value from an edited settings file can't create a camera
+    /// whose speed its own row can't show or reach.</summary>
+    public float DefaultMovementSpeed
+    {
+        get => _defaultMovementSpeed;
+        set => _defaultMovementSpeed = Math.Clamp(value, FreeCameraSpeed.Minimum, FreeCameraSpeed.Maximum);
+    }
 
-    /// <summary>What holding Ctrl multiplies the fly speed by (Brio's ×3;
-    /// Ktisis calls the same knob <c>WorkcamFastMulti</c>).</summary>
+    /// <summary>The look sensitivity a new free camera is created with
+    /// (Brio's <c>DefaultFreeCameraMouseSensitivity</c>), kept within the
+    /// Sensitivity row's range for the same reason.</summary>
+    public float DefaultMouseSensitivity
+    {
+        get => _defaultMouseSensitivity;
+        set => _defaultMouseSensitivity = Math.Clamp(value, FreeCameraSensitivity.Minimum, FreeCameraSensitivity.Maximum);
+    }
+
+    /// <summary>What holding Shift multiplies the fly speed by (Brio's ×3;
+    /// Ktisis calls it <c>WorkcamFastMulti</c>).</summary>
     public float FastMultiplier { get; set; } = 3f;
 
-    /// <summary>What holding Alt multiplies the fly speed by (Brio's ×0.3,
-    /// Ktisis's <c>WorkcamSlowMulti</c>).</summary>
+    /// <summary>What holding Ctrl multiplies the fly speed by (Brio's ×0.3;
+    /// Ktisis calls it <c>WorkcamSlowMulti</c>).</summary>
     public float SlowMultiplier { get; set; } = 0.3f;
 
     /// <summary>
