@@ -53,7 +53,11 @@ public sealed class SpawnBrowserWindow : Window
     private readonly IPropCatalog _propService;
     private readonly LightPane _lightPane;
     private readonly CameraPane _cameraPane;
-    private readonly ISpawnCatalogService _catalog;
+    // Minions, mounts and fashion accessories: the same list the attach
+    // picker uses, built on a worker thread and listed once it arrives.
+    private readonly global::Poser.Application.Companions.CompanionCatalog _companions;
+    private readonly ICompanionCatalogLoader _companionLoader;
+    private int _companionsListed = -1;
     private readonly SelectionSession _selection;
     private readonly ConfigurationService _configuration;
     private readonly ReferenceImageSession _referenceImages;
@@ -105,7 +109,8 @@ public sealed class SpawnBrowserWindow : Window
         SceneSession scene,
         IPropCatalog propService,
         PropertiesContent properties,
-        ISpawnCatalogService catalog,
+        global::Poser.Application.Companions.CompanionCatalog companions,
+        ICompanionCatalogLoader companionLoader,
         SelectionSession selection,
         ConfigurationService configuration,
         ITextureProvider textures,
@@ -129,7 +134,8 @@ public sealed class SpawnBrowserWindow : Window
         // The main surface's panes: the browser opens their dialogs.
         _lightPane = properties.LightPanel;
         _cameraPane = properties.CameraPanel;
-        _catalog = catalog;
+        _companions = companions;
+        _companionLoader = companionLoader;
         _selection = selection;
         _configuration = configuration;
         _notices = notices;
@@ -233,7 +239,8 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void OnOpen()
     {
-        _catalog.Retry();
+        _companionLoader.EnsureLoaded();
+        _companionLoader.Retry();
         // No rescan here: the index scans once at startup and every save
         // tells it — the Draw revision check re-lists whenever it moves.
         BuildRows();
@@ -296,6 +303,7 @@ public sealed class SpawnBrowserWindow : Window
         bool cacheLanded = !_catalogRowsSeated
             && _catalogRowsTask is { IsCompletedSuccessfully: true };
         if (cacheLanded
+            || _companions.Count != _companionsListed
             || _modelCatalog.PublicationVersion != _modelCatalogVersion
             || _library.Snapshot.Revision != _libraryRevision)
         {
@@ -533,10 +541,11 @@ public sealed class SpawnBrowserWindow : Window
             rows.Add(ActionRow(shape.Item1, SpawnBrowserTab.Overlays,
                 "##spawn-collider-" + shape.Item2, "IK collider: " + shape.Item2, TablerIcon.Cube));
 
-        var entries = _catalog.Entries;
+        var entries = _companions.Entries;
+        _companionsListed = entries.Count;
         for (int i = 0; i < entries.Count; i++)
         {
-            var entry = entries[i];
+            var entry = SpawnCatalogEntry.From(entries[i]);
             rows.Add(new SpawnActionDescriptor(
                 "##spawn-catalog-" + i.ToString(CultureInfo.InvariantCulture),
                 entry.Name,
@@ -845,7 +854,7 @@ public sealed class SpawnBrowserWindow : Window
                 + (filtered ? " matches" : " spawnables");
         }
         // A failed minion and mount list says why it is missing, in place of the count.
-        _vm.Status = _catalog.LoadFailure ?? _caption;
+        _vm.Status = _companionLoader.LastError ?? _caption;
     }
 
     // ── activation ───────────────────────────────────────────────────────
