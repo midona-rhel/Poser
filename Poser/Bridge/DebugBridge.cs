@@ -394,7 +394,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/propmodel?prop=SELECTION_ID&model=ID&submodel=ID&variant=ID",
                         "/objectdye?object=SELECTION_ID&stain=N&stain2=N or &tint=R,G,B (0 to 1); &tocamera=1 moves it to the camera; ?createprop=1 spawns a prop; nothing else reads",
                         "/worldobjectmodel?object=SELECTION_ID&path=ABSOLUTE_RESOURCE_PATH",
-                        "/overlaynode?action=create&kind=Talk|Balloon|Status or ?overlay=SELECTION_ID&x=NUMBER&y=NUMBER|scale=NUMBER",
+                        "/overlaynode?action=create&kind=Talk|Balloon|Status or ?overlay=SELECTION_ID&x=NUMBER&y=NUMBER|scale=NUMBER|dragX=NUMBER&dragY=NUMBER",
                         "/libraryentry?action=save&entity=SELECTION_ID&path=NEW_ABSOLUTE_PATH or action=spawn&kind=Overlay&path=ABSOLUTE_PATH&placement=AsSaved|InFrontOfCamera|RelativeToCamera|RelativeToSelectedActor",
                         "/worldsources?kinds=Object,Effect,Light&force=true or ?acquire=CANDIDATE_GUID",
                         "/sceneautosaveconfig (read) or ?mode=isolate&root=ABSOLUTE_DISPOSABLE_PATH or ?mode=restore&root=PRIOR_OVERRIDE",
