@@ -41,13 +41,12 @@ public sealed class TransformGestureService : IDisposable, IUndoRunner
         SceneSession scene,
         ITransformRuntimePort runtime,
         EditHistory history,
-        GroupTransformState? groupTransforms = null,
         GroupTransformCoordinator? groupCoordinator = null)
     {
         _scene = scene;
         _runtime = runtime;
         History = history;
-        _groupTransforms = groupTransforms;
+        _groupTransforms = groupCoordinator?.State;
         _groupCoordinator = groupCoordinator;
         if (groupCoordinator != null)
         {

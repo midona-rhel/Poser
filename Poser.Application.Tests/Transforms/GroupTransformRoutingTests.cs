@@ -57,7 +57,7 @@ public sealed class GroupTransformRoutingTests
         var history = new EditHistory();
         using var coordinator = new GroupTransformCoordinator(scene, new SceneGroups(), state, viewport, camera, history);
         using var gestures = new TransformGestureService(scene, runtime, history,
-            groupTransforms: state, groupCoordinator: coordinator);
+            groupCoordinator: coordinator);
         var facade = new TransformFacade(scene, gestures,
             new TransformCommandService(runtime, history, gestures), null!, coordinator, new ValueJournal(history), null!, null!, null!, null!);
         selection.Add(SelectionId.ForActor(actor));

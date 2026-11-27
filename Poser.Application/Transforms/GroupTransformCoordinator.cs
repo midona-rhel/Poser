@@ -36,6 +36,9 @@ public sealed class GroupTransformCoordinator : IDisposable
         _scene.Selection.SelectionChanged += SelectionChanged;
     }
     public void Dispose() => _scene.Selection.SelectionChanged -= SelectionChanged;
+
+    /// <summary>The stored group values this coordinator keeps up to date.</summary>
+    internal GroupTransformState State => _state;
     public Func<bool>? BeforeSelectionCapture { get; set; }
     public Func<bool>? CaptureAllowed { get; set; }
     internal Func<Guid?, IReadOnlyList<TransformTargetId>, GroupTransformPresentation>? ReadPresentation { get; set; }

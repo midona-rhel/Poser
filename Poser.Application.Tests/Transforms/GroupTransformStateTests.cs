@@ -263,7 +263,7 @@ public sealed class GroupTransformStateTests
                 return view;
             });
             Coordinator = new(Scene, Groups, State, viewport, camera, History);
-            Service = new(Scene, this, History, groupTransforms: State, groupCoordinator: Coordinator);
+            Service = new(Scene, this, History, groupCoordinator: Coordinator);
             Journal = new(History, Service, _ => true, new Fixtures.NoticeLog());
             foreach (var member in Selected) Selection.Add(member);
         }
