@@ -81,7 +81,7 @@ public sealed partial class DebugBridge : IDisposable
         "/screenshot", "/cameras", "/groups", "/layers", "/glamstate", "/wardrobe", "/customize",
         "/uidrag", "/uiinput", "/uiwindows", "/uiscale", "/uiprobestate", "/shortcut", "/gamekeys",
         "/bakestate", "/importstate", "/profile", "/natives", "/appearanceevidence", "/penumbraidentity",
-        "/catalogmodels", "/fonts", "/meta", "/cancel", "/dump", "/watch",
+        "/catalogmodels", "/fonts", "/meta", "/cancel", "/dump", "/watch", "/busy",
     };
 
     /// <summary>A person cannot start an action while another one runs, and neither can a
@@ -94,8 +94,16 @@ public sealed partial class DebugBridge : IDisposable
         bool reads = path switch
         {
             "/scene" => !query.ContainsKey("path"),
-            "/ik" => query.GetValueOrDefault("action") == "read",
-            "/environment" => !query.ContainsKey("weather") && !query.ContainsKey("hold"),
+            "/ik" => query.GetValueOrDefault("action", "read") == "read",
+            "/posefile" => query.GetValueOrDefault("action", "read") == "read",
+            "/loop" or "/physicsfreeze" or "/scrubfallback" or "/positionlock" => !query.ContainsKey("on"),
+            "/expressionbake" => !query.ContainsKey("timeline"),
+            "/environment" => !query.Keys.Any(key => key is "weather" or "hold" or "minute" or "frozen"),
+            "/actorspeed" => !query.ContainsKey("value") && !query.ContainsKey("clear"),
+            "/face" => !query.ContainsKey("unit") && !query.ContainsKey("reset"),
+            "/presentation" => !query.Keys.Any(key => key is "visible" or "opacity" or "tint" or "wet" or "wetness" or "reset"),
+            "/light" => !query.ContainsKey("property"),
+            "/emote" => query.GetValueOrDefault("list") == "1",
             "/mcdf" => !query.Keys.Any(key => key is "import" or "spawn" or "reset" or "export"),
             "/selection" or "/parenting" => query.Count == 0,
             _ => false,
@@ -335,6 +343,15 @@ public sealed partial class DebugBridge : IDisposable
         return bool.TryParse(value, out result);
     }
 
+    /// <summary>A refusal when the request has a parameter the route does not know, so a
+    /// misspelled or made-up parameter cannot quietly change something.</summary>
+    private static string? UnknownParameter(Dictionary<string, string> query, params string[] known)
+    {
+        var unknown = query.Keys.Where(key => !known.Contains(key, StringComparer.OrdinalIgnoreCase)).ToArray();
+        return unknown.Length == 0 ? null
+            : Json(new { error = $"Unknown parameter: {string.Join(", ", unknown)}. Nothing was changed." });
+    }
+
     private static string Json(object value) =>
         JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = false });
 
@@ -378,12 +395,13 @@ public sealed partial class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
+                        "/busy (the action that is running, such as Import pose, or null; other actions wait for it)",
                         "/selection?actors=INDEX,INDEX or entity=EXACT_ID or entities=EXACT_ID,EXACT_ID (omit to read; empty actors/entities to clear)",
                         "/selectionremove?start=1 (normal selected-entity removal; omit start to read completion)",
                         "/shortcut?chord=Ctrl%2BI&kind=Down|Held|Released (probes configured bindings; no binding edits)",
                         "/gpose?action=leave|enter (leaves or enters GPose like the game's /gpose)",
                         "/gamekeys?keys=SHIFT,A&frames=60&mode=messages (holds game keys for that many frames, then records as many without; mode=messages sends real key messages; omit keys to read the recorded camera values)",
-                        "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER, ?child=ID&remove=1",
+                        "/parenting (read), ?create=collider|light, ?child=ID&parent=ID|none, ?child=ID&dx=NUMBER&dy=NUMBER&dz=NUMBER&yaw=DEGREES&scale=NUMBER, ?child=ID&remove=1",
                         "/bodycolliders?actor=NAME|INDEX (generate through the normal command)",
                         "/cameras (read-only camera values; no scene file written)",
                         "/camera?create=Free|Game or ?camera=NAME&action=live|angle|pan|roll|fov&x=NUMBER&y=NUMBER (application commands)",
@@ -407,11 +425,11 @@ public sealed partial class DebugBridge : IDisposable
                         "/uiscale (read-only Dalamud scale, viewport pixels and frame telemetry)",
                         "/referenceimages (read) or ?add=ABSOLUTE_IMAGE_PATH or ?remove=RETURNED_ID",
                         "/uiprobestate?case=bone-labels&actor=NAME|INDEX (materialized Sidebar labels plus effective/preview friendly-name state)",
-                        "/history", "/undo", "/redo", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
+                        "/history", "/undo?selected=1", "/redo?selected=1 (any other parameter is refused)", "/overlay?all=1&visible=1&show=1&mode=Default|Octahedra|Joints", "/profile",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z&dx=0&dy=0&dz=0  (journaled)",
-                        "/ik?actor&name=BONE&action=read|set&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
+                        "/ik?actor&name=BONE&action=read|set|defaults|bone|entity&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/weaponstate?actor=NAME|INDEX&drawn=true|false&visible=true|false (production draw/sheath and appearance visibility controls)",
                         "/appearanceevidence?actor=NAME|INDEX (identity plus production Penumbra/Glamourer reads)",
@@ -428,14 +446,24 @@ public sealed partial class DebugBridge : IDisposable
                         "/play?actor&slot=1", "/pause?actor&slot=1",
                         "/pauseall?actor", "/resumeall?actor",
                         "/scrub?actor&slot=1&time=SECONDS",
-                        "/loop?actor&slot=1&on=1|0",
+                        "/loop?actor&slot=1&on=1|0 (read without on)",
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/reset?actor&slot=1",
                         "/layers?actor (every layer: live timeline, clock reading, speed, weight, loop, ended, selection; held expression; paused)",
                         "/weight?actor&slot=1&value=0.5 (1 releases)",
                         "/expression?actor&hold=TIMELINE | &release=1",
+                        "/expressionbake?actor&timeline=TIMELINE (read whether a bake runs without timeline)",
+                        "/resetall?actor (Reset > All in the inspector's Pose section)",
+                        "/actorspeed?actor&value=SPEED | &clear=1 (the whole actor's speed; read without either)",
+                        "/positionlock?actor&on=1|0 (read without on)",
+                        "/face?actor&unit=ID&weight=W | &reset=1 (the face sliders; read without either)",
+                        "/presentation?actor&visible=1|0&opacity=0..1&tint=R,G,B,A&model=Character&wet=1|0&wetness=W,S,D&reset=1 (read without any)",
+                        "/light?light=INDEX|SELECTION_ID&property=NAME&value=VALUE (a LightProperties value; read without property)",
+                        "/environment?weather=ID&hold=1|0&minute=0..1439&frozen=1|0 (read without any)",
+                        "/physicsfreeze?on=1|0", "/scrubfallback?on=1|0 (both read without on)",
+                        "/posefile?actor&action=read|import|export&path=ABSOLUTE_PATH&full=1",
                         "/lips?actor&timeline=TIMELINE (0 restores)",
-                        "/emote?actor&name=EMOTE_NAME&pick=N&start=1 (the General section's Apply; pick chooses between emotes with the same name; a name that is not exact lists the matches)",
+                        "/emote?actor&name=EMOTE_NAME&pick=N&start=1 (the General section's Apply; pick chooses between emotes with the same name; a name that is not exact, or list=1, only lists the matches; with list=1, kind=Expression searches expressions)",
                         "/stance?actor&stance=Idle|SitGround|SitChair|Sleeping&pose=0",
                         "/seeklayer?actor&slot=1&time=SECONDS (by the layer's own clock; an ended layer is played again held first)",
                         "/wear?actor&slot=3&item=ITEM_ID&dye1=0&dye2=0 (the wardrobe's journaled item change; without item: read the slot)",
@@ -862,11 +890,18 @@ public sealed partial class DebugBridge : IDisposable
             case "/lifetimetrace":
                 return Json(ConfigureLifetimeTrace(query));
             case "/environment":
+                // The Environment tab's commands, each its own undo step.
                 if (query.TryGetValue("weather", out var weatherText)
                     && byte.TryParse(weatherText, out var weather))
-                    _environment.SetWeather(weather, _environment.TransitionTime);
+                    _environmentControl.SetWeather(weather, _environment.TransitionTime);
                 if (query.TryGetValue("hold", out var hold))
-                    _environment.IsWeatherOverrideEnabled = hold == "1";
+                    _environmentControl.SetWeatherOverrideEnabled(hold == "1");
+                if (query.TryGetValue("minute", out var minuteText))
+                    _environmentControl.SetMinuteOfDay(int.Parse(minuteText, CultureInfo.InvariantCulture));
+                if (query.TryGetValue("frozen", out var frozenText))
+                    _environmentControl.SetTimeFrozen(frozenText == "1");
+                if (query.Keys.Any(key => key is "weather" or "hold" or "minute" or "frozen"))
+                    _environmentControl.Seal();
                 return Json(new
                 {
                     current = _environment.CurrentWeatherId,
@@ -884,6 +919,8 @@ public sealed partial class DebugBridge : IDisposable
                 });
             case "/actors":
                 return Json(ListActors());
+            case "/busy":
+                return Json(new { running = _gate.Running?.Name });
             case "/cameras":
                 return JsonSerializer.Serialize(new
                 {
@@ -986,25 +1023,8 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/history":
                 return Json(History());
-            case "/lighton":
-            {
-                // Debug: a Poser light's on/off (?index=N&on=1|0, read without on) and its
-                // DrawObject flags byte (+0x88).
-                var lights = (global::Poser.Game.Services.ILightingService)_services.GetService(
-                    typeof(global::Poser.Game.Services.ILightingService))!;
-                int index = int.TryParse(query.GetValueOrDefault("index", "0"), out var li) ? li : 0;
-                if (index < 0 || index >= lights.Lights.Count)
-                    return Json(new { error = "no such light", count = lights.Lights.Count });
-                var light = lights.Lights[index];
-                if (query.TryGetValue("on", out var onText))
-                    light.IsOn = onText == "1";
-                var native = light.GetType().GetProperty("NativePtr",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(light);
-                byte flags = 0;
-                if (native is System.Reflection.Pointer pointer)
-                    unsafe { flags = *((byte*)System.Reflection.Pointer.Unbox(pointer) + 0x88); }
-                return Json(new { light.Name, light.IsOn, flags = $"0x{flags:X2}" });
-            }
+            case "/light":
+                return LightCommand(query);
             case "/envhold":
             {
                 // Debug: ?section=Fog&on=1|0 holds a section; ?tail=VALUE writes the float at
@@ -1097,13 +1117,18 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(new { hidden = gameGui.GameUiHidden });
             }
             case "/scrubfallback":
-                // Debug: scrubs go through the clock-writing fallback (on=1) or the seek (on=0).
-                global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = query.GetValueOrDefault("on") == "1";
+                // Scrubs write the clock directly (on=1) or seek the way the game does (on=0).
+                // Without on, this only reads which one is used.
+                if (query.TryGetValue("on", out var fallbackOn))
+                    global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback = fallbackOn == "1";
                 return Json(new { fallback = global::Poser.Game.Animation.AnimationScrubRuntimePort.ForceFallback });
             case "/physicsfreeze":
-                // The scene physics freeze (the patch at PartialSkeleton.SetBoneModelSpace+0x346/+0x34F).
             {
-                var result = _animation.SetScenePhysicsFrozen(query.GetValueOrDefault("on") == "1");
+                // The scene's physics freeze (the patch at PartialSkeleton.SetBoneModelSpace+0x346/+0x34F).
+                // Without on, this only reads whether physics is frozen.
+                if (!query.TryGetValue("on", out var freezeOn))
+                    return Json(new { frozen = _animation.IsPhysicsFrozen });
+                var result = _animation.SetScenePhysicsFrozen(freezeOn == "1");
                 return Json(new { result.Success, result.Detail, frozen = _animation.IsPhysicsFrozen });
             }
             case "/natives":
@@ -1143,12 +1168,14 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(new { ok = true });
             case "/undo":
             {
+                if (UnknownParameter(query, "selected") is { } undoRefusal) return undoRefusal;
                 var result = query.GetValueOrDefault("selected") == "1"
                     ? _transforms.UndoSelected() : _transforms.Undo();
                 return Json(new { ok = result.Success, result.Detail, history = History() });
             }
             case "/redo":
             {
+                if (UnknownParameter(query, "selected") is { } redoRefusal) return redoRefusal;
                 var result = query.GetValueOrDefault("selected") == "1"
                     ? _transforms.RedoSelected() : _transforms.Redo();
                 return Json(new { ok = result.Success, result.Detail, history = History() });
@@ -1175,6 +1202,16 @@ public sealed partial class DebugBridge : IDisposable
                 return Json(Rig(actor));
             case "/state":
                 return Json(State(id, actor));
+            case "/resetall":
+                return ResetAll(id);
+            case "/actorspeed":
+                return ActorSpeed(query, id);
+            case "/positionlock":
+                return PositionLock(query, id);
+            case "/face":
+                return FaceSliders(query, id);
+            case "/presentation":
+                return Presentation(query, id);
             case "/appearanceevidence":
             {
                 var descriptor = _sceneSession.Snapshot.FindActor(id);
@@ -1413,6 +1450,15 @@ public sealed partial class DebugBridge : IDisposable
                 var catalog = (AnimationCatalog)_services.GetService(typeof(AnimationCatalog))!;
                 if (!catalog.IsLoaded)
                     return Json(new { error = animationLoader.LastError ?? "The animation list is still loading. Ask again." });
+                // list=1 only lists what the Animation tab's search shows for that text, among
+                // emotes or, with kind=Expression, among expressions.
+                if (query.GetValueOrDefault("list") == "1")
+                    return Json(new { matches = catalog.Search(wanted,
+                            Enum.Parse<AnimationKind>(query.GetValueOrDefault("kind", "Emote"), true))
+                        .Take(50).Select(entry => new
+                        {
+                            entry.Name, entry.EmoteId, entry.TimelineId, slot = entry.Slot.ToString(),
+                        }) });
                 var found = catalog.Search(wanted, AnimationKind.Emote);
                 var named = found.Where(entry => string.Equals(entry.Name, wanted, StringComparison.OrdinalIgnoreCase)).ToArray();
                 // Several emotes can share a name; ?pick=N chooses one of them, counting from 0.
@@ -1433,10 +1479,13 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/expressionbake":
             {
-                // Debug: the Animation tab's Bake expression (?timeline=ROW) for actor 0's id.
+                // The Animation tab's Bake expression for the expression with that timeline.
+                // Without timeline, this only reads whether a bake is running.
                 var preview = (global::Poser.Application.Animation.IExpressionPreview)_services.GetService(
                     typeof(global::Poser.Application.Animation.IExpressionPreview))!;
-                ushort row = ushort.Parse(query.GetValueOrDefault("timeline", "605"));
+                if (!query.TryGetValue("timeline", out var bakeTimeline))
+                    return Json(new { baking = preview.IsBaking });
+                ushort row = ushort.Parse(bakeTimeline, CultureInfo.InvariantCulture);
                 var chose = _animation.ChooseSlot(id, AnimationSlot.Facial, row);
                 var baked = preview.Bake(id, row);
                 return Json(new { chose = chose.Success, ok = baked.Success, baked.Detail, baking = preview.IsBaking });
@@ -1466,7 +1515,10 @@ public sealed partial class DebugBridge : IDisposable
             }
             case "/loop":
             {
-                bool on = !query.TryGetValue("on", out var o) || o != "0";
+                // Without on, this only reads whether the layer's loop is on.
+                if (!query.TryGetValue("on", out var o))
+                    return Json(new { loop = _animation.OverridesFor(id).LoopWantedSlots.Contains(Slot()) });
+                bool on = o != "0";
                 ushort timeline = _animation.SelectedFor(id, Slot())
                     ?? _animation.Read(id)?.TimelineFor(Slot()) ?? 0;
                 var r = _animation.SetSlotLoop(id, Slot(), timeline, on);
@@ -1644,12 +1696,15 @@ public sealed partial class DebugBridge : IDisposable
             case "/posefile":
             {
                 var imports = (Application.Posing.IPoseImportCommands)_services.GetService(typeof(Application.Posing.IPoseImportCommands))!;
-                if (query.GetValueOrDefault("action") == "read")
+                var poseAction = query.GetValueOrDefault("action", "read");
+                if (poseAction is not ("read" or "import" or "export"))
+                    return Json(new { error = "action must be read, import or export." });
+                if (poseAction == "read")
                     return Json(new { busy = imports.IsImportBusy, bakePending = _ikBake.IsPending, bakeNote = _ikBake.Note?.Text });
                 var posePath = query.GetValueOrDefault("path", "");
                 if (!Path.IsPathFullyQualified(posePath))
                     return Json(new { error = "An absolute pose path is required." });
-                if (query.GetValueOrDefault("action") == "export")
+                if (poseAction == "export")
                 {
                     if (File.Exists(posePath)) return Json(new { error = "Choose a new diagnostic export file." });
                     var capture = (Application.Posing.IPoseFileCapture)_services.GetService(typeof(Application.Posing.IPoseFileCapture))!;
@@ -1730,18 +1785,21 @@ public sealed partial class DebugBridge : IDisposable
                             var current = _ikConfiguration.Get(target);
                             if (current == null)
                                 return Json(new { error = "bone cannot use IK" });
-                            if (query.GetValueOrDefault("action") == "read")
+                            var ikAction = query.GetValueOrDefault("action", "read");
+                            if (ikAction is not ("read" or "set" or "defaults" or "bone" or "entity"))
+                                return Json(new { error = "action must be read, set, defaults, bone or entity." });
+                            if (ikAction == "read")
                                 return JsonSerializer.Serialize(new { actorId = id.ToString(), config = current },
                                     new JsonSerializerOptions { IncludeFields = true });
-                            if (query.GetValueOrDefault("action") == "defaults")
+                            if (ikAction == "defaults")
                             {
                                 var reset = _ikConfiguration.ResetDefaults(target);
                                 return Json(new { ok = reset.Success, reset.Detail });
                             }
-                            if (query.GetValueOrDefault("action") is "bone" or "entity" &&
+                            if (ikAction is "bone" or "entity" &&
                                 FindActor(query.GetValueOrDefault("targetActor", "0")) is { } followed)
                             {
-                                if (query.GetValueOrDefault("action") == "entity")
+                                if (ikAction == "entity")
                                 {
                                     var followedLight = _sceneSession.Snapshot.Lights.FirstOrDefault();
                                     if (followedLight == null) return Json(new { error = "Spawn a test light first." });

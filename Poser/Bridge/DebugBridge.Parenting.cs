@@ -84,9 +84,17 @@ public sealed partial class DebugBridge
             }
             if (child.Bone == null && TransformTargetResolver.Target(child) is { } targetId && _parenting.ReadWorld(child) is { } world)
             {
-                float Number(string key) => float.Parse(query.GetValueOrDefault(key, "0"), CultureInfo.InvariantCulture);
+                // dx, dy and dz move the entity, yaw turns it by that many degrees about
+                // the up axis, and scale sets the same scale on all three axes.
+                float Number(string key, float missing = 0) => query.TryGetValue(key, out var text)
+                    ? float.Parse(text, CultureInfo.InvariantCulture) : missing;
+                var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, Number("yaw") * MathF.PI / 180f);
                 return Json(_transforms.SetAbsolute(targetId, world with
-                { Position = world.Position + new Vector3(Number("dx"), Number("dy"), Number("dz")) }, "Move parenting test entity"));
+                {
+                    Position = world.Position + new Vector3(Number("dx"), Number("dy"), Number("dz")),
+                    Rotation = Quaternion.Normalize(turn * world.Rotation),
+                    Scale = query.ContainsKey("scale") ? new Vector3(Number("scale")) : world.Scale,
+                }, "Move parenting test entity"));
             }
         }
         _parenting.RefreshBoneReads();
