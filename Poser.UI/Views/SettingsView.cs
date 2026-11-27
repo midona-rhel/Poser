@@ -744,7 +744,7 @@ public static partial class SettingsView
             form,
             ConfigResetScope.Display,
             "Display settings",
-            "Turn Anonymous mode off and NSFW bones on, their defaults. The theme and window settings are reset on the UI page"));
+            "Turns Anonymous mode off and NSFW bones (Skeleton page) on. The theme and window settings are reset on the UI page"));
     }
 
     private static void DrawSkeleton(
@@ -964,7 +964,7 @@ public static partial class SettingsView
             form,
             ConfigResetScope.Skeleton,
             "Skeleton settings",
-            "Put the bone, line and color settings back to their defaults"));
+            "Puts the bone, line and colour settings back, and deletes your bone visibility and bone map presets"));
     }
 
     private static readonly string[] GroupScaleLabels =
@@ -1242,7 +1242,7 @@ public static partial class SettingsView
             form,
             ConfigResetScope.UI,
             "UI settings",
-            "Put the layout, visibility and key binding settings, and the theme, accent, window opacity and blur, back to their defaults"));
+            "Puts the layout, visibility, key bindings, theme, accent, window opacity and blur, the gizmo hiding and diagnostics switches, and remembered window positions back"));
     }
 
     private static readonly string[] PresetLabels =
