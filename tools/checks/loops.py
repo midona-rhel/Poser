@@ -31,10 +31,16 @@ for _ in range(10):
     seen.append(live("UpperBody"))
 checks.step("Upper body keeps looping for 20 s", all(t == upper for t in seen), f"Upper body every 2 s: {seen}")
 
-get("/cancel", actor=0, a2=1)
-right_after = live("UpperBody")
+def upper_in(state):
+    """Upper body's timeline in a /state reading, read on the same frame as the command."""
+    return next((s["timeline"] for s in state.get("slots", []) if s["slot"] == UPPER_BODY), None)
+
+
+cancelled = get("/cancel", actor=0, a2=1)
+right_after = upper_in(cancelled.get("state", {}))
 ok, again = wait_until(lambda: live("UpperBody"), lambda t: t == upper, timeout=4)
-checks.step("a cancelled looped layer is played again", ok, f"right after the cancel {right_after}, then {again}")
+checks.step("a cancelled looped layer is played again", right_after != upper and ok,
+            f"on the frame of the cancel {right_after}, then {again}")
 
 get("/loop", actor=0, slot=UPPER_BODY, on=0)
 time.sleep(0.5)
@@ -56,8 +62,9 @@ checks.step("resume keeps the loop", live("UpperBody") == upper and layer(layers
             f"Upper body {live('UpperBody')}")
 get("/loop", actor=0, slot=UPPER_BODY, on=0)
 
-stand = play_emote("Stand Up")
-wait_until(lambda: get("/state", actor=0), lambda s: s.get("stance") == "Idle", timeout=8)
+get("/stance", actor=0, stance="Idle")
+ok, state = wait_until(lambda: get("/state", actor=0), lambda s: s.get("stance") == "Idle", timeout=8)
+checks.step("stand up", ok, f"stance {state.get('stance')}")
 photo = play_emote("Photograph")
 full = photo.get("played")
 ok, _ = wait_until(lambda: live("Base"), lambda t: t == full, timeout=5)

@@ -1,6 +1,6 @@
 """Camera follow: the default camera follows a copy of the actor, the copy is removed,
 and undo brings the copy back with the camera following it again."""
-from bridge import Checks, actors, get, ready, short, wait_until
+from bridge import Checks, actors, copy_actor, get, ready, remove, short, wait_until
 
 checks = Checks("camera follow")
 ready(checks)
@@ -13,20 +13,16 @@ def followed():
     return get("/cameratarget", camera=camera).get("followedActor")
 
 
-copy = get("/clone", actor=0)
-ok, listed = wait_until(actors, lambda a: len(a) == 2, timeout=10)
-if not checks.step("copy the actor", copy.get("ok") and ok, f"answer {short(copy, 160)}, {len(listed)} actors"):
+copy_id = copy_actor(checks)
+if copy_id is None:
     checks.finish()
-copy_id = copy["id"]
 
 follow = get("/cameratarget", camera=camera, actor=f"actor:{copy_id}")
 checks.step("the camera follows the copy", follow.get("applied") and followed() == copy_id,
             f"answer {short(follow, 200)}")
 
-get("/selection", entities=f"actor:{copy_id}")
-get("/selectionremove", start=1)
-ok, _ = wait_until(lambda: get("/selectionremove"), lambda r: r.get("running") is False, timeout=20)
-checks.step("remove the copy", ok and len(actors()) == 1, f"{len(actors())} actors, camera follows {followed()}")
+removed, saw = remove([f"actor:{copy_id}"])
+checks.step("remove the copy", removed and len(actors()) == 1, f"{len(actors())} actors, camera follows {followed()}, {saw}")
 
 undo = get("/undo")
 ok, listed = wait_until(actors, lambda a: len(a) == 2, timeout=15)

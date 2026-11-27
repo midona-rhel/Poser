@@ -7,7 +7,8 @@ ready(checks)
 
 
 def entity(selection_id):
-    return next((e for e in get("/parenting") if e["id"] == selection_id), None)
+    listed = get("/parenting")
+    return next((e for e in listed if e["id"] == selection_id), None) if isinstance(listed, list) else None
 
 
 def position(selection_id):

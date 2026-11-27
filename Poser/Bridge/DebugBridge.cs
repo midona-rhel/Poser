@@ -103,6 +103,7 @@ public sealed partial class DebugBridge : IDisposable
             "/face" => !query.ContainsKey("unit") && !query.ContainsKey("reset"),
             "/presentation" => !query.Keys.Any(key => key is "visible" or "opacity" or "tint" or "wet" or "reset"),
             "/light" => !query.ContainsKey("property"),
+            "/emote" => query.GetValueOrDefault("list") == "1",
             "/mcdf" => !query.Keys.Any(key => key is "import" or "spawn" or "reset" or "export"),
             "/selection" or "/parenting" => query.Count == 0,
             _ => false,
@@ -427,7 +428,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z&dx=0&dy=0&dz=0  (journaled)",
-                        "/ik?actor&name=BONE&action=read|set|defaults&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
+                        "/ik?actor&name=BONE&action=read|set|defaults|bone|entity&solver=TwoJoint|Ccd|Fabrik|Rope&parentDepth=3&childDepth=0&targetMode=Actor|World&enabled=1|0&collisions=1|0 (journaled)",
                         "/state?actor=NAME|INDEX",
                         "/weaponstate?actor=NAME|INDEX&drawn=true|false&visible=true|false (production draw/sheath and appearance visibility controls)",
                         "/appearanceevidence?actor=NAME|INDEX (identity plus production Penumbra/Glamourer reads)",
@@ -461,7 +462,7 @@ public sealed partial class DebugBridge : IDisposable
                         "/physicsfreeze?on=1|0", "/scrubfallback?on=1|0 (both read without on)",
                         "/posefile?actor&action=read|import|export&path=ABSOLUTE_PATH&full=1",
                         "/lips?actor&timeline=TIMELINE (0 restores)",
-                        "/emote?actor&name=EMOTE_NAME&pick=N&start=1 (the General section's Apply; pick chooses between emotes with the same name; a name that is not exact, or list=1, only lists the matches)",
+                        "/emote?actor&name=EMOTE_NAME&pick=N&start=1 (the General section's Apply; pick chooses between emotes with the same name; a name that is not exact, or list=1, only lists the matches; with list=1, kind=Expression searches expressions)",
                         "/stance?actor&stance=Idle|SitGround|SitChair|Sleeping&pose=0",
                         "/seeklayer?actor&slot=1&time=SECONDS (by the layer's own clock; an ended layer is played again held first)",
                         "/wear?actor&slot=3&item=ITEM_ID&dye1=0&dye2=0 (the wardrobe's journaled item change; without item: read the slot)",
@@ -898,7 +899,8 @@ public sealed partial class DebugBridge : IDisposable
                     _environmentControl.SetMinuteOfDay(int.Parse(minuteText, CultureInfo.InvariantCulture));
                 if (query.TryGetValue("frozen", out var frozenText))
                     _environmentControl.SetTimeFrozen(frozenText == "1");
-                _environmentControl.Seal();
+                if (query.Keys.Any(key => key is "weather" or "hold" or "minute" or "frozen"))
+                    _environmentControl.Seal();
                 return Json(new
                 {
                     current = _environment.CurrentWeatherId,

@@ -11,14 +11,15 @@ def presentation():
 
 
 start = presentation()
-checks.step("read the actor's presentation", start.get("opacity") is not None and start.get("visible") is True,
-            short(start, 200))
+if not checks.step("read the actor's presentation", start.get("opacity") is not None and start.get("visible") is True,
+                   short(start, 200)):
+    checks.finish()
 
 faded = get("/presentation", actor=0, opacity=0.5)
 ok, reading = wait_until(presentation, lambda p: p.get("opacity") is not None and abs(p["opacity"] - 0.5) < 0.01, timeout=3)
-checks.step("opacity 0.5", faded.get("ok") and ok, f"opacity {reading.get('opacity')}, undo step {faded['history']['undo']}")
+checks.step("opacity 0.5", faded.get("ok") and ok, f"opacity {reading.get('opacity')}, undo step {faded.get('history', {}).get('undo')}")
 get("/undo")
-ok, reading = wait_until(presentation, lambda p: abs(p.get("opacity", 0) - start["opacity"]) < 0.01, timeout=3)
+ok, reading = wait_until(presentation, lambda p: p.get("opacity") is not None and abs(p["opacity"] - start["opacity"]) < 0.01, timeout=3)
 checks.step("undo the opacity", ok, f"opacity {reading.get('opacity')}")
 
 tinted = get("/presentation", actor=0, tint="1,0.2,0.2,1", model="Character")

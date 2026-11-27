@@ -143,16 +143,36 @@ def reset_all(checks, actor=0):
                        f"reset {short(result, 160)} stance {reading.get('stance')} paused {reading.get('paused')}")
 
 
-def remove_copies(checks):
-    """Removes every actor but the first, the way the Remove button does."""
-    extra = [a for a in actors()[1:]]
-    if not extra:
-        return
-    get("/selection", entities=",".join(f"actor:{a['id']}" for a in extra))
+def remove(selection_ids):
+    """Selects exactly these entities and removes them the way the Remove button does.
+    Returns (removed, what was seen). Nothing is removed when the selection did not take,
+    so an earlier selection is never removed by mistake."""
+    selected = get("/selection", entities=",".join(selection_ids))
+    if not isinstance(selected, list) or sorted(selected) != sorted(selection_ids):
+        return False, f"selection refused: {short(selected, 160)}"
     get("/selectionremove", start=1)
     ok, reading = wait_until(lambda: get("/selectionremove"), lambda r: r.get("running") is False, timeout=20)
+    return ok and "error" not in reading, short(reading, 160)
+
+
+def copy_actor(checks, with_pose=False):
+    """Copies the first actor and returns the copy's id as /actors lists it, or None."""
+    answer = get("/dupepose" if with_pose else "/clone", actor=0)
+    ok, listed = wait_until(actors, lambda a: len(a) == 2, timeout=10)
+    copy_id = listed[1]["id"] if ok else None
+    checks.step("copy the actor" + (" with its pose" if with_pose else ""), answer.get("ok") and copy_id is not None,
+                f"answer {short(answer, 160)}, {len(listed)} actors")
+    return copy_id
+
+
+def remove_copies(checks):
+    """Removes every actor but the first."""
+    extra = [f"actor:{a['id']}" for a in actors()[1:]]
+    if not extra:
+        return
+    removed, saw = remove(extra)
     left = actors()
-    checks.step("copies from earlier runs removed", len(left) == 1, f"{len(extra)} removed, {len(left)} actors left")
+    checks.step("copies from earlier runs removed", removed and len(left) == 1, f"{len(left)} actors left, {saw}")
 
 
 def find_emote(name, slot=None):

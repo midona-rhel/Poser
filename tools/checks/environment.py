@@ -29,7 +29,7 @@ if checks.step("add a light", light, str(light)):
         return get("/light", light=light).get("light") or {}
 
     off = get("/light", light=light, property="IsOn", value=0)
-    checks.step("switch the light off", off.get("ok") and read().get("IsOn") is False, f"undo step {off['history']['undo']}")
+    checks.step("switch the light off", off.get("ok") and read().get("IsOn") is False, f"undo step {off.get('history', {}).get('undo')}")
     get("/undo")
     checks.step("undo switches it on", read().get("IsOn") is True, "")
 

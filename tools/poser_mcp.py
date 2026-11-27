@@ -42,7 +42,7 @@ TOOLS = [
     ("poser_pause", "Pause one layer.", {"actor": "", "slot": ""}),
     ("poser_pauseall", "Pause the whole actor.", {"actor": ""}),
     ("poser_resumeall", "Play everything on the actor.", {"actor": ""}),
-    ("poser_scrub", "Scrub a slot to a time in seconds (pauses the actor).",
+    ("poser_scrub", "Scrub a slot to a time in seconds. Only that layer stops; the actor is not paused.",
      {"actor": "", "slot": "", "time": "seconds"}),
     ("poser_loop", "Switch the loop on a slot on or off, or read it when on is left out.", {"actor": "", "slot": "", "on": "1 or 0; leave out to read"}),
     ("poser_speed", "Set a slot's speed override.", {"actor": "", "slot": "", "value": "e.g. 0.5"}),

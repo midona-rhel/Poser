@@ -38,11 +38,15 @@ get("/undo")
 ok, _ = wait_until(lambda: edited(LEFT_ARM), lambda e: e, timeout=3)
 checks.step("undo the body reset", ok, f"left arm edited {edited(LEFT_ARM)}")
 
+step_before = get("/history").get("undo")
+read = get("/ik", actor=0, name=LEFT_HAND)
+checks.step("reading IK changes nothing", read.get("config", {}).get("Enabled") is False
+            and get("/history").get("undo") == step_before,
+            f"IK {read.get('config', {}).get('Enabled')}, undo step {get('/history').get('undo')}")
+
 switched = get("/ik", actor=0, name=LEFT_HAND, action="set", enabled=1, solver="TwoJoint")
 checks.step("switch IK on for the left hand", switched.get("ok") and ik().get("Enabled") is True,
             f"answer {switched.get('ok')} {switched.get('Detail')}, undo step {switched.get('history', {}).get('undo')}")
-checks.step("reading IK changes nothing", ik().get("Enabled") is True and get("/history").get("undo") == switched.get("history", {}).get("undo"),
-            "read without action")
 
 everything = get("/resetall", actor=0)
 ok, _ = wait_until(lambda: (edited(LEFT_ARM), ik().get("Enabled")), lambda r: r == (False, False), timeout=10)

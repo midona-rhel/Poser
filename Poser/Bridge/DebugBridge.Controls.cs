@@ -22,12 +22,10 @@ namespace Poser.Bridge;
 /// </summary>
 public sealed partial class DebugBridge
 {
-    private T Service<T>() => (T)_services.GetService(typeof(T))!;
-
     /// <summary>Reset → All in the inspector's Pose section.</summary>
     private string ResetAll(ActorId id)
     {
-        var result = Service<IActorResetControl>().ResetAll(id);
+        var result = ((IActorResetControl)_services.GetService(typeof(IActorResetControl))!).ResetAll(id);
         return Json(new { ok = result.Success, result.Detail, history = History() });
     }
 
@@ -58,14 +56,15 @@ public sealed partial class DebugBridge
     /// sets one slider, reset=1 resets them all. Reads every slider either way.</summary>
     private string FaceSliders(Dictionary<string, string> query, ActorId id)
     {
-        var face = Service<IExpressionControl>();
+        var face = (IExpressionControl)_services.GetService(typeof(IExpressionControl))!;
         Outcome? result = null;
         if (query.TryGetValue("unit", out var unit))
             result = face.SetWeight(id, unit,
                 float.Parse(query.GetValueOrDefault("weight", "0"), CultureInfo.InvariantCulture));
         else if (query.GetValueOrDefault("reset") == "1")
             result = face.Reset(id);
-        face.Seal();
+        if (result != null)
+            face.Seal();
         return Json(new
         {
             ok = result?.Success, result?.Detail,
@@ -81,7 +80,7 @@ public sealed partial class DebugBridge
     /// wet=1|0, reset=1.</summary>
     private string Presentation(Dictionary<string, string> query, ActorId id)
     {
-        var values = Service<IActorValueControl>();
+        var values = (IActorValueControl)_services.GetService(typeof(IActorValueControl))!;
         var results = new List<Outcome>();
         if (query.TryGetValue("visible", out var visible))
             results.Add(values.SetVisibility(id, visible == "1"));
@@ -97,8 +96,9 @@ public sealed partial class DebugBridge
             results.Add(values.SetWetnessEnabled(id, wet == "1"));
         if (query.GetValueOrDefault("reset") == "1")
             results.Add(values.ResetPresentation(id));
-        values.Seal();
-        var presentation = Service<ActorPresentationSession>();
+        if (results.Count > 0)
+            values.Seal();
+        var presentation = (ActorPresentationSession)_services.GetService(typeof(ActorPresentationSession))!;
         var reading = presentation.Read(id);
         var owned = presentation.OverridesFor(id);
         static float[]? Color(Vector4? c) => c is { } v ? new[] { v.X, v.Y, v.Z, v.W } : null;
@@ -128,7 +128,7 @@ public sealed partial class DebugBridge
             : lights.FirstOrDefault(l => SelectionId.ForLight(l.Id).ToString() == key);
         if (light == null)
             return Json(new { error = "No such light.", count = lights.Count });
-        var control = Service<ILightControl>();
+        var control = (ILightControl)_services.GetService(typeof(ILightControl))!;
         Outcome? result = null;
         if (query.TryGetValue("property", out var name))
         {

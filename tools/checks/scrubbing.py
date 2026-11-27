@@ -33,8 +33,8 @@ get("/scrubfallback", on=1)
 answer = get("/scrub", actor=0, slot=FULL_BODY, time=0.8)
 ok, reading = wait_until(base, at(0.8), timeout=3)
 checks.step("backup clock write to 0.8 s", answer.get("ok") and ok, f"clock {reading.get('time')} {answer.get('Detail')}")
+checks.step("reading the backup write leaves it on", get("/scrubfallback").get("fallback") is True, "read without on")
 get("/scrubfallback", on=0)
-checks.step("the backup write is off again", get("/scrubfallback").get("fallback") is False, "read without on")
 
 before_seek = base().get("time")
 answer = get("/seeklayer", actor=0, slot=FULL_BODY, time=2.0)
@@ -42,7 +42,8 @@ ok, reading = wait_until(base, lambda b: b.get("time") is not None and abs(b["ti
 checks.step("seek by the layer's own clock to 2.0 s", answer.get("ok") and ok, f"clock {reading.get('time')} {answer.get('Detail')}")
 
 undo = get("/undo")
-ok, reading = wait_until(base, lambda b: b.get("time") is not None and abs(b["time"] - 2.0) > 0.05, timeout=3)
+ok, reading = wait_until(base, lambda b: b.get("time") is not None and before_seek is not None
+                         and abs(b["time"] - before_seek) < 0.05, timeout=3)
 checks.step("undo goes back to the earlier frame", undo.get("ok") and ok,
             f"clock {reading.get('time')} (before the seek {before_seek}), undid {undo.get('history', {}).get('redo')}")
 

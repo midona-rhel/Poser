@@ -31,8 +31,9 @@ checks.step("pose the left arm", posed.get("ok") and saved_rotation is not None,
 path = os.path.join(tempfile.mkdtemp(prefix="poser-check-"), "check.xivs")
 save = get("/scene", path=path, save=1)
 ok, reading = wait_until(scene_idle, lambda s: s.get("busy") is False, timeout=20)
-checks.step("save the scene to a new file", save.get("ok") and ok and os.path.getsize(path) > 0,
-            f"answer {short(save, 160)}, file {os.path.getsize(path) if os.path.exists(path) else 'missing'} bytes")
+size = os.path.getsize(path) if os.path.exists(path) else 0
+checks.step("save the scene to a new file", save.get("ok") and ok and size > 0,
+            f"answer {short(save, 160)}, file {size} bytes")
 
 get("/resetall", actor=0)
 ok, _ = wait_until(rotation, lambda r: r is None, timeout=10)
