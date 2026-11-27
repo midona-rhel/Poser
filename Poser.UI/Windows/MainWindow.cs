@@ -71,7 +71,7 @@ public partial class MainWindow : Window
     private readonly Application.Presentation.ISceneObjectControl _objectControl;
     private readonly SceneSession _scene;
 
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
 
     private readonly ISceneCreation _creation;
     private readonly IScenePlaybackControl _playback;

@@ -44,7 +44,7 @@ public sealed class PoseCommandTests
     private sealed class Fixture : ITransformRuntimePort, IPoseEditReads, IDisposable
     {
         public readonly ActorId Actor = ActorId.New();
-        public readonly SceneSession Scene = new(new SelectionSession());
+        public readonly SceneSession Scene = new(new CurrentSelection());
         public readonly EditHistory History = new();
         public readonly Dictionary<TransformTargetId, TransformTargetState> Live = new();
         public readonly TransformTargetId Character, Model;

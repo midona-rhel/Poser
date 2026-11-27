@@ -58,7 +58,7 @@ public sealed class SpawnBrowserWindow : Window
     private readonly global::Poser.Application.Companions.CompanionCatalog _companions;
     private readonly ICompanionCatalogLoader _companionLoader;
     private int _companionsListed = -1;
-    private readonly SelectionSession _selection;
+    private readonly CurrentSelection _selection;
     private readonly ConfigurationService _configuration;
     private readonly ReferenceImageSession _referenceImages;
 
@@ -111,7 +111,7 @@ public sealed class SpawnBrowserWindow : Window
         PropertiesContent properties,
         global::Poser.Application.Companions.CompanionCatalog companions,
         ICompanionCatalogLoader companionLoader,
-        SelectionSession selection,
+        CurrentSelection selection,
         ConfigurationService configuration,
         ITextureProvider textures,
         UserNotices notices,

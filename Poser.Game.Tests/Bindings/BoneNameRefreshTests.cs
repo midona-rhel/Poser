@@ -51,7 +51,7 @@ public sealed class BoneNameRefreshTests
             _ => throw new InvalidOperationException(method.Name),
         });
         var registry = Registry(config, () => new[] { bone });
-        var selection = new SelectionSession();
+        var selection = new CurrentSelection();
         var scene = new SceneSession(selection);
         BoneDescriptor Publish()
         {

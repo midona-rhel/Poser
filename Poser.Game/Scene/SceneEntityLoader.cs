@@ -55,7 +55,7 @@ internal sealed class SceneEntityLoader
 
     /// <summary>The selection, so removing something never leaves it
     /// selected.</summary>
-    private readonly Poser.Application.Selection.SelectionSession _selection;
+    private readonly Poser.Application.Selection.CurrentSelection _selection;
 
     private readonly IPluginLog _log;
 
@@ -75,7 +75,7 @@ internal sealed class SceneEntityLoader
         GazeService gaze,
         Poser.Application.Integration.IntegrationReset integration,
         IActorManager actors,
-        Poser.Application.Selection.SelectionSession selection,
+        Poser.Application.Selection.CurrentSelection selection,
         IPluginLog log, IPlaceService place, SceneLifecycleHistory lifecycle, Poser.Game.Animation.AnimationSession animation)
     {
         _handles = handles;

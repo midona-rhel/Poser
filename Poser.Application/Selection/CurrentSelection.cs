@@ -237,11 +237,11 @@ public sealed class SelectionScope
 
 /// <summary>The selection the windows show and edit. Scene things of any kind
 /// can be selected together; selected bones belong to one actor.</summary>
-public sealed class SelectionSession
+public sealed class CurrentSelection
 {
     private readonly SelectionScope _live;
 
-    public SelectionSession()
+    public CurrentSelection()
     {
         _live = new SelectionScope(PublishLiveChanged);
     }
