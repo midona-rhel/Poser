@@ -10,7 +10,6 @@ namespace Poser.Application.Library;
 public sealed class AutoSaveLibrary(string rootDirectory, SceneAutoSaveService scenes)
 {
     public string RootDirectory { get; } = rootDirectory;
-    private readonly AutoSaveLibraryReader _reader = new();
     private readonly object _sync = new();
     private bool _scanning, _queued;
     private List<AutoSaveFolder>? _latest;
@@ -28,7 +27,7 @@ public sealed class AutoSaveLibrary(string rootDirectory, SceneAutoSaveService s
             while (true)
             {
                 List<AutoSaveFolder> result;
-                try { result = _reader.Read(root, scenes.RootDirectory); }
+                try { result = AutoSaveLibraryReader.Read(root, scenes.RootDirectory); }
                 catch { result = []; }
                 Volatile.Write(ref _latest, result);
                 lock (_sync)

@@ -200,7 +200,7 @@ public sealed partial class PoseLibraryPane
 
 
         // Only the scanned rails carry the synthetic Favorites head; the
-        // auto-save tab's row 1 is a day and a place.
+        // auto-save tab's row 1 is a day.
         var row = _vm.RailHeads > 1 && _vm.Folders.Count > 1
             ? _vm.Folders[1]
             : null;

@@ -110,6 +110,7 @@ public sealed partial class PoseLibraryPane
             return;
         tile.Enriched = true;
         string path = tile.Id;
+        string sub = tile.Sub;
         var kind = LibraryScanner.KindOf(path);
         _ = Task.Run(() =>
         {
@@ -119,11 +120,16 @@ public sealed partial class PoseLibraryPane
                 {
                     var metadata = AtomicPoseFileStore.Default.ReadMetadata(path);
                     var (status, detail) = PoseLibraryFileActions.Classify(metadata);
+                    // A pose that records where it was taken, such as an old
+                    // pose backup, shows the place after its date.
+                    string? place = metadata.Succeeded && metadata.PlaceName is { Length: > 0 } named
+                        ? sub + PlaceSeparator + named
+                        : null;
                     _enrichments.Enqueue(new TileFacts(
                         path,
                         metadata.Succeeded ? metadata.Author : null,
                         metadata.Succeeded ? metadata.Tags : [],
-                        null, status, detail));
+                        place, status, detail));
                 }
                 else if (kind is not (PoseLibraryEntryKind.Mcdf or PoseLibraryEntryKind.Chara))
                 {
