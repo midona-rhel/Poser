@@ -1,7 +1,6 @@
 using Poser.Application.Integration;
 using Poser.Application.Lifecycle;
 using Poser.Application.Posing;
-using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain;
@@ -10,6 +9,7 @@ using Poser.Domain.Integration;
 using Poser.Domain.Operations;
 using Poser.Domain.Transforms;
 using Poser.Game.Appearance;
+using Poser.Game.Presentation;
 
 namespace Poser.Game.Posing;
 

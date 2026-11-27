@@ -69,7 +69,6 @@ public sealed partial class AppearancePane
         }
     }
 
-    private readonly ActorPresentationSession _presentation;
     private readonly IAppearanceColorControl _colors;
     private readonly ModelCatalog _modelCatalog;
     private readonly IModelCatalogLoader _modelLoader;
@@ -158,7 +157,6 @@ public sealed partial class AppearancePane
     private bool _addMcdfToLibrary;
 
     public AppearancePane(
-        ActorPresentationSession presentation,
         ModelCatalog modelCatalog,
         IModelCatalogLoader modelLoader,
         IActorAppearanceControl integration,
@@ -204,7 +202,6 @@ public sealed partial class AppearancePane
         _notices = notices;
         _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
-        _presentation = presentation;
         _modelCatalog = modelCatalog;
         _modelLoader = modelLoader;
         _integration = integration;
@@ -316,90 +313,79 @@ public sealed partial class AppearancePane
 
     private void DrawActorView(PageScope page, ActorId actor)
     {
-        {
-            _modelLoader.EnsureLoaded();
-            // Model controls remain available for creature models.
-            bool supported = _presentation.IsSupported(actor)
-                && _presentation.Read(actor) is not null;
-            page.Section("General", _openGeneral,
-                next => _openGeneral = next,
-                form =>
-                {
-                    ModelRows(form, actor);
-                    if (supported && _presentation.Read(actor) is { } r)
-                        GeneralRows(form, actor,
-                            _presentation.OverridesFor(actor), r);
-                    _poseFiles.Draw(form, actor);
-                },
-                divider: false);
-            DrawAttachmentSection(page, actor);
-            bool first = false;
-
-            if (supported && _presentation.Read(actor) is { } reading)
+        _modelLoader.EnsureLoaded();
+        // Model controls remain available for creature models.
+        var reading = _values.Read(actor);
+        var owned = _values.OverridesFor(actor);
+        page.Section("General", _openGeneral,
+            next => _openGeneral = next,
+            form =>
             {
-                var owned = _presentation.OverridesFor(actor);
-                page.Section("Tint", _openModel,
-                    next => _openModel = next,
-                    form => TintRow(form, actor, owned, reading),
-                    divider: !first);
-                first = false;
-                page.Section("Wet surface", _openWetSurface,
-                    next => _openWetSurface = next,
-                    form => WetSurfaceRows(form, actor, owned, reading));
-            }
+                ModelRows(form, actor);
+                if (reading is not null)
+                    GeneralRows(form, actor, owned, reading);
+                _poseFiles.Draw(form, actor);
+            },
+            divider: false);
+        DrawAttachmentSection(page, actor);
 
-            // Companions, mounts and catalog creatures take the external
-            // integrations like any actor: Brio attaches its appearance
-            // capability to every actor entity (ActorEntity.cs:122) and
-            // gates only on the integration being installed.
-            RefreshReadouts(actor);
-            var external = _integration.OverridesFor(actor);
-
-            page.Section("External appearance", _openExternalAppearance,
-                next => _openExternalAppearance = next,
-                form => ExternalAppearanceRows(form, actor, external),
-                divider: !first);
-            first = false;
-            page.Section("Character file (MCDF)",
-                form => CharacterFileRows(form, actor, external), allowDisclosure: false);
-            // A body taken from the world is handed back from its own page,
-            // as a borrowed light is from its page.
-            if (_scene.Snapshot.FindActor(actor) is { IsAdopted: true })
-                page.Section("Scene", _openScene,
-                    next => _openScene = next,
-                    form => form.Actions(string.Empty, actions =>
-                        actions.Button(
-                            "Release",
-                            () => ReleaseAdopted(actor),
-                            help: "Hand this actor back to the world")));
+        if (reading is not null)
+        {
+            page.Section("Tint", _openModel,
+                next => _openModel = next,
+                form => TintRow(form, actor, owned, reading));
+            page.Section("Wet surface", _openWetSurface,
+                next => _openWetSurface = next,
+                form => WetSurfaceRows(form, actor, owned, reading));
         }
+
+        // Companions, mounts and catalog creatures take the external
+        // integrations like any actor: Brio attaches its appearance
+        // capability to every actor entity (ActorEntity.cs:122) and
+        // gates only on the integration being installed.
+        RefreshReadouts(actor);
+        var external = _integration.OverridesFor(actor);
+
+        page.Section("External appearance", _openExternalAppearance,
+            next => _openExternalAppearance = next,
+            form => ExternalAppearanceRows(form, actor, external));
+        page.Section("Character file (MCDF)",
+            form => CharacterFileRows(form, actor, external), allowDisclosure: false);
+        // A body taken from the world is handed back from its own page,
+        // as a borrowed light is from its page.
+        if (_scene.Snapshot.FindActor(actor) is { IsAdopted: true })
+            page.Section("Scene", _openScene,
+                next => _openScene = next,
+                form => form.Actions(string.Empty, actions =>
+                    actions.Button(
+                        "Release",
+                        () => ReleaseAdopted(actor),
+                        help: "Hand this actor back to the world")));
     }
 
     private void DrawAttachedActorView(
         PageScope page,
         ActorId actor)
     {
-        bool supported = _presentation.IsSupported(actor)
-            && _presentation.Read(actor) is not null;
+        var reading = _values.Read(actor);
+        var owned = _values.OverridesFor(actor);
         page.Section("General", _openGeneral,
             next => _openGeneral = next,
             form =>
             {
-                if (supported && _presentation.Read(actor) is { } reading)
-                    BasicPresentationRows(
-                        form, actor, _presentation.OverridesFor(actor), reading);
+                if (reading is not null)
+                    BasicPresentationRows(form, actor, owned, reading);
                 _poseFiles.Draw(form, actor);
             }, divider: false);
 
-        if (supported && _presentation.Read(actor) is { } present)
+        if (reading is not null)
         {
-            var owned = _presentation.OverridesFor(actor);
             page.Section("Tint", _openModel,
                 next => _openModel = next,
-                form => CharacterTintRow(form, actor, owned, present));
+                form => CharacterTintRow(form, actor, owned, reading));
             page.Section("Wet surface", _openWetSurface,
                 next => _openWetSurface = next,
-                form => WetSurfaceRows(form, actor, owned, present));
+                form => WetSurfaceRows(form, actor, owned, reading));
         }
         DrawAttachmentSection(page, actor);
     }
@@ -853,7 +839,7 @@ public sealed partial class AppearancePane
             help: "Hold wetness against weather and water");
 
         // Read the latest override after the switch callback.
-        var refreshed = _presentation.OverridesFor(actor);
+        var refreshed = _values.OverridesFor(actor);
         bool wetOn = refreshed.Wetness != null;
         WetnessState wet = refreshed.Wetness ?? reading.Wetness;
 
@@ -1165,8 +1151,8 @@ public sealed partial class AppearancePane
 
     /// <summary>Reads wetness when the slider action is dispatched.</summary>
     private WetnessState CurrentWetness(ActorId actor) =>
-        _presentation.OverridesFor(actor).Wetness
-        ?? (_presentation.Read(actor) is { } reading ? reading.Wetness : default);
+        _values.OverridesFor(actor).Wetness
+        ?? (_values.Read(actor) is { } reading ? reading.Wetness : default);
 
     private void RefreshReadouts(ActorId actor)
     {

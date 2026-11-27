@@ -6,7 +6,6 @@ using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using Poser.Application.Integration;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
-using Poser.Application.Presentation;
 using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
@@ -17,13 +16,14 @@ using Poser.Game.Natives;
 namespace Poser.Game.Presentation;
 
 /// <summary>
-/// Reads and writes actor opacity, tint, wetness, and shader colours. Opacity is
-/// written once; owned tint, wetness, and colours are reapplied on framework updates.
-/// Tint uses the CharacterBase update hook, following Brio, but suppresses updates
-/// only for the currently indexed owned model instances. Models are resolved again
-/// each update so replacement draw objects can receive the owned values.
+/// Reads and writes actor opacity, tint, wetness and shader colours in game
+/// memory. Opacity is written once. Tint, wetness and colours that Poser set are
+/// written again every frame, because the game recomputes them. Tint also hooks
+/// the game's own tint update, as Brio does, and skips it only for the models
+/// whose tint Poser set. Models are looked up again every frame, so a new body
+/// after a redraw gets Poser's values too.
 /// </summary>
-public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntimePort, IDisposable
+public sealed unsafe partial class PresentationRuntimePort : IDisposable
 {
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
@@ -39,21 +39,19 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         public bool IsEmpty => Tints.Count == 0 && Wetness == null && Colors.Count == 0;
     }
 
-    // Authoritative, stable-id keyed.
+    // The values Poser set, by actor.
     private readonly Dictionary<ActorId, Owned> _owned = new();
-    // Derived per-frame index for the tint detour only: the exact model
-    // instances whose tint Poser owns right now. Never a source of truth.
-    // SWAP-PUBLISHED, never mutated in place: the detour reads it from
-    // whichever thread the game calls the tint vfunc on, and a HashSet being
-    // cleared and refilled underneath that read tears. Writers build a fresh
-    // set and assign; readers take one reference and use it for the call.
+    // The model addresses whose tint Poser set right now, rebuilt from _owned
+    // for the tint hook. The hook runs on whatever thread the game calls it
+    // from, so the set is never changed in place: a new set is built and
+    // assigned, and the hook reads one reference per call.
     private volatile HashSet<nint> _ownedTintBases = new();
 
     private delegate nint UpdateTintDelegate(nint characterBase, nint tint);
     private readonly Hook<UpdateTintDelegate>? _updateTintHook;
-    // Non-null is NOT enabled: construction can succeed and Enable still
-    // throw. Tint commands gate on this, set only after Enable returned;
-    // a partially constructed hook is still disposed.
+    // Creating the hook can work while enabling it throws, so tint commands
+    // check this flag, which is set only after Enable returned. A hook that
+    // was created but not enabled is still disposed.
     private readonly bool _tintHookEnabled;
     private bool _tintFaultLogged;
 
@@ -73,10 +71,9 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
 
         try
         {
-            // CharacterBase vfunc 24 (vtable byte 0xC0): the game's own
-            // tint update, hooked so owned instances keep Poser's value.
-            // No CS symbol exists for this slot; the address is read from
-            // the CS-named static vtable at runtime, never a raw scan.
+            // CharacterBase virtual function 24 (vtable offset 0xC0) is the
+            // game's own tint update. FFXIVClientStructs has no name for it,
+            // so the address is read from CharacterBase's vtable, which it does name.
             var address = Marshal.ReadInt64((nint)CharacterBase.StaticVirtualTablePointer + NativeFields.CharacterBase_VfSetTint);
             _updateTintHook = hooking.HookFromAddress<UpdateTintDelegate>((nint)address, UpdateTintDetour);
             _updateTintHook.Enable();
@@ -92,10 +89,8 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
 
     private nint UpdateTintDetour(nint characterBase, nint tint)
     {
-        // Only the exact instances Poser owns are suppressed; everything
-        // else keeps the game's own tinting.
-        // One read of the field, then work off that snapshot: a concurrent
-        // rebuild replaces the reference, it never edits this instance.
+        // Skip the game's tint update only for models whose tint Poser set.
+        // The set is read once; a rebuild on another thread assigns a new set.
         try
         {
             if (_ownedTintBases.Contains(characterBase))
@@ -119,14 +114,15 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     {
         detail = null;
         var resolved = _bindings.Resolve(actor);
-        if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
+        if (!resolved.Success || resolved.Value is not { } legacy)
         {
             detail = resolved.Detail ?? $"Actor {actor} is no longer available.";
             return null;
         }
-        // The exit edge is observed after the game may have destroyed its
-        // GPose copies. Borrowed world bodies still exist; a stale binding
-        // alone is not permission to restore into a destroyed copy.
+        // Poser sees GPose end after the game may already have deleted its
+        // GPose actors, while their bindings still exist. Borrowed world actors
+        // are still there. Check the object table so nothing is written into a
+        // deleted actor.
         var current = _objects.CreateObjectReference(legacy.Address);
         if (current is null || !current.IsValid())
         {
@@ -143,8 +139,8 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         _ => PoseSlot.OffHand,
     };
 
-    /// <summary>The exact model instance for one tint target, type
-    /// checked; null when absent. Never another model.</summary>
+    /// <summary>The body, main-hand or off-hand model; null when that model is
+    /// absent. Never falls back to another model.</summary>
     private static CharacterBase* BaseFor(CSCharacter* character, PresentationModel model) =>
         SlotCharacterBases.Resolve((nint)character, SlotFor(model));
 
@@ -232,8 +228,8 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         var characterBase = BaseFor(character, model);
         if (characterBase != null)
             characterBase->Tint = incoming;
-        // If the model is absent, release ownership without a native write.
-        // A later model will use its own values rather than this override.
+        // An absent model has nothing to write back to; forget the tint, so a
+        // later model keeps its own.
         Release(actor, owned => owned.Tints.Remove(model));
         return Outcome.Ok();
     }
@@ -275,8 +271,9 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
         characterBase->WetnessDepth = state.Depth;
     }
 
-    // ── Ownership plumbing ────────────────────────────────────────────
+    // ── Remembering what Poser set ────────────────────────────────────
 
+    /// <summary>Forgets every value Poser set on the actor, without writing anything.</summary>
     public void ClearOwned(ActorId actor)
     {
         SuspendColors(actor);
@@ -302,8 +299,8 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
     }
 
     /// <summary>
-    /// Reapplies owned values to the currently resolved models, then publishes
-    /// the tint-hook index. Missing actors or models are skipped until available.
+    /// Every frame: writes Poser's values again to the current models, then
+    /// replaces the tint hook's set. Missing actors or models are skipped until they are back.
     /// </summary>
     private void EnforceOwned(IFramework framework)
     {
@@ -338,7 +335,7 @@ public sealed unsafe partial class PresentationRuntimePort : IPresentationRuntim
             }
         }
 
-        // Publish last: the detour never observes a half-built index.
+        // Assign the new set last, so the tint hook never reads one half built.
         _ownedTintBases = rebuilt;
     }
 
