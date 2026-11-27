@@ -427,19 +427,17 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
         {
             if (_actors.AddressPair(actor, actor) is { } refusal)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail(refusal.Detail!);
-            if (!_ledger.TryGetOwned(actor, out var owned))
+            if (!_ledger.TryGetOwned(actor, out var owned) || !_ledger.TryGetContents(actor, out var contents))
                 return IntegrationValue<SpawnCollectionSnapshot?>.Ok(null);
             var index = GPoseObjectTable.IndexOf(actor);
             var (valid, _, (effective, _)) = _getCollectionForObject.InvokeFunc(index);
             if (!valid || effective != owned)
                 return IntegrationValue<SpawnCollectionSnapshot?>.Fail(
                     "The duplicate's collection has been replaced; its owned resources cannot be captured.");
-            var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)index });
-            if (trees.Length == 0 || trees[0] is not { } tree)
-                return IntegrationValue<SpawnCollectionSnapshot?>.Fail("Penumbra reported no resources for the duplicate.");
-            var paths = CaptureRedirects(tree, path => _resolveGameObjectPath.InvokeFunc(path, index));
-            return IntegrationValue<SpawnCollectionSnapshot?>.Ok(new(paths,
-                _getMetaManipulations.InvokeFunc(index) ?? string.Empty));
+            // The collection's content is what it was filled with, not what the
+            // actor draws now: an MCDF loads its own files and then releases its
+            // collection, so the loaded files would be the MCDF's.
+            return IntegrationValue<SpawnCollectionSnapshot?>.Ok(contents);
         });
 
     /// <summary>Gives the clone a Poser-owned temporary collection built from
@@ -517,7 +515,7 @@ public sealed class PenumbraIpc : IPenumbraPort, ISpawnCollectionPort, IDisposab
             var (clearEc, _) = _setCollectionForObject.InvokeFunc(cloneIndex, null, false, true);
             if (_ledger.Release(cloneAddress, out var stale))
                 _deleteTemporaryCollection.InvokeFunc(stale);
-            _ledger.Record(cloneAddress, collection);
+            _ledger.Record(cloneAddress, collection, new(redirects, manipulations));
             return PenumbraResult(clearEc, "clearing the duplicate's seed collection");
         });
 
