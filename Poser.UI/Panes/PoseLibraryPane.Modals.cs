@@ -87,15 +87,10 @@ public sealed partial class PoseLibraryPane
                 }
                 _deleteMore.Clear();
                 var result = _fileOperations.Delete(_deletePath);
-                if (result.Succeeded)
-                {
-                    if (_type == LibraryType.AutoSaves)
-                        _autoDirty = true;
-                    else
-                        _library.RequestScan();
-                }
-                else
+                if (!result.Succeeded)
                     _notices.Report(new Poser.Domain.Outcome(false, result.Detail), "Delete");
+                else if (_type == LibraryType.AutoSaves)
+                    _autoDirty = true;
                 _deleteOpen = false;
             }
             ImGui.SameLine(0f, gap);

@@ -494,6 +494,45 @@ internal sealed unsafe partial class IkChainRegistry
         return false;
     }
 
+    /// <summary>Adds a pair to <paramref name="into"/> for each bone on another skeleton that
+    /// a switched-on chain follows: the chain's skeleton, then the followed bone's skeleton.
+    /// Two Joint and CCD chains follow the bone picked as their target. FABRIK and Rope chains
+    /// can follow a bone with their handle and with each end. The followed skeleton is found
+    /// by actor and slot, which a redraw keeps.</summary>
+    public void FollowedSkeletons(List<(SkeletonKey Follower, SkeletonKey Followed)> into)
+    {
+        foreach (var (chainKey, state) in _ikChains)
+        {
+            if (!state.Config.Enabled)
+                continue;
+            if (state.Config is { Solver: IkSolver.Fabrik or IkSolver.Rope })
+            {
+                if (state.Config.Fabrik is not { } fabrik)
+                    continue;
+                AddFollowed(chainKey.Skeleton, fabrik.Root, into);
+                AddFollowed(chainKey.Skeleton, fabrik.Tip, into);
+                AddFollowed(chainKey.Skeleton, fabrik.Handle, into);
+            }
+            else if (state is { Config.TargetMode: IkTargetMode.Bone, TargetBone: { } target })
+                AddFollowed(chainKey.Skeleton, target, into);
+        }
+    }
+
+    private void AddFollowed(SkeletonKey follower, FabrikTarget target,
+        List<(SkeletonKey Follower, SkeletonKey Followed)> into)
+    {
+        if (target is { Mode: IkTargetMode.Bone, Bone: { } bone })
+            AddFollowed(follower, bone, into);
+    }
+
+    private void AddFollowed(SkeletonKey follower, BoneId bone,
+        List<(SkeletonKey Follower, SkeletonKey Followed)> into)
+    {
+        if (_bindings.Resolve(bone.Skeleton.Actor) is { Success: true, Value: { } actor }
+            && new SkeletonKey(actor.Id.Unique, bone.Slot) is var followed && followed != follower)
+            into.Add((follower, followed));
+    }
+
     /// <summary>Finds the chain's joints as bone numbers in the end bone's skeleton and
     /// partial. A missing twist bone is -1, and a missing joint makes Two Joint
     /// unavailable. A chain with no arm or leg definition only has its end bone,

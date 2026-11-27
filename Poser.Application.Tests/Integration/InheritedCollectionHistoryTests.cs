@@ -89,6 +89,7 @@ public sealed class InheritedCollectionHistoryTests
                     Owned = ((CollectionBaseline)args![1]!).InheritedCollection;
                     _individual = false;
                     return IntegrationResult.Ok();
+                case nameof(IIntegrationRuntimeFake.FollowsAnotherDuplicate): return false;
                 case nameof(IIntegrationRuntimeFake.CaptureInheritedCollection):
                     return CaptureFailure == null
                         ? IntegrationValue<SpawnCollectionSnapshot?>.Ok(Owned)
