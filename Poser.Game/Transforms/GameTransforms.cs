@@ -13,15 +13,16 @@ using LegacyTransform = Poser.Domain.Transforms.Transform;
 namespace Poser.Game.Transforms;
 
 /// <summary>
-/// Resolves stable transform targets and applies or captures their runtime state.
+/// Reads and writes the position, rotation and scale of actors, bones, lights,
+/// objects, world objects and IK colliders in the game.
 /// </summary>
-public sealed class TransformRuntimePort : ITransformRuntimePort
+public sealed class GameTransforms : ITransformRuntimePort
 {
     private readonly StableBindingRegistry _bindings;
     private readonly PosingService _actors;
     private readonly BonePosingService _bones;
 
-    public TransformRuntimePort(
+    public GameTransforms(
         StableBindingRegistry bindings,
         PosingService actors,
         BonePosingService bones)

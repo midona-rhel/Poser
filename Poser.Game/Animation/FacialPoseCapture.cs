@@ -32,7 +32,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
     private readonly IEntityBindings _bindings;
     private readonly SceneSession _scene;
     private readonly AnimationSession _animation;
-    private readonly TransformCommandService _transforms;
+    private readonly TransformCommands _transforms;
     private readonly TransformGestureService _gestures;
     private readonly IBonePosingService _posing;
     private readonly ISessionGenerationSource _sessionGeneration;
@@ -95,7 +95,7 @@ public sealed class FacialPoseCapture : IDisposable, IFacialPoseCapture
         IEntityBindings bindings,
         SceneSession scene,
         AnimationSession animation,
-        TransformCommandService transforms,
+        TransformCommands transforms,
         TransformGestureService gestures,
         IBonePosingService posing,
         ISessionGenerationSource sessionGeneration,

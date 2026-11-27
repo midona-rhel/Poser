@@ -143,7 +143,7 @@ public partial class MainWindow : Window
 
     private readonly EditorState _editorState;
 
-    private readonly ITransformFacade _cleanTransforms;
+    private readonly ITransformEditing _transformEditing;
 
     private readonly Application.Posing.IPoseCommands _cleanPose;
 
@@ -335,7 +335,7 @@ public partial class MainWindow : Window
         IScenePlaybackControl playback,
         ISceneDuplication duplication,
         EditorState editorState,
-        ITransformFacade cleanTransforms,
+        ITransformEditing transformEditing,
         Application.Posing.IPoseCommands cleanPose,
         Application.Presentation.ICameraTargetControl cameraTargets,
         PoseLibraryPane libraryPane,
@@ -428,7 +428,7 @@ public partial class MainWindow : Window
         _issueReport = issueReport;
         _sceneWorkflow = sceneWorkflow;
         _editorState = editorState;
-        _cleanTransforms = cleanTransforms;
+        _transformEditing = transformEditing;
         _cleanPose = cleanPose;
 
         _propService = propService;
@@ -495,7 +495,7 @@ public partial class MainWindow : Window
             _overlayControl, _overlayPresentation, _referenceImages, _scene,
             _scenePane, _selection, _sidebar, _poseFileSection,
             _duplication, _selectedEntities, _entityActions, _playback,
-            _cameraTargets, _names, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement, _cleanTransforms, graphicalBonePane);
+            _cameraTargets, _names, () => OnSkeletonSettingsRequested?.Invoke(), _removalDialog, _placement, _transformEditing, graphicalBonePane);
         eventBus.Subscribe<GazeStateChangedEvent>(_ => _sidebar.InvalidateGaze());
         _companionCatalog = companionCatalog;
         _poseRail = poseRail;
@@ -926,10 +926,10 @@ public partial class MainWindow : Window
         // the switch shows the global state and is live under every selection
         // and under none: nothing about the patch is per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
-        _vm.CanUndo = _cleanTransforms.CanUndo;
-        _vm.CanRedo = _cleanTransforms.CanRedo;
-        _vm.UndoDescription = _cleanTransforms.UndoDescription;
-        _vm.RedoDescription = _cleanTransforms.RedoDescription;
+        _vm.CanUndo = _transformEditing.CanUndo;
+        _vm.CanRedo = _transformEditing.CanRedo;
+        _vm.UndoDescription = _transformEditing.UndoDescription;
+        _vm.RedoDescription = _transformEditing.RedoDescription;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and a section header's plus. Every one of them opens
         // the same surface, the spawn browser — the lights and cameras pluses
@@ -1022,14 +1022,14 @@ public partial class MainWindow : Window
 
     private void Undo()
     {
-        if (_cleanTransforms.CanUndo)
-            _cleanTransforms.Undo();
+        if (_transformEditing.CanUndo)
+            _transformEditing.Undo();
     }
 
     private void Redo()
     {
-        if (_cleanTransforms.CanRedo)
-            _cleanTransforms.Redo();
+        if (_transformEditing.CanRedo)
+            _transformEditing.Redo();
     }
 
 

@@ -11,7 +11,13 @@ namespace Poser.Documents.Library;
 
 public sealed record LibrarySourceSpec(string Name, string Path, bool Enabled);
 
-/// <summary>Bounded filesystem traversal. The caller owns scheduling and publication.</summary>
+/// <summary>
+/// Lists the library's source folders: every pose, scene, character and
+/// object file by name and folder, without reading any of them. Stops a
+/// source that goes past the limits in <see cref="PoseLibraryLimits"/>.
+/// <c>PoseLibraryService</c> in Poser.Application decides when to scan
+/// and publishes the result.
+/// </summary>
 public sealed class LibraryScanner
 {
     private const string PoseExtension = ".pose";
@@ -33,26 +39,12 @@ public sealed class LibraryScanner
         SceneFile.OverlayEntryExtension;
 
     private readonly Func<string, bool>? _observeDirectory;
-    private readonly Func<string, IEnumerable<string>> _enumerateFiles;
-    private readonly Func<string, IEnumerable<string>> _enumerateDirectories;
-    private readonly int _maxFiles;
-    private readonly int _maxFolders;
-    private readonly int _maxSources;
-    public LibraryScanner(
-        Func<string, bool>? observeDirectory = null,
-        Func<string, IEnumerable<string>>? enumerateFiles = null,
-        Func<string, IEnumerable<string>>? enumerateDirectories = null,
-        int maxFiles = PoseLibraryLimits.MaxFiles,
-        int maxFolders = PoseLibraryLimits.MaxFolders,
-        int maxSources = PoseLibraryLimits.MaxSources)
-    {
+
+    /// <param name="observeDirectory">Replaces the check that a source folder
+    /// exists and can be opened, so a test can make one source fail. The
+    /// plugin passes nothing.</param>
+    public LibraryScanner(Func<string, bool>? observeDirectory = null) =>
         _observeDirectory = observeDirectory;
-        _enumerateFiles = enumerateFiles ?? Directory.EnumerateFiles;
-        _enumerateDirectories = enumerateDirectories ?? Directory.EnumerateDirectories;
-        _maxFiles = Math.Clamp(maxFiles, 1, PoseLibraryLimits.MaxFiles);
-        _maxFolders = Math.Clamp(maxFolders, 1, PoseLibraryLimits.MaxFolders);
-        _maxSources = Math.Clamp(maxSources, 1, PoseLibraryLimits.MaxSources);
-    }
 
     public PoseLibrarySnapshot Scan(
         IReadOnlyList<LibrarySourceSpec> configuredSources, long generation, int revision,
@@ -60,7 +52,7 @@ public sealed class LibraryScanner
     {
         var folders = new List<PoseLibraryFolder>();
         var entries = new List<PoseLibraryEntry>();
-        var sources = configuredSources.Take(_maxSources).ToArray();
+        var sources = configuredSources.Take(PoseLibraryLimits.MaxSources).ToArray();
         var skippedSources = Math.Max(0, configuredSources.Count - sources.Length);
 
         var sourceSnapshots = new List<PoseLibrarySourceSnapshot>(sources.Length);
@@ -118,11 +110,11 @@ public sealed class LibraryScanner
                     ref fileCount);
                 if (root is not null)
                 {
-                    if (entries.Count + root.Count > _maxFiles
-                        || folders.Count + CountFolders(root) > _maxFolders)
+                    if (entries.Count + root.Count > PoseLibraryLimits.MaxFiles
+                        || folders.Count + CountFolders(root) > PoseLibraryLimits.MaxFolders)
                         throw new ScanAbortException(
                             $"Source '{source.Path}' exceeds the remaining library capacity " +
-                            $"({_maxFiles} files / {_maxFolders} folders overall). Disable another source or narrow this root.");
+                            $"({PoseLibraryLimits.MaxFiles} files / {PoseLibraryLimits.MaxFolders} folders overall). Disable another source or narrow this root.");
                     // The entire tree was validated before appending. Flatten
                     // assigns indexes directly into the aggregate folder list.
                     Flatten(root, folders, entries, cancellation);
@@ -219,7 +211,7 @@ public sealed class LibraryScanner
         if (observation.Health != PoseLibrarySourceHealth.Ready)
             throw new ScanAbortException(
                 $"Folder '{directory}': {observation.Detail}", observation.Health);
-        if (++folderCount > _maxFolders)
+        if (++folderCount > PoseLibraryLimits.MaxFolders)
             throw new ScanAbortException($"Source traversal at '{directory}' exceeds the folder limit.");
 
         var node = new ScanNode
@@ -233,12 +225,12 @@ public sealed class LibraryScanner
         var files = new List<string>();
         try
         {
-            foreach (var file in _enumerateFiles(directory))
+            foreach (var file in Directory.EnumerateFiles(directory))
             {
                 cancellation.ThrowIfCancellationRequested();
                 if (!IsLibraryFile(file))
                     continue;
-                if (++fileCount > _maxFiles)
+                if (++fileCount > PoseLibraryLimits.MaxFiles)
                     throw new ScanAbortException($"Source traversal at '{directory}' exceeds the file limit.");
                 files.Add(file);
             }
@@ -255,10 +247,10 @@ public sealed class LibraryScanner
         var subdirectories = new List<string>();
         try
         {
-            foreach (var subdirectory in _enumerateDirectories(directory))
+            foreach (var subdirectory in Directory.EnumerateDirectories(directory))
             {
                 cancellation.ThrowIfCancellationRequested();
-                if (folderCount + subdirectories.Count + 1 > _maxFolders)
+                if (folderCount + subdirectories.Count + 1 > PoseLibraryLimits.MaxFolders)
                     throw new ScanAbortException($"Source traversal at '{directory}' exceeds the folder limit.");
                 subdirectories.Add(subdirectory);
             }

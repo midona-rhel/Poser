@@ -63,7 +63,7 @@ public sealed partial class DebugBridge : IDisposable
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Game.Services.IBonePosingService _bonePosing;
     private readonly Application.Posing.IIkConfigurationPort _ikConfiguration;
-    private readonly ITransformFacade _transforms;
+    private readonly ITransformEditing _transforms;
     private readonly global::Poser.UI.SkeletonOverlayWindow _overlay;
     private readonly global::Poser.UI.SkeletonOverlayPresentation _overlayPresentation;
     private readonly global::Poser.Application.Viewport.IViewportReads _viewport;
@@ -151,7 +151,7 @@ public sealed partial class DebugBridge : IDisposable
         global::Poser.Application.Catalog.ISpawnCatalogService catalog,
         global::Poser.Game.Posing.IkBakeCapture ikBake,
         global::Poser.Application.Library.IPoseLibraryService library,
-        ITransformFacade transforms,
+        ITransformEditing transforms,
         global::Poser.Application.Viewport.IViewportReads viewport,
         global::Poser.UI.SkeletonOverlayWindow overlay,
         global::Poser.UI.SkeletonOverlayPresentation overlayPresentation,
@@ -166,8 +166,7 @@ public sealed partial class DebugBridge : IDisposable
         Application.Integration.ICharacterFiles characterFiles, IObjectTable objects,
         IVirtualCameraService cameras, Application.Presentation.ICameraControl cameraControl,
         Application.Viewport.ICameraProjection cameraProjection,
-        Application.Transforms.TransformParenting parenting,
-        Application.Transforms.IParentingRuntime parentingRuntime,
+        Game.Transforms.TransformParenting parenting,
         SceneSession sceneSession, Application.Posing.IActorColliderCapture bodyColliders,
         IdleModExport idleExport, IDataManager idleData, ISigScanner idleScanner)
     {
@@ -178,7 +177,7 @@ public sealed partial class DebugBridge : IDisposable
         _poseLibrary = poseLibrary;
         _idleExport = idleExport;
         _idleData = idleData; _idleScanner = idleScanner;
-        _parenting = parenting; _parentingRuntime = parentingRuntime;
+        _parenting = parenting;
         _sceneSession = sceneSession; _bodyColliders = bodyColliders;
         _textures = textures;
         _readback = readback;

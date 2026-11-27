@@ -10,7 +10,7 @@ namespace Poser.Game.Transforms;
 
 /// <summary>
 /// Converts a bone's pose layers from the form the bone code keeps into the
-/// form a move's undo step stores. TransformRuntimePort.ToLegacyLayers converts
+/// form a move's undo step stores. GameTransforms.ToLegacyLayers converts
 /// them back.
 /// </summary>
 internal static class LegacyPoseStackConverter

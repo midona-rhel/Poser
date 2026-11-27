@@ -127,7 +127,7 @@ public sealed class PoseCommandTests
                         new(Vector3.UnitX, Quaternion.CreateFromAxisAngle(Vector3.UnitY, .3f), Vector3.Zero))]), true);
             Gestures = new(Scene, this, History);
             Journal = new(History, Gestures, _ => true, new Fixtures.NoticeLog());
-            var transforms = new TransformCommandService(this, History, Gestures);
+            var transforms = new TransformCommands(this, History, Gestures);
             var edits = new PoseEditService(this, transforms);
             Commands = new PoseCommands(Scene, edits, new(null!, null!, null!, Scene, null!), this);
             _integration = new(Idle<IIntegrationRuntimeFake>(), Idle<IMcdfFileBoundary>(),
