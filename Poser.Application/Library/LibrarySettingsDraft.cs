@@ -27,7 +27,8 @@ public sealed class LibrarySourceDraft
         _enabled = source.Enabled;
         Kind = kind;
         SavedIndex = index;
-        Saved = index < 0 ? null : LibrarySettingsDraft.Copy(source);
+        // The saved list is never changed in place: Save replaces it whole.
+        Saved = index < 0 ? null : source;
     }
 }
 
@@ -152,7 +153,4 @@ public sealed class LibrarySettingsDraft
         detail = string.Empty;
         return true;
     }
-
-    internal static LibrarySourceConfig Copy(LibrarySourceConfig source) => new()
-        { Name = source.Name, Path = source.Path, Enabled = source.Enabled, Kind = source.Kind };
 }
