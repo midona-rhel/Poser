@@ -60,6 +60,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
     private readonly GPoseSceneState _sceneState;
     private readonly SceneAppearance _appearance;
+    private readonly SceneCaptureService _capture;
     private readonly SceneEntityLoader _sceneEntities;
     private readonly SceneActorRestore _actorRestore;
     private readonly SceneHistoryBinder _historyBinder;
@@ -83,6 +84,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     internal SceneWorkflow(
         GPoseSceneState sceneState,
         SceneAppearance appearance,
+        SceneCaptureService capture,
         SceneEntityLoader sceneEntities,
         SceneActorRestore actorRestore,
         SceneHistoryBinder historyBinder,
@@ -96,6 +98,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         _thisInstall = thisInstall;
         _sceneState = sceneState;
         _appearance = appearance;
+        _capture = capture;
         _sceneEntities = sceneEntities;
         _actorRestore = actorRestore;
         _historyBinder = historyBinder;
@@ -314,7 +317,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             {
                 armRefusal = await _sceneState.OnFramework(() =>
                     operation.Guard(_sceneState, cancellation)
-                        ?? _appearance.ArmSceneCapture(
+                        ?? _capture.BeginCapture(
                             operation.SceneScopeId, description,
                             includeAnimation: options.IncludeAnimation,
                             onCaptured: outcome =>

@@ -35,6 +35,7 @@ public static class SceneWorkflowRegistration
         services.AddSingleton<SceneWorkflow>(sp => new SceneWorkflow(
             sp.GetRequiredService<GPoseSceneState>(),
             sp.GetRequiredService<SceneAppearance>(),
+            sp.GetRequiredService<SceneCaptureService>(),
             sp.GetRequiredService<SceneEntityLoader>(),
             sp.GetRequiredService<SceneActorRestore>(),
             sp.GetRequiredService<SceneHistoryBinder>(),

@@ -104,16 +104,6 @@ internal sealed class SceneAppearance : IDisposable
 
     internal void RememberActorIdentity(IActor actor, string? hash) => _capture.RememberIdentity(actor, hash);
 
-    /// <summary>Asks for the scene to be copied once the bone positions have been
-    /// read fresh on the next frame. <paramref name="onCaptured"/> gets the copy.
-    /// Returns why the copy could not be asked for, or null. Main thread.</summary>
-    public string? ArmSceneCapture(
-        Guid sceneId,
-        string? description,
-        Action<SceneCaptureOutcome> onCaptured,
-        bool includeAnimation = false) =>
-        _capture.BeginCapture(sceneId, description, onCaptured, includeAnimation);
-
     /// <summary>Works out a checksum for every MCDF the scene names and writes it
     /// into the scene, so a later load can tell whether the file has changed.
     /// Returns a note for each file that could not be read. Runs on the save's
