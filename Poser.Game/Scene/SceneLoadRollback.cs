@@ -13,8 +13,9 @@ internal sealed class SceneLoadRollback(
     TransformParenting parenting)
 {
     /// <summary>
-    /// Framework thread only and idempotent — each token clears as it is
-    /// released. Returns the joined failure detail, or null.
+    /// Takes the load back. Main thread only. Each entity and saved state is
+    /// taken off the operation's lists once it is undone, so running it again
+    /// only retries what failed. Returns what could not be undone, or null.
     /// </summary>
     public string? Run(SceneOperation operation)
     {

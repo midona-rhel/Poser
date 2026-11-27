@@ -15,7 +15,10 @@ public interface IPendingSceneCreation
     void ApplyPoseWhenReady(SceneEntityHandle handle, PoseFile pose, PoseImportOptions options, string description);
 }
 
-/// <summary>Completes creation receipts on framework updates, independently of their initiating surface.</summary>
+/// <summary>Finishes adding an actor, object or other entity on a later frame,
+/// once the game has made it: selects it, freezes it or applies a pose, as the
+/// control that asked for it wanted. Works the same whichever control started
+/// it.</summary>
 public sealed class PendingSceneCreation(
     ISceneCreation creation,
     ISessionGenerationSource sessions,
@@ -24,7 +27,9 @@ public sealed class PendingSceneCreation(
     IAnimationPlayback animation,
     Presentation.IUserNotices notices) : IPendingSceneCreation
 {
-    // Preserve the library's binding deadline; actual redraw readiness remains owned by Game.
+    // How many frames to wait for a new entity to show up in Poser's lists, the
+    // same wait the library uses. Waiting for a redraw to finish is left to
+    // Poser.Game.
     private const int BindingFrames = 120;
     private readonly List<Pending> _pending = [];
 
@@ -91,7 +96,7 @@ public sealed class PendingSceneCreation(
             });
             var result = imports.ImportPose(actor, pending.Pose, pending.Options!, pending.Description, onReceipt: receipt =>
             {
-                // A receipt from a GPose session that has ended is not reported.
+                // A result from a GPose session that has ended is not reported.
                 if (sessions.ActiveSessionGeneration == pending.Handle.Session
                     && receipt.SessionGeneration == pending.Handle.Session)
                     final(receipt);

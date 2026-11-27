@@ -52,8 +52,9 @@ internal sealed class SceneLoadHistory(
         });
     }
 
-    /// <summary>Reports a redo's outcome once the replayed load is
-    /// terminal, on the framework thread history is confined to.</summary>
+    /// <summary>Reports whether a redo worked once the load it started has
+    /// ended. Reports on the game's main thread, where the undo history
+    /// runs.</summary>
     private async Task CompleteRedo(
         SceneOperation operation, Task running, Action<GestureResult> completed)
     {
@@ -66,7 +67,8 @@ internal sealed class SceneLoadHistory(
         }
         catch (Exception)
         {
-            // The terminal is published before the task ends either way.
+            // The load's result is published before its task ends, whether
+            // the task ended normally or not.
         }
         var result = operation.Committed
             ? GestureResult.Ok()

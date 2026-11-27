@@ -6,6 +6,8 @@ using Poser.Domain.Operations;
 
 namespace Poser.Application.Scene;
 
+/// <summary>Copies an entity, a group or the selection, and selects the copy
+/// once the game has made it.</summary>
 public interface ISceneDuplication
 {
     void DuplicateAndSelect(SelectionId id, bool withPose = false);
@@ -41,8 +43,8 @@ public sealed class SceneDuplication(
             _pending.SelectWhenReady(handle);
     }
 
-    /// <summary>One entity's copy receipt, or null when
-    /// the kind has none or the copy failed.</summary>
+    /// <summary>The handle of the entity's copy, or null when this kind can't
+    /// be copied or the copy failed.</summary>
     private SceneEntityHandle? DuplicateEntity(SelectionId id, bool withPose)
     {
         var result = _creation.Duplicate(id, withPose);

@@ -20,10 +20,10 @@ using Poser.Documents.Files;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The session a scene operation runs in, as a whole: its generation and
-/// framework thread, the scene receipts it issues, the destroy-first clear,
-/// and the environment and world toggles a load stamps and its rollback
-/// restores.
+/// What a scene save or load needs from the GPose session as a whole: which
+/// session is running, running code on the game's main thread, clearing the
+/// scene before a load, and reading and setting the environment and the
+/// frozen water and physics that a load sets and undo puts back.
 /// </summary>
 internal sealed class GPoseSceneState : IDisposable
 {
@@ -108,10 +108,11 @@ internal sealed class GPoseSceneState : IDisposable
             ? "There is no local player to spawn the scene's actors from."
             : null;
 
-    /// <summary>Removes everything Poser added before a load that clears the scene
-    /// first: spawned actors, objects, overlays, lights and extra cameras.
-    /// Borrowed map objects get their earlier state back. Things Poser never
-    /// created, such as the Main Camera, stay.</summary>
+    /// <summary>Empties the scene before a load that clears first: every GPose
+    /// actor, object, overlay, spawned light and extra camera goes, and
+    /// borrowed world objects are given back. The Main Camera stays, and so do
+    /// your own character and the actors in <paramref name="keepActors"/> when
+    /// the load reuses them.</summary>
     public SceneClearOutcome ClearScene(bool keepLocalPlayer = false, IReadOnlyCollection<SceneEntityHandle>? keepActors = null) =>
         _clear.ClearScene(keepLocalPlayer, keepActors?.Select(handle => _handles.Resolve(handle)).ToHashSet());
 

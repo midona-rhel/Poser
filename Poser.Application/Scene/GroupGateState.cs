@@ -3,6 +3,8 @@ using Poser.Domain.Identity;
 
 namespace Poser.Application.Scene;
 
+/// <summary>The group gates: hiding, pausing and night mode for every member
+/// of a group at once.</summary>
 public interface IGroupGateState
 {
     void Reapply();
@@ -14,15 +16,17 @@ public interface IGroupGateState
     void Leave(SelectionId member);
 }
 
-/// <summary>Member-state overrides and restoration; GroupSteps owns their history transaction.</summary>
+/// <summary>Applies a group's gates to its members and puts back each member's
+/// own state when a gate is opened or the member leaves the group.
+/// <see cref="GroupSteps"/> makes each change an undo step.</summary>
 public sealed class GroupGateState(
     SceneGroups groups, ISelectedEntityActions entities, IScenePlaybackControl playback) : IGroupGateState
 {
     private readonly SceneGroups _groups = groups;
     private readonly ISelectedEntityActions _entities = entities;
     private readonly IScenePlaybackControl _playback = playback;
-    /// <summary>Makes the world match every group's gates, after the model
-    /// was put back: the journal's way to undo a gate or a dissolve.</summary>
+    /// <summary>Makes the scene match every group's gates after undo has put the
+    /// groups back. This is how undo reverses a gate or an ungroup.</summary>
     public void Reapply()
     {
         foreach (var group in _groups.All)

@@ -11,7 +11,9 @@ using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
-/// <summary>Where a spawn lands: the anchor for each placement mode.</summary>
+/// <summary>The point and heading each placement mode measures from: the
+/// camera or the selected actor. Used to place new entities and loaded
+/// scenes.</summary>
 public interface IPlacementAnchorSource
 {
     PlacementAnchorData? CameraAnchorNow();

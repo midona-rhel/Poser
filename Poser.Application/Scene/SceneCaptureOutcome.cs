@@ -2,10 +2,10 @@ using Poser.Documents.Files;
 
 namespace Poser.Application.Scene;
 
-/// <summary>Typed result of one whole-scene capture. Notes are per-entity
-/// observations about state the capture could not represent (an actor with
-/// no skeleton, a camera target that no longer resolves) — they are part of
-/// the read model, never silently dropped facts.</summary>
+/// <summary>The result of copying the scene for a save. Notes name what could
+/// not be saved, such as an actor without a skeleton or a camera whose target
+/// is gone. They go into the save's result; nothing is left out without a
+/// word.</summary>
 public sealed class SceneCaptureOutcome
 {
     public bool Success { get; }

@@ -10,10 +10,11 @@ using Poser.Game.Core;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// Refreshes native scene bindings on the framework thread and restores owned
-/// state when GPose ends or the plugin unloads. Events request a refresh rather
-/// than running one inside the publisher. Missing skeletons are retried with
-/// backoff; unchanged scene content does not interrupt transform gestures.
+/// Keeps Poser's lists of actors, skeletons and objects matched to the game,
+/// on the game's main thread, and puts back what Poser changed when GPose ends
+/// or Poser unloads. An event only asks for a refresh; the refresh runs on the
+/// next frame. A skeleton that isn't there yet is looked for again, less often
+/// each time. A refresh that finds nothing new does not interrupt a drag.
 /// </summary>
 public sealed class SceneRefreshAndCleanup : IDisposable
 {
@@ -49,9 +50,9 @@ public sealed class SceneRefreshAndCleanup : IDisposable
     private bool _disposeRestoreAbandoned;
 
     private SceneSnapshot? _lastSignature;
-    /// <summary>The bone-free fingerprint of the scene the last refresh
-    /// settled on; the idle poll rebuilds only when it moves. Null after a
-    /// rejected candidate, so the next poll retries.</summary>
+    /// <summary>A summary, without bones, of the scene the last refresh took.
+    /// The once-a-second check only refreshes when it differs. Cleared when a
+    /// new picture was refused, so the next check tries again.</summary>
     private IReadOnlyList<object?>? _idleSignature;
     private readonly CoalescedRefresh _refreshQueue = new();
     private bool _friendlyBoneNames;
@@ -116,10 +117,10 @@ public sealed class SceneRefreshAndCleanup : IDisposable
         _events.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         _events.Subscribe<GPoseExitingEvent>(OnGPoseExiting);
-        // Discovery, retries, and refreshes all run on the framework thread:
-        // the registry refresh reads native skeleton data and shared
-        // bone-name state, while events publish from the framework thread —
-        // a concurrent ctor-thread refresh corrupted shared collections.
+        // Every refresh runs on the main thread, in the frame update: it reads
+        // the game's skeletons and shared bone names, and the events that ask
+        // for it come from the main thread too. A refresh from another thread
+        // once corrupted those shared lists.
         _framework.Update += OnFrameworkUpdate;
         _refreshQueue.Request();
     }
@@ -183,9 +184,8 @@ public sealed class SceneRefreshAndCleanup : IDisposable
         }
         catch
         {
-            // An unreachable framework thread at shutdown means the game
-            // is tearing down anyway; there is nothing left to restore
-            // into.
+            // The main thread can't be reached at shutdown when the game is
+            // closing too; then there is nothing left to put back.
         }
 
         // Groups are plain managed state, so they end with the plugin
@@ -223,8 +223,8 @@ public sealed class SceneRefreshAndCleanup : IDisposable
 
     private void RefreshCore()
     {
-        // Taken before the candidate: reading the skeletons here can rebuild
-        // one, and the candidate below must already include that rebuild.
+        // Read before building the new picture: reading the skeletons can make
+        // the game rebuild one, and the picture below must include that.
         var idle = _bindings.IdleSignature();
         _idleSignature = null;
         var staged = _bindings.RefreshCandidate();
@@ -234,9 +234,9 @@ public sealed class SceneRefreshAndCleanup : IDisposable
         {
             // Combine newly encountered untranslated bone names into one log write.
             Poser.Domain.Posing.BoneInfo.BoneInfoService.FlushUntranslatedLog();
-            // Skip unchanged scene content only when auxiliary bindings are also
-            // unchanged. Preview bodies are bound for pose import but omitted from
-            // the public scene snapshot, so the snapshot alone cannot detect them.
+            // Skip the refresh only when nothing changed, preview bodies
+            // included. Pose-import previews are tracked but are not part of the
+            // scene picture, so the picture alone would miss them.
             var signature = CanonicalSignature(candidate);
             _retryPending = candidate.Actors.Any(
                 actor => actor.CharacterSkeleton == null);
@@ -255,10 +255,10 @@ public sealed class SceneRefreshAndCleanup : IDisposable
             if (!result.Accepted)
                 return;
 
-            // SceneSession owns application admission; native maps become visible
-            // only after that same admission accepts the candidate. This includes
-            // NoChange: exact ids/generations are still checked by the registry
-            // against the admitted structural snapshot before map publication.
+            // SceneSession decides whether the new picture is taken; the lookup
+            // from ids to game objects is updated only after it is. When nothing
+            // changed, the lookup still checks each id and generation against
+            // the picture before it updates.
             _bindings.CommitCandidate(staged, _scene.Snapshot);
             // Retire clothing-only requests against the newly published actor list.
             _clothingOnly.Reconcile(actor => _scene.Snapshot.FindActor(actor) != null);
@@ -269,20 +269,18 @@ public sealed class SceneRefreshAndCleanup : IDisposable
                 string.Join(", ", candidate.Actors.Select(actor =>
                     $"[{actor.Name} skeleton {(actor.CharacterSkeleton is null ? "none" : "bound")}]")));
 
-            // A rejected candidate is deliberately retried: recording its
-            // signature would coalesce away the correction opportunity.
+            // A refused picture is tried again on purpose. Remembering it here
+            // would make the next refresh think nothing changed.
             _lastSignature = signature;
             _idleSignature = idle;
             _retryInterval = InitialRetryInterval;
             if (!result.StateChanged)
                 return;
 
-            // Selective reconciliation against the refreshed exact-generation
-            // scene: a gesture whose every target is still current survives and
-            // accepts the new revision (unrelated actors/slots may come and go
-            // mid-drag); any stale target cancels it once through the rebuilt
-            // bindings with no history entry. History patches follow the same
-            // rule per patch.
+            // A drag whose targets are all still in the scene, in the same
+            // generation, carries on: other actors may come and go during it.
+            // A drag with a target that is gone or was remade is cancelled once,
+            // with no undo step. Each undo step is checked the same way.
             _gestures.ReconcileScene(_scene.Contains);
             _history.Reconcile(
                 _scene.Contains,
@@ -310,10 +308,10 @@ public sealed class SceneRefreshAndCleanup : IDisposable
     }
 
     /// <summary>
-    /// The one place a refresh runs: at most one per frame, for whatever
-    /// requested it since the last. Also the bounded retry pump for actors
-    /// whose skeletons were not ready at discovery (0.5 s doubling to 5 s
-    /// while such an actor remains present) and the idle poll.
+    /// The one place a refresh runs: at most one per frame, for whatever asked
+    /// for it since the last. It also retries actors whose skeletons were not
+    /// ready when they were found, every 0.5 s at first and doubling up to 5 s
+    /// while such an actor is there, and runs the once-a-second check.
     /// </summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
@@ -343,9 +341,10 @@ public sealed class SceneRefreshAndCleanup : IDisposable
     }
 
     /// <summary>
-    /// Creates the one revision-neutral structural fingerprint. ContentEquals
-    /// is the normative full-scene policy, including exact ids, bone topology,
-    /// relationships, environment, gaze, and every camera field.
+    /// The scene picture with its revision number left out, for telling whether
+    /// anything changed. Two are equal when everything matches: ids, bones and
+    /// how they connect, parents, environment, gaze and every camera
+    /// value.
     /// </summary>
     internal static SceneSnapshot CanonicalSignature(SceneSnapshot candidate) =>
         candidate with { Revision = 0 };
@@ -437,8 +436,8 @@ public sealed class SceneRefreshAndCleanup : IDisposable
             reason,
             detail =>
             {
-                // The receipt is the capture's last operation, not this
-                // cancel's result; a cancel has nothing of its own to fail.
+                // The capture's result describes its own last run, not this
+                // cancel, so it is not reported as this cancel's failure.
                 _facialCapture.CancelPending(detail);
                 return null;
             },
@@ -502,7 +501,8 @@ public sealed class SceneRefreshAndCleanup : IDisposable
         }
         catch (Exception)
         {
-            // The notice surface may already be gone at unload; the log has it.
+            // The notice window may already be gone when Poser unloads; the
+            // log still has the message.
         }
     }
 

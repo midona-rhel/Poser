@@ -17,15 +17,14 @@ internal sealed class SceneOperation : SingleFlightOperation
     public required Guid SceneScopeId { get; init; }
     public required string FileName { get; init; }
     public required SceneOperationKind Kind { get; init; }
-    /// <summary>The user asked to cancel; later cancellable steps keep
-    /// reading "Cancelling" until the terminal state lands.</summary>
+    /// <summary>Cancel was pressed. From then on every step that can be
+    /// cancelled shows "Cancelling" until the final result is in.</summary>
     public bool CancelRequested;
-    /// <summary>Whether a landed load appends its step. A load the
-    /// journal itself started as a redo does not: its step is the one
-    /// being redone.</summary>
+    /// <summary>Set when this load is a redo. A finished load adds an undo
+    /// step, except a redo: its step is the one being redone.</summary>
     public SceneLoadReplay? Replay;
-    /// <summary>The destroy-first clear ran: a rollback cannot give the
-    /// session back what the clear took, and the outcome says so.</summary>
+    /// <summary>The scene was cleared before the load. Taking the load back
+    /// cannot bring back what the clear removed, and the result says so.</summary>
     public bool SessionCleared;
 
     // What this load created, oldest first. Undoing the load removes them
@@ -45,20 +44,20 @@ internal sealed class SceneOperation : SingleFlightOperation
     public IReadOnlyDictionary<(string Kind, Guid Key), SceneEntityHandle> HistoryEntities =
         new Dictionary<(string Kind, Guid Key), SceneEntityHandle>();
     public SceneCameraBaseline? DefaultCameraBaseline;
-    /// <summary>Children whose parent link this load imported; rollback
-    /// removes them before the entities go.</summary>
+    /// <summary>Entities this load gave a parent. Taking the load back removes
+    /// those links before it removes the entities.</summary>
     public readonly List<SelectionId> ImportedLinks = new();
-    /// <summary>The load reached its commit (Applied, or Failed with
-    /// named refusals): it is in the session and is one history step.
+    /// <summary>The load finished and was kept, either complete or with some
+    /// parts named as failed. It is in the scene and is one undo step.
     /// </summary>
     public bool Committed;
     public string? TerminalDetail;
     public SceneEnvironment? EnvironmentBaseline;
     public SceneWorld? WorldBaseline;
 
-    /// <summary>Checked at the top of every framework-thread action before
-    /// its mutations. A replaced session generation is an invalidation: the
-    /// token that admitted this operation no longer exists.</summary>
+    /// <summary>Checked at the start of every step on the main thread, before
+    /// it changes anything. Returns why the operation must stop: it was
+    /// cancelled, or the GPose session it started in has ended.</summary>
     public string? Guard(GPoseSceneState sceneState, CancellationToken cancellation)
     {
         if (Invalidated || cancellation.IsCancellationRequested)
