@@ -268,6 +268,7 @@ public sealed class McdfHistoryTests
                     IntegrationValue<CollectionAssignment>.Ok(new(_collection, "Temporary", false)),
                 nameof(IIntegrationRuntimeFake.GetCollections) =>
                     IntegrationValue<IReadOnlyList<ExternalItem>>.Ok([]),
+                nameof(IIntegrationRuntimeFake.FollowsAnotherDuplicate) => false,
                 nameof(IIntegrationRuntimeFake.CaptureInheritedCollection) =>
                     IntegrationValue<SpawnCollectionSnapshot?>.Ok(OwnedDuplicate
                         ? new(new Dictionary<string, string> { ["model"] = "mod/model" }, "") : null),

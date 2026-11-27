@@ -18,6 +18,10 @@ internal sealed class DuplicateCollectionLedger
 
     public bool TryGetOwned(nint clone, out Guid collection) => _owned.TryGetValue(clone, out collection);
     public bool Owns(nint clone) => _owned.ContainsKey(clone);
+
+    /// <summary>Whether this is a temporary collection Poser made for one of
+    /// its duplicates. Such a collection never belongs to another plugin.</summary>
+    public bool IsDuplicateCollection(Guid collection) => _owned.ContainsValue(collection);
     public void Record(nint clone, Guid collection) => _owned[clone] = collection;
     public bool Release(nint clone, out Guid collection) => _owned.Remove(clone, out collection);
     public void Forget(nint clone) => _owned.Remove(clone);

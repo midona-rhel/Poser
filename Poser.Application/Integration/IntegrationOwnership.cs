@@ -59,11 +59,14 @@ public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusP
 
     /// <summary>
     /// Rejects an effective collection absent from Penumbra's installed list, unless
-    /// it is Empty, individually assigned, or this actor's tracked MCDF collection.
-    /// Such an unrecognized temporary collection cannot be captured for Reset.
+    /// it is Empty, individually assigned, this actor's tracked MCDF collection, or
+    /// a collection Poser made for another duplicate that this actor follows (a
+    /// minion follows its owner's). Such an unrecognized temporary collection
+    /// cannot be captured for Reset. The actor's own duplicate collection is
+    /// rejected here too; callers then capture it with CaptureInheritedCollection.
     /// </summary>
     internal string? ForeignTemporaryCollection(
-        IntegrationOverrides current, CollectionAssignment assignment)
+        ActorId actor, IntegrationOverrides current, CollectionAssignment assignment)
     {
         if (assignment.HasIndividualAssignment)
             return null;
@@ -73,6 +76,8 @@ public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusP
         if (assignment.EffectiveId == Guid.Empty)
             return null;
         if (assignment.EffectiveId == current.Mcdf?.TemporaryCollection)
+            return null;
+        if (penumbra.FollowsAnotherDuplicate(actor, assignment.EffectiveId))
             return null;
         var known = penumbra.GetCollections();
         if (!known.Success || known.Value is not { } collections)
@@ -85,7 +90,7 @@ public sealed class IntegrationOwnership(IPenumbraPort penumbra, ICustomizePlusP
     internal string? ForeignTemporaryCollectionDetail(
         ActorId actor, IntegrationOverrides current, CollectionAssignment assignment)
     {
-        var refusal = ForeignTemporaryCollection(current, assignment);
+        var refusal = ForeignTemporaryCollection(actor, current, assignment);
         if (refusal == null) return null;
         // Spawn collections have a different native owner from MCDF, but are
         // still ours. Ask that owner to capture the current assignment.
