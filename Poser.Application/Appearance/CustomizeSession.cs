@@ -1,5 +1,7 @@
 using Poser.Application.Integration;
+using Poser.Application.Posing;
 using Poser.Application.Transforms;
+using Poser.Domain;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 
@@ -9,25 +11,26 @@ namespace Poser.Application.Appearance;
 /// Applies character customization through Glamourer and records successful
 /// changes for undo. Repeated changes to the same value, such as a slider
 /// drag, merge into one undo step. A related set of values is also one step.
-/// Failed writes are not added to history.
+/// Failed writes are not added to history. Undo also reaches the actor after
+/// it was removed and brought back by undo.
 /// </summary>
 public sealed class CustomizeSession : ICustomizeControl
 {
     private readonly ValueJournal _journal;
     private readonly IntegrationSelectors _integration;
-    private readonly IIntegrationResolutionPort _runtime;
     private readonly DisruptiveSteps _disruptive;
+    private readonly IActorReplacements _replacements;
 
     public CustomizeSession(
         ValueJournal journal,
         IntegrationSelectors integration,
-        IIntegrationResolutionPort runtime,
-        DisruptiveSteps disruptive)
+        DisruptiveSteps disruptive,
+        IActorReplacements replacements)
     {
         _journal = journal;
         _integration = integration;
-        _runtime = runtime;
         _disruptive = disruptive;
+        _replacements = replacements;
     }
 
     public IntegrationValue<CustomizeState> Read(ActorId actor) => _integration.ReadCustomize(actor);
@@ -50,15 +53,18 @@ public sealed class CustomizeSession : ICustomizeControl
         if (before == value)
             return IntegrationResult.Ok();
         IntegrationResult result = IntegrationResult.Ok();
+        var now = _replacements.Track(actor);
         var written = _journal.Set((actor, key), description,
             () => before,
             next =>
             {
-                result = Apply(actor, new Dictionary<CustomizeKey, int> { [key] = next });
+                if (now() is not { } id)
+                    return Gone();
+                result = Apply(id, new Dictionary<CustomizeKey, int> { [key] = next });
                 return result.Outcome;
             },
             value,
-            () => Alive(actor));
+            () => now() is not null);
         return written.Success ? result : new(false, written.Detail, result.AppearanceRefusal);
     }
 
@@ -100,17 +106,15 @@ public sealed class CustomizeSession : ICustomizeControl
         var result = Apply(actor, after);
         if (!result.Success)
             return result;
+        var now = _replacements.Track(actor);
         _journal.Record<IReadOnlyDictionary<CustomizeKey, int>>(SelectionId.ForActor(actor), description, before, after,
-            next =>
-            {
-                var applied = Apply(actor, next);
-                return applied.Outcome;
-            }, () => Alive(actor));
+            next => now() is { } id ? Apply(id, next).Outcome : Gone(),
+            () => now() is not null);
         return result;
     }
 
     private IntegrationResult Apply(ActorId actor, IReadOnlyDictionary<CustomizeKey, int> values) =>
         _integration.SetCustomize(actor, values);
 
-    private bool Alive(ActorId actor) => _runtime.IsResolvable(actor);
+    private static Outcome Gone() => Outcome.Fail("The actor is no longer available.");
 }
