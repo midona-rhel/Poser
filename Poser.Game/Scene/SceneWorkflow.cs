@@ -107,9 +107,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         _loadHistory = new SceneLoadHistory(history, sceneState, historyBinder, _rollback, this);
     }
 
-
-    /// <summary>How many bytes including modded appearance would add to a save
-    /// right now. The interface reads it every frame, so it is only a quick sum
+    /// <summary>The interface reads this every frame, so it is only a quick sum
     /// over the actors in the scene.</summary>
     public long EstimatedAppearanceBytes => _appearance.EstimateAppearanceBytes();
 
@@ -126,7 +124,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
 
     public OperationReceipt? Receipt => _flight.Receipt;
 
-    /// <summary>Only one scene save/load runs at a time.</summary>
     public bool Busy => _flight.Busy;
 
     /// <summary>Finishes when the running save or load has finished. The final
@@ -283,7 +280,9 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         SceneSaveOptions options,
         CancellationToken cancellation)
     {
-        IReadOnlyList<string> sealTemporaries = Array.Empty<string>();
+        // Every temporary appearance package this save makes. They are all
+        // deleted when the save ends, however it ends.
+        var temporaries = new List<string>();
         void Finish(
             bool success,
             string detail,
@@ -397,11 +396,9 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                 PublishStep(operation, new SceneProgress(
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.ApplyingAppearance, 0, 0, false, null));
-                var sealed_ = await _appearance.SealAppearance(
-                    scene, actorIdentities, AppearanceSealTimeout,
-                    cancellation);
-                notes.AddRange(sealed_.Notes);
-                sealTemporaries = sealed_.TemporaryFiles;
+                notes.AddRange(await _appearance.SealAppearance(
+                    scene, actorIdentities, temporaries, AppearanceSealTimeout,
+                    cancellation));
                 PublishStep(operation, new SceneProgress(
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.Writing, 0, 0, false, null));
@@ -445,6 +442,9 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                     written.RecoveryEvidencePaths);
                 return;
             }
+            // The file exists from here on, also when the save ends as Failed
+            // below, so the Library lists it.
+            _observer.Saved();
 
             var summary =
                 $"Saved {scene.Actors.Count} actors, {scene.Props.Count} objects, " +
@@ -476,8 +476,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
             }
 
             Finish(true, summary, notes);
-            // Refresh the Library after saving.
-            _observer.Saved();
         }
         catch (Exception ex)
         {
@@ -485,8 +483,7 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         }
         finally
         {
-            // Delete the temporary package files when the save ends, even when it ends early.
-            foreach (var temporary in sealTemporaries)
+            foreach (var temporary in temporaries)
                 _appearance.DeleteTemporary(temporary);
         }
     }

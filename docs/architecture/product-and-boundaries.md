@@ -45,7 +45,7 @@ Every namespace starts with the name of its project, so a `using` line shows whi
 - `I…Control`, `I…Commands` and similar are what the interface calls. For example `IGazeControl` is how the Gaze controls change where an actor looks.
 - `I…Port` and `I…RuntimePort` are what Poser's logic needs from the game. `Poser.Game` implements them. For example `IGazeRuntimePort` is implemented by `GazeRuntimeAdapter` in `Poser.Game/Posing`.
 
-When the work is mostly talking to the game, the class that does it lives in `Poser.Game`, next to the game code it calls, and `Poser.UI` calls it through one `Poser.Application` interface. Cameras (`ICameraControl`), animation (`IAnimationPlayback`), saving and loading scenes (`ISceneWorkflow`), `ISceneObjectControl` and `IWorldService` work this way.
+When the work is mostly talking to the game, the class that does it lives in `Poser.Game`, next to the game code it calls, and `Poser.UI` calls it through one `Poser.Application` interface. Cameras (`ICameraControl`), animation (`IAnimationPlayback`), importing a pose (`IPoseImportCommands`), saving and loading scenes (`ISceneWorkflow`), `ISceneObjectControl` and `IWorldService` work this way.
 
 Values crossing these interfaces are ids and plain values, never game addresses. How the game side turns an id back into a game object is in [posing-runtime.md](posing-runtime.md).
 

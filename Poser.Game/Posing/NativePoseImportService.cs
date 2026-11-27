@@ -240,7 +240,7 @@ public sealed class NativePoseImportService : IPoseImportCommands
             _bindings.Resolve(id) is not { Success: true, Value: { } current } ||
             !ReferenceEquals(actor, current))
             return PoseEditResult.Fail("The actor could not be resolved.");
-        return _imports.Begin(id, new PreparedPoseImport(plan), options, description, onReceipt);
+        return _imports.Begin(id, plan, options, description, onReceipt);
     }
 
     private readonly ISkeletonService _skeletons;

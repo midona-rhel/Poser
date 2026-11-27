@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
-using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using Poser.Domain.Scene;
 using Poser.Application.Events;
 using Poser.Application.Lifecycle;
@@ -12,10 +11,9 @@ using Poser.Game.Core;
 namespace Poser.Game.Lighting;
 
 /// <summary>
-/// The three GPose camera-light slots, mirrored into the light list. The
-/// toggle hook follows the player switching a slot; the poll backfills the
-/// lights the game already had when GPose opened. A slot the game empties is
-/// delisted, never destroyed — these lights are the game's.
+/// Lists the game's three GPose camera lights in Poser's light list. A hook on
+/// the game's light switch notices when the player turns one on or off; a poll
+/// once a second finds the lights that were already on when GPose opened.
 /// </summary>
 internal sealed unsafe class GPoseCameraLights : IDisposable
 {
@@ -26,13 +24,13 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
 
     private delegate bool ToggleGPoseLightDelegate(GPoseLightController* state, uint index);
 
-    private readonly IPluginLog _log;
     private readonly IGPoseService _gPose;
     private readonly IEventBus _events;
     private readonly List<Light> _lights;
     private readonly WorldLightCapture _world;
     private readonly Func<bool> _disposed;
     private readonly Hook<ToggleGPoseLightDelegate>? _toggleGPoseLightHook;
+    private readonly IPluginLog _log;
     private DateTime _nextGPosePollUtc = DateTime.MinValue;
 
     /// <param name="lights">The light service's own list; camera lights are
@@ -47,29 +45,28 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
         WorldLightCapture world,
         Func<bool> disposed)
     {
-        _log = log;
         _gPose = gPose;
         _events = events;
         _lights = lights;
         _world = world;
         _disposed = disposed;
+        _log = log;
 
-        var toggleAddress = LightingService.TryScan(
-            sigScanner, log, "GPose light toggle", ToggleGPoseLightSignature);
-        if (toggleAddress is { } toggle)
+        // Without the hook, the poll below still finds a toggled light within
+        // a second. The field is set before the hook is turned on, because
+        // the detour reads it; a hook that won't turn on is removed again.
+        if (LightingService.TryScan(sigScanner, log, "GPose light toggle", ToggleGPoseLightSignature) is not { } toggle)
+            return;
+        try
         {
-            try
-            {
-                _toggleGPoseLightHook =
-                    hooks.HookFromAddress<ToggleGPoseLightDelegate>(
-                        toggle, ToggleGPoseLightDetour);
-                _toggleGPoseLightHook.Enable();
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(
-                    $"LightingService: could not hook the GPose light toggle, camera lights will not be tracked: {ex.Message}");
-            }
+            _toggleGPoseLightHook = hooks.HookFromAddress<ToggleGPoseLightDelegate>(toggle, ToggleGPoseLightDetour);
+            _toggleGPoseLightHook.Enable();
+        }
+        catch (Exception ex)
+        {
+            _toggleGPoseLightHook?.Dispose();
+            _toggleGPoseLightHook = null;
+            _log.Warning($"LightingService: could not hook the GPose light toggle: {ex.Message}");
         }
     }
 
@@ -79,20 +76,14 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
     private bool ToggleGPoseLightDetour(GPoseLightController* state, uint index)
     {
         var result = _toggleGPoseLightHook!.Original(state, index);
-        try
-        {
-            if (!_disposed() && _gPose.IsGPosing)
-                RefreshGPoseLights();
-        }
-        catch (Exception ex)
-        {
-            _log.Error($"LightingService: failed to track a GPose light toggle: {ex}");
-        }
+        if (!_disposed() && _gPose.IsGPosing)
+            RefreshGPoseLights();
         return result;
     }
 
-    /// <summary>Reconciles the three camera-light slots against the list. A
-    /// slot the game emptied is delisted, never destroyed.</summary>
+    /// <summary>Brings the light list in line with the three camera-light
+    /// slots. A slot the game emptied is taken off the list; the light is the
+    /// game's, so Poser never frees it.</summary>
     public void RefreshGPoseLights()
     {
         var controller = GetGPoseController();
@@ -123,12 +114,18 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
                 tracked.Invalidate();
             }
 
-            // The game constructed it, so it is sitting in the overworld set;
-            // a camera light is not a capture candidate.
+            // The constructor hook listed it as a world light; a camera light
+            // can't be taken over.
             _world.Forget((nint)native);
 
+            // The light counts as valid only while its slot still holds it, so
+            // a light the game freed is never used, even before the next poll.
+            var address = (nint)native;
+            var index = slot;
             _lights.Add(new Light(
-                native, $"Camera Light {slot + 1}", LightOwnership.GPose)
+                native, $"Camera Light {slot + 1}", LightOwnership.GPose,
+                () => GetGPoseController() is var current && current != null
+                    && (nint)current->GetLight(index) == address)
             {
                 GPoseSlot = (int)slot,
             });
@@ -139,9 +136,8 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
             _events.Publish(new LightListChangedEvent());
     }
 
-    /// <summary>Backfill, Ktisis' RefreshLightEntities: the toggle hook covers
-    /// the player toggling a camera light, but not the lights the game already
-    /// had when GPose opened.</summary>
+    /// <summary>Finds camera lights the toggle hook didn't see, such as the
+    /// ones already on when GPose opened. Ktisis polls the same way.</summary>
     public void PollGPoseLights()
     {
         if (!_gPose.IsGPosing)
@@ -153,7 +149,7 @@ internal sealed unsafe class GPoseCameraLights : IDisposable
         RefreshGPoseLights();
     }
 
-    /// <summary>A GPose edge restarts the backfill poll immediately.</summary>
+    /// <summary>Makes the next frame poll, used when GPose starts or ends.</summary>
     public void ResetPoll() => _nextGPosePollUtc = DateTime.MinValue;
 
     private Light? FindGPoseLight(int slot)
