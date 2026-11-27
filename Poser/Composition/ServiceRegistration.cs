@@ -337,7 +337,6 @@ internal static class ServiceRegistration
         services.AddSingleton<IPosePreview>(sp => sp.GetRequiredService<Game.Preview.PosePreviewService>());
         services.AddSingleton<IPoseImportCommands, NativePoseImportService>();
         services.AddSingleton<PoseImportCoordinator>();
-        services.AddSingleton<IPoseImportRuntime, PoseImportRuntime>();
         return services;
     }
 
