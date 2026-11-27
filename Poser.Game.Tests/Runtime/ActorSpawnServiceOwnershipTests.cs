@@ -361,6 +361,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         }
 
         public bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha) => Gate(descriptor);
+        public float? ReadAlpha(SpawnNativeDescriptor descriptor) => Gate(descriptor) ? 1f : null;
 
         public bool CopyEquipmentVisibility(SpawnNativeDescriptor source, SpawnNativeDescriptor target) => true;
         public bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target) => true;
@@ -432,6 +433,8 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool IsAdopted(IActor actor) => false;
         public bool? AdoptedVisibility(IActor actor) => null;
         public bool SetAdoptedVisibility(IActor actor, bool visible) => false;
+        public float? AdoptedOpacity(IActor actor) => null;
+        public bool SetAdoptedOpacity(IActor actor, float alpha) => false;
         public void ReleaseWorldActor(nint address) { }
         public void Dispose() { }
         public void RegisterAuxiliary(ushort objectIndex, ActorKind kind) { }

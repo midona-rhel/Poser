@@ -8,31 +8,33 @@ namespace Poser.Game;
 
 /// <summary>
 /// What an actor's body shows: its model id (with the redraw that follows a
-/// change), its visibility, and the drawn-appearance copies between two
-/// actors. Callers have already proven the framework thread.
+/// change), whether it is hidden, its opacity, and the drawn-appearance copies
+/// between two actors. Hiding and opacity both use the game's character alpha,
+/// so this class is the only place that writes it. Callers have already proven
+/// the framework thread.
 /// </summary>
 internal sealed class ActorModelControl
 {
     private readonly IActorManager _actorManager;
     private readonly IEventBus _eventBus;
     private readonly IActorSpawnNativeAdapter _native;
-    private readonly SpawnOwnershipLedger _ownership;
     private readonly SpawnActorResolver _resolver;
     private readonly SpawnFramePoller _poller;
     private readonly IPluginLog? _log;
 
-    // Legacy-compatible visibility overrides for actors Poser did not spawn,
-    // keyed by the EXACT descriptor (address+EntityId+lifetime stamp) so an
-    // override dies with the native lifetime and can never transfer across
-    // slot reuse. Cleared with the GPose session.
-    private readonly Dictionary<SpawnNativeDescriptor, bool> _legacyVisibility = new();
-    private const int MaxLegacyVisibilityEntries = 256;
+    // The actors Poser hid, with the alpha each had when it was hidden. Hiding
+    // and opacity both use the game's character alpha, so showing puts this
+    // value back instead of 1, and an opacity change while hidden only changes
+    // this value. Keyed by the exact descriptor (address, EntityId and lifetime
+    // stamp), so an entry never carries over to the next actor in the same
+    // slot. Cleared when GPose ends. Borrowed world actors keep the same value
+    // in their adoption record instead.
+    private readonly Dictionary<SpawnNativeDescriptor, float> _hiddenAlpha = new();
 
     public ActorModelControl(
         IActorManager actorManager,
         IEventBus eventBus,
         IActorSpawnNativeAdapter native,
-        SpawnOwnershipLedger ownership,
         SpawnActorResolver resolver,
         SpawnFramePoller poller,
         IPluginLog? log)
@@ -40,14 +42,13 @@ internal sealed class ActorModelControl
         _actorManager = actorManager;
         _eventBus = eventBus;
         _native = native;
-        _ownership = ownership;
         _resolver = resolver;
         _poller = poller;
         _log = log;
     }
 
-    /// <summary>Ends the session the legacy visibility overrides belong to.</summary>
-    public void ClearSessionVisibility() => _legacyVisibility.Clear();
+    /// <summary>Forgets which actors Poser hid, when GPose ends.</summary>
+    public void ClearSessionVisibility() => _hiddenAlpha.Clear();
 
     public bool CopyDrawnAppearance(IActor source, IActor target)
     {
@@ -99,20 +100,23 @@ internal sealed class ActorModelControl
                 if (!_actorManager.SetAdoptedVisibility(actor, visible))
                     return;
             }
-            else if (!_resolver.TryResolveForOperation(actor, out var descriptor, out var ownership))
+            else if (!_resolver.TryResolveForOperation(actor, out var descriptor, out _))
                 return;
-            else
+            else if (visible)
             {
-                // Fade, never tear down — see IActorSpawnNativeAdapter.SetAlpha.
-                // The remembered flag below stays the record of what the USER
-                // asked for; the alpha is only how the game is told.
-                if (!_native.SetAlpha(descriptor, visible ? 1f : 0f))
+                if (_hiddenAlpha.TryGetValue(descriptor, out var alpha))
+                {
+                    if (!_native.SetAlpha(descriptor, alpha))
+                        return;
+                    _hiddenAlpha.Remove(descriptor);
+                }
+            }
+            else if (!_hiddenAlpha.ContainsKey(descriptor))
+            {
+                if (_native.ReadAlpha(descriptor) is not { } alpha
+                    || !_native.SetAlpha(descriptor, 0f))
                     return;
-
-                if (ownership is not null)
-                    _ownership.TrySetVisibility(actor, descriptor, visible);
-                else
-                    RememberLegacyVisibility(descriptor, visible);
+                _hiddenAlpha[descriptor] = alpha;
             }
         }
         catch (Exception ex)
@@ -126,14 +130,31 @@ internal sealed class ActorModelControl
         _eventBus.Publish(ActorListChangedEvent.Of(PresentActors()));
     }
 
-    private void RememberLegacyVisibility(SpawnNativeDescriptor descriptor, bool visible)
+    /// <summary>The actor's opacity: the alpha it shows, or while Poser has it
+    /// hidden, the alpha showing it puts back. Null when the actor is gone.</summary>
+    public float? GetOpacity(IActor actor)
     {
-        // Bounded fail-safe: dropping overrides only loses badge state, and
-        // only in a pathological session.
-        if (_legacyVisibility.Count >= MaxLegacyVisibilityEntries
-            && !_legacyVisibility.ContainsKey(descriptor))
-            _legacyVisibility.Clear();
-        _legacyVisibility[descriptor] = visible;
+        if (_actorManager.IsAdopted(actor))
+            return _actorManager.AdoptedOpacity(actor);
+        if (!_resolver.TryResolveForOperation(actor, out var descriptor, out _))
+            return null;
+        return _hiddenAlpha.TryGetValue(descriptor, out var hidden)
+            ? hidden
+            : _native.ReadAlpha(descriptor);
+    }
+
+    /// <summary>Sets the actor's opacity. While Poser has the actor hidden,
+    /// only the alpha that showing it puts back changes, so it stays hidden.</summary>
+    public bool SetOpacity(IActor actor, float alpha)
+    {
+        if (_actorManager.IsAdopted(actor))
+            return _actorManager.SetAdoptedOpacity(actor, alpha);
+        if (!_resolver.TryResolveForOperation(actor, out var descriptor, out _))
+            return false;
+        if (!_hiddenAlpha.ContainsKey(descriptor))
+            return _native.SetAlpha(descriptor, alpha);
+        _hiddenAlpha[descriptor] = alpha;
+        return true;
     }
 
     /// <summary>
@@ -164,12 +185,9 @@ internal sealed class ActorModelControl
                 return adopted;
             if (!_resolver.TryResolveForOperation(actor, out var descriptor, out var ownership))
                 return false;
-            if (ownership is not null)
-                return ownership.Visible;
-            if (_legacyVisibility.TryGetValue(descriptor, out var overrideValue))
-                return overrideValue;
-
-            return _native.IsReadyToDraw(descriptor) ?? false;
+            if (_hiddenAlpha.ContainsKey(descriptor))
+                return false;
+            return ownership is not null || (_native.IsReadyToDraw(descriptor) ?? false);
         }
         catch
         {

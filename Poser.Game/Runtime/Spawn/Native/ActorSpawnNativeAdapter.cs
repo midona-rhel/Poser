@@ -118,6 +118,12 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         return true;
     }
 
+    public float? ReadAlpha(SpawnNativeDescriptor descriptor)
+    {
+        var character = (Character*)Revalidate(descriptor);
+        return character == null ? null : character->Alpha;
+    }
+
     public bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target)
     {
         var from = (Character*)Revalidate(source);

@@ -98,6 +98,14 @@ public interface IActorSpawnService : IDisposable
     /// </summary>
     bool IsVisible(IActor actor);
 
+    /// <summary>The actor's opacity: the alpha it shows, or while it is hidden,
+    /// the alpha showing it puts back. Null when the actor is gone.</summary>
+    float? GetOpacity(IActor actor);
+
+    /// <summary>Sets the actor's opacity. Hiding uses the same game value, so
+    /// while the actor is hidden this only changes what showing it puts back.</summary>
+    bool SetOpacity(IActor actor, float alpha);
+
     /// <summary>
     /// Check if an actor was spawned by this service (and can be destroyed).
     /// </summary>
