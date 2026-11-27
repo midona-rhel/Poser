@@ -69,10 +69,10 @@ internal sealed unsafe class StanceControl
                 return released;
         }
 
-        // Save the stance for Reset only after the release above. A Full body
-        // animation Poser played, such as Sit, also sets the stance; releasing
-        // it gave back the game's own stance.
-        var capture = owned.StanceCaptureValue;
+        // Read the stance for Reset after the release: a Full body animation
+        // Poser played, such as Sit, changes the stance, and the release puts
+        // the game's own back.
+        var capture = _store.For(actor).StanceCaptureValue;
         if (capture == null && _playback.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
 
