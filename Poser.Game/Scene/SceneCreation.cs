@@ -35,13 +35,13 @@ public sealed class SceneCreation : ISceneCreation
     private readonly IOverlayNodeService _overlays;
     private readonly Application.Integration.IntegrationSelectors _integration;
     private readonly IPluginLog _log;
-    private readonly Transforms.TransformParenting _parenting;
+    private readonly TransformParenting _parenting;
 
     public SceneCreation(IFramework framework, ISessionGenerationSource sessions,
         IActorManager actors, IActorSpawnService spawn, ISceneLifecycleHistory lifecycle,
         IEntityBindings bindings, ISkeletonService skeletons, IPlacementAnchorSource anchors, Application.Settings.ConfigurationService configuration, IVirtualCameraService cameras, ILightingService lighting, IOverlayNodeService overlays,
         Application.Integration.IntegrationSelectors integration, IPluginLog log,
-        Transforms.TransformParenting parenting)
+        TransformParenting parenting)
     {
         _framework = framework;
         _sessions = sessions;

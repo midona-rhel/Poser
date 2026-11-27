@@ -129,8 +129,8 @@ public sealed class LightBoundaryTests
                 }
             });
             Journal = new(History);
-            // Light control only reads parent links, so parenting needs
-            // nothing from the game here.
+            // Light control only reads parent links, so parenting gets the
+            // stub bindings and no posing service or viewport.
             var parenting = new Poser.Game.Transforms.TransformParenting(bindings, null!,
                 new Poser.Application.Scene.SceneSession(new Poser.Application.Selection.SelectionSession()),
                 new Poser.Application.Scene.SceneGroups(), null!, History, Journal);

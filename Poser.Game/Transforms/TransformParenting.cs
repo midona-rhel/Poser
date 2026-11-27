@@ -11,9 +11,9 @@ using LegacyTransform = Poser.Domain.Transforms.Transform;
 namespace Poser.Game.Transforms;
 
 /// <summary>The one place that keeps parent links: which thing follows which, and at
-/// what offset. Links and their undo steps change only here; the inspector and
-/// <see cref="ParentFollowTick"/>, which moves children each frame, only read them.
-/// It also reads and writes where things are in the game for that.</summary>
+/// what offset. Attaching, detaching, loading a scene and undo change the links
+/// through this class, and <see cref="Evaluate"/> moves every child after its
+/// parent. It reads and writes where things are in the game for that.</summary>
 public sealed class TransformParenting(IEntityBindings bindings, IPosingService posing,
     SceneSession scene, SceneGroups groups, IViewportReads viewport, EditHistory history,
     ValueJournal journal) : ITransformParenting
