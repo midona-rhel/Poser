@@ -294,8 +294,9 @@ public sealed class SpawnBrowserWindow : Window
     private void DrawPortal()
     {
         // A scan that finished while the window is open re-lists the saved
-        // objects live, and the NPC catalog's background publication
-        // re-lists the same way — one int compare each per frame. BuildRows
+        // objects live, and the minion and mount list and the NPC catalog
+        // arriving from the background re-list the same way, one compare
+        // each per frame. BuildRows
         // owns ALL the clearing: a rebuild trigger that cleared some lists
         // at its call site and not others desynced rows from their tabs
         // and crashed the filter (2026-08-31).
@@ -397,8 +398,9 @@ public sealed class SpawnBrowserWindow : Window
 
     // ── the list ─────────────────────────────────────────────────────────
 
-    /// <summary>Every row, minted once: the catalog is the sheets' whole
-    /// admissible set and cannot change inside a session.</summary>
+    /// <summary>Builds every row. Runs when the window opens, and again when
+    /// a list that loads in the background arrives (minions and mounts, NPC
+    /// models, effects and furniture) or the library is rescanned.</summary>
     private void BuildRows()
     {
         if (_built)
