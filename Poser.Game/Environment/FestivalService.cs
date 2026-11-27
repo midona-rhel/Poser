@@ -18,9 +18,9 @@ namespace Poser.Game.Environment;
 /// Adds, removes and changes the seasonal festivals the area shows, and puts
 /// the area's own festivals back when the player leaves GPose.
 ///
-/// The game has eight festival slots. A change is not written at once: it
-/// waits until the game is not in the middle of switching festivals, because
-/// writing during a switch breaks the area's layout (Brio does the same). The
+/// The game has eight festival slots. A change is not written at once: like
+/// Brio, Poser waits until the game is not in the middle of switching
+/// festivals, to avoid writing into a switch that is still running. The
 /// slots waiting to be written are kept as one set, and every change starts
 /// from that set, so two changes in a row both arrive.
 ///
@@ -167,11 +167,12 @@ public sealed unsafe class FestivalService : IDisposable
     }
 
     /// <summary>
-    /// Writes the eight slots in their order: argument i becomes slot i.
-    /// (Brio passes them as (0,4), (1,5), (2,6), (3,7), which moves the
-    /// area's festivals to other slots on every write.) Setting them shows
-    /// them at once. Queueing them lets the game apply them when it can,
-    /// which is the only way left when Poser is unloading.
+    /// Writes the eight slots in their order: <c>festivals[0]</c> fills slot
+    /// 0, <c>festivals[1]</c> slot 1, and so on. Brio passes them as (0,4),
+    /// (1,5), (2,6), (3,7), which puts slot 4 into slot 1, slot 1 into slot
+    /// 2 and so on, so festivals outside slots 0 and 7 move with each write.
+    /// Setting them shows them at once. Unloading Poser queues them instead,
+    /// because no later frame runs to wait for the game to finish a switch.
     /// </summary>
     private static void Apply(GameMain.Festival[] festivals, bool queueOnly)
     {
