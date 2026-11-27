@@ -1,6 +1,7 @@
 using System.Numerics;
 using Poser.Application.Integration;
 using Poser.Application.Posing;
+using Poser.Domain;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
@@ -149,8 +150,11 @@ internal sealed partial class ActorRemoveRestore
                         // A posed duplicate's deltas were captured against the
                         // import's neutral frame, and a paused actor was read
                         // holding still: neither may come back running a new
-                        // idle underneath the saved pose.
-                        var paused = _animation.Pause(id);
+                        // idle underneath the saved pose. The pause is part of
+                        // the undo that brought the actor back, not a step of its own.
+                        Outcome paused;
+                        using (_animation.Untracked())
+                            paused = _animation.Pause(id);
                         if (!paused.Success) { Note($"'{actor.Name}': {paused.Detail}"); done(); return; }
                     }
                     if (!actor.IsCompanion && _spawns.GetCompanionInfo(actor) != runtime.Companion
