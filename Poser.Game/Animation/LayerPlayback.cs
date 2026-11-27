@@ -57,7 +57,7 @@ public sealed unsafe class LayerPlayback : IDisposable
         return IsSupportedActor(live, _scene.Snapshot.FindActor(actor));
     }
 
-    internal static bool IsSupportedActor(
+    private static bool IsSupportedActor(
         IActor live,
         Poser.Domain.Scene.ActorDescriptor? descriptor) =>
         live.CanControlAnimation
@@ -131,7 +131,7 @@ public sealed unsafe class LayerPlayback : IDisposable
     }
 
     /// <summary>Plays a timeline through the native route.</summary>
-    public Outcome Blend(ActorId actor, ushort timeline,
+    private Outcome Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
     {
         captured = null;
@@ -182,7 +182,7 @@ public sealed unsafe class LayerPlayback : IDisposable
 
     /// <summary>The Full body back to what the game played before Poser's first write:
     /// its mode and BaseOverride, the slot cleared for the game's own pick.</summary>
-    public Outcome RestoreBase(ActorId actor, BaseAnimationCapture capture)
+    private Outcome RestoreBase(ActorId actor, BaseAnimationCapture capture)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
@@ -232,7 +232,7 @@ public sealed unsafe class LayerPlayback : IDisposable
         return Outcome.Ok();
     }
 
-    public Outcome WriteLips(ActorId actor, ushort timeline)
+    private Outcome WriteLips(ActorId actor, ushort timeline)
     {
         var character = _native.Resolve(actor, out var detail);
         if (character == null)
@@ -478,10 +478,11 @@ public sealed unsafe class LayerPlayback : IDisposable
         return repeat;
     }
 
-    /// <summary>Drops the Full body's saved state once no layer Poser changed
-    /// still needs it for its own Reset.</summary>
+    /// <summary>Drops the Full body's saved state once neither Poser's own Full body
+    /// animation nor a layer Poser played still needs it for its own Reset. A layer
+    /// only chosen never played anything, so it does not keep the state.</summary>
     private static AnimationOverrides WithoutUnusedBaseCapture(AnimationOverrides o) =>
-        o.BaseTimeline == null && o.SelectedSlots.Count == 0 && o.SlotCaptures.Count == 0
+        o.BaseTimeline == null && o.SlotCaptures.Count == 0
             ? o with { BaseCapture = null }
             : o;
 
