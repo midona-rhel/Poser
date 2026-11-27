@@ -1,9 +1,9 @@
 namespace Poser.Documents.Library;
 
 /// <summary>
-/// Per-source traversal and aggregate publication bounds. A source that
-/// exceeds a bound is reported as failed and contributes no entries; later
-/// sources can still use the remaining publication capacity.
+/// How much the library lists. A source folder that goes past a limit is
+/// shown as failed and lists nothing; the sources after it can still use
+/// what is left.
 /// </summary>
 public static class PoseLibraryLimits
 {
