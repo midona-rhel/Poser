@@ -38,7 +38,6 @@ internal sealed class SceneAppearance : IDisposable
     private readonly IFramework _framework;
     private readonly ISceneDocumentStore _documents;
     private readonly ISessionGenerationSource _sessions;
-    private readonly SceneCaptureService _capture;
     private readonly IActorSpawnService _spawns;
     private readonly StableBindingRegistry _bindings;
     private readonly Poser.Application.Integration.IntegrationSelectors _integration;
@@ -56,7 +55,6 @@ internal sealed class SceneAppearance : IDisposable
         IFramework framework,
         ISceneDocumentStore documents,
         ISessionGenerationSource sessions,
-        SceneCaptureService capture,
         IActorSpawnService spawns,
         StableBindingRegistry bindings,
         Poser.Application.Integration.IntegrationSelectors integration,
@@ -69,7 +67,6 @@ internal sealed class SceneAppearance : IDisposable
         _framework = framework;
         _documents = documents;
         _sessions = sessions;
-        _capture = capture;
         _spawns = spawns;
         _bindings = bindings;
         _integration = integration;
@@ -101,8 +98,6 @@ internal sealed class SceneAppearance : IDisposable
         _framework.Update -= SweepHistoryAppearance;
         _historyAppearanceFiles.Dispose();
     }
-
-    internal void RememberActorIdentity(IActor actor, string? hash) => _capture.RememberIdentity(actor, hash);
 
     /// <summary>Works out a checksum for every MCDF the scene names and writes it
     /// into the scene, so a later load can tell whether the file has changed.

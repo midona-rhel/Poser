@@ -66,10 +66,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     private readonly SceneHistoryBinder _historyBinder;
     private readonly ISceneDocumentStore _documents;
     private readonly SceneWorkflowObserver _observer;
-    private readonly ISceneStructure _structure;
     // This Poser install's id, which decides whether a loaded scene is your own.
     private readonly Func<Guid> _thisInstall;
-    private readonly TransformParenting _parenting;
     private readonly SceneLoadStructure _loadStructure;
     private readonly SceneLoadRollback _rollback;
     private readonly SceneLoadHistory _loadHistory;
@@ -104,8 +102,6 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
         _historyBinder = historyBinder;
         _documents = documents;
         _observer = observer;
-        _structure = structure;
-        _parenting = parenting;
         _loadStructure = new SceneLoadStructure(sceneState, structure, parenting);
         _rollback = new SceneLoadRollback(sceneState, sceneEntities, structure, parenting);
         _loadHistory = new SceneLoadHistory(history, sceneState, historyBinder, _rollback, this);
@@ -320,23 +316,8 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
                         ?? _capture.BeginCapture(
                             operation.SceneScopeId, description,
                             includeAnimation: options.IncludeAnimation,
-                            onCaptured: outcome =>
-                            {
-                                try
-                                {
-                                    if (outcome.Success && outcome.Scene is { } document
-                                        && options.IncludeStructure)
-                                        SceneStructureCodec.Write(document, _structure.Capture(), outcome.ActorIdentities);
-                                    if (outcome.Success && outcome.Scene is { } parentDocument)
-                                        SceneParentingCodec.Write(parentDocument, _parenting.Capture(), outcome.ActorIdentities, _parenting.CompanionOwner);
-                                }
-                                catch (Exception exception)
-                                {
-                                    completion.TrySetException(exception);
-                                    return;
-                                }
-                                completion.TrySetResult(outcome);
-                            }));
+                            includeStructure: options.IncludeStructure,
+                            onCaptured: outcome => completion.TrySetResult(outcome)));
             }
             catch (Exception ex)
             {

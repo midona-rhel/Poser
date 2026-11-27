@@ -61,6 +61,8 @@ public sealed class SceneCaptureService
     private readonly WorldObjects.WorldBorrowing _worldObjects;
     private readonly PlacementAnchorSource _anchors;
     private readonly Poser.Application.Settings.ConfigurationService _configuration;
+    private readonly ISceneStructure _structure;
+    private readonly Poser.Game.Transforms.TransformParenting _parenting;
 
     public SceneCaptureService(
         IFramework framework,
@@ -87,8 +89,12 @@ public sealed class SceneCaptureService
         PlacementAnchorSource anchors,
         Poser.Application.Settings.ConfigurationService configuration,
         IBonePosingService bonePosing,
-        Poser.Application.Appearance.IInvisibleSkinService invisibleSkin)
+        Poser.Application.Appearance.IInvisibleSkinService invisibleSkin,
+        ISceneStructure structure,
+        Poser.Game.Transforms.TransformParenting parenting)
     {
+        _structure = structure;
+        _parenting = parenting;
         _invisibleSkin = invisibleSkin;
         _bonePosing = bonePosing;
         _configuration = configuration;
@@ -121,9 +127,13 @@ public sealed class SceneCaptureService
     /// It first updates the skeleton of every actor and companion, because
     /// Poser's copy of a bone no one has edited can still hold an old value.
     /// With no skeletons it saves at once. Returns the reason when it cannot start.
+    /// The sidebar groups and the top-level order are saved unless
+    /// <paramref name="includeStructure"/> is false; parent links are always
+    /// saved.
     /// </summary>
     public string? BeginCapture(
-        Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured, bool includeAnimation = false)
+        Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured, bool includeAnimation = false,
+        bool includeStructure = true)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return "Scene capture must run on the framework thread.";
@@ -141,7 +151,7 @@ public sealed class SceneCaptureService
 
         if (slots.Count == 0)
         {
-            onCaptured(Capture(sceneId, description, includeAnimation));
+            onCaptured(Capture(sceneId, description, includeAnimation, includeStructure));
             return null;
         }
 
@@ -153,7 +163,7 @@ public sealed class SceneCaptureService
             slots,
             _ =>
             {
-                outcome = Capture(sceneId, description, includeAnimation);
+                outcome = Capture(sceneId, description, includeAnimation, includeStructure);
                 return outcome.Success;
             },
             _ => onCaptured(outcome ?? SceneCaptureOutcome.Fail(
@@ -166,7 +176,8 @@ public sealed class SceneCaptureService
     /// <summary>Builds the scene file once the skeletons have updated, or at once
     /// when there are none. Saving over an existing scene passes its own sceneId,
     /// so it stays the same scene.</summary>
-    private SceneCaptureOutcome Capture(Guid sceneId, string? description, bool includeAnimation)
+    private SceneCaptureOutcome Capture(Guid sceneId, string? description, bool includeAnimation,
+        bool includeStructure)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return SceneCaptureOutcome.Fail(
@@ -205,6 +216,9 @@ public sealed class SceneCaptureService
             scene.Environment = CaptureEnvironment();
             var world = CaptureWorld();
             scene.World = world.IsDefault ? null : world;
+            if (includeStructure)
+                SceneStructureCodec.Write(scene, _structure.Capture(), identities);
+            SceneParentingCodec.Write(scene, _parenting.Capture(), identities, _parenting.CompanionOwner);
 
             var validation = SceneFileValidation.Validate(scene);
             if (!validation.Succeeded)
