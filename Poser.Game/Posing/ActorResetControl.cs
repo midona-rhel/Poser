@@ -21,7 +21,8 @@ public sealed class ActorResetControl(
     IExpressionService expressions, IPoseImportCommands imports,
     GazeSession gaze, IAnimationPlayback animation,
     ActorPresentationSession presentation, ActorModelIdSession models, IntegrationReset integration,
-    EditHistory history, ValueJournal values, IActorStateSnapshots snapshots)
+    EditHistory history, ValueJournal values, IActorStateSnapshots snapshots,
+    IActorReplacements replacements)
     : IActorResetControl
 {
     public PoseEditResult ResetAll(ActorId actor)
@@ -39,19 +40,24 @@ public sealed class ActorResetControl(
         // animation, and the animation reset below adds no undo step of its own,
         // so the animation is saved here separately.
         var animationBefore = animation.Capture(actor);
+        // Undo of removing the actor brings it back with a new id; the step
+        // follows it there.
+        var now = replacements.Track(actor);
         var result = ResetCore(actor);
         history.Append(new JournalStep("Reset all",
-            () => CanReset(actor).Success,
-            () => ResetCore(actor).Success)
+            () => now() is { } id && CanReset(id).Success,
+            () => now() is { } id && ResetCore(id).Success)
         {
             AffectedEntities = new[] { SelectionId.ForActor(actor) },
             OnRefusal = () => RefusalAction.Keep,
+            // Undo and redo above have just found the actor, so it is there.
             CompleteReplay = (undo, current, cancellation, completed) =>
             {
+                var live = now()!.Value;
                 if (undo)
-                    snapshots.Restore(before, current, cancellation, restored => completed(
-                        restored.Success ? GestureResult.From(animation.Restore(actor, animationBefore)) : restored));
-                else snapshots.WaitForReset(actor, current, cancellation, completed);
+                    snapshots.Restore(before.For(live), current, cancellation, restored => completed(
+                        restored.Success ? GestureResult.From(animation.Restore(live, animationBefore)) : restored));
+                else snapshots.WaitForReset(live, current, cancellation, completed);
             },
         });
         return result;

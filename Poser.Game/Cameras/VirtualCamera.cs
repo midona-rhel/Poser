@@ -234,20 +234,12 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     public float MouseSensitivity { get; set; }
 
-    /// <summary>The configured starting fly speed, clamped to the range the
-    /// Speed row can show back — a hand-edited config must not create a
-    /// camera whose speed its own slider cannot reach.</summary>
-    private float DefaultSpeed => Math.Clamp(
-        _service.CameraSettings.DefaultMovementSpeed,
-        FreeCameraSpeed.Minimum,
-        FreeCameraSpeed.Maximum);
+    /// <summary>The fly speed and look sensitivity a new camera starts with,
+    /// from the settings, which keep them within the camera rows' ranges.</summary>
+    private float DefaultSpeed => _service.CameraSettings.DefaultMovementSpeed;
 
-    /// <summary>The configured starting look sensitivity, clamped to the
-    /// Sensitivity row's range for the same reason.</summary>
-    private float DefaultSensitivity => Math.Clamp(
-        _service.CameraSettings.DefaultMouseSensitivity,
-        0.001f,
-        0.2f);
+    /// <inheritdoc cref="DefaultSpeed"/>
+    private float DefaultSensitivity => _service.CameraSettings.DefaultMouseSensitivity;
 
     public bool DelimitAngle { get; set; }
 

@@ -70,8 +70,10 @@ public sealed class CharacterFileSessionTests
         Assert.True(result?.Success, result?.Detail);
     }
 
-    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
+    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots, IActorReplacements
     {
+        // Nothing in these tests removes an actor.
+        public Func<ActorId?> Track(ActorId actor) => () => actor;
         public SessionGeneration? ActiveSessionGeneration { get; set; } = SessionGeneration.New();
         public EditHistory History { get; } = new();
         public Files Files { get; } = new();
@@ -89,7 +91,7 @@ public sealed class CharacterFileSessionTests
             Creation.Session = () => ActiveSessionGeneration!.Value;
             var integration = new IntegrationGraph(port, null!, this);
             _integration = integration.Selectors;
-            Control = new(integration.Selectors, integration.Mcdf, Files, new(History, this, new ValueJournal(History)), creation, this, Clock);
+            Control = new(integration.Selectors, integration.Mcdf, Files, new(History, this, new ValueJournal(History), this), creation, this, Clock);
         }
         public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>
             IntegrationValue<ActorStateSnapshot>.Ok(new(actor, ActiveSessionGeneration!.Value,

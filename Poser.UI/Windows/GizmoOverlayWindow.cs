@@ -66,7 +66,7 @@ public class GizmoOverlayWindow : Window
 
     /// <summary>Size of the gizmo from the settings, before interface scaling.</summary>
     private float HandleSpanPixels =>
-        80f * Math.Clamp(GizmoConfig.GizmoScale, 0.5f, 2f);
+        80f * GizmoConfig.GizmoScale;
     // Logs failed drags at the verbose level.
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
 

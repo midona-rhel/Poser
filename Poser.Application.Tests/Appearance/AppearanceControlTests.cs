@@ -98,8 +98,10 @@ public sealed class AppearanceControlTests
         Assert.Equal(expected.Slots, actual.Slots);
     }
 
-    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots
+    private sealed class Fixture : ISessionGenerationSource, IActorStateSnapshots, IActorReplacements
     {
+        // Nothing in these tests removes an actor.
+        public Func<ActorId?> Track(ActorId actor) => () => actor;
         public SessionGeneration? ActiveSessionGeneration { get; } = SessionGeneration.New();
         public EditHistory History { get; } = new();
         public RuntimeProxy Runtime { get; }
@@ -112,10 +114,10 @@ public sealed class AppearanceControlTests
             var port = DispatchProxy.Create<IIntegrationRuntimeFake, RuntimeProxy>();
             Runtime = (RuntimeProxy)(object)port;
             var integration = new IntegrationGraph(port, null!, this).Selectors;
-            var disruptive = new DisruptiveSteps(History, this, new ValueJournal(History));
+            var disruptive = new DisruptiveSteps(History, this, new ValueJournal(History), this);
             var journal = new ValueJournal(History);
-            Wardrobe = new WardrobeSession(journal, integration, port, disruptive);
-            Customize = new CustomizeSession(journal, integration, port, disruptive);
+            Wardrobe = new WardrobeSession(journal, integration, disruptive, this);
+            Customize = new CustomizeSession(journal, integration, disruptive, this);
         }
 
         public IntegrationValue<ActorStateSnapshot> Capture(ActorId actor) =>

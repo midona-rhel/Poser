@@ -45,6 +45,10 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
 
     internal IActorRemoveRestore ActorStatePort => _actorOwner.Port;
 
+    /// <summary>True while an actor brought back by undo or redo is still
+    /// getting its saved state back. The action gate reads it.</summary>
+    public bool IsRestoringActor => _actorOwner.Port.IsRestoring;
+
     /// <summary>The helpers are internal to the game code, so the plugin
     /// cannot create them. This constructor takes what they need and builds
     /// them.</summary>
@@ -94,7 +98,9 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
                 ? TransformTargetId.ForProp(id) : null,
             overlay => overlay is OverlayNodeHandle { Kind: OverlayNodeKind.Collider } node
                 && bindings.GetOverlayId(node) is { } id
-                ? TransformTargetId.ForCollider(id) : null)
+                ? TransformTargetId.ForCollider(id) : null,
+            actor => bindings.GetActorId(actor) is { } id
+                ? TransformTargetId.ForActor(id) : null)
     { }
 
     /// <summary>For tests: actors, props, overlays and world objects are
@@ -111,7 +117,8 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         Func<ILight, TransformTargetId?>? lightTarget = null,
         Func<object, TransformTargetId?>? worldObjectTarget = null,
         Func<object, TransformTargetId?>? propTarget = null,
-        Func<object, TransformTargetId?>? overlayTarget = null)
+        Func<object, TransformTargetId?>? overlayTarget = null,
+        Func<IActor, TransformTargetId?>? actorTarget = null)
     {
         _history = history;
         _lighting = lighting;
@@ -119,7 +126,7 @@ public sealed class SceneLifecycleHistory : ISceneLifecycleHistory,
         _worldObjectOwner = new(history, worldObjects, worldObjectTarget);
         _lightOwner = new(history, lighting, lightTarget);
         _cameraOwner = new(history, cameras);
-        _actorOwner = new(history, actors);
+        _actorOwner = new(history, actors, actorTarget);
         _propOwner = new(history, props, propTarget);
         _overlayOwner = new(history, overlays, overlayTarget);
         // A slot only exists for undo steps. When the history is cleared,
