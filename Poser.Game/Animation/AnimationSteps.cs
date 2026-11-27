@@ -40,10 +40,10 @@ public sealed class AnimationSteps : IAnimationActions
         // is released when its actor despawns.
         if (!Alive(actor))
             return action();
+        var now = _replacements.Track(actor);
         var before = _animation.Capture(actor);
         var result = action();
         var after = _animation.Capture(actor);
-        var now = _replacements.Track(actor);
         _journal.Record((actor, "Animation", description), description, before, after,
             snapshot => now() is { } id
                 ? _animation.Restore(id, snapshot)
