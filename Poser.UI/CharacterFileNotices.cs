@@ -13,8 +13,12 @@ namespace Poser.UI;
 /// chose gets none. A refusal to start is reported by the button itself, jobs that
 /// scene loads, scene saves and undo start are reported by those, and the
 /// Appearance tab's row keeps showing the last result.
+///
+/// Every job's end is also written to the log, whoever started it, with how far
+/// it got, so an issue report shows why an import did not work.
 /// </summary>
-internal sealed class CharacterFileNotices(ICharacterFiles files, UserNotices notices)
+internal sealed class CharacterFileNotices(ICharacterFiles files, UserNotices notices,
+    Dalamud.Plugin.Services.IPluginLog log)
 {
     private Guid? _seen;
 
@@ -22,13 +26,19 @@ internal sealed class CharacterFileNotices(ICharacterFiles files, UserNotices no
     public void Pump()
     {
         if (files.Receipt is not { } receipt || receipt.State == OperationReceiptState.Pending
-            || receipt.OperationId == _seen || receipt.OperationId != files.Started)
+            || receipt.OperationId == _seen)
             return;
         _seen = receipt.OperationId;
-        if (receipt.State is OperationReceiptState.Applied or OperationReceiptState.Cancelled)
+        var job = files.Progress;
+        string action = $"{(job?.Kind == McdfOperationKind.Export ? "Export" : "Apply")} {job?.FileName}";
+        string line = $"[MCDF] {action}: {receipt.State}, at {job?.Phase}, "
+            + $"{job?.FilesDone}/{job?.FilesTotal} files, {job?.BytesDone / 1048576}/{job?.BytesTotal / 1048576} MB"
+            + (receipt.OperationId == files.Started ? "" : " (started by a scene or undo)")
+            + (string.IsNullOrWhiteSpace(receipt.Detail) ? "" : $". {receipt.Detail}");
+        if (receipt.State == OperationReceiptState.Failed) log.Warning(line); else log.Information(line);
+        if (receipt.OperationId != files.Started
+            || receipt.State is OperationReceiptState.Applied or OperationReceiptState.Cancelled)
             return;
-        var job = files.Progress!;
-        string action = $"{(job.Kind == McdfOperationKind.Export ? "Export" : "Apply")} {job.FileName}";
         notices.Report(new Outcome(false, receipt.Detail), action);
     }
 }

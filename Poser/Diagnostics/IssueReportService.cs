@@ -45,6 +45,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
     private readonly ConfigurationService _config;
     private readonly SceneSession _scene;
     private readonly ISceneWorkflow _scenes;
+    private readonly Application.Gaze.IGazeControl _gaze;
     private readonly IPluginLog _log;
     private readonly Dictionary<Guid, string> _tokens = new();
     private readonly DiagnosticRedactor _redactor = new();
@@ -60,6 +61,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         ConfigurationService config,
         SceneSession scene,
         ISceneWorkflow scenes,
+        Application.Gaze.IGazeControl gaze,
         IPluginLog log,
         UI.UserNotices notices)
     {
@@ -70,6 +72,7 @@ public sealed class IssueReportService : IIssueReports, IDisposable
         _config = config;
         _scene = scene;
         _scenes = scenes;
+        _gaze = gaze;
         _log = log;
         _redactor.RegisterIdentity(Environment.UserName, "[user]");
         _redactor.RegisterPathsJson(JsonSerializer.Serialize(
@@ -247,11 +250,37 @@ public sealed class IssueReportService : IIssueReports, IDisposable
             WrittenAt = DateTime.UtcNow,
             Plugins = plugins,
             Actors = _scene.Snapshot.Actors.Count,
+            Gaze = GazeNow(),
             Actions = _recorder.Snapshot(),
             Settings = _config.Config,
             Log = LogTail(),
         };
         return _redactor.ScrubJson(JsonSerializer.Serialize(report, ReportJson));
+    }
+
+    /// <summary>Each actor's gaze when the report is written: whether it is on,
+    /// what it follows, and which parts are held. A head that keeps turning back
+    /// after the actor is rotated is usually gaze holding a point.</summary>
+    private List<object> GazeNow()
+    {
+        var actors = new List<object>();
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            if (_gaze.Read(actor.Id) is not { } gaze)
+                continue;
+            var settings = gaze.Settings;
+            actors.Add(new
+            {
+                Actor = TokenFor(actor.Id.LogicalId),
+                gaze.Active,
+                Mode = settings.Mode.ToString(),
+                Parts = settings.TargetType.ToString(),
+                FollowsActor = gaze.Target is { } target ? TokenFor(target.LogicalId) : null,
+                gaze.TargetStale,
+                Held = new { Eyes = settings.EyesLocked, Head = settings.HeadLocked, Body = settings.BodyLocked },
+            });
+        }
+        return actors;
     }
 
     /// <summary>The plugin's own lines from the Dalamud log, newest last.</summary>
